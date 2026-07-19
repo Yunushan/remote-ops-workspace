@@ -65,6 +65,12 @@ class TerminalHighlightFragment:
 
 
 DEFAULT_TERMINAL_SYNTAX_RULES: tuple[TerminalSyntaxRule, ...] = (
+    TerminalSyntaxRule(
+        "url",
+        "HTTP(S) link",
+        r"""(?i)\bhttps?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]*[A-Za-z0-9_~/#\]%=+-]""",
+        "#54ccef",
+    ),
     TerminalSyntaxRule("prompt", "Shell prompt", r"(?m)^\$ .+$", "#7cc7ff"),
     TerminalSyntaxRule("note", "Note marker", r"\[note\][^\n]*", "#d7ba7d"),
     TerminalSyntaxRule(
@@ -132,20 +138,28 @@ def highlight_terminal_text(
     for rule in rules or DEFAULT_TERMINAL_SYNTAX_RULES:
         for match in rule.compile().finditer(source):
             start, end = match.span()
-            if start == end or any(occupied[start:end]):
+            if start == end:
                 continue
-            for index in range(start, end):
-                occupied[index] = True
-            spans.append(
-                TerminalHighlightSpan(
-                    start=start,
-                    end=end,
-                    text=source[start:end],
-                    rule_key=rule.key,
-                    label=rule.label,
-                    color=rule.color,
-                )
-            )
+            free_start: int | None = None
+            for index in range(start, end + 1):
+                available = index < end and not occupied[index]
+                if available and free_start is None:
+                    free_start = index
+                if not available and free_start is not None:
+                    free_end = index
+                    for free_index in range(free_start, free_end):
+                        occupied[free_index] = True
+                    spans.append(
+                        TerminalHighlightSpan(
+                            start=free_start,
+                            end=free_end,
+                            text=source[free_start:free_end],
+                            rule_key=rule.key,
+                            label=rule.label,
+                            color=rule.color,
+                        )
+                    )
+                    free_start = None
     return tuple(sorted(spans, key=lambda span: (span.start, span.end)))
 
 

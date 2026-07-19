@@ -192,16 +192,36 @@ def test_real_gui_render_moba_live_contract_requires_usable_crisp_surfaces() -> 
         source.index("def live_tab_labels")
     ]
 
-    assert '"mobaTerminalInputVisible": True' in contract_source
-    assert "terminal_input.isVisible()" in contract_source
-    assert "terminal_input.isEnabled()" in contract_source
+    assert '"mobaTerminalInputVisible": not native_pty' in contract_source
+    assert "native PTY terminal input must be hidden" in contract_source
+    assert "explicit pipe fallback input must be visible" in contract_source
+    assert "mobaTerminalLineInputFallback" in contract_source
+    assert "mobaTerminalContextMenu" in contract_source
+    assert "telemetry context-menu route drifted" in contract_source
+    assert "mobaSyntheticConnectedTranscriptSuppressed" in contract_source
+    assert "preview-only connected transcript data" in contract_source
+    assert "preview-only remote rows" in contract_source
+    assert "must stay disabled without a remote item" in source
+    assert "Waiting for authentication and server output." in contract_source
+    assert "terminal startup preamble must be part of scrollback" in contract_source
+    assert "terminal scrollback is missing its startup preamble" in contract_source
+    assert "must not expose a fixed SSH banner" in contract_source
+    assert "must not expose a permanent right utility rail" in contract_source
+    assert "connected layout must not instantiate" in contract_source
+    assert "mobaBackgroundSshAuthAvailable" in contract_source
+    assert "mobaBackgroundSshAuthDetail" in contract_source
+    assert "auth-required state" in contract_source
+    assert "separate non-interactive SSH process" in contract_source
+    assert "key or agent authentication are required" in contract_source
+    assert '"Monitoring"' in contract_source
+    assert '"Telemetry"' not in contract_source
     assert "transcript_keys =" not in contract_source
     assert "transcript_tones =" not in contract_source
     assert "for line in EXPECTED_MOBA_TERMINAL_TRANSCRIPT" not in contract_source
-    assert "route.web_console_line not in terminal_text" not in source
-    assert "route.terminal_prompt not in terminal_text" not in source
-    assert "banner_frame.frameWidth() != 1" in contract_source
-    assert "banner_frame.contentsRect().getRect() != expected_contents" in contract_source
+    assert "Last login: Sat Jun  6 05:27:50 2026" in contract_source
+    assert "banner_frame.frameWidth() != 1" not in contract_source
+    assert "mobaRightUtilityRailStaticWidth" not in contract_source
+    assert "right utility action route rail" not in contract_source
     assert "QFont.HintingPreference.PreferFullHinting" in contract_source
     assert '"mobaRailTextRenderMode"' in contract_source
     assert '"device-pixel-pixmap"' in contract_source
@@ -295,8 +315,8 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_MOBA_SESSION_TREE_CHROME.profile_row_height == 34
     assert checker.EXPECTED_PRODUCT_TREE_ICON_KEYS["mobaxterm"]["sftp-ops"] == "sftp"
     assert checker.EXPECTED_MOBA_RAIL_ROLES == {"collapse", "sessions", "favorites", "tools", "macros", "sftp"}
-    assert checker.EXPECTED_MOBA_CONNECTED_DOCK_FRAME.rail_width == 24
-    assert checker.EXPECTED_MOBA_RAIL_CHROME.rail_width == 24
+    assert checker.EXPECTED_MOBA_CONNECTED_DOCK_FRAME.rail_width == 28
+    assert checker.EXPECTED_MOBA_RAIL_CHROME.rail_width == 28
     assert checker.EXPECTED_MOBA_RAIL_ITEM_GEOMETRY_BY_ROLE["sftp"].static_label_y == 354
     assert "visible_matches" in source
     assert "def run_render_child" in source
@@ -389,18 +409,8 @@ def test_real_gui_render_manifest_contract_names_required_widgets() -> None:
     assert checker.EXPECTED_MOBA_HOME_WELCOME_CHROME.title == "Remote Ops Workspace"
     assert checker.EXPECTED_MOBA_HOME_WELCOME_CHROME.search_width == 405
     assert checker.EXPECTED_MOBA_HOME_WELCOME_CHROME.recent_title == "Recent sessions"
-    assert checker.EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS == [
-        "web-console",
-        "spacer",
-        "last-login",
-        "prompt-ready",
-    ]
-    assert checker.EXPECTED_MOBA_TERMINAL_TRANSCRIPT_TONES == [
-        "info",
-        "spacer",
-        "info",
-        "command",
-    ]
+    assert checker.EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS == []
+    assert checker.EXPECTED_MOBA_TERMINAL_TRANSCRIPT_TONES == []
     assert "terminal" in checker.EXPECTED_MOBA_SFTP_ACTION_KEYS
     assert checker.EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY_BY_KEY["ascii-mode"].icon_x == 196
     assert checker.EXPECTED_MOBA_SFTP_BROWSER_CHROME.dropdown_marker == "v"
@@ -583,6 +593,14 @@ def test_real_gui_render_defaults_to_every_preset() -> None:
     assert checker.select_presets(None) == [preset.id for preset in checker.GUI_DESIGN_PRESETS]
 
 
+def test_real_gui_render_monitoring_checked_expectation_is_auth_aware() -> None:
+    checker = _load_checker()
+
+    assert checker.EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE.expected_checked is True
+    assert checker.expected_moba_monitoring_checked(True) is True
+    assert checker.expected_moba_monitoring_checked(False) is False
+
+
 def test_real_gui_render_uses_preset_specific_widget_contracts() -> None:
     checker = _load_checker()
 
@@ -621,7 +639,11 @@ def test_real_gui_render_uses_preset_specific_widget_contracts() -> None:
     assert moba_widgets["quickConnect"] == "Moba quick connect field"
     assert moba_widgets["mobaRibbonButton"] == "Moba ribbon action"
     assert moba_widgets["mobaConnectedLeftDock"] == "Moba connected SFTP/monitoring dock"
+    assert moba_widgets["terminalPane"] == "Moba native terminal pane"
+    assert moba_widgets["terminalOutput"] == "Moba native terminal output"
     assert moba_widgets["mobaTelemetryBar"] == "Moba bottom telemetry bar"
+    assert "mobaSshBanner" not in moba_widgets
+    assert "mobaRightUtilityRail" not in moba_widgets
 
 
 def test_real_gui_render_contract_helper_maps_product_labels() -> None:
@@ -1144,6 +1166,9 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         assert isolation_route["visible_property"] == "presetIsolationVisibleObjects"
         assert isolation_route["hidden_property"] == "presetIsolationHiddenObjects"
         assert isolation_route["render_source"] == "gui-design-preset-visibility"
+        if preset_id == "mobaxterm":
+            assert "mobaSshBanner" not in isolation_route["visible_objects"]
+            assert "mobaRightUtilityRail" not in isolation_route["visible_objects"]
         assert selection_route["key"] == f"{preset_id}-preset-selection-route"
         assert selection_route["preset_id"] == preset_id
         assert selection_route["selector_object"] == "designSelect"
@@ -1582,8 +1607,10 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "mobaConnectedLeftDock" in moba["required_widgets"]
     assert "mobaSftpBrowser" in moba["required_widgets"]
     assert "mobaSftpFileTable" in moba["required_widgets"]
-    assert "mobaSessionEdgeControls" in moba["required_widgets"]
-    assert "mobaRightUtilityRail" in moba["required_widgets"]
+    assert "mobaSessionEdgeControls" not in moba["required_widgets"]
+    assert "terminalPane" in moba["required_widgets"]
+    assert "terminalOutput" in moba["required_widgets"]
+    assert "mobaRightUtilityRail" not in moba["required_widgets"]
     assert "mobaBottomEdgeControls" in moba["required_widgets"]
     assert moba["present_widgets"] == {}
     assert moba["reference_profile"] == "edge-prod"
@@ -1591,11 +1618,13 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert {
         "connected-left-dock",
         "sftp-file-table",
-        "ssh-banner-workspace",
-        "session-edge-controls",
+        "native-terminal-workspace",
         "bottom-edge-controls",
     } <= set(moba["layout_contract_ids"])
-    assert {"dock-left-of-ssh-banner", "sftp-table-inside-dock"} <= set(moba["topology_contract_ids"])
+    assert "session-edge-controls" not in moba["layout_contract_ids"]
+    assert {"dock-left-of-native-terminal", "sftp-table-inside-dock"} <= set(
+        moba["topology_contract_ids"]
+    )
     assert "moba-rail-roles" in moba["contract_checks"]
     assert "moba-rail-labels" in moba["contract_checks"]
     assert "moba-rail-geometry" in moba["contract_checks"]
@@ -1620,10 +1649,15 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "session-edge-controls" in moba["contract_checks"]
     assert "session-edge-geometry" in moba["contract_checks"]
     assert "session-edge-action-route" in moba["contract_checks"]
-    assert "right-utility-rail" in moba["contract_checks"]
-    assert "ssh-banner-chrome" in moba["contract_checks"]
-    assert "terminal-transcript" in moba["contract_checks"]
-    assert "terminal-transcript-geometry" in moba["contract_checks"]
+    assert "right-utility-rail" not in moba["contract_checks"]
+    assert "ssh-banner-chrome" not in moba["contract_checks"]
+    assert "terminal-transcript" not in moba["contract_checks"]
+    assert "terminal-transcript-geometry" not in moba["contract_checks"]
+    assert "terminal-runtime-output" in moba["contract_checks"]
+    assert "truthful-terminal-preamble" in moba["contract_checks"]
+    assert "native-pty-input-visibility" in moba["contract_checks"]
+    assert "terminal-context-menu" in moba["contract_checks"]
+    assert "telemetry-context-menu" in moba["contract_checks"]
     assert "sftp-toolbar-groups" in moba["contract_checks"]
     assert "sftp-toolbar-geometry" in moba["contract_checks"]
     assert "sftp-toolbar-action-route" in moba["contract_checks"]
@@ -1639,7 +1673,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     assert "bottom-edge-controls" in moba["contract_checks"]
     assert "live-topology" in moba["contract_checks"]
     assert "remote-monitoring-dock" in moba["contract_checks"]
-    assert "remote-monitoring-footer-geometry" in moba["contract_checks"]
+    assert "remote-monitoring-compact" in moba["contract_checks"]
     assert "monitoring-telemetry-route" in moba["contract_checks"]
     assert "remote-monitoring-control-route" in moba["contract_checks"]
     assert "follow-terminal-folder-control-route" in moba["contract_checks"]
@@ -1670,18 +1704,18 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     }
     assert "terminal" in moba["expected_moba_sftp_action_keys"]
     assert moba["expected_moba_rail_chrome"] == {
-        "rail_width": 24,
-        "icon_x": 5,
+        "rail_width": 28,
+        "icon_x": 6,
         "static_icon_size": 16,
         "live_icon_size": 20,
         "generated_icon_size": 22,
-        "button_width": 24,
+        "button_width": 28,
         "button_height": 26,
         "active_x": 2,
         "active_y_offset": -3,
-        "active_width": 20,
+        "active_width": 24,
         "active_height": 30,
-        "label_width": 24,
+        "label_width": 28,
         "label_height": 54,
         "label_step": 58,
         "unlabeled_gap_after": 8,
@@ -1868,123 +1902,123 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "render_source": "gui-design-moba-sftp-toolbar-route",
     }
     assert moba["expected_moba_sftp_toolbar_action_geometry"] == [
-        {
-            "key": "parent-folder",
-            "button_x": 3,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 7,
-            "icon_y": 5,
+            {
+                "key": "parent-folder",
+                "button_x": 3,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 7,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": True,
             "separator_x": 34,
         },
-        {
-            "key": "download",
-            "button_x": 34,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 38,
-            "icon_y": 5,
+            {
+                "key": "download",
+                "button_x": 34,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 38,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": False,
             "separator_x": 0,
         },
-        {
-            "key": "upload",
-            "button_x": 58,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 62,
-            "icon_y": 5,
+            {
+                "key": "upload",
+                "button_x": 58,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 62,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": True,
             "separator_x": 89,
         },
-        {
-            "key": "connect",
-            "button_x": 89,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 93,
-            "icon_y": 5,
+            {
+                "key": "connect",
+                "button_x": 89,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 93,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": False,
             "separator_x": 0,
         },
-        {
-            "key": "new-folder",
-            "button_x": 113,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 117,
-            "icon_y": 5,
+            {
+                "key": "new-folder",
+                "button_x": 113,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 117,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": False,
             "separator_x": 0,
         },
-        {
-            "key": "new-file",
-            "button_x": 137,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 141,
-            "icon_y": 5,
+            {
+                "key": "new-file",
+                "button_x": 137,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 141,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": False,
             "separator_x": 0,
         },
-        {
-            "key": "delete",
-            "button_x": 161,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 165,
-            "icon_y": 5,
+            {
+                "key": "delete",
+                "button_x": 161,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 165,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": True,
             "separator_x": 192,
         },
-        {
-            "key": "ascii-mode",
-            "button_x": 192,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 196,
-            "icon_y": 5,
+            {
+                "key": "ascii-mode",
+                "button_x": 192,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 196,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": False,
             "separator_x": 0,
         },
-        {
-            "key": "split-view",
-            "button_x": 216,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 220,
-            "icon_y": 5,
+            {
+                "key": "split-view",
+                "button_x": 216,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 220,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": False,
             "separator_x": 0,
         },
-        {
-            "key": "tools",
-            "button_x": 240,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 244,
-            "icon_y": 5,
+            {
+                "key": "tools",
+                "button_x": 240,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 244,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": True,
             "separator_x": 271,
         },
-        {
-            "key": "terminal",
-            "button_x": 271,
-            "button_y": 1,
-            "button_size": 24,
-            "icon_x": 275,
-            "icon_y": 5,
+            {
+                "key": "terminal",
+                "button_x": 271,
+                "button_y": 3,
+                "button_size": 24,
+                "icon_x": 275,
+                "icon_y": 7,
             "icon_size": 16,
             "separator_after": False,
             "separator_x": 0,
@@ -2036,8 +2070,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "visible_metric_keys": [],
         "refresh_seconds": 5,
         "compact": True,
-        "static_height": 116,
-        "divider_offset": 14,
+        "static_height": 78,
+        "divider_offset": 10,
         "divider_left_inset": 18,
         "divider_right_inset": 194,
         "content_left": 42,
@@ -2203,10 +2237,10 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "row_height": 22,
             "live_width": 146,
         },
-        {
-            "key": "follow-terminal-folder",
-            "anchor_x": 42,
-            "static_y": 76,
+            {
+                "key": "follow-terminal-folder",
+                "anchor_x": 42,
+                "static_y": 50,
             "icon_x": 60,
             "icon_size": 16,
             "label_x": 80,
@@ -2225,15 +2259,15 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "notice": "REMOTE OPS WORKSPACE",
         "product_note": "open-protocol operator shell",
         "right_marker": "[]",
-        "static_height": 22,
+        "static_height": 18,
         "notice_x": 6,
-        "notice_y": 6,
+        "notice_y": 4,
         "product_note_x": 142,
-        "product_note_y": 6,
+        "product_note_y": 4,
         "text_font_size": 10,
         "segment_start_right_offset": 480,
         "marker_right_inset": 4,
-        "marker_y": 6,
+        "marker_y": 4,
         "marker_width": 9,
         "marker_height": 10,
     }
@@ -2296,28 +2330,28 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "menu_y": 22,
         "menu_height": 22,
         "ribbon_y": 44,
-        "ribbon_height": 64,
-        "quick_connect_y": 108,
+        "ribbon_height": 54,
+        "quick_connect_y": 98,
         "quick_connect_height": 24,
-        "left_dock_y": 132,
-        "tab_y": 108,
-        "tab_height": 28,
-        "terminal_content_y": 136,
-        "status_height": 22,
-        "side_width": 390,
-        "rail_width": 24,
+        "left_dock_y": 122,
+        "tab_y": 98,
+        "tab_height": 24,
+        "terminal_content_y": 122,
+        "status_height": 18,
+        "side_width": 394,
+        "rail_width": 28,
     }
     assert moba["expected_moba_connected_dock_frame"] == {
-        "side_width": 390,
-        "rail_width": 24,
-        "dock_x": 24,
-        "dock_y": 132,
+        "side_width": 394,
+        "rail_width": 28,
+        "dock_x": 28,
+        "dock_y": 122,
         "dock_width": 366,
-        "dock_height": 606,
-        "workspace_x": 390,
-        "quick_connect_y": 108,
+        "dock_height": 620,
+        "workspace_x": 394,
+        "quick_connect_y": 98,
         "quick_connect_height": 24,
-        "status_y": 738,
+        "status_y": 742,
     }
     assert moba["expected_moba_connected_session_route"] == {
         "key": "moba-active-connected-session-route",
@@ -2406,10 +2440,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "active_tab_label": "edge-prod.example.invalid (operator)",
         "reference_tab_label": "7. edge-prod.example.invalid (operator)",
         "banner_target": "edge-prod.example.invalid",
-        "web_console_line": (
-            "Web console: https://edge-prod.example.invalid:9090/ or https://192.0.2.10:9090/"
-        ),
-        "terminal_prompt": "[operator@edge-prod ~]$ ",
+        "web_console_line": "",
+        "terminal_prompt": "",
         "telemetry_target": "edge-prod.example.invalid:22",
         "target_endpoint": "edge-prod.example.invalid:22",
         "remote_path": "/var/log",
@@ -2437,7 +2469,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "expected_kinds": ["profile", "direct"],
         "max_visible_rows": 4,
         "row_height": 22,
-        "static_width": 390,
+        "static_width": 394,
         "detail_separator": "    ",
     }
     assert moba["expected_moba_home_welcome_chrome"] == {
@@ -2522,7 +2554,7 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "dropdown_font_size": 10,
         "header_label_y": 7,
         "header_font_size": 10,
-        "row_top_offset": -4,
+        "row_top_offset": 0,
         "row_icon_x": 14,
         "row_icon_y_offset": -1,
         "row_name_x": 38,
@@ -2533,31 +2565,23 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "row_modified_font_size": 9,
     }
     assert moba["expected_moba_sftp_dock_layout"] == {
-        "inner_margin": 6,
-        "toolbar_height": 26,
+        "inner_margin": 0,
+        "toolbar_height": 30,
         "toolbar_icon_size": 16,
         "toolbar_icon_step": 24,
         "toolbar_separator_width": 7,
-        "path_height": 24,
+        "path_height": 22,
         "table_header_height": 24,
         "file_row_height": 21,
         "static_max_rows": 9,
-        "monitoring_height": 116,
-        "monitoring_divider_offset": 14,
+        "monitoring_height": 78,
+        "monitoring_divider_offset": 10,
     }
     assert [line["key"] for line in moba["expected_moba_terminal_transcript"]] == (
         checker.EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS
     )
-    assert moba["expected_moba_terminal_transcript"][0]["text"] == (
-        "Web console: https://edge-prod.example.invalid:9090/ or https://192.0.2.10:9090/"
-    )
-    assert moba["expected_moba_terminal_transcript"][3]["text"] == "[operator@edge-prod ~]$ "
-    assert moba["expected_moba_terminal_transcript_row_geometry"] == [
-        {"key": "web-console", "static_x": 14, "static_y": 0, "row_height": 20, "font_size": 13},
-        {"key": "spacer", "static_x": 14, "static_y": 20, "row_height": 20, "font_size": 13},
-        {"key": "last-login", "static_x": 14, "static_y": 40, "row_height": 20, "font_size": 13},
-        {"key": "prompt-ready", "static_x": 14, "static_y": 60, "row_height": 20, "font_size": 13},
-    ]
+    assert moba["expected_moba_terminal_transcript"] == []
+    assert moba["expected_moba_terminal_transcript_row_geometry"] == []
     assert [cell["key"] for cell in moba["expected_moba_telemetry_cells"]] == (
         checker.EXPECTED_MOBA_TELEMETRY_CELL_KEYS
     )
@@ -2566,7 +2590,8 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
     )
     assert [cell["icon_size"] for cell in moba["expected_moba_telemetry_cells"]] == [12] * 8
     assert moba["expected_moba_telemetry_cells"][1]["icon_accent"] == "#f4c430"
-    assert moba["expected_moba_telemetry_cells"][6]["display_text"] == "Connections: 1 (port 22)"
+    assert moba["expected_moba_telemetry_cells"][1]["display_text"] == "Unavailable"
+    assert moba["expected_moba_telemetry_cells"][6]["display_text"] == "Connections: unavailable"
     assert moba["expected_moba_telemetry_cell_geometry"] == [
         {
             "key": "target",
@@ -2762,84 +2787,13 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
             "gap_after": 4,
         },
     ]
-    assert moba["expected_moba_right_utility_keys"] == ["clip", "settings", "tools"]
-    assert "right-utility-rail-chrome" in moba["contract_checks"]
-    assert "right-utility-rail-geometry" in moba["contract_checks"]
-    assert "right-utility-action-route" in moba["contract_checks"]
-    assert moba["expected_moba_right_utility_rail_chrome"] == {
-        "static_width": 30,
-        "live_width": 30,
-        "margin_left": 2,
-        "margin_top": 2,
-        "margin_right": 2,
-        "margin_bottom": 2,
-        "action_spacing": 8,
-        "session_edge_top_y": 108,
-        "session_edge_height": 50,
-        "session_edge_icon_x": 9,
-        "session_edge_icon_size": 16,
-    }
-    assert moba["expected_moba_right_utility_actions"] == [
-        {
-            "key": "clip",
-            "icon_key": "clip",
-            "label": "Clipboard and transfer hints",
-            "static_x": 7,
-            "static_y": 13,
-            "static_size": 16,
-            "live_icon_size": 18,
-            "button_size": 22,
-            "render_source": "generated-pixmap",
-        },
-        {
-            "key": "settings",
-            "icon_key": "gear",
-            "label": "Terminal settings",
-            "static_x": 7,
-            "static_y": 49,
-            "static_size": 16,
-            "live_icon_size": 18,
-            "button_size": 22,
-            "render_source": "generated-pixmap",
-        },
-        {
-            "key": "tools",
-            "icon_key": "spark",
-            "label": "Terminal tools",
-            "static_x": 7,
-            "static_y": 85,
-            "static_size": 16,
-            "live_icon_size": 18,
-            "button_size": 22,
-            "render_source": "generated-pixmap",
-        },
-    ]
-    assert moba["expected_moba_right_utility_action_route"] == {
-        "key": "moba-right-utility-action-route",
-        "route_role": "right-utility-rail-actions-to-terminal-workflows",
-        "rail_object": "mobaRightUtilityRail",
-        "action_object": "mobaRightUtilityAction",
-        "action_keys": ["clip", "settings", "tools"],
-        "action_labels": [
-            "Clipboard and transfer hints",
-            "Terminal settings",
-            "Terminal tools",
-        ],
-        "action_icon_keys": ["clip", "gear", "spark"],
-        "action_handlers": [
-            "show_moba_clipboard_hints",
-            "show_moba_terminal_settings",
-            "show_moba_tools_status",
-        ],
-        "route_key_property": "mobaRightUtilityRouteKey",
-        "action_key_property": "mobaRightUtilityRouteActionKey",
-        "action_label_property": "mobaRightUtilityRouteActionLabel",
-        "action_object_property": "mobaRightUtilityRouteActionObject",
-        "icon_key_property": "mobaRightUtilityRouteIconKey",
-        "handler_property": "mobaRightUtilityRouteHandler",
-        "action_keys_property": "mobaRightUtilityRouteActionKeys",
-        "render_source": "gui-design-moba-right-utility-route",
-    }
+    assert moba["expected_moba_right_utility_keys"] == []
+    assert "right-utility-rail-chrome" not in moba["contract_checks"]
+    assert "right-utility-rail-geometry" not in moba["contract_checks"]
+    assert "right-utility-action-route" not in moba["contract_checks"]
+    assert moba["expected_moba_right_utility_rail_chrome"] == {}
+    assert moba["expected_moba_right_utility_actions"] == []
+    assert moba["expected_moba_right_utility_action_route"] == {}
     assert moba["expected_moba_session_edge_actions"] == [
         {
             "key": "attachment",
@@ -2886,115 +2840,11 @@ def test_real_gui_render_manifest_records_live_contract_summaries(tmp_path: Path
         "action_keys_property": "mobaSessionEdgeRouteActionKeys",
         "render_source": "gui-design-moba-session-edge-route",
     }
-    assert moba["expected_moba_ssh_banner_chrome"] == {
-        "title": "Remote Ops Workspace Personal Edition v1.0",
-        "subtitle": "(SSH client, SFTP browser and remote tools)",
-        "heading_prefix": "* ",
-        "heading_suffix": " *",
-        "target_intro": "SSH session to",
-        "capability_label_width": 15,
-        "footer_prefix": "For more info, ctrl+click on",
-        "static_left_offset": 42,
-        "static_top_offset": 12,
-        "static_width": 570,
-        "static_height": 182,
-        "body_top_offset": 54,
-        "terminal_gap": 18,
-    }
-    assert moba["expected_moba_ssh_banner_row_geometry"] == [
-        {
-            "key": "title",
-            "object_name": "mobaSshBannerTitle",
-            "static_x": 0,
-            "static_y": 10,
-            "static_width": 570,
-            "static_height": 16,
-            "centered": True,
-        },
-        {
-            "key": "subtitle",
-            "object_name": "mobaSshBannerSubtitle",
-            "static_x": 0,
-            "static_y": 27,
-            "static_width": 570,
-            "static_height": 16,
-            "centered": True,
-        },
-        {
-            "key": "target",
-            "object_name": "mobaSshBannerTargetLine",
-            "static_x": 14,
-            "static_y": 54,
-            "static_width": 542,
-            "static_height": 16,
-            "centered": False,
-        },
-        {
-            "key": "direct-ssh",
-            "object_name": "mobaSshBannerCapability",
-            "static_x": 14,
-            "static_y": 70,
-            "static_width": 542,
-            "static_height": 16,
-            "centered": False,
-        },
-        {
-            "key": "ssh-compression",
-            "object_name": "mobaSshBannerCapability",
-            "static_x": 14,
-            "static_y": 86,
-            "static_width": 542,
-            "static_height": 16,
-            "centered": False,
-        },
-        {
-            "key": "smartcard-auth",
-            "object_name": "mobaSshBannerCapability",
-            "static_x": 14,
-            "static_y": 102,
-            "static_width": 542,
-            "static_height": 16,
-            "centered": False,
-        },
-        {
-            "key": "ssh-browser",
-            "object_name": "mobaSshBannerCapability",
-            "static_x": 14,
-            "static_y": 118,
-            "static_width": 542,
-            "static_height": 16,
-            "centered": False,
-        },
-        {
-            "key": "x11-forwarding",
-            "object_name": "mobaSshBannerCapability",
-            "static_x": 14,
-            "static_y": 134,
-            "static_width": 542,
-            "static_height": 16,
-            "centered": False,
-        },
-        {
-            "key": "footer",
-            "object_name": "mobaSshBannerFooter",
-            "static_x": 14,
-            "static_y": 154,
-            "static_width": 542,
-            "static_height": 16,
-            "centered": False,
-        },
-    ]
-    assert moba["expected_moba_ssh_banner_capability_card"]["target"] == "edge-prod.example.invalid"
-    assert [row["key"] for row in moba["expected_moba_ssh_banner_capability_card"]["capabilities"]] == [
-        "direct-ssh",
-        "ssh-compression",
-        "smartcard-auth",
-        "ssh-browser",
-        "x11-forwarding",
-    ]
-    assert moba["expected_moba_ssh_banner_capability_card"]["footer_links"] == ["help", "website"]
-    assert "ssh-banner-capability-card" in moba["contract_checks"]
-    assert "ssh-banner-row-geometry" in moba["contract_checks"]
+    assert moba["expected_moba_ssh_banner_chrome"] == {}
+    assert moba["expected_moba_ssh_banner_row_geometry"] == []
+    assert moba["expected_moba_ssh_banner_capability_card"] == {}
+    assert "ssh-banner-capability-card" not in moba["contract_checks"]
+    assert "ssh-banner-row-geometry" not in moba["contract_checks"]
     assert "workspace-surface" not in moba["contract_checks"]
 
     securecrt = summaries["securecrt"]
@@ -4118,13 +3968,14 @@ def test_real_gui_render_tracks_live_layout_contracts_for_product_presets() -> N
     assert {
         "mobaQuickConnectChrome",
         "mobaConnectedLeftDock",
-        "mobaSessionEdgeControls",
         "mobaBottomEdgeControls",
-        "mobaRightUtilityRail",
         "mobaSftpFileTable",
-        "mobaSshBanner",
+        "terminalOutput",
         "mobaTelemetryBar",
     } <= moba_objects
+    assert "mobaSessionEdgeControls" not in moba_objects
+    assert "mobaRightUtilityRail" not in moba_objects
+    assert "mobaSshBanner" not in moba_objects
     mremoteng_objects = {str(contract["object_name"]) for contract in checker.live_layout_contracts_for_preset("mremoteng")}
     assert "mRemoteNgPropertyGrid" in mremoteng_objects
     assert "mRemoteNgDocumentFilter" in mremoteng_objects
@@ -4155,14 +4006,14 @@ def test_real_gui_render_tracks_live_topology_contracts_for_product_presets() ->
     assert set(checker.LIVE_TOPOLOGY_CONTRACTS) == checker.PRODUCT_STYLE_PRESETS
     for preset_id in checker.PRODUCT_STYLE_PRESETS:
         contracts = checker.live_topology_contracts_for_preset(preset_id)
-        expected_count = 6 if preset_id in {"mobaxterm", "mremoteng"} else 5
+        expected_count = 6 if preset_id == "mremoteng" else 5
         assert len(contracts) == expected_count
         assert all({"id", "from", "relation", "to"} <= set(contract) for contract in contracts)
     moba_ids = {str(contract["id"]) for contract in checker.live_topology_contracts_for_preset("mobaxterm")}
     assert {
         "rail-left-of-dock",
-        "dock-left-of-ssh-banner",
-        "ssh-banner-left-of-right-utility",
+        "dock-left-of-native-terminal",
+        "native-terminal-above-telemetry",
         "sftp-table-inside-dock",
     } <= moba_ids
     mremoteng_ids = {str(contract["id"]) for contract in checker.live_topology_contracts_for_preset("mremoteng")}

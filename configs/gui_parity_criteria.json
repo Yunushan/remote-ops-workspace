@@ -434,8 +434,7 @@
               "sftp-monitoring-dock",
               "ssh-banner-panel",
               "connected-terminal",
-              "bottom-telemetry",
-              "right-utility-rail"
+              "bottom-telemetry"
             ],
             "color_anchor_ids": [
               "ribbon-xserver-action",
@@ -486,12 +485,6 @@
           "moba.remote-monitoring-control-route",
           "moba.follow-terminal-folder-control-route",
           "moba.monitoring-control-geometry",
-          "moba.session-edge-controls",
-          "moba.session-edge-geometry",
-          "moba.session-edge-action-route",
-          "moba.right-utility-rail",
-          "moba.right-utility-rail-chrome",
-          "moba.right-utility-action-route",
           "moba.ssh-banner-row-geometry",
           "moba.terminal-transcript-geometry",
           "moba.bottom-telemetry",
@@ -524,10 +517,6 @@
           "moba.connected-session-action-menu-route",
           "moba.rail-section-labels",
           "moba.rail-geometry",
-          "moba.session-edge-controls",
-          "moba.session-edge-geometry",
-          "moba.session-edge-action-route",
-          "moba.right-utility-action-route",
           "moba.sftp-toolbar-action-route",
           "moba.bottom-edge-controls",
           "moba.reference-line-anchors"
@@ -573,9 +562,6 @@
           "moba.connected-session-actions-route",
           "moba.connected-session-action-menu-route",
           "moba.connected-session-identity-route",
-          "moba.session-edge-controls",
-          "moba.session-edge-geometry",
-          "moba.session-edge-action-route",
           "moba.bottom-edge-controls",
           "moba.connected-session-chrome",
           "moba.reference-line-anchors"
@@ -619,8 +605,6 @@
           "moba.ribbon-pictograms",
           "moba.ribbon-geometry",
           "moba.ribbon-edge-action-route",
-          "moba.session-edge-action-route",
-          "moba.right-utility-action-route",
           "moba.sftp-dock-chrome",
           "moba.sftp-toolbar-groups",
           "moba.sftp-toolbar-geometry",
@@ -650,12 +634,6 @@
           "moba.focus-interaction-route",
           "moba.home-search-route",
           "moba.ribbon-edge-action-route",
-          "moba.session-edge-controls",
-          "moba.session-edge-geometry",
-          "moba.session-edge-action-route",
-          "moba.right-utility-rail",
-          "moba.right-utility-rail-chrome",
-          "moba.right-utility-action-route",
           "moba.connected-tab-chrome",
           "moba.connected-tab-geometry",
           "moba.connected-dock-frame",
@@ -765,12 +743,6 @@
           "moba.bottom-status-chrome",
           "moba.bottom-status-geometry",
           "moba.bottom-edge-controls",
-          "moba.session-edge-controls",
-          "moba.session-edge-geometry",
-          "moba.session-edge-action-route",
-          "moba.right-utility-rail",
-          "moba.right-utility-rail-chrome",
-          "moba.right-utility-action-route",
           "moba.connected-tab-chrome",
           "moba.connected-tab-geometry",
           "moba.reference-line-anchors"
@@ -814,12 +786,6 @@
           "moba.bottom-status-chrome",
           "moba.bottom-status-geometry",
           "moba.bottom-edge-controls",
-          "moba.session-edge-controls",
-          "moba.session-edge-geometry",
-          "moba.session-edge-action-route",
-          "moba.right-utility-rail",
-          "moba.right-utility-rail-chrome",
-          "moba.right-utility-action-route",
           "moba.connected-tab-chrome",
           "moba.connected-tab-geometry",
           "moba.reference-line-anchors"
@@ -858,13 +824,7 @@
           "moba.connected-session-actions-route",
           "moba.connected-session-action-menu-route",
           "moba.connected-session-identity-route",
-          "moba.session-edge-controls",
-          "moba.session-edge-geometry",
-          "moba.session-edge-action-route",
           "moba.bottom-edge-controls",
-          "moba.right-utility-rail",
-          "moba.right-utility-rail-chrome",
-          "moba.right-utility-action-route",
           "moba.connected-tab-chrome",
           "moba.connected-tab-geometry",
           "moba.connected-session-chrome",
@@ -1371,8 +1331,8 @@
               "tree_padding=\"3px 5px\""
             ],
             "scripts/render_gui_design_previews.py": [
-              "side_w = 390",
-              "rail_w = 24"
+              "side_w = frame.side_width",
+              "rail_w = frame.rail_width"
             ],
             "src/remote_ops_workspace/gui.py": [
               "root_splitter.setSizes",
@@ -1405,8 +1365,6 @@
               "ribbon-above-connected-dock",
               "dock-left-of-terminal",
               "sftp-glyphs-inside-connected-dock",
-              "session-edge-controls-above-right-utility-rail",
-              "right-utility-stack-inside-right-utility-rail",
               "sftp-toolbar-actions-inside-connected-dock",
               "monitoring-control-row-inside-monitoring-dock",
               "telemetry-cpu-cell-inside-bottom-telemetry",
@@ -1542,217 +1500,6 @@
           }
         },
         {
-          "id": "moba.session-edge-controls",
-          "description": "Connected MobaXterm-style session edge shortcut cluster tracks the small paperclip/settings controls near the tab and terminal edge with shared action metadata, generated icons and live widget properties.",
-          "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
-              "GuiMobaSessionEdgeAction",
-              "GUI_DESIGN_MOBA_SESSION_EDGE_ACTIONS",
-              "gui_design_moba_session_edge_actions"
-            ],
-            "scripts/render_gui_design_previews.py": [
-              "draw_moba_session_edge_controls",
-              "gui_design_moba_session_edge_actions",
-              "action.relative_y"
-            ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSessionEdgeControls",
-              "mobaSessionEdgeAction",
-              "mobaSessionEdgeIconKey",
-              "mobaSessionEdgePlacement"
-            ],
-            "scripts/check_real_gui_render.py": [
-              "EXPECTED_MOBA_SESSION_EDGE_KEYS",
-              "session-edge-controls",
-              "expected_moba_session_edge_actions"
-            ],
-            "configs/gui_visual_metrics.json": [
-              "session-edge-controls",
-              "session-edge-attachment",
-              "session-edge-settings-control",
-              "session-edge-controls-above-right-utility-rail"
-            ],
-            "docs/GUI_DESIGN.md": [
-              "session edge shortcut"
-            ]
-          }
-        },
-        {
-          "id": "moba.session-edge-geometry",
-          "description": "Connected MobaXterm-style session edge shortcut icons pin static y, relative y, icon size, button size and generated-icon source through shared static/live placement metadata.",
-          "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
-              "static_size",
-              "live_icon_size",
-              "button_size",
-              "relative_y",
-              "render_source"
-            ],
-            "scripts/render_gui_design_previews.py": [
-              "action.relative_y",
-              "action.static_size",
-              "rail.session_edge_top_y"
-            ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSessionEdgeRelativeY",
-              "mobaSessionEdgeButtonSize",
-              "mobaSessionEdgeRenderSource"
-            ],
-            "scripts/check_real_gui_render.py": [
-              "EXPECTED_MOBA_SESSION_EDGE_BY_KEY",
-              "session-edge-geometry",
-              "mobaSessionEdgeButtonSize"
-            ],
-            "configs/gui_visual_metrics.json": [
-              "session-edge-controls",
-              "session-edge-attachment",
-              "session-edge-settings-control"
-            ],
-            "docs/GUI_DESIGN.md": [
-              "MobaXterm-style session-edge shortcut geometry"
-            ]
-          }
-        },
-        {
-          "id": "moba.session-edge-action-route",
-          "description": "Connected MobaXterm-style session edge shortcut actions tie the attachment and settings buttons to stable workflow route metadata, generated icons, tab-strip placement and live handlers.",
-          "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
-              "GuiMobaSessionEdgeActionRoute",
-              "GUI_DESIGN_MOBA_SESSION_EDGE_ACTION_ROUTE",
-              "gui_design_moba_session_edge_action_route"
-            ],
-            "scripts/render_gui_design_previews.py": [
-              "gui_design_moba_session_edge_action_route",
-              "moba_session_edge_action_route",
-              "show_moba_session_attachment"
-            ],
-            "src/remote_ops_workspace/gui.py": [
-              "show_moba_session_attachment",
-              "show_moba_session_settings",
-              "mobaSessionEdgeRouteKey",
-              "mobaSessionEdgeRouteHandler"
-            ],
-            "scripts/check_real_gui_render.py": [
-              "EXPECTED_MOBA_SESSION_EDGE_ACTION_ROUTE",
-              "session-edge-action-route",
-              "expected_moba_session_edge_action_route"
-            ],
-            "docs/GUI_DESIGN.md": [
-              "MobaXterm-style session-edge action route"
-            ]
-          }
-        },
-        {
-          "id": "moba.right-utility-rail",
-          "description": "Connected MobaXterm-style terminal workspace has a narrow right utility rail with generated clip, settings and tool icons plus shared static/live stack geometry instead of text placeholders.",
-          "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
-              "GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTIONS",
-              "GuiMobaRightUtilityAction",
-              "gui_design_moba_right_utility_actions",
-              "Terminal settings",
-              "static_y",
-              "button_size"
-            ],
-            "scripts/render_gui_design_previews.py": [
-              "draw_moba_right_utility_rail",
-              "draw_moba_right_utility_icon",
-              "gui_design_moba_right_utility_actions",
-              "action.static_y",
-              "\"gear\""
-            ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaRightUtilityRail",
-              "mobaRightUtilityAction",
-              "mobaRightUtilityKey",
-              "mobaRightUtilityIconKey",
-              "mobaRightUtilityStaticY",
-              "mobaRightUtilityButtonSize"
-            ],
-            "scripts/check_real_gui_render.py": [
-              "EXPECTED_MOBA_RIGHT_UTILITY_KEYS",
-              "EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS",
-              "EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY",
-              "right-utility-rail-geometry",
-              "mobaRightUtilityIconKey"
-            ],
-            "configs/gui_visual_metrics.json": [
-              "right-utility-rail",
-              "right-utility-action-stack",
-              "right-utility-settings-gear",
-              "right-utility-stack-inside-right-utility-rail"
-            ]
-          }
-        },
-        {
-          "id": "moba.right-utility-rail-chrome",
-          "description": "Connected MobaXterm-style right utility rail pins the rail width, live width, margins, action spacing and session-edge shortcut icon geometry through shared static/live chrome metadata.",
-          "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
-              "GuiMobaRightUtilityRailChrome",
-              "GUI_DESIGN_MOBA_RIGHT_UTILITY_RAIL_CHROME",
-              "gui_design_moba_right_utility_rail_chrome",
-              "session_edge_top_y"
-            ],
-            "scripts/render_gui_design_previews.py": [
-              "gui_design_moba_right_utility_rail_chrome",
-              "right_rail.static_width",
-              "rail.session_edge_icon_x",
-              "rail.session_edge_top_y"
-            ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaRightUtilityRailStaticWidth",
-              "mobaRightUtilityRailMargins",
-              "mobaRightUtilityRailSessionEdgeIconSize",
-              "mobaRightUtilityRailSessionEdgeTopY"
-            ],
-            "scripts/check_real_gui_render.py": [
-              "EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME",
-              "right-utility-rail-chrome",
-              "expected_moba_right_utility_rail_chrome"
-            ],
-            "configs/gui_visual_metrics.json": [
-              "right-utility-rail",
-              "right-utility-action-stack",
-              "session-edge-controls"
-            ],
-            "docs/GUI_DESIGN.md": [
-              "MobaXterm-style right utility rail chrome"
-            ]
-          }
-        },
-        {
-          "id": "moba.right-utility-action-route",
-          "description": "Connected MobaXterm-style right utility rail actions tie the clip, settings and tools buttons to stable workflow route metadata, generated icons and live handlers.",
-          "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
-              "GuiMobaRightUtilityActionRoute",
-              "GUI_DESIGN_MOBA_RIGHT_UTILITY_ACTION_ROUTE",
-              "gui_design_moba_right_utility_action_route"
-            ],
-            "scripts/render_gui_design_previews.py": [
-              "gui_design_moba_right_utility_action_route",
-              "moba_right_utility_action_route",
-              "show_moba_clipboard_hints"
-            ],
-            "src/remote_ops_workspace/gui.py": [
-              "show_moba_clipboard_hints",
-              "show_moba_terminal_settings",
-              "mobaRightUtilityRouteKey",
-              "mobaRightUtilityRouteHandler"
-            ],
-            "scripts/check_real_gui_render.py": [
-              "EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE",
-              "right-utility-action-route",
-              "expected_moba_right_utility_action_route"
-            ],
-            "docs/GUI_DESIGN.md": [
-              "MobaXterm-style right utility action route"
-            ]
-          }
-        },
-        {
           "id": "moba.sftp-table",
           "description": "SFTP browser shows toolbar actions, remote path, a selected parent-folder row, file name, size and last-modified columns.",
           "source_tokens": {
@@ -1864,7 +1611,7 @@
         },
         {
           "id": "moba.sftp-follow-folder-route",
-          "description": "MobaXterm-style SFTP Follow terminal folder workflow ties the checked follow-folder control, active remote path field, follow SFTP list plan and file table state through shared static/live route metadata.",
+          "description": "Moba-style SFTP folder-follow workflow ties the checked control, operator-selected remote path, SFTP list plan and file table state through shared static/live route metadata; it does not claim automatic shell-CWD observation.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "GuiMobaSftpFollowFolderRoute",
@@ -1895,7 +1642,7 @@
         },
         {
           "id": "moba.sftp-terminal-folder-route",
-          "description": "MobaXterm-style terminal-folder route proves the terminal working directory, Follow terminal folder checkbox, SFTP path field, selected parent row and SFTP list command are synchronized as one connected-session workflow.",
+          "description": "Moba-style terminal-folder route proves the selected remote path, folder-follow checkbox, SFTP path field, selected parent row and SFTP list command are synchronized as one connected-session workflow; shell working-directory detection is not implemented.",
           "source_tokens": {
             "src/remote_ops_workspace/moba_connected.py": [
               "MobaSftpTerminalFolderRoute",
@@ -2351,7 +2098,6 @@
               "mobaRemoteMonitoringLiveControlsWidth"
             ],
             "scripts/check_real_gui_render.py": [
-              "remote-monitoring-footer-geometry",
               "mobaRemoteMonitoringStaticHeight",
               "mobaRemoteMonitoringLiveControlsWidth",
               "expected_moba_remote_monitoring_dock_chrome"
@@ -2491,8 +2237,7 @@
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SSH_BANNER_CHROME",
-              "ssh-banner-chrome",
-              "mobaBannerHeight"
+              "expected_moba_ssh_banner_chrome"
             ],
             "configs/gui_visual_metrics.json": [
               "ssh-banner-panel"
@@ -2526,7 +2271,6 @@
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS",
-              "ssh-banner-capability-card",
               "expected_moba_ssh_banner_capability_card"
             ],
             "docs/GUI_DESIGN.md": [
@@ -2555,7 +2299,6 @@
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY",
-              "ssh-banner-row-geometry",
               "expected_moba_ssh_banner_row_geometry"
             ],
             "configs/gui_visual_metrics.json": [
@@ -2587,7 +2330,7 @@
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS",
-              "terminal-transcript",
+              "mobaTerminalTranscriptKeys",
               "expected_moba_terminal_transcript"
             ],
             "configs/gui_visual_metrics.json": [
@@ -2616,7 +2359,7 @@
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY",
-              "terminal-transcript-geometry",
+              "mobaTerminalTranscriptInjected",
               "expected_moba_terminal_transcript_row_geometry"
             ],
             "configs/gui_visual_metrics.json": [

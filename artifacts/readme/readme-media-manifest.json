@@ -6,8 +6,8 @@
       "id": "hero",
       "kind": "png",
       "path": "artifacts/readme/remote-ops-hero.png",
-      "sha256": "566aabcb92f046d05768c31f41b5fb48a85b696cd3d88adee424e907c7db291a",
-      "size_bytes": 246592,
+      "sha256": "12cee6c6539f867db19f991d1a439ce802e6156f857a92514d8f2c9b4b09a348",
+      "size_bytes": 239009,
       "width": 1600
     },
     {
@@ -16,8 +16,8 @@
       "id": "gui-preset-tour",
       "kind": "gif",
       "path": "artifacts/readme/gui-preset-tour.gif",
-      "sha256": "18d4cdff278a0df865fcf060c030be3da81af42e417cb84226ead0f2db518d84",
-      "size_bytes": 206445,
+      "sha256": "22694b2c79b8bb232726fb77522c09a928d51060613a3c3fe9f550aaa23aa80e",
+      "size_bytes": 200851,
       "width": 1120
     },
     {

@@ -65,16 +65,9 @@ def test_connected_session_state_tracks_browser_follow_monitoring_and_banner() -
     assert state.monitoring.process_count == 158
     assert "SSH session to example.internal" in state.banner.lines()[0]
     assert state.connection_label == "example.internal (operator)"
-    assert [line.key for line in state.terminal_transcript] == [
-        "web-console",
-        "spacer",
-        "last-login",
-        "prompt-ready",
-    ]
-    assert state.terminal_transcript[0].text == (
-        "Web console: https://example.internal:9090/ or https://192.0.2.10:9090/"
-    )
-    assert state.terminal_transcript[3].text == "[operator@example ~]$ "
+    assert state.terminal_transcript == ()
+    assert state.state_source == "runtime-observed"
+    assert state.connection_phase == "connected-observed"
     assert state.to_dict()["telemetry_cells"][0]["display_text"] == "example.internal:22"
     assert state.to_dict()["connected_route"]["key"] == "moba-active-connected-session-route"
     assert state.to_dict()["identity_route"]["key"] == "moba-connected-session-identity-route"
@@ -267,7 +260,11 @@ def test_connected_session_action_route_ties_context_menu_to_active_tab() -> Non
 
 
 def test_connected_session_identity_route_ties_visible_target_text_together() -> None:
-    state = build_moba_connected_session_state(ssh_profile(), remote_path="/var/log")
+    state = build_moba_connected_session_state(
+        ssh_profile(),
+        remote_path="/var/log",
+        preview_sample_data=True,
+    )
     route = moba_connected_session_identity_route(state)
 
     assert route.key == "moba-connected-session-identity-route"
@@ -482,6 +479,8 @@ def test_same_parameters_sftp_plan_preserves_ssh_options() -> None:
 def test_sftp_listing_parser_extracts_file_table_rows() -> None:
     rows = parse_sftp_ls_output(
         "total 4\n"
+        "drwxr-xr-x 4 operator operator 4096 Jun 06 12:00 .\n"
+        "drwxr-xr-x 4 operator operator 4096 Jun 06 12:00 ..\n"
         "drwxr-xr-x 2 operator operator 4096 Jun 06 12:01 releases\n"
         "-rw-r--r-- 1 operator operator 2048 Jun 06 12:02 deploy.log\n"
     )
@@ -501,6 +500,44 @@ def test_remote_monitoring_parser_uses_users_as_connection_count() -> None:
     assert snapshot.disk_label == "0.5 GB / 4.0 GB"
     assert snapshot.connection_count == 3
     assert snapshot.process_count == 91
+    assert snapshot.net_up_mbps is None
+    assert snapshot.net_down_mbps is None
+
+
+def test_live_connected_session_default_does_not_fabricate_runtime_evidence() -> None:
+    state = build_moba_connected_session_state(ssh_profile(), remote_path="/var/log")
+    payload = state.to_dict()
+
+    assert state.file_entries == ()
+    assert state.terminal_transcript == ()
+    assert state.monitoring.observed is False
+    assert state.monitoring.cpu_percent is None
+    assert state.monitoring.memory_used_gb is None
+    assert state.monitoring.net_up_mbps is None
+    assert state.state_source == "live"
+    assert state.connection_phase == "connecting"
+    assert payload["monitoring"]["cpu_percent"] is None
+    assert payload["monitoring"]["observed"] is False
+    assert payload["telemetry_cells"][1]["display_text"] == "Unavailable"
+    assert payload["telemetry_cells"][6]["display_text"] == "Connections: unavailable"
+    assert payload["state_source"] == "live"
+    assert payload["connection_phase"] == "connecting"
+
+
+def test_preview_sample_data_is_explicit_and_never_duplicates_parent_row() -> None:
+    state = build_moba_connected_session_state(
+        ssh_profile(),
+        remote_path="/",
+        preview_sample_data=True,
+    )
+
+    assert state.file_entries
+    assert "." not in {entry.name for entry in state.file_entries}
+    assert ".." not in {entry.name for entry in state.file_entries}
+    assert state.monitoring.observed is True
+    assert state.terminal_transcript
+    assert state.state_source == "preview-sample"
+    assert state.connection_phase == "preview"
 
 
 def test_ssh_connection_banner_reports_disabled_options() -> None:

@@ -47,13 +47,16 @@ widgets. That keeps validation shared between tests and the desktop dialogs:
 profile edits become `Profile` objects, layout pane text becomes `LayoutPane`
 objects, and the same storage classes persist the results.
 
-GUI terminal panes own a `QProcess` for each process-backed session, while the
-main window owns tab and shutdown lifecycle. `gui_lifecycle.py` centralizes the
-stop contract: idle processes are ignored, running processes receive a graceful
-terminate request first, and stubborn processes are killed after a bounded
-timeout. Closing a tab or quitting the app enumerates child terminal panes,
-confirms live sessions with the operator, and applies the same cleanup path to
-single tabs, split panes and saved-layout tabs.
+GUI terminal panes own one process adapter for each process-backed session.
+General commands use `QProcess`; direct Windows OpenSSH SSH/SFTP launches use
+the dependency-free ConPTY transport through a Qt signal adapter so interactive
+prompts and terminal input have a local pseudo-console. The main window owns tab
+and shutdown lifecycle. `gui_lifecycle.py` centralizes the stop contract: idle
+processes are ignored, running processes receive a graceful terminate request
+first, and stubborn processes are killed after a bounded timeout. Closing a tab
+or quitting the app enumerates child terminal panes, confirms live sessions with
+the operator, and applies the same cleanup path to single tabs, split panes and
+saved-layout tabs.
 
 File transfer operations are represented as SFTP batch plans. One-shot commands,
 queued transfers and preview commands all flow through `file_transfer.py`, which

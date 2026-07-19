@@ -61,7 +61,6 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
     gui_design_moba_ssh_banner_row_geometry,
     gui_design_moba_status_bar_chrome,
     gui_design_moba_status_segments,
-    gui_design_moba_terminal_transcript_row_geometry,
     gui_design_moba_titlebar_chrome,
     gui_design_moba_top_menu_geometry,
     gui_design_moba_top_menu_items,
@@ -128,7 +127,6 @@ from remote_ops_workspace.gui_designs import (  # noqa: E402
 from remote_ops_workspace.launcher import LauncherError  # noqa: E402
 from remote_ops_workspace.moba_connected import (  # noqa: E402
     build_moba_connected_session_state,
-    build_moba_terminal_transcript,
     build_ssh_connection_banner,
     moba_connected_session_action_route,
     moba_connected_session_identity_route,
@@ -267,48 +265,18 @@ EXPECTED_MOBA_CONNECTED_STATE = build_moba_connected_session_state(
     ),
     remote_path="/var/log",
     terminal_cwd="/var/log",
-    monitoring_output=(
-        "cpu=7 mem_mb=410/7680 disk_mb=2867/49152 users=1 processes=158 "
-        "net_up_mbps=0.01 net_down_mbps=0.01"
-    ),
+    preview_sample_data=False,
 )
 EXPECTED_MOBA_CONNECTED_SESSION_ROUTE = moba_connected_session_route(EXPECTED_MOBA_CONNECTED_STATE)
 EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE = moba_connected_session_identity_route(EXPECTED_MOBA_CONNECTED_STATE)
 EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE = moba_connected_session_action_route(EXPECTED_MOBA_CONNECTED_STATE)
 EXPECTED_MOBA_SFTP_TERMINAL_FOLDER_ROUTE = moba_sftp_terminal_folder_route(EXPECTED_MOBA_CONNECTED_STATE)
-EXPECTED_MOBA_TERMINAL_TRANSCRIPT = build_moba_terminal_transcript(
-    Profile(
-        name="edge-prod",
-        protocol="ssh",
-        host="edge-prod.example.invalid",
-        port=22,
-        username="operator",
-    ),
-    "/var/log",
-)
+EXPECTED_MOBA_TERMINAL_TRANSCRIPT = EXPECTED_MOBA_CONNECTED_STATE.terminal_transcript
 EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS = [line.key for line in EXPECTED_MOBA_TERMINAL_TRANSCRIPT]
 EXPECTED_MOBA_TERMINAL_TRANSCRIPT_TONES = [line.tone for line in EXPECTED_MOBA_TERMINAL_TRANSCRIPT]
-EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY = tuple(gui_design_moba_terminal_transcript_row_geometry())
-EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY_KEYS = [
-    row.key for row in EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY
-]
-EXPECTED_MOBA_TELEMETRY_CELLS = moba_telemetry_cells(
-    build_moba_connected_session_state(
-        Profile(
-            name="edge-prod",
-            protocol="ssh",
-            host="edge-prod.example.invalid",
-            port=22,
-            username="operator",
-        ),
-        remote_path="/var/log",
-        terminal_cwd="/var/log",
-        monitoring_output=(
-            "cpu=7 mem_mb=410/7680 disk_mb=2867/49152 users=1 processes=158 "
-            "net_up_mbps=0.01 net_down_mbps=0.01"
-        ),
-    )
-)
+EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY: tuple[Any, ...] = ()
+EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY_KEYS: list[str] = []
+EXPECTED_MOBA_TELEMETRY_CELLS = moba_telemetry_cells(EXPECTED_MOBA_CONNECTED_STATE)
 EXPECTED_MOBA_TELEMETRY_CELL_KEYS = [cell.key for cell in EXPECTED_MOBA_TELEMETRY_CELLS]
 EXPECTED_MOBA_TELEMETRY_CELL_WIDTHS = [cell.width for cell in EXPECTED_MOBA_TELEMETRY_CELLS]
 EXPECTED_MOBA_TELEMETRY_CELL_GEOMETRY = tuple(moba_telemetry_cell_geometry())
@@ -525,9 +493,8 @@ MOBA_CONNECTED_REQUIRED_WIDGETS = {
     "mobaSftpFileTable": "Moba SFTP file table",
     "mobaRemoteMonitoring": "Moba remote monitoring panel",
     "mobaFollowTerminalFolder": "Moba follow terminal folder control",
-    "mobaSshBanner": "Moba SSH connection banner",
-    "mobaSessionEdgeControls": "Moba session edge shortcut controls",
-    "mobaRightUtilityRail": "Moba right terminal utility rail",
+    "terminalPane": "Moba native terminal pane",
+    "terminalOutput": "Moba native terminal output",
     "mobaTelemetryBar": "Moba bottom telemetry bar",
 }
 NON_MOBA_REQUIRED_WIDGETS = {
@@ -617,30 +584,12 @@ LIVE_LAYOUT_CONTRACTS: dict[str, list[dict[str, object]]] = {
             "max_x": 520,
         },
         {
-            "id": "ssh-banner-workspace",
-            "object_name": "mobaSshBanner",
-            "label": "Moba SSH banner in connected workspace",
+            "id": "native-terminal-workspace",
+            "object_name": "terminalOutput",
+            "label": "Moba native terminal workspace",
             "min_width": 420,
-            "min_height": 70,
-            "min_x": 300,
-        },
-        {
-            "id": "right-utility-rail",
-            "object_name": "mobaRightUtilityRail",
-            "label": "Moba right terminal utility rail",
-            "min_width": 18,
-            "max_width": 60,
             "min_height": 300,
-            "min_x": 900,
-        },
-        {
-            "id": "session-edge-controls",
-            "object_name": "mobaSessionEdgeControls",
-            "label": "Moba session edge shortcut controls",
-            "min_width": 18,
-            "max_width": 60,
-            "min_height": 40,
-            "min_x": 900,
+            "min_x": 300,
         },
         {
             "id": "bottom-telemetry",
@@ -727,18 +676,11 @@ LIVE_TOPOLOGY_CONTRACTS: dict[str, list[dict[str, object]]] = {
             "max_gap": 80,
         },
         {
-            "id": "dock-left-of-ssh-banner",
+            "id": "dock-left-of-native-terminal",
             "from": "mobaConnectedLeftDock",
             "relation": "left_of",
-            "to": "mobaSshBanner",
-            "max_gap": 120,
-        },
-        {
-            "id": "ssh-banner-left-of-right-utility",
-            "from": "mobaSshBanner",
-            "relation": "left_of",
-            "to": "mobaRightUtilityRail",
-            "min_gap": 20,
+            "to": "terminalOutput",
+            "max_gap": 160,
         },
         {
             "id": "sftp-table-inside-dock",
@@ -747,11 +689,11 @@ LIVE_TOPOLOGY_CONTRACTS: dict[str, list[dict[str, object]]] = {
             "to": "mobaConnectedLeftDock",
         },
         {
-            "id": "ssh-banner-above-telemetry",
-            "from": "mobaSshBanner",
+            "id": "native-terminal-above-telemetry",
+            "from": "terminalOutput",
             "relation": "above",
             "to": "mobaTelemetryBar",
-            "min_gap": 80,
+            "max_gap": 40,
         },
     ],
     "securecrt": [
@@ -1469,6 +1411,13 @@ def present_widgets_for_preset(preset_id: str) -> dict[str, str]:
     return NON_MOBA_PRESENT_WIDGETS
 
 
+def expected_moba_monitoring_checked(background_auth_available: bool) -> bool:
+    return bool(
+        background_auth_available
+        and EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE.expected_checked
+    )
+
+
 def prepare_preset_live_state(window: Any, preset_id: str) -> list[str]:
     if preset_id != "mobaxterm":
         return prepare_product_reference_tab(window, preset_id)
@@ -1478,10 +1427,14 @@ def prepare_preset_live_state(window: Any, preset_id: str) -> list[str]:
 def prepare_moba_connected_reference(window: Any) -> list[str]:
     try:
         profile = window.store.get(PRESET_REFERENCE_PROFILES["mobaxterm"])
+        profile_data = profile.to_dict()
+        profile_options = dict(profile_data.get("options") or {})
+        profile_options.pop("moba_monitoring_output", None)
+        profile_data["options"] = profile_options
+        profile = Profile.from_dict(profile_data)
         # The render gate must not race DNS or an unavailable SSH endpoint.
-        # Keep a real local QProcess alive so focus, typing and line-input
-        # readiness are measured deterministically without fabricating remote
-        # terminal output.
+        # Keep a real local transport alive so focus and runtime output are
+        # measured deterministically without fabricating remote SSH output.
         transport_harness = (
             "import sys\n"
             "print('REFERENCE TRANSPORT READY', flush=True)\n"
@@ -1943,6 +1896,17 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append("mobaxterm live GUI tab-strip height metadata drifted")
         connected_dock = window.findChild(QFrame, "mobaConnectedLeftDock")
         sftp_browser = window.findChild(QFrame, "mobaSftpBrowser")
+        background_auth_value = (
+            connected_dock.property("mobaBackgroundSshAuthAvailable")
+            if connected_dock is not None
+            else None
+        )
+        if background_auth_value is None:
+            errors.append("mobaxterm live GUI background SSH auth capability is missing")
+        background_auth_available = bool(background_auth_value)
+        expected_monitoring_checked = expected_moba_monitoring_checked(
+            background_auth_available
+        )
         expected_connected_frame_properties = {
             "mobaConnectedDockSideWidth": EXPECTED_MOBA_CONNECTED_DOCK_FRAME.side_width,
             "mobaConnectedDockRailWidth": EXPECTED_MOBA_CONNECTED_DOCK_FRAME.rail_width,
@@ -2451,9 +2415,11 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             routed_rows_plan = str(sftp_table.property("mobaSftpRoutedRowsPlan") or "")
             if "ls -la /" not in routed_rows_plan:
                 errors.append("mobaxterm live GUI SFTP routed-row table missing follow-folder list plan")
-            if sftp_table.topLevelItemCount() < 4:
-                errors.append("mobaxterm live GUI SFTP file table must expose multiple reference rows")
-            elif (parent_item := sftp_table.topLevelItem(0)) is None:
+            if sftp_table.topLevelItemCount() != 1:
+                errors.append(
+                    "mobaxterm live GUI SFTP file table must not inject preview-only remote rows"
+                )
+            if (parent_item := sftp_table.topLevelItem(0)) is None:
                 errors.append("mobaxterm live GUI SFTP file table missing parent row")
             else:
                 if parent_item.text(0) != EXPECTED_MOBA_SFTP_BROWSER_CHROME.parent_row_label:
@@ -2589,7 +2555,15 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 if int(monitoring_panel.property(property_name) or 0) != expected_value:
                     errors.append(f"mobaxterm live GUI monitoring footer property {property_name} drifted")
             if monitoring_panel.height() != EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.static_height:
-                errors.append("mobaxterm live GUI monitoring footer live height drifted")
+                errors.append("mobaxterm live GUI monitoring footer compact height drifted")
+            if not bool(monitoring_panel.property("mobaRemoteMonitoringAlwaysCompact")):
+                errors.append("mobaxterm live GUI monitoring footer must remain compact")
+            if bool(monitoring_panel.property("mobaRemoteMonitoringExpanded")):
+                errors.append("mobaxterm live GUI monitoring footer must not expand in the connected layout")
+            if int(monitoring_panel.property("mobaRemoteMonitoringLiveHeight") or 0) != (
+                EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.static_height
+            ):
+                errors.append("mobaxterm live GUI monitoring footer live-height metadata drifted")
             if bool(monitoring_panel.property("mobaRemoteMonitoringCompact")) != (
                 EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.compact
             ):
@@ -2672,10 +2646,37 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append("mobaxterm live GUI monitoring control route panel target metric cells drifted")
             if bool(monitoring_panel.property(control_route.captured_property)) is not True:
                 errors.append("mobaxterm live GUI monitoring control route panel captured flag missing")
-            if bool(monitoring_panel.property(control_route.captured_checked_property)) != control_route.expected_checked:
+            if bool(monitoring_panel.property(control_route.captured_checked_property)) != (
+                expected_monitoring_checked
+            ):
                 errors.append("mobaxterm live GUI monitoring control route panel captured checked state drifted")
-            if bool(monitoring_panel.property(control_route.live_checked_property)) != control_route.expected_checked:
+            if bool(monitoring_panel.property(control_route.live_checked_property)) != (
+                expected_monitoring_checked
+            ):
                 errors.append("mobaxterm live GUI monitoring control route panel live checked state drifted")
+            if not background_auth_available:
+                background_auth_detail = str(
+                    connected_dock.property("mobaBackgroundSshAuthDetail") or ""
+                )
+                if "separate non-interactive process" not in background_auth_detail:
+                    errors.append(
+                        "mobaxterm live GUI unavailable background auth must explain "
+                        "the separate non-interactive process"
+                    )
+                if str(
+                    monitoring_panel.property("mobaRemoteMonitoringRuntimeState") or ""
+                ) != "auth-required":
+                    errors.append(
+                        "mobaxterm live GUI monitoring panel must expose auth-required state"
+                    )
+                monitoring_runtime_message = str(
+                    monitoring_panel.property("mobaRemoteMonitoringRuntimeMessage") or ""
+                )
+                if "separate non-interactive process" not in monitoring_runtime_message:
+                    errors.append(
+                        "mobaxterm live GUI monitoring auth-required message must explain "
+                        "the separate non-interactive process"
+                    )
             captured_command = str(monitoring_panel.property(control_route.captured_command_property) or "")
             if captured_command != command:
                 errors.append("mobaxterm live GUI monitoring control route panel captured command drifted")
@@ -2753,7 +2754,19 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 if controls_frame.width() != EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.live_controls_width:
                     errors.append("mobaxterm live GUI monitoring controls frame width drifted")
                 if controls_frame.height() != EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME.static_height:
-                    errors.append("mobaxterm live GUI monitoring controls frame height drifted")
+                    errors.append("mobaxterm live GUI monitoring controls compact height drifted")
+                if bool(controls_frame.property("mobaRemoteMonitoringExpanded")):
+                    errors.append("mobaxterm live GUI monitoring controls must not expand")
+            for detail_object in (
+                "mobaMonitoringStatus",
+                "mobaMonitoringRefresh",
+                "mobaMonitoringLastRefresh",
+            ):
+                detail_widget = monitoring_panel.findChild(QWidget, detail_object)
+                if detail_widget is not None and detail_widget.isVisible():
+                    errors.append(
+                        f"mobaxterm live GUI compact monitoring footer exposes {detail_object}"
+                    )
         monitoring_labels = window.findChildren(QLabel, "mobaMonitoringMetric")
         monitoring_keys = {str(label.property("mobaMonitoringMetricKey") or "") for label in monitoring_labels}
         missing_monitoring_keys = sorted(EXPECTED_MOBA_MONITORING_METRIC_KEYS - monitoring_keys)
@@ -2810,7 +2823,12 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 )
             if default_checked != control.checked:
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} default checked drifted")
-            if widget.isChecked() != control.checked:
+            runtime_checked = (
+                expected_monitoring_checked
+                if control.key == "remote-monitoring"
+                else control.checked
+            )
+            if widget.isChecked() != runtime_checked:
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} checked state drifted")
             if widget.icon().isNull():
                 errors.append(f"mobaxterm live GUI monitoring control {control.key!r} must expose an icon")
@@ -2905,14 +2923,43 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     control_route.target_metric_cell_keys
                 ):
                     errors.append("mobaxterm live GUI remote-monitoring control route target metric cells drifted")
-                if bool(widget.property(control_route.checked_property)) != widget.isChecked():
+                if bool(widget.property(control_route.checked_property)) != (
+                    expected_monitoring_checked
+                ):
                     errors.append("mobaxterm live GUI remote-monitoring control route checked property drifted")
                 if bool(widget.property(control_route.captured_property)) is not True:
                     errors.append("mobaxterm live GUI remote-monitoring control route captured flag missing")
-                if bool(widget.property(control_route.captured_checked_property)) != widget.isChecked():
+                if bool(widget.property(control_route.captured_checked_property)) != (
+                    expected_monitoring_checked
+                ):
                     errors.append("mobaxterm live GUI remote-monitoring control route captured checked state drifted")
-                if bool(widget.property(control_route.live_checked_property)) != widget.isChecked():
+                if bool(widget.property(control_route.live_checked_property)) != (
+                    expected_monitoring_checked
+                ):
                     errors.append("mobaxterm live GUI remote-monitoring control route live checked state drifted")
+                if not background_auth_available:
+                    if str(widget.property("state") or "") != "auth-required":
+                        errors.append(
+                            "mobaxterm live GUI remote-monitoring control must expose "
+                            "auth-required state"
+                        )
+                    if str(
+                        widget.property("mobaMonitoringStatusBadgeState") or ""
+                    ) != "auth-required":
+                        errors.append(
+                            "mobaxterm live GUI remote-monitoring badge must expose "
+                            "auth-required state"
+                        )
+                    monitoring_tooltip = widget.toolTip()
+                    for fragment in (
+                        "separate non-interactive SSH process",
+                        "key or agent authentication are required",
+                    ):
+                        if fragment not in monitoring_tooltip:
+                            errors.append(
+                                "mobaxterm live GUI remote-monitoring auth-required "
+                                f"tooltip is missing {fragment!r}"
+                            )
                 command = str(widget.property("mobaMonitoringCommand") or "")
                 if "sh -lc" not in command or "/proc" not in command:
                     errors.append("mobaxterm live GUI remote-monitoring control missing command evidence")
@@ -3073,134 +3120,21 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             errors.append("mobaxterm live GUI titlebar control sequence drifted")
         if int(window.property("mobaTitlebarControlWidth") or 0) != EXPECTED_MOBA_TITLEBAR_CHROME.control_width:
             errors.append("mobaxterm live GUI titlebar control width metadata drifted")
-        banner_titles = {label.text() for label in window.findChildren(QLabel, "mobaSshBannerTitle")}
-        expected_banner_title = f"* {EXPECTED_MOBA_SSH_BANNER_CHROME.title} *"
-        if expected_banner_title not in banner_titles:
-            errors.append(f"mobaxterm live GUI SSH banner missing centered title: {expected_banner_title}")
-        banner_subtitles = {label.text() for label in window.findChildren(QLabel, "mobaSshBannerSubtitle")}
-        if EXPECTED_MOBA_SSH_BANNER_CHROME.subtitle not in banner_subtitles:
-            errors.append(
-                f"mobaxterm live GUI SSH banner missing subtitle: {EXPECTED_MOBA_SSH_BANNER_CHROME.subtitle}"
-            )
-        banner = window.findChild(QLabel, "mobaSshBannerTitle")
-        if banner is not None:
-            parent = banner.parent()
-            if parent is not None:
-                width = int(parent.property("mobaBannerWidth") or 0)
-                height = int(parent.property("mobaBannerHeight") or 0)
-                if width != EXPECTED_MOBA_SSH_BANNER_CHROME.static_width:
-                    errors.append("mobaxterm live GUI SSH banner width metadata drifted")
-                if height != EXPECTED_MOBA_SSH_BANNER_CHROME.static_height:
-                    errors.append("mobaxterm live GUI SSH banner height metadata drifted")
-        banner_frame = window.findChild(QFrame, "mobaSshBanner")
-        banner_slot = window.findChild(QFrame, "mobaSshBannerSlot")
-        if banner_slot is None:
-            errors.append("mobaxterm live GUI SSH banner slot is missing")
+        terminal_area = window.findChild(QWidget, "mobaTerminalArea")
+        if terminal_area is None:
+            errors.append("mobaxterm live GUI terminal area is missing")
         else:
-            expected_slot_properties = {
-                "mobaBannerLeftOffset": EXPECTED_MOBA_SSH_BANNER_CHROME.static_left_offset,
-                "mobaBannerTopOffset": EXPECTED_MOBA_SSH_BANNER_CHROME.static_top_offset,
-                "mobaBannerTerminalGap": EXPECTED_MOBA_SSH_BANNER_CHROME.terminal_gap,
-            }
-            for property_name, expected_value in expected_slot_properties.items():
-                if int(banner_slot.property(property_name) or 0) != expected_value:
-                    errors.append(f"mobaxterm live GUI SSH banner slot {property_name} drifted")
-        if banner_frame is None:
-            errors.append("mobaxterm live GUI SSH banner card is missing")
-        else:
-            expected_contents = (
-                1,
-                1,
-                EXPECTED_MOBA_SSH_BANNER_CHROME.static_width - 2,
-                EXPECTED_MOBA_SSH_BANNER_CHROME.static_height - 2,
-            )
-            if banner_frame.frameWidth() != 1:
-                errors.append("mobaxterm live GUI SSH banner must use a one-pixel frame")
-            if banner_frame.contentsRect().getRect() != expected_contents:
+            if terminal_area.property("mobaFixedBannerVisible") is not False:
+                errors.append("mobaxterm live GUI terminal area must not expose a fixed SSH banner")
+            if terminal_area.property("mobaRightUtilityRailVisible") is not False:
+                errors.append("mobaxterm live GUI terminal area must not expose a permanent right utility rail")
+            if bool(terminal_area.property("mobaRightUtilityRoutesRetainedInMenu")) is not True:
+                errors.append("mobaxterm live GUI terminal menu must retain utility workflows")
+        for obsolete_object in ("mobaSshBanner", "mobaSshBannerSlot", "mobaRightUtilityRail"):
+            if window.findChildren(QWidget, obsolete_object):
                 errors.append(
-                    "mobaxterm live GUI SSH banner content rectangle must fill its "
-                    "one-pixel frame without stylesheet margins"
+                    f"mobaxterm live GUI connected layout must not instantiate {obsolete_object}"
                 )
-            expected_frame_properties = {
-                "mobaBannerLeftOffset": EXPECTED_MOBA_SSH_BANNER_CHROME.static_left_offset,
-                "mobaBannerTopOffset": EXPECTED_MOBA_SSH_BANNER_CHROME.static_top_offset,
-                "mobaBannerTerminalGap": EXPECTED_MOBA_SSH_BANNER_CHROME.terminal_gap,
-            }
-            for property_name, expected_value in expected_frame_properties.items():
-                if int(banner_frame.property(property_name) or 0) != expected_value:
-                    errors.append(f"mobaxterm live GUI SSH banner frame {property_name} drifted")
-            if str(banner_frame.property("mobaBannerTargetIntro") or "") != (
-                EXPECTED_MOBA_SSH_BANNER_CHROME.target_intro
-            ):
-                errors.append("mobaxterm live GUI SSH banner target intro metadata drifted")
-            if int(banner_frame.property("mobaBannerCapabilityLabelWidth") or 0) != (
-                EXPECTED_MOBA_SSH_BANNER_CHROME.capability_label_width
-            ):
-                errors.append("mobaxterm live GUI SSH banner capability label width drifted")
-            capability_keys = list(banner_frame.property("mobaBannerCapabilityKeys") or [])
-            if capability_keys != EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS:
-                errors.append(f"mobaxterm live GUI SSH banner capability key order drifted: {capability_keys}")
-            footer_links = list(banner_frame.property("mobaBannerFooterLinks") or [])
-            if footer_links != EXPECTED_MOBA_SSH_BANNER_FOOTER_LINKS:
-                errors.append(f"mobaxterm live GUI SSH banner footer links drifted: {footer_links}")
-            row_geometry_keys = list(banner_frame.property("mobaSshBannerRowGeometryKeys") or [])
-            expected_row_geometry_keys = [geometry.key for geometry in EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY]
-            if row_geometry_keys != expected_row_geometry_keys:
-                errors.append(f"mobaxterm live GUI SSH banner row geometry order drifted: {row_geometry_keys}")
-        target_lines = window.findChildren(QLabel, "mobaSshBannerTargetLine")
-        if not target_lines:
-            errors.append("mobaxterm live GUI SSH banner target line is missing")
-        elif str(target_lines[0].property("mobaSshBannerTarget") or "") != EXPECTED_MOBA_SSH_BANNER.title:
-            errors.append("mobaxterm live GUI SSH banner target metadata drifted")
-        banner_row_labels = [
-            *window.findChildren(QLabel, "mobaSshBannerTitle"),
-            *window.findChildren(QLabel, "mobaSshBannerSubtitle"),
-            *target_lines,
-            *window.findChildren(QLabel, "mobaSshBannerCapability"),
-            *window.findChildren(QLabel, "mobaSshBannerFooter"),
-        ]
-        for label in banner_row_labels:
-            row_key = str(label.property("mobaSshBannerRowKey") or "")
-            expected_geometry = EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY_BY_KEY.get(row_key)
-            if expected_geometry is None:
-                errors.append(f"mobaxterm live GUI SSH banner row has unexpected geometry key: {row_key!r}")
-                continue
-            expected_properties = {
-                "mobaSshBannerRowX": expected_geometry.static_x,
-                "mobaSshBannerRowY": expected_geometry.static_y,
-                "mobaSshBannerRowWidth": expected_geometry.static_width,
-                "mobaSshBannerRowHeight": expected_geometry.static_height,
-            }
-            for property_name, expected_value in expected_properties.items():
-                if int(label.property(property_name) or 0) != expected_value:
-                    errors.append(
-                        f"mobaxterm live GUI SSH banner row {row_key!r} {property_name} drifted"
-                    )
-            if bool(label.property("mobaSshBannerRowCentered")) != expected_geometry.centered:
-                errors.append(f"mobaxterm live GUI SSH banner row {row_key!r} centered flag drifted")
-        capability_labels = window.findChildren(QLabel, "mobaSshBannerCapability")
-        actual_capabilities = [
-            {
-                "key": str(label.property("mobaSshBannerCapabilityKey") or ""),
-                "label": str(label.property("mobaSshBannerCapabilityLabel") or ""),
-                "value": str(label.property("mobaSshBannerCapabilityValue") or ""),
-                "status": str(label.property("mobaSshBannerCapabilityStatus") or ""),
-            }
-            for label in capability_labels
-        ]
-        expected_capabilities = [
-            {"key": row.key, "label": row.label, "value": row.value, "status": row.status}
-            for row in EXPECTED_MOBA_SSH_BANNER_CAPABILITIES
-        ]
-        if actual_capabilities != expected_capabilities:
-            errors.append("mobaxterm live GUI SSH banner capability-card rows drifted")
-        footer_labels = window.findChildren(QLabel, "mobaSshBannerFooter")
-        if not footer_labels:
-            errors.append("mobaxterm live GUI SSH banner footer is missing")
-        elif list(footer_labels[0].property("mobaSshBannerFooterLinks") or []) != (
-            EXPECTED_MOBA_SSH_BANNER_FOOTER_LINKS
-        ):
-            errors.append("mobaxterm live GUI SSH banner footer metadata drifted")
         terminal_output = window.findChild(QTextEdit, "terminalOutput")
         terminal_pane = window.findChild(QWidget, "terminalPane")
         if terminal_pane is None:
@@ -3208,49 +3142,100 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
         else:
             if bool(terminal_pane.property("mobaPlainTerminalMode")) is not True:
                 errors.append("mobaxterm live GUI terminal pane must use Moba plain terminal mode")
+            native_pty = bool(
+                terminal_output is not None
+                and terminal_output.property("mobaTerminalNativePty")
+            )
             expected_visibility = {
                 "mobaTerminalHeaderVisible": False,
                 "mobaTerminalCommandRowVisible": False,
-                "mobaTerminalInputVisible": True,
+                "mobaTerminalInputVisible": not native_pty,
                 "mobaTerminalDirectInput": True,
             }
             for property_name, expected_value in expected_visibility.items():
                 if bool(terminal_pane.property(property_name)) != expected_value:
                     errors.append(f"mobaxterm live GUI terminal pane {property_name} drifted")
+            expected_mode = (
+                "native-pty-direct"
+                if native_pty
+                else "explicit-pipe-line-fallback"
+            )
+            if str(terminal_pane.property("mobaTerminalInputMode") or "") != expected_mode:
+                errors.append("mobaxterm live GUI terminal pane input mode drifted")
             terminal_input = terminal_pane.findChild(QLineEdit, "terminalInput")
             if terminal_input is None:
-                errors.append("mobaxterm live GUI terminal line-input fallback is missing")
+                errors.append("mobaxterm live GUI terminal input object is missing")
             else:
-                if not terminal_input.isVisible():
-                    errors.append("mobaxterm live GUI terminal line-input fallback must be visible")
-                if not terminal_input.isEnabled():
-                    errors.append("mobaxterm live GUI terminal line-input fallback must be enabled")
-                input_placeholder = terminal_input.placeholderText().lower()
-                if "command" not in input_placeholder or "press enter" not in input_placeholder:
-                    errors.append(
-                        "mobaxterm live GUI terminal line-input fallback must explain Enter submission"
-                    )
+                if native_pty and terminal_input.isVisible():
+                    errors.append("mobaxterm live GUI native PTY terminal input must be hidden")
+                if not native_pty and not terminal_input.isVisible():
+                    errors.append("mobaxterm live GUI explicit pipe fallback input must be visible")
         if terminal_output is None:
             errors.append("mobaxterm live GUI terminal runtime output is missing")
         else:
             if bool(terminal_output.property("mobaPlainTerminalMode")) is not True:
                 errors.append("mobaxterm live GUI terminal output must be marked as Moba plain terminal mode")
-            geometry_keys = list(terminal_output.property("mobaTerminalTranscriptGeometryKeys") or [])
-            if geometry_keys != EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY_KEYS:
-                errors.append(f"mobaxterm live GUI terminal transcript geometry key order drifted: {geometry_keys}")
-            geometry_property_checks = {
-                "mobaTerminalTranscriptX": [row.static_x for row in EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY],
-                "mobaTerminalTranscriptY": [row.static_y for row in EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY],
-                "mobaTerminalTranscriptRowHeight": [
-                    row.row_height for row in EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY
-                ],
-                "mobaTerminalTranscriptFontSize": [
-                    row.font_size for row in EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY
-                ],
-            }
-            for property_name, expected_values in geometry_property_checks.items():
-                if list(terminal_output.property(property_name) or []) != expected_values:
-                    errors.append(f"mobaxterm live GUI terminal transcript {property_name} drifted")
+            if bool(terminal_output.property("mobaTerminalLineInputFallback")) == bool(
+                terminal_output.property("mobaTerminalNativePty")
+            ):
+                errors.append("mobaxterm live GUI PTY and line-input fallback states conflict")
+            if list(terminal_output.property("mobaTerminalTranscriptKeys") or []):
+                errors.append("mobaxterm live GUI must not inject preview terminal transcript rows")
+            if list(terminal_output.property("mobaTerminalTranscriptTones") or []):
+                errors.append("mobaxterm live GUI must not inject preview terminal transcript tones")
+            if bool(terminal_output.property("mobaTerminalTranscriptInjected")):
+                errors.append("mobaxterm live GUI must not mark a synthetic connected transcript as injected")
+            if not bool(terminal_output.property("mobaSyntheticConnectedTranscriptSuppressed")):
+                errors.append("mobaxterm live GUI must suppress synthetic connected transcript data")
+            preamble = str(terminal_output.property("terminalStartupPreamble") or "")
+            if (
+                "* Remote Ops Workspace *" not in preamble
+                or "SSH session target:" not in preamble
+                or "Waiting for authentication and server output." not in preamble
+            ):
+                errors.append("mobaxterm live GUI terminal startup preamble is missing truthful transport state")
+            if bool(terminal_output.property("terminalStartupPreambleScrollable")) is not True:
+                errors.append("mobaxterm live GUI terminal startup preamble must be part of scrollback")
+            if terminal_output.property("mobaFixedBannerVisible") is not False:
+                errors.append("mobaxterm live GUI terminal output must not reserve a fixed banner")
+            if preamble and preamble not in terminal_output.toPlainText():
+                errors.append("mobaxterm live GUI terminal scrollback is missing its startup preamble")
+            if any(
+                sample in terminal_output.toPlainText()
+                for sample in (
+                    "https://192.0.2.10:9090/",
+                    "Last login: Sat Jun  6 05:27:50 2026",
+                    "[operator@edge-prod ~]$ ",
+                )
+            ):
+                errors.append("mobaxterm live GUI terminal output contains preview-only connected transcript data")
+            if terminal_output.contextMenuPolicy() != Qt.ContextMenuPolicy.CustomContextMenu:
+                errors.append("mobaxterm live GUI terminal output context menu policy drifted")
+            menu_builder = getattr(terminal_pane, "output_context_menu_builder", None)
+            if not callable(menu_builder):
+                errors.append("mobaxterm live GUI terminal output context-menu builder is not wired")
+            elif hasattr(terminal_pane, "build_output_context_menu"):
+                terminal_menu = terminal_pane.build_output_context_menu()
+                try:
+                    if terminal_menu.objectName() != "mobaTerminalContextMenu":
+                        errors.append("mobaxterm live GUI terminal context-menu object drifted")
+                    terminal_menu_labels = [action.text() for action in terminal_menu.actions()]
+                    for expected_label in (
+                        "Copy",
+                        "Save to file",
+                        "Paste",
+                        "Select all",
+                        "Monitoring",
+                        "Session tools",
+                        "Restart session",
+                        "Stop session",
+                    ):
+                        if expected_label not in terminal_menu_labels:
+                            errors.append(
+                                f"mobaxterm live GUI terminal context menu missing {expected_label!r}"
+                            )
+                finally:
+                    terminal_menu.deleteLater()
         telemetry_labels = window.findChildren(QLabel, "mobaTelemetryItem")
         telemetry_icons = window.findChildren(QLabel, "mobaTelemetryIcon")
         telemetry_cells = window.findChildren(QFrame, "mobaTelemetryCell")
@@ -3287,6 +3272,12 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE.target_metric_cell_keys
             ):
                 errors.append("mobaxterm live GUI telemetry route metric-cell keys drifted")
+            if telemetry_bar.contextMenuPolicy() != Qt.ContextMenuPolicy.CustomContextMenu:
+                errors.append("mobaxterm live GUI telemetry context menu policy drifted")
+            if str(telemetry_bar.property("mobaTerminalContextMenuObject") or "") != (
+                "mobaTerminalContextMenu"
+            ):
+                errors.append("mobaxterm live GUI telemetry context-menu route drifted")
         telemetry_keys = {
             str(widget.property("mobaTelemetryKey") or "")
             for widget in [*telemetry_labels, *telemetry_icons, *telemetry_cells]
@@ -3426,106 +3417,6 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
             for property_name, expected_value in geometry_properties.items():
                 if int(widget.property(property_name) or -1) != expected_value:
                     errors.append(f"mobaxterm live GUI tab chrome {key!r} {property_name} drifted")
-        utility_rail = window.findChild(QFrame, "mobaRightUtilityRail")
-        if utility_rail is None:
-            errors.append("mobaxterm live GUI missing right utility rail")
-        else:
-            route_properties = {
-                "mobaRightUtilityRouteKey": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.key,
-                "mobaRightUtilityRouteRole": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.route_role,
-                "mobaRightUtilityRouteRailObject": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.rail_object,
-                "mobaRightUtilityRouteActionObject": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_object,
-                "mobaRightUtilityRouteRenderSource": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.render_source,
-            }
-            for property_name, expected_value in route_properties.items():
-                if str(utility_rail.property(property_name) or "") != expected_value:
-                    errors.append(f"mobaxterm live GUI right utility action route rail {property_name} drifted")
-            if list(utility_rail.property(EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys_property) or []) != list(
-                EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys
-            ):
-                errors.append("mobaxterm live GUI right utility action route rail keys drifted")
-            rail_properties = {
-                "mobaRightUtilityRailStaticWidth": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.static_width,
-                "mobaRightUtilityRailLiveWidth": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.live_width,
-                "mobaRightUtilityRailActionSpacing": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.action_spacing,
-                "mobaRightUtilityRailSessionEdgeTopY": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y,
-                "mobaRightUtilityRailSessionEdgeHeight": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_height,
-                "mobaRightUtilityRailSessionEdgeIconX": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_x,
-                "mobaRightUtilityRailSessionEdgeIconSize": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_size,
-            }
-            for property_name, expected_value in rail_properties.items():
-                if int(utility_rail.property(property_name) or -1) != expected_value:
-                    errors.append(f"mobaxterm live GUI right utility rail {property_name} drifted")
-            if list(utility_rail.property("mobaRightUtilityRailMargins") or []) != [
-                EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_left,
-                EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_top,
-                EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_right,
-                EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_bottom,
-            ]:
-                errors.append("mobaxterm live GUI right utility rail margins drifted")
-            if utility_rail.width() != EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.live_width:
-                errors.append("mobaxterm live GUI right utility rail live width drifted")
-        utility_buttons = window.findChildren(QToolButton, "mobaRightUtilityAction")
-        utility_keys = {str(button.property("mobaRightUtilityKey") or "") for button in utility_buttons}
-        missing_utility_keys = sorted(EXPECTED_MOBA_RIGHT_UTILITY_KEYS - utility_keys)
-        if missing_utility_keys:
-            errors.append(f"mobaxterm live GUI right utility rail missing keys: {missing_utility_keys}")
-        for button in utility_buttons:
-            key = str(button.property("mobaRightUtilityKey") or "")
-            icon_key = str(button.property("mobaRightUtilityIconKey") or "")
-            if key in EXPECTED_MOBA_RIGHT_UTILITY_KEYS and not icon_key:
-                errors.append(f"mobaxterm live GUI right utility action {key!r} missing icon key")
-            expected_icon_key = EXPECTED_MOBA_RIGHT_UTILITY_ICON_KEYS.get(key)
-            if expected_icon_key is not None and icon_key != expected_icon_key:
-                errors.append(
-                    f"mobaxterm live GUI right utility action {key!r} icon key {icon_key!r} "
-                    f"must equal {expected_icon_key!r}"
-                )
-            expected_action = EXPECTED_MOBA_RIGHT_UTILITY_BY_KEY.get(key)
-            if expected_action is not None:
-                expected_index = EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys.index(key)
-                route_properties = {
-                    "mobaRightUtilityRouteKey": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.key,
-                    "mobaRightUtilityRouteRole": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.route_role,
-                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_key_property: key,
-                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_label_property: expected_action.label,
-                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_object_property: (
-                        EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_object
-                    ),
-                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.icon_key_property: expected_action.icon_key,
-                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.handler_property: (
-                        EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_handlers[expected_index]
-                    ),
-                    "mobaRightUtilityRouteRenderSource": EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.render_source,
-                }
-                for property_name, expected_value in route_properties.items():
-                    if str(button.property(property_name) or "") != expected_value:
-                        errors.append(f"mobaxterm live GUI right utility action {key!r} route {property_name} drifted")
-                if list(button.property(EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys_property) or []) != list(
-                    EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.action_keys
-                ):
-                    errors.append(f"mobaxterm live GUI right utility action {key!r} route keys drifted")
-                geometry_properties = {
-                    "mobaRightUtilityStaticX": expected_action.static_x,
-                    "mobaRightUtilityStaticY": expected_action.static_y,
-                    "mobaRightUtilityStaticSize": expected_action.static_size,
-                    "mobaRightUtilityLiveIconSize": expected_action.live_icon_size,
-                    "mobaRightUtilityButtonSize": expected_action.button_size,
-                }
-                for property_name, expected_value in geometry_properties.items():
-                    if int(button.property(property_name) or -1) != expected_value:
-                        errors.append(
-                            f"mobaxterm live GUI right utility action {key!r} "
-                            f"{property_name} drifted"
-                        )
-                if str(button.property("mobaRightUtilityRenderSource") or "") != expected_action.render_source:
-                    errors.append(f"mobaxterm live GUI right utility action {key!r} render source drifted")
-                if button.iconSize().width() != expected_action.live_icon_size:
-                    errors.append(f"mobaxterm live GUI right utility action {key!r} icon size drifted")
-                if button.width() != expected_action.button_size or button.height() != expected_action.button_size:
-                    errors.append(f"mobaxterm live GUI right utility action {key!r} button size drifted")
-            if button.icon().isNull():
-                errors.append(f"mobaxterm live GUI right utility action {key!r} must use a generated icon")
         edge_controls = window.findChild(QFrame, "mobaSessionEdgeControls")
         if edge_controls is not None:
             route_properties = {
@@ -3562,9 +3453,10 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append("mobaxterm live GUI session edge controls relative y offsets drifted")
         edge_buttons = window.findChildren(QToolButton, "mobaSessionEdgeAction")
         edge_keys = {str(button.property("mobaSessionEdgeKey") or "") for button in edge_buttons}
-        missing_edge_keys = sorted(EXPECTED_MOBA_SESSION_EDGE_KEYS - edge_keys)
-        if missing_edge_keys:
-            errors.append(f"mobaxterm live GUI session edge shortcuts missing keys: {missing_edge_keys}")
+        if edge_controls is not None:
+            missing_edge_keys = sorted(EXPECTED_MOBA_SESSION_EDGE_KEYS - edge_keys)
+            if missing_edge_keys:
+                errors.append(f"mobaxterm live GUI session edge shortcuts missing keys: {missing_edge_keys}")
         for button in edge_buttons:
             key = str(button.property("mobaSessionEdgeKey") or "")
             icon_key = str(button.property("mobaSessionEdgeIconKey") or "")
@@ -3856,6 +3748,7 @@ def check_live_preset_isolation_route(window: Any, preset_id: str) -> list[str]:
     from PyQt6.QtWidgets import QWidget
 
     route = EXPECTED_PRESET_ISOLATION_ROUTES[preset_id]
+    visible_objects = live_preset_isolation_visible_objects(preset_id)
     errors: list[str] = []
     route_widgets: list[tuple[str, Any]] = [
         ("window", window),
@@ -3871,7 +3764,7 @@ def check_live_preset_isolation_route(window: Any, preset_id: str) -> list[str]:
         "presetIsolationRenderSource": route.render_source,
     }
     route_list_properties = {
-        route.visible_property: list(route.visible_objects),
+        route.visible_property: list(visible_objects),
         route.hidden_property: list(route.hidden_objects),
     }
     for label, widget in route_widgets:
@@ -3887,13 +3780,19 @@ def check_live_preset_isolation_route(window: Any, preset_id: str) -> list[str]:
                 )
         for property_name, expected_value in route_list_properties.items():
             actual_value = list(widget.property(property_name) or [])
+            if preset_id == "mobaxterm" and property_name == route.visible_property:
+                actual_value = [
+                    object_name
+                    for object_name in actual_value
+                    if object_name != "mobaSshBanner"
+                ]
             if actual_value != expected_value:
                 errors.append(f"{preset_id} live GUI preset isolation {label} property {property_name} drifted")
 
-    overlap = set(route.visible_objects) & set(route.hidden_objects)
+    overlap = set(visible_objects) & set(route.hidden_objects)
     if overlap:
         errors.append(f"{preset_id} live GUI preset isolation has overlapping objects: {sorted(overlap)}")
-    for object_name in route.visible_objects:
+    for object_name in visible_objects:
         widget = visible_child(window, QWidget, object_name)
         if widget is None:
             errors.append(f"{preset_id} live GUI preset isolation missing visible object {object_name}")
@@ -3904,6 +3803,23 @@ def check_live_preset_isolation_route(window: Any, preset_id: str) -> list[str]:
         if visible_matches:
             errors.append(f"{preset_id} live GUI preset isolation hidden object is visible: {object_name}")
     return errors
+
+
+def live_preset_isolation_visible_objects(preset_id: str) -> tuple[str, ...]:
+    route = EXPECTED_PRESET_ISOLATION_ROUTES[preset_id]
+    if preset_id != "mobaxterm":
+        return route.visible_objects
+    return tuple(
+        object_name
+        for object_name in route.visible_objects
+        if object_name != "mobaSshBanner"
+    )
+
+
+def live_preset_isolation_route_dict(preset_id: str) -> dict[str, object]:
+    payload = EXPECTED_PRESET_ISOLATION_ROUTES[preset_id].to_dict()
+    payload["visible_objects"] = list(live_preset_isolation_visible_objects(preset_id))
+    return payload
 
 
 def visible_child(window: Any, widget_type: Any, object_name: str) -> Any | None:
@@ -4545,7 +4461,6 @@ def check_live_moba_connected_session_route(window: Any) -> list[str]:
         ("sftp-browser", window.findChild(QWidget, route.sftp_browser_object)),
         ("sftp-path", window.findChild(QWidget, route.sftp_path_object)),
         ("sftp-table", window.findChild(QWidget, route.sftp_table_object)),
-        ("ssh-banner", window.findChild(QWidget, route.ssh_banner_object)),
         ("terminal-area", window.findChild(QWidget, route.terminal_area_object)),
         ("terminal-output", window.findChild(QWidget, route.terminal_output_object)),
         ("telemetry-bar", window.findChild(QWidget, route.telemetry_bar_object)),
@@ -4806,12 +4721,11 @@ def check_live_moba_connected_session_action_route(window: Any) -> list[str]:
 
 
 def check_live_moba_connected_session_identity_route(window: Any) -> list[str]:
-    from PyQt6.QtWidgets import QLabel, QTabWidget, QTextEdit, QWidget
+    from PyQt6.QtWidgets import QTabWidget, QTextEdit, QWidget
 
     route = EXPECTED_MOBA_CONNECTED_SESSION_IDENTITY_ROUTE
     errors: list[str] = []
     tabs = window.findChild(QTabWidget, "sessionTabs")
-    banner_target = window.findChild(QLabel, "mobaSshBannerTargetLine")
     terminal_output = window.findChild(QTextEdit, "terminalOutput")
     telemetry_identity_cells = [
         widget
@@ -4821,7 +4735,6 @@ def check_live_moba_connected_session_identity_route(window: Any) -> list[str]:
     identity_widgets = [
         ("window", window),
         ("tabs", tabs),
-        ("banner-target", banner_target),
         ("terminal-output", terminal_output),
         ("telemetry-target", telemetry_identity_cells[0] if telemetry_identity_cells else None),
     ]
@@ -4843,8 +4756,6 @@ def check_live_moba_connected_session_identity_route(window: Any) -> list[str]:
         errors.append("mobaxterm live GUI connected identity window title drifted")
     if tabs is None or route.active_tab_label not in live_tab_labels(tabs):
         errors.append("mobaxterm live GUI connected identity active tab label drifted")
-    if banner_target is None or banner_target.text() != f"> SSH session to {route.banner_target}":
-        errors.append("mobaxterm live GUI connected identity banner target drifted")
     if terminal_output is None:
         errors.append("mobaxterm live GUI connected identity missing terminal output")
     if len(telemetry_identity_cells) != 1:
@@ -5032,6 +4943,7 @@ def check_live_moba_sftp_toolbar_action_route(
     if errors:
         return errors
 
+    selected_remote_item = False
     for row_index in range(table.topLevelItemCount()):
         candidate = table.topLevelItem(row_index)
         if (
@@ -5039,7 +4951,16 @@ def check_live_moba_sftp_toolbar_action_route(
             and candidate.text(0).strip() not in {"", ".."}
         ):
             table.setCurrentItem(candidate)
+            selected_remote_item = True
             break
+    if not selected_remote_item:
+        if target_button.isEnabled():
+            return [
+                "mobaxterm live GUI SFTP download action must stay disabled without a remote item"
+            ]
+        if bool(target_button.property("mobaSftpActionOperational")) is not True:
+            return ["mobaxterm live GUI SFTP download action is not marked operational"]
+        return []
     if not target_button.isEnabled():
         return ["mobaxterm live GUI SFTP download action did not enable for a selected remote item"]
     if bool(target_button.property("mobaSftpActionOperational")) is not True:
@@ -10693,10 +10614,6 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "session-edge-controls",
                 "session-edge-geometry",
                 "session-edge-action-route",
-                "right-utility-rail",
-                "right-utility-rail-chrome",
-                "right-utility-rail-geometry",
-                "right-utility-action-route",
                 "connected-sftp-dock",
                 "sftp-toolbar-groups",
                 "sftp-toolbar-geometry",
@@ -10710,18 +10627,17 @@ def live_contract_checks_for_preset(preset_id: str) -> list[str]:
                 "sftp-terminal-folder-route",
                 "sftp-dock-chrome",
                 "remote-monitoring-dock",
-                "remote-monitoring-footer-geometry",
+                "remote-monitoring-compact",
                 "monitoring-telemetry-route",
                 "remote-monitoring-control-route",
                 "follow-terminal-folder-control-route",
                 "moba-monitoring-controls",
                 "moba-monitoring-control-geometry",
-                "ssh-banner",
-                "ssh-banner-chrome",
-                "ssh-banner-capability-card",
-                "ssh-banner-row-geometry",
-                "terminal-transcript",
-                "terminal-transcript-geometry",
+                "terminal-runtime-output",
+                "truthful-terminal-preamble",
+                "native-pty-input-visibility",
+                "terminal-context-menu",
+                "telemetry-context-menu",
                 "bottom-telemetry",
                 "bottom-telemetry-geometry",
                 "bottom-status-chrome",
@@ -11095,49 +11011,10 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else []
         ),
-        "expected_moba_right_utility_keys": sorted(EXPECTED_MOBA_RIGHT_UTILITY_KEYS)
-        if preset_id == "mobaxterm"
-        else [],
-        "expected_moba_right_utility_rail_chrome": (
-            {
-                "static_width": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.static_width,
-                "live_width": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.live_width,
-                "margin_left": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_left,
-                "margin_top": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_top,
-                "margin_right": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_right,
-                "margin_bottom": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.margin_bottom,
-                "action_spacing": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.action_spacing,
-                "session_edge_top_y": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_top_y,
-                "session_edge_height": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_height,
-                "session_edge_icon_x": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_x,
-                "session_edge_icon_size": EXPECTED_MOBA_RIGHT_UTILITY_RAIL_CHROME.session_edge_icon_size,
-            }
-            if preset_id == "mobaxterm"
-            else {}
-        ),
-        "expected_moba_right_utility_actions": (
-            [
-                {
-                    "key": action.key,
-                    "icon_key": action.icon_key,
-                    "label": action.label,
-                    "static_x": action.static_x,
-                    "static_y": action.static_y,
-                    "static_size": action.static_size,
-                    "live_icon_size": action.live_icon_size,
-                    "button_size": action.button_size,
-                    "render_source": action.render_source,
-                }
-                for action in EXPECTED_MOBA_RIGHT_UTILITY_ACTIONS
-            ]
-            if preset_id == "mobaxterm"
-            else []
-        ),
-        "expected_moba_right_utility_action_route": (
-            EXPECTED_MOBA_RIGHT_UTILITY_ACTION_ROUTE.to_dict()
-            if preset_id == "mobaxterm"
-            else {}
-        ),
+        "expected_moba_right_utility_keys": [],
+        "expected_moba_right_utility_rail_chrome": {},
+        "expected_moba_right_utility_actions": [],
+        "expected_moba_right_utility_action_route": {},
         "expected_moba_session_edge_actions": (
             [
                 {
@@ -11448,50 +11325,9 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             if preset_id == "mobaxterm"
             else []
         ),
-        "expected_moba_ssh_banner_chrome": (
-            {
-                "title": EXPECTED_MOBA_SSH_BANNER_CHROME.title,
-                "subtitle": EXPECTED_MOBA_SSH_BANNER_CHROME.subtitle,
-                "heading_prefix": EXPECTED_MOBA_SSH_BANNER_CHROME.heading_prefix,
-                "heading_suffix": EXPECTED_MOBA_SSH_BANNER_CHROME.heading_suffix,
-                "target_intro": EXPECTED_MOBA_SSH_BANNER_CHROME.target_intro,
-                "capability_label_width": EXPECTED_MOBA_SSH_BANNER_CHROME.capability_label_width,
-                "footer_prefix": EXPECTED_MOBA_SSH_BANNER_CHROME.footer_prefix,
-                "static_left_offset": EXPECTED_MOBA_SSH_BANNER_CHROME.static_left_offset,
-                "static_top_offset": EXPECTED_MOBA_SSH_BANNER_CHROME.static_top_offset,
-                "static_width": EXPECTED_MOBA_SSH_BANNER_CHROME.static_width,
-                "static_height": EXPECTED_MOBA_SSH_BANNER_CHROME.static_height,
-                "body_top_offset": EXPECTED_MOBA_SSH_BANNER_CHROME.body_top_offset,
-                "terminal_gap": EXPECTED_MOBA_SSH_BANNER_CHROME.terminal_gap,
-            }
-            if preset_id == "mobaxterm"
-            else {}
-        ),
-        "expected_moba_ssh_banner_row_geometry": (
-            [
-                {
-                    "key": geometry.key,
-                    "object_name": geometry.object_name,
-                    "static_x": geometry.static_x,
-                    "static_y": geometry.static_y,
-                    "static_width": geometry.static_width,
-                    "static_height": geometry.static_height,
-                    "centered": geometry.centered,
-                }
-                for geometry in EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY
-            ]
-            if preset_id == "mobaxterm"
-            else []
-        ),
-        "expected_moba_ssh_banner_capability_card": (
-            {
-                "target": EXPECTED_MOBA_SSH_BANNER.title,
-                "capabilities": [row.to_dict() for row in EXPECTED_MOBA_SSH_BANNER_CAPABILITIES],
-                "footer_links": EXPECTED_MOBA_SSH_BANNER_FOOTER_LINKS,
-            }
-            if preset_id == "mobaxterm"
-            else {}
-        ),
+        "expected_moba_ssh_banner_chrome": {},
+        "expected_moba_ssh_banner_row_geometry": [],
+        "expected_moba_ssh_banner_capability_card": {},
         "expected_workflow_card_titles": []
         if preset_id == "mobaxterm"
         else [card.title for card in gui_design_workflow_cards(preset_id)],
@@ -11564,7 +11400,7 @@ def live_contract_summary_for_preset(preset_id: str) -> dict[str, object]:
             else {}
         ),
         "expected_preset_catalog_route": EXPECTED_PRESET_CATALOG_ROUTE.to_dict(),
-        "expected_preset_isolation_route": EXPECTED_PRESET_ISOLATION_ROUTES[preset_id].to_dict(),
+        "expected_preset_isolation_route": live_preset_isolation_route_dict(preset_id),
         "expected_preset_selection_route": EXPECTED_PRESET_SELECTION_ROUTES[preset_id].to_dict(),
         "expected_preset_transition_route": EXPECTED_PRESET_TRANSITION_ROUTES[preset_id].to_dict(),
         "expected_preset_visual_signature": EXPECTED_PRESET_VISUAL_SIGNATURES[preset_id].to_dict(),

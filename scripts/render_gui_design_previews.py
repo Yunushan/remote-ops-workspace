@@ -1535,6 +1535,7 @@ def moba_preview_reference_state() -> MobaConnectedSessionState:
         sftp_listing=listing,
         monitoring_output="cpu=7 mem_mb=410/7680 disk_mb=2867/49152 load=0.07 users=1 "
         "processes=158 net_up_mbps=0.01 net_down_mbps=0.01",
+        preview_sample_data=True,
     )
 
 
@@ -1775,16 +1776,6 @@ def render_mobaxterm_preset(preset: GuiDesignPreset):
 
     content_y = top_stack.terminal_content_y
     draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
-    right_rail = gui_design_moba_right_utility_rail_chrome()
-    draw_moba_right_utility_rail(
-        draw,
-        PREVIEW_SIZE[0] - right_rail.static_width,
-        content_y,
-        right_rail.static_width,
-        PREVIEW_SIZE[1] - status_h - content_y,
-        c,
-    )
-    draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - right_rail.static_width, c)
 
     content_bottom = PREVIEW_SIZE[1] - status_h - 24
     term_x = workspace_x
@@ -1863,17 +1854,16 @@ def render_mobaxterm_home_preset(preset: GuiDesignPreset):
     image = Image.new("RGB", PREVIEW_SIZE, c.window)
     draw = ImageDraw.Draw(image)
 
-    title_h = 22
-    menu_h = 22
-    ribbon_h = 64
+    top_stack = gui_design_moba_top_stack_geometry()
+    frame = gui_design_moba_connected_dock_frame()
+    title_h = top_stack.titlebar_height
+    menu_h = top_stack.menu_height
+    ribbon_h = top_stack.ribbon_height
     quick_connect_chrome = gui_design_moba_quick_connect_chrome()
-    quick_h = quick_connect_chrome.static_height
-    status_h = 22
-    side_w = 390
-    rail_w = 24
-    top_h = title_h + menu_h + ribbon_h
-    main_y = top_h
-    main_h = PREVIEW_SIZE[1] - main_y - status_h
+    status_h = top_stack.status_height
+    side_w = frame.side_width
+    rail_w = frame.rail_width
+    main_y = frame.quick_connect_y
 
     titlebar_chrome = gui_design_moba_titlebar_chrome()
     draw.rectangle((0, 0, PREVIEW_SIZE[0], title_h), fill="#1c1c1c")
@@ -1898,7 +1888,7 @@ def render_mobaxterm_home_preset(preset: GuiDesignPreset):
         geometry = gui_design_moba_top_menu_geometry_for(item.key)
         draw_text(draw, item.label, geometry.static_x, title_h + geometry.label_y, c.control_text, geometry.label_font_size)
 
-    ribbon_y = title_h + menu_h
+    ribbon_y = top_stack.ribbon_y
     draw.rectangle((0, ribbon_y, PREVIEW_SIZE[0], ribbon_y + ribbon_h), fill=c.toolbar)
     for action in gui_design_moba_ribbon_actions():
         geometry = gui_design_moba_ribbon_action_geometry_for(action.icon_key)
@@ -1962,26 +1952,30 @@ def render_mobaxterm_home_preset(preset: GuiDesignPreset):
     draw.line((0, ribbon_y + ribbon_h - 1, PREVIEW_SIZE[0], ribbon_y + ribbon_h - 1), fill=c.toolbar_border)
 
     draw_moba_quick_connect_chrome(draw, quick_connect_chrome, c, 0, main_y, side_w, query="")
-    tree_y = main_y + quick_h
-    draw_moba_home_rail(draw, image, preset, 0, tree_y, rail_w, main_h - quick_h)
-    draw_moba_home_session_tree(draw, preset, rail_w, tree_y, side_w - rail_w, main_h - quick_h)
+    tree_y = frame.dock_y
+    draw_moba_home_rail(draw, image, preset, 0, tree_y, rail_w, frame.dock_height)
+    draw_moba_home_session_tree(draw, preset, rail_w, tree_y, side_w - rail_w, frame.dock_height)
 
     workspace_x = side_w
-    tab_y = main_y
-    draw_moba_home_tab_bar(draw, preset, workspace_x, tab_y, PREVIEW_SIZE[0] - workspace_x, 28)
-    content_y = tab_y + 28
-    draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
-    right_rail = gui_design_moba_right_utility_rail_chrome()
-    draw_moba_right_utility_rail(
+    tab_y = top_stack.tab_y
+    draw_moba_home_tab_bar(
         draw,
-        PREVIEW_SIZE[0] - right_rail.static_width,
-        content_y,
-        right_rail.static_width,
-        PREVIEW_SIZE[1] - status_h - content_y,
-        c,
+        preset,
+        workspace_x,
+        tab_y,
+        PREVIEW_SIZE[0] - workspace_x,
+        top_stack.tab_height,
     )
-    draw_moba_session_edge_controls(draw, PREVIEW_SIZE[0] - right_rail.static_width, c)
-    draw_moba_home_welcome_surface(draw, preset, workspace_x, content_y, PREVIEW_SIZE[0] - workspace_x - 30, PREVIEW_SIZE[1] - status_h - content_y)
+    content_y = top_stack.terminal_content_y
+    draw.rectangle((workspace_x, content_y, PREVIEW_SIZE[0], PREVIEW_SIZE[1] - status_h), fill=c.pane)
+    draw_moba_home_welcome_surface(
+        draw,
+        preset,
+        workspace_x,
+        content_y,
+        PREVIEW_SIZE[0] - workspace_x,
+        PREVIEW_SIZE[1] - status_h - content_y,
+    )
 
     draw_status_bar(draw, preset, 0, PREVIEW_SIZE[1] - status_h, PREVIEW_SIZE[0], status_h)
     return image
@@ -2326,6 +2320,8 @@ def draw_moba_ssh_banner_card(
     )
     for row in state.banner.capability_rows():
         row_geometry = gui_design_moba_ssh_banner_row_geometry_for(row.key)
+        if row_geometry.static_width <= 0 or row_geometry.static_height <= 0:
+            continue
         value_color = c.control_text if row.status == "ok" else c.status
         draw_text(
             draw,

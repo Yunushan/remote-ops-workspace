@@ -497,6 +497,21 @@ def test_ci_workflow_requires_fonts_and_native_windows_full_renderer() -> None:
     )
 
 
+def test_ci_workflow_requires_real_windows_conpty_transport_tests() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_conpty_tests = source.replace(
+        "      - name: Verify real Windows ConPTY terminal transport\n"
+        "        timeout-minutes: 5\n"
+        "        run: python -m pytest -q tests/test_windows_conpty.py tests/test_qt_terminal_process.py\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(without_conpty_tests)
+
+    assert any("real Windows ConPTY transport" in error for error in errors)
+
+
 def test_ci_workflow_requires_checkout_credentials_disabled() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

@@ -7,29 +7,29 @@ each public target badge:
 
 | Target | Asset |
 |---|---|
-| Python wheel | `remote_ops_workspace-1.0.10-py3-none-any.whl` |
-| Python sdist | `remote_ops_workspace-1.0.10.tar.gz` |
-| Source | `remote-ops-workspace-v1.0.10-source.zip` |
-| Windows | `remote-ops-workspace-v1.0.10-windows.zip` |
-| Linux | `remote-ops-workspace-v1.0.10-linux.tar.gz` |
-| macOS | `remote-ops-workspace-v1.0.10-macos.tar.gz` |
-| BSD | `remote-ops-workspace-v1.0.10-bsd.tar.gz` |
-| Solaris/illumos | `remote-ops-workspace-v1.0.10-solaris.tar.gz` |
-| Android/Termux | `remote-ops-workspace-v1.0.10-android-termux.tar.gz` |
-| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.10-web-pwa.zip` |
-| Web/PWA | `remote-ops-workspace-v1.0.10-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v1.0.10-windows-<x86\|x64\|arm64>-setup.exe` |
-| Windows native | `remote-ops-workspace-v1.0.10-windows-<x86\|x64\|arm64>.msi` |
-| Windows native | `remote-ops-workspace-v1.0.10-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v1.0.10-macos-<x64\|arm64>.dmg` |
-| macOS native | `remote-ops-workspace-v1.0.10-macos-<x64\|arm64>.pkg` |
-| macOS native | `remote-ops-workspace-v1.0.10-macos-<x64\|arm64>-native-manifest.json` |
-| Linux native | `remote-ops-workspace-v1.0.10-linux-<amd64\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v1.0.10-linux-<x86_64\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v1.0.10-linux-<x86_64\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v1.0.10-linux-<x86_64\|aarch64>-native.tar.gz` |
-| Linux native | `remote-ops-workspace-v1.0.10-linux-<x86_64\|aarch64>-native-manifest.json` |
-| Manifests | `remote-ops-workspace-v1.0.10-*-manifest.json` |
+| Python wheel | `remote_ops_workspace-1.0.11-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-1.0.11.tar.gz` |
+| Source | `remote-ops-workspace-v1.0.11-source.zip` |
+| Windows | `remote-ops-workspace-v1.0.11-windows.zip` |
+| Linux | `remote-ops-workspace-v1.0.11-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v1.0.11-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v1.0.11-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v1.0.11-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v1.0.11-android-termux.tar.gz` |
+| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.11-web-pwa.zip` |
+| Web/PWA | `remote-ops-workspace-v1.0.11-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v1.0.11-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v1.0.11-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v1.0.11-windows-<x86\|x64\|arm64>-native.zip` |
+| macOS native | `remote-ops-workspace-v1.0.11-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v1.0.11-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v1.0.11-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v1.0.11-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v1.0.11-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v1.0.11-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v1.0.11-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v1.0.11-linux-<x86_64\|aarch64>-native-manifest.json` |
+| Manifests | `remote-ops-workspace-v1.0.11-*-manifest.json` |
 
 The platform bundles include source, docs, examples, relevant installer entry
 points, and per-target release notes. They are not native protocol-client
@@ -434,6 +434,15 @@ Target support:
 - Windows 8 and Windows 7 as legacy source-only or remote-target systems.
 - Windows Vista and Windows XP as remote targets only.
 
+Direct OpenSSH SSH/SFTP launches inside the PyQt terminal use Windows ConPTY and
+therefore require Windows 10 version 1809/build 17763 or newer. On a host
+without ConPTY, the pane reports a pipe fallback and forces a bounded,
+trusted-host-only, key/agent-only launch; password/passphrase interactivity is
+not claimed there. This boundary does not weaken host-key policy: first-seen
+keys use interactive confirmation, changed keys remain rejected, background
+monitoring requires an already trusted key, and explicit profile settings take
+precedence on the supported interactive path.
+
 Legacy Windows support means this project can store profiles, generate adapter
 commands, and connect to those systems through RDP, VNC, SSH, Telnet, serial
 consoles or raw sockets when the chosen external client can still negotiate the
@@ -555,7 +564,7 @@ row doctor
 Target workflows:
 
 - Web/PWA from Safari or another trusted browser.
-- Static Web/PWA asset from `remote-ops-workspace-v1.0.10-web-pwa.zip`.
+- Static Web/PWA asset from `remote-ops-workspace-v1.0.11-web-pwa.zip`.
 - iOS/iPadOS 15 through 26.x Web/PWA compatibility contract.
 - Live simulator smoke on the current GitHub macOS/Xcode runtime through the
   `ios-simulator-web` job.

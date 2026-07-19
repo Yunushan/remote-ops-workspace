@@ -11,6 +11,21 @@ Official reference points checked on 2026-06-19:
 - https://mobaxterm.mobatek.net/features.html
 - https://mobaxterm.mobatek.net/download-home-edition.html
 
+A user-supplied MobaXterm 26.3 connected-session capture was also reviewed on
+2026-07-18 for layout and interaction measurements. The capture is not copied
+into this repository. It is used only to define generic workbench geometry and
+behavior: a compact four-band top stack, one left SSH-browser dock, terminal
+input on the terminal surface, on-demand editing, a compact monitoring footer,
+and a context-configurable bottom telemetry strip. Remote Ops Workspace keeps
+its own name, text, icons, colors and product identity and does not claim
+affiliation with Mobatek.
+
+The Moba-style preset is a compatibility-oriented workspace, not a claim that
+the application contains every MobaXterm feature. In particular, visual
+similarity cannot close the strict parity articles below. Real shared-session
+SSH/SFTP behavior, a full VT screen implementation, packaged auxiliary
+runtimes, and accepted native evidence remain separate requirements.
+
 Accepted release evidence for the strict articles below is tracked in
 `configs/mobaxterm_parity_evidence.json` and validated by
 `python scripts/check_mobaxterm_parity_evidence.py`. The default check keeps
@@ -22,13 +37,19 @@ article has accepted product-depth evidence.
 
 - SSH, SFTP, SCP, FTP, RDP, VNC, Telnet, rlogin, rsh, Mosh, XDMCP and raw
   network launch workflows through validated argv adapters.
-- Docked SSH/SFTP browser, follow-terminal-folder route, same-parameters SFTP
+- Docked SSH/SFTP browser, operator-controlled folder-follow route, same-parameters SFTP
   open action, persisted SSH/SFTP browser state evidence and file transfer
   queue/previews, plus MobaXterm 26.4-style side-by-side startup location,
   saved column widths and upload/download overwrite confirmation reviews
   through `row ssh-browser`. The connected PyQt Moba SFTP dock consumes those
   persisted preferences for browser visibility, location metadata, overwrite
   confirmation mode and live table column widths.
+  The folder-follow control currently keeps the browser on its selected remote
+  path; it does not observe the interactive shell's working directory.
+  Background SFTP and monitoring also start separate OpenSSH processes, so
+  password-only authentication from the visible terminal is not shared with
+  those helpers. Key or agent authentication is currently required for
+  unattended background refreshes.
 - MobaTextEditor/MobaDiff-style `row text preview/write/diff/remote-plan`
   workflow with local text previews, SHA-256 evidence, guarded saves, backup
   creation, unified diffs and SFTP get/put staging plans for remote files.
@@ -36,10 +57,11 @@ article has accepted product-depth evidence.
   `row text evidence-bundle` and `row text evidence-verify` add a connected
   SFTP-browser editor-tab contract, remote save conflict review, SHA-bound
   connected-session evidence assembly and fail-closed release evidence
-  validation for real remote edit sessions. The connected PyQt Moba SFTP dock
-  now hosts a `QPlainTextEdit` editor pane with syntax highlighting,
-  double-click open routing from file rows, save/diff action capture and SFTP
-  get/put command bindings from the same editor-tab plan.
+  validation for real remote edit sessions. The connected PyQt Moba workspace
+  keeps the editor surface hidden until a file-open action, rather than
+  permanently reducing the live SFTP file list. Syntax highlighting,
+  double-click routing, save/diff review and SFTP get/put command bindings
+  remain part of the editor-tab plan.
 - Smart-card, certificate, PKCS#11 provider and SSH agent handoff options for
   OpenSSH-backed profiles. `row smartcard inventory-plan/select-review/
   mobagent-plan/ssh-browser-plan/evidence-bundle/evidence-verify` adds a
@@ -72,9 +94,16 @@ article has accepted product-depth evidence.
   without destroying a connected SFTP dock, and SFTP returns to that dock. The
   connected SFTP toolbar now routes path/parent navigation, download/upload
   transfer queues, reconnect, Tools and terminal focus to live GUI workflows.
+  The transcript keeps linear multi-line mouse/keyboard selections stable while
+  output arrives, copies exact visible lines, renders bounded ANSI SGR
+  foreground/background styles, and exposes cyan underlined HTTP(S) links that
+  require an explicit Ctrl+click.
   New-file, new-folder, delete, ASCII-mode and split-view controls remain
   disabled in that dock until safe operational backends replace their earlier
   metadata-only previews.
+  The current terminal renderer is a bounded stream transcript rather than a
+  complete VT screen. Alternate-screen applications, cursor-addressed TUIs,
+  mouse reporting and the full DEC/OSC mode set remain outside this claim.
 - MobApt-style `row mobapt status/search/install/update` workflow that
   inventories Unix tools, discovers host package managers such as `apt`,
   `brew`, `winget`, `scoop` and `choco`, builds explicit argv plans and
@@ -153,10 +182,12 @@ article has accepted product-depth evidence.
    workflow for local files, SFTP remote edit staging plans, connected
    editor-tab open plans, direct save conflict reviews, a release-evidence
    bundle writer and a verifier requiring SHA-bound real connected-session
-   proof. The PyQt Moba SFTP dock now hosts an actual syntax-aware editor
-   widget and wires double-click/open plus save/diff route capture directly
-   from the live SFTP browser state. Full parity still needs accepted passing
-   evidence bundles from supported release targets proving real remote edits.
+   proof. The PyQt Moba SFTP dock keeps its editor surface hidden until an
+   explicit file-open action. In the live connected workspace that surface is
+   currently a read-only placeholder; it does not download, conflict-check,
+   save or upload the selected remote file. Full parity still needs an
+   operational remote-edit path and accepted passing evidence bundles from
+   supported release targets proving real remote edits.
 5. Macro recorder parity: ROW now has a CLI-backed typed macro store, SSH
    replay workflow, GUI capture control contracts, live connected-pane replay
    plans preserving per-event delay metadata, conflict/cancel review, a
@@ -195,6 +226,13 @@ article has accepted product-depth evidence.
    resulting deployment evidence. Full parity still needs actual branded
    Windows installer artifacts, a hosted organization update channel and
    accepted passing release evidence from supported targets.
+8. Shared authenticated transport and terminal-screen behavior: the
+   interactive Windows SSH path uses ConPTY when available, but the SFTP
+   browser and monitoring helpers do not reuse that authenticated connection.
+   The transcript renderer also does not implement a complete VT screen. Full
+   parity requires a shared authenticated SSH transport (or equivalently
+   controlled multiplexing), structured connection state, and a real terminal
+   grid with alternate-screen, cursor, color, mode and mouse semantics.
 
 The active parity target is not complete until every article above has a real
 implementation, tests, accepted release evidence in

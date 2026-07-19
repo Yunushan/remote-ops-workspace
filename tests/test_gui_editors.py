@@ -72,7 +72,7 @@ def test_profile_editor_data_formats_existing_profile() -> None:
 def test_protocol_preset_editor_data_uses_safe_protocol_defaults() -> None:
     assert protocol_preset_editor_data("ssh") == {
         "port": "22",
-        "options": "strict_host_key_checking=accept-new",
+        "options": "strict_host_key_checking=ask\nconnect_timeout=10",
     }
     assert protocol_preset_editor_data("rdp")["port"] == "3389"
     assert "baud=115200" in protocol_preset_editor_data("serial")["options"]
@@ -159,6 +159,9 @@ def test_layout_editor_rejects_empty_layout() -> None:
 
 
 def test_layout_to_editor_data_defaults() -> None:
-    assert profile_to_editor_data()["protocol"] == "ssh"
+    profile_data = profile_to_editor_data()
+    assert profile_data["protocol"] == "ssh"
+    assert profile_data["port"] == ""
+    assert profile_data["options"] == ""
     assert layout_to_editor_data()["orientation"] == "grid"
     assert layout_to_editor_data(Layout(name="solo", panes=[LayoutPane(command="whoami")]))["panes"] == "command:whoami"

@@ -28,6 +28,7 @@ from remote_ops_workspace.snippets import Snippet, SnippetStore
 from remote_ops_workspace.terminal import (
     _embedded_terminal_command,
     default_shell_command,
+    openssh_command_with_overrides,
     split_shell_plans,
     terminal_plan_for_command,
     terminal_plan_for_profile,
@@ -155,7 +156,10 @@ def test_terminal_plan_for_profile_uses_launcher() -> None:
     plan = terminal_plan_for_profile(profile)
     assert plan.title == "edge"
     assert plan.command[:4] == ["ssh", "-tt", "-p", "22"]
+    assert "ConnectTimeout=10" in plan.command
+    assert not any("StrictHostKeyChecking=" in argument for argument in plan.command)
     assert plan.command[-1] == "admin@192.0.2.10"
+    assert any("10 second TCP connection timeout" in note for note in plan.notes)
 
 
 def test_embedded_terminal_tty_adaptation_is_scoped_and_idempotent() -> None:
@@ -168,7 +172,58 @@ def test_embedded_terminal_tty_adaptation_is_scoped_and_idempotent() -> None:
     ]
     for tty_flag in ("-t", "-tt", "-T"):
         command = ["ssh", tty_flag, "example.invalid"]
-        assert _embedded_terminal_command(ssh_profile, command) == command
+        adapted = _embedded_terminal_command(ssh_profile, command)
+        assert adapted[:2] == ["ssh", tty_flag]
+        assert "ConnectTimeout=10" in adapted
+        assert not any("StrictHostKeyChecking=" in argument for argument in adapted)
+        assert adapted[-1] == "example.invalid"
+
+
+def test_embedded_terminal_preserves_explicit_ssh_safety_options() -> None:
+    profile = Profile(name="edge", protocol="ssh", host="example.invalid")
+    command = [
+        "ssh",
+        "-o",
+        "ConnectTimeout=30",
+        "-oStrictHostKeyChecking=yes",
+        "example.invalid",
+    ]
+
+    adapted = _embedded_terminal_command(profile, command)
+
+    assert adapted[0:2] == ["ssh", "-tt"]
+    assert adapted.count("ConnectTimeout=30") == 1
+    assert adapted.count("-oStrictHostKeyChecking=yes") == 1
+    assert "ConnectTimeout=10" not in adapted
+    assert "StrictHostKeyChecking=accept-new" not in adapted
+
+
+def test_openssh_runtime_overrides_replace_prompt_capable_options_without_mutation() -> None:
+    original = [
+        "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+        "-o",
+        "StrictHostKeyChecking=ask",
+        "-oBatchMode=no",
+        "-o",
+        "ConnectTimeout=30",
+        "operator@example.invalid",
+    ]
+
+    adapted = openssh_command_with_overrides(
+        original,
+        {
+            "BatchMode": "yes",
+            "ConnectTimeout": "5",
+            "StrictHostKeyChecking": "yes",
+        },
+    )
+
+    assert original[1:3] == ["-o", "StrictHostKeyChecking=ask"]
+    assert adapted.count("BatchMode=yes") == 1
+    assert adapted.count("ConnectTimeout=5") == 1
+    assert adapted.count("StrictHostKeyChecking=yes") == 1
+    assert not any("=ask" in argument or "=no" in argument for argument in adapted)
+    assert adapted[-1] == "operator@example.invalid"
 
 
 def test_sftp_list_plan_uses_batch_stdin() -> None:

@@ -769,10 +769,17 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
         "source_tokens": {
             "src/remote_ops_workspace/gui.py": [
                 "terminalSyntaxHighlightingEnabled",
-                "terminal_highlight_fragments",
+                "terminalAnsiSgrColorEnabled",
+                "terminalLinkActivation",
+                "highlight_terminal_text",
+            ],
+            "src/remote_ops_workspace/terminal_emulation.py": [
+                "def styled_fragments",
+                "def ansi_256_color",
             ],
             "src/remote_ops_workspace/terminal_highlighting.py": [
                 "DEFAULT_TERMINAL_SYNTAX_RULES",
+                '"url"',
                 "parse_terminal_syntax_rules",
             ],
         },

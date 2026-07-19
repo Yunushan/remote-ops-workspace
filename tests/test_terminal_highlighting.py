@@ -26,12 +26,27 @@ def test_default_terminal_highlighting_marks_mobaxterm_style_tokens() -> None:
 
 
 def test_terminal_highlight_fragments_cover_plain_and_colored_text() -> None:
-    text = "ok on 192.0.2.10\nplain\n"
+    text = (
+        "ok on 192.0.2.10\n"
+        "https://192.0.2.10:9090/\n"
+        "$ curl https://example.test/status\n"
+        "plain\n"
+    )
     fragments = terminal_highlight_fragments(text)
 
     assert "".join(fragment.text for fragment in fragments) == text
     assert any(fragment.rule_key == "success" for fragment in fragments)
     assert any(fragment.rule_key == "ipv4" for fragment in fragments)
+    links = [fragment for fragment in fragments if fragment.rule_key == "url"]
+    assert [link.text for link in links] == [
+        "https://192.0.2.10:9090/",
+        "https://example.test/status",
+    ]
+    assert all(link.color == "#54ccef" for link in links)
+    assert any(
+        fragment.rule_key == "prompt" and fragment.text == "$ curl "
+        for fragment in fragments
+    )
     assert any(fragment.rule_key == "plain" and fragment.text for fragment in fragments)
 
 

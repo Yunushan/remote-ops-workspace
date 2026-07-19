@@ -94,6 +94,10 @@ article has accepted product-depth evidence.
   without destroying a connected SFTP dock, and SFTP returns to that dock. The
   connected SFTP toolbar now routes path/parent navigation, download/upload
   transfer queues, reconnect, Tools and terminal focus to live GUI workflows.
+  The transcript keeps linear multi-line mouse/keyboard selections stable while
+  output arrives, copies exact visible lines, renders bounded ANSI SGR
+  foreground/background styles, and exposes cyan underlined HTTP(S) links that
+  require an explicit Ctrl+click.
   New-file, new-folder, delete, ASCII-mode and split-view controls remain
   disabled in that dock until safe operational backends replace their earlier
   metadata-only previews.

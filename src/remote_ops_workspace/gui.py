@@ -206,10 +206,14 @@ from .terminal import (
     terminal_plan_for_profile,
     terminal_plan_for_sftp_browser,
 )
-from .terminal_emulation import TERMINAL_EMULATOR_BACKEND, AnsiTerminalTranscript
+from .terminal_emulation import (
+    TERMINAL_EMULATOR_BACKEND,
+    AnsiTerminalTranscript,
+    AnsiTextStyle,
+)
 from .terminal_highlighting import (
     default_terminal_syntax_rules,
-    terminal_highlight_fragments,
+    highlight_terminal_text,
     terminal_syntax_rule_keys,
 )
 
@@ -473,14 +477,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QSize,
             Qt,
             QTimer,
+            QUrl,
         )
         from PyQt6.QtGui import (
             QBrush,
             QColor,
+            QDesktopServices,
             QFont,
             QIcon,
             QKeySequence,
             QPainter,
+            QPalette,
             QPen,
             QPixmap,
             QShortcut,
@@ -782,6 +789,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output = QTextEdit()
             self.output.setObjectName("terminalOutput")
             self.output.setReadOnly(True)
+            self.output.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+                | Qt.TextInteractionFlag.TextSelectableByKeyboard
+            )
             self.output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
             self.output.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             self.output.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
@@ -806,10 +817,48 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 any(argument in {"-t", "-tt"} for argument in plan.command),
             )
             self.output.setProperty("terminalDirectKeyInput", True)
+            self.output.setProperty("terminalMouseMultilineSelection", True)
+            self.output.setProperty(
+                "terminalKeyboardSelectionShortcuts",
+                [
+                    "Shift+Left/Right",
+                    "Shift+Up/Down",
+                    "Shift+Home/End",
+                    "Shift+PageUp/PageDown",
+                ],
+            )
+            self.output.setProperty(
+                "terminalCopyShortcuts",
+                ["Ctrl+C with selection", "Ctrl+Shift+C"],
+            )
+            self.output.setProperty(
+                "terminalTypingAfterSelection",
+                "collapse-selection-and-forward-to-process",
+            )
             self.output.setProperty("terminalEmulatorScrollbackLimit", self.terminal_emulator.max_scrollback_lines)
+            self.output.setProperty("terminalAnsiSgrColorEnabled", True)
+            self.output.setProperty(
+                "terminalAnsiSgrCapabilities",
+                [
+                    "16-color",
+                    "bright-color",
+                    "256-color",
+                    "rgb",
+                    "foreground-reset",
+                    "background-reset",
+                    "bold",
+                    "underline",
+                    "inverse",
+                ],
+            )
+            self.output.setProperty("terminalAnsiEscapeCodesExcludedFromPlainText", True)
             self.syntax_rules = default_terminal_syntax_rules()
             self.output.setProperty("terminalSyntaxHighlightingEnabled", True)
             self.output.setProperty("terminalSyntaxHighlightRuleKeys", list(terminal_syntax_rule_keys(self.syntax_rules)))
+            self.output.setProperty("terminalLinkActivation", "ctrl-click-http-https")
+            self.output.setProperty("terminalLinkAllowedSchemes", ["http", "https"])
+            self.output.setProperty("terminalLinkAutoOpen", False)
+            self.output.setProperty("terminalUrlHighlightColor", "#54ccef")
             self.input = QLineEdit()
             self.input.setObjectName("terminalInput")
             self.input.setPlaceholderText("stdin, shell command or interactive input")
@@ -986,6 +1035,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if watched in terminal_targets and event.type() == QEvent.Type.MouseButtonPress:
                 self.output.setFocus(Qt.FocusReason.MouseFocusReason)
                 self.output.setProperty("terminalLastInputSurface", "viewport")
+            if (
+                watched is self.output.viewport()
+                and event.type() == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton
+                and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                and not self.output.textCursor().hasSelection()
+            ):
+                href = self.output.anchorAt(event.position().toPoint())
+                if href and self.open_terminal_link(href):
+                    event.accept()
+                    return True
             if watched in terminal_targets and event.type() == QEvent.Type.InputMethod:
                 committed = event.commitString()
                 if committed:
@@ -994,16 +1054,115 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     return True
             if watched in terminal_targets and event.type() == QEvent.Type.KeyPress:
                 selection = self.output.textCursor().selectedText()
-                if event.matches(QKeySequence.StandardKey.Copy) and selection:
+                if self.is_terminal_selection_navigation(event):
+                    # A terminal still needs a usable local scrollback selection.
+                    # Let QTextEdit extend the cursor selection instead of sending
+                    # Shift+Arrow/Home/End/Page keys to the remote PTY.
                     return super().eventFilter(watched, event)
-                if event.matches(QKeySequence.StandardKey.Paste):
+                if (
+                    event.matches(QKeySequence.StandardKey.Copy)
+                    and selection
+                ) or self.is_terminal_copy_shortcut(event):
+                    self.copy_terminal_selection()
+                    return True
+                if event.matches(
+                    QKeySequence.StandardKey.Paste
+                ) or self.is_terminal_paste_shortcut(event):
                     self.paste_to_terminal()
                     return True
                 payload = self.terminal_key_payload(event)
                 if payload is not None:
+                    # Ordinary terminal input after a local selection must be
+                    # delivered to the process, not replace the read-only
+                    # transcript.  Collapse the stale selection first so the
+                    # next output update starts from an unambiguous cursor.
+                    self.clear_terminal_selection_for_remote_input()
                     self.send_raw_input(payload)
                     return True
             return super().eventFilter(watched, event)
+
+        @staticmethod
+        def is_terminal_selection_navigation(event) -> bool:
+            """Return whether *event* extends the local scrollback selection."""
+
+            if not (
+                event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+            ):
+                return False
+            return event.key() in {
+                Qt.Key.Key_Left,
+                Qt.Key.Key_Right,
+                Qt.Key.Key_Up,
+                Qt.Key.Key_Down,
+                Qt.Key.Key_Home,
+                Qt.Key.Key_End,
+                Qt.Key.Key_PageUp,
+                Qt.Key.Key_PageDown,
+            }
+
+        @staticmethod
+        def is_terminal_copy_shortcut(event) -> bool:
+            """Recognize the terminal-safe Ctrl+Shift+C copy shortcut."""
+
+            modifiers = event.modifiers()
+            return bool(
+                event.key() == Qt.Key.Key_C
+                and modifiers & Qt.KeyboardModifier.ControlModifier
+                and modifiers & Qt.KeyboardModifier.ShiftModifier
+                and not modifiers & Qt.KeyboardModifier.AltModifier
+                and not modifiers & Qt.KeyboardModifier.MetaModifier
+            )
+
+        @staticmethod
+        def is_terminal_paste_shortcut(event) -> bool:
+            """Recognize the terminal-safe Ctrl+Shift+V paste shortcut."""
+
+            modifiers = event.modifiers()
+            return bool(
+                event.key() == Qt.Key.Key_V
+                and modifiers & Qt.KeyboardModifier.ControlModifier
+                and modifiers & Qt.KeyboardModifier.ShiftModifier
+                and not modifiers & Qt.KeyboardModifier.AltModifier
+                and not modifiers & Qt.KeyboardModifier.MetaModifier
+            )
+
+        def clear_terminal_selection_for_remote_input(self) -> None:
+            cursor = self.output.textCursor()
+            if not cursor.hasSelection():
+                return
+            cursor.clearSelection()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            self.output.setTextCursor(cursor)
+            self.output.setProperty(
+                "terminalSelectionClearedForRemoteInput",
+                True,
+            )
+
+        @staticmethod
+        def validated_terminal_link(href: str) -> QUrl | None:
+            """Return a safe browser target for an explicit terminal link action."""
+
+            url = QUrl(str(href).strip())
+            if (
+                not url.isValid()
+                or url.isRelative()
+                or url.scheme().lower() not in {"http", "https"}
+                or not url.host()
+            ):
+                return None
+            return url
+
+        def open_terminal_link(self, href: str) -> bool:
+            """Open an HTTP(S) terminal link only after the user's Ctrl+click."""
+
+            url = self.validated_terminal_link(href)
+            if url is None:
+                self.output.setProperty("terminalLastRejectedLink", str(href))
+                return False
+            self.output.setProperty("terminalLastOpenedLink", url.toString())
+            opened = bool(QDesktopServices.openUrl(url))
+            self.output.setProperty("terminalLastLinkOpenSucceeded", opened)
+            return opened
 
         @staticmethod
         def terminal_key_payload(event) -> bytes | None:
@@ -1524,8 +1683,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def render_terminal_transcript(self, transcript: str) -> None:
             previous = self._rendered_terminal_text
-            if transcript == previous:
-                return
+            selected_cursor = self.output.textCursor()
+            selection_anchor = selected_cursor.anchor()
+            selection_position = selected_cursor.position()
+            selection_start = selected_cursor.selectionStart()
+            selection_end = selected_cursor.selectionEnd()
+            selection_text_unchanged = bool(
+                selected_cursor.hasSelection()
+                and selection_end <= len(previous)
+                and selection_end <= len(transcript)
+                and previous[selection_start:selection_end]
+                == transcript[selection_start:selection_end]
+            )
+            scroll_bar = self.output.verticalScrollBar()
+            scroll_value = scroll_bar.value()
+            was_scrolled_to_end = scroll_value >= scroll_bar.maximum() - 2
             if previous and transcript.startswith(previous):
                 replace_from = previous.rfind("\n") + 1
                 cursor = self.output.textCursor()
@@ -1542,14 +1714,114 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 fragment_source = transcript
             cursor = self.output.textCursor()
             cursor.movePosition(QTextCursor.MoveOperation.End)
-            for fragment in terminal_highlight_fragments(fragment_source, self.syntax_rules):
-                text_format = QTextCharFormat()
-                if fragment.color:
-                    text_format.setForeground(QColor(fragment.color))
-                cursor.insertText(fragment.text, text_format)
+            ansi_fragments = self.terminal_emulator.styled_fragments(start=replace_from if previous and transcript.startswith(previous) else 0)
+            syntax_spans = highlight_terminal_text(fragment_source, self.syntax_rules)
+            source_offset = replace_from if previous and transcript.startswith(previous) else 0
+            boundaries = {0, len(fragment_source)}
+            ansi_ranges = []
+            for fragment in ansi_fragments:
+                start = fragment.start - source_offset
+                end = fragment.end - source_offset
+                if end <= 0 or start >= len(fragment_source):
+                    continue
+                start = max(0, start)
+                end = min(len(fragment_source), end)
+                ansi_ranges.append((start, end, fragment.style))
+                boundaries.update({start, end})
+            for span in syntax_spans:
+                boundaries.update({span.start, span.end})
+            ordered_boundaries = sorted(boundaries)
+            ansi_index = 0
+            syntax_index = 0
+            for start, end in zip(
+                ordered_boundaries,
+                ordered_boundaries[1:],
+                strict=False,
+            ):
+                while ansi_index < len(ansi_ranges) and ansi_ranges[ansi_index][1] <= start:
+                    ansi_index += 1
+                while syntax_index < len(syntax_spans) and syntax_spans[syntax_index].end <= start:
+                    syntax_index += 1
+                ansi_style = (
+                    ansi_ranges[ansi_index][2]
+                    if ansi_index < len(ansi_ranges)
+                    and ansi_ranges[ansi_index][0] <= start < ansi_ranges[ansi_index][1]
+                    else AnsiTextStyle()
+                )
+                syntax_span = (
+                    syntax_spans[syntax_index]
+                    if syntax_index < len(syntax_spans)
+                    and syntax_spans[syntax_index].start <= start < syntax_spans[syntax_index].end
+                    else None
+                )
+                cursor.insertText(
+                    fragment_source[start:end],
+                    self.terminal_text_format(
+                        ansi_style,
+                        syntax_span.color if syntax_span is not None else "",
+                        syntax_rule_key=(
+                            syntax_span.rule_key if syntax_span is not None else ""
+                        ),
+                        link_target=(
+                            syntax_span.text
+                            if syntax_span is not None
+                            and syntax_span.rule_key == "url"
+                            else ""
+                        ),
+                    ),
+                )
             self._rendered_terminal_text = transcript
-            self.output.moveCursor(QTextCursor.MoveOperation.End)
+            if selection_text_unchanged:
+                restored = QTextCursor(self.output.document())
+                restored.setPosition(selection_anchor)
+                restored.setPosition(
+                    selection_position,
+                    QTextCursor.MoveMode.KeepAnchor,
+                )
+                self.output.setTextCursor(restored)
+                scroll_bar.setValue(scroll_value)
+                self.output.setProperty("terminalSelectionPreservedOnOutput", True)
+            elif was_scrolled_to_end:
+                self.output.moveCursor(QTextCursor.MoveOperation.End)
+            else:
+                scroll_bar.setValue(scroll_value)
             self.refresh_terminal_input_security(transcript)
+
+        def terminal_text_format(
+            self,
+            ansi_style: AnsiTextStyle,
+            syntax_color: str = "",
+            *,
+            syntax_rule_key: str = "",
+            link_target: str = "",
+        ) -> QTextCharFormat:
+            """Translate retained SGR state into a Qt document character format."""
+
+            text_format = QTextCharFormat()
+            palette = self.output.palette()
+            foreground, background = ansi_style.resolved_colors(
+                palette.color(QPalette.ColorRole.Text).name(),
+                palette.color(QPalette.ColorRole.Base).name(),
+            )
+            if foreground:
+                text_format.setForeground(QColor(foreground))
+            elif syntax_color:
+                text_format.setForeground(QColor(syntax_color))
+            if background:
+                text_format.setBackground(QColor(background))
+            if ansi_style.bold:
+                text_format.setFontWeight(int(QFont.Weight.Bold))
+            if ansi_style.underline:
+                text_format.setFontUnderline(True)
+            if (
+                syntax_rule_key == "url"
+                and link_target
+                and self.validated_terminal_link(link_target) is not None
+            ):
+                text_format.setAnchor(True)
+                text_format.setAnchorHref(link_target)
+                text_format.setFontUnderline(True)
+            return text_format
 
         @staticmethod
         def terminal_secret_prompt_visible(transcript: str) -> bool:

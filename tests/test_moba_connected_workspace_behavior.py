@@ -82,7 +82,9 @@ def test_moba_terminal_and_telemetry_share_operational_context_actions(
 ) -> None:
     from PyQt6.QtCore import Qt
 
-    _app, _window, panel, _dock = _open_connected_panel(gui_window)
+    app, _window, panel, _dock = _open_connected_panel(gui_window)
+    panel.terminal_pane.output.selectAll()
+    selected = panel.terminal_pane.output.textCursor().selectedText()
     menu = panel.build_moba_terminal_context_menu(panel.terminal_pane)
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
 
@@ -91,6 +93,11 @@ def test_moba_terminal_and_telemetry_share_operational_context_actions(
     assert "Save to file" in labels
     assert "Paste" in labels
     assert "Display host information" in labels
+    copy_action = next(action for action in menu.actions() if action.text() == "Copy")
+    assert copy_action.isEnabled()
+    copy_action.trigger()
+    assert app.clipboard().text() == selected.replace("\u2029", "\n")
+    assert panel.terminal_pane.output.textCursor().selectedText() == selected
     host_action = next(
         action for action in menu.actions() if action.text() == "Display host information"
     )

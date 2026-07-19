@@ -6,6 +6,23 @@ printable output, line feeds, carriage-return progress redraws, backspaces,
 tabs, common SGR styling sequences, and CSI clear/erase controls. Scrollback is
 bounded to 10,000 completed lines.
 
+SGR rendering retains the normal and bright 16-color palette, xterm 256-color
+indexes, 24-bit RGB foreground/background colors, bold, underlining, inverse
+video, and foreground/background resets. Inverse video uses the active preset's
+terminal palette rather than assuming a single dark theme. Escape sequences
+stay outside the plain-text document, so copying, searching, and mouse or
+keyboard selection—including selection across multiple lines—operate on the
+visible text. Explicit SGR
+colors take precedence over the product's semantic error/warning/prompt
+highlight rules. This remains transcript styling, not complete VT screen
+emulation.
+
+Visible `http://` and `https://` text is rendered as a cyan underlined link.
+Links never open from output alone: the user must Ctrl+click one, and the
+terminal validates the scheme and host before handing it to the system browser.
+Other schemes remain inert text so a remote process cannot activate local-file
+or script URLs.
+
 On Windows 10 version 1809/build 17763 or newer, direct embedded OpenSSH SSH and
 SFTP launches use the native Windows ConPTY API. That gives `ssh.exe` and
 `sftp.exe` a real local terminal for host-key, password and key-passphrase

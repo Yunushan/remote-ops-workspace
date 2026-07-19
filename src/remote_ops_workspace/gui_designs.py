@@ -7239,6 +7239,8 @@ QLabel#paneStatus[state="error"], QLabel#paneStatus[state="blocked"] {{
 QTextEdit#terminalOutput, QPlainTextEdit {{
   background: {colors.terminal};
   color: {colors.terminal_text};
+  selection-background-color: {colors.terminal_text};
+  selection-color: {colors.terminal};
   border: 1px solid {colors.pane_border};
   border-top: 0;
   font-family: "Cascadia Mono", Consolas, monospace;

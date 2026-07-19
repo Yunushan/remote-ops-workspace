@@ -133,6 +133,123 @@ def test_terminal_output_accepts_direct_keys_and_has_operational_context_menu(
     pane.deleteLater()
 
 
+def test_terminal_multiline_selection_keys_copy_and_typing_stay_local_or_remote(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QEvent, QProcess, Qt
+    from PyQt6.QtGui import QKeyEvent, QTextCursor
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="selection-test", command=[], source="test")
+    )
+    process = _FakeProcess(pane)
+    process.process_state = QProcess.ProcessState.Running
+    process.finished.connect(pane.on_finished)
+    pane.process = process
+    pane.output.setPlainText("alpha one\nbeta two\ngamma three")
+    cursor = pane.output.textCursor()
+    cursor.movePosition(QTextCursor.MoveOperation.End)
+    pane.output.setTextCursor(cursor)
+    pane.output.setFocus()
+
+    shift_up = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_Up,
+        Qt.KeyboardModifier.ShiftModifier,
+    )
+    app.sendEvent(pane.output, shift_up)
+    selected = pane.output.textCursor().selectedText()
+    assert "\u2029" in selected
+    assert "gamma three" in selected
+    assert process.written == b""
+
+    copy_shortcut = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_C,
+        Qt.KeyboardModifier.ControlModifier
+        | Qt.KeyboardModifier.ShiftModifier,
+    )
+    app.sendEvent(pane.output, copy_shortcut)
+    assert app.clipboard().text() == selected.replace("\u2029", "\n")
+    assert pane.output.textCursor().selectedText() == selected
+    assert process.written == b""
+
+    menu = pane.build_output_context_menu()
+    copy_action = next(action for action in menu.actions() if action.text() == "Copy")
+    assert copy_action.isEnabled()
+    copy_action.trigger()
+    assert app.clipboard().text() == selected.replace("\u2029", "\n")
+    assert pane.output.textCursor().selectedText() == selected
+
+    typed = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_Z,
+        Qt.KeyboardModifier.NoModifier,
+        "z",
+    )
+    app.sendEvent(pane.output, typed)
+    assert process.written == b"z"
+    assert not pane.output.textCursor().hasSelection()
+    assert pane.output.property("terminalSelectionClearedForRemoteInput") is True
+    assert pane.output.property("terminalMouseMultilineSelection") is True
+    assert pane.output.property("terminalTypingAfterSelection") == (
+        "collapse-selection-and-forward-to-process"
+    )
+
+    process.finish()
+    menu.deleteLater()
+    pane.deleteLater()
+
+
+def test_terminal_mouse_drag_selects_across_scrollback_lines(gui_window) -> None:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QTextCursor
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="mouse-selection-test", command=[], source="test")
+    )
+    pane.resize(520, 320)
+    pane.show()
+    pane.output.setPlainText("alpha one\nbeta two\ngamma three")
+    app.processEvents()
+
+    start_cursor = QTextCursor(pane.output.document())
+    start_cursor.setPosition(2)
+    end_cursor = QTextCursor(pane.output.document())
+    end_cursor.setPosition(
+        pane.output.document().findBlockByNumber(2).position() + len("gamma")
+    )
+    start_point = pane.output.cursorRect(start_cursor).center()
+    end_point = pane.output.cursorRect(end_cursor).center()
+
+    QTest.mousePress(
+        pane.output.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=start_point,
+    )
+    QTest.mouseMove(pane.output.viewport(), end_point, delay=10)
+    QTest.mouseRelease(
+        pane.output.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=end_point,
+    )
+    selected = pane.output.textCursor().selectedText()
+
+    assert selected.startswith("pha one")
+    assert selected.endswith("gamma")
+    assert selected.count("\u2029") == 2
+    assert pane.output.property("terminalLastInputSurface") == "viewport"
+
+    pane.deleteLater()
+
+
 def test_visible_moba_terminal_routes_keys_from_the_actual_mouse_focus(
     gui_window,
 ) -> None:

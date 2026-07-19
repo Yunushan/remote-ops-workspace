@@ -802,10 +802,15 @@ renders `state.terminal_transcript`, while the live terminal output exposes
 `mobaTerminalTranscriptKeys` and `mobaTerminalTranscriptTones` for the render
 checker.
 Generic `TerminalPane` output also applies
-`terminal_highlighting.terminal_highlight_fragments`, exposing
+`terminal_highlighting.highlight_terminal_text`, exposing
 `terminalSyntaxHighlightingEnabled` and stable rule keys so prompts, notes,
 errors, warnings, IP addresses, paths and custom keyword rules can be styled
-without depending on remote ANSI color output.
+without depending on remote ANSI color output. Retained ANSI SGR ranges are
+composed with those semantic spans; explicit remote foreground colors take
+precedence while the plain transcript remains escape-free and selectable.
+HTTP(S) URL spans are cyan and underlined; activation is an explicit
+Ctrl+click with a scheme-and-host allowlist, never an automatic response to
+remote output.
 MobaXterm-style terminal transcript geometry is also explicit:
 `GuiMobaTerminalTranscriptRowGeometry` fixes the transcript left offset,
 per-line y positions, row cadence and mono font size. The static preview reads

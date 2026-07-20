@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+from importlib.resources import files
 from pathlib import Path
 
 from .file_safety import ensure_private_dir
@@ -39,3 +40,23 @@ def ensure_data_dir() -> Path:
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
+
+
+def runtime_config_path(name: str) -> Path:
+    repository_path = repo_root() / "configs" / name
+    if repository_path.is_file():
+        return repository_path
+    packaged_path = Path(str(files("remote_ops_workspace").joinpath("configs", name)))
+    if packaged_path.is_file():
+        return packaged_path
+    raise FileNotFoundError(f"runtime configuration is missing: {name}")
+
+
+def runtime_web_dir() -> Path:
+    repository_path = repo_root() / "apps" / "web"
+    if repository_path.is_dir():
+        return repository_path
+    packaged_path = Path(str(files("remote_ops_workspace").joinpath("web")))
+    if packaged_path.is_dir():
+        return packaged_path
+    raise FileNotFoundError("packaged Web/PWA assets are missing")

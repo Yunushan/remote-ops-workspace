@@ -34,6 +34,7 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors.extend(check_repo_policy_job(text))
     errors.extend(check_test_job(text))
     errors.extend(check_mobile_web_job(text))
+    errors.extend(check_web_container_job(text))
     errors.extend(check_android_emulator_web_job(text))
     errors.extend(check_ios_simulator_web_job(text))
     errors.extend(check_gui_render_job(text))
@@ -250,6 +251,36 @@ def check_mobile_web_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci mobile-web job missing {label}: {snippet}")
+    return errors
+
+
+def check_web_container_job(workflow: str) -> list[str]:
+    block = workflow_job_block(workflow, "web-container")
+    if not block:
+        return ["ci workflow missing web-container job for live Web/PWA container smoke"]
+    errors: list[str] = []
+    required_snippets = {
+        "name: Web/PWA container smoke": "clear container smoke job label",
+        "runs-on: ubuntu-latest": "stable Linux container runner",
+        "timeout-minutes: 15": "bounded container smoke job timeout",
+        "docker compose -p row-web-smoke -f docker/compose.yaml": "isolated Compose project name",
+        "compose down --volumes --remove-orphans": "container and volume cleanup",
+        "trap cleanup EXIT": "guaranteed container cleanup",
+        "compose up --detach --build": "actual Compose image build and startup",
+        "http://127.0.0.1:8765/healthz": "loopback health smoke",
+        "{{.Config.User}}": "non-root runtime user assertion",
+        '"10001:10001"': "expected non-root runtime user",
+        "{{.HostConfig.ReadonlyRootfs}}": "read-only root filesystem assertion",
+        "{{.HostConfig.PidsLimit}}": "PID limit assertion",
+        "{{.HostConfig.CapDrop}}": "capability-drop assertion",
+        "{{.HostConfig.SecurityOpt}}": "no-new-privileges assertion",
+        "compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'": (
+            "writable non-root data-volume smoke"
+        ),
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci web-container job missing {label}: {snippet}")
     return errors
 
 

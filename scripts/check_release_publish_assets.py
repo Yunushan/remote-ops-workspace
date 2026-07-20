@@ -6,6 +6,9 @@ import importlib.util
 import json
 import re
 import sys
+import tarfile
+import uuid
+import zipfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -27,6 +30,53 @@ from check_platform_verified_evidence import (  # noqa: E402
 )
 
 EXPECTED_CHECKSUM_SUFFIX = "SHA256SUMS.txt"
+SOURCE_PYTHON_SBOM_SCOPE = "source-and-python-release-environment"
+RUNTIME_CONFIG_FILES = (
+    "feature_manifest.json",
+    "platform_targets.json",
+    "platform_verified_evidence.json",
+    "platform_parity_promotion.json",
+    "xp_native_evidence_contract.json",
+)
+WEB_PWA_SOURCE_FILES = (
+    "apps/web/app.js",
+    "apps/web/index.html",
+    "apps/web/manifest.json",
+    "apps/web/styles.css",
+    "apps/web/sw.js",
+)
+SOURCE_DISTRIBUTION_REQUIRED_FILES = (
+    "MANIFEST.in",
+    "pyproject.toml",
+    "setup.py",
+    "src/remote_ops_workspace/paths.py",
+    *(f"configs/{name}" for name in RUNTIME_CONFIG_FILES),
+    *WEB_PWA_SOURCE_FILES,
+)
+FULL_SOURCE_BUNDLE_REQUIRED_FILES = (
+    *SOURCE_DISTRIBUTION_REQUIRED_FILES,
+    "RELEASE_TARGET.md",
+)
+WEB_BUNDLE_REQUIRED_FILES = (
+    "app.js",
+    "index.html",
+    "manifest.json",
+    "styles.css",
+    "sw.js",
+    "LICENSE",
+    "NOTICE",
+    "RELEASE_TARGET.md",
+)
+SOURCE_INSTALL_BUNDLE_FORMATS = {
+    "source": "zip",
+    "windows": "zip",
+    "linux": "tar.gz",
+    "macos": "tar.gz",
+    "bsd": "tar.gz",
+    "solaris": "tar.gz",
+    "android-termux": "tar.gz",
+    "web-pwa": "zip",
+}
 XP_NATIVE_EVIDENCE_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
 PLATFORM_GOAL_TARGETS = (
     "linux-i386",
@@ -49,6 +99,7 @@ PROTECTED_PROMOTION_INPUT = "include_protected_platform_evidence"
 PROTECTED_PROMOTION_CONDITION = (
     "if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_protected_platform_evidence }}"
 )
+ATTEST_RELEASE_ASSETS_ACTION = "actions/attest@a1948c3f048ba23858d222213b7c278aabede763"
 TAGGED_RELEASE_REF = "ref: ${{ env.RELEASE_TAG }}"
 FINAL_ACCEPTED_RECORD_RE = re.compile(
     r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"
@@ -105,6 +156,8 @@ def main(argv: list[str] | None = None) -> int:
                 mobaxterm_parity_registry=mobaxterm_registry,
                 require_platform_goal_targets=args.require_platform_goal_targets,
                 require_mobaxterm_parity_complete=args.require_mobaxterm_parity_complete,
+                native_release_channel=args.native_release_channel,
+                source_assets_only=args.source_assets_only,
             )
         )
     if errors:
@@ -124,7 +177,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--tag",
-        help="Expected release tag, for example v1.0.11. Defaults to the matrix release tag.",
+        help="Expected release tag, for example v1.0.12. Defaults to the matrix release tag.",
     )
     parser.add_argument(
         "--repository",
@@ -143,17 +196,39 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="fail unless every strict MobaXterm parity article has accepted release evidence",
     )
+    parser.add_argument(
+        "--native-release-channel",
+        choices=("production-signed", "unsigned-preview"),
+        help="require native manifest signing metadata for the declared release channel",
+    )
+    parser.add_argument(
+        "--source-assets-only",
+        action="store_true",
+        help="validate only source/Python release assets before native artifacts are merged",
+    )
     return parser.parse_args(argv)
 
 
 def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:
-    if not args.require_platform_goal_targets:
-        return []
     errors: list[str] = []
     if args.assets_dir is None:
-        errors.append("--require-platform-goal-targets requires --assets-dir")
+        if args.require_platform_goal_targets:
+            errors.append("--require-platform-goal-targets requires --assets-dir")
+        if args.native_release_channel:
+            errors.append("--native-release-channel requires --assets-dir")
+        if args.source_assets_only:
+            errors.append("--source-assets-only requires --assets-dir")
     if not args.tag:
-        errors.append("--require-platform-goal-targets requires --tag vX.Y.Z")
+        if args.require_platform_goal_targets:
+            errors.append("--require-platform-goal-targets requires --tag vX.Y.Z")
+        if args.native_release_channel:
+            errors.append("--native-release-channel requires --tag vX.Y.Z")
+    if args.source_assets_only and (
+        args.require_platform_goal_targets or args.native_release_channel
+    ):
+        errors.append(
+            "--source-assets-only cannot be combined with protected-platform or native signing validation"
+        )
     return errors
 
 
@@ -166,6 +241,7 @@ def check_publish_contract(
     mobaxterm_parity_registry: dict[str, Any] | None = None,
     require_platform_goal_targets: bool = False,
     require_mobaxterm_parity_complete: bool = False,
+    native_release_channel: str | None = None,
 ) -> list[str]:
     errors: list[str] = []
     release_tag = tag or matrix_tag(matrix)
@@ -198,6 +274,7 @@ def check_publish_contract(
     if len(checksum_assets) < 6:
         errors.append("release matrix must include source and per-native checksum sidecars")
     errors.extend(check_release_job_clean_checkouts(workflow))
+    errors.extend(check_source_and_python_job(workflow))
     errors.extend(check_platform_evidence_import_job(workflow))
     errors.extend(check_job_disallows_continue_on_error(workflow, "release-preflight"))
     publish_block = workflow_job_block(workflow, "publish")
@@ -210,6 +287,11 @@ def check_publish_contract(
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
         '--repository "${{ github.repository }}"': "publish evidence repository binding",
         "softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e": "GitHub release upload",
+        ATTEST_RELEASE_ASSETS_ACTION: "release artifact provenance attestation",
+        "subject-path: release-assets/**": "release artifact attestation subject path",
+        "attestations: write": "attestation write permission",
+        "artifact-metadata: write": "artifact metadata write permission",
+        "id-token: write": "OIDC token permission for attestation",
         "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
@@ -217,14 +299,100 @@ def check_publish_contract(
         if snippet not in publish_block:
             errors.append(f"publish job missing {label}: {snippet}")
     validate_index = publish_block.find("scripts/check_release_publish_assets.py")
+    attest_index = publish_block.find(ATTEST_RELEASE_ASSETS_ACTION)
     upload_index = publish_block.find("softprops/action-gh-release")
-    if validate_index < 0 or upload_index < 0 or validate_index > upload_index:
-        errors.append("publish asset validation must run before GitHub release upload")
+    if validate_index < 0 or attest_index < 0 or upload_index < 0:
+        errors.append("publish must validate and attest release assets before GitHub release upload")
+    elif not validate_index < attest_index < upload_index:
+        errors.append("publish asset validation and attestation must run before GitHub release upload")
     if "--require-platform-goal-targets" in publish_block or PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND in publish_block:
         errors.append("core publish job must not require protected-platform evidence")
     if "- accepted-platform-evidence-assets" in publish_block:
         errors.append("core publish job must not depend on accepted-platform-evidence-assets")
     errors.extend(check_protected_publish_job(workflow))
+    return errors
+
+
+def check_source_and_python_job(workflow: str) -> list[str]:
+    block = workflow_job_block(workflow, "source-and-python")
+    if not block:
+        return ["release workflow missing source-and-python job"]
+    errors = check_job_block_disallows_continue_on_error("source-and-python", block)
+    errors.extend(check_checkout_step(block, job="source-and-python"))
+    required_snippets = {
+        '".[desktop,security,package]"': "isolated source/Python release environment install",
+        "python scripts/make_release.py": "source/Python release build",
+        "python scripts/check_release_publish_assets.py --assets-dir dist --tag": (
+            "source/Python release asset validation"
+        ),
+        "--source-assets-only": "source-only release validation mode",
+        "python -m venv wheel-smoke": "isolated installed-wheel smoke environment",
+        "wheel-smoke/bin/python -m pip install --no-deps": "installed-wheel smoke install",
+        "wheel-smoke/bin/row --help": "installed-wheel CLI entry-point smoke",
+        "wheel-smoke/bin/python -m remote_ops_workspace features --coverage": (
+            "installed-wheel bundled configuration smoke"
+        ),
+        "wheel-smoke/bin/python -m remote_ops_workspace serve-web --host 127.0.0.1 --port 18767": (
+            "installed-wheel Web/PWA server smoke"
+        ),
+        "grep -Eiq '^content-security-policy:' \"$headers\"": (
+            "installed-wheel Web/PWA content-security-policy smoke"
+        ),
+        "grep -Eiq '^x-frame-options:[[:space:]]*DENY' \"$headers\"": (
+            "installed-wheel Web/PWA frame-protection smoke"
+        ),
+        'python -m pip install --no-deps --no-build-isolation --target "$RUNNER_TEMP/sdist-smoke-package"': (
+            "installed-sdist smoke install"
+        ),
+        'PYTHONPATH="$RUNNER_TEMP/sdist-smoke-package" python -m remote_ops_workspace features --coverage': (
+            "installed-sdist bundled configuration smoke"
+        ),
+        "zipfile.ZipFile(archive).extractall(destination)": "portable source-bundle extraction smoke",
+        'python -m pip install --no-deps --no-build-isolation --target "$RUNNER_TEMP/source-bundle-smoke-package"': (
+            "installed source-bundle smoke install"
+        ),
+        'PYTHONPATH="$RUNNER_TEMP/source-bundle-smoke-package" python -m remote_ops_workspace features --coverage': (
+            "installed source-bundle bundled configuration smoke"
+        ),
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a": (
+            "source/Python artifact upload"
+        ),
+        "path: dist/*": "source/Python artifact upload path",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"source-and-python job missing {label}: {snippet}")
+    build_index = block.find("python scripts/make_release.py")
+    validate_index = block.find("scripts/check_release_publish_assets.py")
+    wheel_smoke_index = block.find("wheel-smoke/bin/python -m pip install --no-deps")
+    web_wheel_smoke_index = block.find(
+        "wheel-smoke/bin/python -m remote_ops_workspace serve-web --host 127.0.0.1 --port 18767"
+    )
+    sdist_smoke_index = block.find('--target "$RUNNER_TEMP/sdist-smoke-package"')
+    source_bundle_smoke_index = block.find('--target "$RUNNER_TEMP/source-bundle-smoke-package"')
+    upload_index = block.find("actions/upload-artifact")
+    if (
+        build_index < 0
+        or validate_index < 0
+        or wheel_smoke_index < 0
+        or web_wheel_smoke_index < 0
+        or sdist_smoke_index < 0
+        or source_bundle_smoke_index < 0
+        or upload_index < 0
+    ):
+        errors.append("source-and-python job must build, validate, and smoke-test assets before upload")
+    elif not (
+        build_index
+        < validate_index
+        < wheel_smoke_index
+        < web_wheel_smoke_index
+        < sdist_smoke_index
+        < source_bundle_smoke_index
+        < upload_index
+    ):
+        errors.append(
+            "source-and-python validation, wheel CLI/Web-PWA smoke, sdist smoke, and source-bundle smoke must run after build and before upload"
+        )
     return errors
 
 
@@ -239,6 +407,9 @@ def check_protected_publish_job(workflow: str) -> list[str]:
         "- publish": "core release dependency",
         "- accepted-platform-evidence-assets": "accepted platform evidence dependency",
         "actions: read": "Actions metadata read permission for published evidence audit",
+        "attestations: write": "attestation write permission",
+        "artifact-metadata: write": "artifact metadata write permission",
+        "id-token: write": "OIDC token permission for attestation",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for published evidence audit",
         "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c": "artifact download",
         "merge-multiple: true": "merged downloaded artifact directory",
@@ -246,6 +417,8 @@ def check_protected_publish_job(workflow: str) -> list[str]:
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "protected publish asset validation",
         "--require-platform-goal-targets": "protected platform goal publish gate",
         PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND: "published protected platform evidence audit",
+        ATTEST_RELEASE_ASSETS_ACTION: "protected release artifact provenance attestation",
+        "subject-path: release-assets/**": "protected release artifact attestation subject path",
         "softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e": "GitHub release upload",
         "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
@@ -255,14 +428,17 @@ def check_protected_publish_job(workflow: str) -> list[str]:
             errors.append(f"{PROTECTED_PUBLISH_JOB} job missing {label}: {snippet}")
     protected_gate_index = block.find(PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND)
     validate_index = block.find("scripts/check_release_publish_assets.py")
+    attest_index = block.find(ATTEST_RELEASE_ASSETS_ACTION)
     upload_index = block.find("softprops/action-gh-release")
     remote_audit_index = block.find(PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND)
     if protected_gate_index < 0 or validate_index < 0 or protected_gate_index > validate_index:
         errors.append("protected platform release asset gate must run before protected publish asset validation")
     if protected_gate_index < 0 or upload_index < 0 or protected_gate_index > upload_index:
         errors.append("protected platform release asset gate must run before protected GitHub release upload")
-    if validate_index < 0 or upload_index < 0 or validate_index > upload_index:
-        errors.append("protected publish asset validation must run before GitHub release upload")
+    if validate_index < 0 or attest_index < 0 or upload_index < 0:
+        errors.append("protected publish must validate and attest release assets before GitHub release upload")
+    elif not validate_index < attest_index < upload_index:
+        errors.append("protected publish asset validation and attestation must run before GitHub release upload")
     if remote_audit_index < 0 or upload_index < 0 or remote_audit_index < upload_index:
         errors.append("published protected platform evidence audit must run after GitHub release upload")
     return errors
@@ -388,6 +564,8 @@ def check_release_assets(
     repository: str | None = None,
     require_platform_goal_targets: bool = False,
     require_mobaxterm_parity_complete: bool = False,
+    native_release_channel: str | None = None,
+    source_assets_only: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     errors.extend(check_release_asset_directory(assets_dir))
@@ -412,10 +590,10 @@ def check_release_assets(
             )
         )
     release_tag = tag or matrix_tag(matrix)
-    expected = expected_release_assets(matrix, tag=release_tag) | accepted_platform_release_assets(
-        registry,
-        tag=release_tag,
-    )
+    expected = expected_source_release_assets(matrix, tag=release_tag)
+    if not source_assets_only:
+        expected |= expected_release_assets(matrix, tag=release_tag) - expected
+        expected |= accepted_platform_release_assets(registry, tag=release_tag)
     errors.extend(check_release_asset_symlinks(root))
     errors.extend(check_release_asset_root_entries(root))
     actual = {path.name for path in root.iterdir() if path.is_file()}
@@ -451,6 +629,202 @@ def check_release_assets(
         errors.append(f"release assets include unexpected files: {extra}")
     errors.extend(check_checksum_sidecars(root, expected))
     errors.extend(check_release_manifest(root, matrix, tag=tag))
+    errors.extend(check_source_distribution_contents(root, release_tag=release_tag))
+    errors.extend(check_source_install_bundle_contents(root, release_tag=release_tag))
+    if native_release_channel is not None:
+        errors.extend(
+            check_native_release_signing_metadata(
+                root,
+                expected,
+                native_release_channel=native_release_channel,
+            )
+        )
+    return errors
+
+
+def check_source_distribution_contents(root: Path, *, release_tag: str) -> list[str]:
+    version = version_from_tag(release_tag)
+    archive_name = f"remote_ops_workspace-{version}.tar.gz"
+    archive_path = root / archive_name
+    if not archive_path.is_file():
+        return []
+
+    root_name = f"remote_ops_workspace-{version}"
+    root_prefix = f"{root_name}/"
+    try:
+        with tarfile.open(archive_path, "r:gz") as archive:
+            members = archive.getmembers()
+    except (OSError, tarfile.TarError) as exc:
+        return [f"{archive_name} must be a readable source distribution archive: {exc}"]
+
+    errors: list[str] = []
+    names = [member.name for member in members]
+    member_names = set(names)
+    duplicates = sorted(name for name in member_names if names.count(name) > 1)
+    if duplicates:
+        errors.append(f"{archive_name} must not contain duplicate members: {duplicates}")
+    for member in members:
+        if member.name != root_name and (
+            not member.name.startswith(root_prefix) or not source_bundle_member_name_is_safe(member.name)
+        ):
+            errors.append(
+                f"{archive_name} contains unsafe source member: {member.name!r}"
+            )
+        if member.issym() or member.islnk():
+            errors.append(f"{archive_name} must not contain link member: {member.name!r}")
+        elif not member.isfile() and not member.isdir():
+            errors.append(f"{archive_name} must not contain non-file member: {member.name!r}")
+    for required_file in SOURCE_DISTRIBUTION_REQUIRED_FILES:
+        expected_member = f"{root_prefix}{required_file}"
+        if expected_member not in member_names:
+            errors.append(f"{archive_name} missing required source file: {required_file}")
+    return errors
+
+
+def check_source_install_bundle_contents(root: Path, *, release_tag: str) -> list[str]:
+    version = version_from_tag(release_tag)
+    errors: list[str] = []
+    for target, archive_format in SOURCE_INSTALL_BUNDLE_FORMATS.items():
+        root_name = f"remote-ops-workspace-v{version}-{target}"
+        archive_name = f"{root_name}.{archive_format}"
+        archive_path = root / archive_name
+        if not archive_path.is_file():
+            continue
+        required_files = (
+            WEB_BUNDLE_REQUIRED_FILES if target == "web-pwa" else FULL_SOURCE_BUNDLE_REQUIRED_FILES
+        )
+        if archive_format == "zip":
+            errors.extend(check_source_install_zip(archive_path, root_name, required_files))
+        else:
+            errors.extend(check_source_install_tar(archive_path, root_name, required_files))
+    return errors
+
+
+def check_source_install_zip(
+    archive_path: Path, root_name: str, required_files: tuple[str, ...]
+) -> list[str]:
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            members = archive.infolist()
+    except (OSError, zipfile.BadZipFile) as exc:
+        return [f"{archive_path.name} must be a readable ZIP archive: {exc}"]
+    names = [member.filename for member in members]
+    errors = check_source_install_member_names(archive_path.name, names, root_name, required_files)
+    for member in members:
+        mode = member.external_attr >> 16
+        if mode & 0o170000 == 0o120000:
+            errors.append(f"{archive_path.name} must not contain link member: {member.filename!r}")
+    return errors
+
+
+def check_source_install_tar(
+    archive_path: Path, root_name: str, required_files: tuple[str, ...]
+) -> list[str]:
+    try:
+        with tarfile.open(archive_path, "r:gz") as archive:
+            members = archive.getmembers()
+    except (OSError, tarfile.TarError) as exc:
+        return [f"{archive_path.name} must be a readable tar archive: {exc}"]
+    names = [member.name for member in members]
+    errors = check_source_install_member_names(archive_path.name, names, root_name, required_files)
+    for member in members:
+        if member.issym() or member.islnk():
+            errors.append(f"{archive_path.name} must not contain link member: {member.name!r}")
+        elif not member.isfile() and not member.isdir():
+            errors.append(
+                f"{archive_path.name} must not contain non-file member: {member.name!r}"
+            )
+    return errors
+
+
+def check_source_install_member_names(
+    archive_name: str,
+    names: list[str],
+    root_name: str,
+    required_files: tuple[str, ...],
+) -> list[str]:
+    errors: list[str] = []
+    root_prefix = f"{root_name}/"
+    duplicates = sorted(name for name in set(names) if names.count(name) > 1)
+    if duplicates:
+        errors.append(f"{archive_name} must not contain duplicate members: {duplicates}")
+    for name in names:
+        if name == root_name or name == f"{root_name}/":
+            continue
+        if not name.startswith(root_prefix) or not source_bundle_member_name_is_safe(name):
+            errors.append(f"{archive_name} contains unsafe member: {name!r}")
+    members = set(names)
+    for required_file in required_files:
+        if f"{root_prefix}{required_file}" not in members:
+            errors.append(f"{archive_name} missing required bundle file: {required_file}")
+    return errors
+
+
+def source_bundle_member_name_is_safe(name: str) -> bool:
+    if not name or "\\" in name:
+        return False
+    path = PurePosixPath(name)
+    return not path.is_absolute() and ".." not in path.parts
+
+
+def check_native_release_signing_metadata(
+    root: Path,
+    expected_assets: set[str],
+    *,
+    native_release_channel: str,
+) -> list[str]:
+    errors: list[str] = []
+    expected_production = native_release_channel == "production-signed"
+    manifest_names = sorted(
+        name
+        for name in expected_assets
+        if name.endswith("-native-manifest.json")
+        and ("-windows-" in name or "-macos-" in name)
+    )
+    for name in manifest_names:
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(f"{name} must be valid JSON for native signing metadata: {exc}")
+            continue
+        if not isinstance(payload, list) or not payload:
+            errors.append(f"{name} must contain a non-empty native manifest list")
+            continue
+        platform = "Windows" if "-windows-" in name else "macOS"
+        for index, item in enumerate(payload):
+            label = f"{name} entry {index}"
+            if not isinstance(item, dict):
+                errors.append(f"{label} must be an object")
+                continue
+            signing = item.get("signing")
+            if not isinstance(signing, dict):
+                errors.append(f"{label} must include signing metadata")
+                continue
+            expected = {
+                "release_channel": native_release_channel,
+                "production_trusted": expected_production,
+            }
+            if platform == "Windows":
+                expected.update(
+                    {
+                        "authenticode_verified": expected_production,
+                        "timestamped": expected_production,
+                    }
+                )
+            else:
+                expected.update(
+                    {
+                        "developer_id_verified": expected_production,
+                        "notarized": expected_production,
+                        "stapled": expected_production,
+                    }
+                )
+            for key, value in expected.items():
+                if signing.get(key) != value:
+                    errors.append(f"{label} signing.{key} must be {value!r}")
     return errors
 
 
@@ -1115,6 +1489,15 @@ def expected_release_assets(matrix: dict[str, Any], *, tag: str | None = None) -
     return assets
 
 
+def expected_source_release_assets(matrix: dict[str, Any], *, tag: str | None = None) -> set[str]:
+    version = version_from_tag(tag or matrix_tag(matrix))
+    source = matrix["default_github_release"]["source_and_python"]
+    return {
+        normalize_version(str(item), version)
+        for item in [*source["artifacts"], *source["target_bundles"]]
+    }
+
+
 def check_checksum_sidecars(root: object, expected: set[str]) -> list[str]:
     root_errors, root_path = path_arg_value(root, "release asset directory")
     if root_errors:
@@ -1262,6 +1645,100 @@ def check_release_manifest(root: object, matrix: dict[str, Any], *, tag: str | N
                 errors.append(f"{manifest_name} artifact {filename} size_bytes does not match release asset")
             if digest_is_valid and digest != sha256_file(artifact_path):
                 errors.append(f"{manifest_name} artifact {filename} sha256 does not match release asset")
+    errors.extend(check_source_python_sbom(root_path, matrix, tag=tag))
+    return errors
+
+
+def check_source_python_sbom(
+    root_path: Path, matrix: dict[str, Any], *, tag: str | None
+) -> list[str]:
+    version = version_from_tag(tag or matrix_tag(matrix))
+    filename = f"remote-ops-workspace-v{version}-sbom.cdx.json"
+    path = root_path / filename
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return [f"{filename} missing from release assets"]
+    except json.JSONDecodeError as exc:
+        return [f"{filename} is not valid JSON: {exc}"]
+    if not isinstance(payload, dict):
+        return [f"{filename} must contain a JSON object"]
+
+    errors: list[str] = []
+    if payload.get("bomFormat") != "CycloneDX":
+        errors.append(f"{filename} bomFormat must be CycloneDX")
+    if payload.get("specVersion") != "1.5":
+        errors.append(f"{filename} specVersion must be 1.5")
+    if payload.get("version") != 1:
+        errors.append(f"{filename} document version must be 1")
+    serial = payload.get("serialNumber")
+    if not isinstance(serial, str) or not serial.startswith("urn:uuid:"):
+        errors.append(f"{filename} serialNumber must be a UUID URN")
+    else:
+        try:
+            uuid.UUID(serial.removeprefix("urn:uuid:"))
+        except ValueError:
+            errors.append(f"{filename} serialNumber must be a UUID URN")
+
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return [*errors, f"{filename} metadata must be an object"]
+    timestamp = metadata.get("timestamp")
+    if not isinstance(timestamp, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", timestamp):
+        errors.append(f"{filename} metadata timestamp must be an RFC 3339 UTC second timestamp")
+    component = metadata.get("component")
+    expected_purl = f"pkg:pypi/remote-ops-workspace@{version}"
+    if not isinstance(component, dict):
+        errors.append(f"{filename} metadata component must be an object")
+    elif component != {
+        "type": "application",
+        "bom-ref": expected_purl,
+        "name": "remote-ops-workspace",
+        "version": version,
+        "purl": expected_purl,
+    }:
+        errors.append(f"{filename} metadata component must identify the released application")
+    properties = metadata.get("properties")
+    if not isinstance(properties, list) or not any(
+        item == {"name": "row:sbom-scope", "value": SOURCE_PYTHON_SBOM_SCOPE}
+        for item in properties
+    ):
+        errors.append(f"{filename} metadata properties must declare the source/Python environment scope")
+    if not isinstance(properties, list) or not any(
+        isinstance(item, dict)
+        and item.get("name") == "row:source-date-epoch"
+        and isinstance(item.get("value"), str)
+        and item["value"].isdigit()
+        for item in properties
+    ):
+        errors.append(f"{filename} metadata properties must declare SOURCE_DATE_EPOCH")
+
+    components = payload.get("components")
+    if not isinstance(components, list) or not components:
+        return [*errors, f"{filename} components must be a non-empty list"]
+    if components != sorted(
+        components,
+        key=lambda item: (str(item.get("name", "")).casefold(), str(item.get("version", "")))
+        if isinstance(item, dict)
+        else ("", ""),
+    ):
+        errors.append(f"{filename} components must be deterministically sorted")
+    seen_refs: set[str] = set()
+    for item in components:
+        if not isinstance(item, dict):
+            errors.append(f"{filename} component entries must be objects")
+            continue
+        name = item.get("name")
+        component_version = item.get("version")
+        purl = item.get("purl")
+        if item.get("type") != "library" or not isinstance(name, str) or not name.strip() or not isinstance(component_version, str) or not component_version.strip():
+            errors.append(f"{filename} components must declare non-empty library names and versions")
+        if not isinstance(purl, str) or not purl.startswith("pkg:pypi/") or item.get("bom-ref") != purl:
+            errors.append(f"{filename} components must use matching PyPI purl and bom-ref values")
+            continue
+        if purl in seen_refs:
+            errors.append(f"{filename} components must not repeat a bom-ref")
+        seen_refs.add(purl)
     return errors
 
 

@@ -433,6 +433,14 @@ $PortableInstallCommand = if ($BuildGuiLauncher) {
 }
 $PortableNotes = @("Standalone PyInstaller CLI executable plus docs.", "Built for Windows $Arch.")
 $InstallerNotes = @("Authenticode-signing is mandatory for release workflow artifacts.", "Built for Windows $Arch.")
+$ReleaseSigningEnabled = $env:ROW_REQUIRE_RELEASE_SIGNING -eq "1"
+$ReleaseChannel = if ($ReleaseSigningEnabled) { "production-signed" } else { "unsigned-preview" }
+$SigningMetadata = @{
+  release_channel = $ReleaseChannel
+  production_trusted = $ReleaseSigningEnabled
+  authenticode_verified = $ReleaseSigningEnabled
+  timestamped = $ReleaseSigningEnabled
+}
 $PortableEntrypoints = @{
   cli = "bin\row.exe"
 }
@@ -457,6 +465,7 @@ $Manifest = @(
     format = "zip"
     install_command = $PortableInstallCommand
     portable_entrypoints = $PortableEntrypoints
+    signing = $SigningMetadata
     notes = $PortableNotes
   },
   @{
@@ -467,6 +476,7 @@ $Manifest = @(
     file = (To-RepoPath $SetupExe)
     format = "exe"
     install_command = "Run the installer interactively or with Inno Setup silent flags."
+    signing = $SigningMetadata
     notes = $InstallerNotes
   },
   @{
@@ -477,6 +487,7 @@ $Manifest = @(
     file = (To-RepoPath $Msi)
     format = "msi"
     install_command = "msiexec /i $(Split-Path -Leaf $Msi)"
+    signing = $SigningMetadata
     notes = $InstallerNotes
   }
 )

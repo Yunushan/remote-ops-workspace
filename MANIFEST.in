@@ -1,0 +1,6 @@
+include configs/feature_manifest.json
+include configs/platform_targets.json
+include configs/platform_verified_evidence.json
+include configs/platform_parity_promotion.json
+include configs/xp_native_evidence_contract.json
+recursive-include apps/web *.css *.html *.js *.json

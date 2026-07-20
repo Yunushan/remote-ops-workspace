@@ -9,6 +9,22 @@ def test_release_toolchain_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_release_toolchain_checker_requires_pinned_python_build_backend() -> None:
+    checker = _load_release_toolchain_checker()
+    toolchain = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8").replace(
+        'requires = ["setuptools==83.0.0", "wheel==0.47.0"]',
+        'requires = ["setuptools>=77", "wheel"]',
+    )
+
+    errors = checker.check_python_build_backend(toolchain, pyproject)
+
+    assert errors == [
+        "pyproject.toml build-system.requires must pin setuptools and wheel to "
+        "configs/release_toolchain.json"
+    ]
+
+
 def test_release_constraints_match_manifest() -> None:
     manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
     expected = {

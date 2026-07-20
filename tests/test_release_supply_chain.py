@@ -1,9 +1,11 @@
 import importlib.util
+import io
 import json
 import sys
 import tarfile
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def load_make_release():
@@ -115,6 +117,152 @@ def test_manifest_and_checksum_file_include_artifact_integrity(tmp_path: Path) -
     assert len(manifest["artifacts"][0]["sha256"]) == 64
     assert "asset.txt" in checksums
     assert "release-manifest.json" in checksums
+
+
+def test_release_manifest_uses_canonical_asset_paths_for_custom_dist(tmp_path: Path) -> None:
+    make_release = load_make_release()
+    old_root = make_release.ROOT
+    make_release.ROOT = tmp_path
+    try:
+        dist = tmp_path / "dist" / "release-smoke"
+        dist.mkdir(parents=True)
+        asset = dist / "asset.txt"
+        asset.write_text("payload", encoding="utf-8")
+        artifact = make_release.artifact_record(
+            phase="test",
+            target="asset",
+            label="Asset",
+            path=asset,
+            format="txt",
+            install_command="cat asset.txt",
+            notes=[],
+        )
+        manifest_rel = make_release.write_manifest("1.2.3", [artifact], dist)
+        checksum_rel = make_release.write_checksums("1.2.3", [artifact], tmp_path / manifest_rel, dist)
+    finally:
+        make_release.ROOT = old_root
+
+    manifest = json.loads((tmp_path / manifest_rel).read_text(encoding="utf-8"))
+    checksums = (tmp_path / checksum_rel).read_text(encoding="utf-8")
+    assert manifest["artifacts"][0]["file"] == "dist/asset.txt"
+    assert checksums == f"{make_release.sha256_file(asset)}  asset.txt\n{make_release.sha256_file(tmp_path / manifest_rel)}  remote-ops-workspace-v1.2.3-release-manifest.json\n"
+
+
+def test_python_package_build_receives_source_date_epoch(monkeypatch, tmp_path: Path) -> None:
+    make_release = load_make_release()
+    old_root = make_release.ROOT
+    make_release.ROOT = tmp_path
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "1704067200")
+
+    def fake_run(command, *, cwd, env, check) -> None:
+        assert command[:4] == [make_release.sys.executable, "-m", "build", "--no-isolation"]
+        assert command[-1] == str(tmp_path)
+        assert cwd == tmp_path.parent
+        assert check is True
+        assert env["SOURCE_DATE_EPOCH"] == "1704067200"
+        outdir = Path(command[command.index("--outdir") + 1])
+        (outdir / "remote_ops_workspace-1.2.3-py3-none-any.whl").write_bytes(b"wheel")
+        _write_sdist(
+            outdir / "remote_ops_workspace-1.2.3.tar.gz",
+            ["remote_ops_workspace-1.2.3/PKG-INFO"],
+            mtime=1_700_000_000,
+        )
+
+    monkeypatch.setattr(make_release.subprocess, "run", fake_run)
+    try:
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        artifacts = make_release.build_python_package("1.2.3", dist)
+    finally:
+        make_release.ROOT = old_root
+
+    assert [artifact["file"] for artifact in artifacts] == [
+        "dist/remote_ops_workspace-1.2.3-py3-none-any.whl",
+        "dist/remote_ops_workspace-1.2.3.tar.gz",
+    ]
+
+
+def test_python_sdist_normalization_is_deterministic(tmp_path: Path) -> None:
+    make_release = load_make_release()
+    sdist = tmp_path / "remote_ops_workspace-1.2.3.tar.gz"
+
+    _write_sdist(sdist, ["package/b.txt", "package/a.txt"], mtime=1_700_000_000)
+    make_release.normalize_python_sdist(sdist)
+    first = sdist.read_bytes()
+
+    _write_sdist(sdist, ["package/a.txt", "package/b.txt"], mtime=1_710_000_000)
+    make_release.normalize_python_sdist(sdist)
+    second = sdist.read_bytes()
+
+    assert first == second
+    with tarfile.open(sdist, "r:gz") as archive:
+        assert archive.getnames() == ["package/a.txt", "package/b.txt"]
+        assert all(member.mtime == make_release.DEFAULT_SOURCE_DATE_EPOCH for member in archive)
+        assert all(member.uid == 0 and member.gid == 0 for member in archive)
+
+
+def _write_sdist(path: Path, names: list[str], *, mtime: int) -> None:
+    with tarfile.open(path, "w:gz") as archive:
+        for name in names:
+            payload = name.encode("utf-8")
+            member = tarfile.TarInfo(name)
+            member.size = len(payload)
+            member.mtime = mtime
+            member.uid = 123
+            member.gid = 456
+            member.uname = "builder"
+            member.gname = "builders"
+            archive.addfile(member, io.BytesIO(payload))
+
+
+def test_source_python_release_environment_sbom_is_deterministic(
+    monkeypatch, tmp_path: Path
+) -> None:
+    make_release = load_make_release()
+    monkeypatch.setattr(
+        make_release.importlib.metadata,
+        "distributions",
+        lambda: [
+            SimpleNamespace(metadata={"Name": "Example_Dep"}, version="1.2.3"),
+            SimpleNamespace(metadata={"Name": "Another.Package"}, version="4.5.6"),
+        ],
+    )
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "1704067200")
+    old_root = make_release.ROOT
+    make_release.ROOT = tmp_path
+    try:
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        artifact = make_release.build_release_environment_sbom("1.2.3", dist)
+        first = (dist / "remote-ops-workspace-v1.2.3-sbom.cdx.json").read_text(encoding="utf-8")
+        make_release.build_release_environment_sbom("1.2.3", dist)
+        second = (dist / "remote-ops-workspace-v1.2.3-sbom.cdx.json").read_text(encoding="utf-8")
+    finally:
+        make_release.ROOT = old_root
+
+    payload = json.loads(first)
+    assert first == second
+    assert artifact["file"] == "dist/remote-ops-workspace-v1.2.3-sbom.cdx.json"
+    assert artifact["format"] == "cyclonedx-json"
+    assert payload["bomFormat"] == "CycloneDX"
+    assert payload["specVersion"] == "1.5"
+    assert payload["metadata"]["timestamp"] == "2024-01-01T00:00:00Z"
+    assert payload["components"] == [
+        {
+            "bom-ref": "pkg:pypi/another-package@4.5.6",
+            "name": "Another.Package",
+            "purl": "pkg:pypi/another-package@4.5.6",
+            "type": "library",
+            "version": "4.5.6",
+        },
+        {
+            "bom-ref": "pkg:pypi/example-dep@1.2.3",
+            "name": "Example_Dep",
+            "purl": "pkg:pypi/example-dep@1.2.3",
+            "type": "library",
+            "version": "1.2.3",
+        },
+    ]
 
 
 def test_release_archive_metadata_is_deterministic(tmp_path: Path) -> None:

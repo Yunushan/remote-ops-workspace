@@ -5,7 +5,7 @@ only when the artifact is real, reproducible, and documented.
 
 Release integrity rules:
 
-- Release tags must match `pyproject.toml` exactly, for example `v1.0.11`.
+- Release tags must match `pyproject.toml` exactly, for example `v1.0.12`.
 - Pushing a `vX.Y.Z` tag automatically builds, smoke-tests and publishes the
   standard source, Windows, macOS and Linux native assets. The tag must resolve
   to a commit reachable from the trusted default branch. The default core-release
@@ -14,10 +14,13 @@ Release integrity rules:
   `release_tag=vX.Y.Z` and `include_protected_platform_evidence=true`; that
   opt-in lane requires the four evidence workflows, finalized accepted records
   and exact evidence assets before it can attach anything to the existing release.
-- Source/install bundles are built with deterministic archive metadata using
-  `SOURCE_DATE_EPOCH` or a fixed default.
+- Source/install bundles and the Python wheel/sdist backend receive deterministic
+  archive metadata through `SOURCE_DATE_EPOCH` or a fixed default.
 - Python release build dependencies are constrained by `requirements-release.txt`
   and mirrored in `configs/release_toolchain.json`.
+- The PEP 517 `build-system` pins `setuptools` and `wheel` to that same
+  release toolchain, so downstream sdist builds do not silently select newer
+  packaging backends.
 - Modern release targets retain `cryptography==49.0.0`. Windows x86 and Intel
   macOS use the explicit `requirements-release-compat.txt` profile with
   `cryptography==48.0.1`, the latest release that still publishes the required
@@ -31,6 +34,25 @@ Release integrity rules:
 - The GitHub release workflow avoids unbounded `pip install --upgrade` commands.
 - Every artifact entry in release manifests includes `size_bytes` and `sha256`.
 - Release manifests record the release toolchain contract used for the build.
+- The source/Python release environment emits
+  `remote-ops-workspace-v<version>-sbom.cdx.json`, a deterministic CycloneDX
+  1.5 inventory. It covers the pinned environment used to build the source and
+  Python assets; native packages retain their own manifests, signing state,
+  checksums and provenance attestations.
+- Before its artifact upload, the source/Python job runs
+  `check_release_publish_assets.py --source-assets-only` against its actual
+  output. This validates the wheel, sdist, source bundles, SBOM, release
+  manifest, and checksum sidecar before the separate native jobs are merged.
+- The same job creates a clean virtual environment, installs the generated
+  wheel without dependencies, and runs both the packaged `row` entry point and
+  `features --coverage`. This catches missing wheel resources before upload.
+- It also installs the generated sdist without dependency resolution into an
+  isolated target directory and runs `features --coverage` from outside the
+  repository. This proves the source archive carries the runtime configuration
+  used by a downstream source build.
+- Finally, it extracts and installs the portable source ZIP into a separate
+  target directory before running the same report outside the checkout. This
+  keeps the contributor/deployment bundle executable as well as complete.
 - The source/Python release job also emits
   `remote-ops-workspace-v<version>-SHA256SUMS.txt` covering every generated
   artifact plus the release manifest.
@@ -159,8 +181,9 @@ and `docs/PLATFORM_SUPPORT.md`.
 
 The default GitHub release workflow publishes:
 
-- Python wheel, Python sdist, target source/install bundles, the release
-  manifest and `remote-ops-workspace-v1.0.11-SHA256SUMS.txt`;
+- Python wheel, Python sdist, a source/Python-environment CycloneDX SBOM,
+  target source/install bundles, the release manifest and
+  `remote-ops-workspace-v1.0.12-SHA256SUMS.txt`;
 - Windows native `x86`, `x64` and `arm64` artifacts;
 - macOS native `x64` and `arm64` artifacts;
 - Linux native `x86_64`/`amd64` and `aarch64`/`arm64` artifacts.
@@ -477,12 +500,12 @@ Status: active.
 
 Release assets:
 
-- `remote_ops_workspace-1.0.11-py3-none-any.whl`
-- `remote_ops_workspace-1.0.11.tar.gz`
+- `remote_ops_workspace-1.0.12-py3-none-any.whl`
+- `remote_ops_workspace-1.0.12.tar.gz`
 - target source/install bundles for Windows, Linux, macOS, BSD, Solaris,
   Android/Termux, and Web/PWA
-- `remote-ops-workspace-v1.0.11-release-manifest.json`
-- `remote-ops-workspace-v1.0.11-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.12-release-manifest.json`
+- `remote-ops-workspace-v1.0.12-SHA256SUMS.txt`
 
 Purpose:
 
@@ -497,11 +520,11 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.11-windows-<x86|x64|arm64>-setup.exe`
-- `remote-ops-workspace-v1.0.11-windows-<x86|x64|arm64>.msi`
-- `remote-ops-workspace-v1.0.11-windows-<x86|x64|arm64>-native.zip`
-- `remote-ops-workspace-v1.0.11-windows-<x86|x64|arm64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.11-windows-<x86|x64|arm64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.12-windows-<x86|x64|arm64>-setup.exe`
+- `remote-ops-workspace-v1.0.12-windows-<x86|x64|arm64>.msi`
+- `remote-ops-workspace-v1.0.12-windows-<x86|x64|arm64>-native.zip`
+- `remote-ops-workspace-v1.0.12-windows-<x86|x64|arm64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.12-windows-<x86|x64|arm64>-native-SHA256SUMS.txt`
 
 Implementation:
 
@@ -534,10 +557,10 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.11-macos-<x64|arm64>.dmg`
-- `remote-ops-workspace-v1.0.11-macos-<x64|arm64>.pkg`
-- `remote-ops-workspace-v1.0.11-macos-<x64|arm64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.11-macos-<x64|arm64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.12-macos-<x64|arm64>.dmg`
+- `remote-ops-workspace-v1.0.12-macos-<x64|arm64>.pkg`
+- `remote-ops-workspace-v1.0.12-macos-<x64|arm64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.12-macos-<x64|arm64>-native-SHA256SUMS.txt`
 
 Implementation:
 
@@ -558,12 +581,12 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.11-linux-<amd64|arm64>.deb`
-- `remote-ops-workspace-v1.0.11-linux-<x86_64|aarch64>.rpm`
-- `remote-ops-workspace-v1.0.11-linux-<x86_64|aarch64>.AppImage`
-- `remote-ops-workspace-v1.0.11-linux-<x86_64|aarch64>-native.tar.gz`
-- `remote-ops-workspace-v1.0.11-linux-<x86_64|aarch64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.11-linux-<x86_64|aarch64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.12-linux-<amd64|arm64>.deb`
+- `remote-ops-workspace-v1.0.12-linux-<x86_64|aarch64>.rpm`
+- `remote-ops-workspace-v1.0.12-linux-<x86_64|aarch64>.AppImage`
+- `remote-ops-workspace-v1.0.12-linux-<x86_64|aarch64>-native.tar.gz`
+- `remote-ops-workspace-v1.0.12-linux-<x86_64|aarch64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.12-linux-<x86_64|aarch64>-native-SHA256SUMS.txt`
 
 Implementation:
 

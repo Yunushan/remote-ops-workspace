@@ -49,6 +49,35 @@ the Python build tooling from `requirements-release.txt` and disables isolated
 build-backend resolution. Review and pin any new action, container base image,
 or image-build dependency before adding it to production automation.
 
+Before uploading a GitHub Release, the workflow creates a pinned
+Sigstore/SLSA provenance attestation for every validated `release-assets` file.
+The core and protected-promotion publish jobs receive only the attestation,
+artifact-metadata, OIDC, release-write, and Actions-read permissions needed for
+that operation. Consumers should verify a promoted release's GitHub
+attestation as well as its installer signatures and SHA-256 checksums.
+
+After downloading a release asset, verify its build provenance against the
+specific release workflow before deployment:
+
+```sh
+gh attestation verify ./remote-ops-workspace-v<version>-linux-x86_64.AppImage \
+  --repo Yunushan/remote-ops-workspace \
+  --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/release.yml
+```
+
+Use the matching local filename for any Windows, macOS, Linux, source, or
+protected-platform asset. The command verifies the artifact digest, GitHub
+repository identity, OIDC issuer, and SLSA provenance predicate; it does not
+replace native installer signature verification or the SHA-256 sidecar check.
+
+The source/Python release also includes
+`remote-ops-workspace-v<version>-sbom.cdx.json`, a deterministic CycloneDX 1.5
+inventory of the pinned environment that built the source and Python assets.
+It is covered by the release manifest, SHA-256 sidecar, and GitHub attestation.
+Its scope is deliberately limited to that source/Python environment; inspect
+each native artifact's manifest, signature state, checksums, and provenance
+attestation separately before deployment.
+
 The repository-policy CI job also runs `pip-audit --strict` against the exact
 release dependency pins. It uses the system trust store, so inspection remains
 reliable on managed networks that add a trusted TLS interception certificate.
@@ -66,6 +95,14 @@ Tag-triggered releases fail before building any partial asset set unless both
 the Windows signing and macOS signing/notarization secret sets are available in
 the protected `release` environment. This prevents a successful-looking tag
 run that silently omits signed desktop installers or a GitHub Release.
+
+Each Windows and macOS native manifest records whether its artifacts are a
+`production-signed` release or an `unsigned-preview`. The publish gate checks
+that metadata against the preflight release channel before upload. A
+production-signed Windows manifest must report verified, timestamped
+Authenticode; a production-signed macOS manifest must report verified Developer
+ID signing, notarization, and stapling. Preview metadata is deliberately not
+promotion evidence.
 
 `.github/workflows/codeql.yml` scans the Python application and
 JavaScript/TypeScript Web/PWA sources on main-branch changes, pull requests,

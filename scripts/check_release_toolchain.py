@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TOOLCHAIN_PATH = ROOT / "configs" / "release_toolchain.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
+PYPROJECT_PATH = ROOT / "pyproject.toml"
 PIN_RE = re.compile(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9][A-Za-z0-9_.!+-]*)$")
 
 
@@ -16,6 +17,7 @@ def main() -> int:
     toolchain = load_toolchain(errors)
     if toolchain:
         errors.extend(check_python_constraints(toolchain))
+        errors.extend(check_python_build_backend(toolchain))
         errors.extend(check_workflow(toolchain))
         errors.extend(check_release_helper(toolchain))
         errors.extend(check_linux_appimagetool_script())
@@ -99,6 +101,33 @@ def check_python_constraints(toolchain: dict[str, object]) -> list[str]:
                 f"{profile_file} pins must match compatibility profile {name} "
                 f"(expected {profile_expected}, got {profile_actual})"
             )
+    return errors
+
+
+def check_python_build_backend(
+    toolchain: dict[str, object], pyproject_text: str | None = None
+) -> list[str]:
+    errors: list[str] = []
+    package_rows = required_list(toolchain, "python_packages", errors)
+    versions = {
+        normalize_package_name(str(row.get("name", ""))): str(row.get("version", ""))
+        for row in package_rows
+        if isinstance(row, dict)
+    }
+    setuptools_version = versions.get("setuptools")
+    wheel_version = versions.get("wheel")
+    if not setuptools_version or not wheel_version:
+        errors.append("release toolchain must pin setuptools and wheel for the Python build backend")
+        return errors
+    pyproject = pyproject_text if pyproject_text is not None else PYPROJECT_PATH.read_text(encoding="utf-8")
+    expected = f'requires = ["setuptools=={setuptools_version}", "wheel=={wheel_version}"]'
+    if expected not in pyproject:
+        errors.append(
+            "pyproject.toml build-system.requires must pin setuptools and wheel to "
+            "configs/release_toolchain.json"
+        )
+    if 'build-backend = "setuptools.build_meta"' not in pyproject:
+        errors.append("pyproject.toml must use the setuptools.build_meta PEP 517 backend")
     return errors
 
 
@@ -199,6 +228,7 @@ def check_workflow(
 def check_release_helper(toolchain: dict[str, object]) -> list[str]:
     errors: list[str] = []
     helper = (ROOT / "scripts" / "make_release.py").read_text(encoding="utf-8")
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     python = required_mapping(toolchain, "python", errors)
     if not python:
         return errors
@@ -207,14 +237,29 @@ def check_release_helper(toolchain: dict[str, object]) -> list[str]:
         errors.append(f"make_release.py default SOURCE_DATE_EPOCH must be {source_date_epoch}")
     if "release_toolchain_metadata()" not in helper:
         errors.append("make_release.py manifest must include release_toolchain_metadata()")
+    if 'build_env.setdefault("SOURCE_DATE_EPOCH", str(source_date_epoch()))' not in helper:
+        errors.append("make_release.py must pass SOURCE_DATE_EPOCH into the Python package build")
+    if "normalize_python_sdist(sdist)" not in helper:
+        errors.append("make_release.py must normalize Python sdist archive metadata")
+    if "build_release_environment_sbom" not in helper or "importlib.metadata.distributions()" not in helper:
+        errors.append(
+            "make_release.py must generate a source/Python release-environment CycloneDX SBOM"
+        )
     if '"requirements-release.txt"' not in helper:
         errors.append("source release bundles must include requirements-release.txt")
+    for packaging_file in ("MANIFEST.in", "setup.py"):
+        if f'"{packaging_file}"' not in helper:
+            errors.append(f"source release bundles must include {packaging_file}")
     for row in required_list(python, "compatibility_profiles", errors):
         if not isinstance(row, dict):
             continue
         constraints_file = str(row.get("constraints_file", ""))
         if constraints_file and f'"{constraints_file}"' not in helper:
             errors.append(f"source release bundles must include {constraints_file}")
+    if '".[desktop,security,package]"' not in workflow:
+        errors.append(
+            "release workflow must install the source/Python release environment before SBOM generation"
+        )
     return errors
 
 

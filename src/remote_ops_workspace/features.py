@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from .paths import repo_root
+from .paths import runtime_config_path
 
 DEFAULT_FEATURE_FAMILY_STATUS_WEIGHTS: dict[str, float] = {
     "implemented": 1.0,
@@ -523,7 +523,7 @@ GITHUB_ACTIONS_RUN_RE = re.compile(rf"^https://github\.com/({GITHUB_REPOSITORY_R
 
 
 def feature_manifest_path() -> Path:
-    return repo_root() / "configs" / "feature_manifest.json"
+    return runtime_config_path("feature_manifest.json")
 
 
 def load_feature_manifest(path: Path | None = None) -> dict[str, Any]:
@@ -1056,7 +1056,7 @@ def _platform_verified_readiness(
     platform_data: dict[str, Any] | None = None,
     evidence_registry: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    path = repo_root() / "configs" / "platform_targets.json"
+    path = runtime_config_path("platform_targets.json")
     evidence_data = (
         evidence_registry
         if evidence_registry is not None
@@ -1229,7 +1229,7 @@ def _legacy_windows_verified_scope(
 
 
 def _platform_verified_evidence_registry() -> dict[str, Any]:
-    path = repo_root() / "configs" / "platform_verified_evidence.json"
+    path = runtime_config_path("platform_verified_evidence.json")
     if not path.exists():
         return {"schema_version": 1, "accepted_evidence": []}
     try:
@@ -1240,7 +1240,7 @@ def _platform_verified_evidence_registry() -> dict[str, Any]:
 
 
 def _promotion_config_sha256() -> str:
-    path = repo_root() / "configs" / "platform_parity_promotion.json"
+    path = runtime_config_path("platform_parity_promotion.json")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -1251,7 +1251,7 @@ def _promotion_config_sha256() -> str:
 
 
 def _xp_native_evidence_contract_sha256() -> str:
-    path = repo_root() / "configs" / "xp_native_evidence_contract.json"
+    path = runtime_config_path("xp_native_evidence_contract.json")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -1630,7 +1630,7 @@ def _protected_platform_remote_release_audit_command(release_tag: str, repositor
 
 
 def _platform_parity_promotion_config() -> dict[str, Any]:
-    path = repo_root() / "configs" / "platform_parity_promotion.json"
+    path = runtime_config_path("platform_parity_promotion.json")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):

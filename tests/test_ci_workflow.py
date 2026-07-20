@@ -159,6 +159,30 @@ def test_ci_workflow_requires_mobile_web_pwa_contract_job() -> None:
     assert "ci workflow missing mobile-web job for Android/iOS Web/PWA contract" in errors
 
 
+def test_ci_workflow_requires_live_web_container_smoke_job() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "  web-container:",
+        "  web_container_disabled:",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci workflow missing web-container job for live Web/PWA container smoke" in errors
+
+
+def test_ci_workflow_requires_writable_non_root_web_data_volume() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("writable non-root data-volume smoke" in error for error in errors)
+
+
 def test_ci_workflow_requires_android_emulator_web_job() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

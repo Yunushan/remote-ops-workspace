@@ -160,7 +160,7 @@ if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" == "1" ]]; then
   xcrun stapler staple "$DMG"
 fi
 
-"$PYTHON_BIN" - "$ROOT" "$VERSION" "$DMG" "$PKG" "$ARTIFACT_ARCH" "$OUT_DIR" <<'PY'
+"$PYTHON_BIN" - "$ROOT" "$VERSION" "$DMG" "$PKG" "$ARTIFACT_ARCH" "$OUT_DIR" "${ROW_REQUIRE_RELEASE_SIGNING:-0}" <<'PY'
 from __future__ import annotations
 
 import hashlib
@@ -174,6 +174,14 @@ dmg = Path(sys.argv[3])
 pkg = Path(sys.argv[4])
 arch = sys.argv[5]
 out_dir = Path(sys.argv[6])
+production_signing = sys.argv[7] == "1"
+signing = {
+    "release_channel": "production-signed" if production_signing else "unsigned-preview",
+    "production_trusted": production_signing,
+    "developer_id_verified": production_signing,
+    "notarized": production_signing,
+    "stapled": production_signing,
+}
 
 def repo_path(path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
@@ -203,10 +211,12 @@ manifest = [
         "file": repo_path(dmg),
         "format": "dmg",
         "install_command": "Open the DMG and drag the app to Applications.",
-        "notes": [
-            "Ad-hoc signed PyInstaller app bundle for the PyQt6 desktop UI.",
-            "Developer ID signing and notarization should be added for production distribution.",
-        ],
+        "signing": signing,
+        "notes": (
+            ["Developer ID signed, notarized, and stapled PyInstaller app bundle."]
+            if production_signing
+            else ["Ad-hoc signed PyInstaller app bundle; not trusted for production distribution."]
+        ),
     },
     {
         "phase": "phase-3-macos-native",
@@ -215,10 +225,12 @@ manifest = [
         "file": repo_path(pkg),
         "format": "pkg",
         "install_command": f"sudo installer -pkg {pkg.name} -target /",
-        "notes": [
-            "Installer package for managed macOS deployment.",
-            "Unsigned CI artifact; production distribution should add signing and notarization.",
-        ],
+        "signing": signing,
+        "notes": (
+            ["Developer ID signed, notarized, and stapled installer for managed deployment."]
+            if production_signing
+            else ["Unsigned preview installer; not trusted for production distribution."]
+        ),
     },
 ]
 

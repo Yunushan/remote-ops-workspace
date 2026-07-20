@@ -42,6 +42,32 @@ def test_container_base_images_require_no_build_isolation() -> None:
     assert any("install the application with --no-build-isolation" in error for error in errors)
 
 
+def test_container_base_images_require_loopback_compose_hardening() -> None:
+    checker = _load_checker()
+    compose = Path("docker/compose.yaml").read_text(encoding="utf-8").replace(
+        '"127.0.0.1:8765:8765"',
+        '"8765:8765"',
+    )
+
+    errors = checker.check_compose_hardening(compose)
+
+    assert any("loopback-only published port" in error for error in errors)
+
+
+def test_container_base_images_require_runtime_config_build_context() -> None:
+    checker = _load_checker()
+    dockerignore = Path(".dockerignore").read_text(encoding="utf-8").replace(
+        "!configs/platform_targets.json\n",
+        "",
+    )
+
+    errors = checker.check_docker_build_context(dockerignore)
+
+    assert errors == [
+        ".dockerignore must allow required Web/PWA build input: !configs/platform_targets.json"
+    ]
+
+
 def _load_checker():
     path = Path("scripts/check_container_base_images.py")
     spec = importlib.util.spec_from_file_location("container_base_images", path)

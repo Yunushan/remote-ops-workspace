@@ -2,8 +2,15 @@
 # protect Docker build contexts, so private ROW data must never be sent to Docker.
 *
 !pyproject.toml
+!setup.py
 !requirements-release.txt
 !README.md
+!configs/
+!configs/feature_manifest.json
+!configs/platform_targets.json
+!configs/platform_verified_evidence.json
+!configs/platform_parity_promotion.json
+!configs/xp_native_evidence_contract.json
 !src/
 !src/**
 !apps/

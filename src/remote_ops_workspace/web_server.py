@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from . import command_safety as safe
 from .enterprise_policy import load_enterprise_policy
 from .models import Profile
-from .paths import repo_root
+from .paths import runtime_web_dir
 from .storage import ProfileStore
 
 SECURITY_HEADERS = {
@@ -257,7 +257,7 @@ def serve_web(
 ) -> None:
     host = validate_web_bind(host, allow_public_bind=allow_public_bind)
     port = safe.port(port, "web port")
-    web_dir = directory or (repo_root() / "apps" / "web")
+    web_dir = directory or runtime_web_dir()
     web_dir = web_dir.resolve()
     if not web_dir.exists() or not web_dir.is_dir():
         raise ValueError(f"web directory does not exist: {web_dir}")

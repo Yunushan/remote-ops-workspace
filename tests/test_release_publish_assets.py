@@ -3,10 +3,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib.util
+import io
 import json
 import shutil
 import sys
+import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 
 POLICY = (
@@ -112,7 +115,7 @@ def test_release_publish_asset_checker_passes_current_tree() -> None:
 def test_release_publish_asset_checker_requires_strict_platform_goal_assets_dir() -> None:
     checker = _load_checker()
 
-    assert checker.main(["--require-platform-goal-targets", "--tag", "v1.0.11"]) == 2
+    assert checker.main(["--require-platform-goal-targets", "--tag", "v1.0.12"]) == 2
 
 
 def test_release_publish_asset_checker_requires_strict_platform_goal_tag(tmp_path: Path) -> None:
@@ -121,19 +124,72 @@ def test_release_publish_asset_checker_requires_strict_platform_goal_tag(tmp_pat
     assert checker.main(["--require-platform-goal-targets", "--assets-dir", str(tmp_path)]) == 2
 
 
+def test_native_manifest_signing_metadata_requires_production_truth(tmp_path: Path) -> None:
+    checker = _load_checker()
+    manifests = {
+        "remote-ops-workspace-v1.0.12-windows-x64-native-manifest.json": [
+            {
+                "signing": {
+                    "release_channel": "production-signed",
+                    "production_trusted": True,
+                    "authenticode_verified": True,
+                    "timestamped": True,
+                }
+            }
+        ],
+        "remote-ops-workspace-v1.0.12-macos-arm64-native-manifest.json": [
+            {
+                "signing": {
+                    "release_channel": "production-signed",
+                    "production_trusted": True,
+                    "developer_id_verified": True,
+                    "notarized": True,
+                    "stapled": True,
+                }
+            }
+        ],
+    }
+    for name, payload in manifests.items():
+        (tmp_path / name).write_text(json.dumps(payload), encoding="utf-8")
+
+    assert (
+        checker.check_native_release_signing_metadata(
+            tmp_path,
+            set(manifests),
+            native_release_channel="production-signed",
+        )
+        == []
+    )
+
+    manifests["remote-ops-workspace-v1.0.12-windows-x64-native-manifest.json"][0]["signing"][
+        "timestamped"
+    ] = False
+    (tmp_path / "remote-ops-workspace-v1.0.12-windows-x64-native-manifest.json").write_text(
+        json.dumps(manifests["remote-ops-workspace-v1.0.12-windows-x64-native-manifest.json"]),
+        encoding="utf-8",
+    )
+    errors = checker.check_native_release_signing_metadata(
+        tmp_path,
+        set(manifests),
+        native_release_channel="production-signed",
+    )
+
+    assert "signing.timestamped must be True" in errors[0]
+
+
 def test_expected_release_assets_expand_default_matrix() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
 
     assets = checker.expected_release_assets(matrix)
 
-    assert "remote_ops_workspace-1.0.11-py3-none-any.whl" in assets
-    assert "remote-ops-workspace-v1.0.11-windows-x86-setup.exe" in assets
-    assert "remote-ops-workspace-v1.0.11-macos-arm64.pkg" in assets
-    assert "remote-ops-workspace-v1.0.11-linux-amd64.deb" in assets
-    assert "remote-ops-workspace-v1.0.11-linux-aarch64-native-SHA256SUMS.txt" in assets
-    assert "remote-ops-workspace-v1.0.11-linux-i386.deb" not in assets
-    assert "remote-ops-workspace-v1.0.11-linux-armhf.deb" not in assets
+    assert "remote_ops_workspace-1.0.12-py3-none-any.whl" in assets
+    assert "remote-ops-workspace-v1.0.12-windows-x86-setup.exe" in assets
+    assert "remote-ops-workspace-v1.0.12-macos-arm64.pkg" in assets
+    assert "remote-ops-workspace-v1.0.12-linux-amd64.deb" in assets
+    assert "remote-ops-workspace-v1.0.12-linux-aarch64-native-SHA256SUMS.txt" in assets
+    assert "remote-ops-workspace-v1.0.12-linux-i386.deb" not in assets
+    assert "remote-ops-workspace-v1.0.12-linux-armhf.deb" not in assets
 
 
 def test_expected_release_assets_normalize_to_requested_tag() -> None:
@@ -144,8 +200,8 @@ def test_expected_release_assets_normalize_to_requested_tag() -> None:
 
     assert "remote_ops_workspace-1.0.3-py3-none-any.whl" in assets
     assert "remote-ops-workspace-v1.0.3-windows-x64-setup.exe" in assets
-    assert "remote_ops_workspace-1.0.11-py3-none-any.whl" not in assets
-    assert "remote-ops-workspace-v1.0.11-windows-x64-setup.exe" not in assets
+    assert "remote_ops_workspace-1.0.12-py3-none-any.whl" not in assets
+    assert "remote-ops-workspace-v1.0.12-windows-x64-setup.exe" not in assets
 
 
 def test_publish_contract_rejects_gated_default_asset_without_evidence() -> None:
@@ -153,11 +209,11 @@ def test_publish_contract_rejects_gated_default_asset_without_evidence() -> None
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.11-linux-i386.deb")
+    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.12-linux-i386.deb")
 
     errors = checker.check_publish_contract(matrix, workflow, evidence_registry=_empty_evidence_registry())
 
-    assert any("gated native asset remote-ops-workspace-v1.0.11-linux-i386.deb" in error for error in errors)
+    assert any("gated native asset remote-ops-workspace-v1.0.12-linux-i386.deb" in error for error in errors)
 
 
 def test_publish_contract_uses_explicit_empty_platform_registry(monkeypatch) -> None:
@@ -165,14 +221,14 @@ def test_publish_contract_uses_explicit_empty_platform_registry(monkeypatch) -> 
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.11-linux-i386.deb")
+    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.12-linux-i386.deb")
     monkeypatch.setattr(checker, "read_evidence_registry", lambda: _accepted_evidence_registry("linux-i386"))
 
     errors = checker.check_publish_contract(matrix, workflow, evidence_registry={})
 
     assert any(
-        "default release matrix includes gated native asset remote-ops-workspace-v1.0.11-linux-i386.deb "
-        "for linux-i386 without accepted platform evidence for release_tag v1.0.11"
+        "default release matrix includes gated native asset remote-ops-workspace-v1.0.12-linux-i386.deb "
+        "for linux-i386 without accepted platform evidence for release_tag v1.0.12"
         in error
         for error in errors
     )
@@ -200,7 +256,7 @@ def test_publish_contract_rejects_gated_default_asset_with_wrong_release_evidenc
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.11-linux-i386.deb")
+    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.12-linux-i386.deb")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -222,13 +278,13 @@ def test_publish_contract_rejects_gated_asset_with_unfinalized_platform_candidat
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.11-linux-i386.deb")
+    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.12-linux-i386.deb")
     registry = _accepted_evidence_registry("linux-i386")
     registry["accepted_evidence"][0].pop("review_bundle")
 
     errors = checker.check_publish_contract(matrix, workflow, evidence_registry=registry)
 
-    assert any("gated native asset remote-ops-workspace-v1.0.11-linux-i386.deb" in error for error in errors)
+    assert any("gated native asset remote-ops-workspace-v1.0.12-linux-i386.deb" in error for error in errors)
 
 
 def test_publish_contract_rejects_malformed_accepted_evidence_for_gated_asset() -> None:
@@ -236,7 +292,7 @@ def test_publish_contract_rejects_malformed_accepted_evidence_for_gated_asset() 
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.11-linux-i386.deb")
+    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.12-linux-i386.deb")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -254,7 +310,7 @@ def test_publish_contract_rejects_malformed_accepted_evidence_for_gated_asset() 
         },
     )
 
-    assert any("gated native asset remote-ops-workspace-v1.0.11-linux-i386.deb" in error for error in errors)
+    assert any("gated native asset remote-ops-workspace-v1.0.12-linux-i386.deb" in error for error in errors)
 
 
 def test_publish_contract_rejects_xp_asset_without_complete_xp_pair() -> None:
@@ -262,7 +318,7 @@ def test_publish_contract_rejects_xp_asset_without_complete_xp_pair() -> None:
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     windows_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "windows-native")
-    windows_job["asset_patterns"].append("remote-ops-workspace-v1.0.11-windows-xp-x86-native.zip")
+    windows_job["asset_patterns"].append("remote-ops-workspace-v1.0.12-windows-xp-x86-native.zip")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -1631,6 +1687,307 @@ def test_release_assets_accept_complete_synthetic_directory(tmp_path: Path) -> N
     assert errors == []
 
 
+def test_source_assets_only_accepts_source_python_release_directory(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    expected = checker.expected_source_release_assets(matrix, tag="v1.0.2")
+    for path in list(tmp_path.iterdir()):
+        if path.name not in expected:
+            path.unlink()
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    checksum.write_text(
+        "\n".join(
+            f"{_sha256(tmp_path / asset)}  {asset}"
+            for asset in sorted(expected - {checksum.name})
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        source_assets_only=True,
+    )
+
+    assert errors == []
+
+
+def test_source_assets_only_rejects_sdist_missing_runtime_configuration(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    expected = checker.expected_source_release_assets(matrix, tag="v1.0.2")
+    for path in list(tmp_path.iterdir()):
+        if path.name not in expected:
+            path.unlink()
+    _write_source_distribution(
+        tmp_path / "remote_ops_workspace-1.0.2.tar.gz",
+        omit="configs/feature_manifest.json",
+    )
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    checksum.write_text(
+        "\n".join(
+            f"{_sha256(tmp_path / asset)}  {asset}"
+            for asset in sorted(expected - {checksum.name})
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        source_assets_only=True,
+    )
+
+    assert (
+        "remote_ops_workspace-1.0.2.tar.gz missing required source file: "
+        "configs/feature_manifest.json"
+    ) in errors
+
+
+def test_source_assets_only_rejects_sdist_missing_web_pwa_asset(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    expected = checker.expected_source_release_assets(matrix, tag="v1.0.2")
+    for path in list(tmp_path.iterdir()):
+        if path.name not in expected:
+            path.unlink()
+    _write_source_distribution(
+        tmp_path / "remote_ops_workspace-1.0.2.tar.gz",
+        omit="apps/web/index.html",
+    )
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    checksum.write_text(
+        "\n".join(
+            f"{_sha256(tmp_path / asset)}  {asset}"
+            for asset in sorted(expected - {checksum.name})
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        source_assets_only=True,
+    )
+
+    assert (
+        "remote_ops_workspace-1.0.2.tar.gz missing required source file: apps/web/index.html"
+    ) in errors
+
+
+def test_source_assets_only_rejects_sdist_traversal_member(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    expected = checker.expected_source_release_assets(matrix, tag="v1.0.2")
+    for path in list(tmp_path.iterdir()):
+        if path.name not in expected:
+            path.unlink()
+    sdist = tmp_path / "remote_ops_workspace-1.0.2.tar.gz"
+    _write_source_distribution(sdist, add_traversal=True)
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    checksum.write_text(
+        "\n".join(
+            f"{_sha256(tmp_path / asset)}  {asset}"
+            for asset in sorted(expected - {checksum.name})
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        source_assets_only=True,
+    )
+
+    assert any(
+        error
+        == "remote_ops_workspace-1.0.2.tar.gz contains unsafe source member: "
+        "'remote_ops_workspace-1.0.2/../escape.py'"
+        for error in errors
+    )
+
+
+def test_source_assets_only_rejects_sdist_duplicate_member(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    expected = checker.expected_source_release_assets(matrix, tag="v1.0.2")
+    for path in list(tmp_path.iterdir()):
+        if path.name not in expected:
+            path.unlink()
+    sdist = tmp_path / "remote_ops_workspace-1.0.2.tar.gz"
+    _write_source_distribution(sdist, duplicate="configs/feature_manifest.json")
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    checksum.write_text(
+        "\n".join(
+            f"{_sha256(tmp_path / asset)}  {asset}"
+            for asset in sorted(expected - {checksum.name})
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        source_assets_only=True,
+    )
+
+    assert any(
+        error
+        == "remote_ops_workspace-1.0.2.tar.gz must not contain duplicate members: "
+        "['remote_ops_workspace-1.0.2/configs/feature_manifest.json']"
+        for error in errors
+    )
+
+
+def test_source_assets_only_rejects_source_bundle_missing_runtime_configuration(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    expected = checker.expected_source_release_assets(matrix, tag="v1.0.2")
+    for path in list(tmp_path.iterdir()):
+        if path.name not in expected:
+            path.unlink()
+    _write_source_install_bundle(
+        tmp_path / "remote-ops-workspace-v1.0.2-source.zip",
+        omit="configs/feature_manifest.json",
+    )
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    checksum.write_text(
+        "\n".join(
+            f"{_sha256(tmp_path / asset)}  {asset}"
+            for asset in sorted(expected - {checksum.name})
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        source_assets_only=True,
+    )
+
+    assert (
+        "remote-ops-workspace-v1.0.2-source.zip missing required bundle file: "
+        "configs/feature_manifest.json"
+    ) in errors
+
+
+def test_source_assets_only_rejects_source_bundle_link_member(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    expected = checker.expected_source_release_assets(matrix, tag="v1.0.2")
+    for path in list(tmp_path.iterdir()):
+        if path.name not in expected:
+            path.unlink()
+    bundle = tmp_path / "remote-ops-workspace-v1.0.2-linux.tar.gz"
+    _write_source_install_bundle(bundle, add_link=True)
+    checksum = tmp_path / "remote-ops-workspace-v1.0.2-SHA256SUMS.txt"
+    checksum.write_text(
+        "\n".join(
+            f"{_sha256(tmp_path / asset)}  {asset}"
+            for asset in sorted(expected - {checksum.name})
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    errors = checker.check_release_assets(
+        tmp_path,
+        matrix,
+        tag="v1.0.2",
+        source_assets_only=True,
+    )
+
+    assert any(
+        error
+        == "remote-ops-workspace-v1.0.2-linux.tar.gz must not contain link member: "
+        "'remote-ops-workspace-v1.0.2-linux/unsafe-link'"
+        for error in errors
+    )
+
+
+def test_release_contract_requires_installed_source_wheel_smoke() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          wheel-smoke/bin/python -m remote_ops_workspace features --coverage\n",
+        "          true\n",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert any(
+        error.startswith("source-and-python job missing installed-wheel bundled configuration smoke")
+        for error in errors
+    )
+
+
+def test_release_contract_requires_installed_web_pwa_wheel_smoke() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "          wheel-smoke/bin/python -m remote_ops_workspace serve-web --host 127.0.0.1 --port 18767 >\"$log\" 2>&1 &\n",
+        "          true\n",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert any(
+        error.startswith("source-and-python job missing installed-wheel Web/PWA server smoke")
+        for error in errors
+    )
+
+
+def test_release_contract_requires_installed_source_distribution_smoke() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '            PYTHONPATH="$RUNNER_TEMP/sdist-smoke-package" python -m remote_ops_workspace features --coverage\n',
+        "            true\n",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert any(
+        error.startswith("source-and-python job missing installed-sdist bundled configuration smoke")
+        for error in errors
+    )
+
+
+def test_release_contract_requires_installed_portable_source_bundle_smoke() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        '            PYTHONPATH="$RUNNER_TEMP/source-bundle-smoke-package" python -m remote_ops_workspace features --coverage\n',
+        "            true\n",
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert any(
+        error.startswith("source-and-python job missing installed source-bundle bundled configuration smoke")
+        for error in errors
+    )
+
+
 def test_release_assets_reject_release_manifest_boolean_size_bytes(tmp_path: Path) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
@@ -1679,6 +2036,20 @@ def test_release_manifest_rejects_malformed_artifact_sha256(tmp_path: Path) -> N
         "sha256 must be a lowercase SHA-256 hex digest"
     ) in errors
     assert f"{manifest.name} artifact {filename} sha256 does not match release asset" not in errors
+
+
+def test_release_manifest_rejects_malformed_source_python_sbom(tmp_path: Path) -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    _write_synthetic_release_assets(checker, matrix, tmp_path)
+    sbom = tmp_path / "remote-ops-workspace-v1.0.2-sbom.cdx.json"
+    payload = json.loads(sbom.read_text(encoding="utf-8"))
+    payload["specVersion"] = "1.4"
+    sbom.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    errors = checker.check_release_manifest(tmp_path, matrix, tag="v1.0.2")
+
+    assert f"{sbom.name} specVersion must be 1.5" in errors
 
 
 def test_release_manifest_rejects_artifact_size_drift(tmp_path: Path) -> None:
@@ -1977,7 +2348,53 @@ def _write_synthetic_release_assets(checker, matrix: dict[str, object], root: Pa
     checksum_assets = {asset for asset in expected if asset.endswith("SHA256SUMS.txt")}
 
     for asset in sorted(expected - checksum_assets - {release_manifest}):
-        (root / asset).write_bytes(f"{asset}\n".encode())
+        if asset.startswith("remote-ops-workspace-v1.0.2-") and asset.endswith((".zip", ".tar.gz")):
+            _write_source_install_bundle(root / asset)
+        else:
+            (root / asset).write_bytes(f"{asset}\n".encode())
+
+    _write_source_distribution(root / "remote_ops_workspace-1.0.2.tar.gz")
+
+    sbom = root / "remote-ops-workspace-v1.0.2-sbom.cdx.json"
+    sbom.write_text(
+        json.dumps(
+            {
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.5",
+                "serialNumber": "urn:uuid:00000000-0000-0000-0000-000000000000",
+                "version": 1,
+                "metadata": {
+                    "timestamp": "2024-01-01T00:00:00Z",
+                    "component": {
+                        "type": "application",
+                        "bom-ref": "pkg:pypi/remote-ops-workspace@1.0.2",
+                        "name": "remote-ops-workspace",
+                        "version": "1.0.2",
+                        "purl": "pkg:pypi/remote-ops-workspace@1.0.2",
+                    },
+                    "properties": [
+                        {
+                            "name": "row:sbom-scope",
+                            "value": "source-and-python-release-environment",
+                        },
+                        {"name": "row:source-date-epoch", "value": "1704067200"},
+                    ],
+                },
+                "components": [
+                    {
+                        "type": "library",
+                        "bom-ref": "pkg:pypi/example@1.0.0",
+                        "name": "example",
+                        "version": "1.0.0",
+                        "purl": "pkg:pypi/example@1.0.0",
+                    }
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     manifest_payload = {
         "schema_version": 1,
@@ -1996,6 +2413,106 @@ def _write_synthetic_release_assets(checker, matrix: dict[str, object], root: Pa
     checksum_lines = "\n".join(f"{_sha256(root / asset)}  {asset}" for asset in reference_assets) + "\n"
     for checksum in checksum_assets:
         (root / checksum).write_text(checksum_lines, encoding="utf-8")
+
+
+def _write_source_distribution(
+    path: Path,
+    *,
+    omit: str | None = None,
+    add_traversal: bool = False,
+    duplicate: str | None = None,
+) -> None:
+    package_root = "remote_ops_workspace-1.0.2"
+    required_files = (
+        "MANIFEST.in",
+        "pyproject.toml",
+        "setup.py",
+        "src/remote_ops_workspace/paths.py",
+        "configs/feature_manifest.json",
+        "configs/platform_targets.json",
+        "configs/platform_verified_evidence.json",
+        "configs/platform_parity_promotion.json",
+        "configs/xp_native_evidence_contract.json",
+        "apps/web/app.js",
+        "apps/web/index.html",
+        "apps/web/manifest.json",
+        "apps/web/styles.css",
+        "apps/web/sw.js",
+    )
+    with tarfile.open(path, "w:gz") as archive:
+        directory = tarfile.TarInfo(package_root)
+        directory.type = tarfile.DIRTYPE
+        archive.addfile(directory)
+        for required_file in required_files:
+            if required_file == omit:
+                continue
+            contents = f"synthetic {required_file}\n".encode()
+            member = tarfile.TarInfo(f"{package_root}/{required_file}")
+            member.size = len(contents)
+            archive.addfile(member, io.BytesIO(contents))
+            if required_file == duplicate:
+                archive.addfile(member, io.BytesIO(contents))
+        if add_traversal:
+            contents = b"synthetic traversal\n"
+            member = tarfile.TarInfo(f"{package_root}/../escape.py")
+            member.size = len(contents)
+            archive.addfile(member, io.BytesIO(contents))
+
+
+def _write_source_install_bundle(
+    path: Path, *, omit: str | None = None, add_link: bool = False
+) -> None:
+    root_name = path.name.removesuffix(".tar.gz").removesuffix(".zip")
+    web_only = root_name.endswith("-web-pwa")
+    required_files = (
+        (
+            "app.js",
+            "index.html",
+            "manifest.json",
+            "styles.css",
+            "sw.js",
+            "LICENSE",
+            "NOTICE",
+            "RELEASE_TARGET.md",
+        )
+        if web_only
+        else (
+            "MANIFEST.in",
+            "pyproject.toml",
+            "setup.py",
+            "src/remote_ops_workspace/paths.py",
+            "configs/feature_manifest.json",
+            "configs/platform_targets.json",
+            "configs/platform_verified_evidence.json",
+            "configs/platform_parity_promotion.json",
+            "configs/xp_native_evidence_contract.json",
+            "apps/web/app.js",
+            "apps/web/index.html",
+            "apps/web/manifest.json",
+            "apps/web/styles.css",
+            "apps/web/sw.js",
+            "RELEASE_TARGET.md",
+        )
+    )
+    if path.suffix == ".zip":
+        with zipfile.ZipFile(path, "w") as archive:
+            for required_file in required_files:
+                if required_file != omit:
+                    archive.writestr(f"{root_name}/{required_file}", f"synthetic {required_file}\n")
+        return
+    with tarfile.open(path, "w:gz") as archive:
+        for required_file in required_files:
+            if required_file == omit:
+                continue
+            contents = f"synthetic {required_file}\n".encode()
+            member = tarfile.TarInfo(f"{root_name}/{required_file}")
+            member.size = len(contents)
+            archive.addfile(member, io.BytesIO(contents))
+        if add_link:
+            link = tarfile.TarInfo(f"{root_name}/unsafe-link")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "configs/feature_manifest.json"
+            archive.addfile(link)
 
 
 def _add_default_linux_asset(matrix: dict[str, object], asset: str) -> None:

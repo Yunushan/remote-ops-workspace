@@ -14,10 +14,10 @@ PLATFORM_TARGETS_PATH = ROOT / "configs" / "platform_targets.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
-    "remote-ops-workspace-v1.0.11-linux-<i386|amd64|armhf|arm64>.deb",
-    "remote-ops-workspace-v1.0.11-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.11-linux-<i686|x86_64|armhf|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.11-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.12-linux-<i386|amd64|armhf|arm64>.deb",
+    "remote-ops-workspace-v1.0.12-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.12-linux-<i686|x86_64|armhf|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.12-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
 )
 SCRIPT_TARGET_BUILDER_REQUIREMENT_SNIPPETS = {
     "linux-i386": (
@@ -132,6 +132,7 @@ def check_source_and_python_assets(matrix: dict[str, Any]) -> list[str]:
     expected_artifacts = {
         f"remote_ops_workspace-{version}-py3-none-any.whl",
         f"remote_ops_workspace-{version}.tar.gz",
+        f"remote-ops-workspace-v{version}-sbom.cdx.json",
         f"remote-ops-workspace-v{version}-release-manifest.json",
         f"remote-ops-workspace-v{version}-SHA256SUMS.txt",
     }

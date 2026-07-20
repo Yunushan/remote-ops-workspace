@@ -116,6 +116,43 @@ jobs:
       - name: Android and iOS Web/PWA smoke
         run: python -m pytest tests/test_web_hardening.py tests/test_platform_targets.py tests/test_platform_support_truth.py tests/test_mobile_support.py
 
+  web-container:
+    name: Web/PWA container smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - name: Build and smoke-test Web/PWA container
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose() { docker compose -p row-web-smoke -f docker/compose.yaml "$@"; }
+          cleanup() { compose down --volumes --remove-orphans; }
+          trap cleanup EXIT
+          compose up --detach --build
+          healthy=false
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8765/healthz; then
+              healthy=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$healthy" != true ]]; then
+            compose logs
+            exit 1
+          fi
+          container_id="$(compose ps -q remote-ops-web)"
+          test -n "$container_id"
+          test "$(docker inspect --format '{{.Config.User}}' "$container_id")" = "10001:10001"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_id")" = "true"
+          test "$(docker inspect --format '{{.HostConfig.PidsLimit}}' "$container_id")" = "128"
+          docker inspect --format '{{.HostConfig.CapDrop}}' "$container_id" | grep -Fx "[ALL]"
+          docker inspect --format '{{.HostConfig.SecurityOpt}}' "$container_id" | grep -Fx "[no-new-privileges:true]"
+          compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'
+
   android-emulator-web:
     name: Android Web/PWA emulator API ${{ matrix.api-level }}
     runs-on: ubuntu-latest

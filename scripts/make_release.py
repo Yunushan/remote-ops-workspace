@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import gzip
 import hashlib
+import importlib.metadata
 import json
 import os
 import re
@@ -11,11 +13,13 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import uuid
 import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
@@ -43,12 +47,14 @@ PROJECT_FILES = [
     "NOTICE",
     "README.md",
     "README.tr.md",
+    "MANIFEST.in",
     "pyproject.toml",
     "requirements-dev.txt",
     "requirements-release-compat.txt",
     "requirements-release.txt",
     "requirements.txt",
     "SECURITY.md",
+    "setup.py",
 ]
 
 WEB_FILES = [
@@ -211,6 +217,7 @@ def main() -> int:
     if not args.skip_python_package:
         artifacts.extend(build_python_package(version, dist))
     artifacts.extend(build_target(target, version, dist) for target in selected)
+    artifacts.append(build_release_environment_sbom(version, dist))
     manifest = write_manifest(version, artifacts, dist)
     checksums = write_checksums(version, artifacts, ROOT / manifest, dist)
 
@@ -273,6 +280,8 @@ def reset_dist(dist: Path) -> None:
 def build_python_package(version: str, dist: Path) -> list[dict[str, object]]:
     build_metadata = [ROOT / "build", ROOT / "src" / "remote_ops_workspace.egg-info"]
     existing_metadata = {path for path in build_metadata if path.exists()}
+    build_env = os.environ.copy()
+    build_env.setdefault("SOURCE_DATE_EPOCH", str(source_date_epoch()))
 
     try:
         subprocess.run(
@@ -285,8 +294,12 @@ def build_python_package(version: str, dist: Path) -> list[dict[str, object]]:
                 "--wheel",
                 "--outdir",
                 str(dist),
+                str(ROOT),
             ],
-            cwd=ROOT,
+            # A pre-existing ignored build/ output directory can otherwise shadow
+            # the PyPI build module when this helper runs from the project root.
+            cwd=ROOT.parent,
+            env=build_env,
             check=True,
         )
     except subprocess.CalledProcessError as exc:
@@ -299,6 +312,7 @@ def build_python_package(version: str, dist: Path) -> list[dict[str, object]]:
     missing = [path.name for path in (wheel, sdist) if not path.exists()]
     if missing:
         raise SystemExit(f"python package build did not create expected artifacts: {', '.join(missing)}")
+    normalize_python_sdist(sdist)
 
     return [
         artifact_record(
@@ -336,6 +350,90 @@ def cleanup_generated_metadata(paths: Iterable[Path], existing_paths: set[Path])
             shutil.rmtree(path)
         else:
             path.unlink()
+
+
+def normalize_python_sdist(path: Path) -> None:
+    entries: list[tuple[tarfile.TarInfo, bytes | None]] = []
+    with tarfile.open(path, "r:gz") as source:
+        for member in source.getmembers():
+            payload = source.extractfile(member).read() if member.isfile() else None
+            entries.append((copy.copy(member), payload))
+
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=source_date_epoch()) as gz:
+            with tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as archive:
+                for member, payload in sorted(entries, key=lambda entry: entry[0].name):
+                    member.mtime = source_date_epoch()
+                    member.uid = 0
+                    member.gid = 0
+                    member.uname = ""
+                    member.gname = ""
+                    member.pax_headers = {}
+                    archive.addfile(member, BytesReader(payload) if payload is not None else None)
+    temporary.replace(path)
+
+
+def build_release_environment_sbom(version: str, dist: Path) -> dict[str, object]:
+    components: list[dict[str, str]] = []
+    for distribution in importlib.metadata.distributions():
+        name = distribution.metadata.get("Name")
+        if not name:
+            continue
+        component_version = distribution.version
+        normalized_name = re.sub(r"[-_.]+", "-", name).lower()
+        purl = f"pkg:pypi/{quote(normalized_name, safe='.-')}@{quote(component_version, safe='.-')}"
+        components.append(
+            {
+                "type": "library",
+                "bom-ref": purl,
+                "name": name,
+                "version": component_version,
+                "purl": purl,
+            }
+        )
+    components.sort(key=lambda component: (component["name"].casefold(), component["version"]))
+    component_refs = "\n".join(component["bom-ref"] for component in components)
+    serial = uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"https://github.com/Yunushan/remote-ops-workspace/releases/v{version}\n{component_refs}",
+    )
+    timestamp = datetime.fromtimestamp(source_date_epoch(), tz=timezone.utc).replace(microsecond=0)
+    payload: dict[str, object] = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "serialNumber": f"urn:uuid:{serial}",
+        "version": 1,
+        "metadata": {
+            "timestamp": timestamp.isoformat().replace("+00:00", "Z"),
+            "component": {
+                "type": "application",
+                "bom-ref": f"pkg:pypi/{NAME}@{version}",
+                "name": NAME,
+                "version": version,
+                "purl": f"pkg:pypi/{NAME}@{version}",
+            },
+            "properties": [
+                {"name": "row:sbom-scope", "value": "source-and-python-release-environment"},
+                {"name": "row:source-date-epoch", "value": str(source_date_epoch())},
+            ],
+        },
+        "components": components,
+    }
+    path = dist / f"remote-ops-workspace-v{version}-sbom.cdx.json"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return artifact_record(
+        phase="phase-1-python-package",
+        target="source-python-sbom",
+        label="Source/Python release environment SBOM",
+        path=path,
+        format="cyclonedx-json",
+        install_command="Verify as a CycloneDX 1.5 inventory before deployment.",
+        notes=[
+            "CycloneDX inventory generated from the isolated source/Python release environment.",
+            "Native platform packages retain their own manifests, checksums, signing state, and provenance attestations.",
+        ],
+    )
 
 
 def build_target(target: ReleaseTarget, version: str, dist: Path) -> dict[str, object]:
@@ -475,7 +573,8 @@ def zip_datetime() -> tuple[int, int, int, int, int, int]:
 def artifact_record(**values: object) -> dict[str, object]:
     path = Path(values.pop("path"))
     record = dict(values)
-    record["file"] = path.relative_to(ROOT).as_posix()
+    # Release manifests describe the flattened GitHub release asset name, not a local --dist path.
+    record["file"] = (Path("dist") / path.name).as_posix()
     record.update(file_integrity(path))
     return record
 
@@ -565,7 +664,7 @@ def release_toolchain_metadata() -> dict[str, object]:
 
 def write_checksums(version: str, artifacts: list[dict[str, object]], manifest_path: Path, dist: Path) -> str:
     checksum_path = dist / f"{NAME}-v{version}-SHA256SUMS.txt"
-    entries = [ROOT / str(artifact["file"]) for artifact in artifacts]
+    entries = [dist / Path(str(artifact["file"])).name for artifact in artifacts]
     entries.append(manifest_path)
     lines = []
     for path in entries:

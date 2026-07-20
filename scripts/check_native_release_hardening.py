@@ -352,6 +352,21 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
             errors.append(
                 f"{job} must run without signing material only for an explicit unsigned preview"
             )
+    for job, marker in (
+        (
+            "windows-native",
+            'if ("${{ needs.release-preflight.outputs.signed_native_publish_ready }}" -ne "true")',
+        ),
+        (
+            "macos-native",
+            'if [[ "${{ needs.release-preflight.outputs.signed_native_publish_ready }}" != "true" ]]',
+        ),
+    ):
+        block = workflow_job_block(workflow, job)
+        if marker not in block:
+            errors.append(
+                f"{job} must use combined signing readiness so unsigned previews cannot mix channels"
+            )
     publish_condition = (
         "if: ${{ needs.release-preflight.outputs.native_publish_ready == 'true' }}"
     )

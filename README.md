@@ -538,6 +538,8 @@ Signed installers are the production channel. If protected Windows/macOS
 credentials are unavailable, maintainers may use the manual
 `allow_unsigned_preview` workflow input to publish an **UNSIGNED PREVIEW**
 prerelease. Those installers are intentionally not production-trusted.
+When either protected native signing stack is unavailable, every native installer
+in that preview remains unsigned; production signing requires both stacks.
 
 | Target | Asset |
 |---|---|

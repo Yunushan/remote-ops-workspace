@@ -50,6 +50,22 @@ def test_native_workflow_allows_only_explicit_unsigned_preview_publish() -> None
     assert checker.check_signing_readiness_gate(workflow) == []
 
 
+def test_native_workflow_requires_uniform_preview_signing_channel() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        'if ("${{ needs.release-preflight.outputs.signed_native_publish_ready }}" -ne "true")',
+        'if ("${{ needs.release-preflight.outputs.windows_release_signing_ready }}" -ne "true")',
+        1,
+    )
+
+    errors = checker.check_signing_readiness_gate(workflow)
+
+    assert (
+        "windows-native must use combined signing readiness so unsigned previews cannot mix channels"
+        in errors
+    )
+
+
 def test_native_workflow_rejects_publish_without_a_readiness_gate() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

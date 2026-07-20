@@ -296,7 +296,7 @@ jobs:
           ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD }}
           ROW_WINDOWS_TIMESTAMP_URL: ${{ secrets.ROW_WINDOWS_TIMESTAMP_URL }}
         run: |
-          if ("${{ needs.release-preflight.outputs.windows_release_signing_ready }}" -ne "true") {
+          if ("${{ needs.release-preflight.outputs.signed_native_publish_ready }}" -ne "true") {
             Add-Content $env:GITHUB_ENV "ROW_REQUIRE_RELEASE_SIGNING=0"
             Add-Content $env:GITHUB_ENV "ROW_NATIVE_RELEASE_CHANNEL=unsigned-preview"
             Write-Warning "Building explicitly unsigned preview installers. Do not treat these artifacts as production-trusted."
@@ -368,7 +368,7 @@ jobs:
           ROW_MACOS_NOTARY_KEY_ID: ${{ secrets.ROW_MACOS_NOTARY_KEY_ID }}
           ROW_MACOS_NOTARY_ISSUER: ${{ secrets.ROW_MACOS_NOTARY_ISSUER }}
         run: |
-          if [[ "${{ needs.release-preflight.outputs.macos_release_signing_ready }}" != "true" ]]; then
+          if [[ "${{ needs.release-preflight.outputs.signed_native_publish_ready }}" != "true" ]]; then
             {
               echo "ROW_REQUIRE_RELEASE_SIGNING=0"
               echo "ROW_NATIVE_RELEASE_CHANNEL=unsigned-preview"

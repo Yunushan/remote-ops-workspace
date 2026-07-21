@@ -161,6 +161,19 @@ def test_native_manifest_signing_metadata_requires_production_truth(tmp_path: Pa
         == []
     )
 
+    windows_manifest = tmp_path / "remote-ops-workspace-v1.0.13-windows-x64-native-manifest.json"
+    windows_manifest.write_bytes(
+        b"\xef\xbb\xbf" + json.dumps(manifests[windows_manifest.name]).encode("utf-8")
+    )
+    assert (
+        checker.check_native_release_signing_metadata(
+            tmp_path,
+            set(manifests),
+            native_release_channel="production-signed",
+        )
+        == []
+    )
+
     manifests["remote-ops-workspace-v1.0.13-windows-x64-native-manifest.json"][0]["signing"][
         "timestamped"
     ] = False

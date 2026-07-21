@@ -786,7 +786,7 @@ def check_native_release_signing_metadata(
         if not path.is_file():
             continue
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError) as exc:
             errors.append(f"{name} must be valid JSON for native signing metadata: {exc}")
             continue

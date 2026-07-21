@@ -519,9 +519,16 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+      - name: Check out workflow-bound release validation tooling
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          path: release-tooling
+          persist-credentials: false
+          clean: true
       - name: Validate release publish assets
         run: >-
-          python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "$RELEASE_TAG"
+          python release-tooling/scripts/check_release_publish_assets.py --assets-dir release-assets --tag "$RELEASE_TAG"
           --repository "${{ github.repository }}"
           --native-release-channel "${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' && 'production-signed' || 'unsigned-preview' }}"
       - name: Attest release asset provenance

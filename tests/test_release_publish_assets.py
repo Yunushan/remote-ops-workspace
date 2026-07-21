@@ -544,6 +544,23 @@ def test_publish_contract_requires_clean_checkouts_for_release_jobs() -> None:
     assert "linux-native job missing clean release checkout: clean: true" in errors
 
 
+def test_publish_contract_requires_native_manifest_encoding_normalization() -> None:
+    checker = _load_checker()
+    matrix = _load_matrix()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    publish_block = checker.workflow_job_block(workflow, "publish")
+    assert publish_block
+    workflow = workflow.replace(
+        publish_block,
+        publish_block.replace("      - name: Normalize native manifest UTF-8 encodings\n", "", 1),
+        1,
+    )
+
+    errors = checker.check_publish_contract(matrix, workflow)
+
+    assert "publish job missing native manifest UTF-8 normalization: Normalize native manifest UTF-8 encodings" in errors
+
+
 def test_publish_contract_rejects_clean_checkout_setting_outside_checkout_step() -> None:
     checker = _load_checker()
     matrix = _load_matrix()

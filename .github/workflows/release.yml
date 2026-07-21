@@ -519,6 +519,15 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+      - name: Normalize native manifest UTF-8 encodings
+        shell: python
+        run: |
+          from pathlib import Path
+
+          for manifest in Path("release-assets").glob("*-native-manifest.json"):
+              payload = manifest.read_bytes()
+              if payload.startswith(b"\xef\xbb\xbf"):
+                  manifest.write_bytes(payload[3:])
       - name: Validate release publish assets
         run: >-
           python scripts/check_release_publish_assets.py --assets-dir release-assets --tag "$RELEASE_TAG"

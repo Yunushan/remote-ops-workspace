@@ -612,7 +612,7 @@ def test_platform_promotion_artifacts_reject_manifest_architecture_drift(tmp_pat
 
     assert any(
         "linux-armhf native manifest record "
-        "remote-ops-workspace-v1.0.12-linux-armhf.deb architecture must be 'armhf', got 'arm64'"
+        "remote-ops-workspace-v1.0.13-linux-armhf.deb architecture must be 'armhf', got 'arm64'"
         in error
         for error in errors
     )
@@ -637,7 +637,7 @@ def test_platform_promotion_artifacts_reject_manifest_format_drift(tmp_path: Pat
 
     assert any(
         "windows-xp-native-x64 native manifest record "
-        "remote-ops-workspace-v1.0.12-windows-xp-x64-native.zip format must be 'zip', got 'tar.gz'"
+        "remote-ops-workspace-v1.0.13-windows-xp-x64-native.zip format must be 'zip', got 'tar.gz'"
         in error
         for error in errors
     )

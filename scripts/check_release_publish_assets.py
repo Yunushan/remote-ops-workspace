@@ -177,7 +177,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--tag",
-        help="Expected release tag, for example v1.0.12. Defaults to the matrix release tag.",
+        help="Expected release tag, for example v1.0.13. Defaults to the matrix release tag.",
     )
     parser.add_argument(
         "--repository",

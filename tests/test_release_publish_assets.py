@@ -346,7 +346,7 @@ def test_publish_contract_requires_validation_before_upload() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag",
+        "python release-tooling/scripts/check_release_publish_assets.py --assets-dir release-assets --tag",
         "python scripts/check_release_matrix.py # disabled publish asset validation",
     )
 
@@ -544,7 +544,7 @@ def test_publish_contract_requires_clean_checkouts_for_release_jobs() -> None:
     assert "linux-native job missing clean release checkout: clean: true" in errors
 
 
-def test_publish_contract_requires_native_manifest_encoding_normalization() -> None:
+def test_publish_contract_requires_workflow_bound_release_validation_tooling() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -552,13 +552,13 @@ def test_publish_contract_requires_native_manifest_encoding_normalization() -> N
     assert publish_block
     workflow = workflow.replace(
         publish_block,
-        publish_block.replace("      - name: Normalize native manifest UTF-8 encodings\n", "", 1),
+        publish_block.replace("          path: release-tooling\n", "", 1),
         1,
     )
 
     errors = checker.check_publish_contract(matrix, workflow)
 
-    assert "publish job missing native manifest UTF-8 normalization: Normalize native manifest UTF-8 encodings" in errors
+    assert "publish job missing workflow-bound release validation tooling path: path: release-tooling" in errors
 
 
 def test_publish_contract_rejects_clean_checkout_setting_outside_checkout_step() -> None:

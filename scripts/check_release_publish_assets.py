@@ -284,7 +284,9 @@ def check_publish_contract(
     required_snippets = {
         "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c": "artifact download",
         "merge-multiple: true": "merged downloaded artifact directory",
-        "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
+        "ref: ${{ github.sha }}": "workflow-bound release validation tooling checkout",
+        "path: release-tooling": "workflow-bound release validation tooling path",
+        "python release-tooling/scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
         '--repository "${{ github.repository }}"': "publish evidence repository binding",
         "softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e": "GitHub release upload",
         ATTEST_RELEASE_ASSETS_ACTION: "release artifact provenance attestation",
@@ -292,22 +294,19 @@ def check_publish_contract(
         "attestations: write": "attestation write permission",
         "artifact-metadata: write": "artifact metadata write permission",
         "id-token: write": "OIDC token permission for attestation",
-        "Normalize native manifest UTF-8 encodings": "native manifest UTF-8 normalization",
-        'payload.startswith(b"\\xef\\xbb\\xbf")': "native manifest BOM detection",
-        "manifest.write_bytes(payload[3:])": "native manifest BOM removal",
         "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
     }
     for snippet, label in required_snippets.items():
         if snippet not in publish_block:
             errors.append(f"publish job missing {label}: {snippet}")
-    normalize_index = publish_block.find("Normalize native manifest UTF-8 encodings")
-    validate_index = publish_block.find("scripts/check_release_publish_assets.py")
+    tooling_index = publish_block.find("Check out workflow-bound release validation tooling")
+    validate_index = publish_block.find("release-tooling/scripts/check_release_publish_assets.py")
     attest_index = publish_block.find(ATTEST_RELEASE_ASSETS_ACTION)
     upload_index = publish_block.find("softprops/action-gh-release")
-    if normalize_index < 0 or validate_index < 0 or attest_index < 0 or upload_index < 0:
+    if tooling_index < 0 or validate_index < 0 or attest_index < 0 or upload_index < 0:
         errors.append("publish must validate and attest release assets before GitHub release upload")
-    elif not normalize_index < validate_index < attest_index < upload_index:
+    elif not tooling_index < validate_index < attest_index < upload_index:
         errors.append("publish asset validation and attestation must run before GitHub release upload")
     if "--require-platform-goal-targets" in publish_block or PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND in publish_block:
         errors.append("core publish job must not require protected-platform evidence")

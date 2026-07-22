@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOYMENT_GUIDE = ROOT / "docs" / "PRODUCTION_DEPLOYMENT.md"
 COMPOSE_FILE = ROOT / "docker" / "compose.yaml"

@@ -49,6 +49,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "production deployment readiness",
+            [python, "scripts/check_production_deployment.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "roadmap truth",
             [python, "scripts/check_roadmap_truth.py"],
             env=_source_env(),

@@ -25,6 +25,23 @@ intentionally loopback-only. Configure uptime checks against `/healthz`, retain
 proxy access logs according to your policy, and back up the named `/data`
 volume with encryption at rest.
 
+## Operational Go/No-Go
+
+Before exposing the Web/PWA beyond localhost, record the managed reverse
+proxy's TLS and authentication policy, an uptime check against `/healthz`, and
+the encrypted backup location for the `remote-ops-data` volume. Perform and
+record a restore drill in an isolated environment: restore a recent encrypted
+volume backup, start the Compose stack, confirm `/healthz` responds through the
+proxy, and confirm the restored data is the expected backup revision. A backup
+job without a successful restore drill is not production recovery evidence.
+
+Keep public Web/PWA exposure separate from the loopback browser API. The API
+token must not be forwarded by a public proxy, and the static Web/PWA should
+not be represented as a central credential, authorization, or session-control
+service. Establish monitoring and incident ownership in the reverse-proxy or
+endpoint-management platform that actually operates the public endpoint; this
+repository does not provide a hosted operations control plane.
+
 ## Native Releases
 
 Production tags run in the protected GitHub `release` environment. Configure
@@ -116,6 +133,12 @@ release publication; they never publish unsigned native assets. Check the
 Authenticode signatures, macOS Gatekeeper assessment, release checksums, and
 the generated manifests before promoting a release. Checksums prove file
 integrity only; they are not a substitute for platform signing.
+
+An `UNSIGNED PREVIEW` is suitable only for controlled evaluation. It is not a
+production release, even when checksums, SBOMs, installer smoke tests and
+provenance attestations are present. Promote a desktop release only after the
+protected signing environment is populated and its installer signatures and
+notarization evidence have been verified.
 
 ## Updates and Dependencies
 

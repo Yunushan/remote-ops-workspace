@@ -13,6 +13,7 @@ The full verifier runs:
 
 - `python -m compileall src tests scripts`;
 - `python scripts/check_docs.py` for local Markdown links, required release docs and English/Turkish README snippet consistency;
+- `python scripts/check_production_deployment.py` for the production deployment boundary: localhost-only Web/PWA Compose exposure, container hardening, health monitoring, encrypted backup-and-restore drills, explicit unsigned-preview handling, and the non-enterprise team-sync limit;
 - `python scripts/check_roadmap_truth.py` for roadmap truth checks, keeping shipped release phases, native smoke tests and implemented CLI workflows out of future-planned sections;
 - `python scripts/check_ci_workflow.py` for CI workflow policy, including read-only checkout, lint-enabled verification and a dedicated live PyQt6 render smoke job;
 - `python scripts/check_release_truth.py` for repository identity, release workflow matrix, actual GitHub Actions `needs` dependency wiring, protected-platform checklist/hard-gate wiring, accepted-platform evidence import-before-build wiring, read-only accepted-platform evidence import permissions and documented artifact truth;

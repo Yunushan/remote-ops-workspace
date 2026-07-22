@@ -18,7 +18,6 @@ REQUIRED_GUIDE_SNIPPETS = (
 )
 
 REQUIRED_COMPOSE_SNIPPETS = (
-    '"127.0.0.1:8765:8765"',
     "restart: unless-stopped",
     "read_only: true",
     "- ALL",
@@ -44,7 +43,42 @@ def check_production_deployment() -> list[str]:
     for snippet in REQUIRED_COMPOSE_SNIPPETS:
         if snippet not in compose:
             errors.append(f"Compose deployment missing required hardening: {snippet}")
+    errors.extend(check_loopback_port_mappings(compose))
     return errors
+
+
+def check_loopback_port_mappings(compose: str) -> list[str]:
+    mappings = compose_port_mappings(compose)
+    if not mappings:
+        return ["Compose deployment must expose the Web/PWA through a loopback port mapping"]
+
+    errors: list[str] = []
+    for mapping in mappings:
+        if not mapping.startswith("127.0.0.1:"):
+            errors.append(f"Compose deployment has a public network port mapping: {mapping}")
+    return errors
+
+
+def compose_port_mappings(compose: str) -> list[str]:
+    mappings: list[str] = []
+    ports_indent: int | None = None
+    for line in compose.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        if stripped == "ports:":
+            ports_indent = indent
+            continue
+        if ports_indent is None:
+            continue
+        if indent <= ports_indent:
+            ports_indent = None
+            continue
+        if stripped.startswith("-"):
+            mapping = stripped[1:].strip().split("#", 1)[0].strip().strip("\"'")
+            mappings.append(mapping)
+    return mappings
 
 
 def main() -> int:

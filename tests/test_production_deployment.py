@@ -20,6 +20,19 @@ def test_production_deployment_checker_rejects_missing_restore_drill(monkeypatch
     assert any("restore drill" in error for error in checker.check_production_deployment())
 
 
+def test_production_deployment_checker_rejects_public_port_mapping(monkeypatch, tmp_path: Path) -> None:
+    checker = _load_checker()
+    compose = checker.COMPOSE_FILE.read_text(encoding="utf-8")
+    replacement = tmp_path / "compose.yaml"
+    replacement.write_text(
+        compose.replace('      - "127.0.0.1:8765:8765"', '      - "127.0.0.1:8765:8765"\n      - "8765:8765"'),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(checker, "COMPOSE_FILE", replacement)
+
+    assert any("public network port mapping: 8765:8765" in error for error in checker.check_production_deployment())
+
+
 def _load_checker():
     path = Path("scripts/check_production_deployment.py")
     spec = importlib.util.spec_from_file_location("check_production_deployment_script", path)

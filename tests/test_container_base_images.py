@@ -69,7 +69,13 @@ def test_container_base_images_require_bounded_local_log_retention() -> None:
 def test_container_base_images_rejects_log_retention_on_a_different_service() -> None:
     checker = _load_checker()
     compose = Path("docker/compose.yaml").read_text(encoding="utf-8")
-    logging_block = checker.REQUIRED_WEB_SERVICE_LOGGING
+    logging_block = (
+        "    logging:\n"
+        "      driver: local\n"
+        "      options:\n"
+        '        max-size: "10m"\n'
+        '        max-file: "3"'
+    )
     replacement = (
         "  reverse-proxy:\n"
         "    image: caddy:2\n"

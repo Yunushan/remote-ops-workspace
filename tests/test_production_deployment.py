@@ -71,6 +71,16 @@ def test_production_deployment_checker_rejects_sidecar_only_log_retention(monkey
     assert any("bounded local logs on remote-ops-web" in error for error in checker.check_production_deployment())
 
 
+def test_production_deployment_checker_requires_options_inside_logging_mapping(monkeypatch, tmp_path: Path) -> None:
+    checker = _load_checker()
+    compose = checker.COMPOSE_FILE.read_text(encoding="utf-8")
+    replacement = tmp_path / "compose.yaml"
+    replacement.write_text(compose.replace("    logging:\n", "    environment:\n", 1), encoding="utf-8")
+    monkeypatch.setattr(checker, "COMPOSE_FILE", replacement)
+
+    assert any("bounded local logs on remote-ops-web" in error for error in checker.check_production_deployment())
+
+
 def _load_checker():
     path = Path("scripts/check_production_deployment.py")
     spec = importlib.util.spec_from_file_location("check_production_deployment_script", path)

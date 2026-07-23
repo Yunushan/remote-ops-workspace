@@ -54,8 +54,9 @@ def check_production_deployment() -> list[str]:
 
 
 def has_bounded_web_service_logs(compose: str) -> bool:
+    logging_block = compose_mapping_block(compose_service_block(compose, "remote-ops-web"), "logging")
     return all(
-        snippet in compose_service_block(compose, "remote-ops-web")
+        snippet in logging_block
         for snippet in ("driver: local", 'max-size: "10m"', 'max-file: "3"')
     )
 
@@ -115,6 +116,22 @@ def compose_service_block(compose: str, service_name: str) -> str:
         if indent <= services_indent:
             break
         if indent == service_indent and stripped.endswith(":"):
+            break
+        body.append(line)
+    return "\n".join(body)
+
+
+def compose_mapping_block(text: str, mapping_name: str) -> str:
+    mapping_indent: int | None = None
+    body: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if mapping_indent is None:
+            if stripped == f"{mapping_name}:":
+                mapping_indent = indent
+            continue
+        if indent <= mapping_indent:
             break
         body.append(line)
     return "\n".join(body)

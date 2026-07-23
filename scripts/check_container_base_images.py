@@ -17,12 +17,10 @@ PINNED_BUILD_TOOLCHAIN = (
 )
 ISOLATED_APP_INSTALL = "pip install --no-cache-dir --no-compile --no-build-isolation ."
 WEB_SERVICE_NAME = "remote-ops-web"
-REQUIRED_WEB_SERVICE_LOGGING = (
-    "    logging:\n"
-    "      driver: local\n"
-    "      options:\n"
-    '        max-size: "10m"\n'
-    '        max-file: "3"'
+REQUIRED_WEB_SERVICE_LOG_OPTIONS = (
+    "driver: local",
+    'max-size: "10m"',
+    'max-file: "3"',
 )
 
 
@@ -95,8 +93,8 @@ def check_compose_hardening(compose_text: str | None = None) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in text:
             errors.append(f"compose.yaml missing {label}: {snippet}")
-    web_service = compose_service_block(text, WEB_SERVICE_NAME)
-    if REQUIRED_WEB_SERVICE_LOGGING not in web_service:
+    web_logging = compose_service_mapping_block(text, WEB_SERVICE_NAME, "logging")
+    if not all(option in web_logging for option in REQUIRED_WEB_SERVICE_LOG_OPTIONS):
         errors.append("compose.yaml missing bounded local container log retention on remote-ops-web")
     for snippet, label in {
         "privileged: true": "privileged container mode",
@@ -128,6 +126,26 @@ def compose_service_block(compose_text: str, service_name: str) -> str:
         if indent <= services_indent:
             break
         if indent == service_indent and stripped.endswith(":"):
+            break
+        body.append(line)
+    return "\n".join(body)
+
+
+def compose_service_mapping_block(compose_text: str, service_name: str, mapping_name: str) -> str:
+    return compose_mapping_block(compose_service_block(compose_text, service_name), mapping_name)
+
+
+def compose_mapping_block(text: str, mapping_name: str) -> str:
+    mapping_indent: int | None = None
+    body: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if mapping_indent is None:
+            if stripped == f"{mapping_name}:":
+                mapping_indent = indent
+            continue
+        if indent <= mapping_indent:
             break
         body.append(line)
     return "\n".join(body)

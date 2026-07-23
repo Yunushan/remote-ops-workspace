@@ -23,7 +23,10 @@ exposing the service beyond localhost. Proxy only the static application and
 `/healthz`; do not publish `row serve-web --api-token` because that API is
 intentionally loopback-only. Configure uptime checks against `/healthz`, retain
 proxy access logs according to your policy, and back up the named `/data`
-volume with encryption at rest.
+volume with encryption at rest. The checked-in Compose service uses Docker's
+local log driver with bounded rotation; forward or retain proxy and container
+logs in your operating environment according to its incident and compliance
+requirements.
 
 ## Operational Go/No-Go
 

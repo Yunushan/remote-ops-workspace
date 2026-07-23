@@ -16,6 +16,14 @@ PINNED_BUILD_TOOLCHAIN = (
     "pip install --no-cache-dir --no-compile --constraint requirements-release.txt pip setuptools wheel"
 )
 ISOLATED_APP_INSTALL = "pip install --no-cache-dir --no-compile --no-build-isolation ."
+WEB_SERVICE_NAME = "remote-ops-web"
+REQUIRED_WEB_SERVICE_LOGGING = (
+    "    logging:\n"
+    "      driver: local\n"
+    "      options:\n"
+    '        max-size: "10m"\n'
+    '        max-file: "3"'
+)
 
 
 def main() -> int:
@@ -87,6 +95,9 @@ def check_compose_hardening(compose_text: str | None = None) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in text:
             errors.append(f"compose.yaml missing {label}: {snippet}")
+    web_service = compose_service_block(text, WEB_SERVICE_NAME)
+    if REQUIRED_WEB_SERVICE_LOGGING not in web_service:
+        errors.append("compose.yaml missing bounded local container log retention on remote-ops-web")
     for snippet, label in {
         "privileged: true": "privileged container mode",
         "network_mode: host": "host networking",
@@ -94,6 +105,32 @@ def check_compose_hardening(compose_text: str | None = None) -> list[str]:
         if snippet in text:
             errors.append(f"compose.yaml must not enable {label}: {snippet}")
     return errors
+
+
+def compose_service_block(compose_text: str, service_name: str) -> str:
+    lines = compose_text.splitlines()
+    services_indent: int | None = None
+    service_indent: int | None = None
+    body: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if services_indent is None:
+            if stripped == "services:" and indent == 0:
+                services_indent = indent
+            continue
+        if service_indent is None:
+            if indent <= services_indent:
+                return ""
+            if indent == services_indent + 2 and stripped == f"{service_name}:":
+                service_indent = indent
+            continue
+        if indent <= services_indent:
+            break
+        if indent == service_indent and stripped.endswith(":"):
+            break
+        body.append(line)
+    return "\n".join(body)
 
 
 if __name__ == "__main__":

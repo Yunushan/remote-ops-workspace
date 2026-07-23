@@ -54,6 +54,35 @@ def test_container_base_images_require_loopback_compose_hardening() -> None:
     assert any("loopback-only published port" in error for error in errors)
 
 
+def test_container_base_images_require_bounded_local_log_retention() -> None:
+    checker = _load_checker()
+    compose = Path("docker/compose.yaml").read_text(encoding="utf-8").replace(
+        '        max-file: "3"\n',
+        "",
+    )
+
+    errors = checker.check_compose_hardening(compose)
+
+    assert any("bounded local container log retention" in error for error in errors)
+
+
+def test_container_base_images_rejects_log_retention_on_a_different_service() -> None:
+    checker = _load_checker()
+    compose = Path("docker/compose.yaml").read_text(encoding="utf-8")
+    logging_block = checker.REQUIRED_WEB_SERVICE_LOGGING
+    replacement = (
+        "  reverse-proxy:\n"
+        "    image: caddy:2\n"
+        f"{logging_block}\n"
+        "volumes:\n"
+    )
+    compose = compose.replace(logging_block, "").replace("volumes:\n", replacement)
+
+    errors = checker.check_compose_hardening(compose)
+
+    assert any("bounded local container log retention" in error for error in errors)
+
+
 def test_container_base_images_require_runtime_config_build_context() -> None:
     checker = _load_checker()
     dockerignore = Path(".dockerignore").read_text(encoding="utf-8").replace(

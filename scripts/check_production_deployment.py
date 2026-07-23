@@ -12,6 +12,7 @@ REQUIRED_GUIDE_SNIPPETS = (
     "not a multi-tenant remote-desktop gateway",
     "Configure uptime checks against `/healthz`",
     "back up the named `/data` volume with encryption at rest",
+    "bounded rotation",
     "restore drill",
     "Do not use it as an enterprise source of truth",
     "UNSIGNED PREVIEW",
@@ -24,6 +25,9 @@ REQUIRED_COMPOSE_SNIPPETS = (
     "no-new-privileges:true",
     "pids_limit: 128",
     "mem_limit: 256m",
+    "driver: local",
+    'max-size: "10m"',
+    'max-file: "3"',
     "remote-ops-data:/data",
 )
 
@@ -43,8 +47,17 @@ def check_production_deployment() -> list[str]:
     for snippet in REQUIRED_COMPOSE_SNIPPETS:
         if snippet not in compose:
             errors.append(f"Compose deployment missing required hardening: {snippet}")
+    if not has_bounded_web_service_logs(compose):
+        errors.append("Compose deployment must configure bounded local logs on remote-ops-web")
     errors.extend(check_loopback_port_mappings(compose))
     return errors
+
+
+def has_bounded_web_service_logs(compose: str) -> bool:
+    return all(
+        snippet in compose_service_block(compose, "remote-ops-web")
+        for snippet in ("driver: local", 'max-size: "10m"', 'max-file: "3"')
+    )
 
 
 def check_loopback_port_mappings(compose: str) -> list[str]:
@@ -79,6 +92,32 @@ def compose_port_mappings(compose: str) -> list[str]:
             mapping = stripped[1:].strip().split("#", 1)[0].strip().strip("\"'")
             mappings.append(mapping)
     return mappings
+
+
+def compose_service_block(compose: str, service_name: str) -> str:
+    lines = compose.splitlines()
+    services_indent: int | None = None
+    service_indent: int | None = None
+    body: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if services_indent is None:
+            if stripped == "services:" and indent == 0:
+                services_indent = indent
+            continue
+        if service_indent is None:
+            if indent <= services_indent:
+                return ""
+            if indent == services_indent + 2 and stripped == f"{service_name}:":
+                service_indent = indent
+            continue
+        if indent <= services_indent:
+            break
+        if indent == service_indent and stripped.endswith(":"):
+            break
+        body.append(line)
+    return "\n".join(body)
 
 
 def main() -> int:

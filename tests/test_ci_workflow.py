@@ -249,6 +249,30 @@ def test_ci_workflow_requires_android_sdk_archive_recovery() -> None:
     assert any("bounded Android SDK installation retries" in error for error in errors)
 
 
+def test_ci_workflow_requires_android_google_apis_image_for_hosted_smoke() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "google_apis;x86_64",
+        "google_apis_playstore;x86_64",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("Android Google APIs system image for reliable hosted boot" in error for error in errors)
+
+
+def test_ci_workflow_requires_explicit_android_boot_only_coverage() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        " --skip-web-response",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("explicit boot-only coverage" in error for error in errors)
+
+
 def test_ci_workflow_requires_durable_android_avd_home_and_creation_assertion() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")

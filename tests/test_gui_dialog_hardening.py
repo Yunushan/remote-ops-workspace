@@ -1118,6 +1118,22 @@ def test_running_tab_close_is_immediate_and_cancels_pending_restart(gui_window) 
     assert process.process_state == QProcess.ProcessState.NotRunning
 
 
+def test_terminal_status_ignores_deleted_tabs_from_late_process_signal(gui_window) -> None:
+    _app, window = gui_window
+
+    class DeletedTabs:
+        def count(self) -> int:
+            raise RuntimeError("wrapped C/C++ object of type ResponsiveWorkspaceTabs has been deleted")
+
+    original_tabs = window.tabs
+    window.tabs = DeletedTabs()
+    try:
+        assert window.all_terminal_panes() == []
+        window.update_session_status()
+    finally:
+        window.tabs = original_tabs
+
+
 def test_moba_sftp_dock_routes_supported_actions_and_disables_stubs(gui_window) -> None:
     from remote_ops_workspace.moba_connected import RemoteFileEntry
     from remote_ops_workspace.terminal import TerminalPanePlan

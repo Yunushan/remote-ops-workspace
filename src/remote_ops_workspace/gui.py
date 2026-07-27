@@ -16544,16 +16544,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def all_terminal_panes(self) -> list[TerminalPane]:
             panes: list[TerminalPane] = []
             seen: set[int] = set()
-            for index in range(self.tabs.count()):
-                widget = self.tabs.widget(index)
-                if widget is None:
-                    continue
-                for pane in self.terminal_panes_in(widget):
-                    key = id(pane)
-                    if key in seen:
+            try:
+                for index in range(self.tabs.count()):
+                    widget = self.tabs.widget(index)
+                    if widget is None:
                         continue
-                    seen.add(key)
-                    panes.append(pane)
+                    for pane in self.terminal_panes_in(widget):
+                        key = id(pane)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        panes.append(pane)
+            except RuntimeError:
+                # A QProcess may emit finished while Qt is deleting the main window's tabs.
+                return []
             return panes
 
         def running_terminal_panes(self) -> list[TerminalPane]:
@@ -16587,11 +16591,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return answer == QMessageBox.StandardButton.Yes
 
         def update_session_status(self) -> None:
-            running = len(self.running_terminal_panes())
-            if running:
-                self.statusBar().showMessage(f"Running process panes: {running}")
-            else:
-                self.statusBar().showMessage("No running process panes")
+            try:
+                running = len(self.running_terminal_panes())
+                if running:
+                    self.statusBar().showMessage(f"Running process panes: {running}")
+                else:
+                    self.statusBar().showMessage("No running process panes")
+            except RuntimeError:
+                # Ignore late process signals after Qt has disposed of the window.
+                return
 
         def closeEvent(self, event) -> None:
             running = self.running_terminal_panes()

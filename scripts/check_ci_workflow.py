@@ -303,6 +303,7 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "ANDROID_AVD_HOME=$avd_home": "durable Android AVD home export",
         "GITHUB_PATH": "Android SDK executable PATH export",
         "sdkmanager": "Android SDK package installation",
+        "google_apis;x86_64": "Android Google APIs system image for reliable hosted boot",
         "for attempt in 1 2 3": "bounded Android SDK installation retries",
         "removing transient cache and incomplete API": "Android SDK corrupt archive recovery",
         "Android SDK package installation failed after 3 attempts": "Android SDK retry exhaustion failure",
@@ -330,7 +331,7 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "sys.boot_completed": "Android emulator boot-completion check",
         "scripts/check_mobile_emulator_smoke.py --platform android": "Android emulator smoke helper",
         "--android-api ${{ matrix.api-level }}": "Android API assertion",
-        "http://10.0.2.2:8765/index.html": "Android emulator host loopback URL",
+        "--skip-web-response": "explicit boot-only coverage for Android API levels without stable HTTP capture",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "Android smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing Android screenshots",
     }

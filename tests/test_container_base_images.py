@@ -103,6 +103,18 @@ def test_container_base_images_require_runtime_config_build_context() -> None:
     ]
 
 
+def test_container_base_images_require_docker_dependabot_to_target_docker_directory() -> None:
+    checker = _load_checker()
+    dependabot = Path(".github/dependabot.yml").read_text(encoding="utf-8").replace(
+        '    directory: "/docker"',
+        '    directory: "/"',
+    )
+
+    assert checker.check_dependabot_docker_updates(dependabot) == [
+        "dependabot.yml Docker updates must target /docker for Dockerfile.web"
+    ]
+
+
 def _load_checker():
     path = Path("scripts/check_container_base_images.py")
     spec = importlib.util.spec_from_file_location("container_base_images", path)

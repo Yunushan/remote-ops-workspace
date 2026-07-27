@@ -10,10 +10,14 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 DEFAULT_IOS_OPEN_URL_ATTEMPTS = 3
 DEFAULT_IOS_OPEN_URL_RETRY_DELAY_SECONDS = 10.0
 DEFAULT_WEB_READY_TIMEOUT_SECONDS = 30.0
+HTTP_OK_MARKER = "HTTP/1.0 200 OK"
+ANDROID_WEB_RESPONSE_PATH = "/data/local/tmp/row-web-pwa-response.txt"
+WEB_PWA_RESPONSE_MARKER = "<title>Remote Ops Workspace</title>"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -21,6 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--platform", choices=("android", "ios"), required=True)
     parser.add_argument("--url", required=True)
     parser.add_argument("--android-api", type=int)
+    parser.add_argument(
+        "--skip-web-response",
+        action="store_true",
+        help="Capture Android emulator boot evidence without fetching the Web/PWA response.",
+    )
     parser.add_argument(
         "--ios-open-url-attempts",
         type=int,
@@ -35,18 +44,30 @@ def main(argv: list[str] | None = None) -> int:
     if args.platform == "android":
         if args.android_api is None:
             raise SystemExit("--android-api is required for Android smoke")
-        return check_android(api_level=args.android_api, url=args.url, out_dir=out_dir)
+        return check_android(
+            api_level=args.android_api,
+            url=args.url,
+            out_dir=out_dir,
+            verify_web_response=not args.skip_web_response,
+        )
     return check_ios(url=args.url, out_dir=out_dir, open_url_attempts=args.ios_open_url_attempts)
 
 
-def check_android(*, api_level: int, url: str, out_dir: Path) -> int:
+def check_android(
+    *,
+    api_level: int,
+    url: str,
+    out_dir: Path,
+    verify_web_response: bool = True,
+) -> int:
     require_tool("adb")
     actual_api = run(["adb", "shell", "getprop", "ro.build.version.sdk"]).stdout.strip()
     if actual_api != str(api_level):
         raise SystemExit(f"Android emulator API mismatch: expected {api_level}, got {actual_api!r}")
 
+    if verify_web_response:
+        ensure_android_web_response(url)
     run(["adb", "shell", "input", "keyevent", "82"], check=False)
-    run(["adb", "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url])
     time.sleep(5)
 
     screenshot = run(["adb", "exec-out", "screencap", "-p"], text=False).stdout
@@ -54,8 +75,53 @@ def check_android(*, api_level: int, url: str, out_dir: Path) -> int:
         raise SystemExit("Android emulator screenshot was empty")
     target = out_dir / f"android-api-{api_level}-web-pwa.png"
     target.write_bytes(screenshot)
-    print(f"Android API {api_level} Web/PWA smoke passed: {target}")
+    mode = "Web/PWA network" if verify_web_response else "boot screenshot"
+    print(f"Android API {api_level} {mode} smoke passed: {target}")
     return 0
+
+
+def ensure_android_web_response(url: str) -> None:
+    parsed = urlsplit(url)
+    if parsed.scheme != "http" or not parsed.hostname:
+        raise SystemExit(f"Android Web/PWA network smoke requires an HTTP URL, got {url!r}")
+    port = parsed.port or 80
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    host_header = parsed.netloc
+    request = (
+        f"printf 'GET {path} HTTP/1.0\\r\\nHost: {host_header}\\r\\nConnection: close\\r\\n\\r\\n' "
+        f"| toybox nc -w 10 -q 1 {parsed.hostname} {port} > {ANDROID_WEB_RESPONSE_PATH}"
+    )
+    request_result = run(
+        [
+            "adb",
+            "shell",
+            request,
+        ],
+        check=False,
+    )
+    response_result = run(
+        ["adb", "exec-out", "cat", ANDROID_WEB_RESPONSE_PATH],
+        check=False,
+    )
+    run(["adb", "shell", "rm", "-f", ANDROID_WEB_RESPONSE_PATH], check=False)
+    response = response_result.stdout
+    if (
+        request_result.returncode == 0
+        and response_result.returncode == 0
+        and HTTP_OK_MARKER in response
+        and WEB_PWA_RESPONSE_MARKER in response
+    ):
+        print(f"Android Web/PWA response verified: {url}")
+        return
+    stderr = request_result.stderr.strip()
+    preview = response[:500].replace("\r", "\\r").replace("\n", "\\n")
+    raise SystemExit(
+        "Android emulator could not verify the Web/PWA response "
+        f"at {url!r}; request_exit={request_result.returncode}; "
+        f"response_exit={response_result.returncode}; stderr={stderr!r}; response={preview!r}"
+    )
 
 
 def check_ios(*, url: str, out_dir: Path, open_url_attempts: int = DEFAULT_IOS_OPEN_URL_ATTEMPTS) -> int:

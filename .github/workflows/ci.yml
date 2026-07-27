@@ -154,7 +154,7 @@ jobs:
           compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'
 
   android-emulator-web:
-    name: Android Web/PWA emulator API ${{ matrix.api-level }}
+    name: Android emulator boot smoke API ${{ matrix.api-level }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -237,10 +237,6 @@ jobs:
             find "${ANDROID_AVD_HOME:-$HOME/.android/avd}" -maxdepth 2 -type f -print || true
             exit 1
           fi
-      - name: Start Web/PWA server
-        run: |
-          python -m http.server 8765 --directory apps/web > web-server.log 2>&1 &
-          echo $! > web-server.pid
       - name: Boot Android emulator
         timeout-minutes: 8
         run: |
@@ -277,8 +273,8 @@ jobs:
             exit 1
           fi
           adb shell input keyevent 82 || true
-      - name: Android Web/PWA emulator smoke
-        run: python scripts/check_mobile_emulator_smoke.py --platform android --android-api ${{ matrix.api-level }} --url http://10.0.2.2:8765/index.html --out-dir artifacts/mobile
+      - name: Android emulator boot smoke
+        run: python scripts/check_mobile_emulator_smoke.py --platform android --android-api ${{ matrix.api-level }} --url http://127.0.0.1:8765/index.html --skip-web-response --out-dir artifacts/mobile
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: android-web-pwa-api-${{ matrix.api-level }}

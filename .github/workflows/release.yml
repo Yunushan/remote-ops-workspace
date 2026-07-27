@@ -43,7 +43,7 @@ jobs:
       unsigned_native_preview_allowed: ${{ steps.signing-readiness.outputs.unsigned_preview_allowed }}
       native_publish_ready: ${{ steps.signing-readiness.outputs.native_publish_ready }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
@@ -133,7 +133,7 @@ jobs:
     needs: release-preflight
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
@@ -226,7 +226,7 @@ jobs:
             runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
@@ -340,7 +340,7 @@ jobs:
             runner: macos-latest
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
@@ -419,7 +419,7 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
@@ -454,13 +454,13 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
           clean: true
       - name: Check out immutable release source for evidence binding
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           path: release-source
@@ -507,7 +507,7 @@ jobs:
       - macos-native
       - linux-native
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
@@ -520,7 +520,7 @@ jobs:
           path: release-assets
           merge-multiple: true
       - name: Check out workflow-bound release validation tooling
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ github.sha }}
           path: release-tooling
@@ -556,7 +556,7 @@ jobs:
       - publish
       - accepted-platform-evidence-assets
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false

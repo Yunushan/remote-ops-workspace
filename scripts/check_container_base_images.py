@@ -8,10 +8,14 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB_DOCKERFILE = ROOT / "docker" / "Dockerfile.web"
 COMPOSE_PATH = ROOT / "docker" / "compose.yaml"
 DOCKERIGNORE_PATH = ROOT / ".dockerignore"
+DEPENDABOT_CONFIG_PATH = ROOT / ".github" / "dependabot.yml"
 PYTHON_BASE_IMAGE = (
     "python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de"
 )
 FROM_RE = re.compile(r"(?mi)^FROM\s+([^\s]+)")
+DEPENDABOT_DOCKER_ENTRY_RE = re.compile(
+    r"(?ms)^  - package-ecosystem:\s*docker\s*$.*?(?=^  - package-ecosystem:|\Z)"
+)
 PINNED_BUILD_TOOLCHAIN = (
     "pip install --no-cache-dir --no-compile --constraint requirements-release.txt pip setuptools wheel"
 )
@@ -50,6 +54,7 @@ def check_container_base_images(dockerfile: str | None = None) -> list[str]:
     if ISOLATED_APP_INSTALL not in text:
         errors.append("Dockerfile.web must install the application with --no-build-isolation")
     errors.extend(check_docker_build_context())
+    errors.extend(check_dependabot_docker_updates())
     errors.extend(check_compose_hardening())
     return errors
 
@@ -74,6 +79,20 @@ def check_docker_build_context(dockerignore_text: str | None = None) -> list[str
         for entry in required_entries
         if entry not in text
     ]
+
+
+def check_dependabot_docker_updates(dependabot_text: str | None = None) -> list[str]:
+    text = (
+        dependabot_text
+        if dependabot_text is not None
+        else DEPENDABOT_CONFIG_PATH.read_text(encoding="utf-8")
+    )
+    entry = DEPENDABOT_DOCKER_ENTRY_RE.search(text)
+    if entry is None:
+        return ["dependabot.yml must define a Docker update entry for Dockerfile.web"]
+    if 'directory: "/docker"' not in entry.group(0):
+        return ["dependabot.yml Docker updates must target /docker for Dockerfile.web"]
+    return []
 
 
 def check_compose_hardening(compose_text: str | None = None) -> list[str]:

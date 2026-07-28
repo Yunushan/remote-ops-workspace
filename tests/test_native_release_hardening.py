@@ -68,9 +68,16 @@ def test_native_workflow_requires_uniform_preview_signing_channel() -> None:
 
 def test_native_workflow_rejects_publish_without_a_readiness_gate() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    publish = checker.workflow_job_block(workflow, "publish")
+    assert publish
+    workflow = workflow.replace(
+        publish,
+        publish.replace(
         "    if: ${{ needs.release-preflight.outputs.native_publish_ready == 'true' }}\n",
         "",
+        1,
+        ),
         1,
     )
 

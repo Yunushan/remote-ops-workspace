@@ -133,6 +133,146 @@ def test_terminal_output_accepts_direct_keys_and_has_operational_context_menu(
     pane.deleteLater()
 
 
+def test_terminal_output_submits_return_to_a_real_pipe_process(gui_window) -> None:
+    import sys
+
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    child = (
+        "import sys; "
+        "print('READY', flush=True); "
+        "payload = sys.stdin.buffer.readline(); "
+        "print('DIRECT:' + payload.hex(), flush=True)"
+    )
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(
+            title="direct-pipe-input",
+            command=[sys.executable, "-u", "-c", child],
+            source="test",
+        )
+    )
+    window.add_workspace_tab(
+        pane,
+        "direct-pipe-input",
+        role="terminal",
+    )
+
+    try:
+        for _ in range(100):
+            app.processEvents()
+            if "READY" in pane.output.toPlainText():
+                break
+            QTest.qWait(10)
+        QTest.mouseClick(
+            pane.output.viewport(),
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            QPoint(20, 20),
+        )
+        QTest.keyClicks(pane.output, "pipeinput")
+        QTest.keyClick(pane.output, Qt.Key.Key_Return)
+        for _ in range(100):
+            app.processEvents()
+            if "DIRECT:70697065696e7075740a" in pane.output.toPlainText():
+                break
+            QTest.qWait(10)
+
+        assert pane.output.property("terminalProcessBackend") == "qt-process-pipe"
+        assert "DIRECT:70697065696e7075740a" in pane.output.toPlainText()
+    finally:
+        if pane.is_running():
+            pane.process.kill()
+            pane.process.waitForFinished(1_000)
+        if window.tabs.indexOf(pane) >= 0:
+            window.close_tab(window.tabs.indexOf(pane))
+
+
+def test_clean_local_shell_exit_closes_its_standalone_tab(gui_window) -> None:
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import default_shell_plan
+
+    app, window = gui_window
+    plan = default_shell_plan()
+    plan.title = "auto-close-shell"
+    pane = window.new_terminal_pane(plan)
+    window.add_workspace_tab(pane, plan.title, role="terminal")
+
+    for _ in range(100):
+        app.processEvents()
+        if pane.is_running():
+            break
+        QTest.qWait(10)
+    assert pane.is_running()
+    pane.input.setText("exit")
+    pane.send_input()
+    for _ in range(200):
+        app.processEvents()
+        if window.find_tab_by_label(plan.title) < 0:
+            break
+        QTest.qWait(10)
+
+    assert window.find_tab_by_label(plan.title) < 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows ConPTY integration")
+def test_windows_shell_tab_accepts_direct_input_and_exit_closes_tab(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import default_shell_plan
+    from remote_ops_workspace.windows_conpty import conpty_support
+
+    support = conpty_support()
+    if not support.supported:
+        pytest.skip(support.reason)
+    app, window = gui_window
+    plan = default_shell_plan()
+    plan.title = "windows-shell-direct-input"
+    pane = window.new_terminal_pane(plan)
+    window.add_workspace_tab(pane, plan.title, role="terminal")
+
+    try:
+        assert pane.output.property("terminalProcessBackend") == "windows-conpty"
+        QTest.mouseClick(
+            pane.output.viewport(),
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+            QPoint(20, 20),
+        )
+        QTest.keyClicks(pane.output, "echo __ROW_SHELL_DIRECT_OK__")
+        QTest.keyClick(pane.output, Qt.Key.Key_Return)
+        for _ in range(200):
+            app.processEvents()
+            if pane.output.toPlainText().count("__ROW_SHELL_DIRECT_OK__") >= 2:
+                break
+            QTest.qWait(10)
+
+        assert pane.output.toPlainText().count("__ROW_SHELL_DIRECT_OK__") >= 2
+        QTest.keyClicks(pane.output, "exit")
+        QTest.keyClick(pane.output, Qt.Key.Key_Return)
+        for _ in range(200):
+            app.processEvents()
+            if window.find_tab_by_label(plan.title) < 0:
+                break
+            QTest.qWait(10)
+
+        assert window.find_tab_by_label(plan.title) < 0
+    finally:
+        index = window.find_tab_by_label(plan.title)
+        if index >= 0:
+            if pane.is_running():
+                pane.process.kill()
+                pane.process.waitForFinished(1_000)
+            window.close_tab(index)
+
+
 def test_terminal_multiline_selection_keys_copy_and_typing_stay_local_or_remote(
     gui_window,
 ) -> None:
@@ -297,7 +437,7 @@ def test_visible_moba_terminal_routes_keys_from_the_actual_mouse_focus(
     process.finish()
 
     assert focus is pane.output
-    assert written == b"focused\r"
+    assert written == b"focused\n"
 
     # Pipe-backed panes retain a visible, reliable line-mode fallback.  The
     # connected-state evidence route must not masquerade as live process output.

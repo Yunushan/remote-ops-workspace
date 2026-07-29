@@ -538,13 +538,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         plan: TerminalPanePlan,
         _profile: Profile | None,
     ):
-        """Select a real local pseudo-console for interactive Windows OpenSSH."""
+        """Select a real local pseudo-console for interactive Windows sessions."""
 
+        program_name = Path(plan.command[0]).name.lower() if plan.command else ""
+        openssh_program = program_name in {"ssh", "ssh.exe", "sftp", "sftp.exe"}
+        local_shell_program = bool(
+            plan.source == "shell"
+            and program_name
+            in {
+                "cmd",
+                "cmd.exe",
+                "powershell",
+                "powershell.exe",
+                "pwsh",
+                "pwsh.exe",
+            }
+        )
         use_windows_conpty = bool(
             sys.platform == "win32"
-            and plan.command
-            and Path(plan.command[0]).name.lower()
-            in {"ssh", "ssh.exe", "sftp", "sftp.exe"}
+            and (openssh_program or local_shell_program)
         )
         if not use_windows_conpty:
             return QProcess(parent), ""
@@ -558,13 +570,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             reason = support.reason
         except (ImportError, OSError, RuntimeError) as exc:
             reason = str(exc)
+        if openssh_program:
+            return (
+                _openssh_pipe_fallback_process(parent),
+                (
+                    "Local ConPTY is unavailable, so this SSH pane is using a pipe fallback. "
+                    "Interactive prompts are unsupported; this launch is restricted to "
+                    f"trusted-host key/agent authentication: {reason}"
+                ),
+            )
+        process = QProcess(parent)
+        process.setProperty("terminalLineInputFallback", True)
         return (
-            _openssh_pipe_fallback_process(parent),
-            (
-                "Local ConPTY is unavailable, so this SSH pane is using a pipe fallback. "
-                "Interactive prompts are unsupported; this launch is restricted to "
-                f"trusted-host key/agent authentication: {reason}"
-            ),
+            process,
+            "Local ConPTY is unavailable, so this shell is using line-oriented input: "
+            f"{reason}",
         )
 
     def _openssh_pipe_fallback_process(parent):
@@ -1166,8 +1186,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.setProperty("terminalLastLinkOpenSucceeded", opened)
             return opened
 
-        @staticmethod
-        def terminal_key_payload(event) -> bytes | None:
+        def terminal_key_payload(self, event) -> bytes | None:
             """Translate a focused terminal key event to conventional TTY bytes."""
 
             key = event.key()
@@ -1237,8 +1256,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 modifier = 1 + int(shift) + 2 * int(alt) + 4 * int(control)
                 return f"\x1b[{tilde_navigation[key]};{modifier}~".encode("ascii")
             special = {
-                Qt.Key.Key_Return: b"\r",
-                Qt.Key.Key_Enter: b"\r",
+                Qt.Key.Key_Return: (
+                    b"\r" if bool(getattr(self.process, "is_pty", False)) else b"\n"
+                ),
+                Qt.Key.Key_Enter: (
+                    b"\r" if bool(getattr(self.process, "is_pty", False)) else b"\n"
+                ),
                 Qt.Key.Key_Backspace: b"\x7f",
                 Qt.Key.Key_Tab: b"\t",
                 Qt.Key.Key_Escape: b"\x1b",
@@ -16493,9 +16516,47 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             profile: Profile | None = None,
         ) -> TerminalPane:
             pane = TerminalPane(plan, profile=profile)
+            pane.setProperty("terminalAutoCloseOnCleanExit", plan.source == "shell")
             pane.process.started.connect(self.update_session_status)
-            pane.process.finished.connect(lambda *_args: self.update_session_status())
+            pane.process.finished.connect(
+                lambda exit_code, _exit_status, terminal_pane=pane: self.handle_terminal_process_finished(
+                    terminal_pane,
+                    exit_code,
+                )
+            )
             return pane
+
+        def handle_terminal_process_finished(
+            self,
+            pane: TerminalPane,
+            exit_code: int,
+        ) -> None:
+            self.update_session_status()
+            try:
+                auto_close = bool(pane.property("terminalAutoCloseOnCleanExit"))
+                closing = bool(pane.property("terminalClosing"))
+            except RuntimeError:
+                return
+            if exit_code != 0 or not auto_close or closing:
+                return
+            QTimer.singleShot(
+                0,
+                lambda terminal_pane=pane: self.close_finished_shell_tab(
+                    terminal_pane
+                ),
+            )
+
+        def close_finished_shell_tab(self, pane: TerminalPane) -> None:
+            """Close a standalone shell tab after its shell exits successfully."""
+
+            try:
+                if pane.is_running() or bool(pane.property("terminalClosing")):
+                    return
+                index = self.tabs.indexOf(pane)
+            except RuntimeError:
+                return
+            if index >= 0 and self.tab_role(index) == "terminal":
+                self.close_tab(index)
 
         def close_tab(self, index: int) -> None:
             widget = self.tabs.widget(index)

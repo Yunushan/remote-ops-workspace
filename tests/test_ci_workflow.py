@@ -153,16 +153,29 @@ def test_ci_workflow_requires_complete_qt_coverage_runtime() -> None:
     assert any("known readable coverage-runner GUI font" in error for error in errors)
 
 
-def test_ci_workflow_requires_pyqt6_compatible_coverage_tracer() -> None:
+def test_ci_workflow_requires_coverage_safe_virtual_x_platform() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        '      COVERAGE_CORE: "pytrace"\n',
-        '      COVERAGE_CORE: "ctrace"\n',
+        '      QT_QPA_PLATFORM: "xcb"\n',
+        '      QT_QPA_PLATFORM: "offscreen"\n',
+        1,
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("PyQt6-compatible pure-Python coverage tracer" in error for error in errors)
+    assert any("coverage-safe virtual X Qt platform" in error for error in errors)
+
+
+def test_ci_workflow_requires_virtual_x_coverage_execution() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          xvfb-run -a python -m pytest -q \\\n",
+        "          python -m pytest -q \\\n",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("full pytest execution on a virtual X display" in error for error in errors)
 
 
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:

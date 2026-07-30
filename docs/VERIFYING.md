@@ -32,10 +32,12 @@ coverage and at least 55% pure branch-decision coverage. These are floors, not
 targets or readiness claims. They may be raised as coverage improves, but
 repository policy rejects reducing either threshold or making the job advisory.
 CI retains XML and JSON reports for both successful and failed test runs so a
-threshold result is auditable. The hosted Linux gate uses coverage.py's
-pure-Python tracer because its native C tracer reproducibly crashes while
-instrumenting the real PyQt6 suite; this changes the tracer implementation,
-not the measured source, tests, branches or enforced floors.
+threshold result is auditable. The hosted Linux coverage gate uses Qt's
+`xcb` platform on an Xvfb virtual display because instrumented `offscreen`
+widget traversal reproducibly crashes inside PyQt6. This keeps keyboard-focus
+tests, measured source, branches and floors intact; the separate live GUI job
+still uses `offscreen` and retains validated screenshot and interaction
+artifacts.
 
 The full verifier runs:
 

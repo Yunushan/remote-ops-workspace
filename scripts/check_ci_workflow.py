@@ -104,8 +104,7 @@ def check_coverage_job(workflow: str) -> list[str]:
         "name: Python branch-aware coverage": "clear branch-aware coverage job label",
         "runs-on: ubuntu-latest": "stable coverage runner",
         "timeout-minutes: 30": "bounded coverage job timeout",
-        'COVERAGE_CORE: "pytrace"': "PyQt6-compatible pure-Python coverage tracer",
-        'QT_QPA_PLATFORM: "offscreen"': "headless Qt coverage platform",
+        'QT_QPA_PLATFORM: "xcb"': "coverage-safe virtual X Qt platform",
         'python-version: "3.12"': "stable coverage Python version",
         "Install Linux Qt coverage runtime libraries": "explicit Qt coverage runtime setup",
         "fontconfig": "Qt coverage font discovery runtime",
@@ -114,6 +113,8 @@ def check_coverage_job(workflow: str) -> list[str]:
         "libgl1": "OpenGL coverage runtime library",
         "libxkbcommon-x11-0": "Qt xkbcommon X11 coverage runtime library",
         "libxcb-cursor0": "Qt xcb cursor coverage runtime library",
+        "xauth": "virtual X authority runtime",
+        "xvfb": "virtual X display runtime",
         "Verify coverage runner font discovery": "explicit coverage font discovery gate",
         "fc-cache -f": "fresh coverage-runner fontconfig cache",
         'fc-match "DejaVu Sans"': "known coverage-runner Linux font match",
@@ -121,7 +122,7 @@ def check_coverage_job(workflow: str) -> list[str]:
         'python -m pip install -e ".[desktop,security,dev]"': (
             "desktop, security and development dependency installation"
         ),
-        "python -m pytest -q": "direct full pytest execution",
+        "xvfb-run -a python -m pytest -q": "full pytest execution on a virtual X display",
         "--cov=remote_ops_workspace": "application source coverage",
         "--cov-branch": "branch coverage measurement",
         "--cov-report=term-missing": "human-readable missing-line report",

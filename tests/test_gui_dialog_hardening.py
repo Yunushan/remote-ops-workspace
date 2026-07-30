@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 
@@ -1338,7 +1339,8 @@ def test_moba_sftp_dock_routes_supported_actions_and_disables_stubs(gui_window) 
 
 @pytest.fixture
 def gui_window(monkeypatch, tmp_path):
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    if "QT_QPA_PLATFORM" not in os.environ:
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("ROW_HOME", str(tmp_path / "row-home"))
     pytest.importorskip("PyQt6")
     from remote_ops_workspace.gui import create_main_window

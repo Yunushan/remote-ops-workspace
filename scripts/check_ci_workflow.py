@@ -102,27 +102,17 @@ def check_coverage_job(workflow: str) -> list[str]:
         return ["ci workflow missing coverage job for enforced Python branch coverage"]
     required_snippets = {
         "name: Python branch-aware coverage": "clear branch-aware coverage job label",
-        "runs-on: ubuntu-latest": "stable coverage runner",
+        "runs-on: windows-2025-vs2026": "stable native Windows coverage runner",
         "timeout-minutes: 30": "bounded coverage job timeout",
-        'QT_QPA_PLATFORM: "xcb"': "coverage-safe virtual X Qt platform",
+        'QT_QPA_PLATFORM: "windows"': "native Windows Qt coverage platform",
         'python-version: "3.12"': "stable coverage Python version",
-        "Install Linux Qt coverage runtime libraries": "explicit Qt coverage runtime setup",
-        "fontconfig": "Qt coverage font discovery runtime",
-        "fonts-dejavu-core": "known readable coverage-runner GUI font",
-        "libegl1": "Qt EGL coverage runtime library",
-        "libgl1": "OpenGL coverage runtime library",
-        "libxkbcommon-x11-0": "Qt xkbcommon X11 coverage runtime library",
-        "libxcb-cursor0": "Qt xcb cursor coverage runtime library",
-        "xauth": "virtual X authority runtime",
-        "xvfb": "virtual X display runtime",
-        "Verify coverage runner font discovery": "explicit coverage font discovery gate",
-        "fc-cache -f": "fresh coverage-runner fontconfig cache",
-        'fc-match "DejaVu Sans"': "known coverage-runner Linux font match",
-        "fc-list : family | grep -q .": "non-empty coverage-runner Qt font inventory assertion",
         'python -m pip install -e ".[desktop,security,dev]"': (
             "desktop, security and development dependency installation"
         ),
-        "xvfb-run -a python -m pytest -q": "full pytest execution on a virtual X display",
+        "New-Item -ItemType Directory -Force -Path artifacts/coverage | Out-Null": (
+            "explicit Windows coverage evidence directory"
+        ),
+        "python -m pytest -q": "direct full pytest execution",
         "--cov=remote_ops_workspace": "application source coverage",
         "--cov-branch": "branch coverage measurement",
         "--cov-report=term-missing": "human-readable missing-line report",

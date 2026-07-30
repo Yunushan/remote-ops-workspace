@@ -48,14 +48,14 @@ jobs:
 
   coverage:
     name: Python branch-aware coverage
-    runs-on: ubuntu-latest
+    runs-on: windows-2025-vs2026
     timeout-minutes: 30
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PIP_NO_CACHE_DIR: "1"
-      # Coverage uses a virtual X display because instrumented traversal of
-      # Qt's offscreen plugin reproducibly crashes on hosted Linux.
-      QT_QPA_PLATFORM: "xcb"
+      # Use the proven native Windows GUI runtime because instrumented PyQt6
+      # application startup aborts on hosted Linux under offscreen and Xvfb.
+      QT_QPA_PLATFORM: "windows"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -63,41 +63,19 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - name: Install Linux Qt coverage runtime libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            fontconfig \
-            fonts-dejavu-core \
-            libegl1 \
-            libgl1 \
-            libxkbcommon-x11-0 \
-            libxcb-cursor0 \
-            libxcb-icccm4 \
-            libxcb-keysyms1 \
-            libxcb-render-util0 \
-            libxcb-xinerama0 \
-            libxext6 \
-            libxrender1 \
-            xauth \
-            xvfb
-      - name: Verify coverage runner font discovery
-        run: |
-          fc-cache -f
-          fc-match "DejaVu Sans"
-          fc-list : family | grep -q .
       - name: Install coverage verification dependencies
         run: python -m pip install -e ".[desktop,security,dev]"
+      - name: Create coverage evidence directory
+        run: New-Item -ItemType Directory -Force -Path artifacts/coverage | Out-Null
       - name: Enforce branch coverage floor
-        run: |
-          mkdir -p artifacts/coverage
-          xvfb-run -a python -m pytest -q \
-            --cov=remote_ops_workspace \
-            --cov-branch \
-            --cov-report=term-missing \
-            --cov-report=xml:artifacts/coverage/coverage.xml \
-            --cov-report=json:artifacts/coverage/coverage.json \
-            --cov-fail-under=70
+        run: >-
+          python -m pytest -q
+          --cov=remote_ops_workspace
+          --cov-branch
+          --cov-report=term-missing
+          --cov-report=xml:artifacts/coverage/coverage.xml
+          --cov-report=json:artifacts/coverage/coverage.json
+          --cov-fail-under=70
       - name: Validate aggregate and branch coverage evidence
         run: >-
           python scripts/check_coverage_report.py

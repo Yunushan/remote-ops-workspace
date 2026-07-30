@@ -32,12 +32,12 @@ coverage and at least 55% pure branch-decision coverage. These are floors, not
 targets or readiness claims. They may be raised as coverage improves, but
 repository policy rejects reducing either threshold or making the job advisory.
 CI retains XML and JSON reports for both successful and failed test runs so a
-threshold result is auditable. The hosted Linux coverage gate uses Qt's
-`xcb` platform on an Xvfb virtual display because instrumented `offscreen`
-widget traversal reproducibly crashes inside PyQt6. This keeps keyboard-focus
-tests, measured source, branches and floors intact; the separate live GUI job
-still uses `offscreen` and retains validated screenshot and interaction
-artifacts.
+threshold result is auditable. The gate runs the full suite with the native Qt
+Windows platform because instrumented PyQt6 application startup reproducibly
+aborts on hosted Linux with both `offscreen` and Xvfb. This keeps the measured
+source, tests, keyboard-focus behavior, branches and floors intact. Linux still
+runs in the cross-platform matrix, while its separate live GUI job retains
+validated `offscreen` screenshot and interaction artifacts.
 
 The full verifier runs:
 

@@ -109,13 +109,13 @@ def test_ci_workflow_rejects_reduced_or_advisory_coverage_gate() -> None:
 def test_ci_workflow_requires_branch_and_machine_readable_coverage_evidence() -> None:
     checker = _load_checker()
     source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    without_branch = source.replace("            --cov-branch \\\n", "")
+    without_branch = source.replace("          --cov-branch\n", "")
     without_xml = source.replace(
-        "            --cov-report=xml:artifacts/coverage/coverage.xml \\\n",
+        "          --cov-report=xml:artifacts/coverage/coverage.xml\n",
         "",
     )
     without_json = source.replace(
-        "            --cov-report=json:artifacts/coverage/coverage.json \\\n",
+        "          --cov-report=json:artifacts/coverage/coverage.json\n",
         "",
     )
 
@@ -140,42 +140,42 @@ def test_ci_workflow_requires_independent_coverage_report_validation() -> None:
     assert any("aggregate and branch report validator" in error for error in errors)
 
 
-def test_ci_workflow_requires_complete_qt_coverage_runtime() -> None:
+def test_ci_workflow_requires_stable_native_windows_coverage_runner() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "            fonts-dejavu-core \\\n",
-        "",
+        "    runs-on: windows-2025-vs2026\n",
+        "    runs-on: ubuntu-latest\n",
         1,
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("known readable coverage-runner GUI font" in error for error in errors)
+    assert any("stable native Windows coverage runner" in error for error in errors)
 
 
-def test_ci_workflow_requires_coverage_safe_virtual_x_platform() -> None:
+def test_ci_workflow_requires_native_windows_qt_coverage_platform() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        '      QT_QPA_PLATFORM: "xcb"\n',
+        '      QT_QPA_PLATFORM: "windows"\n',
         '      QT_QPA_PLATFORM: "offscreen"\n',
         1,
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("coverage-safe virtual X Qt platform" in error for error in errors)
+    assert any("native Windows Qt coverage platform" in error for error in errors)
 
 
-def test_ci_workflow_requires_virtual_x_coverage_execution() -> None:
+def test_ci_workflow_requires_coverage_evidence_directory() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "          xvfb-run -a python -m pytest -q \\\n",
-        "          python -m pytest -q \\\n",
+        "        run: New-Item -ItemType Directory -Force -Path artifacts/coverage | Out-Null\n",
+        "",
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("full pytest execution on a virtual X display" in error for error in errors)
+    assert any("explicit Windows coverage evidence directory" in error for error in errors)
 
 
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:

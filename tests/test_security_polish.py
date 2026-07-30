@@ -81,6 +81,21 @@ def test_security_polish_uses_explicit_empty_security_baseline() -> None:
     assert "Windows XP security policy must not claim native operator-host support" in errors
 
 
+def test_security_polish_rejects_cleartext_protocol_default_drift() -> None:
+    checker = load_security_checker()
+    baseline = _security_baseline()
+    baseline["modern_defaults"]["cleartext_protocol_default"] = "allowed"
+    baseline["cleartext_legacy_protocols"]["default"] = "allowed"
+
+    errors = checker.check_legacy_security_policy(
+        baseline=baseline,
+        xp_contract=_xp_contract(),
+    )
+
+    assert "security_baseline cleartext_protocol_default must be blocked" in errors
+    assert "security_baseline cleartext legacy protocol default must be blocked" in errors
+
+
 def test_security_polish_uses_explicit_empty_xp_contract() -> None:
     checker = load_security_checker()
 
@@ -416,6 +431,8 @@ def test_security_polish_rejects_permissive_legacy_launcher_behavior() -> None:
     assert "weak SSH algorithms must reject generic XP legacy_target aliases" in errors
     assert "RDP native security must require an isolated XP legacy_target" in errors
     assert "RDP native security must reject generic XP legacy_target aliases" in errors
+    for protocol in ("ftp", "rlogin", "rsh", "telnet"):
+        assert f"{protocol} launch must require explicit per-profile cleartext opt-in" in errors
 
 
 def _security_baseline() -> dict[str, object]:

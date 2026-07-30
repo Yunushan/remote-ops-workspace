@@ -36,6 +36,10 @@ Profile and command launch hardening:
 - known weak SSH algorithms, including SHA-1 host-key/KEX overrides and
   CBC/3DES/RC4 cipher overrides, are blocked unless the profile is marked as an
   isolated Windows XP remote target and explicitly sets `allow_legacy_crypto=true`;
+- Telnet, rlogin, rsh and FTP are cleartext legacy protocols and are blocked
+  by default; each isolated target profile must explicitly set
+  `allow_insecure_cleartext=true`, and this exception does not change any
+  modern SSH, SFTP, HTTPS, WinRM or RDP default;
 - FreeRDP `security=rdp` is blocked unless the profile is marked as an isolated
   Windows XP remote target and explicitly sets `allow_legacy_rdp_security=true`;
 - generic XP labels such as `xp`, `winxp` and `windows-xp`, plus the

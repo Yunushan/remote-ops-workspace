@@ -13,7 +13,7 @@ from . import command_safety as safe
 from .enterprise_policy import assert_profile_launch_allowed
 from .models import Profile, Tunnel
 from .plugins import LoadedPlugin, load_plugin_registry
-from .profile_validation import prepare_profile
+from .profile_validation import CLEARTEXT_PROTOCOL_OPT_IN, CLEARTEXT_PROTOCOLS, prepare_profile
 
 
 @dataclass(slots=True)
@@ -144,9 +144,16 @@ def build_launch_plan(profile: Profile) -> LaunchPlan:
         return _build_xdmcp(profile)
     if protocol == "ica":
         return _build_ica(profile)
-    if protocol in {"telnet", "rlogin", "rsh", "ftp"}:
+    if protocol in CLEARTEXT_PROTOCOLS:
+        _require_cleartext_protocol_opt_in(profile)
         port = _port(profile, protocol)
         target = _host(profile)
+        notes.extend(
+            [
+                f"{protocol} is a cleartext legacy protocol and provides no transport encryption.",
+                "The per-profile allow_insecure_cleartext=true exception is intended only for isolated networks.",
+            ]
+        )
         return LaunchPlan(protocol, [protocol, target, str(port)], notes)
     if protocol in {"http", "https", "www"}:
         return _build_url(profile, protocol)
@@ -546,6 +553,16 @@ def _require_sshv1_opt_in(profile: Profile) -> None:
         "SSHv1 is disabled by default; set allow_insecure_sshv1=true, "
         "legacy_target=windows-xp-32 or windows-xp-64, and allow_legacy_crypto=true "
         "only for isolated legacy systems"
+    )
+
+
+def _require_cleartext_protocol_opt_in(profile: Profile) -> None:
+    if _option_bool(profile.options, CLEARTEXT_PROTOCOL_OPT_IN):
+        return
+    protocol = profile.protocol.strip().lower()
+    raise LauncherError(
+        f"{protocol} is a cleartext legacy protocol and is disabled by default; "
+        f"set {CLEARTEXT_PROTOCOL_OPT_IN}=true only on an isolated per-profile target"
     )
 
 

@@ -32,6 +32,26 @@ def test_doctor_marks_sshv1_as_legacy_opt_in(monkeypatch) -> None:
         assert any("protocol v1" in note for note in status["notes"])
 
 
+def test_doctor_marks_cleartext_protocols_as_legacy_opt_in(monkeypatch) -> None:
+    available = {"ftp", "lftp", "rlogin", "rsh", "telnet"}
+    monkeypatch.setattr(
+        doctor_module.shutil,
+        "which",
+        lambda candidate: f"/mock/{candidate}" if candidate in available else None,
+    )
+
+    result = run_doctor()
+
+    for protocol in ("ftp", "rlogin", "rsh", "telnet"):
+        status = result.protocol_status[protocol]
+        assert status["status"] == "legacy-insecure-opt-in"
+        assert status["client_present"] is True
+        assert status["launchable_by_default"] is False
+        assert status["requires_profile_opt_in"] is True
+        assert "allow_insecure_cleartext=true" in status["summary"]
+        assert any("no transport encryption" in note for note in status["notes"])
+
+
 def test_doctor_cli_prints_sshv1_legacy_status(monkeypatch, capsys) -> None:
     result = DoctorResult(
         platform="Windows 11 (AMD64)",

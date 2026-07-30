@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 from remote_ops_workspace.features import load_feature_manifest
 
@@ -41,6 +42,30 @@ def test_feature_reality_protocol_samples_are_non_executing_plans() -> None:
     errors = checker.check_protocol_plans("protocol.ssh", ["ssh", "rdp", "serial", "local-shell"])
 
     assert errors == []
+
+
+def test_feature_reality_verifies_cleartext_default_and_opted_in_plan() -> None:
+    checker = _load_checker()
+
+    protocols = ["ftp", "rlogin", "rsh", "telnet"]
+    errors = checker.check_protocol_plans("protocol.cleartext", protocols)
+
+    assert errors == []
+    for protocol in protocols:
+        assert checker.sample_profile(protocol).options["allow_insecure_cleartext"] == "true"
+
+
+def test_feature_reality_rejects_permissive_cleartext_launcher(monkeypatch) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(
+        checker,
+        "build_launch_plan",
+        lambda profile: SimpleNamespace(protocol=profile.protocol, command=[profile.protocol]),
+    )
+
+    errors = checker.check_protocol_plans("protocol.telnet", ["telnet"])
+
+    assert "protocol.telnet telnet must be rejected without explicit per-profile cleartext opt-in" in errors
 
 
 def _load_checker():

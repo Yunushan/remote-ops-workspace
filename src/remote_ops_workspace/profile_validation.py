@@ -66,6 +66,8 @@ HOST_TARGET_PROTOCOLS = frozenset(
 URL_PROTOCOLS = frozenset({"http", "https", "www"})
 LOCAL_PROTOCOLS = frozenset({"local", "local-shell", "shell"})
 BOOL_TRUE_VALUES = frozenset({"1", "true", "yes"})
+CLEARTEXT_PROTOCOLS = frozenset({"ftp", "rlogin", "rsh", "telnet"})
+CLEARTEXT_PROTOCOL_OPT_IN = "allow_insecure_cleartext"
 
 
 class ProfileValidationError(ValueError):

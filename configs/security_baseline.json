@@ -11,7 +11,19 @@
     ],
     "ssh_legacy_crypto_default": "blocked",
     "rdp_legacy_security_default": "blocked",
+    "cleartext_protocol_default": "blocked",
     "weak_crypto_global_default": "blocked"
+  },
+  "cleartext_legacy_protocols": {
+    "protocols": [
+      "ftp",
+      "rlogin",
+      "rsh",
+      "telnet"
+    ],
+    "default": "blocked",
+    "profile_scope": "per-profile",
+    "required_profile_option": "allow_insecure_cleartext=true"
   },
   "legacy_windows_xp_remote_targets": {
     "coverage_percent": 100.0,

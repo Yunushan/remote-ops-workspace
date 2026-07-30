@@ -13,7 +13,12 @@ from urllib.parse import urlparse
 from . import command_safety as safe
 from .models import Profile
 from .plugins import plugin_protocols
-from .profile_validation import prepare_profile
+from .profile_validation import (
+    BOOL_TRUE_VALUES,
+    CLEARTEXT_PROTOCOL_OPT_IN,
+    CLEARTEXT_PROTOCOLS,
+    prepare_profile,
+)
 from .storage import ProfileStore
 
 SUPPORTED_IMPORT_FORMATS = {"auto", "row", "remmina", "mremoteng", "termius", "mobaxterm"}
@@ -52,6 +57,7 @@ def import_profiles(
         raise ValueError(f"no profiles found in {path}")
     result.profiles = [prepare_profile(profile, extra_protocols=plugin_protocols()) for profile in result.profiles]
     _warn_legacy_sshv1(result)
+    _warn_cleartext_protocols(result)
     return result
 
 
@@ -532,6 +538,16 @@ def _warn_legacy_sshv1(result: ProfileImportResult) -> None:
                 f"{profile.name}: SSHv1 is disabled by default; set allow_insecure_sshv1=true, "
                 "legacy_target=windows-xp-32 or windows-xp-64, and allow_legacy_crypto=true "
                 "only for isolated legacy systems"
+            )
+
+
+def _warn_cleartext_protocols(result: ProfileImportResult) -> None:
+    for profile in result.profiles:
+        opt_in = profile.options.get(CLEARTEXT_PROTOCOL_OPT_IN, "").lower()
+        if profile.protocol in CLEARTEXT_PROTOCOLS and opt_in not in BOOL_TRUE_VALUES:
+            result.warnings.append(
+                f"{profile.name}: {profile.protocol} is a cleartext legacy protocol and is disabled by default; "
+                f"set {CLEARTEXT_PROTOCOL_OPT_IN}=true only for an isolated per-profile target"
             )
 
 

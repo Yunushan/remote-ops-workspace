@@ -95,6 +95,34 @@ def test_sshv1_alias_command_builder() -> None:
     assert plan.command[:3] == ["ssh", "-1", "-p"]
 
 
+def test_cleartext_protocols_require_explicit_per_profile_opt_in() -> None:
+    for protocol in ("ftp", "rlogin", "rsh", "telnet"):
+        profile = Profile(name=f"legacy-{protocol}", protocol=protocol, host="192.0.2.10")
+        try:
+            build_launch_plan(profile)
+        except LauncherError as exc:
+            assert protocol in str(exc)
+            assert "cleartext legacy protocol" in str(exc)
+            assert "allow_insecure_cleartext=true" in str(exc)
+            assert "per-profile" in str(exc)
+        else:
+            raise AssertionError(f"{protocol} launch should require explicit cleartext opt-in")
+
+
+def test_cleartext_protocols_allow_only_explicit_per_profile_exception() -> None:
+    for protocol, port in (("ftp", 21), ("rlogin", 513), ("rsh", 514), ("telnet", 23)):
+        profile = Profile(
+            name=f"legacy-{protocol}",
+            protocol=protocol,
+            host="192.0.2.10",
+            options={"allow_insecure_cleartext": "true"},
+        )
+        plan = build_launch_plan(profile)
+        assert plan.command == [protocol, "192.0.2.10", str(port)]
+        assert any("provides no transport encryption" in note for note in plan.notes)
+        assert any("isolated networks" in note for note in plan.notes)
+
+
 def test_weak_ssh_algorithms_require_isolated_legacy_target() -> None:
     profile = Profile(
         name="legacy",

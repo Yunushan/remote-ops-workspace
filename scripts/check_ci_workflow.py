@@ -32,6 +32,7 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors: list[str] = []
     errors.extend(check_top_level_policy(text))
     errors.extend(check_repo_policy_job(text))
+    errors.extend(check_coverage_job(text))
     errors.extend(check_test_job(text))
     errors.extend(check_mobile_web_job(text))
     errors.extend(check_web_container_job(text))
@@ -91,6 +92,59 @@ def check_repo_policy_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci repo-policy job missing {label}: {snippet}")
+    return errors
+
+
+def check_coverage_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "coverage")
+    if not block:
+        return ["ci workflow missing coverage job for enforced Python branch coverage"]
+    required_snippets = {
+        "name: Python branch-aware coverage": "clear branch-aware coverage job label",
+        "runs-on: ubuntu-latest": "stable coverage runner",
+        "timeout-minutes: 30": "bounded coverage job timeout",
+        'QT_QPA_PLATFORM: "offscreen"': "headless Qt coverage platform",
+        'python-version: "3.12"': "stable coverage Python version",
+        "sudo apt-get install -y libegl1": "Qt headless runtime dependency",
+        'python -m pip install -e ".[desktop,security,dev]"': (
+            "desktop, security and development dependency installation"
+        ),
+        "python -m pytest -q": "direct full pytest execution",
+        "--cov=remote_ops_workspace": "application source coverage",
+        "--cov-branch": "branch coverage measurement",
+        "--cov-report=term-missing": "human-readable missing-line report",
+        "--cov-report=xml:artifacts/coverage/coverage.xml": "XML coverage evidence",
+        "--cov-report=json:artifacts/coverage/coverage.json": "JSON coverage evidence",
+        "python scripts/check_coverage_report.py": "aggregate and branch report validator",
+        "--report artifacts/coverage/coverage.json": "validated JSON coverage report",
+        "if: ${{ always() }}": "coverage evidence upload after pass or failure",
+        "name: python-branch-aware-coverage": "dedicated coverage artifact name",
+        "path: artifacts/coverage/": "dedicated coverage artifact path",
+        "if-no-files-found: error": "failure when coverage evidence is missing",
+        "include-hidden-files: false": "explicit hidden-file exclusion",
+        "retention-days: 14": "bounded coverage evidence retention",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci coverage job missing {label}: {snippet}")
+    threshold_match = re.search(r"--cov-fail-under(?:=|\s+)(\d+(?:\.\d+)?)", block)
+    if threshold_match is None:
+        errors.append("ci coverage job missing an explicit branch coverage failure threshold")
+    elif float(threshold_match.group(1)) < 70:
+        errors.append("ci coverage job aggregate coverage failure threshold must be at least 70")
+    total_match = re.search(r"--min-total(?:=|\s+)(\d+(?:\.\d+)?)", block)
+    if total_match is None:
+        errors.append("ci coverage job missing validated aggregate coverage threshold")
+    elif float(total_match.group(1)) < 70:
+        errors.append("ci coverage job validated aggregate coverage threshold must be at least 70")
+    branch_match = re.search(r"--min-branches(?:=|\s+)(\d+(?:\.\d+)?)", block)
+    if branch_match is None:
+        errors.append("ci coverage job missing pure branch coverage threshold")
+    elif float(branch_match.group(1)) < 55:
+        errors.append("ci coverage job pure branch coverage threshold must be at least 55")
+    if "continue-on-error: true" in block:
+        errors.append("ci coverage job must remain release-blocking")
     return errors
 
 

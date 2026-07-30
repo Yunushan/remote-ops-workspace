@@ -46,6 +46,52 @@ jobs:
       - name: Ruff lint
         run: python -m ruff check src tests scripts
 
+  coverage:
+    name: Python branch-aware coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_CACHE_DIR: "1"
+      QT_QPA_PLATFORM: "offscreen"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install Qt headless runtime dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1
+      - name: Install coverage verification dependencies
+        run: python -m pip install -e ".[desktop,security,dev]"
+      - name: Enforce branch coverage floor
+        run: |
+          mkdir -p artifacts/coverage
+          python -m pytest -q \
+            --cov=remote_ops_workspace \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:artifacts/coverage/coverage.xml \
+            --cov-report=json:artifacts/coverage/coverage.json \
+            --cov-fail-under=70
+      - name: Validate aggregate and branch coverage evidence
+        run: >-
+          python scripts/check_coverage_report.py
+          --report artifacts/coverage/coverage.json
+          --min-total 70
+          --min-branches 55
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: python-branch-aware-coverage
+          path: artifacts/coverage/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
+
   test:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

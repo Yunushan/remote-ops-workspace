@@ -10,7 +10,7 @@ from remote_ops_workspace.cli import main
 from remote_ops_workspace.launcher import LaunchPlan, build_launch_plan
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.plugin_dev import scaffold_plugin, validate_installed_plugins
-from remote_ops_workspace.plugins import load_plugin_registry
+from remote_ops_workspace.plugins import load_plugin_registry, normalize_plugin_protocols
 from remote_ops_workspace.profile_validation import prepare_profile
 from remote_ops_workspace.storage import ProfileStore
 
@@ -120,6 +120,15 @@ def test_plugin_registry_rejects_builtin_protocol_collisions() -> None:
     assert registry.loaded == []
     assert len(registry.failures) == 1
     assert "built-in protocol" in registry.failures[0].error
+
+
+def test_plugin_protocol_metadata_must_be_string_or_iterable() -> None:
+    try:
+        normalize_plugin_protocols(7)
+    except TypeError as exc:
+        assert str(exc) == "plugin protocols must be a string or iterable"
+    else:
+        raise AssertionError("non-iterable plugin protocol metadata should be rejected")
 
 
 def test_prepare_profile_accepts_explicit_plugin_protocols() -> None:

@@ -618,8 +618,13 @@ def write_mobapt_runtime_bundle(
 
     for package in plan.packages:
         target = _bundle_package_archive_path(package_dir, package)
-        source = Path(package.source_path) if package.source_path else None
-        source_kind = _write_bundle_package(package, target, source_path=source, allow_synthetic=plan.allow_shims)
+        package_source = Path(package.source_path) if package.source_path else None
+        source_kind = _write_bundle_package(
+            package,
+            target,
+            source_path=package_source,
+            allow_synthetic=plan.allow_shims,
+        )
         if source_kind == "synthetic":
             synthetic_packages.append(package.name)
         relative = _relative_to_root(target, root)
@@ -1055,7 +1060,8 @@ def _load_runtime_candidate(root: Path, manifest_path: Path) -> MobAptEmbeddedRu
             notes=["runtime manifest root must be an object"],
         )
     schema = str(data.get("schema", ""))
-    runtime = data.get("runtime") if isinstance(data.get("runtime"), dict) else {}
+    raw_runtime = data.get("runtime")
+    runtime: dict[str, Any] = raw_runtime if isinstance(raw_runtime, dict) else {}
     name = safe.clean_text(str(runtime.get("name") or "ROW MobApt runtime"), "runtime name")
     version = safe.clean_text(str(runtime.get("version") or "unknown"), "runtime version")
     if schema != MOBAPT_RUNTIME_SCHEMA:

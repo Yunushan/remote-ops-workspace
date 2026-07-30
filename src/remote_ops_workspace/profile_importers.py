@@ -19,6 +19,11 @@ from .storage import ProfileStore
 SUPPORTED_IMPORT_FORMATS = {"auto", "row", "remmina", "mremoteng", "termius", "mobaxterm"}
 
 
+class _CasePreservingConfigParser(configparser.ConfigParser):
+    def optionxform(self, optionstr: str) -> str:
+        return optionstr
+
+
 @dataclass(slots=True)
 class ProfileImportResult:
     source_format: str
@@ -257,8 +262,7 @@ def _read_remmina_file(path: Path) -> dict[str, str]:
 
 
 def _parse_ini_like(text: str, *, default_section: str) -> configparser.ConfigParser:
-    parser = configparser.ConfigParser(interpolation=None, strict=False)
-    parser.optionxform = str
+    parser = _CasePreservingConfigParser(interpolation=None, strict=False)
     content = text if text.lstrip().startswith("[") else f"[{default_section}]\n{text}"
     parser.read_string(content)
     return parser

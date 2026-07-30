@@ -944,7 +944,9 @@ class WindowsConPtyProcess:
             if item is _OUTPUT_EOF:
                 self._output_eof.set()
                 return b""
-            payload = bytes(item)
+            if not isinstance(item, bytes):
+                raise ConPtyProcessError("ReadFile", 0, "output queue contained an invalid payload")
+            payload = item
             if self._output_queue.empty():
                 self.output_ready.clear()
                 if self._output_eof.is_set():
@@ -1025,6 +1027,8 @@ class WindowsConPtyProcess:
         )
         result = int(api.WaitForSingleObject(self._process_handle, milliseconds))
         if result == _WAIT_TIMEOUT:
+            if timeout is None:
+                raise ConPtyProcessError("WaitForSingleObject", result, "infinite wait timed out")
             raise subprocess.TimeoutExpired(self.argv, timeout)
         if result == _WAIT_FAILED:
             raise _last_error("WaitForSingleObject")

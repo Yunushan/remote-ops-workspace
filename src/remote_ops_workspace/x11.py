@@ -222,7 +222,7 @@ class XServerLifecycleRecord:
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, state_path: Path | None = None, running: bool | None = None) -> XServerLifecycleRecord:
         pid_value = data.get("pid")
-        pid = int(pid_value) if pid_value not in (None, "") else None
+        pid = int(str(pid_value)) if pid_value not in (None, "") else None
         return cls(
             display=safe.display(str(data.get("display") or ":0")),
             runtime_key=safe.option_value(str(data.get("runtime_key") or "unknown"), "runtime key"),
@@ -610,7 +610,7 @@ def load_moba_x_server_record(
     if not isinstance(data, dict):
         raise ValueError(f"managed X server state must be a JSON object: {target_state_path}")
     pid_value = data.get("pid")
-    pid = int(pid_value) if pid_value not in (None, "") else None
+    pid = int(str(pid_value)) if pid_value not in (None, "") else None
     running = (pid_probe or _pid_exists)(pid) if pid is not None and str(data.get("state", "")) == "started" else False
     return XServerLifecycleRecord.from_dict(data, state_path=target_state_path, running=running)
 
@@ -686,8 +686,8 @@ def run_moba_x_server_smoke(
             checked_at=_timestamp(),
             lifecycle_state=lifecycle_state,
             lifecycle_running=lifecycle_running,
-            stdout=_limit_text(exc.stdout or ""),
-            stderr=_limit_text(exc.stderr or ""),
+            stdout=_limit_text(_subprocess_output_text(exc.stdout)),
+            stderr=_limit_text(_subprocess_output_text(exc.stderr)),
             timeout_seconds=float(timeout_seconds),
             notes=[*notes, "X11 smoke probe timed out."],
         )
@@ -1211,6 +1211,12 @@ def _limit_text(value: str, limit: int = 4000) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "\n...[truncated]"
+
+
+def _subprocess_output_text(value: bytes | str | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""
 
 
 def _pid_exists(pid: int) -> bool:

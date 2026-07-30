@@ -57,6 +57,19 @@ def test_ci_workflow_requires_policy_job_lint_and_quick_verifier() -> None:
     assert any("ci repo-policy job missing single-row repository verifier" in error for error in verify_errors)
 
 
+def test_ci_workflow_requires_non_gui_production_type_gate() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Non-GUI production type gate\n"
+        "        run: python scripts/check_non_gui_types.py\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("bounded non-GUI production type gate" in error for error in errors)
+
+
 def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

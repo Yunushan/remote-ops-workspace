@@ -98,7 +98,9 @@ def test_row_importer_never_silently_enables_cleartext_profiles(tmp_path: Path) 
         """{
   "profiles": [
     {"name": "Legacy console", "protocol": "telnet", "host": "192.0.2.15"},
-    {"name": "Reviewed FTP", "protocol": "ftp", "host": "192.0.2.16", "options": {"allow_insecure_cleartext": "true"}}
+    {"name": "Reviewed FTP", "protocol": "ftp", "host": "192.0.2.16", "options": {"allow_insecure_cleartext": "true"}},
+    {"name": "Reviewed rlogin", "protocol": "rlogin", "host": "192.0.2.17", "options": {"allow_insecure_cleartext": "on"}},
+    {"name": "Reviewed rsh", "protocol": "rsh", "host": "192.0.2.18", "options": {"allow_insecure_cleartext": "enabled"}}
   ]
 }""",
         encoding="utf-8",
@@ -111,6 +113,8 @@ def test_row_importer_never_silently_enables_cleartext_profiles(tmp_path: Path) 
         for warning in result.warnings
     )
     assert not any("Reviewed FTP" in warning for warning in result.warnings)
+    assert not any("Reviewed rlogin" in warning for warning in result.warnings)
+    assert not any("Reviewed rsh" in warning for warning in result.warnings)
 
 
 def test_termius_importer_maps_host_json(tmp_path: Path) -> None:

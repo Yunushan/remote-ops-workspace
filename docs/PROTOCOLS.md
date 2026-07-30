@@ -50,6 +50,9 @@ protocols expose session data, and credentials where applicable, to the network.
 The opt-in is intentionally per profile and should be used only on an isolated
 network when an encrypted alternative is unavailable. `row doctor` reports
 these adapters as `legacy-insecure-opt-in`, never launchable by default.
+The option must be stored directly on the reviewed profile: `row profile
+defaults` and imported `group_defaults` reject it rather than inheriting an
+insecure exception into existing or future group members.
 
 Managed X server runtime status is available with:
 
@@ -99,7 +102,7 @@ intentionally not emitted on the command line.
 |---|---|
 | SSH/SFTP/SCP | `compression=true`, `connect_timeout=10`, `keepalive_interval=30`, `keepalive_count=3`, `strict_host_key_checking=accept-new`, `user_known_hosts_file=/path/known_hosts`, `log_level=ERROR`, `certificate_file=/path/id-cert.pub`, `pkcs11_provider=/path/opensc-pkcs11.so`, `smartcard_provider=microsoft-capi`, `identity_agent=/path/agent.sock`, `security_key_provider=internal`, `ciphers=...`, `host_key_algorithms=...`, `kex_algorithms=...`, `macs=...`, `proxy_jump=bastion`, `proxy_command=...` with `allow_unsafe_proxy_command=true`, `agent_forward=true` or `forward_agent=true` for SSH. Known legacy algorithms such as `ssh-rsa`, `ssh-dss`, `diffie-hellman-group1-sha1`, CBC/3DES/RC4 ciphers and SHA-1 MACs require `legacy_target=windows-xp-32` or `windows-xp-64` plus `allow_legacy_crypto=true`. |
 | SSHv1 legacy | Requires `--protocol ssh1` or `--protocol sshv1`, `--option allow_insecure_sshv1=true`, `--option legacy_target=windows-xp-32` or `windows-xp-64`, and `--option allow_legacy_crypto=true` before the launcher will add `-1`. This is insecure, obsolete, and only works with clients that still include SSH protocol v1 support. |
-| Telnet/rlogin/rsh/FTP | Requires `allow_insecure_cleartext=true` on each profile. The exception is profile-scoped, leaves encrypted protocol defaults unchanged, and is intended only for isolated legacy networks. |
+| Telnet/rlogin/rsh/FTP | Requires `allow_insecure_cleartext=true` stored directly on each profile. Group defaults reject the option. The exception leaves encrypted protocol defaults unchanged and is intended only for isolated legacy networks. |
 | Mosh | SSH handoff options above, plus `mosh_port=60000:61000`, `mosh_server=mosh-server`, `predict=adaptive|always|never|experimental`, `bind_server=ssh|any|IP` |
 | Kubernetes exec | Profile host is the pod; `namespace=default`, `container=api`, `context=prod`, `kubeconfig=/path/config`, `shell=/bin/bash`. The profile `command` field, when present, is used as the post-`--` command. |
 | WinRM | `transport=https` is the default and uses port 5986. An optional profile username is passed only to PowerShell's interactive `Get-Credential` prompt; `credential_ref` is never put in argv. `transport=http` is rejected unless `legacy_target=windows-xp-32` or `windows-xp-64` and `allow_insecure_winrm_http=true` are both set for an isolated legacy target. |

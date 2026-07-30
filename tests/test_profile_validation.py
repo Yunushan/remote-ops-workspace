@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from remote_ops_workspace.gui_editors import profile_from_editor_data
 from remote_ops_workspace.models import Profile, Tunnel
-from remote_ops_workspace.profile_validation import ProfileValidationError, prepare_profile
+from remote_ops_workspace.profile_validation import (
+    PROFILE_ONLY_SECURITY_OPTIONS,
+    ProfileValidationError,
+    normalize_group_defaults,
+    prepare_profile,
+)
 from remote_ops_workspace.storage import ProfileStore
 
 
@@ -78,6 +83,37 @@ def test_profile_store_normalizes_saved_profiles(tmp_path) -> None:
 
     assert profile.protocol == "ssh"
     assert profile.tags == ["prod"]
+
+
+def test_group_defaults_reject_every_profile_only_security_option() -> None:
+    for option_name in PROFILE_ONLY_SECURITY_OPTIONS:
+        try:
+            normalize_group_defaults({"options": {option_name: "true"}})
+        except ProfileValidationError as exc:
+            assert "group default options" in str(exc)
+            assert option_name in str(exc)
+        else:
+            raise AssertionError(f"group defaults must reject profile-only option {option_name}")
+
+
+def test_profile_store_rejects_persisted_insecure_group_default(tmp_path) -> None:
+    path = tmp_path / "profiles.json"
+    path.write_text(
+        """{
+  "version": 1,
+  "profiles": [{"name": "legacy", "protocol": "telnet", "host": "192.0.2.10", "group": "legacy"}],
+  "group_defaults": {"legacy": {"options": {"allow_insecure_cleartext": "true"}}}
+}""",
+        encoding="utf-8",
+    )
+    store = ProfileStore(path)
+
+    try:
+        store.load()
+    except ProfileValidationError as exc:
+        assert "allow_insecure_cleartext" in str(exc)
+    else:
+        raise AssertionError("persisted group defaults must not bypass the per-profile security boundary")
 
 
 def test_profile_editor_uses_shared_profile_validation() -> None:

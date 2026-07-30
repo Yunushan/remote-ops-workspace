@@ -96,6 +96,17 @@ def test_security_polish_rejects_cleartext_protocol_default_drift() -> None:
     assert "security_baseline cleartext legacy protocol default must be blocked" in errors
 
 
+def test_security_polish_rejects_permissive_group_security_defaults() -> None:
+    checker = load_security_checker()
+
+    errors = checker.check_profile_only_security_defaults(
+        normalize_defaults=lambda defaults: defaults,
+        validation_error_type=RuntimeError,
+    )
+
+    assert "group defaults must reject profile-only security option: allow_insecure_cleartext" in errors
+
+
 def test_security_polish_uses_explicit_empty_xp_contract() -> None:
     checker = load_security_checker()
 

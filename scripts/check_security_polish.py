@@ -30,6 +30,7 @@ def main() -> int:
     errors.extend(check_support_bundle_redaction())
     errors.extend(check_legacy_security_policy())
     errors.extend(check_docs_and_verifier())
+    errors.extend(check_profile_only_security_defaults())
     if errors:
         for error in errors:
             print(f"security polish: {error}", file=sys.stderr)
@@ -102,12 +103,41 @@ def check_docs_and_verifier() -> list[str]:
         "allow_legacy_rdp_security=true",
         "allow_insecure_cleartext=true",
         "Telnet, rlogin, rsh and FTP",
+        "group default options",
         "generic XP labels such as `xp`, `winxp` and `windows-xp`",
         "`legacy_platform` alias key",
         "Linux i386/armhf security smoke proof lines",
     ):
         if snippet not in docs:
             errors.append(f"security docs missing required snippet: {snippet}")
+    return errors
+
+
+def check_profile_only_security_defaults(
+    *,
+    normalize_defaults: Any | None = None,
+    validation_error_type: type[Exception] | None = None,
+) -> list[str]:
+    if normalize_defaults is None or validation_error_type is None:
+        from remote_ops_workspace.profile_validation import (
+            PROFILE_ONLY_SECURITY_OPTIONS,
+            ProfileValidationError,
+            normalize_group_defaults,
+        )
+
+        normalize_defaults = normalize_group_defaults
+        validation_error_type = ProfileValidationError
+        option_names = sorted(PROFILE_ONLY_SECURITY_OPTIONS)
+    else:
+        option_names = ["allow_insecure_cleartext"]
+
+    errors: list[str] = []
+    for option_name in option_names:
+        try:
+            normalize_defaults({"options": {option_name: "true"}})
+        except validation_error_type:
+            continue
+        errors.append(f"group defaults must reject profile-only security option: {option_name}")
     return errors
 
 

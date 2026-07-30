@@ -40,6 +40,9 @@ Profile and command launch hardening:
   by default; each isolated target profile must explicitly set
   `allow_insecure_cleartext=true`, and this exception does not change any
   modern SSH, SFTP, HTTPS, WinRM or RDP default;
+- group default options cannot contain `legacy_target` or any insecure protocol,
+  legacy-crypto, native-RDP, WinRM HTTP or unsafe proxy-command opt-in; these
+  exceptions must be persisted directly on the one reviewed profile they affect;
 - FreeRDP `security=rdp` is blocked unless the profile is marked as an isolated
   Windows XP remote target and explicitly sets `allow_legacy_rdp_security=true`;
 - generic XP labels such as `xp`, `winxp` and `windows-xp`, plus the

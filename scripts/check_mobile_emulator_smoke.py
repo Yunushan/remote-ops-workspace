@@ -122,8 +122,8 @@ def ensure_android_web_response(
                     [
                         "adb",
                         "shell",
-                        f"toybox nc -w 10 -q 2 127.0.0.1 {port} "
-                        f"< {ANDROID_WEB_REQUEST_PATH} > {ANDROID_WEB_RESPONSE_PATH}",
+                        f"(cat {ANDROID_WEB_REQUEST_PATH}; sleep 1) | toybox nc -w 10 127.0.0.1 {port} "
+                        f"> {ANDROID_WEB_RESPONSE_PATH}",
                     ],
                     check=False,
                 )

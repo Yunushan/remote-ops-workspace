@@ -86,7 +86,7 @@ def test_android_web_response_accepts_expected_page(monkeypatch) -> None:
         assert args == [
             "adb",
             "shell",
-            f"toybox nc -w 10 -q 2 127.0.0.1 8765 < {smoke.ANDROID_WEB_REQUEST_PATH} "
+            f"(cat {smoke.ANDROID_WEB_REQUEST_PATH}; sleep 1) | toybox nc -w 10 127.0.0.1 8765 "
             f"> {smoke.ANDROID_WEB_RESPONSE_PATH}",
         ]
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")

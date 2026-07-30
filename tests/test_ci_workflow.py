@@ -57,6 +57,31 @@ def test_ci_workflow_requires_policy_job_lint_and_quick_verifier() -> None:
     assert any("ci repo-policy job missing single-row repository verifier" in error for error in verify_errors)
 
 
+def test_ci_workflow_requires_cross_platform_gui_type_safety() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    labels = {
+        "linux": "Linux",
+        "win32": "Windows",
+        "darwin": "macOS",
+    }
+
+    for platform in ("linux", "win32", "darwin"):
+        workflow = source.replace(
+            "python -m mypy src/remote_ops_workspace/gui.py "
+            f"--platform {platform}",
+            "python -m mypy src/remote_ops_workspace/gui.py "
+            f"--platform removed-{platform}",
+        )
+
+        errors = checker.check_ci_workflow(workflow)
+
+        assert any(
+            f"{labels[platform]} GUI type-safety gate" in error
+            for error in errors
+        )
+
+
 def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

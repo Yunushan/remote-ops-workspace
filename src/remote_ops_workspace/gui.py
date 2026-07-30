@@ -7,8 +7,10 @@ import re
 import shlex
 import sys
 import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
+from typing import TypeVar
 from urllib.parse import urlparse
 
 from .doctor import run_doctor
@@ -18,6 +20,7 @@ from .file_safety import (
     write_json_atomic,
 )
 from .file_transfer import (
+    SftpBatchPlan,
     build_sftp_list_plan,
     build_sftp_queue_plan,
     parse_transfer_item_spec,
@@ -227,6 +230,15 @@ def _safe_tooltip_html(text: str) -> str:
 
 class GuiDependencyError(RuntimeError):
     pass
+
+
+_GuiValue = TypeVar("_GuiValue")
+
+
+def _required_gui_value(value: _GuiValue | None, label: str) -> _GuiValue:
+    if value is None:
+        raise RuntimeError(f"required GUI value is unavailable: {label}")
+    return value
 
 
 QUICK_CONNECT_PROTOCOLS = {
@@ -480,7 +492,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QUrl,
         )
         from PyQt6.QtGui import (
+            QAction,
             QBrush,
+            QClipboard,
             QColor,
             QDesktopServices,
             QFont,
@@ -490,6 +504,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QPalette,
             QPen,
             QPixmap,
+            QPolygon,
             QShortcut,
             QSyntaxHighlighter,
             QTextCharFormat,
@@ -497,6 +512,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QTransform,
         )
         from PyQt6.QtWidgets import (
+            QAbstractButton,
             QApplication,
             QCheckBox,
             QComboBox,
@@ -519,6 +535,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QSizePolicy,
             QSplitter,
             QStackedWidget,
+            QStatusBar,
             QStyle,
             QTabBar,
             QTabWidget,
@@ -532,6 +549,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         )
     except Exception as exc:  # pragma: no cover - optional dependency
         raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
+
+    def _application_clipboard() -> QClipboard:
+        return _required_gui_value(QApplication.clipboard(), "application clipboard")
+
+    def _application_instance() -> QApplication:
+        instance = QApplication.instance()
+        if not isinstance(instance, QApplication):
+            raise RuntimeError("required GUI value is unavailable: Qt application")
+        return instance
+
+    def _widget_style(widget: QWidget) -> QStyle:
+        return _required_gui_value(widget.style(), f"style for {type(widget).__name__}")
 
     def _terminal_process_backend(
         parent,
@@ -639,7 +668,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         """Keep a dialog's initial and minimum size inside its parent's screen."""
 
         screen = _dialog_screen(parent)
-        dialog._bounded_parent_screen = screen
         available = screen.availableGeometry() if screen is not None else None
         target_width = (
             min(maximum_width, max(1, available.width() - 48))
@@ -658,7 +686,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         dialog.resize(target_width, target_height)
 
     def _clamp_dialog_frame_to_parent_screen(dialog: QDialog) -> None:
-        screen = getattr(dialog, "_bounded_parent_screen", None) or _dialog_screen(dialog.parentWidget())
+        screen = _dialog_screen(dialog.parentWidget())
         if screen is None:
             return
         available = screen.availableGeometry()
@@ -783,7 +811,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._pty_startup_probe = ""
             self.startup_preamble = ""
             self.show_launch_command = True
-            self.output_context_menu_builder = None
+            self.output_context_menu_builder: Callable[[TerminalPane], QMenu] | None = None
             self._stop_timer = QTimer(self)
             self._stop_timer.setSingleShot(True)
             self._stop_timer.timeout.connect(self.kill_after_stop_timeout)
@@ -821,7 +849,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.setFocusProxy(self.output)
             self.output.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.output.installEventFilter(self)
-            self.output.viewport().installEventFilter(self)
+            self.output_viewport = _required_gui_value(
+                self.output.viewport(),
+                "terminal output viewport",
+            )
+            self.output_viewport.installEventFilter(self)
             self.terminal_emulator = AnsiTerminalTranscript()
             self.output.setProperty("terminalEmulatorBackend", TERMINAL_EMULATOR_BACKEND)
             self.output.setProperty(
@@ -999,7 +1031,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             button.setProperty("terminalActionLabel", label)
             button.setProperty("terminalActionTooltip", tooltip)
             icon = getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
-            button.setIcon(self.style().standardIcon(icon))
+            button.setIcon(_widget_style(self).standardIcon(icon))
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             # The grid owns the available width.  Ignoring the button text size
             # hint lets resizeEvent cross its breakpoints instead of trapping the
@@ -1021,7 +1053,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             metrics = self.output.fontMetrics()
             cell_width = max(1, metrics.horizontalAdvance("M"))
             cell_height = max(1, metrics.lineSpacing())
-            viewport = self.output.viewport().size()
+            viewport = self.output_viewport.size()
             columns = max(20, viewport.width() // cell_width)
             rows = max(5, viewport.height() // cell_height)
             resize(columns, rows)
@@ -1053,12 +1085,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return self.process.state() != QProcess.ProcessState.NotRunning
 
         def eventFilter(self, watched, event) -> bool:  # noqa: N802
-            terminal_targets = (self.output, self.output.viewport())
+            terminal_targets = (self.output, self.output_viewport)
             if watched in terminal_targets and event.type() == QEvent.Type.MouseButtonPress:
                 self.output.setFocus(Qt.FocusReason.MouseFocusReason)
                 self.output.setProperty("terminalLastInputSurface", "viewport")
             if (
-                watched is self.output.viewport()
+                watched is self.output_viewport
                 and event.type() == QEvent.Type.MouseButtonRelease
                 and event.button() == Qt.MouseButton.LeftButton
                 and event.modifiers() & Qt.KeyboardModifier.ControlModifier
@@ -1301,7 +1333,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
 
         def paste_to_terminal(self) -> None:
-            text = QApplication.clipboard().text()
+            text = _application_clipboard().text()
             if not text:
                 return
             if self.is_running():
@@ -1314,36 +1346,51 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             selection = self.output.textCursor().selectedText().replace("\u2029", "\n")
             if selection:
                 self.output.setProperty("terminalLastCopiedText", selection)
-                QApplication.clipboard().setText(selection)
+                _application_clipboard().setText(selection)
 
         def build_output_context_menu(self) -> QMenu:
             if callable(self.output_context_menu_builder):
                 return self.output_context_menu_builder(self)
             menu = QMenu(self.output)
             selection = bool(self.output.textCursor().selectedText())
-            clipboard_text = bool(QApplication.clipboard().text())
-            copy_action = menu.addAction("Copy")
+            clipboard_text = bool(_application_clipboard().text())
+            copy_action = _required_gui_value(menu.addAction("Copy"), "copy action")
             copy_action.setEnabled(selection)
             copy_action.triggered.connect(self.copy_terminal_selection)
-            paste_action = menu.addAction("Paste to terminal")
+            paste_action = _required_gui_value(
+                menu.addAction("Paste to terminal"),
+                "paste action",
+            )
             paste_action.setEnabled(clipboard_text)
             paste_action.triggered.connect(self.paste_to_terminal)
-            select_action = menu.addAction("Select all")
+            select_action = _required_gui_value(
+                menu.addAction("Select all"),
+                "select-all action",
+            )
             select_action.triggered.connect(self.output.selectAll)
             menu.addSeparator()
-            clear_action = menu.addAction("Clear terminal")
+            clear_action = _required_gui_value(
+                menu.addAction("Clear terminal"),
+                "clear-terminal action",
+            )
             clear_action.triggered.connect(self.clear_output)
-            restart_action = menu.addAction("Restart session")
+            restart_action = _required_gui_value(
+                menu.addAction("Restart session"),
+                "restart-session action",
+            )
             restart_action.setEnabled(bool(self.plan.command))
             restart_action.triggered.connect(self.restart)
-            stop_action = menu.addAction("Stop session")
+            stop_action = _required_gui_value(
+                menu.addAction("Stop session"),
+                "stop-session action",
+            )
             stop_action.setEnabled(self.is_running())
             stop_action.triggered.connect(self.request_stop)
             return menu
 
         def show_output_context_menu(self, position: QPoint) -> None:
             menu = self.build_output_context_menu()
-            menu.exec(self.output.viewport().mapToGlobal(position))
+            menu.exec(self.output_viewport.mapToGlobal(position))
             menu.deleteLater()
 
         def start(self) -> None:
@@ -1468,7 +1515,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             # on the Windows/offscreen Qt platform.  Publish the detached string
             # after that document mutation so the copied value remains stable.
             self.output.setProperty("terminalLastCopiedText", clipboard_text)
-            QApplication.clipboard().setText(clipboard_text)
+            _application_clipboard().setText(clipboard_text)
 
         def clear_output(self) -> None:
             self.output.clear()
@@ -1782,7 +1829,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 and previous[selection_start:selection_end]
                 == transcript[selection_start:selection_end]
             )
-            scroll_bar = self.output.verticalScrollBar()
+            scroll_bar = _required_gui_value(
+                self.output.verticalScrollBar(),
+                "terminal vertical scroll bar",
+            )
             scroll_value = scroll_bar.value()
             was_scrolled_to_end = scroll_value >= scroll_bar.maximum() - 2
             if previous and transcript.startswith(previous):
@@ -1977,8 +2027,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def set_status(self, text: str, state: str) -> None:
             self.status.setText(text)
             self.status.setProperty("state", state)
-            self.status.style().unpolish(self.status)
-            self.status.style().polish(self.status)
+            status_style = _widget_style(self.status)
+            status_style.unpolish(self.status)
+            status_style.polish(self.status)
             self.status.update()
 
         def update_process_actions(self) -> None:
@@ -2028,11 +2079,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return [*common, (r"\b(?:error|failed|denied|warning|ok|success)\b", "#dcdcaa")]
             return common
 
-        def highlightBlock(self, text: str) -> None:
+        def highlightBlock(self, text: str | None) -> None:
+            source = text or ""
             for pattern, color in self.patterns:
                 text_format = QTextCharFormat()
                 text_format.setForeground(QColor(color))
-                for match in re.finditer(pattern, text, re.IGNORECASE):
+                for match in re.finditer(pattern, source, re.IGNORECASE):
                     start, end = match.span()
                     self.setFormat(start, end - start, text_format)
 
@@ -2054,6 +2106,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             "ascii-mode": "ASCII transfer mode is not supported by the SFTP queue backend.",
             "split-view": "Split file comparison is not available in the connected dock.",
         }
+
+        def main_window(self) -> MainWindow | None:
+            window = self.window()
+            return window if isinstance(window, MainWindow) else None
 
         @staticmethod
         def apply_connected_dock_frame_properties(widget) -> None:
@@ -2302,7 +2358,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 file_entries=self.filtered_sftp_entries(state.file_entries),
             )
             self.active_remote_path = normalise_remote_path(self.state.remote_path)
-            self.monitoring_control_widgets = {}
+            self.monitoring_control_widgets: dict[str, QAbstractButton] = {}
             self.monitoring_output_buffer = bytearray()
             self.runtime_shutting_down = False
             self.monitoring_generation = 0
@@ -2328,7 +2384,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.handle_remote_monitoring_error
             )
             self.sftp_refresh_output_buffer = bytearray()
-            self.sftp_refresh_plan = None
+            self.sftp_refresh_plan: SftpBatchPlan | None = None
             self.sftp_refresh_generation = 0
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_request_path = ""
@@ -2504,9 +2560,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.file_table.setUniformRowHeights(True)
             self.file_table.setSortingEnabled(False)
             self.file_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            self.file_table.header().setFixedHeight(density.table_header_height)
-            self.file_table.header().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-            self.file_table.header().setStretchLastSection(False)
+            file_header = _required_gui_value(
+                self.file_table.header(),
+                "SFTP file table header",
+            )
+            file_header.setFixedHeight(density.table_header_height)
+            file_header.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+            file_header.setStretchLastSection(False)
             for column_index, width in enumerate(column_widths):
                 self.file_table.setColumnWidth(column_index, width)
             parent_item = QTreeWidgetItem([chrome.parent_row_label, "", ""])
@@ -2655,12 +2715,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     "auth-required": QStyle.StandardPixmap.SP_MessageBoxWarning,
                 }.get(state)
                 badge.setIcon(
-                    self.style().standardIcon(status_icon)
+                    _widget_style(self).standardIcon(status_icon)
                     if status_icon is not None
                     else self._sftp_status_default_icon
                 )
-                badge.style().unpolish(badge)
-                badge.style().polish(badge)
+                badge_style = _widget_style(badge)
+                badge_style.unpolish(badge)
+                badge_style.polish(badge)
                 badge.update()
             for widget in (
                 self,
@@ -2735,7 +2796,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             button.setProperty("mobaTextEditorActionObject", object_name)
             button.setProperty("mobaTextEditorRemotePath", route.remote_path)
             button.setProperty("mobaTextEditorRenderSource", route.render_source)
-            button.setIcon(self.style().standardIcon(self.standard_icon(icon_name)))
+            button.setIcon(_widget_style(self).standardIcon(self.standard_icon(icon_name)))
             button.setIconSize(QSize(16, 16))
             button.setFixedSize(QSize(24, 22))
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
@@ -3026,7 +3087,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 Qt.ToolButtonStyle.ToolButtonTextBesideIcon
             )
             refresh_button.setIcon(
-                self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+                _widget_style(self).standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
             )
             refresh_button.setGeometry(42, 50, 102, 23)
             refresh_button.clicked.connect(self.request_remote_monitoring_refresh)
@@ -3243,8 +3304,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setText(message)
                 label.setProperty("state", state)
                 label.setToolTip(_safe_tooltip_html(message))
-                label.style().unpolish(label)
-                label.style().polish(label)
+                label_style = _widget_style(label)
+                label_style.unpolish(label)
+                label_style.polish(label)
                 label.update()
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is not None:
@@ -3267,12 +3329,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     "auth-required": QStyle.StandardPixmap.SP_MessageBoxWarning,
                 }.get(state)
                 control.setIcon(
-                    self.style().standardIcon(status_icon)
+                    _widget_style(self).standardIcon(status_icon)
                     if status_icon is not None
                     else self.monitoring_control_icon("monitor")
                 )
-                control.style().unpolish(control)
-                control.style().polish(control)
+                control_style = _widget_style(control)
+                control_style.unpolish(control)
+                control_style.polish(control)
                 control.update()
             panel = getattr(self, "remote_monitoring_panel", None)
             for widget in (self, panel):
@@ -3283,8 +3346,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def monitoring_surface_is_current(self) -> bool:
             if self.runtime_shutting_down:
                 return False
-            main_window = self.window()
-            if hasattr(main_window, "moba_connected_dock"):
+            main_window = self.main_window()
+            if main_window is not None and hasattr(main_window, "moba_connected_dock"):
                 return main_window.moba_connected_dock is self
             return True
 
@@ -3444,7 +3507,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def read_remote_monitoring_output(self) -> None:
             self.monitoring_output_buffer.extend(
-                bytes(self.monitoring_process.readAllStandardOutput())
+                self.monitoring_process.readAllStandardOutput().data()
             )
 
         def handle_remote_monitoring_error(self, error) -> None:
@@ -3508,12 +3571,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return False
             live_state = replace(self.state, monitoring=snapshot)
             self.state = live_state
-            main_window = self.window()
-            current_panel = (
-                main_window.tabs.currentWidget()
-                if hasattr(main_window, "tabs")
-                else None
-            )
+            main_window = self.main_window()
+            current_panel = main_window.tabs.currentWidget() if main_window is not None else None
             if (
                 isinstance(current_panel, MobaConnectedSessionPanel)
                 and current_panel.state.profile_name == live_state.profile_name
@@ -3568,16 +3627,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             menu = QMenu(self)
             menu.setObjectName("mobaRemoteMonitoringContextMenu")
             control = self.monitoring_control_widgets.get("remote-monitoring")
-            enabled_action = menu.addAction("Remote monitoring enabled")
+            enabled_action = _required_gui_value(
+                menu.addAction("Remote monitoring enabled"),
+                "remote-monitoring action",
+            )
             enabled_action.setCheckable(True)
             enabled_action.setChecked(
                 bool(control is not None and control.isChecked())
             )
             if control is not None:
                 enabled_action.toggled.connect(control.setChecked)
-            refresh_action = menu.addAction(
-                "Refresh now",
-                self.request_remote_monitoring_refresh,
+            refresh_action = _required_gui_value(
+                menu.addAction(
+                    "Refresh now",
+                    self.request_remote_monitoring_refresh,
+                ),
+                "monitoring-refresh action",
             )
             refresh_action.setEnabled(
                 bool(control is not None and control.isChecked())
@@ -3585,7 +3650,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             follow_control = self.monitoring_control_widgets.get(
                 "follow-terminal-folder"
             )
-            follow_action = menu.addAction("Follow terminal folder")
+            follow_action = _required_gui_value(
+                menu.addAction("Follow terminal folder"),
+                "follow-terminal-folder action",
+            )
             follow_action.setCheckable(True)
             follow_action.setChecked(
                 bool(follow_control is not None and follow_control.isChecked())
@@ -3595,7 +3663,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             menu.addSeparator()
             menu.addAction(
                 "Copy monitoring command",
-                lambda: QApplication.clipboard().setText(
+                lambda: _application_clipboard().setText(
                     self.state.monitoring_plan.printable()
                 ),
             )
@@ -3765,7 +3833,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def read_sftp_refresh_output(self) -> None:
             self.sftp_refresh_output_buffer.extend(
-                bytes(self.sftp_refresh_process.readAllStandardOutput())
+                self.sftp_refresh_process.readAllStandardOutput().data()
             )
 
         def handle_sftp_refresh_error(self, error) -> None:
@@ -4022,7 +4090,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if hasattr(self, "file_table"):
                 for index in range(self.file_table.topLevelItemCount()):
                     item = self.file_table.topLevelItem(index)
-                    item.setData(0, SFTP_ROW_SOURCE_PATH_ROLE, normalized)
+                    if item is not None:
+                        item.setData(0, SFTP_ROW_SOURCE_PATH_ROLE, normalized)
             if hasattr(self, "sftp_transfer_queue"):
                 self.sftp_transfer_queue.setText(f"Path: {normalized}")
             self.show_sftp_status(f"SFTP path: {normalized}")
@@ -4064,7 +4133,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def copy_sftp_context_path(self, item: QTreeWidgetItem | None) -> None:
             path = self.sftp_remote_path_for_item(item)
-            QApplication.clipboard().setText(path)
+            _application_clipboard().setText(path)
             self.show_sftp_status(f"Copied remote path: {path}")
 
         def build_sftp_context_menu(
@@ -4085,24 +4154,33 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             transfer_ready = kind in {"file", "dir"} and name not in {"", ".."}
             menu = QMenu(self.file_table)
             menu.setObjectName("mobaSftpContextMenu")
-            open_action = menu.addAction(
-                "Open" if kind == "file" else "Open folder",
-                lambda: self.open_sftp_context_item(selected),
+            open_action = _required_gui_value(
+                menu.addAction(
+                    "Open" if kind == "file" else "Open folder",
+                    lambda: self.open_sftp_context_item(selected),
+                ),
+                "SFTP open action",
             )
             open_action.setEnabled(open_ready)
             menu.addSeparator()
-            download_action = menu.addAction(
-                "Download",
-                lambda: self.show_moba_sftp_toolbar_action("download"),
+            download_action = _required_gui_value(
+                menu.addAction(
+                    "Download",
+                    lambda: self.show_moba_sftp_toolbar_action("download"),
+                ),
+                "SFTP download action",
             )
             download_action.setEnabled(transfer_ready)
             menu.addAction(
                 "Upload here",
                 lambda: self.show_moba_sftp_toolbar_action("upload"),
             )
-            copy_action = menu.addAction(
-                "Copy remote path",
-                lambda: self.copy_sftp_context_path(selected),
+            copy_action = _required_gui_value(
+                menu.addAction(
+                    "Copy remote path",
+                    lambda: self.copy_sftp_context_path(selected),
+                ),
+                "SFTP copy-path action",
             )
             copy_action.setEnabled(open_ready)
             menu.addSeparator()
@@ -4129,27 +4207,32 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if item is not None:
                 self.file_table.setCurrentItem(item)
             menu = self.build_sftp_context_menu(item)
-            menu.exec(self.file_table.viewport().mapToGlobal(position))
+            viewport = _required_gui_value(
+                self.file_table.viewport(),
+                "SFTP file table viewport",
+            )
+            menu.exec(viewport.mapToGlobal(position))
             menu.deleteLater()
 
         def profile_for_sftp_action(self) -> Profile | None:
-            main_window = self.window()
-            if not hasattr(main_window, "profile_by_name"):
+            main_window = self.main_window()
+            if main_window is None:
                 return None
             return main_window.profile_by_name(self.state.profile_name)
 
         def show_sftp_status(self, message: str) -> None:
-            main_window = self.window()
-            if hasattr(main_window, "statusBar"):
-                main_window.statusBar().showMessage(message)
-            log = getattr(main_window, "log", None)
-            if log is not None and hasattr(log, "append"):
-                log.append(message)
+            main_window = self.main_window()
+            if main_window is None:
+                return
+            status_bar = main_window.statusBar()
+            if status_bar is not None:
+                status_bar.showMessage(message)
+            main_window.log.append(message)
 
         def open_moba_sftp_transfer_workflow(self, action_key: str) -> bool:
-            main_window = self.window()
+            main_window = self.main_window()
             profile = self.profile_for_sftp_action()
-            if profile is None or not hasattr(main_window, "create_transfer_queue_dialog"):
+            if profile is None or main_window is None:
                 self.show_sftp_status("SFTP transfer unavailable: connected profile was not found")
                 return False
             if action_key == "download":
@@ -4192,8 +4275,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return True
 
         def reconnect_moba_sftp_session(self) -> bool:
-            main_window = self.window()
-            current = main_window.tabs.currentWidget() if hasattr(main_window, "tabs") else None
+            main_window = self.main_window()
+            if main_window is None:
+                self.show_sftp_status("Reconnect unavailable: main window is unavailable")
+                return False
+            current = main_window.tabs.currentWidget()
             panes = main_window.terminal_panes_in(current) if current is not None else []
             pane = next(
                 (
@@ -4207,26 +4293,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.show_sftp_status("Reconnect unavailable: no terminal pane is attached")
                 return False
             pane.restart()
-            pane.output.setProperty("mobaTerminalFocusRequested", True)
-            pane.output.setFocus(Qt.FocusReason.OtherFocusReason)
+            terminal_output = pane.output
+            terminal_output.setProperty("mobaTerminalFocusRequested", True)
+            terminal_output.setFocus(Qt.FocusReason.OtherFocusReason)
             QTimer.singleShot(
                 0,
-                lambda output=pane.output: output.setFocus(Qt.FocusReason.OtherFocusReason),
+                lambda: terminal_output.setFocus(Qt.FocusReason.OtherFocusReason),
             )
             self.show_sftp_status(f"Reconnecting {self.state.profile_name}")
             return True
 
         def focus_moba_sftp_terminal(self) -> bool:
-            main_window = self.window()
-            pane = main_window.active_terminal_pane() if hasattr(main_window, "active_terminal_pane") else None
+            main_window = self.main_window()
+            pane = main_window.active_terminal_pane() if main_window is not None else None
             if pane is None:
                 self.show_sftp_status("Terminal unavailable: no active session pane")
                 return False
-            pane.output.setProperty("mobaTerminalFocusRequested", True)
-            pane.output.setFocus(Qt.FocusReason.OtherFocusReason)
+            terminal_output = pane.output
+            terminal_output.setProperty("mobaTerminalFocusRequested", True)
+            terminal_output.setFocus(Qt.FocusReason.OtherFocusReason)
             QTimer.singleShot(
                 0,
-                lambda output=pane.output: output.setFocus(Qt.FocusReason.OtherFocusReason),
+                lambda: terminal_output.setFocus(Qt.FocusReason.OtherFocusReason),
             )
             self.show_sftp_status(f"Terminal focused at {self.active_remote_path}")
             return True
@@ -4242,11 +4330,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if action_key == "connect":
                 return self.reconnect_moba_sftp_session()
             if action_key == "tools":
-                main_window = self.window()
-                if hasattr(main_window, "show_moba_tools_status"):
-                    main_window.show_moba_tools_status()
-                    return True
-                return False
+                main_window = self.main_window()
+                if main_window is None:
+                    return False
+                main_window.show_moba_tools_status()
+                return True
             if action_key == "terminal":
                 return self.focus_moba_sftp_terminal()
             return False
@@ -4376,11 +4464,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     brush(blue)
                     pen(blue)
                     painter.drawPolygon(
-                        [
-                            QPoint(mid, 5),
-                            QPoint(mid - 4, 10),
-                            QPoint(mid + 4, 10),
-                        ]
+                        QPolygon(
+                            [
+                                QPoint(mid, 5),
+                                QPoint(mid - 4, 10),
+                                QPoint(mid + 4, 10),
+                            ]
+                        )
                     )
                     painter.drawRect(mid - 1, 9, 2, 6)
                 else:
@@ -4392,9 +4482,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 pen(white, 2)
                 painter.drawLine(mid, 5 if direction == 1 else 10, mid, 13 if direction == 1 else 16)
                 if direction == 1:
-                    painter.drawPolygon([QPoint(mid - 4, 12), QPoint(mid + 4, 12), QPoint(mid, 17)])
+                    painter.drawPolygon(
+                        QPolygon(
+                            [
+                                QPoint(mid - 4, 12),
+                                QPoint(mid + 4, 12),
+                                QPoint(mid, 17),
+                            ]
+                        )
+                    )
                 else:
-                    painter.drawPolygon([QPoint(mid - 4, 9), QPoint(mid + 4, 9), QPoint(mid, 4)])
+                    painter.drawPolygon(
+                        QPolygon(
+                            [
+                                QPoint(mid - 4, 9),
+                                QPoint(mid + 4, 9),
+                                QPoint(mid, 4),
+                            ]
+                        )
+                    )
                 painter.drawRect(5, 15, size - 10, 2)
             elif icon_key == "connect":
                 brush(QColor("#55cc7a"))
@@ -4471,6 +4577,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             super().__init__()
             self.setObjectName("mobaConnectedSession")
             self.state = state
+            self.moba_connected_state = state
             self.terminal_pane = terminal_pane
             self.apply_connected_session_route_properties(self)
             self.apply_connected_identity_route_properties(self)
@@ -4682,10 +4789,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             menu = QMenu(pane.output)
             menu.setObjectName("mobaTerminalContextMenu")
             selection = bool(pane.output.textCursor().selectedText())
-            copy_action = menu.addAction("Copy")
+            copy_action = _required_gui_value(
+                menu.addAction("Copy"),
+                "terminal context copy action",
+            )
             copy_action.setEnabled(selection)
             copy_action.triggered.connect(pane.copy_terminal_selection)
-            save_action = menu.addAction("Save to file")
+            save_action = _required_gui_value(
+                menu.addAction("Save to file"),
+                "terminal context save action",
+            )
             save_action.setEnabled(bool(pane._rendered_terminal_text))
             save_action.triggered.connect(
                 lambda _checked=False, active_pane=pane: self.save_terminal_to_file(
@@ -4707,7 +4820,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         else key.replace("-", " ")
                     )
                 )
-                action = menu.addAction(f"Display {label} information")
+                action = _required_gui_value(
+                    menu.addAction(f"Display {label} information"),
+                    f"terminal telemetry action for {key}",
+                )
                 action.setCheckable(True)
                 action.setChecked(frame.isVisible())
                 action.setProperty("mobaTelemetryVisibilityKey", key)
@@ -4719,21 +4835,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
 
             menu.addSeparator()
-            paste_action = menu.addAction("Paste")
-            paste_action.setEnabled(bool(QApplication.clipboard().text()))
+            paste_action = _required_gui_value(
+                menu.addAction("Paste"),
+                "terminal context paste action",
+            )
+            paste_action.setEnabled(bool(_application_clipboard().text()))
             paste_action.triggered.connect(pane.paste_to_terminal)
-            select_action = menu.addAction("Select all")
+            select_action = _required_gui_value(
+                menu.addAction("Select all"),
+                "terminal context select-all action",
+            )
             select_action.triggered.connect(pane.output.selectAll)
 
             dock = self.active_moba_sftp_dock()
             if dock is not None:
-                monitoring_menu = menu.addMenu("Monitoring")
+                monitoring_menu = _required_gui_value(
+                    menu.addMenu("Monitoring"),
+                    "terminal monitoring menu",
+                )
                 monitoring_menu.setObjectName("mobaMonitoringContextMenu")
                 monitoring_control = dock.monitoring_control_widgets.get(
                     "remote-monitoring"
                 )
-                monitoring_action = monitoring_menu.addAction(
-                    "Remote monitoring enabled"
+                monitoring_action = _required_gui_value(
+                    monitoring_menu.addAction("Remote monitoring enabled"),
+                    "remote monitoring toggle action",
                 )
                 monitoring_action.setCheckable(True)
                 monitoring_action.setChecked(
@@ -4749,7 +4875,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 follow_control = dock.monitoring_control_widgets.get(
                     "follow-terminal-folder"
                 )
-                follow_action = monitoring_menu.addAction("Follow terminal folder")
+                follow_action = _required_gui_value(
+                    monitoring_menu.addAction("Follow terminal folder"),
+                    "follow terminal folder action",
+                )
                 follow_action.setCheckable(True)
                 follow_action.setChecked(
                     bool(follow_control is not None and follow_control.isChecked())
@@ -4757,7 +4886,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 if follow_control is not None:
                     follow_action.toggled.connect(follow_control.setChecked)
 
-            tools_menu = menu.addMenu("Session tools")
+            tools_menu = _required_gui_value(
+                menu.addMenu("Session tools"),
+                "terminal session tools menu",
+            )
             session_route = gui_design_moba_session_edge_action_route()
             session_handlers = dict(
                 zip(
@@ -4766,12 +4898,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     strict=True,
                 )
             )
-            for action_spec in gui_design_moba_session_edge_actions():
-                action = tools_menu.addAction(action_spec.label)
-                action.setProperty("mobaSessionEdgeKey", action_spec.key)
+            for session_action_spec in gui_design_moba_session_edge_actions():
+                action = _required_gui_value(
+                    tools_menu.addAction(session_action_spec.label),
+                    f"session edge action for {session_action_spec.key}",
+                )
+                action.setProperty("mobaSessionEdgeKey", session_action_spec.key)
                 action.triggered.connect(
                     lambda _checked=False, handler=session_handlers[
-                        action_spec.key
+                        session_action_spec.key
                     ]: self.dispatch_moba_workspace_action(handler)
                 )
             utility_route = gui_design_moba_right_utility_action_route()
@@ -4782,20 +4917,29 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     strict=True,
                 )
             )
-            for action_spec in gui_design_moba_right_utility_actions():
-                action = tools_menu.addAction(action_spec.label)
-                action.setProperty("mobaRightUtilityKey", action_spec.key)
+            for utility_action_spec in gui_design_moba_right_utility_actions():
+                action = _required_gui_value(
+                    tools_menu.addAction(utility_action_spec.label),
+                    f"right utility action for {utility_action_spec.key}",
+                )
+                action.setProperty("mobaRightUtilityKey", utility_action_spec.key)
                 action.triggered.connect(
                     lambda _checked=False, handler=utility_handlers[
-                        action_spec.key
+                        utility_action_spec.key
                     ]: self.dispatch_moba_workspace_action(handler)
                 )
 
             menu.addSeparator()
-            restart_action = menu.addAction("Restart session")
+            restart_action = _required_gui_value(
+                menu.addAction("Restart session"),
+                "terminal restart-session action",
+            )
             restart_action.setEnabled(bool(pane.plan.command))
             restart_action.triggered.connect(pane.restart)
-            stop_action = menu.addAction("Stop session")
+            stop_action = _required_gui_value(
+                menu.addAction("Stop session"),
+                "terminal stop-session action",
+            )
             stop_action.setEnabled(pane.is_running())
             stop_action.triggered.connect(pane.request_stop)
             return menu
@@ -4876,7 +5020,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def moba_terminal_context_pane(self, source: QWidget) -> TerminalPane:
             """Route shared chrome actions to the split that originated or owns focus."""
 
-            candidate = source
+            candidate: QWidget | None = source
             while candidate is not None:
                 if isinstance(candidate, TerminalPane):
                     return candidate
@@ -4884,7 +5028,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             main_window = self.window()
             active = (
                 main_window.active_terminal_pane()
-                if hasattr(main_window, "active_terminal_pane")
+                if isinstance(main_window, MainWindow)
                 else None
             )
             if (
@@ -5376,8 +5520,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 minimum_height=420,
             )
             data = profile_to_editor_data(profile)
-            self.fields: dict[str, object] = {}
-            self._validated_profile = None
+            self.fields: dict[str, QLineEdit | QComboBox | QPlainTextEdit] = {}
+            self._validated_profile: Profile | None = None
 
             root = QVBoxLayout(self)
             root.setContentsMargins(18, 16, 18, 16)
@@ -5419,6 +5563,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 ("identity_file", "Identity file"),
                 ("credential_ref", "Credential ref"),
             ]:
+                widget: QLineEdit | QComboBox
                 if key == "protocol":
                     widget = QComboBox()
                     widget.setEditable(False)
@@ -5428,10 +5573,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         protocols.append(data[key])
                     widget.addItems(protocols)
                     widget.setCurrentText(data[key])
+                    model = _required_gui_value(
+                        widget.model(),
+                        "profile protocol model",
+                    )
                     for row, protocol in enumerate(protocols):
                         if protocol in {"ssh1", "sshv1"}:
-                            widget.model().setData(
-                                widget.model().index(row, 0),
+                            model.setData(
+                                model.index(row, 0),
                                 "Legacy SSH v1: launch requires allow_insecure_sshv1=true, "
                                 "legacy_target=windows-xp-32 or windows-xp-64, and "
                                 "allow_legacy_crypto=true; use only for isolated legacy systems.",
@@ -5496,7 +5645,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
             )
             self.buttons.setObjectName("profileDialogButtons")
-            self.save_button = self.buttons.button(QDialogButtonBox.StandardButton.Save)
+            self.save_button = _required_gui_value(
+                self.buttons.button(QDialogButtonBox.StandardButton.Save),
+                "profile dialog save button",
+            )
             self.save_button.setObjectName("primaryAction")
             self.save_button.setDefault(True)
             self.buttons.accepted.connect(self.submit)
@@ -5622,13 +5774,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 root.addWidget(warnings)
             buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
             buttons.setObjectName("profileImportDialogButtons")
-            buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Import profiles")
+            import_button = _required_gui_value(
+                buttons.button(QDialogButtonBox.StandardButton.Ok),
+                "profile import confirmation button",
+            )
+            import_button.setText("Import profiles")
             buttons.accepted.connect(self.accept)
             buttons.rejected.connect(self.reject)
             root.addWidget(buttons)
 
     class LayoutDialog(_ScreenBoundedDialog):
-        def __init__(self, layout=None, parent=None) -> None:
+        def __init__(self, layout: Layout | None = None, parent=None) -> None:
             super().__init__(parent)
             self.setObjectName("workflowDialog")
             self.setWindowTitle("Layout")
@@ -5641,8 +5797,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 minimum_height=420,
             )
             data = layout_to_editor_data(layout)
-            self._original_layout = layout
-            self._validated_layout = None
+            self._original_layout: Layout | None = layout
+            self._validated_layout: Layout | None = None
 
             root = QVBoxLayout(self)
             root.setContentsMargins(18, 16, 18, 16)
@@ -5701,7 +5857,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
             )
             self.buttons.setObjectName("layoutDialogButtons")
-            self.save_button = self.buttons.button(QDialogButtonBox.StandardButton.Save)
+            self.save_button = _required_gui_value(
+                self.buttons.button(QDialogButtonBox.StandardButton.Save),
+                "layout dialog save button",
+            )
             self.save_button.setObjectName("primaryAction")
             self.save_button.setDefault(True)
             self.buttons.accepted.connect(self.submit)
@@ -5749,7 +5908,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "panes": self.panes.toPlainText(),
             }
 
-        def layout(self) -> Layout:
+        def workspace_layout(self) -> Layout:
             if self._validated_layout is not None:
                 return self._validated_layout
             return self.parsed_layout()
@@ -6026,8 +6185,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             lines = [f"{data['path']}: {data['kind']}"]
             if data.get("size") is not None:
                 lines.append(f"size: {data['size']}")
-            for child in data.get("children", []):
-                lines.append(f"  {child}")
+            children = data.get("children")
+            if isinstance(children, (list, tuple)):
+                for child in children:
+                    lines.append(f"  {child}")
             if data.get("binary"):
                 lines.append("binary: true")
             if data.get("truncated"):
@@ -6046,7 +6207,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             subtitle: str,
             rows: list[tuple[str, str, str]],
             detail: str,
-            actions: list[tuple[str, object]] | None = None,
+            actions: Sequence[tuple[str, Callable[..., object]]] | None = None,
             parent=None,
         ) -> None:
             super().__init__(parent)
@@ -6142,8 +6303,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.setAccessibleDescription(f"Open the {label} rail")
             self.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.setFixedSize(chrome.label_width, chrome.label_height)
-            self._rail_text_pixmap = None
-            self._rail_text_cache_key = None
+            self._rail_text_pixmap: QPixmap | None = None
+            self._rail_text_cache_key: tuple[str, str, int, float, int, int] | None = None
             font = QFont("Segoe UI")
             font.setPixelSize(chrome.label_font_size)
             font.setBold(True)
@@ -6250,7 +6411,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def __init__(self, parent=None) -> None:
             super().__init__(parent)
-            self.special_tab_handler = None
+            self.special_tab_handler: Callable[[int], None] | None = None
             self._pressed_special_key = ""
             self._stabilizing_special_tabs = False
             self.tabMoved.connect(self.stabilize_special_tabs)
@@ -6341,11 +6502,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     class MainWindow(QMainWindow):
         CLOSE_STOP_POLICY = ProcessStopPolicy(terminate_timeout_ms=300, kill_timeout_ms=0)
 
+        def statusBar(self) -> QStatusBar:  # noqa: N802
+            return _required_gui_value(
+                super().statusBar(),
+                "main status bar",
+            )
+
         def __init__(self) -> None:
             super().__init__()
             self.setObjectName("remoteOpsMain")
             self.setWindowTitle("Remote Ops Workspace")
-            self.setWindowIcon(QApplication.instance().windowIcon())
+            self.setWindowIcon(_application_instance().windowIcon())
             self.apply_moba_titlebar_chrome("Remote Ops Workspace")
             self.resize(1180, 720)
             self.store = ProfileStore()
@@ -6364,7 +6531,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.layout_toolbar.setMovable(False)
             self.addToolBarBreak()
             self.addToolBar(self.layout_toolbar)
-            self.toolbar_widget_actions: dict[int, object] = {}
+            self.toolbar_widget_actions: dict[int, QAction] = {}
             self.refresh_button = self.toolbar_button(
                 "Refresh", "SP_BrowserReload", "Reload profiles"
             )
@@ -6611,14 +6778,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_connected_dock: MobaSftpDock | None = None
             self.left_panel = self.create_left_panel()
             self.tabs = ResponsiveWorkspaceTabs()
-            self.tabs.setTabBar(MobaWorkspaceTabBar())
-            self.tabs.tabBar().special_tab_handler = self.activate_moba_special_tab
+            self.moba_tab_bar = MobaWorkspaceTabBar()
+            self.tabs.setTabBar(self.moba_tab_bar)
+            self.moba_tab_bar.special_tab_handler = self.activate_moba_special_tab
             self.tabs.setObjectName("sessionTabs")
-            self.tabs.tabBar().setObjectName("sessionTabBar")
+            self.moba_tab_bar.setObjectName("sessionTabBar")
             self.tabs.setTabsClosable(True)
             self.tabs.setMovable(True)
             self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
-            self.tabs.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.moba_tab_bar.setContextMenuPolicy(
+                Qt.ContextMenuPolicy.CustomContextMenu
+            )
             self.moba_tab_guard = False
             self.recent_terminal_plans: list[tuple[TerminalPanePlan, Profile | None]] = []
             self.log = LiteralTextEdit()
@@ -6683,7 +6853,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_exit_button.clicked.connect(self.close)
             self.tabs.tabCloseRequested.connect(self.close_tab)
             self.tabs.currentChanged.connect(self.handle_tab_changed)
-            self.tabs.tabBar().customContextMenuRequested.connect(self.show_tab_context_menu)
+            self.moba_tab_bar.customContextMenuRequested.connect(
+                self.show_tab_context_menu
+            )
             self.design_select.currentIndexChanged.connect(self.apply_selected_design)
             self.find_button.clicked.connect(self.find_log_text)
             self.search_input.returnPressed.connect(self.find_log_text)
@@ -6698,7 +6870,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.quick_connect_suggestions.itemActivated.connect(
                 lambda item, _column: self.run_quick_connect_candidate(item)
             )
-            QApplication.instance().focusChanged.connect(self.remember_terminal_focus)
+            _application_instance().focusChanged.connect(self.remember_terminal_focus)
             self.keyboard_shortcuts = self.create_keyboard_shortcuts()
             self.refresh_profiles()
             self.refresh_layouts()
@@ -6818,14 +6990,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 shortcut.setProperty("presetKeyboardShortcutKey", str(spec["key"]))
                 shortcut.setProperty("presetKeyboardShortcutSequence", str(spec["sequence"]))
                 shortcut.setProperty("presetKeyboardShortcutActionLabel", str(spec["action_label"]))
-                shortcut.activated.connect(spec["callback"])
+                callback = spec["callback"]
+                if not callable(callback):
+                    raise RuntimeError(
+                        f"keyboard shortcut callback is unavailable: {spec['key']}"
+                    )
+                shortcut.activated.connect(callback)
                 shortcuts.append(shortcut)
             return shortcuts
 
         def build_menu_bar(self) -> None:
-            self.menuBar().setObjectName("mobaTopMenuBar")
+            self.main_menu_bar = _required_gui_value(
+                self.menuBar(),
+                "main menu bar",
+            )
+            self.main_menu_bar.setObjectName("mobaTopMenuBar")
             self.moba_top_menus: list[QMenu] = []
-            self.moba_top_menu_actions = []
+            self.moba_top_menu_actions: list[QAction] = []
             self.product_menu_callbacks = {
                 "mobaxterm": {
                     "terminal": self.open_local_terminal_tab,
@@ -6890,109 +7071,166 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     "help": "help-topics",
                 },
             }
-            for item in gui_design_moba_top_menu_items():
-                geometry = gui_design_moba_top_menu_geometry_for(item.key)
-                menu = self.menuBar().addMenu(item.label)
+            for moba_item in gui_design_moba_top_menu_items():
+                geometry = gui_design_moba_top_menu_geometry_for(moba_item.key)
+                menu = _required_gui_value(
+                    self.main_menu_bar.addMenu(moba_item.label),
+                    f"Moba top menu for {moba_item.key}",
+                )
                 menu.setObjectName("mobaTopMenu")
-                menu.setProperty("mobaTopMenuKey", item.key)
-                menu.setProperty("mobaTopMenuLabel", item.label)
-                menu.setProperty("mobaTopMenuGeometryKeys", [item.key for item in gui_design_moba_top_menu_geometry()])
+                menu.setProperty("mobaTopMenuKey", moba_item.key)
+                menu.setProperty("mobaTopMenuLabel", moba_item.label)
+                menu.setProperty(
+                    "mobaTopMenuGeometryKeys",
+                    [entry.key for entry in gui_design_moba_top_menu_geometry()],
+                )
                 menu.setProperty("mobaTopMenuStaticX", geometry.static_x)
                 menu.setProperty("mobaTopMenuWidth", geometry.width)
                 menu.setProperty("mobaTopMenuLabelY", geometry.label_y)
                 menu.setProperty("mobaTopMenuLabelFontSize", geometry.label_font_size)
                 menu.setProperty("mobaTopMenuGapAfter", geometry.gap_after)
-                menu.setToolTip(item.tooltip)
-                menu.menuAction().setProperty("mobaTopMenuKey", item.key)
-                menu.menuAction().setProperty("mobaTopMenuLabel", item.label)
-                menu.menuAction().setProperty(
-                    "mobaTopMenuGeometryKeys",
-                    [item.key for item in gui_design_moba_top_menu_geometry()],
+                menu.setToolTip(moba_item.tooltip)
+                menu_action = _required_gui_value(
+                    menu.menuAction(),
+                    f"Moba menu action for {moba_item.key}",
                 )
-                menu.menuAction().setProperty("mobaTopMenuStaticX", geometry.static_x)
-                menu.menuAction().setProperty("mobaTopMenuWidth", geometry.width)
-                menu.menuAction().setProperty("mobaTopMenuLabelY", geometry.label_y)
-                menu.menuAction().setProperty("mobaTopMenuLabelFontSize", geometry.label_font_size)
-                menu.menuAction().setProperty("mobaTopMenuGapAfter", geometry.gap_after)
-                menu.menuAction().setToolTip(item.tooltip)
+                menu_action.setProperty("mobaTopMenuKey", moba_item.key)
+                menu_action.setProperty("mobaTopMenuLabel", moba_item.label)
+                menu_action.setProperty(
+                    "mobaTopMenuGeometryKeys",
+                    [entry.key for entry in gui_design_moba_top_menu_geometry()],
+                )
+                menu_action.setProperty("mobaTopMenuStaticX", geometry.static_x)
+                menu_action.setProperty("mobaTopMenuWidth", geometry.width)
+                menu_action.setProperty("mobaTopMenuLabelY", geometry.label_y)
+                menu_action.setProperty(
+                    "mobaTopMenuLabelFontSize",
+                    geometry.label_font_size,
+                )
+                menu_action.setProperty("mobaTopMenuGapAfter", geometry.gap_after)
+                menu_action.setToolTip(moba_item.tooltip)
                 self.moba_top_menus.append(menu)
-                self.moba_top_menu_actions.append(menu.menuAction())
-                if item.key == "sessions":
+                self.moba_top_menu_actions.append(menu_action)
+                if moba_item.key == "sessions":
                     menu.addAction("New session", self.create_profile)
-                if item.key == "view":
+                if moba_item.key == "view":
                     self.view_menu = menu
-                if item.key not in self.product_menu_callbacks["mobaxterm"]:
-                    raise RuntimeError(f"missing Moba top-menu handler: {item.key}")
-                action = menu.addAction(item.primary_action)
+                if moba_item.key not in self.product_menu_callbacks["mobaxterm"]:
+                    raise RuntimeError(
+                        f"missing Moba top-menu handler: {moba_item.key}"
+                    )
+                action = _required_gui_value(
+                    menu.addAction(moba_item.primary_action),
+                    f"Moba primary menu action for {moba_item.key}",
+                )
                 action.triggered.connect(
-                    lambda _checked=False, action_key=item.key: self.run_product_menu_action(
+                    lambda _checked=False, action_key=moba_item.key: self.run_product_menu_action(
                         "mobaxterm", action_key
                     )
                 )
-                action.setProperty("menuActionKey", item.key)
+                action.setProperty("menuActionKey", moba_item.key)
                 action.setProperty("menuActionFamily", "mobaxterm")
                 action.setProperty(
-                    "menuActionOperation", self.product_menu_operations["mobaxterm"][item.key]
+                    "menuActionOperation",
+                    self.product_menu_operations["mobaxterm"][moba_item.key],
                 )
 
             securecrt_chrome = gui_design_securecrt_top_chrome()
             self.securecrt_top_menus: list[QMenu] = []
-            self.securecrt_top_menu_actions = []
-            for item in securecrt_chrome.menu_items:
-                menu = self.menuBar().addMenu(item.label)
+            self.securecrt_top_menu_actions: list[QAction] = []
+            for securecrt_item in securecrt_chrome.menu_items:
+                menu = _required_gui_value(
+                    self.main_menu_bar.addMenu(securecrt_item.label),
+                    f"SecureCRT top menu for {securecrt_item.key}",
+                )
                 menu.setObjectName("secureCrtTopMenu")
-                menu.setProperty("secureCrtTopMenuKey", item.key)
-                menu.setProperty("secureCrtTopMenuLabel", item.label)
-                menu.setProperty("secureCrtTopMenuPrimaryAction", item.primary_action)
-                menu.setToolTip(item.tooltip)
-                menu.menuAction().setProperty("secureCrtTopMenuKey", item.key)
-                menu.menuAction().setProperty("secureCrtTopMenuLabel", item.label)
-                menu.menuAction().setProperty("secureCrtTopMenuPrimaryAction", item.primary_action)
-                menu.menuAction().setToolTip(item.tooltip)
+                menu.setProperty("secureCrtTopMenuKey", securecrt_item.key)
+                menu.setProperty("secureCrtTopMenuLabel", securecrt_item.label)
+                menu.setProperty(
+                    "secureCrtTopMenuPrimaryAction",
+                    securecrt_item.primary_action,
+                )
+                menu.setToolTip(securecrt_item.tooltip)
+                menu_action = _required_gui_value(
+                    menu.menuAction(),
+                    f"SecureCRT menu action for {securecrt_item.key}",
+                )
+                menu_action.setProperty("secureCrtTopMenuKey", securecrt_item.key)
+                menu_action.setProperty("secureCrtTopMenuLabel", securecrt_item.label)
+                menu_action.setProperty(
+                    "secureCrtTopMenuPrimaryAction",
+                    securecrt_item.primary_action,
+                )
+                menu_action.setToolTip(securecrt_item.tooltip)
                 self.securecrt_top_menus.append(menu)
-                self.securecrt_top_menu_actions.append(menu.menuAction())
-                if item.key not in self.product_menu_callbacks["securecrt"]:
-                    raise RuntimeError(f"missing SecureCRT top-menu handler: {item.key}")
-                action = menu.addAction(item.primary_action)
+                self.securecrt_top_menu_actions.append(menu_action)
+                if securecrt_item.key not in self.product_menu_callbacks["securecrt"]:
+                    raise RuntimeError(
+                        f"missing SecureCRT top-menu handler: {securecrt_item.key}"
+                    )
+                action = _required_gui_value(
+                    menu.addAction(securecrt_item.primary_action),
+                    f"SecureCRT primary menu action for {securecrt_item.key}",
+                )
                 action.triggered.connect(
-                    lambda _checked=False, action_key=item.key: self.run_product_menu_action(
+                    lambda _checked=False, action_key=securecrt_item.key: self.run_product_menu_action(
                         "securecrt", action_key
                     )
                 )
-                action.setProperty("menuActionKey", item.key)
+                action.setProperty("menuActionKey", securecrt_item.key)
                 action.setProperty("menuActionFamily", "securecrt")
                 action.setProperty(
-                    "menuActionOperation", self.product_menu_operations["securecrt"][item.key]
+                    "menuActionOperation",
+                    self.product_menu_operations["securecrt"][securecrt_item.key],
                 )
 
             mremoteng_chrome = gui_design_mremoteng_top_chrome()
             self.mremoteng_top_menus: list[QMenu] = []
-            self.mremoteng_top_menu_actions = []
-            for item in mremoteng_chrome.menu_items:
-                menu = self.menuBar().addMenu(item.label)
+            self.mremoteng_top_menu_actions: list[QAction] = []
+            for mremoteng_item in mremoteng_chrome.menu_items:
+                menu = _required_gui_value(
+                    self.main_menu_bar.addMenu(mremoteng_item.label),
+                    f"mRemoteNG top menu for {mremoteng_item.key}",
+                )
                 menu.setObjectName("mRemoteNgTopMenu")
-                menu.setProperty("mRemoteNgTopMenuKey", item.key)
-                menu.setProperty("mRemoteNgTopMenuLabel", item.label)
-                menu.setProperty("mRemoteNgTopMenuPrimaryAction", item.primary_action)
-                menu.setToolTip(item.tooltip)
-                menu.menuAction().setProperty("mRemoteNgTopMenuKey", item.key)
-                menu.menuAction().setProperty("mRemoteNgTopMenuLabel", item.label)
-                menu.menuAction().setProperty("mRemoteNgTopMenuPrimaryAction", item.primary_action)
-                menu.menuAction().setToolTip(item.tooltip)
+                menu.setProperty("mRemoteNgTopMenuKey", mremoteng_item.key)
+                menu.setProperty("mRemoteNgTopMenuLabel", mremoteng_item.label)
+                menu.setProperty(
+                    "mRemoteNgTopMenuPrimaryAction",
+                    mremoteng_item.primary_action,
+                )
+                menu.setToolTip(mremoteng_item.tooltip)
+                menu_action = _required_gui_value(
+                    menu.menuAction(),
+                    f"mRemoteNG menu action for {mremoteng_item.key}",
+                )
+                menu_action.setProperty("mRemoteNgTopMenuKey", mremoteng_item.key)
+                menu_action.setProperty("mRemoteNgTopMenuLabel", mremoteng_item.label)
+                menu_action.setProperty(
+                    "mRemoteNgTopMenuPrimaryAction",
+                    mremoteng_item.primary_action,
+                )
+                menu_action.setToolTip(mremoteng_item.tooltip)
                 self.mremoteng_top_menus.append(menu)
-                self.mremoteng_top_menu_actions.append(menu.menuAction())
-                if item.key not in self.product_menu_callbacks["mremoteng"]:
-                    raise RuntimeError(f"missing mRemoteNG top-menu handler: {item.key}")
-                action = menu.addAction(item.primary_action)
+                self.mremoteng_top_menu_actions.append(menu_action)
+                if mremoteng_item.key not in self.product_menu_callbacks["mremoteng"]:
+                    raise RuntimeError(
+                        f"missing mRemoteNG top-menu handler: {mremoteng_item.key}"
+                    )
+                action = _required_gui_value(
+                    menu.addAction(mremoteng_item.primary_action),
+                    f"mRemoteNG primary menu action for {mremoteng_item.key}",
+                )
                 action.triggered.connect(
-                    lambda _checked=False, action_key=item.key: self.run_product_menu_action(
+                    lambda _checked=False, action_key=mremoteng_item.key: self.run_product_menu_action(
                         "mremoteng", action_key
                     )
                 )
-                action.setProperty("menuActionKey", item.key)
+                action.setProperty("menuActionKey", mremoteng_item.key)
                 action.setProperty("menuActionFamily", "mremoteng")
                 action.setProperty(
-                    "menuActionOperation", self.product_menu_operations["mremoteng"][item.key]
+                    "menuActionOperation",
+                    self.product_menu_operations["mremoteng"][mremoteng_item.key],
                 )
 
         def run_product_menu_action(self, family: str, action_key: str) -> None:
@@ -7003,7 +7241,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             callback()
 
         def populate_view_design_menu(self) -> None:
-            design_menu = self.view_menu.addMenu("Design preset")
+            design_menu = _required_gui_value(
+                self.view_menu.addMenu("Design preset"),
+                "design preset menu",
+            )
             for preset in GUI_DESIGN_PRESETS:
                 design_menu.addAction(
                     preset.label,
@@ -7019,13 +7260,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             button = QToolButton()
             button.setText(label)
             button.setToolTip(tooltip)
-            button.setIcon(self.style().standardIcon(self.standard_icon(icon_name)))
+            button.setIcon(
+                _widget_style(self).standardIcon(self.standard_icon(icon_name))
+            )
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             button.setAutoRaise(False)
             return button
 
         def add_toolbar_widget(self, toolbar: QToolBar, widget: QWidget):
-            action = toolbar.addWidget(widget)
+            action = _required_gui_value(
+                toolbar.addWidget(widget),
+                f"toolbar action for {widget.objectName() or type(widget).__name__}",
+            )
             self.toolbar_widget_actions[id(widget)] = action
             return action
 
@@ -7380,7 +7626,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("mobaRibbonEdgeRouteDialogDetail", route.xserver_dialog_detail)
 
         def build_moba_ribbon_buttons(self) -> list[QToolButton]:
-            slots = {
+            slots: dict[str, Callable[..., object]] = {
                 "session": self.create_profile,
                 "servers": self.show_moba_servers_status,
                 "tools": self.show_moba_tools_status,
@@ -7518,7 +7764,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             menu.addSeparator()
             menu.addAction("Tools", self.show_moba_tools_status)
             menu.addAction("Macros", self.show_moba_macros_status)
-            sftp_action = menu.addAction("SFTP browser", self.show_moba_sftp_rail)
+            sftp_action = _required_gui_value(
+                menu.addAction("SFTP browser", self.show_moba_sftp_rail),
+                "Moba rail SFTP action",
+            )
             sftp_action.setEnabled(self.moba_connected_dock is not None)
             menu.addSeparator()
             menu.addAction("Collapse or expand sessions", self.toggle_moba_session_panel)
@@ -7654,65 +7903,94 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     "mRemoteNgTopToolbarStaticWidth",
                     mremoteng_action.static_width if mremoteng_action else 0,
                 )
-                is_remmina_transfer = (
-                    remmina_transfer_route is not None
+                active_remmina_route = (
+                    remmina_transfer_route
+                    if remmina_transfer_route is not None
                     and key == remmina_transfer_route.toolbar_action_key
+                    else None
                 )
+                is_remmina_transfer = active_remmina_route is not None
                 button.setProperty(
                     "remminaSftpTransferRouteKey",
-                    remmina_transfer_route.key if is_remmina_transfer else "",
+                    active_remmina_route.key if active_remmina_route is not None else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteRole",
-                    remmina_transfer_route.route_role if is_remmina_transfer else "",
+                    active_remmina_route.route_role
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteToolbarActionKey",
-                    remmina_transfer_route.toolbar_action_key if is_remmina_transfer else "",
+                    active_remmina_route.toolbar_action_key
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteToolbarActionLabel",
-                    remmina_transfer_route.toolbar_action_label if is_remmina_transfer else "",
+                    active_remmina_route.toolbar_action_label
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteToolbarActionObject",
-                    remmina_transfer_route.toolbar_action_object if is_remmina_transfer else "",
+                    active_remmina_route.toolbar_action_object
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteSelectedProfileKey",
-                    remmina_transfer_route.selected_profile_key if is_remmina_transfer else "",
+                    active_remmina_route.selected_profile_key
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteSelectedProfile",
-                    remmina_transfer_route.selected_profile_name if is_remmina_transfer else "",
+                    active_remmina_route.selected_profile_name
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteProtocol",
-                    remmina_transfer_route.selected_profile_protocol if is_remmina_transfer else "",
+                    active_remmina_route.selected_profile_protocol
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteStatus",
-                    remmina_transfer_route.selected_profile_status if is_remmina_transfer else "",
+                    active_remmina_route.selected_profile_status
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteActiveTab",
-                    remmina_transfer_route.active_tab_label if is_remmina_transfer else "",
+                    active_remmina_route.active_tab_label
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRoutePath",
-                    remmina_transfer_route.remote_path if is_remmina_transfer else "",
+                    active_remmina_route.remote_path
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteQueueState",
-                    remmina_transfer_route.transfer_status if is_remmina_transfer else "",
+                    active_remmina_route.transfer_status
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteQueueLabel",
-                    remmina_transfer_route.transfer_queue_label if is_remmina_transfer else "",
+                    active_remmina_route.transfer_queue_label
+                    if active_remmina_route is not None
+                    else "",
                 )
                 button.setProperty(
                     "remminaSftpTransferRouteRenderSource",
-                    remmina_transfer_route.render_source if is_remmina_transfer else "",
+                    active_remmina_route.render_source
+                    if active_remmina_route is not None
+                    else "",
                 )
                 if remmina_transfer_route is not None:
                     button.setProperty(
@@ -7736,7 +8014,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             is_mremoteng = preset.id == "mremoteng"
             securecrt_chrome = gui_design_securecrt_top_chrome()
             mremoteng_chrome = gui_design_mremoteng_top_chrome()
-            menu_bar = self.menuBar()
+            menu_bar = self.main_menu_bar
             menu_bar.setVisible(is_moba or is_securecrt or is_mremoteng)
             menu_bar.setObjectName(
                 "mobaTopMenuBar"
@@ -7841,8 +8119,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.tabs.setProperty("interactionStatePresetId", preset.id)
             self.tabs.setProperty("interactionStateActiveTabStatus", state.active_tab_status)
 
-        def focus_interaction_widgets(self) -> dict[str, object]:
-            def live_line_edit(object_name: str):
+        def focus_interaction_widgets(self) -> dict[str, QLineEdit]:
+            def live_line_edit(object_name: str) -> QLineEdit:
                 widget = self.findChild(QLineEdit, object_name)
                 return widget if widget is not None else self.search_input
 
@@ -7903,8 +8181,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 action = self.toolbar_widget_actions.get(id(widget))
                 if action is not None:
                     action.setEnabled(state != "disabled")
-            widget.style().unpolish(widget)
-            widget.style().polish(widget)
+            widget_style = _widget_style(widget)
+            widget_style.unpolish(widget)
+            widget_style.polish(widget)
             widget.update()
 
         def configure_status_bar_for_design(self, preset: GuiDesignPreset) -> None:
@@ -8069,8 +8348,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             }
             for key, value in properties.items():
                 self.setProperty(key, value)
-            self.menuBar().setProperty("mobaTopStackMenuY", stack.menu_y)
-            self.menuBar().setProperty("mobaTopStackMenuHeight", stack.menu_height)
+            self.main_menu_bar.setProperty("mobaTopStackMenuY", stack.menu_y)
+            self.main_menu_bar.setProperty(
+                "mobaTopStackMenuHeight",
+                stack.menu_height,
+            )
             self.main_toolbar.setProperty("mobaTopStackRibbonY", stack.ribbon_y)
             self.main_toolbar.setProperty("mobaTopStackRibbonHeight", stack.ribbon_height)
             self.moba_quick_connect_chrome.setProperty("mobaTopStackQuickConnectY", stack.quick_connect_y)
@@ -8749,7 +9031,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             item.setData(0, TREE_ICON_RENDER_ROLE, "platform")
             if row_icon.row_kind in {"root", "group"}:
                 icon_name = "SP_DirHomeIcon" if row_icon.row_kind == "root" else "SP_DirIcon"
-                item.setIcon(0, self.style().standardIcon(self.standard_icon(icon_name)))
+                item.setIcon(
+                    0,
+                    _widget_style(self).standardIcon(self.standard_icon(icon_name)),
+                )
                 return
             item.setIcon(0, self.profile_icon_for_protocol(protocol))
 
@@ -8819,14 +9104,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 painter.setPen(QPen(fill, 1))
                 painter.setBrush(QBrush(fill))
                 painter.drawPolygon(
-                    [
-                        QPoint(size // 2, 1),
-                        QPoint(size - 2, size // 2),
-                        QPoint(size // 2 + 2, size // 2 + 2),
-                        QPoint(size // 2, size - 1),
-                        QPoint(size // 2 - 2, size // 2 + 2),
-                        QPoint(2, size // 2),
-                    ]
+                    QPolygon(
+                        [
+                            QPoint(size // 2, 1),
+                            QPoint(size - 2, size // 2),
+                            QPoint(size // 2 + 2, size // 2 + 2),
+                            QPoint(size // 2, size - 1),
+                            QPoint(size // 2 - 2, size // 2 + 2),
+                            QPoint(2, size // 2),
+                        ]
+                    )
                 )
                 return
             if icon_key in {"shell", "command", "ssh", "ssh2", "host"}:
@@ -8874,7 +9161,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 icon_name = "SP_DriveNetIcon"
             elif normalized in {"serial", "raw", "telnet", "rlogin", "rsh"}:
                 icon_name = "SP_CommandLink"
-            return self.style().standardIcon(self.standard_icon(icon_name))
+            return _widget_style(self).standardIcon(self.standard_icon(icon_name))
 
         def refresh_layouts(self) -> None:
             self.layout_select.clear()
@@ -8949,31 +9236,69 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             is_moba = preset.id == "mobaxterm"
             self.setStyleSheet(preset.stylesheet)
-            for widget in (self, self.design_select, self.main_toolbar):
-                self.apply_preset_catalog_route_properties(widget, catalog_route)
-                self.apply_preset_isolation_route_properties(widget, isolation_route)
-                self.apply_preset_transition_route_properties(widget, transition_route)
+            for catalog_widget in (self, self.design_select, self.main_toolbar):
+                self.apply_preset_catalog_route_properties(catalog_widget, catalog_route)
+                self.apply_preset_isolation_route_properties(
+                    catalog_widget,
+                    isolation_route,
+                )
+                self.apply_preset_transition_route_properties(
+                    catalog_widget,
+                    transition_route,
+                )
             self.apply_keyboard_shortcut_route_for_design(keyboard_shortcut_route)
-            for widget in (self, self.tabs):
+            for reference_widget in (self, self.tabs):
                 if reference_tab_route is None:
-                    self.clear_preset_reference_tab_route_properties(widget)
-                    self.clear_preset_reference_tab_chrome_route_properties(widget)
-                    self.clear_preset_reference_status_bar_route_properties(widget)
-                    self.clear_preset_reference_session_action_route_properties(widget)
-                    self.clear_preset_reference_surface_route_properties(widget)
-                    self.clear_preset_reference_control_route_properties(widget)
-                    self.clear_preset_reference_input_route_properties(widget)
-                    self.clear_preset_reference_transcript_route_properties(widget)
+                    self.clear_preset_reference_tab_route_properties(reference_widget)
+                    self.clear_preset_reference_tab_chrome_route_properties(
+                        reference_widget
+                    )
+                    self.clear_preset_reference_status_bar_route_properties(
+                        reference_widget
+                    )
+                    self.clear_preset_reference_session_action_route_properties(
+                        reference_widget
+                    )
+                    self.clear_preset_reference_surface_route_properties(reference_widget)
+                    self.clear_preset_reference_control_route_properties(reference_widget)
+                    self.clear_preset_reference_input_route_properties(reference_widget)
+                    self.clear_preset_reference_transcript_route_properties(
+                        reference_widget
+                    )
                 else:
-                    self.apply_preset_reference_tab_route_properties(widget, reference_tab_route)
-                    self.apply_preset_reference_tab_chrome_route_properties(widget, reference_tab_chrome_route)
-                    self.apply_preset_reference_status_bar_route_properties(widget, reference_status_route)
-                    self.apply_preset_reference_session_action_route_properties(widget, reference_session_action_route)
-                    self.apply_preset_reference_surface_route_properties(widget, reference_surface_route)
-                    self.apply_preset_reference_control_route_properties(widget, reference_control_route)
-                    self.apply_preset_reference_input_route_properties(widget, reference_input_route)
-                    self.apply_preset_reference_transcript_route_properties(widget, reference_transcript_route)
-            for widget in (
+                    self.apply_preset_reference_tab_route_properties(
+                        reference_widget,
+                        reference_tab_route,
+                    )
+                    self.apply_preset_reference_tab_chrome_route_properties(
+                        reference_widget,
+                        reference_tab_chrome_route,
+                    )
+                    self.apply_preset_reference_status_bar_route_properties(
+                        reference_widget,
+                        reference_status_route,
+                    )
+                    self.apply_preset_reference_session_action_route_properties(
+                        reference_widget,
+                        reference_session_action_route,
+                    )
+                    self.apply_preset_reference_surface_route_properties(
+                        reference_widget,
+                        reference_surface_route,
+                    )
+                    self.apply_preset_reference_control_route_properties(
+                        reference_widget,
+                        reference_control_route,
+                    )
+                    self.apply_preset_reference_input_route_properties(
+                        reference_widget,
+                        reference_input_route,
+                    )
+                    self.apply_preset_reference_transcript_route_properties(
+                        reference_widget,
+                        reference_transcript_route,
+                    )
+            for visual_widget in (
                 self,
                 self.main_toolbar,
                 self.layout_toolbar,
@@ -8983,9 +9308,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.log,
                 self.statusBar(),
             ):
-                self.apply_preset_visual_signature_properties(widget, visual_signature)
+                self.apply_preset_visual_signature_properties(
+                    visual_widget,
+                    visual_signature,
+                )
             self.apply_preset_selection_route_properties(self, selection_route)
-            for widget in (
+            for selection_widget in (
                 self.design_select,
                 self.main_toolbar,
                 self.layout_toolbar,
@@ -8994,7 +9322,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.tabs,
                 self.statusBar(),
             ):
-                self.apply_preset_selection_route_properties(widget, selection_route)
+                self.apply_preset_selection_route_properties(
+                    selection_widget,
+                    selection_route,
+                )
             self.configure_menu_bar_for_design(preset)
             self.moba_quick_connect_chrome.setVisible(is_moba)
             self.quick_connect.setVisible(is_moba)
@@ -9011,16 +9342,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.layout_toolbar.setIconSize(QSize(preset.toolbar_icon_size, preset.toolbar_icon_size))
             self.configure_toolbar_copy_for_design(preset)
             self.configure_status_bar_for_design(preset)
-            for widget in (self.statusBar(), self.status_notice_label, *self.status_segment_labels):
+            for status_widget in (
+                self.statusBar(),
+                self.status_notice_label,
+                *self.status_segment_labels,
+            ):
                 if reference_status_route is None:
-                    self.clear_preset_reference_status_bar_route_properties(widget)
+                    self.clear_preset_reference_status_bar_route_properties(status_widget)
                 else:
-                    self.apply_preset_reference_status_bar_route_properties(widget, reference_status_route)
+                    self.apply_preset_reference_status_bar_route_properties(
+                        status_widget,
+                        reference_status_route,
+                    )
             if reference_session_action_route is None:
-                self.clear_preset_reference_session_action_route_properties(self.tabs.tabBar())
+                self.clear_preset_reference_session_action_route_properties(
+                    self.moba_tab_bar
+                )
             else:
                 self.apply_preset_reference_session_action_route_properties(
-                    self.tabs.tabBar(),
+                    self.moba_tab_bar,
                     reference_session_action_route,
                 )
             self.configure_toolbar_for_design(preset, is_moba, preset.toolbar_icon_size)
@@ -11090,7 +11430,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             rows: list[tuple[str, str, str]],
             detail: str,
             *,
-            actions: list[tuple[str, object]] | None = None,
+            actions: Sequence[tuple[str, Callable[..., object]]] | None = None,
         ) -> None:
             dialog = self.create_workflow_dialog(
                 title,
@@ -11109,7 +11449,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             rows: list[tuple[str, str, str]],
             detail: str,
             *,
-            actions: list[tuple[str, object]] | None = None,
+            actions: Sequence[tuple[str, Callable[..., object]]] | None = None,
         ):
             return WorkflowDialog(title, subtitle, rows, detail, actions=actions, parent=self)
 
@@ -11126,7 +11466,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return QTabWidget.TabPosition.North
 
         def configure_workspace_tabs_for_design(self, is_moba: bool) -> None:
-            tab_bar = self.tabs.tabBar()
+            tab_bar = self.moba_tab_bar
             tab_bar.setProperty("mobaCompactTabWidths", bool(is_moba))
             tab_bar.setProperty(
                 "mobaCompactTabWidthSource",
@@ -11294,7 +11634,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.deleteLater()
 
         def refresh_special_tab_buttons(self) -> None:
-            tab_bar = self.tabs.tabBar()
+            tab_bar = self.moba_tab_bar
             for role in ["home", "new-session"]:
                 index = self.find_tab_by_role(role)
                 if index < 0:
@@ -11339,7 +11679,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             widget = self.tabs.widget(index)
             geometry = moba_connected_tab_chrome_geometry_for(key)
-            tab_bar = self.tabs.tabBar()
+            tab_bar = self.moba_tab_bar
             tab_bar.setTabData(
                 index,
                 {
@@ -11483,7 +11823,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return "sessionTabContextMenu"
             return str(getattr(route, "menu_object", "presetReferenceSessionTabContextMenu"))
 
-        def apply_session_action_menu_capture(self, menu, route, tab_title: str, actions: list[object]) -> None:
+        def apply_session_action_menu_capture(
+            self,
+            menu,
+            route,
+            tab_title: str,
+            actions: list[QAction],
+        ) -> None:
             if route is None:
                 return
             if hasattr(route, "profile_name"):
@@ -11517,11 +11863,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             specs = {str(spec["key"]): spec for spec in self.tab_context_session_action_specs(index)}
             menu = QMenu(self)
             menu.setObjectName(self.session_action_menu_object_name(route))
-            context_actions = []
+            context_actions: list[QAction] = []
 
             def add_context_action(key: str, callback) -> None:
                 spec = specs[key]
-                action = menu.addAction(str(spec["label"]), callback)
+                action = _required_gui_value(
+                    menu.addAction(str(spec["label"]), callback),
+                    f"tab context action for {key}",
+                )
                 action.setEnabled(bool(spec["enabled"]))
                 self.apply_session_action_spec_properties(action, spec, route)
                 context_actions.append(action)
@@ -11541,7 +11890,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return menu
 
         def show_tab_context_menu(self, position) -> None:
-            index = self.tabs.tabBar().tabAt(position)
+            index = self.moba_tab_bar.tabAt(position)
             if index < 0:
                 return
             if self.tab_role(index) != "new-session":
@@ -11549,7 +11898,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             menu = self.build_tab_context_menu(index)
             if menu is not None:
                 try:
-                    menu.exec(self.tabs.tabBar().mapToGlobal(position))
+                    menu.exec(self.moba_tab_bar.mapToGlobal(position))
                 finally:
                     menu.deleteLater()
 
@@ -11583,23 +11932,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             has_profile = isinstance(profile_name, str) and bool(profile_name)
             menu = QMenu(self.profile_list)
             menu.setObjectName("profileTreeContextMenu")
-            connect_action = menu.addAction(
-                "Connect",
-                lambda: self.connect_selected(False),
+            connect_action = _required_gui_value(
+                menu.addAction(
+                    "Connect",
+                    lambda: self.connect_selected(False),
+                ),
+                "profile context connect action",
             )
-            dry_run_action = menu.addAction(
-                "Preview command",
-                lambda: self.connect_selected(True),
+            dry_run_action = _required_gui_value(
+                menu.addAction(
+                    "Preview command",
+                    lambda: self.connect_selected(True),
+                ),
+                "profile context preview action",
             )
-            files_action = menu.addAction(
-                "Open files / SFTP",
-                self.open_files_selected,
+            files_action = _required_gui_value(
+                menu.addAction(
+                    "Open files / SFTP",
+                    self.open_files_selected,
+                ),
+                "profile context files action",
             )
             for action in (connect_action, dry_run_action, files_action):
                 action.setEnabled(has_profile)
             menu.addSeparator()
-            edit_action = menu.addAction("Edit profile", self.edit_selected_profile)
-            remove_action = menu.addAction("Remove profile", self.remove_selected_profile)
+            edit_action = _required_gui_value(
+                menu.addAction("Edit profile", self.edit_selected_profile),
+                "profile context edit action",
+            )
+            remove_action = _required_gui_value(
+                menu.addAction("Remove profile", self.remove_selected_profile),
+                "profile context remove action",
+            )
             edit_action.setEnabled(has_profile)
             remove_action.setEnabled(has_profile)
             menu.addSeparator()
@@ -11612,12 +11976,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if item is not None:
                 self.profile_list.setCurrentItem(item)
             menu = self.build_profile_context_menu(item)
-            menu.exec(self.profile_list.viewport().mapToGlobal(position))
+            viewport = _required_gui_value(
+                self.profile_list.viewport(),
+                "profile list viewport",
+            )
+            menu.exec(viewport.mapToGlobal(position))
             menu.deleteLater()
 
         @staticmethod
         def profile_tree_item_is_visible(item: QTreeWidgetItem) -> bool:
-            current = item
+            current: QTreeWidgetItem | None = item
             while current is not None:
                 if current.isHidden():
                     return False
@@ -12172,7 +12540,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "homeActionOperation",
                 self.home_action_operations["primary"],
             )
-            start_button.setIcon(self.style().standardIcon(self.standard_icon("SP_DialogApplyButton")))
+            start_button.setIcon(
+                _widget_style(self).standardIcon(
+                    self.standard_icon("SP_DialogApplyButton")
+                )
+            )
             start_button.setMinimumWidth(200)
             recover_button = QPushButton(secondary_action)
             recover_button.setObjectName("mobaHomeAction")
@@ -12181,7 +12553,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "homeActionOperation",
                 self.home_action_operations["secondary"],
             )
-            recover_button.setIcon(self.style().standardIcon(self.standard_icon("SP_BrowserReload")))
+            recover_button.setIcon(
+                _widget_style(self).standardIcon(
+                    self.standard_icon("SP_BrowserReload")
+                )
+            )
             recover_button.setMinimumWidth(218)
             start_button.clicked.connect(
                 lambda _checked=False: self.run_home_action("primary")
@@ -12259,7 +12635,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
             QTimer.singleShot(0, self.configure_welcome_responsiveness)
 
-        def home_action_callbacks_for_design(self) -> dict[str, object]:
+        def home_action_callbacks_for_design(
+            self,
+        ) -> dict[str, Callable[[], object]]:
             if self.current_design_id() in {"native", "mobaxterm"}:
                 self.home_action_operations = {
                     "primary": "open-local-terminal",
@@ -14077,7 +14455,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         raise RuntimeError("could not encode Remmina screenshot as PNG")
                 finally:
                     buffer.close()
-                payload = bytes(encoded)
+                payload = encoded.data()
                 if not payload.startswith(b"\x89PNG\r\n\x1a\n"):
                     raise RuntimeError("Remmina screenshot encoder did not produce a PNG")
                 write_bytes_atomic(artifact_path, payload, private=True)
@@ -14771,7 +15149,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setProperty("termiusSyncRouteState", sync_route.sync_state)
                     button.setProperty("termiusSyncRouteActionLabel", action.label)
                     button.setProperty("termiusSyncRouteRenderSource", sync_route.render_source)
-                button.setIcon(self.style().standardIcon(self.standard_icon(self.termius_hosts_icon_name(action.icon_key))))
+                button.setIcon(
+                    _widget_style(self).standardIcon(
+                        self.standard_icon(
+                            self.termius_hosts_icon_name(action.icon_key)
+                        )
+                    )
+                )
                 button.setIconSize(QSize(14, 14))
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                 button.setFixedSize(QSize(24, 24))
@@ -15723,7 +16107,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             closeable = bool(self.tabs.tabsClosable() and tab_role == route.reference_tab_role)
             selected = self.tabs.currentIndex() == tab_index
             position = self.tab_position_name()
-            for widget in (pane, self.tabs, self.tabs.tabBar()):
+            for widget in (pane, self.tabs, self.moba_tab_bar):
                 self.apply_preset_reference_tab_chrome_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_label_property, self.tabs.tabText(tab_index))
@@ -15772,7 +16156,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             action_labels = [str(spec["label"]) for spec in specs]
             enabled_keys = [str(spec["key"]) for spec in specs if bool(spec["enabled"])]
             disabled_keys = [str(spec["key"]) for spec in specs if not bool(spec["enabled"])]
-            for widget in (pane, self.tabs, self.tabs.tabBar()):
+            for widget in (pane, self.tabs, self.moba_tab_bar):
                 self.apply_preset_reference_session_action_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_tab_property, tab_title)
@@ -15796,7 +16180,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             specs = self.tab_context_session_action_specs(tab_index)
             action_keys, action_labels, enabled_keys, disabled_keys = self.session_action_capture_from_specs(specs)
-            for widget in (panel, self.tabs, self.tabs.tabBar()):
+            for widget in (panel, self.tabs, self.moba_tab_bar):
                 self.apply_moba_connected_session_action_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_tab_property, tab_title)
@@ -15828,15 +16212,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty(route.actual_output_property, actual_output)
 
         def apply_reference_control_route_to_terminal_tab(self, pane: QWidget, tab_title: str, route) -> None:
-            action_buttons = [
+            action_button_candidates = [
                 getattr(pane, "start_button", None),
                 getattr(pane, "restart_button", None),
                 getattr(pane, "stop_button", None),
                 getattr(pane, "copy_button", None),
                 getattr(pane, "clear_button", None),
             ]
-            action_buttons = [button for button in action_buttons if button is not None]
-            status_widget = getattr(pane, "status", None)
+            action_buttons = [
+                button
+                for button in action_button_candidates
+                if isinstance(button, QAbstractButton)
+            ]
+            status_candidate = getattr(pane, "status", None)
+            status_widget = (
+                status_candidate if isinstance(status_candidate, QLabel) else None
+            )
             action_keys = [str(button.property(route.action_key_property) or "") for button in action_buttons]
             status_state = str(status_widget.property(route.status_state_property) or "") if status_widget is not None else ""
             status_text = status_widget.text() if status_widget is not None else ""
@@ -16072,7 +16463,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def equalize_ad_hoc_splitter(splitter: QSplitter) -> None:
             splitter.setChildrenCollapsible(False)
             for index in range(splitter.count()):
-                splitter.widget(index).show()
+                child = splitter.widget(index)
+                if child is not None:
+                    child.show()
                 splitter.setCollapsible(index, False)
                 splitter.setStretchFactor(index, 1)
             splitter.setSizes([1000] * splitter.count())
@@ -16151,14 +16544,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.update_session_status()
 
         def terminal_splitter_clone_supported(self, source: QSplitter) -> bool:
-            return all(
-                isinstance(source.widget(index), TerminalPane)
-                or (
-                    isinstance(source.widget(index), QSplitter)
-                    and self.terminal_splitter_clone_supported(source.widget(index))
-                )
-                for index in range(source.count())
-            )
+            for index in range(source.count()):
+                child = source.widget(index)
+                if isinstance(child, TerminalPane):
+                    continue
+                if isinstance(child, QSplitter) and self.terminal_splitter_clone_supported(
+                    child
+                ):
+                    continue
+                return False
+            return True
 
         def clone_terminal_splitter(self, source: QSplitter) -> QSplitter:
             clone = QSplitter(source.orientation())
@@ -16168,6 +16563,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 clone.setProperty("savedLayoutName", saved_layout_name)
             for index in range(source.count()):
                 child = source.widget(index)
+                duplicate: QWidget
                 if isinstance(child, TerminalPane):
                     duplicate = self.new_terminal_pane(child.plan, profile=child.profile)
                     self.remember_terminal_plan(child.plan, profile=child.profile)
@@ -16249,7 +16645,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         profile=profile,
                         tab_title=(
                             self.profile_tab_label(profile)
-                            if is_profile_terminal
+                            if profile is not None and is_profile_terminal
                             else plan.title
                         ),
                         tab_status="recovered",
@@ -16260,7 +16656,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             dialog = LayoutDialog(parent=self)
             while dialog.exec() == QDialog.DialogCode.Accepted:
                 try:
-                    layout = dialog.layout()
+                    layout = dialog.workspace_layout()
                     self.layout_store.add(layout)
                 except ValueError as exc:
                     dialog.show_validation_error(str(exc))
@@ -16293,7 +16689,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             dialog = LayoutDialog(current, self)
             while dialog.exec() == QDialog.DialogCode.Accepted:
                 try:
-                    layout = dialog.layout()
+                    layout = dialog.workspace_layout()
                     self.save_layout(layout, original_name=name)
                 except (KeyError, ValueError) as exc:
                     dialog.show_validation_error(str(exc))
@@ -16461,7 +16857,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.restore_layout_splitter_sizes(root, layout.splitter_sizes)
             return root
 
-        def layout_splitters(self, widget: QWidget) -> list[QSplitter]:
+        def layout_splitters(self, widget: QWidget | None) -> list[QSplitter]:
             if not isinstance(widget, QSplitter):
                 return []
             splitters = [widget]
@@ -16681,7 +17077,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
     set_windows_taskbar_app_id()
     app = QApplication.instance()
-    if app is None:
+    if not isinstance(app, QApplication):
         app = QApplication(argv or sys.argv)
     icon = QIcon(str(application_icon_path()))
     if not icon.isNull():

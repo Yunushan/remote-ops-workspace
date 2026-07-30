@@ -45,6 +45,11 @@ jobs:
         run: python scripts/verify.py --quick
       - name: Ruff lint
         run: python -m ruff check src tests scripts
+      - name: Cross-platform GUI type safety
+        run: |
+          python -m mypy src/remote_ops_workspace/gui.py --platform linux --no-incremental --no-pretty --show-error-codes
+          python -m mypy src/remote_ops_workspace/gui.py --platform win32 --no-incremental --no-pretty --show-error-codes
+          python -m mypy src/remote_ops_workspace/gui.py --platform darwin --no-incremental --no-pretty --show-error-codes
 
   test:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}

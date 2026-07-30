@@ -87,6 +87,15 @@ def check_repo_policy_job(workflow: str) -> list[str]:
         ),
         "python scripts/verify.py --quick": "single-row repository verifier",
         "python -m ruff check src tests scripts": "single-row ruff lint",
+        "python -m mypy src/remote_ops_workspace/gui.py --platform linux": (
+            "Linux GUI type-safety gate"
+        ),
+        "python -m mypy src/remote_ops_workspace/gui.py --platform win32": (
+            "Windows GUI type-safety gate"
+        ),
+        "python -m mypy src/remote_ops_workspace/gui.py --platform darwin": (
+            "macOS GUI type-safety gate"
+        ),
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:

@@ -26,11 +26,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     totals = report["totals"]
+    branch_percent = 100 * totals["covered_branches"] / totals["num_branches"]
     print(
         "coverage report passed: "
         f"aggregate={totals['percent_covered']:.2f}% >= {args.min_total:.2f}%, "
-        f"branches={totals['percent_branches_covered']:.2f}% >= "
-        f"{args.min_branches:.2f}%"
+        f"branches={branch_percent:.2f}% >= {args.min_branches:.2f}%"
     )
     return 0
 
@@ -57,7 +57,6 @@ def check_report(
         "missing_branches",
         "num_branches",
         "percent_covered",
-        "percent_branches_covered",
     ):
         value = totals.get(key)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -82,7 +81,6 @@ def check_report(
         errors.append("covered_branches plus missing_branches must equal num_branches")
 
     _check_percentage(errors, values, "percent_covered")
-    _check_percentage(errors, values, "percent_branches_covered")
     if values["num_statements"] > 0 and values["num_branches"] > 0:
         expected_total = 100 * (
             values["covered_lines"] + values["covered_branches"]
@@ -90,20 +88,16 @@ def check_report(
         expected_branches = 100 * values["covered_branches"] / values["num_branches"]
         if not math.isclose(values["percent_covered"], expected_total, abs_tol=1e-9):
             errors.append("totals.percent_covered does not match the coverage counts")
-        if not math.isclose(
-            values["percent_branches_covered"],
-            expected_branches,
-            abs_tol=1e-9,
-        ):
-            errors.append("totals.percent_branches_covered does not match the branch counts")
+    else:
+        expected_branches = 0.0
     if values["percent_covered"] < minimum_total:
         errors.append(
             f"aggregate coverage {values['percent_covered']:.2f}% is below "
             f"the required {minimum_total:.2f}%"
         )
-    if values["percent_branches_covered"] < minimum_branches:
+    if expected_branches < minimum_branches:
         errors.append(
-            f"branch coverage {values['percent_branches_covered']:.2f}% is below "
+            f"branch coverage {expected_branches:.2f}% is below "
             f"the required {minimum_branches:.2f}%"
         )
     return errors

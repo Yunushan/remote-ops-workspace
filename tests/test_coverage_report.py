@@ -14,21 +14,22 @@ def test_coverage_report_accepts_consistent_totals_at_both_floors() -> None:
 
 def test_coverage_report_rejects_aggregate_or_branch_regression() -> None:
     checker = _load_checker()
-    low_total = _report(percent_covered=69.99)
-    low_branches = _report(percent_branches_covered=54.99)
+    low_total = _report(covered_lines=84, covered_branches=55)
+    low_branches = _report(covered_lines=86, covered_branches=54)
 
     total_errors = checker.check_report(low_total, minimum_total=70, minimum_branches=55)
     branch_errors = checker.check_report(low_branches, minimum_total=70, minimum_branches=55)
 
-    assert any("aggregate coverage 69.99%" in error for error in total_errors)
-    assert any("branch coverage 54.99%" in error for error in branch_errors)
+    assert any("aggregate coverage 69.50%" in error for error in total_errors)
+    assert any("branch coverage 54.00%" in error for error in branch_errors)
 
 
 def test_coverage_report_rejects_missing_or_inconsistent_evidence() -> None:
     checker = _load_checker()
     inconsistent = _report()
     inconsistent["totals"]["num_branches"] = 99
-    inflated = _report(percent_covered=99, percent_branches_covered=99)
+    inflated = _report()
+    inflated["totals"]["percent_covered"] = 99
 
     assert checker.check_report({}, minimum_total=70, minimum_branches=55) == [
         "JSON must contain a totals object"
@@ -47,9 +48,6 @@ def test_coverage_report_rejects_missing_or_inconsistent_evidence() -> None:
         minimum_branches=55,
     )
     assert "totals.percent_covered does not match the coverage counts" in inflated_errors
-    assert (
-        "totals.percent_branches_covered does not match the branch counts" in inflated_errors
-    )
 
 
 def test_coverage_report_cli_validates_a_json_file(tmp_path: Path, capsys) -> None:
@@ -74,19 +72,21 @@ def test_coverage_report_cli_validates_a_json_file(tmp_path: Path, capsys) -> No
 
 def _report(
     *,
-    percent_covered: float = 70,
-    percent_branches_covered: float = 55,
+    covered_lines: int = 85,
+    covered_branches: int = 55,
 ) -> dict[str, object]:
+    missing_lines = 100 - covered_lines
+    missing_branches = 100 - covered_branches
+    percent_covered = 100 * (covered_lines + covered_branches) / 200
     return {
         "totals": {
-            "covered_lines": 85,
-            "missing_lines": 15,
+            "covered_lines": covered_lines,
+            "missing_lines": missing_lines,
             "num_statements": 100,
-            "covered_branches": 55,
-            "missing_branches": 45,
+            "covered_branches": covered_branches,
+            "missing_branches": missing_branches,
             "num_branches": 100,
             "percent_covered": percent_covered,
-            "percent_branches_covered": percent_branches_covered,
         }
     }
 

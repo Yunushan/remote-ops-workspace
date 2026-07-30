@@ -175,6 +175,23 @@ def check_test_job(workflow: str) -> list[str]:
         for version in ("3.12", "3.13", "3.14"):
             if not workflow_includes_matrix_entry(block, os_name=os_name, python_version=version):
                 errors.append(f"ci test matrix missing macOS smoke row: {os_name} Python {version}")
+    intel_macos_snippets = {
+        "Install Intel macOS compatibility dependencies": (
+            "explicit Intel macOS dependency compatibility step"
+        ),
+        "runner.os == 'macOS' && runner.arch == 'X64'": (
+            "Intel macOS architecture condition"
+        ),
+        "-c requirements-release-compat.txt": (
+            "Intel macOS release compatibility constraints"
+        ),
+        "runner.os != 'macOS' || runner.arch != 'X64'": (
+            "non-Intel-macOS dependency condition"
+        ),
+    }
+    for snippet, label in intel_macos_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci test job missing {label}: {snippet}")
     if '".[security,dev]"' not in block:
         errors.append("ci test job must install security and dev extras")
     if "python -m pytest -q" not in block:

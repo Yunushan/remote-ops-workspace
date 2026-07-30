@@ -544,7 +544,8 @@ Target workflows:
 - CLI through Termux with Python and OpenSSH on ARMv7 and ARM64 devices where
   Termux packages are available.
 - Android 12 through Android 16 (API 31-36) Web/PWA emulator CI through the
-  `android-emulator-web` job.
+  `android-emulator-web` job, including an emulator-originated HTTP response
+  assertion over an explicit `adb reverse` loopback mapping.
 
 Termux example:
 

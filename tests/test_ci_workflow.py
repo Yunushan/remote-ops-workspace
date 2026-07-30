@@ -261,16 +261,29 @@ def test_ci_workflow_requires_android_google_apis_image_for_hosted_smoke() -> No
     assert any("Android Google APIs system image for reliable hosted boot" in error for error in errors)
 
 
-def test_ci_workflow_requires_explicit_android_boot_only_coverage() -> None:
+def test_ci_workflow_requires_real_android_web_response_coverage() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        " --skip-web-response",
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow_without_server = source.replace(
+        '          python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1 > web-server.log 2>&1 &\n',
         "",
     )
+    workflow_without_reverse = source.replace(
+        '          adb reverse "tcp:${WEB_PWA_PORT}" "tcp:${WEB_PWA_PORT}"\n',
+        "",
+    )
+    workflow_with_skip = source.replace(
+        ' --url "$WEB_PWA_URL" --out-dir artifacts/mobile',
+        ' --url "$WEB_PWA_URL" --skip-web-response --out-dir artifacts/mobile',
+    )
 
-    errors = checker.check_ci_workflow(workflow)
+    server_errors = checker.check_ci_workflow(workflow_without_server)
+    reverse_errors = checker.check_ci_workflow(workflow_without_reverse)
+    skip_errors = checker.check_ci_workflow(workflow_with_skip)
 
-    assert any("explicit boot-only coverage" in error for error in errors)
+    assert any("loopback-only host Web/PWA server" in error for error in server_errors)
+    assert any("Android reverse-port mapping" in error for error in reverse_errors)
+    assert any("must not skip the emulator Web/PWA response assertion" in error for error in skip_errors)
 
 
 def test_ci_workflow_requires_durable_android_avd_home_and_creation_assertion() -> None:

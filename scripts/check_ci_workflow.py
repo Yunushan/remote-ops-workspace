@@ -291,12 +291,18 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         return ["ci workflow missing android-emulator-web job for Android API Web/PWA smoke"]
     required_snippets = {
         "runs-on: ubuntu-latest": "stable Linux Android runner",
+        "name: Android emulator Web/PWA response smoke API": "real Android Web/PWA response job label",
         "timeout-minutes: 35": "bounded Android emulator job timeout",
         "fail-fast: false": "non-cancelling Android API matrix",
         "api-level: [31, 32, 33, 34, 35, 36]": "Android 12-16 API matrix",
         'python-version: "3.12"': "stable Android smoke Python version",
         'python -m pip install -e ".[dev]"': "dev dependency installation",
         "tests/test_mobile_support.py": "mobile support contract tests",
+        "Start Web/PWA server": "host Web/PWA server startup",
+        'WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"': "dynamic loopback Web/PWA URL",
+        'python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1': (
+            "loopback-only host Web/PWA server"
+        ),
         "Configure Android SDK command-line tools": "Android SDK command-line tools PATH setup",
         "cmdline-tools/latest/bin": "Android SDK command-line tools discovery path",
         "ANDROID_HOME=$sdk_root": "Android SDK home export",
@@ -329,15 +335,21 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "adb devices -l": "Android emulator device-list diagnostics",
         "tail -200 emulator.log": "Android emulator log diagnostics",
         "sys.boot_completed": "Android emulator boot-completion check",
+        "Map emulator loopback to host Web/PWA": "Android reverse-port mapping step",
+        'adb reverse "tcp:${WEB_PWA_PORT}" "tcp:${WEB_PWA_PORT}"': "Android reverse-port mapping",
+        "adb reverse --list": "Android reverse-port mapping assertion",
         "scripts/check_mobile_emulator_smoke.py --platform android": "Android emulator smoke helper",
         "--android-api ${{ matrix.api-level }}": "Android API assertion",
-        "--skip-web-response": "explicit boot-only coverage for Android API levels without stable HTTP capture",
+        '--url "$WEB_PWA_URL"': "emulator-routed Web/PWA URL",
+        "tail -200 web-server.log": "Web/PWA server failure diagnostics",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "Android smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing Android screenshots",
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci android-emulator-web job missing {label}: {snippet}")
+    if "--skip-web-response" in block:
+        errors.append("ci android-emulator-web job must not skip the emulator Web/PWA response assertion")
     return errors
 
 

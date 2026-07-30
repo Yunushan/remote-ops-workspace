@@ -7842,19 +7842,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.tabs.setProperty("interactionStateActiveTabStatus", state.active_tab_status)
 
         def focus_interaction_widgets(self) -> dict[str, object]:
-            tree_filter = self.search_input
-            if self.current_design_id() == "mremoteng":
-                candidate = self.findChild(QLineEdit, "mRemoteNgDocumentFilter")
-                if candidate is not None:
-                    tree_filter = candidate
+            def live_line_edit(object_name: str):
+                widget = self.findChild(QLineEdit, object_name)
+                return widget if widget is not None else self.search_input
 
             return {
                 "quick-connect": self.quick_connect,
                 "search-log": self.search_input,
-                "session-filter": self.securecrt_session_filter,
-                "host-search": self.termius_host_search,
-                "profile-filter": self.remmina_profile_filter,
-                "tree-filter": tree_filter,
+                "session-filter": live_line_edit("secureCrtSessionFilter"),
+                "host-search": live_line_edit("termiusHostSearch"),
+                "profile-filter": live_line_edit("remminaProfileFilter"),
+                "tree-filter": live_line_edit("mRemoteNgDocumentFilter"),
             }
 
         def selected_profile_tree_label(self) -> str:

@@ -51,6 +51,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      # Avoid the reproducible coverage C-tracer/PyQt6 crash on hosted Linux.
+      COVERAGE_CORE: "pytrace"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PIP_NO_CACHE_DIR: "1"
       QT_QPA_PLATFORM: "offscreen"

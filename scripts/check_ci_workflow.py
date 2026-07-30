@@ -104,6 +104,7 @@ def check_coverage_job(workflow: str) -> list[str]:
         "name: Python branch-aware coverage": "clear branch-aware coverage job label",
         "runs-on: ubuntu-latest": "stable coverage runner",
         "timeout-minutes: 30": "bounded coverage job timeout",
+        'COVERAGE_CORE: "pytrace"': "PyQt6-compatible pure-Python coverage tracer",
         'QT_QPA_PLATFORM: "offscreen"': "headless Qt coverage platform",
         'python-version: "3.12"': "stable coverage Python version",
         "Install Linux Qt coverage runtime libraries": "explicit Qt coverage runtime setup",

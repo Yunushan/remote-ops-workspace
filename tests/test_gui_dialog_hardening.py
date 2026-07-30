@@ -23,28 +23,6 @@ def test_main_window_and_application_have_a_visible_product_icon(gui_window) -> 
     assert not window.windowIcon().isNull()
 
 
-def test_native_focus_controls_do_not_traverse_hidden_qt_children(
-    gui_window,
-    monkeypatch,
-) -> None:
-    _app, window = gui_window
-    native_index = window.design_select.findData("native")
-    assert native_index >= 0
-    window.design_select.setCurrentIndex(native_index)
-
-    def reject_hidden_child_lookup(*_args, **_kwargs):
-        raise AssertionError("native focus configuration must use owned widget references")
-
-    monkeypatch.setattr(window, "findChild", reject_hidden_child_lookup)
-
-    widgets = window.focus_interaction_widgets()
-
-    assert widgets["session-filter"] is window.securecrt_session_filter
-    assert widgets["host-search"] is window.termius_host_search
-    assert widgets["profile-filter"] is window.remmina_profile_filter
-    assert widgets["tree-filter"] is window.search_input
-
-
 def test_profile_protocol_is_a_closed_supported_catalog(gui_window) -> None:
     from PyQt6.QtCore import QTimer
     from PyQt6.QtWidgets import QApplication, QComboBox

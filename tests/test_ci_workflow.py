@@ -153,6 +153,18 @@ def test_ci_workflow_requires_complete_qt_coverage_runtime() -> None:
     assert any("known readable coverage-runner GUI font" in error for error in errors)
 
 
+def test_ci_workflow_requires_pyqt6_compatible_coverage_tracer() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        '      COVERAGE_CORE: "pytrace"\n',
+        '      COVERAGE_CORE: "ctrace"\n',
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("PyQt6-compatible pure-Python coverage tracer" in error for error in errors)
+
+
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

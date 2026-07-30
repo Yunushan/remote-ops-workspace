@@ -35,6 +35,7 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors.extend(check_test_job(text))
     errors.extend(check_mobile_web_job(text))
     errors.extend(check_web_container_job(text))
+    errors.extend(check_web_recovery_job(text))
     errors.extend(check_android_emulator_web_job(text))
     errors.extend(check_ios_simulator_web_job(text))
     errors.extend(check_gui_render_job(text))
@@ -281,6 +282,43 @@ def check_web_container_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci web-container job missing {label}: {snippet}")
+    return errors
+
+
+def check_web_recovery_job(workflow: str) -> list[str]:
+    block = workflow_job_block(workflow, "web-recovery")
+    if not block:
+        return ["ci workflow missing web-recovery job for destructive backup and restore evidence"]
+    errors: list[str] = []
+    required_snippets = {
+        "name: Web/PWA backup and restore drill": "clear recovery drill job label",
+        "runs-on: ubuntu-latest": "stable recovery drill runner",
+        "timeout-minutes: 20": "bounded recovery drill timeout",
+        'python-version: "3.12"': "stable recovery evidence Python version",
+        "python scripts/run_web_recovery_drill.py": "real recovery drill runner",
+        "--project-name row-web-recovery": "isolated recovery Compose project",
+        "--output artifacts/recovery/web-recovery-evidence.json": "sanitized evidence output",
+        '--repository "$GITHUB_REPOSITORY"': "repository-bound recovery evidence",
+        '--source-sha "$GITHUB_SHA"': "source-bound recovery evidence",
+        '--workflow-run-url "$workflow_run_url"': "workflow-run-bound recovery evidence",
+        '--run-attempt "$GITHUB_RUN_ATTEMPT"': "workflow-attempt-bound recovery evidence",
+        "python scripts/check_web_recovery_evidence.py": "independent retained evidence validation",
+        "if: ${{ always() }}": "failure-path evidence retention",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": (
+            "pinned recovery evidence upload"
+        ),
+        "name: web-recovery-evidence-${{ github.sha }}-${{ github.run_attempt }}": (
+            "source and attempt scoped recovery artifact"
+        ),
+        "path: artifacts/recovery/web-recovery-evidence.json": "JSON-only recovery artifact",
+        "if-no-files-found: error": "missing recovery evidence failure",
+        "retention-days: 30": "bounded recovery evidence retention",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci web-recovery job missing {label}: {snippet}")
+    if ".tar" in block or "remote-ops-data.tar" in block:
+        errors.append("ci web-recovery job must not upload backup payloads")
     return errors
 
 

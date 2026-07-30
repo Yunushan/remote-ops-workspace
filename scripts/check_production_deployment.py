@@ -6,6 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOYMENT_GUIDE = ROOT / "docs" / "PRODUCTION_DEPLOYMENT.md"
 COMPOSE_FILE = ROOT / "docker" / "compose.yaml"
+RECOVERY_DRILL = ROOT / "scripts" / "run_web_recovery_drill.py"
+RECOVERY_EVIDENCE_CHECKER = ROOT / "scripts" / "check_web_recovery_evidence.py"
 
 REQUIRED_GUIDE_SNIPPETS = (
     "operator workstation application",
@@ -14,6 +16,9 @@ REQUIRED_GUIDE_SNIPPETS = (
     "back up the named `/data` volume with encryption at rest",
     "bounded rotation",
     "restore drill",
+    "Automated Application-Volume Recovery Evidence",
+    "web-recovery-evidence-<sha>-<attempt>",
+    "It does not prove an operator's encrypted backup location",
     "Do not use it as an enterprise source of truth",
     "UNSIGNED PREVIEW",
 )
@@ -31,6 +36,16 @@ REQUIRED_COMPOSE_SNIPPETS = (
     "remote-ops-data:/data",
 )
 
+REQUIRED_RECOVERY_DRILL_SNIPPETS = (
+    "archive_marker_bytes",
+    '"original_volume_removed"',
+    '"fresh_volume_created"',
+    '"restored_revision_verified"',
+    '"post_backup_sentinel_absent"',
+    '"payload_uploaded": False',
+    '"cleanup": {"completed": False}',
+)
+
 
 def check_production_deployment() -> list[str]:
     errors: list[str] = []
@@ -38,15 +53,23 @@ def check_production_deployment() -> list[str]:
         return ["missing production deployment guide"]
     if not COMPOSE_FILE.exists():
         return ["missing Web/PWA Compose deployment file"]
+    if not RECOVERY_DRILL.exists():
+        return ["missing executable Web/PWA recovery drill"]
+    if not RECOVERY_EVIDENCE_CHECKER.exists():
+        return ["missing Web/PWA recovery evidence validator"]
 
     guide = " ".join(DEPLOYMENT_GUIDE.read_text(encoding="utf-8").split())
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
+    recovery_drill = RECOVERY_DRILL.read_text(encoding="utf-8")
     for snippet in REQUIRED_GUIDE_SNIPPETS:
         if " ".join(snippet.split()) not in guide:
             errors.append(f"production deployment guide missing required boundary: {snippet}")
     for snippet in REQUIRED_COMPOSE_SNIPPETS:
         if snippet not in compose:
             errors.append(f"Compose deployment missing required hardening: {snippet}")
+    for snippet in REQUIRED_RECOVERY_DRILL_SNIPPETS:
+        if snippet not in recovery_drill:
+            errors.append(f"Web/PWA recovery drill missing required proof: {snippet}")
     if not has_bounded_web_service_logs(compose):
         errors.append("Compose deployment must configure bounded local logs on remote-ops-web")
     errors.extend(check_loopback_port_mappings(compose))

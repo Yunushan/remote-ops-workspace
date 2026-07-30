@@ -297,6 +297,7 @@ jobs:
           adb reverse --list
           adb reverse --list | grep -F "tcp:${WEB_PWA_PORT} tcp:${WEB_PWA_PORT}"
       - name: Android emulator Web/PWA response smoke
+        timeout-minutes: 2
         run: |
           if ! python scripts/check_mobile_emulator_smoke.py --platform android --android-api ${{ matrix.api-level }} --url "$WEB_PWA_URL" --out-dir artifacts/mobile; then
             adb reverse --list || true

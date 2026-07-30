@@ -341,6 +341,7 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "scripts/check_mobile_emulator_smoke.py --platform android": "Android emulator smoke helper",
         "--android-api ${{ matrix.api-level }}": "Android API assertion",
         '--url "$WEB_PWA_URL"': "emulator-routed Web/PWA URL",
+        "timeout-minutes: 2": "bounded Android Web/PWA response smoke timeout",
         "tail -200 web-server.log": "Web/PWA server failure diagnostics",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "Android smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing Android screenshots",

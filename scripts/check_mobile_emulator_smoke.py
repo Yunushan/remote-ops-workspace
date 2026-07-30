@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -18,6 +19,8 @@ DEFAULT_ANDROID_WEB_RESPONSE_ATTEMPTS = 3
 DEFAULT_ANDROID_WEB_RESPONSE_RETRY_DELAY_SECONDS = 2.0
 DEFAULT_WEB_READY_TIMEOUT_SECONDS = 30.0
 HTTP_OK_MARKER = "HTTP/1.0 200 OK"
+ANDROID_WEB_REQUEST_PATH = "/data/local/tmp/row-web-pwa-request.txt"
+ANDROID_WEB_RESPONSE_PATH = "/data/local/tmp/row-web-pwa-response.txt"
 WEB_PWA_RESPONSE_MARKER = "<title>Remote Ops Workspace</title>"
 
 
@@ -93,6 +96,8 @@ def ensure_android_web_response(
     parsed = urlsplit(url)
     if parsed.scheme != "http" or not parsed.hostname:
         raise SystemExit(f"Android Web/PWA network smoke requires an HTTP URL, got {url!r}")
+    if parsed.hostname != "127.0.0.1":
+        raise SystemExit("Android Web/PWA network smoke requires adb-reversed emulator loopback")
     port = parsed.port or 80
     path = parsed.path or "/"
     if parsed.query:
@@ -103,40 +108,62 @@ def ensure_android_web_response(
         f"Host: {host_header}\r\n"
         "Connection: close\r\n\r\n"
     )
+    request_result: subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes] | None = None
     response_result: subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes] | None = None
     response = ""
-    for attempt in range(1, attempts + 1):
-        response_result = run(
-            ["adb", "exec-out", "toybox", "nc", "-w", "10", "-q", "2", parsed.hostname, str(port)],
-            check=False,
-            input_text=request,
-        )
-        response = (
-            response_result.stdout
-            if isinstance(response_result.stdout, str)
-            else response_result.stdout.decode(errors="replace")
-        )
-        if (
-            response_result.returncode == 0
-            and HTTP_OK_MARKER in response
-            and WEB_PWA_RESPONSE_MARKER in response
-        ):
-            print(f"Android Web/PWA response verified through emulator: {url}")
-            return
-        if attempt < attempts:
-            time.sleep(retry_delay_seconds)
+    with tempfile.TemporaryDirectory(prefix="row-android-web-") as temp_dir:
+        request_path = Path(temp_dir) / "request.txt"
+        request_path.write_bytes(request.encode("ascii"))
+        run(["adb", "push", str(request_path), ANDROID_WEB_REQUEST_PATH])
+        try:
+            for attempt in range(1, attempts + 1):
+                run(["adb", "shell", "rm", "-f", ANDROID_WEB_RESPONSE_PATH], check=False)
+                request_result = run(
+                    [
+                        "adb",
+                        "shell",
+                        f"toybox nc -w 10 -q 2 127.0.0.1 {port} "
+                        f"< {ANDROID_WEB_REQUEST_PATH} > {ANDROID_WEB_RESPONSE_PATH}",
+                    ],
+                    check=False,
+                )
+                response_result = run(
+                    ["adb", "exec-out", "cat", ANDROID_WEB_RESPONSE_PATH],
+                    check=False,
+                )
+                response = (
+                    response_result.stdout
+                    if isinstance(response_result.stdout, str)
+                    else response_result.stdout.decode(errors="replace")
+                )
+                if (
+                    request_result.returncode == 0
+                    and response_result.returncode == 0
+                    and HTTP_OK_MARKER in response
+                    and WEB_PWA_RESPONSE_MARKER in response
+                ):
+                    print(f"Android Web/PWA response verified through emulator: {url}")
+                    return
+                if attempt < attempts:
+                    time.sleep(retry_delay_seconds)
+        finally:
+            run(
+                ["adb", "shell", "rm", "-f", ANDROID_WEB_REQUEST_PATH, ANDROID_WEB_RESPONSE_PATH],
+                check=False,
+            )
 
+    assert request_result is not None
     assert response_result is not None
     stderr = (
-        response_result.stderr.strip()
-        if isinstance(response_result.stderr, str)
-        else response_result.stderr.decode(errors="replace").strip()
+        request_result.stderr.strip()
+        if isinstance(request_result.stderr, str)
+        else request_result.stderr.decode(errors="replace").strip()
     )
     preview = response[:500].replace("\r", "\\r").replace("\n", "\\n")
     raise SystemExit(
         "Android emulator could not verify the Web/PWA response "
-        f"at {url!r} after {attempts} attempts; response_exit={response_result.returncode}; "
-        f"stderr={stderr!r}; response={preview!r}"
+        f"at {url!r} after {attempts} attempts; request_exit={request_result.returncode}; "
+        f"response_exit={response_result.returncode}; stderr={stderr!r}; response={preview!r}"
     )
 
 
@@ -264,13 +291,11 @@ def run(
     *,
     check: bool = True,
     text: bool = True,
-    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
     result = subprocess.run(
         args,
         check=False,
         capture_output=True,
-        input=input_text,
         text=text,
     )
     if check and result.returncode != 0:

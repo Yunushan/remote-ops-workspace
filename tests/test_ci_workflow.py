@@ -276,14 +276,20 @@ def test_ci_workflow_requires_real_android_web_response_coverage() -> None:
         ' --url "$WEB_PWA_URL" --out-dir artifacts/mobile',
         ' --url "$WEB_PWA_URL" --skip-web-response --out-dir artifacts/mobile',
     )
+    workflow_without_response_timeout = source.replace(
+        "      - name: Android emulator Web/PWA response smoke\n        timeout-minutes: 2\n",
+        "      - name: Android emulator Web/PWA response smoke\n",
+    )
 
     server_errors = checker.check_ci_workflow(workflow_without_server)
     reverse_errors = checker.check_ci_workflow(workflow_without_reverse)
     skip_errors = checker.check_ci_workflow(workflow_with_skip)
+    timeout_errors = checker.check_ci_workflow(workflow_without_response_timeout)
 
     assert any("loopback-only host Web/PWA server" in error for error in server_errors)
     assert any("Android reverse-port mapping" in error for error in reverse_errors)
     assert any("must not skip the emulator Web/PWA response assertion" in error for error in skip_errors)
+    assert any("bounded Android Web/PWA response smoke timeout" in error for error in timeout_errors)
 
 
 def test_ci_workflow_requires_durable_android_avd_home_and_creation_assertion() -> None:

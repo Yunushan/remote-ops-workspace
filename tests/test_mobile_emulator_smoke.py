@@ -16,7 +16,6 @@ def test_open_ios_url_retries_transient_timeout(monkeypatch) -> None:
         *,
         check: bool = True,
         text: bool = True,
-        input_text: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         nonlocal open_attempts
         calls.append(args)
@@ -44,7 +43,6 @@ def test_open_ios_url_reports_exhausted_attempts(monkeypatch) -> None:
         *,
         check: bool = True,
         text: bool = True,
-        input_text: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args, 60, stdout="", stderr="Operation timed out")
 
@@ -67,31 +65,31 @@ def test_android_web_response_accepts_expected_page(monkeypatch) -> None:
         *,
         check: bool = True,
         text: bool = True,
-        input_text: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        if args[:2] == ["adb", "push"]:
+            assert Path(args[2]).read_bytes() == (
+                b"GET /index.html HTTP/1.0\r\n"
+                b"Host: 127.0.0.1:8765\r\n"
+                b"Connection: close\r\n\r\n"
+            )
+            assert args[3] == smoke.ANDROID_WEB_REQUEST_PATH
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args == ["adb", "exec-out", "cat", smoke.ANDROID_WEB_RESPONSE_PATH]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=f"{smoke.HTTP_OK_MARKER}\r\n\r\n{smoke.WEB_PWA_RESPONSE_MARKER}",
+                stderr="",
+            )
+        if args[:4] == ["adb", "shell", "rm", "-f"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
         assert args == [
             "adb",
-            "exec-out",
-            "toybox",
-            "nc",
-            "-w",
-            "10",
-            "-q",
-            "2",
-            "127.0.0.1",
-            "8765",
+            "shell",
+            f"toybox nc -w 10 -q 2 127.0.0.1 8765 < {smoke.ANDROID_WEB_REQUEST_PATH} "
+            f"> {smoke.ANDROID_WEB_RESPONSE_PATH}",
         ]
-        assert input_text == (
-            "GET /index.html HTTP/1.0\r\n"
-            "Host: 127.0.0.1:8765\r\n"
-            "Connection: close\r\n\r\n"
-        )
-        return subprocess.CompletedProcess(
-            args,
-            0,
-            stdout=f"{smoke.HTTP_OK_MARKER}\r\n\r\n{smoke.WEB_PWA_RESPONSE_MARKER}",
-            stderr="",
-        )
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
     monkeypatch.setattr(smoke, "run", fake_run)
 
@@ -106,8 +104,11 @@ def test_android_web_response_reports_failed_fetch(monkeypatch) -> None:
         *,
         check: bool = True,
         text: bool = True,
-        input_text: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        if args[:2] == ["adb", "push"] or args[:4] == ["adb", "shell", "rm", "-f"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args == ["adb", "exec-out", "cat", smoke.ANDROID_WEB_RESPONSE_PATH]:
+            return subprocess.CompletedProcess(args, 1, stdout="", stderr="missing response")
         return subprocess.CompletedProcess(args, 1, stdout="", stderr="connection refused")
 
     monkeypatch.setattr(smoke, "run", fake_run)
@@ -121,6 +122,17 @@ def test_android_web_response_reports_failed_fetch(monkeypatch) -> None:
         raise AssertionError("failed Web/PWA response fetch should fail the Android smoke")
 
 
+def test_android_web_response_requires_adb_reversed_loopback() -> None:
+    smoke = _load_smoke()
+
+    try:
+        smoke.ensure_android_web_response("http://10.0.2.2:8765/index.html", attempts=1)
+    except SystemExit as exc:
+        assert "adb-reversed emulator loopback" in str(exc)
+    else:
+        raise AssertionError("Android Web/PWA smoke must require the explicit adb reverse boundary")
+
+
 def test_android_boot_screenshot_mode_does_not_fetch_web_response(monkeypatch, tmp_path) -> None:
     smoke = _load_smoke()
     calls: list[list[str]] = []
@@ -130,7 +142,6 @@ def test_android_boot_screenshot_mode_does_not_fetch_web_response(monkeypatch, t
         *,
         check: bool = True,
         text: bool = True,
-        input_text: str | None = None,
     ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
         calls.append(args)
         if args == ["adb", "shell", "getprop", "ro.build.version.sdk"]:

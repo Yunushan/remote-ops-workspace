@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GUI_MODULE = "src/remote_ops_workspace/gui.py"
 GUI_ERROR_BASELINE = 382
+MYPY_PLATFORMS = ("linux", "win32", "darwin")
 ERROR_RE = re.compile(r"^(?P<path>.*?):\d+(?::\d+)?: error:")
 
 
@@ -43,30 +44,41 @@ def main() -> int:
     if importlib.util.find_spec("mypy") is None:
         print("non-GUI type gate: mypy is not installed", file=sys.stderr)
         return 2
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "mypy",
-            "src",
-            "--no-pretty",
-            "--show-error-codes",
-        ],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    output = "\n".join(part for part in (completed.stdout, completed.stderr) if part)
-    errors, gui_errors = check_mypy_output(output, completed.returncode)
-    if errors:
+    results: list[str] = []
+    failed = False
+    for platform in MYPY_PLATFORMS:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "mypy",
+                "src",
+                "--platform",
+                platform,
+                "--no-incremental",
+                "--no-pretty",
+                "--show-error-codes",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        output = "\n".join(part for part in (completed.stdout, completed.stderr) if part)
+        errors, gui_errors = check_mypy_output(output, completed.returncode)
+        results.append(f"{platform}={gui_errors}/{GUI_ERROR_BASELINE}")
+        if not errors:
+            continue
+        failed = True
         for error in errors:
-            print(f"non-GUI type gate: {error}", file=sys.stderr)
+            print(f"non-GUI type gate [{platform}]: {error}", file=sys.stderr)
+        for line in output.splitlines():
+            match = ERROR_RE.match(line)
+            if match and match.group("path").replace("\\", "/") != GUI_MODULE:
+                print(f"non-GUI type gate [{platform}]: {line}", file=sys.stderr)
+    if failed:
         return 1
-    print(
-        "non-GUI production type gate passed; "
-        f"remaining isolated GUI errors: {gui_errors}/{GUI_ERROR_BASELINE}"
-    )
+    print("non-GUI production type gate passed; " + ", ".join(results))
     return 0
 
 

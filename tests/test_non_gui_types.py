@@ -18,6 +18,12 @@ def test_non_gui_type_gate_accepts_bounded_gui_debt() -> None:
     assert checker.check_mypy_output(output, 1) == ([], 2)
 
 
+def test_non_gui_type_gate_checks_each_modern_host_platform() -> None:
+    checker = _load_checker()
+
+    assert checker.MYPY_PLATFORMS == ("linux", "win32", "darwin")
+
+
 def test_non_gui_type_gate_rejects_error_outside_gui() -> None:
     checker = _load_checker()
     output = "src/remote_ops_workspace/storage.py:10: error: unsafe type [arg-type]"

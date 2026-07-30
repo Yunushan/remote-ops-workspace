@@ -140,19 +140,17 @@ def test_ci_workflow_requires_independent_coverage_report_validation() -> None:
     assert any("aggregate and branch report validator" in error for error in errors)
 
 
-def test_ci_workflow_requires_qt_headless_runtime_dependency() -> None:
+def test_ci_workflow_requires_complete_qt_coverage_runtime() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "      - name: Install Qt headless runtime dependency\n"
-        "        run: |\n"
-        "          sudo apt-get update\n"
-        "          sudo apt-get install -y libegl1\n",
+        "            fonts-dejavu-core \\\n",
         "",
+        1,
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("Qt headless runtime dependency" in error for error in errors)
+    assert any("known readable coverage-runner GUI font" in error for error in errors)
 
 
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:

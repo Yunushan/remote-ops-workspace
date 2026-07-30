@@ -106,7 +106,17 @@ def check_coverage_job(workflow: str) -> list[str]:
         "timeout-minutes: 30": "bounded coverage job timeout",
         'QT_QPA_PLATFORM: "offscreen"': "headless Qt coverage platform",
         'python-version: "3.12"': "stable coverage Python version",
-        "sudo apt-get install -y libegl1": "Qt headless runtime dependency",
+        "Install Linux Qt coverage runtime libraries": "explicit Qt coverage runtime setup",
+        "fontconfig": "Qt coverage font discovery runtime",
+        "fonts-dejavu-core": "known readable coverage-runner GUI font",
+        "libegl1": "Qt EGL coverage runtime library",
+        "libgl1": "OpenGL coverage runtime library",
+        "libxkbcommon-x11-0": "Qt xkbcommon X11 coverage runtime library",
+        "libxcb-cursor0": "Qt xcb cursor coverage runtime library",
+        "Verify coverage runner font discovery": "explicit coverage font discovery gate",
+        "fc-cache -f": "fresh coverage-runner fontconfig cache",
+        'fc-match "DejaVu Sans"': "known coverage-runner Linux font match",
+        "fc-list : family | grep -q .": "non-empty coverage-runner Qt font inventory assertion",
         'python -m pip install -e ".[desktop,security,dev]"': (
             "desktop, security and development dependency installation"
         ),

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import sys
+import time
 from dataclasses import dataclass
 
 import pytest
 
-from remote_ops_workspace.gui import _safe_tooltip_html
+from remote_ops_workspace.gui import _required_gui_value, _safe_tooltip_html
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.profile_importers import ProfileImportResult
 
@@ -14,6 +15,16 @@ def test_safe_tooltip_html_escapes_markup_and_preserves_lines() -> None:
     assert _safe_tooltip_html("<b>literal</b>\nnext & final") == (
         "<qt>&lt;b&gt;literal&lt;/b&gt;<br>next &amp; final</qt>"
     )
+
+
+def test_required_gui_value_fails_closed_with_actionable_context() -> None:
+    assert _required_gui_value("ready", "terminal viewport") == "ready"
+
+    with pytest.raises(
+        RuntimeError,
+        match="required GUI value is unavailable: terminal viewport",
+    ):
+        _required_gui_value(None, "terminal viewport")
 
 
 def test_main_window_and_application_have_a_visible_product_icon(gui_window) -> None:
@@ -127,7 +138,9 @@ def test_terminal_output_accepts_direct_keys_and_has_operational_context_menu(
     pane.request_stop(policy=ProcessStopPolicy(terminate_timeout_ms=10, kill_timeout_ms=0))
     assert process.terminated
     assert not process.killed
-    QTest.qWait(30)
+    deadline = time.monotonic() + 0.5
+    while not process.killed and time.monotonic() < deadline:
+        QTest.qWait(10)
     assert process.killed
     menu.deleteLater()
     pane.deleteLater()

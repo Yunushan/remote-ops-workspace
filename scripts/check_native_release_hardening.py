@@ -186,7 +186,9 @@ def check_windows_application_icon() -> list[str]:
         "def set_windows_taskbar_app_id()": "Windows taskbar identity helper",
         "SetCurrentProcessExplicitAppUserModelID": "Windows taskbar identity call",
         "app.setWindowIcon(icon)": "application icon assignment",
-        "self.setWindowIcon(QApplication.instance().windowIcon())": "main-window icon assignment",
+        "self.setWindowIcon(_application_instance().windowIcon())": (
+            "guarded main-window icon assignment"
+        ),
     }.items():
         if snippet not in gui:
             errors.append(f"src/remote_ops_workspace/gui.py missing {label}: {snippet}")

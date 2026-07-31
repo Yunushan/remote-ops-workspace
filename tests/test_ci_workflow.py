@@ -97,19 +97,110 @@ def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
     assert any("dependency vulnerability audit" in error for error in errors)
 
 
-def test_ci_workflow_requires_qt_headless_runtime_dependency() -> None:
+def test_ci_workflow_requires_enforced_branch_coverage_job() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "      - name: Install Qt headless runtime dependency\n"
-        "        run: |\n"
-        "          sudo apt-get update\n"
-        "          sudo apt-get install -y libegl1\n",
+        "  coverage:",
+        "  coverage_disabled:",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci workflow missing coverage job for enforced Python branch coverage" in errors
+
+
+def test_ci_workflow_rejects_reduced_or_advisory_coverage_gate() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    reduced_threshold = source.replace("--cov-fail-under=70", "--cov-fail-under=69")
+    reduced_validated_total = source.replace("--min-total 70", "--min-total 69")
+    reduced_branch_threshold = source.replace("--min-branches 55", "--min-branches 54")
+    advisory_gate = source.replace(
+        "  coverage:\n    name: Python branch-aware coverage\n",
+        "  coverage:\n    continue-on-error: true\n    name: Python branch-aware coverage\n",
+    )
+
+    threshold_errors = checker.check_ci_workflow(reduced_threshold)
+    total_errors = checker.check_ci_workflow(reduced_validated_total)
+    branch_errors = checker.check_ci_workflow(reduced_branch_threshold)
+    advisory_errors = checker.check_ci_workflow(advisory_gate)
+
+    assert any("aggregate coverage failure threshold" in error for error in threshold_errors)
+    assert any("validated aggregate coverage threshold" in error for error in total_errors)
+    assert any("pure branch coverage threshold" in error for error in branch_errors)
+    assert "ci coverage job must remain release-blocking" in advisory_errors
+
+
+def test_ci_workflow_requires_branch_and_machine_readable_coverage_evidence() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_branch = source.replace("          --cov-branch\n", "")
+    without_xml = source.replace(
+        "          --cov-report=xml:artifacts/coverage/coverage.xml\n",
+        "",
+    )
+    without_json = source.replace(
+        "          --cov-report=json:artifacts/coverage/coverage.json\n",
+        "",
+    )
+
+    branch_errors = checker.check_ci_workflow(without_branch)
+    xml_errors = checker.check_ci_workflow(without_xml)
+    json_errors = checker.check_ci_workflow(without_json)
+
+    assert any("branch coverage measurement" in error for error in branch_errors)
+    assert any("XML coverage evidence" in error for error in xml_errors)
+    assert any("JSON coverage evidence" in error for error in json_errors)
+
+
+def test_ci_workflow_requires_independent_coverage_report_validation() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          python scripts/check_coverage_report.py\n",
+        "          python -c 'print(\"coverage accepted\")'\n",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("aggregate and branch report validator" in error for error in errors)
+
+
+def test_ci_workflow_requires_stable_native_windows_coverage_runner() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "    runs-on: windows-2025-vs2026\n",
+        "    runs-on: ubuntu-latest\n",
+        1,
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("stable native Windows coverage runner" in error for error in errors)
+
+
+def test_ci_workflow_requires_native_windows_qt_coverage_platform() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        '      QT_QPA_PLATFORM: "windows"\n',
+        '      QT_QPA_PLATFORM: "offscreen"\n',
+        1,
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("native Windows Qt coverage platform" in error for error in errors)
+
+
+def test_ci_workflow_requires_coverage_evidence_directory() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "        run: New-Item -ItemType Directory -Force -Path artifacts/coverage | Out-Null\n",
         "",
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("Qt headless runtime dependency" in error for error in errors)
+    assert any("explicit Windows coverage evidence directory" in error for error in errors)
 
 
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
@@ -123,6 +214,18 @@ def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
 
     assert "ci test job must run pytest directly" in errors
     assert "ci test matrix must not fan out the monolithic lint verifier" in errors
+
+
+def test_ci_workflow_requires_intel_macos_compatibility_constraints() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        '          python -m pip install -c requirements-release-compat.txt -e ".[security,dev]"\n',
+        '          python -m pip install -e ".[security,dev]"\n',
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("Intel macOS release compatibility constraints" in error for error in errors)
 
 
 def test_ci_workflow_requires_bounded_test_matrix_timeout() -> None:

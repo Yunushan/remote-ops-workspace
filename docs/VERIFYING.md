@@ -9,13 +9,43 @@ python -m pip install -e ".[desktop,security,dev]"
 python scripts/verify.py
 ```
 
+CI also owns a dedicated branch-aware coverage gate. Reproduce it locally with
+the same source scope, reports and minimum thresholds:
+
+```bash
+mkdir -p artifacts/coverage
+python -m pytest -q \
+  --cov=remote_ops_workspace \
+  --cov-branch \
+  --cov-report=term-missing \
+  --cov-report=xml:artifacts/coverage/coverage.xml \
+  --cov-report=json:artifacts/coverage/coverage.json \
+  --cov-fail-under=70
+python scripts/check_coverage_report.py \
+  --report artifacts/coverage/coverage.json \
+  --min-total 70 \
+  --min-branches 55
+```
+
+The release-blocking baseline requires at least 70% aggregate line-and-branch
+coverage and at least 55% pure branch-decision coverage. These are floors, not
+targets or readiness claims. They may be raised as coverage improves, but
+repository policy rejects reducing either threshold or making the job advisory.
+CI retains XML and JSON reports for both successful and failed test runs so a
+threshold result is auditable. The gate runs the full suite with the native Qt
+Windows platform because instrumented PyQt6 application startup reproducibly
+aborts on hosted Linux with both `offscreen` and Xvfb. This keeps the measured
+source, tests, keyboard-focus behavior, branches and floors intact. Linux still
+runs in the cross-platform matrix, while its separate live GUI job retains
+validated `offscreen` screenshot and interaction artifacts.
+
 The full verifier runs:
 
 - `python -m compileall src tests scripts`;
 - `python scripts/check_docs.py` for local Markdown links, required release docs and English/Turkish README snippet consistency;
 - `python scripts/check_production_deployment.py` for the production deployment boundary: localhost-only Web/PWA Compose exposure, container hardening, health monitoring, encrypted backup-and-restore drills, explicit unsigned-preview handling, and the non-enterprise team-sync limit;
 - `python scripts/check_roadmap_truth.py` for roadmap truth checks, keeping shipped release phases, native smoke tests and implemented CLI workflows out of future-planned sections;
-- `python scripts/check_ci_workflow.py` for CI workflow policy, including read-only checkout, lint-enabled verification and a dedicated live PyQt6 render smoke job;
+- `python scripts/check_ci_workflow.py` for CI workflow policy, including read-only checkout, lint-enabled verification, enforced 70% aggregate and 55% pure-branch coverage floors with retained XML/JSON evidence and a dedicated live PyQt6 render smoke job;
 - `python scripts/check_release_truth.py` for repository identity, release workflow matrix, actual GitHub Actions `needs` dependency wiring, protected-platform checklist/hard-gate wiring, accepted-platform evidence import-before-build wiring, read-only accepted-platform evidence import permissions and documented artifact truth;
 - `python scripts/check_release_toolchain.py` for pinned release constraints, workflow install commands and release toolchain metadata;
 - `python scripts/check_release_matrix.py` for the machine-readable `configs/release_matrix.json` policy, default GitHub release jobs, script-supported native targets and platform-target release channels;

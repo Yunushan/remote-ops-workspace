@@ -18,6 +18,7 @@ artifacts/gui-interactions-windows/
 artifacts/gui-interactions-debug/
 artifacts/gui-interactions-subagent/
 artifacts/gui-interactions-*/
+artifacts/coverage/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/

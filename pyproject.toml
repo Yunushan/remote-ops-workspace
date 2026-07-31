@@ -36,7 +36,7 @@ dependencies = []
 desktop = ["PyQt6>=6.6"]
 security = ["cryptography>=42", "truststore>=0.10"]
 package = ["build>=1.2", "pyinstaller>=6.0"]
-dev = ["build>=1.2", "pytest>=8", "ruff>=0.5", "mypy>=1.10"]
+dev = ["build>=1.2", "pytest>=8", "pytest-cov>=6.3", "ruff>=0.5", "mypy>=1.10"]
 
 [project.urls]
 Homepage = "https://github.com/Yunushan/remote-ops-workspace"
@@ -62,6 +62,22 @@ remote_ops_workspace = ["py.typed", "assets/*.svg", "assets/*.ico", "assets/*.ma
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.coverage.run]
+branch = true
+relative_files = true
+source = ["remote_ops_workspace"]
+
+[tool.coverage.report]
+fail_under = 70
+precision = 1
+show_missing = true
+
+[tool.coverage.xml]
+output = "artifacts/coverage/coverage.xml"
+
+[tool.coverage.json]
+output = "artifacts/coverage/coverage.json"
 
 [tool.ruff]
 line-length = 100

@@ -1419,6 +1419,16 @@ def expected_moba_monitoring_checked(background_auth_available: bool) -> bool:
 
 
 def prepare_preset_live_state(window: Any, preset_id: str) -> list[str]:
+    if preset_id == "native":
+        state = gui_design_interaction_state(preset_id)
+        if not hasattr(window, "select_profile_tree_label"):
+            return ["native live GUI cannot select its reference profile tree row"]
+        if not window.select_profile_tree_label(state.selected_tree_label):
+            return [
+                "native live GUI could not select reference profile tree row: "
+                f"{state.selected_tree_label}"
+            ]
+        return []
     if preset_id != "mobaxterm":
         return prepare_product_reference_tab(window, preset_id)
     return prepare_moba_connected_reference(window)

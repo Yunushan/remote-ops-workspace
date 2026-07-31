@@ -56,7 +56,9 @@ class WebProfileApi:
 
     def authorized(self, authorization: str | None) -> bool:
         expected = f"Bearer {self.token}"
-        return bool(authorization) and secrets.compare_digest(authorization, expected)
+        if authorization is None:
+            return False
+        return secrets.compare_digest(authorization, expected)
 
     def health(self) -> dict[str, object]:
         return {"api_version": 1, "status": "ok", "profile_count": len(self.store.load())}

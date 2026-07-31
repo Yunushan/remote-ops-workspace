@@ -2678,8 +2678,9 @@ def _has_linux_smoke_summary_host_binding(
     raw_builder_identity: Any,
     target: str,
 ) -> bool:
-    builder = raw_builder_identity if isinstance(raw_builder_identity, dict) else {}
-    host_identity = builder.get("host_identity") if isinstance(builder.get("host_identity"), dict) else {}
+    builder: dict[str, Any] = raw_builder_identity if isinstance(raw_builder_identity, dict) else {}
+    raw_host_identity = builder.get("host_identity")
+    host_identity: dict[str, Any] = raw_host_identity if isinstance(raw_host_identity, dict) else {}
     host_label = str(summary.get("host_label", "")).strip()
     if re.fullmatch(r"^[a-z0-9][a-z0-9._-]{2,63}$", host_label) is None:
         return False
@@ -2707,7 +2708,7 @@ def _has_linux_smoke_summary_runtime_binding(
     summary: dict[str, Any],
     raw_builder_identity: Any,
 ) -> bool:
-    builder = raw_builder_identity if isinstance(raw_builder_identity, dict) else {}
+    builder: dict[str, Any] = raw_builder_identity if isinstance(raw_builder_identity, dict) else {}
     for summary_key, builder_key in (
         ("os_release", "os_release"),
         ("kernel_release", "kernel_release"),
@@ -2719,11 +2720,8 @@ def _has_linux_smoke_summary_runtime_binding(
         expected = str(builder.get(builder_key, "")).strip()
         if expected and value != expected:
             return False
-    security_patch = (
-        builder.get("security_patch_evidence")
-        if isinstance(builder.get("security_patch_evidence"), dict)
-        else {}
-    )
+    raw_security_patch = builder.get("security_patch_evidence")
+    security_patch: dict[str, Any] = raw_security_patch if isinstance(raw_security_patch, dict) else {}
     for summary_key, builder_key in (
         ("python_ssl_openssl", "python_ssl_openssl"),
         ("openssl_cli_version", "openssl_cli_version"),
@@ -2945,13 +2943,13 @@ def _is_safe_xp_validation_path(
     if not path or "<" in path or ">" in path or any(char in path for char in "*?"):
         return False
     if "\\" in path:
-        parsed_path = PureWindowsPath(path)
-        parts = parsed_path.parts
-        is_absolute = parsed_path.is_absolute() or bool(parsed_path.drive)
+        windows_path = PureWindowsPath(path)
+        parts = windows_path.parts
+        is_absolute = windows_path.is_absolute() or bool(windows_path.drive)
     else:
-        parsed_path = PurePosixPath(path)
-        parts = parsed_path.parts
-        is_absolute = parsed_path.is_absolute()
+        posix_path = PurePosixPath(path)
+        parts = posix_path.parts
+        is_absolute = posix_path.is_absolute()
     if is_absolute or any(part == ".." for part in parts):
         return False
     normalized_parts = tuple(part for part in parts if part not in ("", "."))

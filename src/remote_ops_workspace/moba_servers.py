@@ -364,7 +364,7 @@ class MobaEmbeddedServerLifecycleRecord:
         running: bool | None = None,
     ) -> MobaEmbeddedServerLifecycleRecord:
         pid_value = data.get("pid")
-        pid = int(pid_value) if pid_value not in (None, "") else None
+        pid = int(str(pid_value)) if pid_value not in (None, "") else None
         return cls(
             service=_service_key(str(data.get("service") or "http")),
             host=safe.host(str(data.get("host") or "127.0.0.1"), "server bind host"),
@@ -436,6 +436,7 @@ def discover_moba_server_runtimes(
     packaged = discover_packaged_moba_server_runtimes(service_key, system=system_key, roots=packaged_roots)
     runtimes: list[MobaEmbeddedServerRuntime] = []
     for key, label, executable, bundled, builtin, notes in _runtime_definitions(service_key, system_key):
+        resolved: str | None
         if key == "pyftpdlib" and importlib.util.find_spec("pyftpdlib") is not None:
             resolved = sys.executable
             available = True
@@ -1007,7 +1008,8 @@ def load_moba_server_record(
     if not isinstance(data, dict):
         raise ValueError(f"embedded server state must be a JSON object: {target_state_path}")
     probe = pid_probe or _pid_running
-    running = bool(data.get("pid")) and probe(int(data.get("pid")))
+    pid_value = data.get("pid")
+    running = pid_value not in (None, "") and probe(int(str(pid_value)))
     return MobaEmbeddedServerLifecycleRecord.from_dict(data, state_path=target_state_path, running=running)
 
 

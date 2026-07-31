@@ -291,9 +291,9 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
         ("keepalive_count", "ServerAliveCountMax"),
         ("server_alive_count_max", "ServerAliveCountMax"),
     ):
-        value = _option_positive_int(options, option_name)
-        if value is not None:
-            args.extend(["-o", f"{open_ssh_name}={value}"])
+        numeric_value = _option_positive_int(options, option_name)
+        if numeric_value is not None:
+            args.extend(["-o", f"{open_ssh_name}={numeric_value}"])
 
     strict_host_key_checking = _option_enum(
         options,
@@ -356,10 +356,10 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
         ("kex_algorithms", "KexAlgorithms"),
         ("macs", "MACs"),
     ):
-        value = _option(options, option_name)
-        if value:
-            _validate_ssh_algorithm_override(options, option_name, value)
-            args.extend(["-o", f"{open_ssh_name}={_option_token(value, option_name)}"])
+        algorithm_value = _option(options, option_name)
+        if algorithm_value:
+            _validate_ssh_algorithm_override(options, option_name, algorithm_value)
+            args.extend(["-o", f"{open_ssh_name}={_option_token(algorithm_value, option_name)}"])
 
     return args
 

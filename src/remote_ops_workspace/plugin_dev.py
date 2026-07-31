@@ -332,7 +332,12 @@ def report_to_text(report: PluginValidationReport) -> str:
         return "no plugins installed"
     lines: list[str] = []
     for plugin in report.loaded:
-        protocols = ", ".join(plugin.get("protocols", [])) or "-"
+        raw_protocols = plugin.get("protocols", [])
+        protocols = (
+            ", ".join(str(protocol) for protocol in raw_protocols)
+            if isinstance(raw_protocols, list)
+            else "-"
+        ) or "-"
         lines.append(f"loaded: {plugin.get('name')} protocols {protocols}")
     for failure in report.failures:
         lines.append(f"failed: {failure.get('name')}: {failure.get('error')}")

@@ -50,6 +50,8 @@ jobs:
           python -m mypy src/remote_ops_workspace/gui.py --platform linux --no-incremental --no-pretty --show-error-codes
           python -m mypy src/remote_ops_workspace/gui.py --platform win32 --no-incremental --no-pretty --show-error-codes
           python -m mypy src/remote_ops_workspace/gui.py --platform darwin --no-incremental --no-pretty --show-error-codes
+      - name: Non-GUI production type gate
+        run: python scripts/check_non_gui_types.py
 
   coverage:
     name: Python branch-aware coverage

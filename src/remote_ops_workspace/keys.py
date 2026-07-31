@@ -4,6 +4,10 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurve
 
 from .file_safety import write_bytes_atomic
 
@@ -91,6 +95,7 @@ def _write_native_key_pair(plan: KeygenPlan) -> None:
     if private_path.exists() or public_path.exists():
         raise ValueError(f"key file already exists: {private_path}")
 
+    private_key: ed25519.Ed25519PrivateKey | rsa.RSAPrivateKey | ec.EllipticCurvePrivateKey
     if plan.key_type == "ed25519":
         private_key = ed25519.Ed25519PrivateKey.generate()
     elif plan.key_type == "rsa":
@@ -119,15 +124,15 @@ def _write_native_key_pair(plan: KeygenPlan) -> None:
     write_bytes_atomic(public_path, public_bytes)
 
 
-def _ecdsa_curve(bits: int | None):  # type: ignore[no-untyped-def]
+def _ecdsa_curve(bits: int | None) -> EllipticCurve:
     from cryptography.hazmat.primitives.asymmetric import ec
 
-    curves = {
-        256: ec.SECP256R1,
-        384: ec.SECP384R1,
-        521: ec.SECP521R1,
+    curves: dict[int, EllipticCurve] = {
+        256: ec.SECP256R1(),
+        384: ec.SECP384R1(),
+        521: ec.SECP521R1(),
     }
     curve = curves.get(bits or 256)
     if curve is None:
         raise ValueError("ecdsa bits must be one of: 256, 384, 521")
-    return curve()
+    return curve

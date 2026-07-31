@@ -340,12 +340,12 @@ def run_sftp_queue(
     safe.argv_list(plan.command, "sftp queue command")
     _require_force_for_execution(plan.destructive, plan.force, dry_run, plan.safety_warnings)
     if dry_run:
-        progress = [
+        planned_progress = [
             SftpQueueProgress(index=index, total=len(plan.items), item=item, state="planned")
             for index, item in enumerate(plan.items, start=1)
         ]
         if on_progress:
-            for event in progress:
+            for event in planned_progress:
                 on_progress(event)
         return SftpQueueResult(
             profile_name=plan.profile_name,
@@ -356,7 +356,7 @@ def run_sftp_queue(
             destructive=plan.destructive,
             force=plan.force,
             safety_warnings=plan.safety_warnings,
-            progress=progress,
+            progress=planned_progress,
         )
     progress: list[SftpQueueProgress] = []
     output: list[str] = []

@@ -98,6 +98,7 @@ def check_repo_policy_job(workflow: str) -> list[str]:
         "python -m mypy src/remote_ops_workspace/gui.py --platform darwin": (
             "macOS GUI type-safety gate"
         ),
+        "python scripts/check_non_gui_types.py": "bounded non-GUI production type gate",
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:

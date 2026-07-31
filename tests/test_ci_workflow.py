@@ -82,6 +82,19 @@ def test_ci_workflow_requires_cross_platform_gui_type_safety() -> None:
         )
 
 
+def test_ci_workflow_requires_non_gui_production_type_gate() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Non-GUI production type gate\n"
+        "        run: python scripts/check_non_gui_types.py\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("bounded non-GUI production type gate" in error for error in errors)
+
+
 def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

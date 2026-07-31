@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from .enterprise_policy import (
     assert_profile_collection_change_allowed,
@@ -118,7 +119,11 @@ class ProfileStore:
         write_json_atomic(path, data, private=True)
 
     def import_from(self, path: Path, replace: bool = False) -> int:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw_data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw_data, dict):
+            raise ValueError(f"profile import root must be a JSON object: {path}")
+        data: dict[str, Any] = raw_data
+        profiles = _profile_rows(data.get("profiles", []), source=f"profile import {path}")
         if replace and "group_defaults" in data:
             assert_profile_collection_change_allowed(
                 surface="cli",
@@ -137,7 +142,7 @@ class ProfileStore:
             current["group_defaults"] = group_defaults
             write_json_atomic(self.path, current, private=True)
         count = 0
-        for item in data.get("profiles", []):
+        for item in profiles:
             self.add(Profile.from_dict(item), replace=replace)
             count += 1
         return count
@@ -167,20 +172,40 @@ class ProfileStore:
             action="profile-defaults",
             policy_path=self.policy_path,
         )
-        group_defaults = data.setdefault("group_defaults", {})
+        group_defaults = normalize_group_defaults_map(data.get("group_defaults", {}))
+        data["group_defaults"] = group_defaults
         existing = {} if replace else dict(group_defaults.get(group, {}))
         existing.update({key: value for key, value in defaults.items() if value not in (None, "", [], {})})
         group_defaults[group] = existing
         write_json_atomic(self.path, data, private=True)
 
-    def _load_data(self) -> dict[str, object]:
+    def _load_data(self) -> dict[str, Any]:
         if not self.path.exists():
             return {"version": 1, "profiles": [], "group_defaults": {}}
-        data = json.loads(self.path.read_text(encoding="utf-8"))
+        raw_data = json.loads(self.path.read_text(encoding="utf-8"))
+        if not isinstance(raw_data, dict):
+            raise ValueError(f"profile store root must be a JSON object: {self.path}")
+        data: dict[str, Any] = raw_data
         data.setdefault("version", 1)
-        data.setdefault("profiles", [])
+        data["profiles"] = _profile_rows(data.get("profiles", []), source=f"profile store {self.path}")
         data["group_defaults"] = normalize_group_defaults_map(data.get("group_defaults", {}))
         return data
+
+
+def _profile_rows(value: object, *, source: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError(f"{source} profiles must be a JSON array")
+    rows: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"{source} profile at index {index} must be a JSON object")
+        row: dict[str, Any] = {}
+        for key, field_value in item.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{source} profile at index {index} contains a non-string key")
+            row[key] = field_value
+        rows.append(row)
+    return rows
 
 
 def example_profiles() -> list[Profile]:

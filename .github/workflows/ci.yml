@@ -50,6 +50,53 @@ jobs:
           python -m mypy src/remote_ops_workspace/gui.py --platform linux --no-incremental --no-pretty --show-error-codes
           python -m mypy src/remote_ops_workspace/gui.py --platform win32 --no-incremental --no-pretty --show-error-codes
           python -m mypy src/remote_ops_workspace/gui.py --platform darwin --no-incremental --no-pretty --show-error-codes
+      - name: Non-GUI production type gate
+        run: python scripts/check_non_gui_types.py
+
+  coverage:
+    name: Python branch-aware coverage
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_CACHE_DIR: "1"
+      # Use the proven native Windows GUI runtime because instrumented PyQt6
+      # application startup aborts on hosted Linux under offscreen and Xvfb.
+      QT_QPA_PLATFORM: "windows"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install coverage verification dependencies
+        run: python -m pip install -e ".[desktop,security,dev]"
+      - name: Create coverage evidence directory
+        run: New-Item -ItemType Directory -Force -Path artifacts/coverage | Out-Null
+      - name: Enforce branch coverage floor
+        run: >-
+          python -m pytest -q
+          --cov=remote_ops_workspace
+          --cov-branch
+          --cov-report=term-missing
+          --cov-report=xml:artifacts/coverage/coverage.xml
+          --cov-report=json:artifacts/coverage/coverage.json
+          --cov-fail-under=70
+      - name: Validate aggregate and branch coverage evidence
+        run: >-
+          python scripts/check_coverage_report.py
+          --report artifacts/coverage/coverage.json
+          --min-total 70
+          --min-branches 55
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: python-branch-aware-coverage
+          path: artifacts/coverage/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
 
   test:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
@@ -97,7 +144,14 @@ jobs:
       - name: Purge pip cache
         run: python -m pip cache purge
         continue-on-error: true
+      - name: Install Intel macOS compatibility dependencies
+        if: runner.os == 'macOS' && runner.arch == 'X64'
+        env:
+          PIP_NO_CACHE_DIR: "1"
+        run: |
+          python -m pip install -c requirements-release-compat.txt -e ".[security,dev]"
       - name: Install
+        if: runner.os != 'macOS' || runner.arch != 'X64'
         env:
           PIP_NO_CACHE_DIR: "1"
         run: |
@@ -158,8 +212,52 @@ jobs:
           docker inspect --format '{{.HostConfig.SecurityOpt}}' "$container_id" | grep -Fx "[no-new-privileges:true]"
           compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'
 
+  web-recovery:
+    name: Web/PWA backup and restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Exercise destructive application-volume recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow_run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python scripts/run_web_recovery_drill.py \
+            --compose-file docker/compose.yaml \
+            --project-name row-web-recovery \
+            --output artifacts/recovery/web-recovery-evidence.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-sha "$GITHUB_SHA" \
+            --workflow-run-url "$workflow_run_url" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Validate retained recovery evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow_run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python scripts/check_web_recovery_evidence.py \
+            --evidence artifacts/recovery/web-recovery-evidence.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-sha "$GITHUB_SHA" \
+            --workflow-run-url "$workflow_run_url" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Upload sanitized recovery evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: web-recovery-evidence-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/recovery/web-recovery-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
   android-emulator-web:
-    name: Android emulator boot smoke API ${{ matrix.api-level }}
+    name: Android emulator Web/PWA response smoke API ${{ matrix.api-level }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     strategy:
@@ -177,6 +275,23 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Static mobile contract checks
         run: python -m pytest tests/test_web_hardening.py tests/test_mobile_support.py
+      - name: Start Web/PWA server
+        shell: bash
+        run: |
+          set -euo pipefail
+          WEB_PWA_PORT="$(python - <<'PY'
+          import socket
+
+          with socket.socket() as sock:
+              sock.bind(("127.0.0.1", 0))
+              print(sock.getsockname()[1])
+          PY
+          )"
+          WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"
+          echo "WEB_PWA_PORT=$WEB_PWA_PORT" >> "$GITHUB_ENV"
+          echo "WEB_PWA_URL=$WEB_PWA_URL" >> "$GITHUB_ENV"
+          python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1 > web-server.log 2>&1 &
+          echo $! > web-server.pid
       - name: Enable KVM access
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -278,8 +393,20 @@ jobs:
             exit 1
           fi
           adb shell input keyevent 82 || true
-      - name: Android emulator boot smoke
-        run: python scripts/check_mobile_emulator_smoke.py --platform android --android-api ${{ matrix.api-level }} --url http://127.0.0.1:8765/index.html --skip-web-response --out-dir artifacts/mobile
+      - name: Map emulator loopback to host Web/PWA
+        run: |
+          set -euo pipefail
+          adb reverse "tcp:${WEB_PWA_PORT}" "tcp:${WEB_PWA_PORT}"
+          adb reverse --list
+          adb reverse --list | grep -F "tcp:${WEB_PWA_PORT} tcp:${WEB_PWA_PORT}"
+      - name: Android emulator Web/PWA response smoke
+        timeout-minutes: 2
+        run: |
+          if ! python scripts/check_mobile_emulator_smoke.py --platform android --android-api ${{ matrix.api-level }} --url "$WEB_PWA_URL" --out-dir artifacts/mobile; then
+            adb reverse --list || true
+            tail -200 web-server.log || true
+            exit 1
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: android-web-pwa-api-${{ matrix.api-level }}

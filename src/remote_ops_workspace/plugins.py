@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import builtins
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING, Any, Protocol
@@ -29,7 +30,7 @@ class LoadedPlugin:
     object: ProtocolPlugin
     entry_point: str
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> dict[str, builtins.object]:
         return {
             "name": self.name,
             "protocols": list(self.protocols),
@@ -142,10 +143,7 @@ def plugin_clients() -> dict[str, list[str]]:
 
 
 def normalize_plugin_protocols(values: object) -> tuple[str, ...]:
-    if isinstance(values, str):
-        raw_values = (values,)
-    else:
-        raw_values = tuple(values or ())  # type: ignore[arg-type]
+    raw_values = _plugin_values(values, "protocols")
     result: list[str] = []
     seen: set[str] = set()
     for value in raw_values:
@@ -163,10 +161,7 @@ def normalize_plugin_protocols(values: object) -> tuple[str, ...]:
 
 
 def normalize_plugin_executables(values: object) -> tuple[str, ...]:
-    if isinstance(values, str):
-        raw_values = (values,)
-    else:
-        raw_values = tuple(values or ())  # type: ignore[arg-type]
+    raw_values = _plugin_values(values, "executables")
     result: list[str] = []
     seen: set[str] = set()
     for value in raw_values:
@@ -176,3 +171,13 @@ def normalize_plugin_executables(values: object) -> tuple[str, ...]:
         seen.add(executable)
         result.append(executable)
     return tuple(result)
+
+
+def _plugin_values(values: object, label: str) -> tuple[object, ...]:
+    if isinstance(values, str):
+        return (values,)
+    if values is None:
+        return ()
+    if not isinstance(values, Iterable):
+        raise TypeError(f"plugin {label} must be a string or iterable")
+    return tuple(values)

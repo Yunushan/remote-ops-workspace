@@ -45,6 +45,38 @@ service. Establish monitoring and incident ownership in the reverse-proxy or
 endpoint-management platform that actually operates the public endpoint; this
 repository does not provide a hosted operations control plane.
 
+### Automated Application-Volume Recovery Evidence
+
+CI runs a destructive recovery drill against an isolated Compose project. The
+drill writes a source-bound revision marker through the non-root application
+container, stops the service, creates and validates a backup archive, writes a
+post-backup sentinel, removes the original named volume, creates a fresh
+Compose-labeled volume, restores the archive, and proves that the expected
+revision survived while the sentinel did not. It then restarts the hardened
+container and requires `/healthz` to return HTTP 200 before and after recovery.
+
+The runner retains only a sanitized JSON record; it never uploads the backup
+payload or `/data` contents. The record binds the repository, source SHA,
+workflow run URL and run attempt, backup digest, immutable image ID, health
+responses, container hardening, destructive replacement and cleanup result.
+Download a `web-recovery-evidence-<sha>-<attempt>` CI artifact and validate it
+with:
+
+```sh
+python scripts/check_web_recovery_evidence.py \
+  --evidence web-recovery-evidence.json \
+  --repository <owner>/<repo> \
+  --source-sha <40-character-git-sha> \
+  --workflow-run-url <github-actions-run-url> \
+  --run-attempt <positive-run-attempt>
+```
+
+This automated check proves the checked-in application's named-volume recovery
+mechanics. It does not prove an operator's encrypted backup location, managed
+reverse proxy, TLS/authentication policy, monitoring route, retention policy,
+recovery time objective, or incident ownership. Production go/no-go still
+requires a recorded site-specific restore through those operated controls.
+
 ## Native Releases
 
 Production tags run in the protected GitHub `release` environment. Configure

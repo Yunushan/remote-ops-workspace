@@ -20,6 +20,30 @@ def test_production_deployment_checker_rejects_missing_restore_drill(monkeypatch
     assert any("restore drill" in error for error in checker.check_production_deployment())
 
 
+def test_production_deployment_checker_requires_executable_recovery_drill(
+    monkeypatch, tmp_path: Path
+) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker, "RECOVERY_DRILL", tmp_path / "missing-recovery-drill.py")
+
+    assert checker.check_production_deployment() == ["missing executable Web/PWA recovery drill"]
+
+
+def test_production_deployment_checker_rejects_non_destructive_recovery_claim(
+    monkeypatch, tmp_path: Path
+) -> None:
+    checker = _load_checker()
+    drill = checker.RECOVERY_DRILL.read_text(encoding="utf-8")
+    replacement = tmp_path / "recovery-drill.py"
+    replacement.write_text(
+        drill.replace('"original_volume_removed"', '"volume_reused"'),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(checker, "RECOVERY_DRILL", replacement)
+
+    assert any("original_volume_removed" in error for error in checker.check_production_deployment())
+
+
 def test_production_deployment_checker_rejects_public_port_mapping(monkeypatch, tmp_path: Path) -> None:
     checker = _load_checker()
     compose = checker.COMPOSE_FILE.read_text(encoding="utf-8")

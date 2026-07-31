@@ -14,8 +14,12 @@ if str(SRC) not in sys.path:
 from remote_ops_workspace.cli import build_parser  # noqa: E402
 from remote_ops_workspace.features import load_feature_manifest  # noqa: E402
 from remote_ops_workspace.keys import build_keygen_plan  # noqa: E402
-from remote_ops_workspace.launcher import build_launch_plan  # noqa: E402
+from remote_ops_workspace.launcher import LauncherError, build_launch_plan  # noqa: E402
 from remote_ops_workspace.models import Profile, Tunnel  # noqa: E402
+from remote_ops_workspace.profile_validation import (  # noqa: E402
+    CLEARTEXT_PROTOCOL_OPT_IN,
+    CLEARTEXT_PROTOCOLS,
+)
 
 SAMPLE_HOST = "row-feature-check.example"
 
@@ -1002,6 +1006,8 @@ def check_cli_paths(
 def check_protocol_plans(feature_id: str, protocols: list[str]) -> list[str]:
     errors: list[str] = []
     for protocol in protocols:
+        if protocol in CLEARTEXT_PROTOCOLS:
+            errors.extend(check_cleartext_protocol_default(feature_id, protocol))
         try:
             plan = build_launch_plan(sample_profile(protocol))
         except Exception as exc:
@@ -1010,6 +1016,23 @@ def check_protocol_plans(feature_id: str, protocols: list[str]) -> list[str]:
         if not plan.command:
             errors.append(f"{feature_id} {protocol} launch plan has an empty command")
     return errors
+
+
+def check_cleartext_protocol_default(feature_id: str, protocol: str) -> list[str]:
+    profile = Profile(name=f"{protocol}-default-rejection", protocol=protocol, host=SAMPLE_HOST)
+    try:
+        build_launch_plan(profile)
+    except LauncherError as exc:
+        message = str(exc)
+        if CLEARTEXT_PROTOCOL_OPT_IN in message and "disabled by default" in message:
+            return []
+        return [
+            f"{feature_id} {protocol} default rejection must explain "
+            f"{CLEARTEXT_PROTOCOL_OPT_IN}=true: {message}"
+        ]
+    except Exception as exc:
+        return [f"{feature_id} {protocol} default rejection raised an unexpected error: {exc}"]
+    return [f"{feature_id} {protocol} must be rejected without explicit per-profile cleartext opt-in"]
 
 
 def check_named_plans(feature_id: str, plan_specs: list[dict[str, Any]]) -> list[str]:
@@ -1095,7 +1118,18 @@ def sample_profile(protocol: str) -> Profile:
             name=f"{protocol}-proof",
             protocol=protocol,
             host=SAMPLE_HOST,
-            options={"allow_insecure_sshv1": "true"},
+            options={
+                "allow_insecure_sshv1": "true",
+                "legacy_target": "windows-xp-32",
+                "allow_legacy_crypto": "true",
+            },
+        )
+    if protocol in CLEARTEXT_PROTOCOLS:
+        return Profile(
+            name=f"{protocol}-proof",
+            protocol=protocol,
+            host=SAMPLE_HOST,
+            options={CLEARTEXT_PROTOCOL_OPT_IN: "true"},
         )
     return Profile(name=f"{protocol}-proof", protocol=protocol, host=SAMPLE_HOST, username="operator")
 

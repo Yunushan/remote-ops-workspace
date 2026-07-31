@@ -318,6 +318,7 @@
         "Can be managed as a remote target when an external client can still negotiate the protocol.",
         "Covers both 32-bit x86 and 64-bit x64 XP endpoints as managed hosts.",
         "Legacy SSH/RDP crypto is blocked globally and requires per-profile legacy_target plus explicit opt-in flags.",
+        "Cleartext Telnet is blocked by default and requires per-profile allow_insecure_cleartext=true.",
         "Modern native Python/PyQt release artifacts do not target XP."
       ]
     }

@@ -230,6 +230,8 @@ class AnsiTerminalTranscript:
         return tuple(fragments)
 
     def _feed_escape(self, char: str) -> None:
+        if self._escape is None:
+            raise RuntimeError("escape parser entered without an active sequence")
         sequence = self._escape + char
         if sequence in {"[", "]", "P", "^", "_"}:
             self._escape = sequence

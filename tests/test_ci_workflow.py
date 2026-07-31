@@ -82,6 +82,19 @@ def test_ci_workflow_requires_cross_platform_gui_type_safety() -> None:
         )
 
 
+def test_ci_workflow_requires_non_gui_production_type_gate() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "      - name: Non-GUI production type gate\n"
+        "        run: python scripts/check_non_gui_types.py\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("bounded non-GUI production type gate" in error for error in errors)
+
+
 def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
@@ -97,19 +110,110 @@ def test_ci_workflow_requires_dependency_vulnerability_audit() -> None:
     assert any("dependency vulnerability audit" in error for error in errors)
 
 
-def test_ci_workflow_requires_qt_headless_runtime_dependency() -> None:
+def test_ci_workflow_requires_enforced_branch_coverage_job() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "      - name: Install Qt headless runtime dependency\n"
-        "        run: |\n"
-        "          sudo apt-get update\n"
-        "          sudo apt-get install -y libegl1\n",
+        "  coverage:",
+        "  coverage_disabled:",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci workflow missing coverage job for enforced Python branch coverage" in errors
+
+
+def test_ci_workflow_rejects_reduced_or_advisory_coverage_gate() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    reduced_threshold = source.replace("--cov-fail-under=70", "--cov-fail-under=69")
+    reduced_validated_total = source.replace("--min-total 70", "--min-total 69")
+    reduced_branch_threshold = source.replace("--min-branches 55", "--min-branches 54")
+    advisory_gate = source.replace(
+        "  coverage:\n    name: Python branch-aware coverage\n",
+        "  coverage:\n    continue-on-error: true\n    name: Python branch-aware coverage\n",
+    )
+
+    threshold_errors = checker.check_ci_workflow(reduced_threshold)
+    total_errors = checker.check_ci_workflow(reduced_validated_total)
+    branch_errors = checker.check_ci_workflow(reduced_branch_threshold)
+    advisory_errors = checker.check_ci_workflow(advisory_gate)
+
+    assert any("aggregate coverage failure threshold" in error for error in threshold_errors)
+    assert any("validated aggregate coverage threshold" in error for error in total_errors)
+    assert any("pure branch coverage threshold" in error for error in branch_errors)
+    assert "ci coverage job must remain release-blocking" in advisory_errors
+
+
+def test_ci_workflow_requires_branch_and_machine_readable_coverage_evidence() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_branch = source.replace("          --cov-branch\n", "")
+    without_xml = source.replace(
+        "          --cov-report=xml:artifacts/coverage/coverage.xml\n",
+        "",
+    )
+    without_json = source.replace(
+        "          --cov-report=json:artifacts/coverage/coverage.json\n",
+        "",
+    )
+
+    branch_errors = checker.check_ci_workflow(without_branch)
+    xml_errors = checker.check_ci_workflow(without_xml)
+    json_errors = checker.check_ci_workflow(without_json)
+
+    assert any("branch coverage measurement" in error for error in branch_errors)
+    assert any("XML coverage evidence" in error for error in xml_errors)
+    assert any("JSON coverage evidence" in error for error in json_errors)
+
+
+def test_ci_workflow_requires_independent_coverage_report_validation() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          python scripts/check_coverage_report.py\n",
+        "          python -c 'print(\"coverage accepted\")'\n",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("aggregate and branch report validator" in error for error in errors)
+
+
+def test_ci_workflow_requires_stable_native_windows_coverage_runner() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "    runs-on: windows-2025-vs2026\n",
+        "    runs-on: ubuntu-latest\n",
+        1,
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("stable native Windows coverage runner" in error for error in errors)
+
+
+def test_ci_workflow_requires_native_windows_qt_coverage_platform() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        '      QT_QPA_PLATFORM: "windows"\n',
+        '      QT_QPA_PLATFORM: "offscreen"\n',
+        1,
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("native Windows Qt coverage platform" in error for error in errors)
+
+
+def test_ci_workflow_requires_coverage_evidence_directory() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "        run: New-Item -ItemType Directory -Force -Path artifacts/coverage | Out-Null\n",
         "",
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("Qt headless runtime dependency" in error for error in errors)
+    assert any("explicit Windows coverage evidence directory" in error for error in errors)
 
 
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
@@ -123,6 +227,18 @@ def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
 
     assert "ci test job must run pytest directly" in errors
     assert "ci test matrix must not fan out the monolithic lint verifier" in errors
+
+
+def test_ci_workflow_requires_intel_macos_compatibility_constraints() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        '          python -m pip install -c requirements-release-compat.txt -e ".[security,dev]"\n',
+        '          python -m pip install -e ".[security,dev]"\n',
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("Intel macOS release compatibility constraints" in error for error in errors)
 
 
 def test_ci_workflow_requires_bounded_test_matrix_timeout() -> None:
@@ -208,6 +324,54 @@ def test_ci_workflow_requires_writable_non_root_web_data_volume() -> None:
     assert any("writable non-root data-volume smoke" in error for error in errors)
 
 
+def test_ci_workflow_requires_destructive_web_recovery_job() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "  web-recovery:",
+        "  web_recovery_disabled:",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci workflow missing web-recovery job for destructive backup and restore evidence" in errors
+
+
+def test_ci_workflow_requires_source_bound_recovery_evidence() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        '            --source-sha "$GITHUB_SHA" \\\n',
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("source-bound recovery evidence" in error for error in errors)
+
+
+def test_ci_workflow_requires_failure_path_recovery_evidence_upload() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "        if: ${{ always() }}\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("failure-path evidence retention" in error for error in errors)
+
+
+def test_ci_workflow_rejects_recovery_backup_payload_upload() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          path: artifacts/recovery/web-recovery-evidence.json\n",
+        "          path: artifacts/recovery/remote-ops-data.tar.gz\n",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci web-recovery job must not upload backup payloads" in errors
+
+
 def test_ci_workflow_requires_android_emulator_web_job() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
@@ -286,16 +450,35 @@ def test_ci_workflow_requires_android_google_apis_image_for_hosted_smoke() -> No
     assert any("Android Google APIs system image for reliable hosted boot" in error for error in errors)
 
 
-def test_ci_workflow_requires_explicit_android_boot_only_coverage() -> None:
+def test_ci_workflow_requires_real_android_web_response_coverage() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        " --skip-web-response",
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow_without_server = source.replace(
+        '          python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1 > web-server.log 2>&1 &\n',
         "",
     )
+    workflow_without_reverse = source.replace(
+        '          adb reverse "tcp:${WEB_PWA_PORT}" "tcp:${WEB_PWA_PORT}"\n',
+        "",
+    )
+    workflow_with_skip = source.replace(
+        ' --url "$WEB_PWA_URL" --out-dir artifacts/mobile',
+        ' --url "$WEB_PWA_URL" --skip-web-response --out-dir artifacts/mobile',
+    )
+    workflow_without_response_timeout = source.replace(
+        "      - name: Android emulator Web/PWA response smoke\n        timeout-minutes: 2\n",
+        "      - name: Android emulator Web/PWA response smoke\n",
+    )
 
-    errors = checker.check_ci_workflow(workflow)
+    server_errors = checker.check_ci_workflow(workflow_without_server)
+    reverse_errors = checker.check_ci_workflow(workflow_without_reverse)
+    skip_errors = checker.check_ci_workflow(workflow_with_skip)
+    timeout_errors = checker.check_ci_workflow(workflow_without_response_timeout)
 
-    assert any("explicit boot-only coverage" in error for error in errors)
+    assert any("loopback-only host Web/PWA server" in error for error in server_errors)
+    assert any("Android reverse-port mapping" in error for error in reverse_errors)
+    assert any("must not skip the emulator Web/PWA response assertion" in error for error in skip_errors)
+    assert any("bounded Android Web/PWA response smoke timeout" in error for error in timeout_errors)
 
 
 def test_ci_workflow_requires_durable_android_avd_home_and_creation_assertion() -> None:

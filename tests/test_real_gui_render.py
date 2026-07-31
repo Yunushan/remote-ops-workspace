@@ -55,6 +55,19 @@ def test_real_gui_render_require_pyqt6_fails_when_missing() -> None:
     assert any("fail-closed" in message for message in messages)
 
 
+def test_real_gui_render_prepares_native_reference_tree_selection() -> None:
+    checker = _load_checker()
+    selected: list[str] = []
+
+    class Window:
+        def select_profile_tree_label(self, label: str) -> bool:
+            selected.append(label)
+            return True
+
+    assert checker.prepare_preset_live_state(Window(), "native") == []
+    assert selected == [checker.gui_design_interaction_state("native").selected_tree_label]
+
+
 def test_real_gui_render_metrics_reject_blank_capture() -> None:
     checker = _load_checker()
     samples = [(255, 255, 255)] * 100

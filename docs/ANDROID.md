@@ -9,8 +9,11 @@ Remote Ops Workspace supports Android through two practical routes:
 
 The verified Android contract covers Android 12 through Android 16 (API 31-36)
 for the Web/PWA path. CI runs the `android-emulator-web` job across API levels
-31, 32, 33, 34, 35 and 36, opens the Web/PWA in the emulator, and uploads a
-screenshot artifact.
+31, 32, 33, 34, 35 and 36. Each job starts the real static Web/PWA server,
+maps the server into emulator loopback with `adb reverse`, fetches the page
+through the emulator, requires HTTP 200 plus the expected page marker, and
+uploads an emulator screenshot artifact. This is Web/PWA network evidence, not
+a native APK or installed-browser rendering claim.
 
 The release target remains ARMv7 and ARM64 for Termux/Web packaging. The
 emulator smoke uses x86_64 system images because that is the practical Android

@@ -30,6 +30,7 @@ def main() -> int:
     errors.extend(check_support_bundle_redaction())
     errors.extend(check_legacy_security_policy())
     errors.extend(check_docs_and_verifier())
+    errors.extend(check_profile_only_security_defaults())
     if errors:
         for error in errors:
             print(f"security polish: {error}", file=sys.stderr)
@@ -100,12 +101,43 @@ def check_docs_and_verifier() -> list[str]:
         "legacy_target=windows-xp-32",
         "allow_legacy_crypto=true",
         "allow_legacy_rdp_security=true",
+        "allow_insecure_cleartext=true",
+        "Telnet, rlogin, rsh and FTP",
+        "group default options",
         "generic XP labels such as `xp`, `winxp` and `windows-xp`",
         "`legacy_platform` alias key",
         "Linux i386/armhf security smoke proof lines",
     ):
         if snippet not in docs:
             errors.append(f"security docs missing required snippet: {snippet}")
+    return errors
+
+
+def check_profile_only_security_defaults(
+    *,
+    normalize_defaults: Any | None = None,
+    validation_error_type: type[Exception] | None = None,
+) -> list[str]:
+    if normalize_defaults is None or validation_error_type is None:
+        from remote_ops_workspace.profile_validation import (
+            PROFILE_ONLY_SECURITY_OPTIONS,
+            ProfileValidationError,
+            normalize_group_defaults,
+        )
+
+        normalize_defaults = normalize_group_defaults
+        validation_error_type = ProfileValidationError
+        option_names = sorted(PROFILE_ONLY_SECURITY_OPTIONS)
+    else:
+        option_names = ["allow_insecure_cleartext"]
+
+    errors: list[str] = []
+    for option_name in option_names:
+        try:
+            normalize_defaults({"options": {option_name: "true"}})
+        except validation_error_type:
+            continue
+        errors.append(f"group defaults must reject profile-only security option: {option_name}")
     return errors
 
 
@@ -158,10 +190,27 @@ def check_legacy_security_policy(
     for key in (
         "ssh_legacy_crypto_default",
         "rdp_legacy_security_default",
+        "cleartext_protocol_default",
         "weak_crypto_global_default",
     ):
         if modern.get(key) != "blocked":
             errors.append(f"security_baseline {key} must be blocked")
+
+    cleartext_policy = baseline.get("cleartext_legacy_protocols", {})
+    expected_cleartext_protocols = ["ftp", "rlogin", "rsh", "telnet"]
+    if cleartext_policy.get("protocols") != expected_cleartext_protocols:
+        errors.append(
+            "security_baseline cleartext_legacy_protocols.protocols must be "
+            f"{expected_cleartext_protocols!r}"
+        )
+    if cleartext_policy.get("default") != "blocked":
+        errors.append("security_baseline cleartext legacy protocol default must be blocked")
+    if cleartext_policy.get("profile_scope") != "per-profile":
+        errors.append("security_baseline cleartext legacy protocol scope must be per-profile")
+    if cleartext_policy.get("required_profile_option") != "allow_insecure_cleartext=true":
+        errors.append(
+            "security_baseline cleartext legacy protocols must require allow_insecure_cleartext=true"
+        )
 
     xp_policy = baseline.get("legacy_windows_xp_remote_targets", {})
     if xp_policy.get("coverage_percent") != 100.0:
@@ -360,6 +409,7 @@ def check_platform_target_security_boundary(
             errors.append(f"platform_targets Windows XP {key} must be {expected!r}, got {xp_row.get(key)!r}")
     required_note_snippets = (
         "Legacy SSH/RDP crypto is blocked globally",
+        "Cleartext Telnet is blocked by default and requires per-profile allow_insecure_cleartext=true.",
         "per-profile legacy_target plus explicit opt-in flags",
         "Modern native Python/PyQt release artifacts do not target XP.",
     )
@@ -406,6 +456,17 @@ def check_legacy_launcher_behavior(
         profile_type = Profile
         launcher_error_type = LauncherError
 
+    cleartext_scenarios = tuple(
+        (
+            f"{protocol} launch must require explicit per-profile cleartext opt-in",
+            profile_type(
+                name=f"{protocol}-without-opt-in",
+                protocol=protocol,
+                host="192.0.2.10",
+            ),
+        )
+        for protocol in ("ftp", "rlogin", "rsh", "telnet")
+    )
     scenarios = (
         (
             "SSHv1 launch must require an isolated XP legacy_target",
@@ -486,6 +547,7 @@ def check_legacy_launcher_behavior(
                 },
             ),
         ),
+        *cleartext_scenarios,
     )
 
     errors: list[str] = []

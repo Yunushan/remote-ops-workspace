@@ -32,9 +32,11 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors: list[str] = []
     errors.extend(check_top_level_policy(text))
     errors.extend(check_repo_policy_job(text))
+    errors.extend(check_coverage_job(text))
     errors.extend(check_test_job(text))
     errors.extend(check_mobile_web_job(text))
     errors.extend(check_web_container_job(text))
+    errors.extend(check_web_recovery_job(text))
     errors.extend(check_android_emulator_web_job(text))
     errors.extend(check_ios_simulator_web_job(text))
     errors.extend(check_gui_render_job(text))
@@ -96,10 +98,66 @@ def check_repo_policy_job(workflow: str) -> list[str]:
         "python -m mypy src/remote_ops_workspace/gui.py --platform darwin": (
             "macOS GUI type-safety gate"
         ),
+        "python scripts/check_non_gui_types.py": "bounded non-GUI production type gate",
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci repo-policy job missing {label}: {snippet}")
+    return errors
+
+
+def check_coverage_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "coverage")
+    if not block:
+        return ["ci workflow missing coverage job for enforced Python branch coverage"]
+    required_snippets = {
+        "name: Python branch-aware coverage": "clear branch-aware coverage job label",
+        "runs-on: windows-2025-vs2026": "stable native Windows coverage runner",
+        "timeout-minutes: 30": "bounded coverage job timeout",
+        'QT_QPA_PLATFORM: "windows"': "native Windows Qt coverage platform",
+        'python-version: "3.12"': "stable coverage Python version",
+        'python -m pip install -e ".[desktop,security,dev]"': (
+            "desktop, security and development dependency installation"
+        ),
+        "New-Item -ItemType Directory -Force -Path artifacts/coverage | Out-Null": (
+            "explicit Windows coverage evidence directory"
+        ),
+        "python -m pytest -q": "direct full pytest execution",
+        "--cov=remote_ops_workspace": "application source coverage",
+        "--cov-branch": "branch coverage measurement",
+        "--cov-report=term-missing": "human-readable missing-line report",
+        "--cov-report=xml:artifacts/coverage/coverage.xml": "XML coverage evidence",
+        "--cov-report=json:artifacts/coverage/coverage.json": "JSON coverage evidence",
+        "python scripts/check_coverage_report.py": "aggregate and branch report validator",
+        "--report artifacts/coverage/coverage.json": "validated JSON coverage report",
+        "if: ${{ always() }}": "coverage evidence upload after pass or failure",
+        "name: python-branch-aware-coverage": "dedicated coverage artifact name",
+        "path: artifacts/coverage/": "dedicated coverage artifact path",
+        "if-no-files-found: error": "failure when coverage evidence is missing",
+        "include-hidden-files: false": "explicit hidden-file exclusion",
+        "retention-days: 14": "bounded coverage evidence retention",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci coverage job missing {label}: {snippet}")
+    threshold_match = re.search(r"--cov-fail-under(?:=|\s+)(\d+(?:\.\d+)?)", block)
+    if threshold_match is None:
+        errors.append("ci coverage job missing an explicit branch coverage failure threshold")
+    elif float(threshold_match.group(1)) < 70:
+        errors.append("ci coverage job aggregate coverage failure threshold must be at least 70")
+    total_match = re.search(r"--min-total(?:=|\s+)(\d+(?:\.\d+)?)", block)
+    if total_match is None:
+        errors.append("ci coverage job missing validated aggregate coverage threshold")
+    elif float(total_match.group(1)) < 70:
+        errors.append("ci coverage job validated aggregate coverage threshold must be at least 70")
+    branch_match = re.search(r"--min-branches(?:=|\s+)(\d+(?:\.\d+)?)", block)
+    if branch_match is None:
+        errors.append("ci coverage job missing pure branch coverage threshold")
+    elif float(branch_match.group(1)) < 55:
+        errors.append("ci coverage job pure branch coverage threshold must be at least 55")
+    if "continue-on-error: true" in block:
+        errors.append("ci coverage job must remain release-blocking")
     return errors
 
 
@@ -128,6 +186,23 @@ def check_test_job(workflow: str) -> list[str]:
         for version in ("3.12", "3.13", "3.14"):
             if not workflow_includes_matrix_entry(block, os_name=os_name, python_version=version):
                 errors.append(f"ci test matrix missing macOS smoke row: {os_name} Python {version}")
+    intel_macos_snippets = {
+        "Install Intel macOS compatibility dependencies": (
+            "explicit Intel macOS dependency compatibility step"
+        ),
+        "runner.os == 'macOS' && runner.arch == 'X64'": (
+            "Intel macOS architecture condition"
+        ),
+        "-c requirements-release-compat.txt": (
+            "Intel macOS release compatibility constraints"
+        ),
+        "runner.os != 'macOS' || runner.arch != 'X64'": (
+            "non-Intel-macOS dependency condition"
+        ),
+    }
+    for snippet, label in intel_macos_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci test job missing {label}: {snippet}")
     if '".[security,dev]"' not in block:
         errors.append("ci test job must install security and dev extras")
     if "python -m pytest -q" not in block:
@@ -293,6 +368,43 @@ def check_web_container_job(workflow: str) -> list[str]:
     return errors
 
 
+def check_web_recovery_job(workflow: str) -> list[str]:
+    block = workflow_job_block(workflow, "web-recovery")
+    if not block:
+        return ["ci workflow missing web-recovery job for destructive backup and restore evidence"]
+    errors: list[str] = []
+    required_snippets = {
+        "name: Web/PWA backup and restore drill": "clear recovery drill job label",
+        "runs-on: ubuntu-latest": "stable recovery drill runner",
+        "timeout-minutes: 20": "bounded recovery drill timeout",
+        'python-version: "3.12"': "stable recovery evidence Python version",
+        "python scripts/run_web_recovery_drill.py": "real recovery drill runner",
+        "--project-name row-web-recovery": "isolated recovery Compose project",
+        "--output artifacts/recovery/web-recovery-evidence.json": "sanitized evidence output",
+        '--repository "$GITHUB_REPOSITORY"': "repository-bound recovery evidence",
+        '--source-sha "$GITHUB_SHA"': "source-bound recovery evidence",
+        '--workflow-run-url "$workflow_run_url"': "workflow-run-bound recovery evidence",
+        '--run-attempt "$GITHUB_RUN_ATTEMPT"': "workflow-attempt-bound recovery evidence",
+        "python scripts/check_web_recovery_evidence.py": "independent retained evidence validation",
+        "if: ${{ always() }}": "failure-path evidence retention",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": (
+            "pinned recovery evidence upload"
+        ),
+        "name: web-recovery-evidence-${{ github.sha }}-${{ github.run_attempt }}": (
+            "source and attempt scoped recovery artifact"
+        ),
+        "path: artifacts/recovery/web-recovery-evidence.json": "JSON-only recovery artifact",
+        "if-no-files-found: error": "missing recovery evidence failure",
+        "retention-days: 30": "bounded recovery evidence retention",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci web-recovery job missing {label}: {snippet}")
+    if ".tar" in block or "remote-ops-data.tar" in block:
+        errors.append("ci web-recovery job must not upload backup payloads")
+    return errors
+
+
 def check_android_emulator_web_job(workflow: str) -> list[str]:
     errors: list[str] = []
     block = workflow_job_block(workflow, "android-emulator-web")
@@ -300,12 +412,18 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         return ["ci workflow missing android-emulator-web job for Android API Web/PWA smoke"]
     required_snippets = {
         "runs-on: ubuntu-latest": "stable Linux Android runner",
+        "name: Android emulator Web/PWA response smoke API": "real Android Web/PWA response job label",
         "timeout-minutes: 35": "bounded Android emulator job timeout",
         "fail-fast: false": "non-cancelling Android API matrix",
         "api-level: [31, 32, 33, 34, 35, 36]": "Android 12-16 API matrix",
         'python-version: "3.12"': "stable Android smoke Python version",
         'python -m pip install -e ".[dev]"': "dev dependency installation",
         "tests/test_mobile_support.py": "mobile support contract tests",
+        "Start Web/PWA server": "host Web/PWA server startup",
+        'WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"': "dynamic loopback Web/PWA URL",
+        'python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1': (
+            "loopback-only host Web/PWA server"
+        ),
         "Configure Android SDK command-line tools": "Android SDK command-line tools PATH setup",
         "cmdline-tools/latest/bin": "Android SDK command-line tools discovery path",
         "ANDROID_HOME=$sdk_root": "Android SDK home export",
@@ -338,15 +456,22 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         "adb devices -l": "Android emulator device-list diagnostics",
         "tail -200 emulator.log": "Android emulator log diagnostics",
         "sys.boot_completed": "Android emulator boot-completion check",
+        "Map emulator loopback to host Web/PWA": "Android reverse-port mapping step",
+        'adb reverse "tcp:${WEB_PWA_PORT}" "tcp:${WEB_PWA_PORT}"': "Android reverse-port mapping",
+        "adb reverse --list": "Android reverse-port mapping assertion",
         "scripts/check_mobile_emulator_smoke.py --platform android": "Android emulator smoke helper",
         "--android-api ${{ matrix.api-level }}": "Android API assertion",
-        "--skip-web-response": "explicit boot-only coverage for Android API levels without stable HTTP capture",
+        '--url "$WEB_PWA_URL"': "emulator-routed Web/PWA URL",
+        "timeout-minutes: 2": "bounded Android Web/PWA response smoke timeout",
+        "tail -200 web-server.log": "Web/PWA server failure diagnostics",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "Android smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing Android screenshots",
     }
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci android-emulator-web job missing {label}: {snippet}")
+    if "--skip-web-response" in block:
+        errors.append("ci android-emulator-web job must not skip the emulator Web/PWA response assertion")
     return errors
 
 

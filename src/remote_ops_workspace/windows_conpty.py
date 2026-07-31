@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 MINIMUM_CONPTY_BUILD = 17763
 
@@ -66,6 +67,13 @@ class ConPtyProcessError(OSError):
         super().__init__(error_code, f"{operation}: {message}")
         self.operation = operation
         self.error_code = int(error_code)
+
+
+def _windows_ctypes_member(name: str) -> Any:
+    member = getattr(ctypes, name, None)
+    if member is None:
+        raise ConPtyUnavailableError(f"ctypes.{name} is unavailable on {sys.platform}")
+    return member
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,7 +265,7 @@ class _Kernel32Api:
 
     def __init__(self) -> None:
         require_conpty_support()
-        self.dll = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.dll = _windows_ctypes_member("WinDLL")("kernel32", use_last_error=True)
         self._bind()
 
     def _bind(self) -> None:
@@ -377,9 +385,9 @@ class _Kernel32Api:
 
 
 def _last_error(operation: str) -> ConPtyProcessError:
-    code = int(ctypes.get_last_error())
+    code = int(_windows_ctypes_member("get_last_error")())
     try:
-        message = ctypes.WinError(code).strerror
+        message = _windows_ctypes_member("WinError")(code).strerror
     except (AttributeError, OSError):
         message = f"Win32 error {code}"
     return ConPtyProcessError(operation, code, str(message))
@@ -389,7 +397,7 @@ def _hresult_error(operation: str, hresult: int) -> ConPtyProcessError:
     unsigned = int(hresult) & 0xFFFFFFFF
     win32_code = unsigned & 0xFFFF if (unsigned & 0xFFFF0000) == 0x80070000 else unsigned
     try:
-        message = ctypes.WinError(win32_code).strerror
+        message = _windows_ctypes_member("WinError")(win32_code).strerror
     except (AttributeError, OSError):
         message = f"HRESULT 0x{unsigned:08X}"
     return ConPtyProcessError(
@@ -702,7 +710,7 @@ class WindowsConPtyProcess:
                     ctypes.byref(transferred),
                     None,
                 ):
-                    code = int(ctypes.get_last_error())
+                    code = int(_windows_ctypes_member("get_last_error")())
                     if code not in _PIPE_SHUTDOWN_ERRORS:
                         self._record_io_error(_last_error("ReadFile(ConPTY)"))
                     break
@@ -767,7 +775,7 @@ class WindowsConPtyProcess:
                 ctypes.byref(transferred),
                 None,
             ):
-                code = int(ctypes.get_last_error())
+                code = int(_windows_ctypes_member("get_last_error")())
                 if code in _PIPE_SHUTDOWN_ERRORS:
                     raise ConPtyProcessError(
                         "WriteFile(ConPTY)",
@@ -944,7 +952,9 @@ class WindowsConPtyProcess:
             if item is _OUTPUT_EOF:
                 self._output_eof.set()
                 return b""
-            payload = bytes(item)
+            if not isinstance(item, bytes):
+                raise ConPtyProcessError("ReadFile", 0, "output queue contained an invalid payload")
+            payload = item
             if self._output_queue.empty():
                 self.output_ready.clear()
                 if self._output_eof.is_set():
@@ -1025,6 +1035,8 @@ class WindowsConPtyProcess:
         )
         result = int(api.WaitForSingleObject(self._process_handle, milliseconds))
         if result == _WAIT_TIMEOUT:
+            if timeout is None:
+                raise ConPtyProcessError("WaitForSingleObject", result, "infinite wait timed out")
             raise subprocess.TimeoutExpired(self.argv, timeout)
         if result == _WAIT_FAILED:
             raise _last_error("WaitForSingleObject")

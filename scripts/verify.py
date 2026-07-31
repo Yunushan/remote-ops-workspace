@@ -433,13 +433,21 @@ def build_steps(
             )
         )
     if not quick:
-        steps.append(
-            VerifyStep(
-                "pytest",
-                [python, "-m", "pytest", "-q"],
-                env=_source_env(),
-                requires_module="pytest",
-            )
+        steps.extend(
+            [
+                VerifyStep(
+                    "non-GUI production typing",
+                    [python, "scripts/check_non_gui_types.py"],
+                    env=_source_env(),
+                    requires_module="mypy",
+                ),
+                VerifyStep(
+                    "pytest",
+                    [python, "-m", "pytest", "-q"],
+                    env=_source_env(),
+                    requires_module="pytest",
+                ),
+            ]
         )
     if not no_cli_smoke:
         smoke_home = row_home or Path(".verify-row-home")

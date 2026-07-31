@@ -3224,8 +3224,8 @@ def _print_local_preview(preview: dict[str, object]) -> None:
         return
     if preview.get("size") is not None:
         print(f"size: {preview['size']}")
-    children = preview.get("children") or []
-    if children:
+    children = preview.get("children")
+    if isinstance(children, list) and children:
         print("children:")
         for child in children:
             print(f"  {child}")

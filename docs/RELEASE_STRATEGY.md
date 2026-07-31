@@ -613,9 +613,11 @@ Do not publish an APK just to wrap the current Python project unless the Android
 app has its own tested install and update path.
 
 The CI contract for Android Web/PWA runs `android-emulator-web` across Android
-12 through Android 16 (API 31-36), opens the Web/PWA in each emulator, and
-uploads screenshot artifacts. Termux ARMv7/ARM64 coverage remains a package and
-metadata contract, not a native APK claim.
+12 through Android 16 (API 31-36), serves the real static Web/PWA, maps it into
+emulator loopback with `adb reverse`, requires an emulator-originated HTTP 200
+response containing the expected page marker, and uploads screenshot artifacts.
+Termux ARMv7/ARM64 coverage remains a package and metadata contract, not a
+native APK claim.
 
 iOS/iPadOS remains Web/PWA-only until there is a real native iOS wrapper. Do not
 publish an `.ipa` or App Store package unless the iOS app has its own tested

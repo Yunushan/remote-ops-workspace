@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from remote_ops_workspace.models import Profile
@@ -8,7 +10,8 @@ from remote_ops_workspace.terminal import TerminalPanePlan
 
 @pytest.fixture
 def gui_window(monkeypatch, tmp_path):
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    if "QT_QPA_PLATFORM" not in os.environ:
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("ROW_HOME", str(tmp_path / "row-home"))
     pytest.importorskip("PyQt6")
     from remote_ops_workspace.gui import create_main_window
@@ -82,7 +85,7 @@ def test_moba_terminal_and_telemetry_share_operational_context_actions(
 ) -> None:
     from PyQt6.QtCore import Qt
 
-    app, _window, panel, _dock = _open_connected_panel(gui_window)
+    _app, _window, panel, _dock = _open_connected_panel(gui_window)
     panel.terminal_pane.output.selectAll()
     selected = panel.terminal_pane.output.textCursor().selectedText()
     menu = panel.build_moba_terminal_context_menu(panel.terminal_pane)
@@ -96,7 +99,9 @@ def test_moba_terminal_and_telemetry_share_operational_context_actions(
     copy_action = next(action for action in menu.actions() if action.text() == "Copy")
     assert copy_action.isEnabled()
     copy_action.trigger()
-    assert app.clipboard().text() == selected.replace("\u2029", "\n")
+    assert panel.terminal_pane.output.property("terminalLastCopiedText") == selected.replace(
+        "\u2029", "\n"
+    )
     assert panel.terminal_pane.output.textCursor().selectedText() == selected
     host_action = next(
         action for action in menu.actions() if action.text() == "Display host information"
@@ -114,6 +119,7 @@ def test_moba_terminal_and_telemetry_share_operational_context_actions(
 
 def test_moba_terminal_context_routes_to_originating_or_active_split(
     gui_window,
+    monkeypatch,
 ) -> None:
     from PyQt6.QtCore import Qt
 
@@ -124,7 +130,7 @@ def test_moba_terminal_context_routes_to_originating_or_active_split(
     panel.add_terminal_split(second, Qt.Orientation.Horizontal)
 
     assert panel.moba_terminal_context_pane(second.output) is second
-    window._last_terminal_pane = second
+    monkeypatch.setattr(window, "active_terminal_pane", lambda: second)
     assert panel.moba_terminal_context_pane(panel.telemetry_bar) is second
 
 

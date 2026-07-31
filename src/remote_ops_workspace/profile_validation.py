@@ -65,7 +65,23 @@ HOST_TARGET_PROTOCOLS = frozenset(
 
 URL_PROTOCOLS = frozenset({"http", "https", "www"})
 LOCAL_PROTOCOLS = frozenset({"local", "local-shell", "shell"})
-BOOL_TRUE_VALUES = frozenset({"1", "true", "yes"})
+BOOL_TRUE_VALUES = frozenset({"1", "enabled", "on", "true", "yes"})
+CLEARTEXT_PROTOCOLS = frozenset({"ftp", "rlogin", "rsh", "telnet"})
+CLEARTEXT_PROTOCOL_OPT_IN = "allow_insecure_cleartext"
+PROFILE_ONLY_SECURITY_OPTIONS = frozenset(
+    {
+        CLEARTEXT_PROTOCOL_OPT_IN,
+        "allow_insecure_legacy_crypto",
+        "allow_insecure_rdp_security",
+        "allow_insecure_sshv1",
+        "allow_insecure_winrm_http",
+        "allow_legacy_crypto",
+        "allow_legacy_rdp_security",
+        "allow_unsafe_proxy_command",
+        "allow_unsafe_sshv1",
+        "legacy_target",
+    }
+)
 
 
 class ProfileValidationError(ValueError):
@@ -165,6 +181,12 @@ def normalize_group_defaults(defaults: Mapping[str, Any] | None) -> dict[str, ob
     options = defaults.get("options")
     if isinstance(options, Mapping):
         cleaned_options = _clean_options(options)
+        inherited_security_options = sorted(PROFILE_ONLY_SECURITY_OPTIONS.intersection(cleaned_options))
+        if inherited_security_options:
+            raise ProfileValidationError(
+                "group default options must not include profile-only security options: "
+                + ", ".join(inherited_security_options)
+            )
         if cleaned_options:
             normalized["options"] = cleaned_options
     elif options not in (None, "", {}, []):

@@ -35,6 +35,11 @@ row vault set prod/router-password
 row profile defaults prod --credential-ref prod/router-password
 ```
 
+Imported Telnet, rlogin, rsh and FTP profiles remain disabled and produce a
+warning until an operator reviews that specific target and adds
+`allow_insecure_cleartext=true`. Import never enables a cleartext transport on
+the operator's behalf, and group default options cannot supply this exception.
+
 Always inspect imported launch commands before use:
 
 ```bash

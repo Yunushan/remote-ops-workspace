@@ -96,8 +96,14 @@ def run_broadcast(
                     profile_name=plan.profile_name,
                     command=plan.command,
                     returncode=124,
-                    stdout=exc.stdout or "",
-                    stderr=exc.stderr or f"timed out after {timeout} seconds",
+                    stdout=_output_text(exc.stdout),
+                    stderr=_output_text(exc.stderr) or f"timed out after {timeout} seconds",
                 )
             )
     return results
+
+
+def _output_text(value: bytes | str | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value or ""

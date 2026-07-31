@@ -311,6 +311,54 @@ def test_ci_workflow_requires_writable_non_root_web_data_volume() -> None:
     assert any("writable non-root data-volume smoke" in error for error in errors)
 
 
+def test_ci_workflow_requires_destructive_web_recovery_job() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "  web-recovery:",
+        "  web_recovery_disabled:",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci workflow missing web-recovery job for destructive backup and restore evidence" in errors
+
+
+def test_ci_workflow_requires_source_bound_recovery_evidence() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        '            --source-sha "$GITHUB_SHA" \\\n',
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("source-bound recovery evidence" in error for error in errors)
+
+
+def test_ci_workflow_requires_failure_path_recovery_evidence_upload() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "        if: ${{ always() }}\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert any("failure-path evidence retention" in error for error in errors)
+
+
+def test_ci_workflow_rejects_recovery_backup_payload_upload() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          path: artifacts/recovery/web-recovery-evidence.json\n",
+        "          path: artifacts/recovery/remote-ops-data.tar.gz\n",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert "ci web-recovery job must not upload backup payloads" in errors
+
+
 def test_ci_workflow_requires_android_emulator_web_job() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

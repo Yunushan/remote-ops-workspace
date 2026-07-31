@@ -210,6 +210,50 @@ jobs:
           docker inspect --format '{{.HostConfig.SecurityOpt}}' "$container_id" | grep -Fx "[no-new-privileges:true]"
           compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'
 
+  web-recovery:
+    name: Web/PWA backup and restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Exercise destructive application-volume recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow_run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python scripts/run_web_recovery_drill.py \
+            --compose-file docker/compose.yaml \
+            --project-name row-web-recovery \
+            --output artifacts/recovery/web-recovery-evidence.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-sha "$GITHUB_SHA" \
+            --workflow-run-url "$workflow_run_url" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Validate retained recovery evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow_run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python scripts/check_web_recovery_evidence.py \
+            --evidence artifacts/recovery/web-recovery-evidence.json \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-sha "$GITHUB_SHA" \
+            --workflow-run-url "$workflow_run_url" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Upload sanitized recovery evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: web-recovery-evidence-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/recovery/web-recovery-evidence.json
+          if-no-files-found: error
+          retention-days: 30
+
   android-emulator-web:
     name: Android emulator Web/PWA response smoke API ${{ matrix.api-level }}
     runs-on: ubuntu-latest

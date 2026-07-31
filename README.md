@@ -588,7 +588,7 @@ native jobs. The native build scripts also map Linux `i386`/`i686` and
 default release. Android remains Termux/Web with no APK published, and
 iOS/iPadOS is Web/PWA only; no native `.ipa` or App Store package is published.
 Mobile CI covers Android 12 through Android 16 (API 31-36) Web/PWA emulator
-smoke and iOS/iPadOS 15 through 26.x Web/PWA compatibility, with simulator smoke
+HTTP response smoke and iOS/iPadOS 15 through 26.x Web/PWA compatibility, with simulator smoke
 on the current GitHub macOS/Xcode runtime.
 The machine-readable release decision lives in
 [`configs/release_matrix.json`](configs/release_matrix.json), while

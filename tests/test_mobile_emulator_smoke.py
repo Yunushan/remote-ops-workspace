@@ -66,20 +66,29 @@ def test_android_web_response_accepts_expected_page(monkeypatch) -> None:
         check: bool = True,
         text: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        if args[:2] == ["adb", "shell"] and len(args) == 3:
-            assert args[2] == (
-                "printf 'GET /index.html HTTP/1.0\\r\\nHost: 127.0.0.1:8765\\r\\nConnection: close\\r\\n\\r\\n' "
-                f"| toybox nc -w 10 -q 1 127.0.0.1 8765 > {smoke.ANDROID_WEB_RESPONSE_PATH}"
+        if args[:2] == ["adb", "push"]:
+            assert Path(args[2]).read_bytes() == (
+                b"GET /index.html HTTP/1.0\r\n"
+                b"Host: 127.0.0.1:8765\r\n"
+                b"Connection: close\r\n\r\n"
             )
+            assert args[3] == smoke.ANDROID_WEB_REQUEST_PATH
             return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
         if args == ["adb", "exec-out", "cat", smoke.ANDROID_WEB_RESPONSE_PATH]:
             return subprocess.CompletedProcess(
                 args,
                 0,
-                stdout=f"{smoke.HTTP_OK_MARKER}\\r\\n\\r\\n{smoke.WEB_PWA_RESPONSE_MARKER}",
+                stdout=f"{smoke.HTTP_OK_MARKER}\r\n\r\n{smoke.WEB_PWA_RESPONSE_MARKER}",
                 stderr="",
             )
-        assert args == ["adb", "shell", "rm", "-f", smoke.ANDROID_WEB_RESPONSE_PATH]
+        if args[:4] == ["adb", "shell", "rm", "-f"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        assert args == [
+            "adb",
+            "shell",
+            f"(cat {smoke.ANDROID_WEB_REQUEST_PATH}; sleep 1) | toybox nc -w 10 127.0.0.1 8765 "
+            f"> {smoke.ANDROID_WEB_RESPONSE_PATH}",
+        ]
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
     monkeypatch.setattr(smoke, "run", fake_run)
@@ -96,22 +105,32 @@ def test_android_web_response_reports_failed_fetch(monkeypatch) -> None:
         check: bool = True,
         text: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        if args[:2] == ["adb", "shell"] and len(args) == 3:
-            return subprocess.CompletedProcess(args, 1, stdout="", stderr="connection refused")
+        if args[:2] == ["adb", "push"] or args[:4] == ["adb", "shell", "rm", "-f"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
         if args == ["adb", "exec-out", "cat", smoke.ANDROID_WEB_RESPONSE_PATH]:
             return subprocess.CompletedProcess(args, 1, stdout="", stderr="missing response")
-        assert args == ["adb", "shell", "rm", "-f", smoke.ANDROID_WEB_RESPONSE_PATH]
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="connection refused")
 
     monkeypatch.setattr(smoke, "run", fake_run)
 
     try:
-        smoke.ensure_android_web_response("http://127.0.0.1:8765/index.html")
+        smoke.ensure_android_web_response("http://127.0.0.1:8765/index.html", attempts=1)
     except SystemExit as exc:
         assert "could not verify the Web/PWA response" in str(exc)
         assert "connection refused" in str(exc)
     else:
         raise AssertionError("failed Web/PWA response fetch should fail the Android smoke")
+
+
+def test_android_web_response_requires_adb_reversed_loopback() -> None:
+    smoke = _load_smoke()
+
+    try:
+        smoke.ensure_android_web_response("http://10.0.2.2:8765/index.html", attempts=1)
+    except SystemExit as exc:
+        assert "adb-reversed emulator loopback" in str(exc)
+    else:
+        raise AssertionError("Android Web/PWA smoke must require the explicit adb reverse boundary")
 
 
 def test_android_boot_screenshot_mode_does_not_fetch_web_response(monkeypatch, tmp_path) -> None:
@@ -141,7 +160,7 @@ def test_android_boot_screenshot_mode_does_not_fetch_web_response(monkeypatch, t
         out_dir=tmp_path,
         verify_web_response=False,
     ) == 0
-    assert not any("nc -w 10" in " ".join(call) for call in calls)
+    assert not any("toybox nc" in " ".join(call) for call in calls)
     assert (tmp_path / "android-api-32-web-pwa.png").read_bytes() == b"png"
 
 

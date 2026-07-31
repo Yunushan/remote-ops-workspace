@@ -92,6 +92,31 @@ def test_mremoteng_importer_preserves_ssh1_protocol(tmp_path: Path) -> None:
     assert any("allow_legacy_crypto=true" in warning for warning in result.warnings)
 
 
+def test_row_importer_never_silently_enables_cleartext_profiles(tmp_path: Path) -> None:
+    source = tmp_path / "profiles.json"
+    source.write_text(
+        """{
+  "profiles": [
+    {"name": "Legacy console", "protocol": "telnet", "host": "192.0.2.15"},
+    {"name": "Reviewed FTP", "protocol": "ftp", "host": "192.0.2.16", "options": {"allow_insecure_cleartext": "true"}},
+    {"name": "Reviewed rlogin", "protocol": "rlogin", "host": "192.0.2.17", "options": {"allow_insecure_cleartext": "on"}},
+    {"name": "Reviewed rsh", "protocol": "rsh", "host": "192.0.2.18", "options": {"allow_insecure_cleartext": "enabled"}}
+  ]
+}""",
+        encoding="utf-8",
+    )
+
+    result = import_profiles(source, source_format="row")
+
+    assert any(
+        "Legacy console" in warning and "allow_insecure_cleartext=true" in warning
+        for warning in result.warnings
+    )
+    assert not any("Reviewed FTP" in warning for warning in result.warnings)
+    assert not any("Reviewed rlogin" in warning for warning in result.warnings)
+    assert not any("Reviewed rsh" in warning for warning in result.warnings)
+
+
 def test_termius_importer_maps_host_json(tmp_path: Path) -> None:
     tmp_path.mkdir(parents=True, exist_ok=True)
     source = tmp_path / "termius.json"

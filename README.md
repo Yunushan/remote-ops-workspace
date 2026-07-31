@@ -457,6 +457,9 @@ Core design principles:
 - Destructive SFTP actions, remote-overwrite-prone uploads and local-overwrite downloads are blocked before execution unless an operator passes `--force`; broad delete targets and remote globs are rejected for deletes/renames.
 - `row serve-web` binds to loopback by default, adds static-app security headers, disables directory listing and requires `--allow-public-bind` for non-loopback interfaces. The web Docker image runs as a non-root user and compose binds to localhost with dropped Linux capabilities.
 - Prefer SSH `proxy_jump`; `proxy_command` requires explicit `allow_unsafe_proxy_command=true`.
+- Telnet, rlogin, rsh and FTP are cleartext legacy protocols and remain blocked
+  unless the individual isolated target profile sets `allow_insecure_cleartext=true`;
+  group default options cannot inherit this or another insecure protocol exception.
 - SSHv1 legacy profiles require `--protocol ssh1`/`sshv1`,
   `--option allow_insecure_sshv1=true`, `--option legacy_target=windows-xp-32`
   or `windows-xp-64`, and `--option allow_legacy_crypto=true`; protocol v1

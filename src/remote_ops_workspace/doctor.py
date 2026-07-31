@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from .launcher import SSH_V1_PROTOCOLS, protocol_clients
 from .paths import data_dir
+from .profile_validation import CLEARTEXT_PROTOCOL_OPT_IN, CLEARTEXT_PROTOCOLS
 
 SSHV1_DOCTOR_NOTES = [
     "SSHv1 is insecure and disabled by default in Remote Ops Workspace.",
@@ -15,6 +16,12 @@ SSHV1_DOCTOR_NOTES = [
     "windows-xp-64, and allow_legacy_crypto=true.",
     "Modern OpenSSH builds commonly remove or disable SSH protocol v1 support.",
     "Doctor checks client presence only; it does not prove protocol v1 negotiation works.",
+]
+CLEARTEXT_DOCTOR_NOTES = [
+    "Telnet, rlogin, rsh and FTP provide no transport encryption.",
+    f"Launching requires the per-profile option {CLEARTEXT_PROTOCOL_OPT_IN}=true.",
+    "Use these protocols only on an isolated network when no encrypted alternative is available.",
+    "Doctor checks client presence only; it does not prove remote authentication or protocol operation.",
 ]
 
 
@@ -74,6 +81,21 @@ def _protocol_status(protocol: str, candidates: dict[str, bool]) -> dict[str, ob
                 "protocol v1 support is not verified"
             ),
             "notes": SSHV1_DOCTOR_NOTES,
+        }
+    if protocol in CLEARTEXT_PROTOCOLS:
+        status = "legacy-insecure-opt-in" if client_present else "missing-client"
+        client_summary = ", ".join(available_clients) if available_clients else f"missing {protocol} client"
+        return {
+            "status": status,
+            "client_present": client_present,
+            "launchable_by_default": False,
+            "requires_profile_opt_in": True,
+            "available_clients": available_clients,
+            "summary": (
+                f"{status}: {client_summary}; requires "
+                f"{CLEARTEXT_PROTOCOL_OPT_IN}=true; cleartext transport is not verified"
+            ),
+            "notes": CLEARTEXT_DOCTOR_NOTES,
         }
     return {
         "status": "available" if client_present else "missing",

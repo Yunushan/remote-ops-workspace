@@ -3048,7 +3048,11 @@ def draw_termius_title_bar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w
     draw.ellipse((x + 14, y + 9, x + 23, y + 18), fill=c.primary)
     draw_text(draw, "Remote Ops", x + 30, y + 9, c.control_text, 12, bold=True)
     nav_x = x + 166
-    for label in ("Vaults", "Keychain", "Port forwarding", "Snippets"):
+    # Termius keeps file transfer as a first-class top-level destination in
+    # connected sessions; retaining the SFTP chip here makes the desktop
+    # preview reflect the supplied dual-pane SFTP reference as well as the
+    # host/vault home screen.
+    for label in ("Vaults", "SFTP", "Keychain", "Port forwarding", "Snippets"):
         draw_text(draw, label, nav_x, y + 10, c.sidebar_muted, 9)
         nav_x += len(label) * 6 + 26
     rounded(draw, (x + w - 118, y + 6, x + w - 48, y + 27), c.control, c.control_border, 10)
@@ -3483,7 +3487,12 @@ def draw_sidebar(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: 
     c = preset.colors
     interaction = gui_design_interaction_state(preset.id)
     if preset.id == "securecrt":
-        draw_securecrt_command_manager(draw, preset, x, y, w, h)
+        # SecureCRT's native left dock is the Session Manager, not the
+        # command palette used by the generic preset.  The supplied product
+        # references consistently show the session tree, filter, and routed
+        # session-manager actions, so render that real surface here as well.
+        draw_securecrt_session_manager_chrome(draw, preset, x, y, w, h)
+        draw_securecrt_session_tree(draw, preset, x, y, w, h)
         return
     if preset.id == "mremoteng":
         draw_mremoteng_docks(draw, preset, x, y, w, h)
@@ -4089,7 +4098,6 @@ def draw_termius_workspace(
     h: int,
     log_h: int,
 ) -> None:
-    c = preset.colors
     host_route = gui_design_termius_host_selection_route()
     reference = gui_design_reference_state(preset.id)
     if host_route.active_tab_label != reference.active_tab_label:
@@ -4100,58 +4108,77 @@ def draw_termius_workspace(
         raise RuntimeError("Termius host-selection route target metadata drifted")
     if host_route.protocol_value != reference.protocol_label:
         raise RuntimeError("Termius host-selection route protocol metadata drifted")
-    draw_termius_hosts_reference(draw, preset, x, y, w, h)
-    return
-    tabs_w = 86
-    log_y = y + h - log_h
-    draw_termius_navigation_rail(draw, preset, x, y, tabs_w, log_y - y - 8)
-    pane_x = x + tabs_w
-    pane_w = w - tabs_w
-    pane_h = log_y - y - 8
-    rounded(draw, (pane_x, y, pane_x + pane_w, y + pane_h), c.pane, c.pane_border, 5)
-    draw_text(draw, "edge-prod", pane_x + 20, y + 18, c.control_text, 17, bold=True)
-    draw_text(draw, "prod  ·  SSH  ·  edge-prod.example.invalid", pane_x + 20, y + 43, c.sidebar_muted, 10)
-    rounded(draw, (pane_x + pane_w - 124, y + 16, pane_x + pane_w - 22, y + 47), c.primary, c.primary, 9)
-    draw_text(draw, "Connect", pane_x + pane_w - 96, y + 26, c.primary_text, 10, bold=True)
-    tab_x = pane_x + 18
-    for tab in ("Terminal", "Files", "Tunnels", "SFTP"):
-        active = tab == "Terminal"
-        draw_text(draw, tab, tab_x, y + 78, c.control_text if active else c.sidebar_muted, 10, bold=active)
-        if active:
-            draw.rectangle((tab_x, y + 96, tab_x + 51, y + 98), fill=c.primary)
-        tab_x += len(tab) * 7 + 32
-    strip_y = y + 108
-    draw_termius_host_identity_strip(draw, preset, pane_x + 12, strip_y, pane_w - 24, 30)
+    # The supplied Termius reference is the connected SFTP workspace, not the
+    # vault landing page.  Keep the route checks above, then render the same
+    # two-pane file manager hierarchy shown in that reference.
+    draw_termius_sftp_workspace(draw, preset, surface, x, y, w, h, log_h)
 
-    term_w = int(pane_w * 0.64)
-    main_h = pane_h - 196
-    flow_y = y + 98 + main_h
-    terminal_y = strip_y + 38
-    terminal_h = flow_y - terminal_y - 10
-    draw_product_terminal(draw, preset, surface, pane_x + 12, terminal_y, term_w - 18, terminal_h)
-    detail_x = pane_x + term_w + 4
-    files_h = max(132, min(152, terminal_h // 2))
-    detail_h = terminal_h - files_h - 8
-    draw_detail_panel(
-        draw,
-        preset,
-        surface,
-        detail_x,
-        terminal_y,
-        pane_w - term_w - 16,
-        detail_h,
-        heading="Vault / Snippets",
-    )
-    draw_termius_files_browser(
-        draw,
-        preset,
-        detail_x,
-        terminal_y + detail_h + 8,
-        pane_w - term_w - 16,
-        files_h,
-    )
-    draw_termius_session_workflow(draw, preset, pane_x + 12, flow_y, pane_w - 24, y + pane_h - flow_y - 10)
-    draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "Connection log")
+
+def draw_termius_sftp_workspace(
+    draw: Any,
+    preset: GuiDesignPreset,
+    surface: Any,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    log_h: int,
+) -> None:
+    log_y = y + h - log_h
+    draw.rectangle((x, y, x + w, log_y - 6), fill="#111b2b", outline="#263b57")
+    # Termius' compact top navigation: hamburger, Vaults and the selected SFTP
+    # workspace chip.
+    draw_text(draw, "☰", x + 18, y + 17, "#d6e4f4", 14, bold=True)
+    for index, (label, active) in enumerate((("Vaults", False), ("SFTP", True))):
+        chip_x = x + 54 + index * 116
+        fill = "#263d5a" if active else "#18283d"
+        rounded(draw, (chip_x, y + 9, chip_x + 98, y + 34), fill, "#355476", 12)
+        draw_text(draw, label, chip_x + 28, y + 17, "#eaf3ff" if active else "#a9bdd5", 9, bold=active)
+    draw_text(draw, "edge-prod", x + w - 130, y + 17, "#d9e7f7", 9, bold=True)
+
+    body_y = y + 48
+    body_h = log_y - body_y - 7
+    divider = x + w // 2
+    draw.line((divider, body_y, divider, body_y + body_h), fill="#314a69", width=1)
+
+    def pane(pane_x: int, pane_w: int, selected_index: int) -> None:
+        draw_text(draw, "Ubuntu", pane_x + 18, body_y + 17, "#e5eefb", 10, bold=True)
+        draw_text(draw, "operator@edge-prod", pane_x + 18, body_y + 34, "#8ea8c6", 8)
+        for index, label in enumerate(("Filter", "Actions")):
+            button_x = pane_x + pane_w - 150 + index * 72
+            rounded(draw, (button_x, body_y + 11, button_x + 63, body_y + 31), "#1b2c43", "#3c5878", 4)
+            draw_text(draw, label, button_x + 13, body_y + 17, "#b7cbe2", 8)
+        crumb_y = body_y + 54
+        rounded(draw, (pane_x + 14, crumb_y, pane_x + pane_w - 14, crumb_y + 25), "#0d1624", "#2e4767", 4)
+        draw_text(draw, "/", pane_x + 23, crumb_y + 8, "#91b5dc", 8, mono=True)
+        draw_text(draw, "home", pane_x + 38, crumb_y + 8, "#d9e7f7", 8, mono=True)
+        draw_text(draw, "operator", pane_x + 76, crumb_y + 8, "#d9e7f7", 8, mono=True)
+        header_y = crumb_y + 38
+        draw_text(draw, "Name", pane_x + 17, header_y, "#89a6c7", 8, bold=True)
+        draw_text(draw, "Date modified", pane_x + pane_w - 138, header_y, "#89a6c7", 8, bold=True)
+        draw_text(draw, "Size", pane_x + pane_w - 52, header_y, "#89a6c7", 8, bold=True)
+        rows = (
+            ("..", "folder", "—", "—"),
+            ("apps", "folder", "Jun 06, 2026", "—"),
+            ("logs", "folder", "Jun 06, 2026", "—"),
+            ("README.txt", "file", "Jun 04, 2026", "3 KB"),
+            (".bash_history", "file", "Jun 06, 2026", "2 KB"),
+        )
+        row_y = header_y + 12
+        for index, (name, kind, modified, size) in enumerate(rows):
+            selected = index == selected_index
+            if selected:
+                rounded(draw, (pane_x + 12, row_y - 2, pane_x + pane_w - 12, row_y + 21), "#1d543f", "#38c98a", 3)
+            icon = "▰" if kind == "folder" else "▤"
+            draw_text(draw, icon, pane_x + 18, row_y + 5, "#58d6a0" if kind == "folder" else "#a8c7e7", 8)
+            draw_text(draw, name, pane_x + 35, row_y + 5, "#f1f7ff" if selected else "#c0d1e5", 8, mono=True)
+            draw_text(draw, modified, pane_x + pane_w - 138, row_y + 5, "#c4d5e8", 7, mono=True)
+            draw_text(draw, size, pane_x + pane_w - 50, row_y + 5, "#c4d5e8", 7, mono=True)
+            row_y += 27
+
+    pane(x, divider - x, 1)
+    pane(divider + 1, x + w - divider - 1, 3)
+    draw_product_activity_log(draw, preset, surface, x, log_y, w, y + h - log_y, "SFTP activity")
 
 
 def draw_termius_navigation_rail(draw: Any, preset: GuiDesignPreset, x: int, y: int, w: int, h: int) -> None:
@@ -4332,8 +4359,6 @@ def draw_remmina_workspace(
         key: label for key, label, _tooltip in gui_design_toolbar_actions("remmina")
     }.get(sftp_transfer_route.toolbar_action_key):
         raise RuntimeError("Remmina SFTP transfer route toolbar metadata drifted")
-    draw_remmina_home_reference(draw, preset, x, y, w, h)
-    return
     controls = gui_design_remmina_viewer_controls()
     if route.viewer_control_key not in {control.key for control in controls}:
         raise RuntimeError("Remmina profile-viewer route target control is missing")

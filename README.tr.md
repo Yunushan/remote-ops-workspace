@@ -361,6 +361,9 @@ uretir. CI checkout credential'lari final publish adimina kadar read-only kalir.
 | 4 | Linux `.deb`, `.rpm`, AppImage ve native tarball | Aktif |
 
 Ayrintilar icin [`docs/RELEASE_STRATEGY.md`](docs/RELEASE_STRATEGY.md) dosyasina bakin.
+100/100 production-readiness kapilari, imzalama sirlarinin, gercek legacy
+host kanitlarinin ve GitHub yonetisim kosullarinin tam listesi icin
+[`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) dosyasina bakin.
 
 ---
 

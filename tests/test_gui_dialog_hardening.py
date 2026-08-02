@@ -35,6 +35,48 @@ def test_main_window_and_application_have_a_visible_product_icon(gui_window) -> 
     assert not window.windowIcon().isNull()
 
 
+def test_product_reference_surfaces_keep_live_terminal_and_sftp_routes(gui_window) -> None:
+    """Exercise the product-document wrappers used by the live render gate."""
+    from PyQt6.QtWidgets import QTreeWidget, QWidget
+
+    from remote_ops_workspace.gui_designs import gui_design_preset_reference_tab_route
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    profile = Profile(
+        name="product-reference-test",
+        protocol="ssh",
+        host="product-reference.example.invalid",
+        username="operator",
+    )
+    for preset_id in ("securecrt", "termius", "remmina", "mremoteng"):
+        window.set_design_preset(preset_id)
+        app.processEvents()
+        route = gui_design_preset_reference_tab_route(preset_id)
+        window.open_terminal_tab(
+            TerminalPanePlan(title=route.active_tab_label, command=[], source="test"),
+            profile=profile,
+            tab_title=route.active_tab_label,
+        )
+        app.processEvents()
+        surface = window.tabs.currentWidget()
+        assert surface is not None
+        assert surface.property("productReferenceTabSurfaceRole") == "connected-product-document"
+        pane = surface.findChild(QWidget, "terminalPane")
+        assert pane is not None
+        assert pane.property("productReferenceTerminalChrome") == "connected-document"
+        if preset_id == "termius":
+            table = surface.findChild(QTreeWidget, "termiusNativeSftpTable")
+            assert table is not None
+            item = table.topLevelItem(1)
+            assert item is not None
+            window.open_sftp_context_item(item)
+            assert window.property("termiusNativeSftpOpenedItem") == item.text(0)
+        index = window.tabs.currentIndex()
+        window.tabs.removeTab(index)
+        app.processEvents()
+
+
 def test_profile_protocol_is_a_closed_supported_catalog(gui_window) -> None:
     from PyQt6.QtCore import QTimer
     from PyQt6.QtWidgets import QApplication, QComboBox

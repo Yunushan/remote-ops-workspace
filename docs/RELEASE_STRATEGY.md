@@ -65,6 +65,17 @@ Release integrity rules:
   `scripts/smoke_windows_native.ps1`, `scripts/smoke_macos_native.sh` and
   `scripts/smoke_linux_native.sh` after native builds and before artifact
   upload.
+- Before attestation and GitHub release upload, the publish job generates a
+  deterministic boundary-aware release body with
+  `python scripts/write_release_notes.py --root .`. It records the signed versus
+  unsigned-preview channel, downloadable release families, protected-platform
+  evidence count, strict MobaXterm evidence count and the verification commands;
+  `body_path: release-notes.md` is required so a release cannot be published
+  with an empty or misleading description.
+- The strict local production gate also audits live `main` branch protection
+  with `python scripts/check_repository_governance.py --repository <owner/repo>`;
+  required reviews and signed commits are release prerequisites, not implied by
+  a green workflow run.
 - The core `release-preflight` workflow job checks out the requested immutable
   tag, requires it to match both project version declarations, then runs
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, reports

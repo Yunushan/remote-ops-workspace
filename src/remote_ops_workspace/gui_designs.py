@@ -6313,6 +6313,47 @@ QToolBar#mainToolbar, QToolBar#layoutToolbar {{
   spacing: 5px;
   padding: 5px 7px;
 }}
+QToolBar#mainToolbar[productChromePreset="securecrt"],
+QToolBar#mainToolbar[productChromePreset="mremoteng"] {{
+  spacing: 2px;
+  padding: 2px 6px;
+}}
+QToolBar#mainToolbar[productChromePreset="termius"],
+QToolBar#mainToolbar[productChromePreset="remmina"] {{
+  spacing: 3px;
+  padding: 3px 6px;
+}}
+QToolBar#mainToolbar[productChromePreset="termius"] {{
+  background: {colors.window};
+  border-bottom-color: {colors.control_border};
+}}
+QToolBar#layoutToolbar[productChromePreset="securecrt"],
+QToolBar#layoutToolbar[productChromePreset="termius"],
+QToolBar#layoutToolbar[productChromePreset="remmina"],
+QToolBar#layoutToolbar[productChromePreset="mremoteng"] {{
+  spacing: 3px;
+  padding: 2px 6px;
+  border-bottom: 1px solid {colors.toolbar_border};
+}}
+QToolBar#layoutToolbar[productChromePreset="termius"] {{
+  background: {colors.window};
+  border-bottom-color: {colors.control_border};
+}}
+QToolBar#layoutToolbar[productChromePreset="remmina"] {{
+  background: {colors.toolbar};
+}}
+QToolBar#layoutToolbar[productChromePreset="securecrt"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="termius"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="remmina"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="mremoteng"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="securecrt"] QLineEdit,
+QToolBar#layoutToolbar[productChromePreset="termius"] QLineEdit,
+QToolBar#layoutToolbar[productChromePreset="remmina"] QLineEdit,
+QToolBar#layoutToolbar[productChromePreset="mremoteng"] QLineEdit {{
+  min-height: 20px;
+  max-height: 24px;
+  padding: 2px 6px;
+}}
 QMenuBar {{
   background: {colors.toolbar};
   color: {colors.control_text};
@@ -6593,6 +6634,15 @@ QFrame#terminalCommandRow {{
   border-left: 1px solid {colors.pane_border};
   border-right: 1px solid {colors.pane_border};
   border-bottom: 1px solid {colors.pane_border};
+}}
+QWidget#terminalPane[productReferenceTerminalChrome="connected-document"] QFrame#terminalHeader {{
+  padding: 3px 7px;
+  border-bottom: 1px solid {colors.pane_border};
+}}
+QWidget#terminalPane[productReferenceTerminalChrome="connected-document"] QLineEdit#terminalInput {{
+  min-height: 22px;
+  max-height: 26px;
+  padding: 2px 7px;
 }}
 QLabel#terminalTitle {{
   color: {colors.control_text};
@@ -7565,7 +7615,7 @@ GUI_DESIGN_PRESETS: tuple[GuiDesignPreset, ...] = (
     _preset(
         id="securecrt",
         label="SecureCRT-style",
-        description="Native Windows terminal workspace with menu chrome, command dock and compact session tabs.",
+        description="Native Windows terminal workspace with menu chrome, Session Manager tree and compact session tabs.",
         profile_width=270,
         log_height=118,
         tab_position="north",

@@ -712,10 +712,10 @@ LIVE_TOPOLOGY_CONTRACTS: dict[str, list[dict[str, object]]] = {
             "max_gap": 80,
         },
         {
-            "id": "workflow-above-workspace-surface",
-            "from": "productWorkflowEvidence",
+            "id": "workspace-surface-above-workflow",
+            "from": "productWorkspaceSurface",
             "relation": "above",
-            "to": "productWorkspaceSurface",
+            "to": "productWorkflowEvidence",
             "max_gap": 50,
         },
         {
@@ -749,10 +749,10 @@ LIVE_TOPOLOGY_CONTRACTS: dict[str, list[dict[str, object]]] = {
             "max_gap": 80,
         },
         {
-            "id": "workflow-above-workspace-surface",
-            "from": "productWorkflowEvidence",
+            "id": "workspace-surface-above-workflow",
+            "from": "productWorkspaceSurface",
             "relation": "above",
-            "to": "productWorkspaceSurface",
+            "to": "productWorkflowEvidence",
             "max_gap": 50,
         },
         {
@@ -786,10 +786,10 @@ LIVE_TOPOLOGY_CONTRACTS: dict[str, list[dict[str, object]]] = {
             "max_gap": 80,
         },
         {
-            "id": "workflow-above-workspace-surface",
-            "from": "productWorkflowEvidence",
+            "id": "workspace-surface-above-workflow",
+            "from": "productWorkspaceSurface",
             "relation": "above",
-            "to": "productWorkspaceSurface",
+            "to": "productWorkflowEvidence",
             "max_gap": 50,
         },
         {
@@ -1246,7 +1246,32 @@ def _capture_live_gui(
                     f"must equal requested size {REQUESTED_SIZE}"
                 )
 
+            # Capture the connected product document rather than the generic
+            # welcome card.  prepare_product_reference_tab intentionally
+            # returns home so route contracts can verify the recovery path;
+            # temporarily selecting the reference tab here makes the evidence
+            # image represent the actual SecureCRT/Termius/Remmina/mRemoteNG
+            # connected workspace users see after opening a session.
+            capture_index = -1
+            reference_route = EXPECTED_PRESET_REFERENCE_TAB_ROUTES.get(preset.id)
+            if reference_route is not None:
+                capture_index = find_live_tab_index(window.tabs, reference_route.active_tab_label)
+                if capture_index >= 0:
+                    window.tabs.setCurrentIndex(capture_index)
+                    process_events(app)
+                    if window.tabs.currentIndex() != capture_index:
+                        errors.append(
+                            f"{preset.id} live GUI could not select connected capture tab: "
+                            f"expected {capture_index}, got {window.tabs.currentIndex()}"
+                        )
             pixmap = normalize_capture_pixmap(window.grab())
+            if capture_index >= 0 and reference_route is not None:
+                home_index = window.find_tab_by_role(reference_route.home_tab_role)
+                if home_index >= 0:
+                    window.tabs.setCurrentIndex(home_index)
+                    window.tabs.setProperty(reference_route.home_tab_property, reference_route.home_tab_label)
+                    window.tabs.setProperty(reference_route.returned_home_label_property, reference_route.home_tab_label)
+                    process_events(app)
             metrics = metrics_from_qimage(pixmap.toImage())
             errors.extend(validate_metrics(preset.id, metrics))
             contract_evidence = collect_live_contract_evidence(window, preset.id)

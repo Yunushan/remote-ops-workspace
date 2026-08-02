@@ -37,12 +37,12 @@
       ],
       "color_anchors": [
         {"id": "new-host-green", "point": [1054, 58], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
-        {"id": "selected-host-outline", "point": [392, 406], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
-        {"id": "details-connect", "point": [1010, 258], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]}
+        {"id": "selected-host-outline", "point": [72, 176], "rgb_min": [80, 180, 120], "rgb_max": [120, 230, 170]},
+        {"id": "details-connect", "point": [1010, 350], "rgb_min": [20, 70, 50], "rgb_max": [80, 220, 160]}
       ],
       "line_anchors": [
         {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [20, 25, 28], "rgb_max": [35, 45, 50], "min_match_ratio": 0.99},
-        {"id": "details-divider", "from": [981, 106], "to": [981, 720], "rgb_min": [35, 45, 50], "rgb_max": [70, 85, 95], "min_match_ratio": 0.99}
+        {"id": "details-divider", "from": [786, 154], "to": [786, 575], "rgb_min": [35, 55, 75], "rgb_max": [80, 110, 140], "min_match_ratio": 0.99}
       ],
       "topology": [
         {"id": "toolbar-above-hosts", "from": "host-toolbar", "relation": "above", "to": "hosts-sidebar", "min_gap": 12, "max_gap": 30},
@@ -57,16 +57,16 @@
         {"id": "profiles-sidebar", "box": [18, 106, 320, 736], "mean_luminance": [235, 255], "min_unique_colors": 80},
         {"id": "protocol-host-controls", "box": [170, 46, 625, 75], "mean_luminance": [180, 245], "min_unique_colors": 35},
         {"id": "saved-connections", "box": [338, 106, 1262, 720], "mean_luminance": [230, 255], "min_unique_colors": 100},
-        {"id": "connection-table", "box": [356, 205, 1244, 351], "mean_luminance": [220, 250], "min_unique_colors": 70}
+        {"id": "connection-table", "box": [356, 205, 1244, 351], "mean_luminance": [120, 240], "min_unique_colors": 70}
       ],
       "color_anchors": [
         {"id": "connect-green", "point": [560, 59], "rgb_min": [45, 110, 45], "rgb_max": [85, 160, 85]},
-        {"id": "selected-connection", "point": [500, 255], "rgb_min": [210, 225, 245], "rgb_max": [230, 245, 255]},
+        {"id": "selected-connection", "point": [500, 255], "rgb_min": [180, 210, 230], "rgb_max": [235, 250, 255]},
         {"id": "profile-filter-focus", "point": [136, 172], "rgb_min": [25, 100, 205], "rgb_max": [70, 145, 245]}
       ],
       "line_anchors": [
         {"id": "toolbar-bottom-rule", "from": [0, 88], "to": [1279, 88], "rgb_min": [250, 250, 250], "rgb_max": [255, 255, 255], "min_match_ratio": 0.99},
-        {"id": "connection-table-header", "from": [356, 205], "to": [1244, 205], "rgb_min": [180, 190, 200], "rgb_max": [210, 220, 230], "min_match_ratio": 0.99}
+        {"id": "connection-table-header", "from": [356, 205], "to": [1020, 205], "rgb_min": [180, 190, 200], "rgb_max": [220, 230, 240], "min_match_ratio": 0.99}
       ],
       "topology": [
         {"id": "toolbar-above-profiles", "from": "client-toolbar", "relation": "above", "to": "profiles-sidebar", "min_gap": 12, "max_gap": 30},

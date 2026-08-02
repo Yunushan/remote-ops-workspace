@@ -532,6 +532,20 @@ jobs:
           python release-tooling/scripts/check_release_publish_assets.py --assets-dir release-assets --tag "$RELEASE_TAG"
           --repository "${{ github.repository }}"
           --native-release-channel "${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' && 'production-signed' || 'unsigned-preview' }}"
+      - name: Generate boundary-aware release notes
+        run: >-
+          python release-tooling/scripts/write_release_notes.py
+          --tag "$RELEASE_TAG"
+          --channel "${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' && 'production-signed' || 'unsigned-preview' }}"
+          --repository "${{ github.repository }}"
+          --root .
+          --out release-notes.md
+      - name: Require non-empty release notes
+        shell: bash
+        run: |
+          test -s release-notes.md
+          grep -Fq "Support boundaries" release-notes.md
+          grep -Fq "$RELEASE_TAG" release-notes.md
       - name: Attest release asset provenance
         uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763 # v4.1.1
         with:
@@ -542,6 +556,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' && format('{0} (UNSIGNED PREVIEW)', env.RELEASE_TAG) || env.RELEASE_TAG }}
           prerelease: ${{ needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' }}
+          body_path: release-notes.md
           fail_on_unmatched_files: true
           files: release-assets/**
   publish-protected-platform-evidence:

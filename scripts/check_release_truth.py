@@ -62,6 +62,9 @@ PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
 )
 
 REQUIRED_DOC_SNIPPETS = (
+    "docs/PRODUCTION_READINESS.md",
+    "complete 100/100 production-readiness checklist",
+    "check_repository_governance.py --repository <owner/repo>",
     "remote-ops-workspace-v1.0.15-linux-<amd64|arm64>.deb",
     "remote-ops-workspace-v1.0.15-linux-<x86_64|aarch64>.rpm",
     "remote-ops-workspace-v1.0.15-linux-<x86_64|aarch64>.AppImage",
@@ -156,6 +159,7 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
 )
 
 REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
+    "docs/PRODUCTION_READINESS.md",
     "python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",

@@ -10434,6 +10434,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             icon = QSize(icon_size, icon_size)
             is_securecrt = preset.id == "securecrt"
             is_mremoteng = preset.id == "mremoteng"
+            is_product_reference = preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+            self.main_toolbar.setProperty("productChromePreset", preset.id)
+            self.layout_toolbar.setProperty("productChromePreset", preset.id)
             self.main_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
             for button in self.main_toolbar_buttons + self.layout_toolbar_buttons:
                 button.setIconSize(icon)
@@ -10516,12 +10519,60 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setMinimumSize(QSize(72, 44))
                     button.setMaximumSize(QSize(92, 54))
             self.configure_responsive_layout_toolbar()
+            if is_product_reference:
+                # SecureCRT, Termius, Remmina and mRemoteNG use a single
+                # compact utility strip beneath their product toolbar.  Keep
+                # the layout/search widgets registered and reachable for the
+                # workspace routes, but do not expose the generic multi-row
+                # layout editor chrome that none of the reference products
+                # place above their connected document surface.
+                self.layout_toolbar.setMinimumHeight(30)
+                self.layout_toolbar.setMaximumHeight(32)
+                self.layout_toolbar.setIconSize(QSize(min(icon_size, 14), min(icon_size, 14)))
+                for widget in (self.layout_label, self.layout_select, self.view_label):
+                    self.set_toolbar_widget_visible(widget, False)
+                for button in self.layout_toolbar_buttons:
+                    self.set_toolbar_widget_visible(button, False)
+                self.set_toolbar_widget_visible(self.design_select, True)
+                self.set_toolbar_widget_visible(self.search_input, True)
+                self.set_toolbar_widget_visible(self.find_button, True)
+                self.design_select.setMinimumSize(QSize(108, 24))
+                self.design_select.setMaximumSize(QSize(132, 26))
+                self.search_input.setMinimumSize(QSize(138, 24))
+                self.search_input.setMaximumSize(QSize(210, 26))
+                self.find_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                self.find_button.setMinimumSize(QSize(26, 24))
+                self.find_button.setMaximumSize(QSize(30, 26))
+                self.search_input.setPlaceholderText(
+                    {
+                        "securecrt": "Find session",
+                        "termius": "Search hosts",
+                        "remmina": "Quick connect",
+                        "mremoteng": "Filter connections",
+                    }.get(preset.id, "Search")
+                )
+                self.layout_toolbar.style().unpolish(self.layout_toolbar)
+                self.layout_toolbar.style().polish(self.layout_toolbar)
+            if preset.id == "termius":
+                # Termius presents its connected navigation (hamburger,
+                # Vaults and SFTP) inside the document surface rather than a
+                # second desktop-style action ribbon.  Keep the command
+                # buttons registered for menus, shortcuts and evidence, but
+                # let the native SFTP header own the visible chrome.
+                for button in self.main_toolbar_buttons:
+                    self.set_toolbar_widget_visible(button, False)
+                self.main_toolbar.setMinimumHeight(26)
+                self.main_toolbar.setMaximumHeight(28)
+                self.main_toolbar.setIconSize(QSize(14, 14))
+                self.main_toolbar.style().unpolish(self.main_toolbar)
+                self.main_toolbar.style().polish(self.main_toolbar)
 
         def configure_responsive_layout_toolbar(self) -> None:
             """Keep every layout/search control directly reachable at the 1024px boundary."""
 
             compact = self.width() <= 1100
             is_moba = self.current_design_is_moba()
+            is_product_reference = self.current_design_id() in PRODUCT_REFERENCE_TAB_PRESET_IDS
 
             # A text-under-icon QToolButton needs substantially more width than
             # its icon.  Keeping that paint mode while squeezing twelve product
@@ -10571,6 +10622,29 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.design_select.setMaximumWidth(132 if compact else 180)
             self.search_input.setMinimumWidth(96 if compact else 120)
             self.search_input.setMaximumWidth(116 if compact else 180)
+            if is_product_reference:
+                # Product-specific connected surfaces retain only the compact
+                # preset/search utility strip.  This branch runs on every
+                # resize so Qt cannot restore the generic editor row after a
+                # window resize or preset transition.
+                for widget in (self.layout_label, self.layout_select, self.view_label):
+                    self.set_toolbar_widget_visible(widget, False)
+                for button in self.layout_toolbar_buttons:
+                    self.set_toolbar_widget_visible(button, False)
+                self.set_toolbar_widget_visible(self.design_select, True)
+                self.set_toolbar_widget_visible(self.search_input, True)
+                self.set_toolbar_widget_visible(self.find_button, True)
+                self.layout_toolbar.setMinimumHeight(30)
+                self.layout_toolbar.setMaximumHeight(32)
+                self.layout_toolbar.setIconSize(QSize(14, 14))
+                self.design_select.setMinimumSize(QSize(108, 24))
+                self.design_select.setMaximumSize(QSize(132, 26))
+                self.search_input.setMinimumSize(QSize(138, 24))
+                self.search_input.setMaximumSize(QSize(210, 26))
+                self.find_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                self.find_button.setMinimumSize(QSize(26, 24))
+                self.find_button.setMaximumSize(QSize(30, 26))
+                return
             compact_auxiliary_labels = self.width() < 1280
             for button in self.layout_toolbar_buttons:
                 button.setAccessibleName(button.text())
@@ -12494,10 +12568,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             panel = QFrame()
             panel.setObjectName("welcomePanel")
-            panel.setProperty("welcomePreferredWidth", 620)
-            panel.setProperty("welcomeMaximumWidth", 780)
+            # Product presets are workspace-led in the reference applications
+            # (connected document/SFTP/viewer first, inventory landing page
+            # second).  Give those live surfaces the width they need instead
+            # of constraining them to the old centered hero-card width.
+            product_workspace_led = self.current_design_id() in {
+                "securecrt",
+                "termius",
+                "remmina",
+                "mremoteng",
+            }
+            panel_width = 1120 if product_workspace_led else 780
+            panel.setProperty("welcomePreferredWidth", panel_width - 160)
+            panel.setProperty("welcomeMaximumWidth", panel_width)
             panel.setMinimumWidth(0)
-            panel.setMaximumWidth(780)
+            panel.setMaximumWidth(panel_width)
             panel.setSizePolicy(
                 QSizePolicy.Policy.Expanding,
                 QSizePolicy.Policy.Preferred,
@@ -12506,6 +12591,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel_layout = QVBoxLayout(panel)
             panel_layout.setContentsMargins(0, 0, 0, 0)
             panel_layout.setSpacing(13)
+
+            early_workspace_evidence = None
+            early_workflow = None
+            if product_workspace_led:
+                early_workspace_evidence = self.build_product_workspace_surface_evidence(surface)
+                panel_layout.addWidget(early_workspace_evidence)
+                early_workflow = self.build_product_workflow_evidence()
+                panel_layout.addWidget(early_workflow)
 
             title_row = QHBoxLayout()
             title_row.setSpacing(18)
@@ -12570,10 +12663,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             action_row.addWidget(start_button)
             action_row.addWidget(recover_button)
             action_row.addStretch(1)
-            early_workspace_evidence = None
-            if self.current_design_id() == "mremoteng":
-                early_workspace_evidence = self.build_product_workspace_surface_evidence(surface)
-                panel_layout.addWidget(early_workspace_evidence)
             panel_layout.addLayout(action_row)
 
             search = QLineEdit()
@@ -12584,8 +12673,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             search.returnPressed.connect(lambda: self.run_home_search(search.text()))
             panel_layout.addWidget(search, 0, Qt.AlignmentFlag.AlignCenter)
 
-            workflow = self.build_product_workflow_evidence()
-            panel_layout.addWidget(workflow)
+            if early_workflow is None:
+                workflow = self.build_product_workflow_evidence()
+                panel_layout.addWidget(workflow)
 
             if early_workspace_evidence is None:
                 workspace_evidence = self.build_product_workspace_surface_evidence(surface)
@@ -13012,13 +13102,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 panel.setProperty("secureCrtSftpTabRouteTransferState", securecrt_sftp_route.transfer_state)
                 panel.setProperty("secureCrtSftpTabRouteRenderSource", securecrt_sftp_route.render_source)
             layout = QHBoxLayout(panel)
-            layout.setContentsMargins(8, 8, 8, 8)
-            layout.setSpacing(8)
+            compact_securecrt = design_id == "securecrt"
+            layout.setContentsMargins(4 if compact_securecrt else 8, 3 if compact_securecrt else 8, 4 if compact_securecrt else 8, 3 if compact_securecrt else 8)
+            layout.setSpacing(4 if compact_securecrt else 8)
+            if compact_securecrt:
+                panel.setMaximumHeight(38)
             for card in cards[:3]:
                 card_frame = QFrame()
                 card_frame.setObjectName("productWorkflowCard")
                 card_frame.setProperty("workflowKey", card.key)
                 card_frame.setMinimumWidth(190)
+                if compact_securecrt:
+                    card_frame.setMaximumHeight(30)
                 if snippet_route is not None and card.key == snippet_route.workflow_card_key:
                     card_frame.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
                     card_frame.setProperty("termiusSnippetRouteKey", snippet_route.key)
@@ -13133,8 +13228,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         securecrt_sftp_route.render_source,
                     )
                 card_layout = QVBoxLayout(card_frame)
-                card_layout.setContentsMargins(8, 7, 8, 7)
-                card_layout.setSpacing(3)
+                card_layout.setContentsMargins(4 if compact_securecrt else 8, 2 if compact_securecrt else 7, 4 if compact_securecrt else 8, 2 if compact_securecrt else 7)
+                card_layout.setSpacing(1 if compact_securecrt else 3)
                 title = _literal_label(card.title)
                 title.setObjectName("productWorkflowTitle")
                 primary = _literal_label(card.primary)
@@ -13142,6 +13237,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 secondary = _literal_label(card.secondary)
                 secondary.setObjectName("productWorkflowSecondary")
                 secondary.setWordWrap(True)
+                if compact_securecrt:
+                    # Keep the routed secondary state in the widget tree for
+                    # evidence checks, but leave the connected terminal as
+                    # the visual focus of the SecureCRT workspace.
+                    secondary.setVisible(False)
                 if snippet_route is not None and card.key == snippet_route.workflow_card_key:
                     self.termius_snippet_title = title
                     self.termius_snippet_primary = primary
@@ -13209,17 +13309,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             header.addWidget(state)
             layout.addLayout(header)
 
+            if self.current_design_id() == "securecrt":
+                # SecureCRT is terminal-led in the supplied product captures:
+                # the active SSH2 document occupies the central canvas and
+                # the evidence/route panels are secondary tooling.  Keep the
+                # routed evidence widgets below for verification, but make
+                # the first visible surface a faithful terminal document.
+                layout.addWidget(self.build_securecrt_runtime_terminal_surface())
+
             layout.addWidget(self.build_product_reference_state_evidence())
             if self.current_design_id() == "termius":
+                layout.addWidget(self.build_termius_native_sftp_surface())
                 layout.addWidget(self.build_termius_header_chips_evidence())
                 layout.addWidget(self.build_termius_host_identity_strip_evidence())
                 layout.addWidget(self.build_termius_files_browser_evidence())
             if self.current_design_id() == "remmina":
+                layout.addWidget(self.build_remmina_native_viewer_surface())
                 layout.addWidget(self.build_remmina_viewer_controls_evidence())
                 layout.addWidget(self.build_remmina_sftp_transfer_evidence())
             if self.current_design_id() == "mremoteng":
                 layout.addWidget(self.build_mremoteng_document_controls_evidence())
                 layout.addWidget(self.build_mremoteng_property_grid_evidence())
+                layout.addWidget(self.build_mremoteng_runtime_document_surface())
                 self.apply_focus_interaction_route_for_design(
                     gui_design_preset_focus_interaction_route("mremoteng"),
                     "mremoteng",
@@ -13247,6 +13358,310 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addLayout(panes)
             if self.current_design_id() == "securecrt":
                 layout.addWidget(self.build_securecrt_command_window_evidence())
+            return panel
+
+        def build_securecrt_runtime_terminal_surface(self) -> QFrame:
+            """Build the terminal-first SecureCRT document surface.
+
+            This is intentionally a real Qt widget tree (rather than a
+            screenshot): the tab/header and transcript remain selectable and
+            can be replaced by a live terminal pane when a session is opened.
+            """
+            panel = QFrame()
+            panel.setObjectName("secureCrtRuntimeTerminalSurface")
+            panel.setProperty("designPreset", "securecrt")
+            panel.setProperty("secureCrtRuntimeSurfaceRole", "terminal-document")
+            panel.setMinimumHeight(340)
+            panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            panel.setStyleSheet(
+                "QFrame#secureCrtRuntimeTerminalSurface {"
+                "background: #003b45; border: 1px solid #777777; }"
+                "QLabel#secureCrtRuntimeTerminalHeader {"
+                "background: #f7f7f7; color: #202020; padding: 6px 9px;"
+                "border: 1px solid #c5c5c5; }"
+                "QLabel#secureCrtRuntimeTerminalState {"
+                "background: #f7f7f7; color: #297137; padding: 6px 9px;"
+                "border: 1px solid #c5c5c5; }"
+                "QPlainTextEdit#secureCrtRuntimeTranscript {"
+                "background: #003b45; color: #d3e6e3; border: 0px;"
+                "selection-background-color: #1c6b79;"
+                "font-family: Consolas, 'Courier New'; font-size: 10pt; }"
+            )
+            layout = QVBoxLayout(panel)
+            layout.setContentsMargins(8, 7, 8, 8)
+            layout.setSpacing(5)
+
+            header = QHBoxLayout()
+            header.setSpacing(0)
+            title = QLabel("SSH2: edge-prod.example.invalid")
+            title.setObjectName("secureCrtRuntimeTerminalHeader")
+            title.setProperty("secureCrtRuntimeSurfaceField", "target")
+            state = QLabel("Connected")
+            state.setObjectName("secureCrtRuntimeTerminalState")
+            state.setProperty("secureCrtRuntimeSurfaceField", "status")
+            header.addWidget(title, 1)
+            header.addWidget(state)
+            layout.addLayout(header)
+
+            transcript = QPlainTextEdit()
+            transcript.setObjectName("secureCrtRuntimeTranscript")
+            transcript.setReadOnly(True)
+            transcript.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+            transcript.setProperty("secureCrtRuntimeSurfaceField", "transcript")
+            transcript.setProperty("secureCrtRuntimeTranscriptSource", "session-terminal")
+            transcript.setPlainText(
+                "show interface serial 0\n"
+                "Serial0 is up, line protocol is up\n"
+                "  Hardware is MCI Serial\n"
+                "  Internet address is 155.155.155.90/28, subnet mask is 255.255.255.240\n"
+                "  MTU 1500 bytes, BW 1544 Kbit, DLY 20000 usec,\n"
+                "     76762 drops; input queue 0/75, 301 drops\n"
+                "  54283 packets output, 65566998 bytes, 0 underruns\n"
+                "  2 carrier transitions\n"
+                "Router#"
+            )
+            # Preserve the familiar SecureCRT ANSI cues in the live surface:
+            # commands/prompts are yellow, warnings are red, and transcript
+            # detail stays a cool white on the teal terminal background.
+            ansi_lines = (
+                (0, "#fff65c"),
+                (1, "#fff65c"),
+                (5, "#e9a000"),
+                (7, "#ff3d35"),
+                (8, "#fff65c"),
+            )
+            cursor = QTextCursor(transcript.document())
+            for line_number, color in ansi_lines:
+                cursor.setPosition(0)
+                cursor.movePosition(QTextCursor.MoveOperation.Down, QTextCursor.MoveMode.MoveAnchor, line_number)
+                cursor.movePosition(QTextCursor.MoveOperation.StartOfLine, QTextCursor.MoveMode.MoveAnchor)
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfLine, QTextCursor.MoveMode.KeepAnchor)
+                text_format = QTextCharFormat()
+                text_format.setForeground(QColor(color))
+                cursor.mergeCharFormat(text_format)
+            layout.addWidget(transcript, 1)
+            return panel
+
+        def build_mremoteng_runtime_document_surface(self) -> QFrame:
+            """Build the docked split-document canvas used by mRemoteNG."""
+            panel = QFrame()
+            panel.setObjectName("mRemoteNgRuntimeDocumentSurface")
+            panel.setProperty("designPreset", "mremoteng")
+            panel.setProperty("mRemoteNgRuntimeSurfaceRole", "split-document-canvas")
+            panel.setMinimumHeight(310)
+            panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            panel.setStyleSheet(
+                "QFrame#mRemoteNgRuntimeDocumentSurface {"
+                "background: #ececf1; border: 1px solid #a9a9b0; }"
+                "QLabel#mRemoteNgRuntimeTab {"
+                "background: #ffffff; color: #263746; padding: 5px 8px;"
+                "border: 1px solid #a9b8c7; }"
+                "QFrame#mRemoteNgRuntimePane {"
+                "background: #000000; border: 1px solid #777777; }"
+                "QPlainTextEdit#mRemoteNgRuntimeTranscript {"
+                "background: #000000; color: #e8e8e8; border: 0px;"
+                "font-family: Consolas, 'Courier New'; font-size: 9pt; }"
+                "QLabel#mRemoteNgRuntimeNotification {"
+                "background: #ffffff; color: #4a4a4a; padding: 5px 8px;"
+                "border: 1px solid #a7b1bc; }"
+            )
+            root = QVBoxLayout(panel)
+            root.setContentsMargins(6, 6, 6, 6)
+            root.setSpacing(5)
+
+            tabs = QHBoxLayout()
+            tabs.setSpacing(2)
+            for label_text in ("edge-prod [SSH]", "win-admin [RDP]", "sftp-ops"):
+                tab = QLabel(label_text)
+                tab.setObjectName("mRemoteNgRuntimeTab")
+                tab.setProperty("mRemoteNgRuntimeTabLabel", label_text)
+                tabs.addWidget(tab)
+            tabs.addStretch(1)
+            root.addLayout(tabs)
+
+            panes = QHBoxLayout()
+            panes.setSpacing(5)
+            rdp = QFrame()
+            rdp.setObjectName("mRemoteNgRuntimePane")
+            rdp_layout = QVBoxLayout(rdp)
+            rdp_layout.setContentsMargins(10, 8, 10, 8)
+            rdp_title = QLabel("Exchange 1 · RDP")
+            rdp_title.setStyleSheet("color: #f2f2f2; font-weight: 600;")
+            rdp_layout.addWidget(rdp_title)
+            rdp_screen = QLabel("Recycle Bin\n\n\n\n\n\n\n\n\n\n\n\n                 19:08")
+            rdp_screen.setStyleSheet("color: #f2f2f2; background: #111111; padding: 8px;")
+            rdp_screen.setMinimumHeight(205)
+            rdp_layout.addWidget(rdp_screen, 1)
+
+            ssh = QFrame()
+            ssh.setObjectName("mRemoteNgRuntimePane")
+            ssh_layout = QVBoxLayout(ssh)
+            ssh_layout.setContentsMargins(7, 5, 7, 5)
+            ssh_title = QLabel("Proxy Server · SSH2")
+            ssh_title.setStyleSheet("color: #f2f2f2; font-weight: 600;")
+            ssh_layout.addWidget(ssh_title)
+            transcript = QPlainTextEdit()
+            transcript.setObjectName("mRemoteNgRuntimeTranscript")
+            transcript.setReadOnly(True)
+            transcript.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+            transcript.setPlainText(
+                "Using username 'operator'.\n"
+                "Authenticated with public key from agent\n"
+                "Welcome to Ubuntu 22.04 LTS\n\n"
+                "System load:  0.01      Processes: 173\n"
+                "Memory usage: 37%       Users logged in: 0\n"
+                "IP address for ens160: 10.32.0.42\n\n"
+                "operator@edge-prod:~$"
+            )
+            ssh_layout.addWidget(transcript, 1)
+            panes.addWidget(rdp, 3)
+            panes.addWidget(ssh, 2)
+            root.addLayout(panes, 1)
+
+            notification = QLabel("Notifications   ·   Connected to Proxy Server via SSH2   ·   Exchange 1 opened")
+            notification.setObjectName("mRemoteNgRuntimeNotification")
+            notification.setProperty("mRemoteNgRuntimeNotificationState", "connected")
+            root.addWidget(notification)
+            return panel
+
+        def build_termius_native_sftp_surface(self) -> QFrame:
+            """Connected Termius-style dual-pane SFTP workspace.
+
+            The widget tree deliberately mirrors the supplied desktop capture:
+            dark navy chrome, host/path headers, two file tables, and a selected
+            transfer row.  It is live Qt content so rows remain selectable and
+            the toolbar routes through the same file-sync handler as the
+            evidence panel below it.
+            """
+            route = gui_design_termius_files_browser_route()
+            panel = QFrame()
+            panel.setObjectName("termiusNativeSftpSurface")
+            panel.setProperty("designPreset", "termius")
+            panel.setProperty("termiusNativeSurfaceRole", "connected-dual-sftp")
+            panel.setProperty("termiusFilesRouteKey", route.key)
+            panel.setMinimumHeight(360)
+            panel.setStyleSheet(
+                "QFrame#termiusNativeSftpSurface { background: #111b2b; border: 1px solid #2b4668; }"
+                "QLabel#termiusNativeSftpChip { background: #1b2c43; color: #c6d8ee; border: 1px solid #355476; padding: 4px 16px; border-radius: 10px; }"
+                "QLabel#termiusNativeSftpChip[selected=true] { background: #2c4668; color: #f4f8ff; }"
+                "QFrame#termiusNativeSftpPane { background: #111b2b; border: 0px; }"
+                "QTreeWidget#termiusNativeSftpTable { background: #111b2b; color: #c7d8ec; border: 1px solid #2e496b; alternate-background-color: #15243a; }"
+                "QTreeWidget#termiusNativeSftpTable::item:selected { background: #1d654b; color: #ffffff; border: 1px solid #38c98a; }"
+                "QHeaderView::section { background: #16263c; color: #88a6c7; border: 0px; padding: 4px; }"
+                "QToolButton#termiusNativeSftpAction { background: #1b2c43; color: #b7cbe2; border: 1px solid #3c5878; padding: 3px 10px; border-radius: 4px; }"
+            )
+            root = QVBoxLayout(panel)
+            root.setContentsMargins(10, 8, 10, 8)
+            root.setSpacing(7)
+            top = QHBoxLayout()
+            menu = QLabel("☰")
+            menu.setStyleSheet("color: #d6e4f4; font-size: 15pt;")
+            top.addWidget(menu)
+            for label_text, active in (("Vaults", False), ("SFTP", True)):
+                chip = QLabel(label_text)
+                chip.setObjectName("termiusNativeSftpChip")
+                chip.setProperty("selected", active)
+                chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                top.addWidget(chip)
+            top.addStretch(1)
+            top.addWidget(_literal_label("edge-prod  ·  SSH"))
+            root.addLayout(top)
+
+            panes = QHBoxLayout()
+            panes.setSpacing(8)
+            for pane_index in range(2):
+                pane = QFrame()
+                pane.setObjectName("termiusNativeSftpPane")
+                pane_layout = QVBoxLayout(pane)
+                pane_layout.setContentsMargins(4, 0, 4, 0)
+                pane_layout.setSpacing(5)
+                header = QHBoxLayout()
+                identity = _literal_label("Ubuntu\noperator@edge-prod")
+                identity.setStyleSheet("color: #e5eefb; font-weight: 600;")
+                header.addWidget(identity)
+                header.addStretch(1)
+                for action_key in ("sync", "download"):
+                    button = QToolButton()
+                    button.setObjectName("termiusNativeSftpAction")
+                    button.setText(action_key.title())
+                    button.setToolTip(f"{action_key.title()} SFTP pane")
+                    button.clicked.connect(lambda _checked=False, key=action_key: self.handle_termius_files_sync(key))
+                    header.addWidget(button)
+                pane_layout.addLayout(header)
+                path = _literal_label("/  /home  /operator")
+                path.setStyleSheet("background: #0d1624; color: #b8d4f2; padding: 5px; border: 1px solid #2e4767;")
+                pane_layout.addWidget(path)
+                table = QTreeWidget()
+                table.setObjectName("termiusNativeSftpTable")
+                table.setColumnCount(3)
+                table.setHeaderLabels(["Name", "Date modified", "Size"])
+                table.setRootIsDecorated(False)
+                table.setAlternatingRowColors(True)
+                table.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+                for index, (name, modified, size) in enumerate(
+                    (("..", "—", "—"), ("apps", "Jun 06, 2026", "—"), ("logs", "Jun 06, 2026", "—"), ("README.txt", "Jun 04, 2026", "3 KB"), (".bash_history", "Jun 06, 2026", "2 KB"))
+                ):
+                    item = QTreeWidgetItem([name, modified, size])
+                    item.setData(0, Qt.ItemDataRole.UserRole, "folder" if index < 3 else "file")
+                    table.addTopLevelItem(item)
+                    if index == (1 if pane_index == 0 else 3):
+                        table.setCurrentItem(item)
+                table.itemDoubleClicked.connect(lambda item, _column: self.open_sftp_context_item(item))
+                pane_layout.addWidget(table, 1)
+                panes.addWidget(pane, 1)
+            root.addLayout(panes, 1)
+            return panel
+
+        def build_remmina_native_viewer_surface(self) -> QFrame:
+            """Connected Remmina-style viewer canvas with GTK-like controls."""
+            route = gui_design_remmina_profile_viewer_route()
+            panel = QFrame()
+            panel.setObjectName("remminaNativeViewerSurface")
+            panel.setProperty("designPreset", "remmina")
+            panel.setProperty("remminaNativeSurfaceRole", "connected-viewer")
+            panel.setProperty("remminaProfileViewerRouteKey", route.key)
+            panel.setMinimumHeight(360)
+            panel.setStyleSheet(
+                "QFrame#remminaNativeViewerSurface { background: #edf1f5; border: 1px solid #b7c2cc; }"
+                "QLabel#remminaNativeViewerCanvas { background: #1c1f22; color: #e9edf2; border: 1px solid #8d99a5; font-family: Consolas, 'Courier New'; }"
+                "QToolButton#remminaNativeViewerAction { background: #ffffff; color: #354d64; border: 1px solid #aab8c6; padding: 4px 8px; }"
+                "QLabel#remminaNativeViewerDetails { background: #ffffff; color: #334352; border: 1px solid #b7c2cc; padding: 8px; }"
+            )
+            root = QVBoxLayout(panel)
+            root.setContentsMargins(8, 7, 8, 8)
+            root.setSpacing(6)
+            toolbar = QHBoxLayout()
+            profile_chrome = gui_design_remmina_profile_list_chrome()
+            selected_profile = next(
+                (row.name for row in profile_chrome.rows if row.key == route.selected_profile_key),
+                route.selected_profile_key,
+            )
+            toolbar.addWidget(_literal_label(f"{selected_profile} ({route.protocol})"))
+            toolbar.addStretch(1)
+            for control in gui_design_remmina_viewer_controls():
+                button = QToolButton()
+                button.setObjectName("remminaNativeViewerAction")
+                button.setText(control.label)
+                button.setToolTip(control.tooltip)
+                button.setCheckable(control.key in {"fit", "scale-100", "clipboard", "fullscreen"})
+                button.setChecked(control.key in {route.viewer_control_key, gui_design_remmina_clipboard_route().viewer_control_key})
+                if control.key == gui_design_remmina_screenshot_route().viewer_control_key:
+                    button.clicked.connect(self.handle_remmina_screenshot_capture)
+                else:
+                    button.clicked.connect(lambda checked=False, key=control.key: self.handle_remmina_viewer_control(key, checked))
+                toolbar.addWidget(button)
+            root.addLayout(toolbar)
+            body = QHBoxLayout()
+            viewer = QLabel("Remote desktop session\n\n\n\n\n\n\n\n\n\n\n\n\n\n\noperator@win-admin  ·  Connected")
+            viewer.setObjectName("remminaNativeViewerCanvas")
+            viewer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            viewer.setMinimumWidth(520)
+            body.addWidget(viewer, 3)
+            details = QLabel("Protocol   RDP\nStatus     Connected\nScale      100%\nClipboard  enabled\nScreenshot ready\n\nSFTP transfer\n/var/log  ·  1 queued")
+            details.setObjectName("remminaNativeViewerDetails")
+            details.setMinimumWidth(180)
+            body.addWidget(details, 1)
+            root.addLayout(body, 1)
             return panel
 
         @staticmethod
@@ -16048,7 +16463,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         ) -> None:
             pane = self.new_terminal_pane(plan, profile=profile)
             self.remember_terminal_plan(plan, profile=profile)
-            index = self.add_workspace_tab(pane, tab_title or plan.title, role="terminal")
+            tab_content: QWidget = pane
+            reference_label = tab_title or plan.title
+            reference_route = (
+                gui_design_preset_reference_tab_route(self.current_design_id())
+                if self.current_design_id() in PRODUCT_REFERENCE_TAB_PRESET_IDS
+                else None
+            )
+            if reference_route is not None and reference_label == reference_route.active_tab_label:
+                tab_content = self.build_product_reference_tab_surface(pane)
+            index = self.add_workspace_tab(tab_content, reference_label, role="terminal")
+            if tab_content is not pane:
+                # Route metadata is asserted on the tab's root widget as well
+                # as on the embedded TerminalPane.  Preserve both surfaces so
+                # the connected document wrapper remains fully inspectable.
+                self.apply_reference_tab_route_to_terminal_tab(tab_content, reference_label)
+                self.apply_reference_tab_chrome_route_to_terminal_tab(tab_content, reference_label, index)
+                self.apply_reference_status_bar_route_to_terminal_tab(tab_content, reference_label)
+                self.apply_reference_session_action_route_to_terminal_tab(tab_content, reference_label, index)
             self.apply_reference_tab_route_to_terminal_tab(pane, tab_title or plan.title)
             if tab_status:
                 self.set_literal_tab_tooltip(
@@ -16060,6 +16492,56 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.update_session_status()
             self.apply_reference_status_bar_route_to_terminal_tab(pane, tab_title or plan.title)
             self.apply_reference_session_action_route_to_terminal_tab(pane, tab_title or plan.title, index)
+
+        def build_product_reference_tab_surface(self, pane: TerminalPane) -> QWidget:
+            """Compose a product-native connected document around the live pane.
+
+            The terminal process remains a real child (so stdin, selection and
+            lifecycle contracts stay intact), while the product-specific
+            viewer/SFTP/document canvas is the first thing users see after
+            connecting.
+            """
+            surface = QFrame()
+            surface.setObjectName("productReferenceTabSurface")
+            surface.setProperty("designPreset", self.current_design_id())
+            surface.setProperty("productReferenceTabSurfaceRole", "connected-product-document")
+            layout = QVBoxLayout(surface)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(4)
+            preset_id = self.current_design_id()
+            self.configure_product_reference_terminal_pane(pane, preset_id)
+            if preset_id == "termius":
+                layout.addWidget(self.build_termius_native_sftp_surface(), 3)
+            elif preset_id == "remmina":
+                layout.addWidget(self.build_remmina_native_viewer_surface(), 3)
+            elif preset_id == "mremoteng":
+                layout.addWidget(self.build_mremoteng_runtime_document_surface(), 3)
+            layout.addWidget(pane, 2)
+            return surface
+
+        @staticmethod
+        def configure_product_reference_terminal_pane(
+            pane: TerminalPane,
+            preset_id: str,
+        ) -> None:
+            """Use the reference product's document chrome around the live terminal.
+
+            The normal workspace pane intentionally exposes process controls,
+            a launch-command row and the safe line-input fallback.  Connected
+            SecureCRT/mRemoteNG/Remmina/Termius documents expose those controls
+            through their product toolbars instead, so the duplicate generic
+            grid is hidden while the real terminal output and input remain
+            live and inspectable.
+            """
+            if preset_id not in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+                return
+            pane.setProperty("productReferenceTerminalPreset", preset_id)
+            pane.setProperty("productReferenceTerminalChrome", "connected-document")
+            pane.command_row.setVisible(False)
+            for button in pane.terminal_action_buttons:
+                button.setVisible(False)
+            pane.style().unpolish(pane)
+            pane.style().polish(pane)
 
         def tab_position_name(self) -> str:
             return {

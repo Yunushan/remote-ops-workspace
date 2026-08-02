@@ -5914,11 +5914,11 @@
         },
         {
           "id": "termius.workspace-surface",
-          "description": "Termius-style central workspace is a host/vault surface with SSH host, files, snippets and port-forward state.",
+          "description": "Termius-style central workspace is a connected dark SFTP document with dual file panes, host identity and transfer state.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "Host terminal workspace",
-              "Vault and snippets",
+              "SFTP",
               "Port fwd : 8080"
             ],
             "src/remote_ops_workspace/gui.py": [
@@ -5928,7 +5928,7 @@
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_termius_workspace",
-              "Vault / Snippets",
+              "SFTP",
               "gui_design_termius_header_chips"
             ]
           }

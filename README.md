@@ -496,6 +496,10 @@ uploads `gui-real-render-windows` and `gui-interactions-windows` independently
 from the Linux `gui-real-render` and `gui-interactions-linux-offscreen`
 artifacts. `python scripts/check_ci_workflow.py` keeps those gates from drifting.
 
+Run the same live interaction gate locally with `make gui-interactions`. It
+covers terminal input, context menus, selection/copy/paste, monitoring
+controls and the six product-style layouts.
+
 The interaction gate declares **1024x768** as the minimum readiness-gated GUI
 window boundary. Every preset must render at that exact size with its visible
 toolbar actions inside the toolbar and with no Qt overflow-extension button;
@@ -536,6 +540,10 @@ python scripts/make_release.py
 The GitHub release workflow is manually promoted from the trusted default branch
 with an immutable tag input such as `v1.0.15`; it builds that tag and uploads
 these assets only after accepted platform evidence is present:
+
+The complete 100/100 production-readiness checklist, including signing secrets,
+real evidence-host prerequisites, and the final promotion sequence, is in
+[`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
 
 Signed installers are the production channel. If protected Windows/macOS
 credentials are unavailable, maintainers may use the manual
@@ -613,6 +621,8 @@ packages and validates staged evidence, but is not counted as the XP host.
 Linux accepted records in the same path must include `linux_smoke_summary`
 runtime, OpenSSL and profile-only legacy crypto proof values alongside the
 captured smoke log hash.
+The complete 100/100 production-readiness checklist and external prerequisite
+matrix is [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
 The `accepted-platform-evidence-assets` job runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
 to copy only same-tag, same-repository, workflow-file, source-head and

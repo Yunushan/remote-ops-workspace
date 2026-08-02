@@ -26,10 +26,26 @@ does not remain listed as planned work.
 
 ## v0.2.x
 
-- Add release signing support for Windows Authenticode and macOS Developer ID.
+Release workflow support for Windows Authenticode and macOS Developer ID is
+implemented in `.github/workflows/release.yml`, but this item is not marked
+production-complete until the protected `release` environment contains the
+required certificate, identity and notarization secrets and a signed release
+has passed the remote asset audit.
 
 ## v0.3.x
 
-- Add Apple notarization for macOS distribution.
-- Add hosted or self-hosted 32-bit Linux and ARMv7 release runners for already declared native package mappings.
-- Android PWA packaging; keep APK publishing gated on a real native Android wrapper.
+- Apple notarization support is implemented in the macOS native workflow; the
+  production prerequisite remains protected Developer ID/notary material.
+- Extended Linux evidence workflows and native package mappings are present for
+  32-bit Linux and ARMv7, but production readiness still requires matching
+  online self-hosted builders and accepted release-bound evidence.
+- The Web/PWA mobile contract is shipped and tested. APK publishing remains
+  intentionally gated on a real native Android wrapper and is not claimed by
+  the Web/PWA release channel.
+
+## Current status
+
+The repository-side implementation and verification gates for these roadmap
+items pass. External release prerequisites are tracked separately in
+[`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md); they must be satisfied
+before a roadmap item is promoted to a 100% production claim.

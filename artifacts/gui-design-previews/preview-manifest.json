@@ -2,8 +2,8 @@
   "contact_sheet": {
     "height": 1392,
     "path": "all-gui-designs-contact-sheet.png",
-    "sha256": "9e52a75ee14b3fb3b55ec5a22784ecf99dc6de582598350a99fe8f119617566c",
-    "size_bytes": 288248,
+    "sha256": "434b111c419cb72eaf87eccb33b9975afa834c43494c883be26c1ed5b2cf9dcd",
+    "size_bytes": 310081,
     "width": 1272
   },
   "contact_thumb": {
@@ -1034,13 +1034,13 @@
     },
     {
       "density": "terminal",
-      "description": "Native Windows terminal workspace with menu chrome, command dock and compact session tabs.",
+      "description": "Native Windows terminal workspace with menu chrome, Session Manager tree and compact session tabs.",
       "id": "securecrt",
       "image": {
         "height": 760,
         "path": "securecrt.png",
-        "sha256": "ea32631162440dfc1e46fa96c803271dccd48c208741e3aafaccd9a45b154ab7",
-        "size_bytes": 45139,
+        "sha256": "430f8a9139b59ad95ac5d7f2cb3fb50f5b4012a622e69d1dd74d9f6c73e5168e",
+        "size_bytes": 51474,
         "width": 1280
       },
       "label": "SecureCRT-style",
@@ -1856,8 +1856,8 @@
       "image": {
         "height": 760,
         "path": "termius.png",
-        "sha256": "463b8d534503a7350149378c68347ee6cdab204394c5e23874372721f8ffa695",
-        "size_bytes": 54158,
+        "sha256": "7bba0276fb8cfa9c63fb51f8d68f7d6b67726aae4dfb0bd3c6ef66291b84d37a",
+        "size_bytes": 49749,
         "width": 1280
       },
       "label": "Termius-style",
@@ -2670,8 +2670,8 @@
       "image": {
         "height": 760,
         "path": "remmina.png",
-        "sha256": "dff24e2690fce00266755a1546c338f405d05f36e79c4dd06c051c6af299253e",
-        "size_bytes": 52407,
+        "sha256": "bb38bc83b3a60d797bd5b5074b4e2fb43ed8f472c02853105bba6f833603c6f6",
+        "size_bytes": 78340,
         "width": 1280
       },
       "label": "Remmina-style",

@@ -10551,21 +10551,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         "mremoteng": "Filter connections",
                     }.get(preset.id, "Search")
                 )
-                self.layout_toolbar.style().unpolish(self.layout_toolbar)
-                self.layout_toolbar.style().polish(self.layout_toolbar)
+                layout_toolbar_style = _widget_style(self.layout_toolbar)
+                layout_toolbar_style.unpolish(self.layout_toolbar)
+                layout_toolbar_style.polish(self.layout_toolbar)
             if preset.id == "termius":
                 # Termius presents its connected navigation (hamburger,
                 # Vaults and SFTP) inside the document surface rather than a
-                # second desktop-style action ribbon.  Keep the command
-                # buttons registered for menus, shortcuts and evidence, but
-                # let the native SFTP header own the visible chrome.
+                # second desktop-style action ribbon.  Keep the registered
+                # product actions visible as a compact icon-only strip so
+                # keyboard/mouse routes and the 1024px interaction contract
+                # remain reachable, while the native SFTP header owns the
+                # dominant connected chrome.
                 for button in self.main_toolbar_buttons:
-                    self.set_toolbar_widget_visible(button, False)
-                self.main_toolbar.setMinimumHeight(26)
-                self.main_toolbar.setMaximumHeight(28)
+                    self.set_toolbar_widget_visible(button, True)
+                    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                    button.setMinimumSize(QSize(26, 24))
+                    button.setMaximumSize(QSize(30, 26))
+                self.main_toolbar.setMinimumHeight(30)
+                self.main_toolbar.setMaximumHeight(32)
                 self.main_toolbar.setIconSize(QSize(14, 14))
-                self.main_toolbar.style().unpolish(self.main_toolbar)
-                self.main_toolbar.style().polish(self.main_toolbar)
+                main_toolbar_style = _widget_style(self.main_toolbar)
+                main_toolbar_style.unpolish(self.main_toolbar)
+                main_toolbar_style.polish(self.main_toolbar)
 
         def configure_responsive_layout_toolbar(self) -> None:
             """Keep every layout/search control directly reachable at the 1024px boundary."""
@@ -13612,6 +13619,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             root.addLayout(panes, 1)
             return panel
 
+        def open_sftp_context_item(self, item: QTreeWidgetItem | None) -> None:
+            """Record a connected Termius SFTP row activation safely.
+
+            The product-reference SFTP surface is a real selectable Qt view,
+            but it does not own the MobaXterm SFTP dock's transfer controller.
+            Keep double-click behavior explicit and observable without calling
+            a method that only exists on ``MobaSftpDock``.
+            """
+            if item is None:
+                return
+            name = item.text(0).strip()
+            kind = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
+            if not name:
+                return
+            self.setProperty("termiusNativeSftpOpenedItem", name)
+            self.setProperty("termiusNativeSftpOpenedKind", kind)
+            surface = self.findChild(QFrame, "termiusNativeSftpSurface")
+            if surface is not None:
+                surface.setProperty("termiusNativeSftpOpenedItem", name)
+                surface.setProperty("termiusNativeSftpOpenedKind", kind)
+
         def build_remmina_native_viewer_surface(self) -> QFrame:
             """Connected Remmina-style viewer canvas with GTK-like controls."""
             route = gui_design_remmina_profile_viewer_route()
@@ -16540,8 +16568,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             pane.command_row.setVisible(False)
             for button in pane.terminal_action_buttons:
                 button.setVisible(False)
-            pane.style().unpolish(pane)
-            pane.style().polish(pane)
+            pane_style = _widget_style(pane)
+            pane_style.unpolish(pane)
+            pane_style.polish(pane)
 
         def tab_position_name(self) -> str:
             return {

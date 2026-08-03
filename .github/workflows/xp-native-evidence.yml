@@ -45,7 +45,52 @@ env:
   PYTHONHASHSEED: "0"
 
 jobs:
+  evidence-runner-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.runner-readiness.outputs.ready }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - id: runner-readiness
+        name: Check evidence runner availability
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python scripts/check_platform_evidence_runner_readiness.py \
+            --repository "${{ github.repository }}" \
+            --target "${{ inputs.target }}" \
+            --require-idle \
+            --allow-unavailable \
+            --github-output "$GITHUB_OUTPUT"
+
+  evidence-runner-unavailable:
+    needs: evidence-runner-readiness
+    if: ${{ needs.evidence-runner-readiness.result == 'success' && needs.evidence-runner-readiness.outputs.ready != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Report non-promotional protected evidence skip
+        run: |
+          set -euo pipefail
+          echo "::warning::No idle protected-platform evidence runner is available for ${{ inputs.target }}."
+          echo "Protected target evidence was skipped; strict release promotion remains blocked until accepted evidence exists."
+
   xp-native-evidence:
+    needs: evidence-runner-readiness
+    if: ${{ needs.evidence-runner-readiness.outputs.ready == 'true' }}
     runs-on: [self-hosted, xp-evidence]
     timeout-minutes: 60
     steps:

@@ -14,6 +14,63 @@ def test_xp_native_evidence_workflow_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_xp_native_evidence_requires_runner_readiness_preflight() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        "  evidence-runner-readiness:\n",
+        "  removed-evidence-runner-readiness:\n",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert "XP native evidence workflow missing job: evidence-runner-readiness" in errors
+
+
+def test_xp_native_evidence_requires_non_promotional_unavailable_runner_report() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        "  evidence-runner-unavailable:\n",
+        "  removed-evidence-runner-unavailable:\n",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert "XP native evidence workflow missing job: evidence-runner-unavailable" in errors
+
+
+def test_xp_native_evidence_requires_native_job_to_wait_for_runner_readiness() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "xp-native-evidence")
+    assert block
+    workflow = workflow.replace(block, block.replace("    needs: evidence-runner-readiness\n", "", 1), 1)
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert (
+        "xp-native-evidence job missing runner readiness preflight dependency: "
+        "needs: evidence-runner-readiness"
+    ) in errors
+
+
+def test_xp_native_evidence_requires_native_job_to_skip_when_runner_is_unavailable() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        "    if: ${{ needs.evidence-runner-readiness.outputs.ready == 'true' }}\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert (
+        "xp-native-evidence job missing runner readiness target guard: "
+        "if: ${{ needs.evidence-runner-readiness.outputs.ready == 'true' }}"
+    ) in errors
+
+
 def test_xp_native_evidence_workflow_rejects_publish_trigger() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
@@ -38,10 +95,10 @@ def test_xp_native_evidence_workflow_rejects_write_permissions() -> None:
 
 def test_xp_native_evidence_workflow_requires_clean_checkout() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        "          clean: true\n",
-        "",
-    )
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "xp-native-evidence")
+    assert block
+    workflow = workflow.replace(block, block.replace("          clean: true\n", "", 1), 1)
 
     errors = checker.check_xp_native_evidence_workflow(workflow)
 
@@ -472,11 +529,11 @@ def test_xp_native_evidence_workflow_requires_local_goal_preflight() -> None:
 
 def test_xp_native_evidence_workflow_requires_local_goal_preflight_repository() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --repository "${{ github.repository }}"',
-        "",
-        1,
-    )
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "xp-native-evidence")
+    assert block
+    mutated = block.replace(' --repository "${{ github.repository }}"', "", 1)
+    workflow = workflow.replace(block, mutated, 1)
 
     errors = checker.check_xp_native_evidence_workflow(workflow)
 

@@ -90,6 +90,13 @@ Release integrity rules:
   --repository <owner>/<repo> --require-goal-targets --require-idle`. It confirms
   the required self-hosted evidence labels are online and idle without granting
   runner-inventory access to normal release jobs.
+- The dispatch-only protected evidence workflows perform a hosted read-only
+  inventory preflight as well. A successfully read inventory with no matching
+  idle runner produces a visible non-promotional skip and does not queue a native
+  target job; authentication, permission, malformed-response and transport
+  failures remain hard failures. The strict operator command above and every
+  release promotion gate remain unchanged, so a skipped workflow cannot be
+  mistaken for accepted evidence.
 - Before tagging or rerunning a protected-platform promotion, run the
   pre-release protected-platform import dry-run
   `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>`.

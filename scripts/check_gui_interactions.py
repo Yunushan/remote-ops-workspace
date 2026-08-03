@@ -288,6 +288,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
     from remote_ops_workspace.gui import create_main_window
     from remote_ops_workspace.gui_designs import (
         GUI_DESIGN_PRESETS,
+        PRODUCT_REFERENCE_TAB_PRESET_IDS,
         gui_design_interaction_state,
         gui_design_mremoteng_connection_document_route,
         gui_design_remmina_clipboard_route,
@@ -797,17 +798,24 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
                 QToolButton,
                 "qt_toolbar_ext_button",
             )
+            reference_toolbar = preset_id in PRODUCT_REFERENCE_TAB_PRESET_IDS
+            expected_wide_style = (
+                Qt.ToolButtonStyle.ToolButtonIconOnly
+                if reference_toolbar
+                else Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+            )
             record(
-                f"preset-toolbar-full-labels-fit-{preset_id}-1920x1080",
+                f"preset-toolbar-reference-fit-{preset_id}-1920x1080",
                 all(
-                    button.toolButtonStyle()
-                    == Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+                    button.toolButtonStyle() == expected_wide_style
                     and button.width() >= button.sizeHint().width()
                     for button in window.product_toolbar_buttons
                 )
                 and (wide_extension is None or not wide_extension.isVisible()),
                 {
                     "toolbar_width": window.main_toolbar.width(),
+                    "reference_toolbar": reference_toolbar,
+                    "expected_style": expected_wide_style.name,
                     "buttons": {
                         button.text(): {
                             "style": button.toolButtonStyle().name,

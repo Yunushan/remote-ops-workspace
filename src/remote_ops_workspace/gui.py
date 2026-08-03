@@ -2911,6 +2911,36 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             del remote_path
             return ""
 
+        def generated_icon_pixmap(
+            self,
+            size: int,
+            draw: Callable[[QPainter, int], None],
+            *,
+            antialias: bool = True,
+        ) -> QPixmap:
+            scale = max(1.0, float(self.devicePixelRatioF()))
+            pixel_size = max(1, int(round(size * scale)))
+            pixmap = QPixmap(pixel_size, pixel_size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, antialias)
+            painter.scale(scale, scale)
+            try:
+                draw(painter, size)
+            finally:
+                painter.end()
+            pixmap.setDevicePixelRatio(scale)
+            return pixmap
+
+        def generated_icon(
+            self,
+            size: int,
+            draw: Callable[[QPainter, int], None],
+            *,
+            antialias: bool = True,
+        ) -> QIcon:
+            return QIcon(self.generated_icon_pixmap(size, draw, antialias=antialias))
+
         def apply_sftp_file_row_icon(self, item: QTreeWidgetItem, kind: str) -> None:
             row_icon = gui_design_moba_sftp_file_row_icon(kind)
             item.setData(0, Qt.ItemDataRole.UserRole, row_icon.row_kind)
@@ -2948,15 +2978,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 item.setText(0, name)
 
         def sftp_file_row_icon(self, icon_key: str, *, size: int) -> QIcon:
-            pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            try:
-                self.draw_sftp_file_row_icon(painter, icon_key, size)
-            finally:
-                painter.end()
-            return QIcon(pixmap)
+            return self.generated_icon(
+                size,
+                lambda painter, logical_size: self.draw_sftp_file_row_icon(
+                    painter, icon_key, logical_size
+                ),
+            )
 
         def draw_sftp_file_row_icon(self, painter: QPainter, icon_key: str, size: int) -> None:
             outline = QColor("#343a40")
@@ -4428,15 +4455,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return separator
 
         def sftp_action_icon(self, icon_key: str, fill: str, *, size: int = 20) -> QIcon:
-            pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            try:
-                self.draw_sftp_action_icon(painter, icon_key, QColor(fill), size)
-            finally:
-                painter.end()
-            return QIcon(pixmap)
+            return self.generated_icon(
+                size,
+                lambda painter, logical_size: self.draw_sftp_action_icon(
+                    painter, icon_key, QColor(fill), logical_size
+                ),
+            )
 
         def draw_sftp_action_icon(self, painter: QPainter, icon_key: str, fill: QColor, size: int) -> None:
             white = QColor("#ffffff")
@@ -4538,36 +4562,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 painter.drawLine(11, 12, 7, 15)
 
         def monitoring_control_icon(self, icon_key: str, *, size: int = 20) -> QIcon:
-            pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            try:
+            def draw(painter: QPainter, logical_size: int) -> None:
                 cyan = QColor("#35d7c7")
                 dark = QColor("#101010")
                 painter.setPen(QPen(cyan, 1))
                 painter.setBrush(QBrush(dark))
                 if icon_key == "monitor":
-                    painter.drawRect(3, 4, size - 6, size - 8)
+                    painter.drawRect(3, 4, logical_size - 6, logical_size - 8)
                     painter.setPen(QPen(cyan, 2))
                     painter.drawLine(6, 12, 9, 8)
                     painter.drawLine(9, 8, 12, 14)
                     painter.drawLine(12, 14, 15, 7)
-                    painter.drawLine(size // 2, size - 4, size // 2, size - 2)
-                    painter.drawLine(6, size - 2, size - 6, size - 2)
+                    painter.drawLine(logical_size // 2, logical_size - 4, logical_size // 2, logical_size - 2)
+                    painter.drawLine(6, logical_size - 2, logical_size - 6, logical_size - 2)
                 elif icon_key == "follow-folder":
                     painter.setBrush(QBrush(QColor("#ffd866")))
                     painter.setPen(QPen(QColor("#303030"), 1))
-                    painter.drawRect(3, 8, size - 6, size - 7)
+                    painter.drawRect(3, 8, logical_size - 6, logical_size - 7)
                     painter.drawRect(4, 6, 7, 4)
                     painter.setPen(QPen(QColor("#1c7a38"), 2))
-                    painter.drawLine(size - 8, size - 7, size - 5, size - 4)
-                    painter.drawLine(size - 5, size - 4, size - 2, size - 10)
+                    painter.drawLine(logical_size - 8, logical_size - 7, logical_size - 5, logical_size - 4)
+                    painter.drawLine(logical_size - 5, logical_size - 4, logical_size - 2, logical_size - 10)
                 else:
-                    painter.drawEllipse(4, 4, size - 8, size - 8)
-            finally:
-                painter.end()
-            return QIcon(pixmap)
+                    painter.drawEllipse(4, 4, logical_size - 8, logical_size - 8)
+
+            return self.generated_icon(size, draw)
 
         def standard_icon(self, icon_name: str):
             return getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
@@ -5452,13 +5471,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             return bar
 
-        def telemetry_icon_pixmap(self, cell) -> QPixmap:
-            size = cell.icon_size
-            pixmap = QPixmap(size, size)
+        def generated_icon_pixmap(
+            self,
+            size: int,
+            draw: Callable[[QPainter, int], None],
+            *,
+            antialias: bool = True,
+        ) -> QPixmap:
+            scale = max(1.0, float(self.devicePixelRatioF()))
+            pixel_size = max(1, int(round(size * scale)))
+            pixmap = QPixmap(pixel_size, pixel_size)
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, antialias)
+            painter.scale(scale, scale)
             try:
+                draw(painter, size)
+            finally:
+                painter.end()
+            pixmap.setDevicePixelRatio(scale)
+            return pixmap
+
+        def telemetry_icon_pixmap(self, cell) -> QPixmap:
+            size = cell.icon_size
+
+            def draw(painter: QPainter, logical_size: int) -> None:
                 accent = QColor(cell.icon_accent)
                 dark = QColor("#101010")
 
@@ -5470,41 +5507,40 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
                 pen(accent)
                 brush(dark)
-                painter.drawRect(0, 0, size - 1, size - 1)
-                mid = size // 2
+                painter.drawRect(0, 0, logical_size - 1, logical_size - 1)
+                mid = logical_size // 2
                 icon_key = cell.icon_key
                 if icon_key == "host":
-                    painter.drawRect(3, 3, size - 6, size - 8)
-                    painter.drawLine(4, size - 3, size - 4, size - 3)
+                    painter.drawRect(3, 3, logical_size - 6, logical_size - 8)
+                    painter.drawLine(4, logical_size - 3, logical_size - 4, logical_size - 3)
                 elif icon_key == "cpu":
-                    painter.drawRect(3, 3, size - 6, size - 6)
+                    painter.drawRect(3, 3, logical_size - 6, logical_size - 6)
                     painter.drawPoint(mid, 4)
-                    painter.drawPoint(mid, size - 4)
+                    painter.drawPoint(mid, logical_size - 4)
                     painter.drawPoint(4, mid)
-                    painter.drawPoint(size - 4, mid)
+                    painter.drawPoint(logical_size - 4, mid)
                 elif icon_key in {"memory", "disk"}:
-                    painter.drawRect(3, 4, size - 6, size - 8)
-                    painter.drawLine(4, size - 5, size - 4, size - 5)
+                    painter.drawRect(3, 4, logical_size - 6, logical_size - 8)
+                    painter.drawLine(4, logical_size - 5, logical_size - 4, logical_size - 5)
                 elif icon_key == "upload":
                     pen(accent, 2)
-                    painter.drawLine(mid, size - 3, mid, 3)
+                    painter.drawLine(mid, logical_size - 3, mid, 3)
                     painter.drawLine(mid, 3, mid - 3, 6)
                     painter.drawLine(mid, 3, mid + 3, 6)
                 elif icon_key == "download":
                     pen(accent, 2)
-                    painter.drawLine(mid, 3, mid, size - 3)
-                    painter.drawLine(mid, size - 3, mid - 3, size - 6)
-                    painter.drawLine(mid, size - 3, mid + 3, size - 6)
+                    painter.drawLine(mid, 3, mid, logical_size - 3)
+                    painter.drawLine(mid, logical_size - 3, mid - 3, logical_size - 6)
+                    painter.drawLine(mid, logical_size - 3, mid + 3, logical_size - 6)
                 elif icon_key == "connection":
                     pen(accent, 2)
-                    painter.drawArc(2, 3, size - 4, size, 200 * 16, 140 * 16)
+                    painter.drawArc(2, 3, logical_size - 4, logical_size, 200 * 16, 140 * 16)
                 elif icon_key == "process":
-                    painter.drawLine(3, 4, size - 3, 4)
-                    painter.drawLine(3, 7, size - 5, 7)
-                    painter.drawLine(3, 10, size - 6, 10)
-            finally:
-                painter.end()
-            return pixmap
+                    painter.drawLine(3, 4, logical_size - 3, 4)
+                    painter.drawLine(3, 7, logical_size - 5, 7)
+                    painter.drawLine(3, 10, logical_size - 6, 10)
+
+            return self.generated_icon_pixmap(size, draw, antialias=False)
 
     class ProfileDialog(_ScreenBoundedDialog):
         def __init__(self, profile=None, parent=None) -> None:
@@ -6693,6 +6729,32 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setObjectName("productToolbarButton")
                 button.setProperty("productToolbarKey", key)
                 self.add_toolbar_widget(self.main_toolbar, button)
+            # SecureCRT and mRemoteNG put a compact connection field directly
+            # in the native toolbar.  Keep these widgets registered even when
+            # another preset is active so switching designs does not rebuild
+            # the toolbar or lose keyboard focus routes.
+            self.securecrt_host_input = QLineEdit()
+            self.securecrt_host_input.setObjectName("secureCrtHostInput")
+            self.securecrt_host_input.setPlaceholderText("Enter host <Alt+P>")
+            self.securecrt_host_input.setToolTip("SecureCRT host field; press Enter to connect")
+            self.securecrt_keyword_input = QLineEdit()
+            self.securecrt_keyword_input.setObjectName("secureCrtKeywordInput")
+            self.securecrt_keyword_input.setPlaceholderText("Keyword <Alt+/>")
+            self.securecrt_keyword_input.setToolTip("SecureCRT keyword filter")
+            self.mremoteng_connect_input = QLineEdit()
+            self.mremoteng_connect_input.setObjectName("mRemoteNgConnectInput")
+            self.mremoteng_connect_input.setPlaceholderText("Connect:")
+            self.mremoteng_connect_input.setToolTip("mRemoteNG connect field; press Enter to open")
+            self.mremoteng_protocol_label = QLabel("RDP")
+            self.mremoteng_protocol_label.setObjectName("mRemoteNgProtocolLabel")
+            self.mremoteng_protocol_label.setToolTip("mRemoteNG active protocol")
+            for widget in (
+                self.securecrt_host_input,
+                self.securecrt_keyword_input,
+                self.mremoteng_connect_input,
+                self.mremoteng_protocol_label,
+            ):
+                self.add_toolbar_widget(self.main_toolbar, widget)
             self.view_label = QLabel("View")
             self.view_label.setObjectName("toolbarLabel")
             self.layout_label = QLabel("Layout")
@@ -6859,6 +6921,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.design_select.currentIndexChanged.connect(self.apply_selected_design)
             self.find_button.clicked.connect(self.find_log_text)
             self.search_input.returnPressed.connect(self.find_log_text)
+            self.securecrt_host_input.returnPressed.connect(
+                lambda: self.connect_from_product_host(self.securecrt_host_input.text())
+            )
+            self.securecrt_keyword_input.returnPressed.connect(
+                lambda: self.find_product_keyword(self.securecrt_keyword_input.text())
+            )
+            self.mremoteng_connect_input.returnPressed.connect(
+                lambda: self.connect_from_product_host(self.mremoteng_connect_input.text())
+            )
             self.profile_list.itemActivated.connect(self.activate_profile_item)
             self.profile_list.itemSelectionChanged.connect(self.update_profile_action_states)
             self.profile_list.customContextMenuRequested.connect(
@@ -6872,6 +6943,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             _application_instance().focusChanged.connect(self.remember_terminal_focus)
             self.keyboard_shortcuts = self.create_keyboard_shortcuts()
+            self.securecrt_host_shortcut = QShortcut(QKeySequence("Alt+P"), self)
+            self.securecrt_host_shortcut.setObjectName("secureCrtHostShortcut")
+            self.securecrt_host_shortcut.setProperty(
+                "shortcutTooltip",
+                "Focus SecureCRT host field",
+            )
+            self.securecrt_host_shortcut.activated.connect(self.focus_securecrt_host)
+            self.securecrt_keyword_shortcut = QShortcut(QKeySequence("Alt+/"), self)
+            self.securecrt_keyword_shortcut.setObjectName("secureCrtKeywordShortcut")
+            self.securecrt_keyword_shortcut.setProperty(
+                "shortcutTooltip",
+                "Focus SecureCRT keyword field",
+            )
+            self.securecrt_keyword_shortcut.activated.connect(self.focus_securecrt_keyword)
+            self.securecrt_host_shortcut.setEnabled(False)
+            self.securecrt_keyword_shortcut.setEnabled(False)
             self.refresh_profiles()
             self.refresh_layouts()
             self.populate_view_design_menu()
@@ -7260,6 +7347,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             button = QToolButton()
             button.setText(label)
             button.setToolTip(tooltip)
+            button.setProperty("standardIconName", icon_name)
             button.setIcon(
                 _widget_style(self).standardIcon(self.standard_icon(icon_name))
             )
@@ -7309,16 +7397,219 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 raise RuntimeError(f"missing layout toolbar callback: {action_key}")
             callback()
 
+        def generated_icon_pixmap(
+            self,
+            size: int,
+            draw: Callable[[QPainter, int], None],
+            *,
+            antialias: bool = True,
+        ) -> QPixmap:
+            """Paint a generated icon at the host's device-pixel scale.
+
+            The MobaXterm-style rail, SFTP dock and product profile trees use
+            small generated glyphs.  Painting those directly into a logical
+            16/20px pixmap makes them look blurred on a scaled Windows desktop;
+            Qt can retain the crisp source if the pixmap carries its DPR.
+            """
+            scale = max(1.0, float(self.devicePixelRatioF()))
+            pixel_size = max(1, int(round(size * scale)))
+            pixmap = QPixmap(pixel_size, pixel_size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, antialias)
+            painter.scale(scale, scale)
+            try:
+                draw(painter, size)
+            finally:
+                painter.end()
+            pixmap.setDevicePixelRatio(scale)
+            return pixmap
+
+        def generated_icon(
+            self,
+            size: int,
+            draw: Callable[[QPainter, int], None],
+            *,
+            antialias: bool = True,
+        ) -> QIcon:
+            return QIcon(self.generated_icon_pixmap(size, draw, antialias=antialias))
+
         def moba_ribbon_icon(self, icon_key: str, fill: str, *, size: int = 32) -> QIcon:
-            pixmap = QPixmap(size, size)
+            return self.generated_icon(
+                size,
+                lambda painter, logical_size: self.draw_moba_ribbon_icon(
+                    painter, icon_key, QColor(fill), logical_size
+                ),
+            )
+
+        def product_toolbar_icon(self, preset_id: str, icon_key: str, *, size: int = 16) -> QIcon:
+            """Return the compact glyph used by the native product toolbar.
+
+            Qt's standard icons are deliberately platform-dependent and read as
+            large application buttons.  The reference products use small,
+            monochrome glyphs, so draw those glyphs into a deterministic pixmap
+            and keep the action's text available through its tooltip/accessibility
+            name.
+            """
+            preset = get_gui_design_preset(preset_id)
+            # Render the tiny product glyphs at the screen scale factor.  A
+            # 14px pixmap painted directly at device resolution is visibly
+            # soft on 125%/150% Windows displays, which is especially obvious
+            # beside the native SecureCRT/mRemoteNG toolbars.
+            scale = max(1.0, float(self.devicePixelRatioF()))
+            pixel_size = max(1, int(round(size * scale)))
+            pixmap = QPixmap(pixel_size, pixel_size)
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.scale(scale, scale)
             try:
-                self.draw_moba_ribbon_icon(painter, icon_key, QColor(fill), size)
+                if preset_id == "mremoteng":
+                    self.draw_mremoteng_toolbar_icon(
+                        painter,
+                        icon_key,
+                        QColor(preset.colors.primary),
+                        QColor(preset.colors.window),
+                        QColor(preset.colors.control_text),
+                        size,
+                    )
+                else:
+                    self.draw_securecrt_toolbar_icon(
+                        painter,
+                        icon_key,
+                        QColor(preset.colors.primary),
+                        QColor(preset.colors.window),
+                        QColor(preset.colors.control_text),
+                        QColor(preset.colors.sidebar_muted),
+                        size,
+                    )
             finally:
                 painter.end()
+            pixmap.setDevicePixelRatio(scale)
             return QIcon(pixmap)
+
+        @staticmethod
+        def draw_securecrt_toolbar_icon(
+            painter: QPainter,
+            icon_key: str,
+            primary: QColor,
+            dark: QColor,
+            white: QColor,
+            muted: QColor,
+            size: int,
+        ) -> None:
+            """Paint one compact SecureCRT/Remmina-style toolbar glyph."""
+            color = primary
+            mid = size // 2
+
+            def pen(value: QColor, width: int = 1) -> None:
+                painter.setPen(QPen(value, width))
+
+            def brush(value: QColor) -> None:
+                painter.setBrush(QBrush(value))
+
+            pen(color)
+            brush(Qt.BrushStyle.NoBrush)
+            if icon_key == "session-manager":
+                brush(color)
+                painter.drawRect(2, 6, size - 4, size - 8)
+                pen(white)
+                painter.drawRect(4, 4, 7, 3)
+                return
+            if icon_key == "new-session":
+                pen(color, 1)
+                painter.drawRect(2, 2, size - 4, size - 6)
+                pen(color, 2)
+                painter.drawLine(mid, 5, mid, size - 7)
+                painter.drawLine(5, mid - 1, size - 5, mid - 1)
+                return
+            if icon_key == "properties":
+                pen(color, 2)
+                painter.drawRect(4, 3, size - 8, size - 6)
+                painter.drawLine(6, 6, size - 6, 6)
+                painter.drawLine(6, 9, size - 6, 9)
+                return
+            if icon_key == "delete":
+                pen(color, 2)
+                painter.drawLine(4, 4, size - 4, size - 4)
+                painter.drawLine(size - 4, 4, 4, size - 4)
+                return
+            if icon_key in {"connect", "open-connection"}:
+                brush(color)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawPolygon(QPolygon([QPoint(4, 3), QPoint(size - 3, mid), QPoint(4, size - 3)]))
+                if icon_key == "open-connection":
+                    pen(color, 1)
+                    brush(dark)
+                    painter.drawRect(1, 5, 4, size - 10)
+                return
+            if icon_key in {"sftp", "import-session", "import-connections"}:
+                brush(color)
+                painter.setPen(QPen(white, 1))
+                painter.drawRect(2, 6, size - 4, size - 8)
+                painter.drawLine(5, 11, size - 5, 11)
+                return
+            if icon_key == "transfer":
+                pen(color, 2)
+                painter.drawLine(3, 6, size - 4, 6)
+                painter.drawLine(size - 5, 4, size - 2, 6)
+                painter.drawLine(size - 5, 8, size - 2, 6)
+                painter.drawLine(size - 3, 12, 4, 12)
+                painter.drawLine(5, 10, 2, 12)
+                painter.drawLine(5, 14, 2, 12)
+                return
+            if icon_key in {"command", "script"}:
+                brush(dark)
+                pen(color, 1)
+                painter.drawRect(2, 3, size - 4, size - 6)
+                pen(color, 2)
+                painter.drawLine(5, 7, 9, 10)
+                painter.drawLine(9, 10, 5, 13)
+                return
+            if icon_key in {"tools", "external-tool"}:
+                pen(color, 2)
+                painter.drawLine(4, 4, size - 5, size - 5)
+                painter.drawLine(size - 5, 4, 5, size - 4)
+                return
+            if icon_key in {"tile-h", "tile-v"}:
+                pen(color, 2)
+                painter.drawRect(2, 3, size - 4, size - 6)
+                if icon_key == "tile-h":
+                    painter.drawLine(2, mid, size - 2, mid)
+                else:
+                    painter.drawLine(mid, 3, mid, size - 3)
+                return
+            if icon_key == "refresh-tree":
+                pen(color, 2)
+                painter.drawArc(3, 3, size - 6, size - 6, 40 * 16, 280 * 16)
+                brush(color)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawPolygon(QPolygon([QPoint(size - 4, 4), QPoint(size - 1, 7), QPoint(size - 6, 9)]))
+                return
+            # Unknown import/diagnostics actions still get a clear, compact
+            # outline rather than falling back to the large native icon.
+            pen(muted if not icon_key else color)
+            painter.drawRect(3, 3, size - 6, size - 6)
+
+        def draw_mremoteng_toolbar_icon(
+            self,
+            painter: QPainter,
+            icon_key: str,
+            primary: QColor,
+            dark: QColor,
+            _white: QColor,
+            _size: int,
+        ) -> None:
+            """Paint the compact legacy mRemoteNG connection-toolbar glyph."""
+            self.draw_securecrt_toolbar_icon(
+                painter,
+                icon_key,
+                primary,
+                dark,
+                primary,
+                primary,
+                _size,
+            )
 
         def draw_moba_ribbon_icon(self, painter: QPainter, icon_key: str, fill: QColor, size: int) -> None:
             white = QColor("#ffffff")
@@ -7476,55 +7767,51 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 painter.drawLine(8, mid, size - 8, mid)
 
         def moba_utility_icon(self, icon_key: str, fill: str, *, size: int = 20) -> QIcon:
-            pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             color = QColor(fill)
-            try:
+
+            def draw(painter: QPainter, logical_size: int) -> None:
                 painter.setPen(QPen(color, 2))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                mid = size // 2
+                mid = logical_size // 2
                 if icon_key == "arrow-left":
-                    painter.drawLine(size - 3, 5, 6, mid)
-                    painter.drawLine(6, mid, size - 3, size - 5)
-                    painter.drawLine(6, mid, size - 1, mid)
+                    painter.drawLine(logical_size - 3, 5, 6, mid)
+                    painter.drawLine(6, mid, logical_size - 3, logical_size - 5)
+                    painter.drawLine(6, mid, logical_size - 1, mid)
                 elif icon_key == "arrow-right":
-                    painter.drawLine(3, 5, size - 6, mid)
-                    painter.drawLine(size - 6, mid, 3, size - 5)
-                    painter.drawLine(1, mid, size - 6, mid)
+                    painter.drawLine(3, 5, logical_size - 6, mid)
+                    painter.drawLine(logical_size - 6, mid, 3, logical_size - 5)
+                    painter.drawLine(1, mid, logical_size - 6, mid)
                 elif icon_key == "close":
-                    painter.drawLine(5, 5, size - 5, size - 5)
-                    painter.drawLine(size - 5, 5, 5, size - 5)
+                    painter.drawLine(5, 5, logical_size - 5, logical_size - 5)
+                    painter.drawLine(logical_size - 5, 5, 5, logical_size - 5)
                 elif icon_key == "clip":
                     painter.drawArc(5, 3, 10, 13, 35 * 16, 280 * 16)
                     painter.drawArc(8, 5, 6, 10, 35 * 16, 280 * 16)
                     painter.drawLine(9, 14, 6, 11)
                 elif icon_key == "spark":
-                    painter.drawLine(mid, 3, mid, size - 3)
-                    painter.drawLine(3, mid, size - 3, mid)
-                    painter.drawLine(5, 5, size - 5, size - 5)
-                    painter.drawLine(size - 5, 5, 5, size - 5)
+                    painter.drawLine(mid, 3, mid, logical_size - 3)
+                    painter.drawLine(3, mid, logical_size - 3, mid)
+                    painter.drawLine(5, 5, logical_size - 5, logical_size - 5)
+                    painter.drawLine(logical_size - 5, 5, 5, logical_size - 5)
                 elif icon_key == "gear":
-                    painter.drawEllipse(6, 6, size - 12, size - 12)
-                    painter.drawEllipse(8, 8, size - 16, size - 16)
+                    painter.drawEllipse(6, 6, logical_size - 12, logical_size - 12)
+                    painter.drawEllipse(8, 8, logical_size - 16, logical_size - 16)
                     for start, end in (
                         ((mid, 2), (mid, 6)),
-                        ((mid, size - 6), (mid, size - 2)),
+                        ((mid, logical_size - 6), (mid, logical_size - 2)),
                         ((2, mid), (6, mid)),
-                        ((size - 6, mid), (size - 2, mid)),
+                        ((logical_size - 6, mid), (logical_size - 2, mid)),
                         ((5, 5), (7, 7)),
-                        ((size - 7, 5), (size - 5, 7)),
-                        ((5, size - 5), (7, size - 7)),
-                        ((size - 7, size - 7), (size - 5, size - 5)),
+                        ((logical_size - 7, 5), (logical_size - 5, 7)),
+                        ((5, logical_size - 5), (7, logical_size - 7)),
+                        ((logical_size - 7, logical_size - 7), (logical_size - 5, logical_size - 5)),
                     ):
                         painter.drawLine(start[0], start[1], end[0], end[1])
                 else:
                     painter.setPen(QPen(QColor("#9ca3af"), 2))
-                    painter.drawRect(4, 4, size - 8, size - 8)
-            finally:
-                painter.end()
-            return QIcon(pixmap)
+                    painter.drawRect(4, 4, logical_size - 8, logical_size - 8)
+
+            return self.generated_icon(size, draw)
 
         def create_status_segments(self) -> list[QLabel]:
             self.statusBar().setObjectName("statusBar")
@@ -7805,6 +8092,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_left_stack.addWidget(self.profile_list)
             body_layout.addWidget(self.moba_left_stack, 1)
             layout.addWidget(body, 1)
+            # mRemoteNG keeps a compact Config/property inspector docked
+            # beneath the Connections tree while a document is active.  Keep
+            # the real routed grid in the left chrome (rather than rendering
+            # it only on the welcome surface) so the connected layout follows
+            # the product's actual split-pane workflow.  It is hidden for
+            # other presets by ``apply_selected_design``.
+            self.mremoteng_left_property_grid_panel = (
+                self.build_mremoteng_property_grid_evidence()
+            )
+            self.mremoteng_left_property_grid_panel.setProperty(
+                "mRemoteNgLeftDockView",
+                True,
+            )
+            self.mremoteng_left_property_grid_panel.setMaximumHeight(176)
+            self.mremoteng_left_property_grid_panel.setVisible(False)
+            layout.addWidget(self.mremoteng_left_property_grid_panel, 0)
             return panel
 
         def show_moba_profile_tree(self, *, preserve_connected_dock: bool = False) -> None:
@@ -7861,12 +8164,48 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 button.setProperty("productToolbarKey", key)
                 button.setProperty("productToolbarLabel", label)
                 button.setProperty("productToolbarTooltip", tooltip)
+                button.setProperty("productChromePreset", preset.id)
                 securecrt_action = (
                     securecrt_toolbar_actions.get(key) if preset.id == "securecrt" else None
                 )
                 mremoteng_action = (
                     mremoteng_toolbar_actions.get(key) if preset.id == "mremoteng" else None
                 )
+                product_icon_key = (
+                    securecrt_action.icon_key
+                    if securecrt_action is not None
+                    else mremoteng_action.icon_key
+                    if mremoteng_action is not None
+                    else ""
+                )
+                if not product_icon_key:
+                    product_icon_key = {
+                        "refresh": "refresh-tree",
+                        "new": "new-session",
+                        "import": "import-session",
+                        "edit": "properties",
+                        "remove": "delete",
+                        "connect": "connect",
+                        "files": "sftp",
+                        "queue": "transfer",
+                        "dry-run": "command",
+                        "doctor": "tools",
+                        "split-h": "tile-h",
+                        "split-v": "tile-v",
+                    }.get(key, key)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+                    self.product_toolbar_button_by_key[key].setIcon(
+                        self.product_toolbar_icon(
+                            preset.id,
+                            product_icon_key or key,
+                            size=max(14, min(18, preset.toolbar_icon_size)),
+                        )
+                    )
+                else:
+                    standard_icon_name = str(button.property("standardIconName") or "SP_FileIcon")
+                    button.setIcon(
+                        _widget_style(self).standardIcon(self.standard_icon(standard_icon_name))
+                    )
                 button.setProperty(
                     "secureCrtTopToolbarKey", securecrt_action.key if securecrt_action else ""
                 )
@@ -7999,14 +8338,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     )
                     if is_remmina_transfer:
                         self.apply_remmina_sftp_transfer_action_route_properties(button, remmina_transfer_route)
-                button.setMinimumWidth(
-                    securecrt_action.static_width
-                    if securecrt_action
-                    else mremoteng_action.static_width
-                    if mremoteng_action
-                    else 0
-                )
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+                    # The static preview geometry reserves room for labels,
+                    # while the live product chrome is intentionally
+                    # icon-only.  Do not let those preview widths recreate the
+                    # oversized generic ribbon in the real window.
+                    button.setMinimumWidth(
+                        28 if preset.id in {"securecrt", "mremoteng"} else 30
+                    )
+                else:
+                    button.setMinimumWidth(
+                        securecrt_action.static_width
+                        if securecrt_action
+                        else mremoteng_action.static_width
+                        if mremoteng_action
+                        else 0
+                    )
                 button.setEnabled(True)
+                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS:
+                    button_style = _widget_style(button)
+                    button_style.unpolish(button)
+                    button_style.polish(button)
+                    button.update()
 
         def configure_menu_bar_for_design(self, preset: GuiDesignPreset) -> None:
             is_moba = preset.id == "mobaxterm"
@@ -9064,15 +9417,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             item.setData(0, TREE_ROW_STATIC_TARGET_X_ROLE, target_x)
 
         def profile_tree_generated_icon(self, icon_key: str, *, group: bool, size: int = 16) -> QIcon:
-            pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            try:
-                self.draw_profile_tree_generated_icon(painter, icon_key, group=group, size=size)
-            finally:
-                painter.end()
-            return QIcon(pixmap)
+            return self.generated_icon(
+                size,
+                lambda painter, logical_size: self.draw_profile_tree_generated_icon(
+                    painter, icon_key, group=group, size=logical_size
+                ),
+            )
 
         def draw_profile_tree_generated_icon(self, painter: QPainter, icon_key: str, *, group: bool, size: int) -> None:
             fill = QColor("#f4c430" if group else "#35d7c7")
@@ -9331,12 +9681,41 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.quick_connect.setVisible(is_moba)
             self.configure_left_panel_header_for_design(preset, is_moba)
             self.remmina_profile_list_chrome.setVisible(preset.id == "remmina")
+            self.mremoteng_left_property_grid_panel.setVisible(
+                preset.id == "mremoteng"
+            )
             if preset.id == "remmina":
                 self.filter_remmina_profile_rows(self.remmina_profile_filter.text())
             self.moba_rail.setVisible(is_moba)
             self.update_quick_connect_suggestions()
             self.layout_toolbar.setVisible(not is_moba)
+            reference_document = preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
             self.log.setVisible(not is_moba)
+            self.log.setProperty("productCompactActivityLog", reference_document)
+            if reference_document:
+                # The reference products use a thin status/notification edge;
+                # the workspace activity feed remains available but must not
+                # consume a quarter of the connected document canvas.
+                self.log.setMinimumHeight(70)
+                self.log.setMaximumHeight(70)
+                log_colors = {
+                    "securecrt": ("#ededed", "#303030", "#a9a9a9"),
+                    "termius": ("#101416", "#d1ddd8", "#303b40"),
+                    "remmina": ("#edf1f5", "#334352", "#b7c2cc"),
+                    "mremoteng": ("#e8edf2", "#263442", "#aab6c2"),
+                }
+                background, foreground, border = log_colors[preset.id]
+                self.log.setStyleSheet(
+                    "QTextEdit#activityLog {"
+                    f"background: {background}; color: {foreground}; "
+                    f"border: 1px solid {border}; padding: 3px 6px; "
+                    "font-family: 'Cascadia Mono', Consolas, monospace; "
+                    "font-size: 8pt; }"
+                )
+            else:
+                self.log.setMinimumHeight(0)
+                self.log.setMaximumHeight(16777215)
+                self.log.setStyleSheet("")
             self.refresh_profiles()
             self.main_toolbar.setIconSize(QSize(preset.toolbar_icon_size, preset.toolbar_icon_size))
             self.layout_toolbar.setIconSize(QSize(preset.toolbar_icon_size, preset.toolbar_icon_size))
@@ -9376,13 +9755,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if is_moba:
                 self.workspace.setSizes([max(620, self.height()), 0])
             else:
-                self.workspace.setSizes([max(420, self.height() - preset.log_height), preset.log_height])
+                log_height = 70 if reference_document else preset.log_height
+                self.workspace.setSizes([max(420, self.height() - log_height), log_height])
             self.tabs.setTabPosition(self.tab_position_for_design(preset.tab_position))
             self.tabs.setDocumentMode(preset.document_mode)
             self.configure_workspace_tabs_for_design(is_moba)
             self.apply_interaction_state_tab_status(preset, gui_design_interaction_state(preset.id))
             self.apply_home_search_route_for_design(home_search_route)
             self.refresh_moba_left_dock_for_current_tab()
+            # Reset connected-document chrome before applying any
+            # product-specific active-tab presentation.  Termius hides the
+            # generic workspace chrome only while its SFTP document is active;
+            # switching presets must always restore the normal shell.
+            self.main_toolbar.setVisible(True)
+            self.left_panel.setVisible(True)
+            self.layout_toolbar.setVisible(not is_moba)
+            self.tabs.tabBar().setVisible(True)
+            self.log.setVisible(not is_moba)
+            self.configure_product_connected_chrome()
             self.log.setPlaceholderText(
                 f"{preset.description}\n\nLaunch output, dry-run commands and doctor reports appear here."
             )
@@ -10439,6 +10829,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.layout_toolbar.setProperty("productChromePreset", preset.id)
             self.main_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
             for button in self.main_toolbar_buttons + self.layout_toolbar_buttons:
+                button.setProperty("productChromePreset", preset.id)
                 button.setIconSize(icon)
                 button.setToolButtonStyle(
                     Qt.ToolButtonStyle.ToolButtonTextUnderIcon
@@ -10476,6 +10867,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             ]
             for widget in moba_widgets:
                 self.set_toolbar_widget_visible(widget, is_moba)
+            for widget in (
+                self.securecrt_host_input,
+                self.securecrt_keyword_input,
+            ):
+                self.set_toolbar_widget_visible(widget, preset.id == "securecrt")
+            for widget in (
+                self.mremoteng_connect_input,
+                self.mremoteng_protocol_label,
+            ):
+                self.set_toolbar_widget_visible(widget, preset.id == "mremoteng")
+            self.securecrt_host_shortcut.setEnabled(is_securecrt)
+            self.securecrt_keyword_shortcut.setEnabled(is_securecrt)
             if is_moba:
                 top_stack = gui_design_moba_top_stack_geometry()
                 self.main_toolbar.setMinimumHeight(top_stack.ribbon_height)
@@ -10502,16 +10905,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.main_toolbar.setMinimumHeight(gui_design_securecrt_top_chrome().toolbar_height)
                 self.main_toolbar.setMaximumHeight(gui_design_securecrt_top_chrome().toolbar_height)
                 for button in self.main_toolbar_buttons:
-                    width = int(button.property("secureCrtTopToolbarStaticWidth") or 58)
-                    button.setMinimumSize(QSize(width, 44))
-                    button.setMaximumSize(QSize(max(width + 12, 70), 48))
+                    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                    button.setMinimumSize(QSize(28, 28))
+                    button.setMaximumSize(QSize(34, 32))
+                self.securecrt_host_input.setMinimumSize(QSize(142, 24))
+                self.securecrt_host_input.setMaximumSize(QSize(166, 26))
+                self.securecrt_keyword_input.setMinimumSize(QSize(130, 24))
+                self.securecrt_keyword_input.setMaximumSize(QSize(154, 26))
             elif is_mremoteng:
                 self.main_toolbar.setMinimumHeight(gui_design_mremoteng_top_chrome().toolbar_height)
                 self.main_toolbar.setMaximumHeight(gui_design_mremoteng_top_chrome().toolbar_height)
                 for button in self.main_toolbar_buttons:
-                    width = int(button.property("mRemoteNgTopToolbarStaticWidth") or 56)
-                    button.setMinimumSize(QSize(width, 40))
-                    button.setMaximumSize(QSize(max(width + 12, 70), 44))
+                    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                    button.setMinimumSize(QSize(28, 26))
+                    button.setMaximumSize(QSize(34, 30))
+                self.mremoteng_connect_input.setMinimumSize(QSize(110, 24))
+                self.mremoteng_connect_input.setMaximumSize(QSize(132, 26))
+                self.mremoteng_protocol_label.setMinimumSize(QSize(28, 22))
+                self.mremoteng_protocol_label.setMaximumSize(QSize(42, 24))
             else:
                 self.main_toolbar.setMinimumHeight(0)
                 self.main_toolbar.setMaximumHeight(16777215)
@@ -10543,6 +10954,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.find_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                 self.find_button.setMinimumSize(QSize(26, 24))
                 self.find_button.setMaximumSize(QSize(30, 26))
+                if preset.id in {"remmina", "termius"}:
+                    self.main_toolbar.setMinimumHeight(32)
+                    self.main_toolbar.setMaximumHeight(34)
+                    self.main_toolbar.setIconSize(QSize(16, 16))
                 self.search_input.setPlaceholderText(
                     {
                         "securecrt": "Find session",
@@ -10580,6 +10995,39 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             compact = self.width() <= 1100
             is_moba = self.current_design_is_moba()
             is_product_reference = self.current_design_id() in PRODUCT_REFERENCE_TAB_PRESET_IDS
+
+            if is_product_reference:
+                # The reference products use a compact, icon-led toolbar.  Do
+                # not switch back to Qt's text-under-icon mode merely because
+                # the window is wide enough: that produces a generic ribbon
+                # instead of SecureCRT/mRemoteNG/Remmina chrome.  Text remains
+                # available through the tooltip and accessibility name.
+                product_id = self.current_design_id()
+                button_width = 28 if product_id in {"securecrt", "mremoteng"} else 30
+                button_height = 28 if product_id == "securecrt" else 26
+                self.main_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                for button in self.main_toolbar_buttons:
+                    button.setAccessibleName(button.text())
+                    button.setAccessibleDescription(button.toolTip())
+                    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                    button.setMinimumSize(QSize(button_width, button_height))
+                    button.setMaximumSize(QSize(button_width + 6, button_height + 4))
+                if product_id == "securecrt":
+                    self.main_toolbar.setMinimumHeight(gui_design_securecrt_top_chrome().toolbar_height)
+                    self.main_toolbar.setMaximumHeight(gui_design_securecrt_top_chrome().toolbar_height)
+                elif product_id == "mremoteng":
+                    self.main_toolbar.setMinimumHeight(gui_design_mremoteng_top_chrome().toolbar_height)
+                    self.main_toolbar.setMaximumHeight(gui_design_mremoteng_top_chrome().toolbar_height)
+                else:
+                    self.main_toolbar.setMinimumHeight(32)
+                    self.main_toolbar.setMaximumHeight(34)
+                self.layout_select.setMinimumWidth(112 if compact else 150)
+                self.layout_select.setMaximumWidth(132 if compact else 190)
+                self.design_select.setMinimumWidth(108 if compact else 118)
+                self.design_select.setMaximumWidth(132 if compact else 150)
+                self.search_input.setMinimumWidth(138 if compact else 164)
+                self.search_input.setMaximumWidth(210 if compact else 250)
+                return
 
             # A text-under-icon QToolButton needs substantially more width than
             # its icon.  Keeping that paint mode while squeezing twelve product
@@ -11801,8 +12249,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def handle_tab_changed(self, index: int) -> None:
             if self.moba_tab_guard or index < 0:
+                self.configure_product_connected_chrome()
+                QTimer.singleShot(0, self.configure_product_connected_chrome)
                 self.refresh_moba_left_dock_for_current_tab()
                 return
+            self.configure_product_connected_chrome()
+            # QTabWidget may finish laying out the newly selected page after
+            # emitting currentChanged.  Re-apply once the splitter has its
+            # final geometry so the activity pane and side chrome cannot stay
+            # collapsed after returning from a connected Termius document.
+            QTimer.singleShot(0, self.configure_product_connected_chrome)
             if self.tab_role(index) != "new-session":
                 preset = get_gui_design_preset(self.current_design_id())
                 self.apply_interaction_state_tab_status(
@@ -11820,6 +12276,71 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             finally:
                 self.moba_tab_guard = False
             self.refresh_moba_left_dock_for_current_tab()
+
+        def configure_product_connected_chrome(self) -> None:
+            """Switch to the connected document chrome used by reference apps.
+
+            The supplied Termius reference is a surface-first SFTP workspace:
+            its dark document navigation owns the frame, with no generic
+            profile sidebar, layout ribbon, tab strip, or activity transcript
+            competing for space.  Keep those widgets alive (their route
+            metadata and actions remain inspectable) but collapse them only
+            while the routed connected Termius tab is active.  All other
+            presets retain the normal workspace shell.
+            """
+            preset_id = self.current_design_id()
+            active_index = self.tabs.currentIndex()
+            active_reference = False
+            if preset_id == "termius" and active_index >= 0:
+                route = gui_design_preset_reference_tab_route("termius")
+                active_reference = (
+                    self.tabs.tabText(active_index) == route.active_tab_label
+                    and self.tab_role(active_index) == route.reference_tab_role
+                )
+            hidden = bool(preset_id == "termius" and active_reference)
+            self.setProperty("termiusConnectedChromeActive", hidden)
+            self.setProperty(
+                "termiusConnectedChromeHiddenObjects",
+                [
+                    "leftPanel",
+                    "mainToolbar",
+                    "layoutToolbar",
+                    "sessionTabBar",
+                ]
+                if hidden
+                else [],
+            )
+            if hidden:
+                self.left_panel.setVisible(False)
+                self.main_toolbar.setVisible(False)
+                self.layout_toolbar.setVisible(False)
+                self.tabs.tabBar().setVisible(False)
+                # Keep the shared activity/status edge mounted.  The live
+                # render contracts use it as the workspace's bottom boundary;
+                # Termius still gets the compact 70px strip rather than the
+                # old oversized transcript pane.
+                self.log.setVisible(True)
+                self.root_splitter.setSizes([0, max(620, self.width())])
+                self.workspace.setSizes([max(420, self.height() - 70), 70])
+                return
+
+            self.left_panel.setVisible(True)
+            self.main_toolbar.setVisible(True)
+            self.layout_toolbar.setVisible(preset_id != "mobaxterm")
+            self.tabs.tabBar().setVisible(True)
+            self.log.setVisible(preset_id != "mobaxterm")
+            try:
+                preset = get_gui_design_preset(preset_id)
+                profile_width = (
+                    gui_design_moba_connected_dock_frame().side_width
+                    if preset_id == "mobaxterm"
+                    else preset.profile_width
+                )
+            except ValueError:
+                profile_width = 300
+            self.root_splitter.setSizes(
+                [min(profile_width, 430), max(620, self.width() - profile_width)]
+            )
 
         def tab_context_session_action_specs(self, index: int) -> list[dict[str, object]]:
             role = self.tab_role(index)
@@ -13449,7 +13970,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addWidget(transcript, 1)
             return panel
 
-        def build_mremoteng_runtime_document_surface(self) -> QFrame:
+        def build_mremoteng_runtime_document_surface(
+            self,
+            pane: TerminalPane | None = None,
+        ) -> QFrame:
             """Build the docked split-document canvas used by mRemoteNG."""
             panel = QFrame()
             panel.setObjectName("mRemoteNgRuntimeDocumentSurface")
@@ -13468,6 +13992,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "QPlainTextEdit#mRemoteNgRuntimeTranscript {"
                 "background: #000000; color: #e8e8e8; border: 0px;"
                 "font-family: Consolas, 'Courier New'; font-size: 9pt; }"
+                "QWidget#terminalPane { background: #000000; border: 0px; }"
+                "QTextEdit#terminalOutput { background: #000000; color: #e8e8e8; border: 0px;"
+                "font-family: Consolas, 'Courier New'; font-size: 9pt; }"
+                "QLineEdit#terminalInput { background: #111111; color: #f2f2f2; border: 1px solid #777777;"
+                "padding: 3px 6px; font-family: Consolas, 'Courier New'; }"
                 "QLabel#mRemoteNgRuntimeNotification {"
                 "background: #ffffff; color: #4a4a4a; padding: 5px 8px;"
                 "border: 1px solid #a7b1bc; }"
@@ -13507,20 +14036,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             ssh_title = QLabel("Proxy Server · SSH2")
             ssh_title.setStyleSheet("color: #f2f2f2; font-weight: 600;")
             ssh_layout.addWidget(ssh_title)
-            transcript = QPlainTextEdit()
-            transcript.setObjectName("mRemoteNgRuntimeTranscript")
-            transcript.setReadOnly(True)
-            transcript.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-            transcript.setPlainText(
-                "Using username 'operator'.\n"
-                "Authenticated with public key from agent\n"
-                "Welcome to Ubuntu 22.04 LTS\n\n"
-                "System load:  0.01      Processes: 173\n"
-                "Memory usage: 37%       Users logged in: 0\n"
-                "IP address for ens160: 10.32.0.42\n\n"
-                "operator@edge-prod:~$"
-            )
-            ssh_layout.addWidget(transcript, 1)
+            if pane is None:
+                transcript = QPlainTextEdit()
+                transcript.setObjectName("mRemoteNgRuntimeTranscript")
+                transcript.setReadOnly(True)
+                transcript.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+                transcript.setPlainText(
+                    "Using username 'operator'.\n"
+                    "Authenticated with public key from agent\n"
+                    "Welcome to Ubuntu 22.04 LTS\n\n"
+                    "System load:  0.01      Processes: 173\n"
+                    "Memory usage: 37%       Users logged in: 0\n"
+                    "IP address for ens160: 10.32.0.42\n\n"
+                    "operator@edge-prod:~$"
+                )
+                ssh_layout.addWidget(transcript, 1)
+            else:
+                pane.header.setVisible(False)
+                pane.setProperty("mRemoteNgRuntimeEmbedded", True)
+                pane.setMinimumSize(0, 0)
+                pane.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+                ssh_layout.addWidget(pane, 1)
             panes.addWidget(rdp, 3)
             panes.addWidget(ssh, 2)
             root.addLayout(panes, 1)
@@ -13531,7 +14067,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             root.addWidget(notification)
             return panel
 
-        def build_termius_native_sftp_surface(self) -> QFrame:
+        def build_termius_native_sftp_surface(
+            self,
+            terminal_pane: TerminalPane | None = None,
+        ) -> QFrame:
             """Connected Termius-style dual-pane SFTP workspace.
 
             The widget tree deliberately mirrors the supplied desktop capture:
@@ -13556,6 +14095,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "QTreeWidget#termiusNativeSftpTable::item:selected { background: #1d654b; color: #ffffff; border: 1px solid #38c98a; }"
                 "QHeaderView::section { background: #16263c; color: #88a6c7; border: 0px; padding: 4px; }"
                 "QToolButton#termiusNativeSftpAction { background: #1b2c43; color: #b7cbe2; border: 1px solid #3c5878; padding: 3px 10px; border-radius: 4px; }"
+                "QFrame#termiusNativeTerminalDrawer { background: #0d1624; border: 1px solid #2e496b; }"
+                "QTextEdit#terminalOutput { background: #0d1624; color: #d9e8f8; border: 0px;"
+                "font-family: Consolas, 'Courier New'; font-size: 9pt; }"
+                "QLineEdit#terminalInput { background: #111b2b; color: #f4f8ff; border: 1px solid #3c5878;"
+                "padding: 3px 6px; font-family: Consolas, 'Courier New'; }"
             )
             root = QVBoxLayout(panel)
             root.setContentsMargins(10, 8, 10, 8)
@@ -13572,14 +14116,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 top.addWidget(chip)
             top.addStretch(1)
             top.addWidget(_literal_label("edge-prod  ·  SSH"))
+            terminal_toggle: QToolButton | None = None
+            if terminal_pane is not None:
+                terminal_toggle = QToolButton()
+                terminal_toggle.setObjectName("termiusNativeTerminalToggle")
+                terminal_toggle.setText("Terminal")
+                terminal_toggle.setToolTip("Show or hide the connected terminal")
+                top.addWidget(terminal_toggle)
             root.addLayout(top)
 
             panes = QHBoxLayout()
             panes.setSpacing(8)
             for pane_index in range(2):
-                pane = QFrame()
-                pane.setObjectName("termiusNativeSftpPane")
-                pane_layout = QVBoxLayout(pane)
+                sftp_pane = QFrame()
+                sftp_pane.setObjectName("termiusNativeSftpPane")
+                pane_layout = QVBoxLayout(sftp_pane)
                 pane_layout.setContentsMargins(4, 0, 4, 0)
                 pane_layout.setSpacing(5)
                 header = QHBoxLayout()
@@ -13615,8 +14166,30 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         table.setCurrentItem(item)
                 table.itemDoubleClicked.connect(lambda item, _column: self.open_sftp_context_item(item))
                 pane_layout.addWidget(table, 1)
-                panes.addWidget(pane, 1)
+                panes.addWidget(sftp_pane, 1)
             root.addLayout(panes, 1)
+            if terminal_pane is not None:
+                terminal_drawer = QFrame()
+                terminal_drawer.setObjectName("termiusNativeTerminalDrawer")
+                terminal_drawer.setProperty("productTerminalDrawerPreset", "termius")
+                terminal_drawer.setProperty("productTerminalDrawerState", "closed")
+                drawer_layout = QVBoxLayout(terminal_drawer)
+                drawer_layout.setContentsMargins(4, 4, 4, 4)
+                drawer_layout.addWidget(terminal_pane)
+                terminal_pane.header.setVisible(False)
+                terminal_pane.setProperty("termiusNativeTerminalEmbedded", True)
+                terminal_pane.setMinimumSize(0, 0)
+                terminal_pane.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Expanding,
+                )
+                terminal_drawer.setVisible(False)
+                root.addWidget(terminal_drawer)
+                if terminal_toggle is not None:
+                    terminal_toggle.clicked.connect(
+                        lambda _checked=False, drawer=terminal_drawer, button=terminal_toggle:
+                        self.toggle_product_terminal_drawer(drawer, button)
+                    )
             return panel
 
         def open_sftp_context_item(self, item: QTreeWidgetItem | None) -> None:
@@ -13640,7 +14213,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 surface.setProperty("termiusNativeSftpOpenedItem", name)
                 surface.setProperty("termiusNativeSftpOpenedKind", kind)
 
-        def build_remmina_native_viewer_surface(self) -> QFrame:
+        def build_remmina_native_viewer_surface(
+            self,
+            terminal_pane: TerminalPane | None = None,
+        ) -> QFrame:
             """Connected Remmina-style viewer canvas with GTK-like controls."""
             route = gui_design_remmina_profile_viewer_route()
             panel = QFrame()
@@ -13653,7 +14229,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "QFrame#remminaNativeViewerSurface { background: #edf1f5; border: 1px solid #b7c2cc; }"
                 "QLabel#remminaNativeViewerCanvas { background: #1c1f22; color: #e9edf2; border: 1px solid #8d99a5; font-family: Consolas, 'Courier New'; }"
                 "QToolButton#remminaNativeViewerAction { background: #ffffff; color: #354d64; border: 1px solid #aab8c6; padding: 4px 8px; }"
+                "QToolButton#remminaNativeTerminalToggle { background: #ffffff; color: #354d64; border: 1px solid #aab8c6; padding: 4px 8px; }"
                 "QLabel#remminaNativeViewerDetails { background: #ffffff; color: #334352; border: 1px solid #b7c2cc; padding: 8px; }"
+                "QFrame#remminaNativeTerminalDrawer { background: #1c1f22; border: 1px solid #8d99a5; }"
+                "QTextEdit#terminalOutput { background: #1c1f22; color: #e9edf2; border: 0px;"
+                "font-family: Consolas, 'Courier New'; font-size: 9pt; }"
+                "QLineEdit#terminalInput { background: #252a2f; color: #f2f5f8; border: 1px solid #8d99a5;"
+                "padding: 3px 6px; font-family: Consolas, 'Courier New'; }"
             )
             root = QVBoxLayout(panel)
             root.setContentsMargins(8, 7, 8, 8)
@@ -13678,6 +14260,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 else:
                     button.clicked.connect(lambda checked=False, key=control.key: self.handle_remmina_viewer_control(key, checked))
                 toolbar.addWidget(button)
+            terminal_toggle: QToolButton | None = None
+            if terminal_pane is not None:
+                terminal_toggle = QToolButton()
+                terminal_toggle.setObjectName("remminaNativeTerminalToggle")
+                terminal_toggle.setText("Terminal")
+                terminal_toggle.setToolTip("Show or hide the connected terminal")
+                toolbar.addWidget(terminal_toggle)
             root.addLayout(toolbar)
             body = QHBoxLayout()
             viewer = QLabel("Remote desktop session\n\n\n\n\n\n\n\n\n\n\n\n\n\n\noperator@win-admin  ·  Connected")
@@ -13690,7 +14279,49 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             details.setMinimumWidth(180)
             body.addWidget(details, 1)
             root.addLayout(body, 1)
+            if terminal_pane is not None:
+                terminal_drawer = QFrame()
+                terminal_drawer.setObjectName("remminaNativeTerminalDrawer")
+                terminal_drawer.setProperty("productTerminalDrawerPreset", "remmina")
+                terminal_drawer.setProperty("productTerminalDrawerState", "closed")
+                drawer_layout = QVBoxLayout(terminal_drawer)
+                drawer_layout.setContentsMargins(4, 4, 4, 4)
+                drawer_layout.addWidget(terminal_pane)
+                terminal_pane.header.setVisible(False)
+                terminal_pane.setProperty("remminaNativeTerminalEmbedded", True)
+                terminal_pane.setMinimumSize(0, 0)
+                terminal_pane.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Expanding,
+                )
+                terminal_drawer.setVisible(False)
+                root.addWidget(terminal_drawer)
+                if terminal_toggle is not None:
+                    terminal_toggle.clicked.connect(
+                        lambda _checked=False, drawer=terminal_drawer, button=terminal_toggle:
+                        self.toggle_product_terminal_drawer(drawer, button)
+                    )
             return panel
+
+        def toggle_product_terminal_drawer(
+            self,
+            drawer: QWidget,
+            button: QToolButton,
+        ) -> None:
+            """Toggle the opt-in terminal drawer on viewer-first product surfaces."""
+            visible = not drawer.isVisible()
+            drawer.setVisible(visible)
+            state = "open" if visible else "closed"
+            drawer.setProperty("productTerminalDrawerState", state)
+            button.setText("Hide terminal" if visible else "Terminal")
+            button.setProperty("productTerminalDrawerState", state)
+            button.setAccessibleName("Hide terminal" if visible else "Show terminal")
+            button.style().unpolish(button)
+            button.style().polish(button)
+            self.statusBar().showMessage(
+                "Terminal drawer opened" if visible else "Terminal drawer closed",
+                1800,
+            )
 
         @staticmethod
         def apply_mremoteng_reconnect_route_properties(
@@ -15313,15 +15944,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return panel
 
         def remmina_viewer_control_icon(self, icon_key: str, *, size: int) -> QIcon:
-            pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            try:
-                self.draw_remmina_viewer_control_icon(painter, icon_key, size)
-            finally:
-                painter.end()
-            return QIcon(pixmap)
+            return self.generated_icon(
+                size,
+                lambda painter, logical_size: self.draw_remmina_viewer_control_icon(
+                    painter, icon_key, logical_size
+                ),
+            )
 
         def draw_remmina_viewer_control_icon(self, painter: QPainter, icon_key: str, size: int) -> None:
             primary = QColor("#2f6fb1")
@@ -16471,6 +17099,46 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.quick_connect.setText(text)
             self.run_quick_connect()
 
+        def connect_from_product_host(self, text: str) -> None:
+            """Resolve a native product toolbar host field to a saved profile."""
+            query = text.strip()
+            if not query:
+                self.connect_selected(False)
+                return
+            needle = query.casefold()
+            for item in self.iter_profile_tree_items():
+                profile_name = item.data(0, Qt.ItemDataRole.UserRole)
+                profile = self.profile_by_name(profile_name if isinstance(profile_name, str) else None)
+                haystack = " ".join(
+                    (
+                        item.text(0),
+                        profile.name if profile is not None else "",
+                        profile.host if profile is not None else "",
+                        profile.display_target if profile is not None else "",
+                    )
+                ).casefold()
+                if profile is not None and needle in haystack and self.profile_tree_item_is_visible(item):
+                    self.profile_list.setCurrentItem(item)
+                    self.connect_selected(False)
+                    self.statusBar().showMessage(f"Connected: {profile.name}")
+                    return
+            self.statusBar().showMessage(f"No saved session matches: {query}")
+            self.log.append(f"PRODUCT HOST MISS: {query}")
+
+        def focus_securecrt_host(self) -> None:
+            self.securecrt_host_input.setFocus(Qt.FocusReason.ShortcutFocusReason)
+            self.securecrt_host_input.selectAll()
+
+        def focus_securecrt_keyword(self) -> None:
+            self.securecrt_keyword_input.setFocus(Qt.FocusReason.ShortcutFocusReason)
+            self.securecrt_keyword_input.selectAll()
+
+        def find_product_keyword(self, text: str) -> None:
+            """Route SecureCRT's keyword field through the shared terminal finder."""
+            query = text.strip()
+            self.search_input.setText(query)
+            self.find_log_text()
+
         def open_local_terminal_tab(self) -> None:
             self.open_terminal_tab(default_shell_plan(self.next_shell_index()))
 
@@ -16538,13 +17206,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.setSpacing(4)
             preset_id = self.current_design_id()
             self.configure_product_reference_terminal_pane(pane, preset_id)
+            product_surface: QWidget | None = None
             if preset_id == "termius":
-                layout.addWidget(self.build_termius_native_sftp_surface(), 3)
+                product_surface = self.build_termius_native_sftp_surface(pane)
             elif preset_id == "remmina":
-                layout.addWidget(self.build_remmina_native_viewer_surface(), 3)
+                product_surface = self.build_remmina_native_viewer_surface(pane)
             elif preset_id == "mremoteng":
-                layout.addWidget(self.build_mremoteng_runtime_document_surface(), 3)
-            layout.addWidget(pane, 2)
+                product_surface = self.build_mremoteng_runtime_document_surface(pane)
+            if product_surface is not None:
+                layout.addWidget(product_surface, 1)
+            else:
+                # SecureCRT is already terminal-led, so its real pane is the
+                # connected document surface rather than a nested product
+                # viewer.
+                layout.addWidget(pane, 1)
             return surface
 
         @staticmethod

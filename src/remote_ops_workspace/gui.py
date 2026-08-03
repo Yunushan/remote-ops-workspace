@@ -7509,7 +7509,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 painter.setBrush(QBrush(value))
 
             pen(color)
-            brush(Qt.BrushStyle.NoBrush)
+            painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
             if icon_key == "session-manager":
                 brush(color)
                 painter.drawRect(2, 6, size - 4, size - 8)
@@ -9770,7 +9770,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.main_toolbar.setVisible(True)
             self.left_panel.setVisible(True)
             self.layout_toolbar.setVisible(not is_moba)
-            self.tabs.tabBar().setVisible(True)
+            tab_bar = self.tabs.tabBar()
+            if tab_bar is not None:
+                tab_bar.setVisible(True)
             self.log.setVisible(not is_moba)
             self.configure_product_connected_chrome()
             self.log.setPlaceholderText(
@@ -12314,7 +12316,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.left_panel.setVisible(False)
                 self.main_toolbar.setVisible(False)
                 self.layout_toolbar.setVisible(False)
-                self.tabs.tabBar().setVisible(False)
+                tab_bar = self.tabs.tabBar()
+                if tab_bar is not None:
+                    tab_bar.setVisible(False)
                 # Keep the shared activity/status edge mounted.  The live
                 # render contracts use it as the workspace's bottom boundary;
                 # Termius still gets the compact 70px strip rather than the
@@ -12327,7 +12331,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.left_panel.setVisible(True)
             self.main_toolbar.setVisible(True)
             self.layout_toolbar.setVisible(preset_id != "mobaxterm")
-            self.tabs.tabBar().setVisible(True)
+            tab_bar = self.tabs.tabBar()
+            if tab_bar is not None:
+                tab_bar.setVisible(True)
             self.log.setVisible(preset_id != "mobaxterm")
             try:
                 preset = get_gui_design_preset(preset_id)
@@ -14316,8 +14322,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             button.setText("Hide terminal" if visible else "Terminal")
             button.setProperty("productTerminalDrawerState", state)
             button.setAccessibleName("Hide terminal" if visible else "Show terminal")
-            button.style().unpolish(button)
-            button.style().polish(button)
+            style = button.style()
+            if style is not None:
+                style.unpolish(button)
+                style.polish(button)
             self.statusBar().showMessage(
                 "Terminal drawer opened" if visible else "Terminal drawer closed",
                 1800,
@@ -17113,8 +17121,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     (
                         item.text(0),
                         profile.name if profile is not None else "",
-                        profile.host if profile is not None else "",
-                        profile.display_target if profile is not None else "",
+                        (profile.host or "") if profile is not None else "",
+                        (profile.display_target or "") if profile is not None else "",
                     )
                 ).casefold()
                 if profile is not None and needle in haystack and self.profile_tree_item_is_visible(item):

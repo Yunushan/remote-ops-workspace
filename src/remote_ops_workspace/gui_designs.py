@@ -6437,6 +6437,71 @@ QPushButton[interactionState="disabled"], QToolButton[interactionState="disabled
   color: {colors.sidebar_muted};
   border-color: {colors.toolbar_border};
 }}
+QToolButton#productToolbarButton[productChromePreset="securecrt"],
+QToolButton#productToolbarButton[productChromePreset="mremoteng"],
+QToolButton#productToolbarButton[productChromePreset="remmina"],
+QToolButton#productToolbarButton[productChromePreset="termius"] {{
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 1px;
+  padding: 1px;
+  color: {colors.control_text};
+}}
+QToolButton#productToolbarButton[productChromePreset="securecrt"]:hover,
+QToolButton#productToolbarButton[productChromePreset="mremoteng"]:hover,
+QToolButton#productToolbarButton[productChromePreset="remmina"]:hover,
+QToolButton#productToolbarButton[productChromePreset="termius"]:hover {{
+  background: {colors.control};
+  border-color: {colors.control_hover};
+}}
+QToolButton#productToolbarButton[productChromePreset="securecrt"][interactionState="active"],
+QToolButton#productToolbarButton[productChromePreset="mremoteng"][interactionState="active"],
+QToolButton#productToolbarButton[productChromePreset="remmina"][interactionState="active"],
+QToolButton#productToolbarButton[productChromePreset="termius"][interactionState="active"] {{
+  background: {colors.primary};
+  border-color: {colors.primary};
+}}
+QToolButton#productToolbarButton[productChromePreset="securecrt"][interactionState="checked"],
+QToolButton#productToolbarButton[productChromePreset="mremoteng"][interactionState="checked"],
+QToolButton#productToolbarButton[productChromePreset="remmina"][interactionState="checked"],
+QToolButton#productToolbarButton[productChromePreset="termius"][interactionState="checked"] {{
+  background: {colors.sidebar_selected};
+  border-color: {colors.control_hover};
+}}
+QToolButton#productToolbarButton[productChromePreset="securecrt"]:disabled,
+QToolButton#productToolbarButton[productChromePreset="mremoteng"]:disabled,
+QToolButton#productToolbarButton[productChromePreset="remmina"]:disabled,
+QToolButton#productToolbarButton[productChromePreset="termius"]:disabled {{
+  background: transparent;
+  border-color: transparent;
+}}
+QLineEdit#secureCrtHostInput,
+QLineEdit#secureCrtKeywordInput,
+QLineEdit#mRemoteNgConnectInput {{
+  min-height: 20px;
+  max-height: 24px;
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_border};
+  border-radius: 1px;
+  padding: 1px 5px;
+}}
+QLabel#mRemoteNgProtocolLabel {{
+  color: {colors.primary};
+  font-weight: 700;
+  padding: 1px 3px;
+}}
+QToolBar#mainToolbar[productChromePreset="securecrt"] QLineEdit,
+QToolBar#mainToolbar[productChromePreset="mremoteng"] QLineEdit {{
+  background: {colors.control};
+  border-radius: 1px;
+  padding: 1px 5px;
+}}
+QToolBar#layoutToolbar[productChromePreset="securecrt"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="mremoteng"] QComboBox {{
+  border-radius: 1px;
+  padding: 1px 5px;
+}}
 QLineEdit[interactionState="focused"], QComboBox[interactionState="focused"] {{
   border: 2px solid {colors.control_hover};
   padding: {control_padding};

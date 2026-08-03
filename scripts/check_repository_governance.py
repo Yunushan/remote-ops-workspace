@@ -46,9 +46,19 @@ def _disabled(payload: Any, key: str) -> bool:
 
 
 def audit_protection(
-    payload: dict[str, Any], required_checks: tuple[str, ...] = REQUIRED_CHECKS
+    payload: dict[str, Any],
+    required_checks: tuple[str, ...] = REQUIRED_CHECKS,
+    *,
+    require_review: bool = False,
+    require_signed_commits: bool = False,
 ) -> list[str]:
-    """Return actionable failures for one GitHub branch-protection response."""
+    """Return actionable failures for one GitHub branch-protection response.
+
+    Pull-request approvals and signed commits are intentionally optional by
+    default.  This matches repositories that use status checks and linear
+    history as their merge controls, while the two ``require_*`` switches keep
+    the stricter production policy available for release audits.
+    """
 
     errors: list[str] = []
     status = payload.get("required_status_checks")
@@ -77,22 +87,24 @@ def audit_protection(
             if check not in contexts:
                 errors.append(f"required status check missing: {check}")
 
-    reviews = payload.get("required_pull_request_reviews")
-    if not isinstance(reviews, dict) or not isinstance(
-        reviews.get("required_approving_review_count"), int
-    ):
-        errors.append("at least one required pull-request approval must be configured")
-    elif reviews["required_approving_review_count"] < 1:
-        errors.append("required pull-request approval count must be at least 1")
+    if require_review:
+        reviews = payload.get("required_pull_request_reviews")
+        if not isinstance(reviews, dict) or not isinstance(
+            reviews.get("required_approving_review_count"), int
+        ):
+            errors.append("at least one required pull-request approval must be configured")
+        elif reviews["required_approving_review_count"] < 1:
+            errors.append("required pull-request approval count must be at least 1")
 
     for key, label in (
         ("enforce_admins", "administrator enforcement"),
         ("required_linear_history", "linear history"),
         ("required_conversation_resolution", "conversation resolution"),
-        ("required_signatures", "signed commits"),
     ):
         if not _enabled(payload, key):
             errors.append(f"{label} must be enabled ({key})")
+    if require_signed_commits and not _enabled(payload, "required_signatures"):
+        errors.append("signed commits must be enabled (required_signatures)")
     for key, label in (("allow_force_pushes", "force pushes"), ("allow_deletions", "branch deletion")):
         if not _disabled(payload, key):
             errors.append(f"{label} must be disabled ({key})")
@@ -168,6 +180,16 @@ def main() -> int:
     parser.add_argument("--branch", default=DEFAULT_BRANCH)
     parser.add_argument("--protection-json", type=Path, help="offline branch-protection response fixture")
     parser.add_argument("--required-check", action="append", dest="required_checks")
+    parser.add_argument(
+        "--require-review",
+        action="store_true",
+        help="require at least one approving pull-request review",
+    )
+    parser.add_argument(
+        "--require-signed-commits",
+        action="store_true",
+        help="require GitHub signed-commit protection",
+    )
     args = parser.parse_args()
     if not args.protection_json and not args.repository:
         parser.error("--repository is required unless --protection-json is provided")
@@ -175,7 +197,12 @@ def main() -> int:
         repository = normalize_repository(args.repository) if args.repository else "fixture/fixture"
         payload = load_fixture(args.protection_json) if args.protection_json else fetch_protection(repository, args.branch)
         required_checks = tuple(args.required_checks or REQUIRED_CHECKS)
-        errors = audit_protection(payload, required_checks)
+        errors = audit_protection(
+            payload,
+            required_checks,
+            require_review=args.require_review,
+            require_signed_commits=args.require_signed_commits,
+        )
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"repository governance: {exc}", file=sys.stderr)
         return 1

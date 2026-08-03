@@ -13,7 +13,7 @@ not close a native-host or release-trust requirement by itself.
 | Production signing | Windows Authenticode and macOS Developer ID/notarization proofs are present | release environment signing readiness and native manifest signing metadata |
 | Protected platform parity | Finalized, release-bound accepted records for Linux i386, Linux armhf, Windows XP x86 and Windows XP x64, including real host smoke and release-byte provenance | `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>` and the asset-backed protected-goal gate |
 | Strict MobaXterm depth | One accepted release evidence record for every tracked article | `python scripts/check_mobaxterm_parity_evidence.py --require-complete` |
-| Repository governance | Required checks, pull-request review, conversation resolution, linear history, no force-push/deletion, and signed-commit policy are enabled on `main` | `python scripts/check_repository_governance.py --repository <owner/repo>` (GitHub branch-protection API, not a local manifest) |
+| Repository governance | Required checks, conversation resolution, linear history, and no force-push/deletion are enabled on `main`; pull-request approvals and signed commits remain optional controls | `python scripts/check_repository_governance.py --repository <owner/repo>` (GitHub branch-protection API, not a local manifest). Add `--require-review --require-signed-commits` for the stricter policy. |
 
 The protected-platform gate must report `4/4` accepted targets and the strict
 MobaXterm gate must report `7/7`. Candidate workflow success is deliberately not

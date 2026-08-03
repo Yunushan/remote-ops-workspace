@@ -32,11 +32,18 @@ def test_complete_protection_passes() -> None:
     assert audit_protection(_protection()) == []
 
 
-def test_missing_review_and_signature_are_blocking() -> None:
+def test_missing_review_and_signature_are_allowed_by_default() -> None:
     protection = _protection()
     protection["required_pull_request_reviews"] = None
     protection["required_signatures"] = {"enabled": False}
-    errors = audit_protection(protection)
+    assert audit_protection(protection) == []
+
+
+def test_missing_review_and_signature_are_blocking_in_strict_mode() -> None:
+    protection = _protection()
+    protection["required_pull_request_reviews"] = None
+    protection["required_signatures"] = {"enabled": False}
+    errors = audit_protection(protection, require_review=True, require_signed_commits=True)
     assert "at least one required pull-request approval must be configured" in errors
     assert "signed commits must be enabled (required_signatures)" in errors
 

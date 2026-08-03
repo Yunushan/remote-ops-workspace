@@ -51,6 +51,17 @@ or `GITHUB_TOKEN` with repository administration read access; it is an operator
 preflight rather than a release-workflow step because normal release tokens do
 not need runner-inventory access.
 
+The dispatch-only evidence workflows have a separate non-promotional unavailable
+path. Their hosted inventory preflight uses `--allow-unavailable` and writes
+`ready=false` only when a valid GitHub runner inventory proves that the selected
+target has no matching idle runner. The workflow then emits a visible warning and
+skips only the native target job. That result creates no candidate or accepted
+record, changes no support boundary, and cannot satisfy any strict promotion gate.
+Inventory authentication, permission, malformed-response and transport failures
+remain hard failures. The strict operator preflight above still returns non-zero
+for an unavailable or busy target, so an operator cannot mistake a workflow skip
+for readiness.
+
 Accepted records must start as candidates generated with
 `python scripts/make_platform_verified_evidence_record.py`, then the review
 bundle must be packaged and bound back into the record with

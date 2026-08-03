@@ -299,6 +299,11 @@ def check_publish_contract(
         "body_path: release-notes.md": "release notes body upload",
         "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
         "fail_on_unmatched_files: true": "strict GitHub release upload",
+        'gh release edit "$RELEASE_TAG"': "explicit published release notes application",
+        "--notes-file release-notes.md": "published release notes source",
+        "python release-tooling/scripts/check_published_release_notes.py": (
+            "published release notes verification"
+        ),
     }
     for snippet, label in required_snippets.items():
         if snippet not in publish_block:
@@ -308,19 +313,33 @@ def check_publish_contract(
     notes_index = publish_block.find("release-tooling/scripts/write_release_notes.py")
     attest_index = publish_block.find(ATTEST_RELEASE_ASSETS_ACTION)
     upload_index = publish_block.find("softprops/action-gh-release")
+    apply_notes_index = publish_block.find('gh release edit "$RELEASE_TAG"')
+    verify_notes_index = publish_block.find(
+        "release-tooling/scripts/check_published_release_notes.py"
+    )
     if (
         tooling_index < 0
         or validate_index < 0
         or notes_index < 0
         or attest_index < 0
         or upload_index < 0
+        or apply_notes_index < 0
+        or verify_notes_index < 0
     ):
         errors.append(
-            "publish must validate assets, generate release notes, and attest before GitHub release upload"
+            "publish must validate assets, generate release notes, attest, upload, and verify the published release notes"
         )
-    elif not tooling_index < validate_index < notes_index < attest_index < upload_index:
+    elif not (
+        tooling_index
+        < validate_index
+        < notes_index
+        < attest_index
+        < upload_index
+        < apply_notes_index
+        < verify_notes_index
+    ):
         errors.append(
-            "publish asset validation, release notes generation, and attestation must run before GitHub release upload"
+            "publish asset validation, release notes generation, and attestation must run before GitHub release upload, followed by notes application and verification"
         )
     if "--require-platform-goal-targets" in publish_block or PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND in publish_block:
         errors.append("core publish job must not require protected-platform evidence")

@@ -9,6 +9,7 @@ import ssl
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -40,8 +41,18 @@ def main(argv: list[str] | None = None) -> int:
         require_idle=args.require_idle,
         fetcher=runner_api_fetcher(repository=args.repository, timeout=args.timeout),
     )
+    unavailable = args.allow_unavailable and is_expected_runner_unavailability(report, errors)
+    if args.github_output:
+        write_github_output(Path(args.github_output), ready=bool(report["ready"]))
     if args.json:
         print(json.dumps({**report, "errors": errors}, indent=2, sort_keys=True))
+    elif unavailable:
+        print(
+            "platform evidence runner readiness unavailable: "
+            f"{args.repository}; protected target jobs will be skipped; "
+            "strict release promotion remains blocked until accepted evidence exists",
+            file=sys.stderr,
+        )
     elif errors:
         for error in errors:
             print(f"platform evidence runner readiness: {error}", file=sys.stderr)
@@ -51,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
             "platform evidence runner readiness passed: "
             f"{args.repository}; targets={len(targets)}/{len(targets)}; mode={mode}"
         )
-    return 1 if errors else 0
+    return 0 if not errors or unavailable else 1
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -80,6 +91,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--timeout", type=float, default=20.0, help="GitHub API timeout in seconds")
     parser.add_argument("--json", action="store_true", help="Emit a machine-readable report")
+    parser.add_argument(
+        "--allow-unavailable",
+        action="store_true",
+        help=(
+            "Treat a successfully read but unavailable or busy runner inventory as a "
+            "non-promotional skip; API, authentication, and input errors still fail"
+        ),
+    )
+    parser.add_argument(
+        "--github-output",
+        help="Append the ready=true/false result to a GitHub Actions output file",
+    )
     args = parser.parse_args(argv)
     if not args.require_goal_targets and not args.target:
         parser.error("pass --require-goal-targets or at least one --target")
@@ -162,6 +185,38 @@ def check_platform_evidence_runner_readiness(
 
     report["ready"] = not errors
     return report, errors
+
+
+def is_expected_runner_unavailability(
+    report: dict[str, Any], errors: Sequence[object]
+) -> bool:
+    """Return true only after a valid inventory proves every target is unavailable."""
+
+    targets = report.get("targets")
+    readiness = report.get("target_readiness")
+    if not isinstance(targets, list) or not isinstance(readiness, dict):
+        return False
+    if not targets or len(readiness) != len(targets) or not errors:
+        return False
+    if any(
+        not isinstance(item, dict) or item.get("ready") is not False
+        for item in readiness.values()
+    ):
+        return False
+    return all(is_runner_availability_error(error) for error in errors)
+
+
+def is_runner_availability_error(error: object) -> bool:
+    return isinstance(error, str) and (
+        "requires a self-hosted runner with labels" in error
+        or "matching self-hosted runner labels" in error
+        or "online self-hosted runner labels" in error
+    )
+
+
+def write_github_output(path: Path, *, ready: bool) -> None:
+    with path.open("a", encoding="utf-8", newline="\n") as output:
+        output.write(f"ready={'true' if ready else 'false'}\n")
 
 
 def validate_inputs(*, repository: object, targets: Sequence[object], require_idle: object) -> list[str]:

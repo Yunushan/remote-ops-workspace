@@ -54,6 +54,16 @@ def test_platform_promotion_runbook_requires_protected_goal_gate() -> None:
     assert any("check_protected_platform_goal.py" in error for error in errors)
 
 
+def test_platform_promotion_runbook_requires_non_promotional_runner_skip_boundary() -> None:
+    checker = _load_checker()
+    text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8")
+    text = text.replace("`--allow-unavailable`", "`--allow-runner-skip`")
+
+    errors = checker.check_platform_promotion_runbook(runbook_text=text)
+
+    assert any("--allow-unavailable" in error for error in errors)
+
+
 def test_platform_promotion_runbook_requires_bundle_backed_strict_verify() -> None:
     checker = _load_checker()
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(

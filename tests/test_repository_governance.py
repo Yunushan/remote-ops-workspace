@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+from urllib.error import URLError
+
+from scripts import check_repository_governance as governance
 from scripts.check_repository_governance import audit_protection
 
 
@@ -41,3 +46,22 @@ def test_missing_required_check_is_blocking() -> None:
     protection["required_status_checks"]["contexts"].remove("CodeQL python")
     errors = audit_protection(protection)
     assert "required status check missing: CodeQL python" in errors
+
+
+def test_fetch_protection_uses_gh_after_python_tls_failure(monkeypatch) -> None:
+    protection = _protection()
+    monkeypatch.setenv("GH_TOKEN", "test-token")
+    monkeypatch.setattr(governance.shutil, "which", lambda name: "gh.exe")
+
+    def fail_urlopen(*args, **kwargs):
+        raise URLError("certificate verify failed")
+
+    def fake_run(args, **kwargs):
+        assert args[:3] == ["gh.exe", "api", "https://api.github.com/repos/example/project/branches/main/protection"]
+        assert kwargs["env"]["GH_TOKEN"] == "test-token"
+        return SimpleNamespace(stdout=json.dumps(protection))
+
+    monkeypatch.setattr(governance, "urlopen", fail_urlopen)
+    monkeypatch.setattr(governance.subprocess, "run", fake_run)
+
+    assert governance.fetch_protection("example/project", "main") == protection

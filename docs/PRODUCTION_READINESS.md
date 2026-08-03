@@ -49,6 +49,14 @@ python scripts/check_platform_evidence_runner_readiness.py \
   --repository <owner>/<repo> --require-goal-targets --require-idle
 ```
 
+The manual protected-evidence workflows also perform this inventory check on a
+hosted runner. If GitHub successfully returns the inventory but no required idle
+runner exists, the workflow records an explicit non-promotional skip and leaves
+the native target jobs skipped. That result does not create evidence, change the
+support boundary, or satisfy the `4/4` protected-platform gate. Authentication,
+permission, malformed-response, and transport failures remain hard workflow
+failures so an unavailable API cannot be mistaken for an unavailable runner.
+
 The Linux and XP hosts must produce the target/release-scoped artifacts, smoke
 logs, builder or host identity, security-patch provenance, checksums, manifests,
 review bundle, and finalized accepted record required by

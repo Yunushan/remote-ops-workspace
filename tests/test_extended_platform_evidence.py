@@ -13,6 +13,63 @@ def test_extended_platform_evidence_workflow_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_extended_platform_evidence_requires_runner_readiness_preflight() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "  evidence-runner-readiness:\n",
+        "  removed-evidence-runner-readiness:\n",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert "extended platform evidence workflow missing job: evidence-runner-readiness" in errors
+
+
+def test_extended_platform_evidence_requires_non_promotional_unavailable_runner_report() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        "  evidence-runner-unavailable:\n",
+        "  removed-evidence-runner-unavailable:\n",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert "extended platform evidence workflow missing job: evidence-runner-unavailable" in errors
+
+
+def test_extended_platform_evidence_requires_native_jobs_to_wait_for_runner_readiness() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-i386-native-evidence")
+    assert block
+    workflow = workflow.replace(block, block.replace("    needs: evidence-runner-readiness\n", "", 1), 1)
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert (
+        "linux-i386-native-evidence missing runner readiness preflight dependency: "
+        "needs: evidence-runner-readiness"
+    ) in errors
+
+
+def test_extended_platform_evidence_requires_native_jobs_to_skip_when_runner_is_unavailable() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        " && needs.evidence-runner-readiness.outputs.ready == 'true'",
+        "",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert (
+        "linux-i386-native-evidence missing target guard: "
+        "if: ${{ inputs.target == 'linux-i386' && needs.evidence-runner-readiness.outputs.ready == 'true' }}"
+    ) in errors
+
+
 def test_extended_platform_evidence_rejects_publish_trigger() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
@@ -37,10 +94,10 @@ def test_extended_platform_evidence_rejects_write_permissions() -> None:
 
 def test_extended_platform_evidence_requires_clean_checkout() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "          clean: true\n",
-        "",
-    )
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-i386-native-evidence")
+    assert block
+    workflow = workflow.replace(block, block.replace("          clean: true\n", "", 1), 1)
 
     errors = checker.check_extended_platform_evidence(workflow)
 
@@ -125,11 +182,10 @@ def test_extended_platform_evidence_rejects_job_level_only_bash_default() -> Non
 
 def test_extended_platform_evidence_requires_strict_shell_safety() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "          set -euo pipefail\n",
-        "",
-        1,
-    )
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-i386-native-evidence")
+    assert block
+    workflow = workflow.replace(block, block.replace("          set -euo pipefail\n", "", 1), 1)
 
     errors = checker.check_extended_platform_evidence(workflow)
 
@@ -267,11 +323,10 @@ def test_extended_platform_evidence_requires_local_goal_preflight() -> None:
 def test_extended_platform_evidence_requires_local_goal_preflight_repository() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
-    workflow = workflow.replace(
-        '            --repository "${{ github.repository }}" \\\n',
-        "",
-        1,
-    )
+    block = checker.workflow_job_block(workflow, "linux-i386-native-evidence")
+    assert block
+    mutated = block.replace('            --repository "${{ github.repository }}" \\\n', "", 1)
+    workflow = workflow.replace(block, mutated, 1)
 
     errors = checker.check_extended_platform_evidence(workflow)
 

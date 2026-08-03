@@ -559,6 +559,21 @@ jobs:
           body_path: release-notes.md
           fail_on_unmatched_files: true
           files: release-assets/**
+      - name: Apply boundary-aware release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release edit "$RELEASE_TAG"
+          --repo "${{ github.repository }}"
+          --notes-file release-notes.md
+      - name: Verify published release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python release-tooling/scripts/check_published_release_notes.py
+          --repository "${{ github.repository }}"
+          --tag "$RELEASE_TAG"
+          --channel "${{ needs.release-preflight.outputs.signed_native_publish_ready == 'true' && 'production-signed' || 'unsigned-preview' }}"
   publish-protected-platform-evidence:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_protected_platform_evidence }}
     runs-on: ubuntu-latest

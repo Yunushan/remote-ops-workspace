@@ -66,6 +66,63 @@ def test_runner_readiness_rejects_missing_or_offline_target_runners() -> None:
     assert "linux-armhf requires a self-hosted runner with labels ['armhf', 'linux', 'self-hosted']; none found" in errors
 
 
+def test_runner_readiness_allows_verified_unavailability_only_for_non_promotional_skip() -> None:
+    checker = _load_checker()
+    report, errors = checker.check_platform_evidence_runner_readiness(
+        repository="example/remote-ops-workspace",
+        targets=checker.GOAL_TARGETS,
+        require_idle=True,
+        fetcher=FakeFetcher({"actions/runners?per_page=100&page=1": _runner_page()}),
+    )
+
+    assert report["ready"] is False
+    assert checker.is_expected_runner_unavailability(report, errors) is True
+    assert checker.is_expected_runner_unavailability(
+        report, [*errors, "cannot read GitHub runner inventory"]
+    ) is False
+
+
+def test_runner_readiness_does_not_allow_inventory_fetch_failure_to_be_skipped() -> None:
+    checker = _load_checker()
+    report, errors = checker.check_platform_evidence_runner_readiness(
+        repository="example/remote-ops-workspace",
+        targets=checker.GOAL_TARGETS,
+        require_idle=True,
+        fetcher=FakeFetcher(
+            {"actions/runners?per_page=100&page=1": HTTPError("url", 403, "Forbidden", None, None)}
+        ),
+    )
+
+    assert report["target_readiness"] == {}
+    assert checker.is_expected_runner_unavailability(report, errors) is False
+
+
+def test_runner_readiness_writes_boolean_github_output(tmp_path: Path) -> None:
+    checker = _load_checker()
+    output = tmp_path / "github-output"
+
+    checker.write_github_output(output, ready=False)
+
+    assert output.read_text(encoding="utf-8") == "ready=false\n"
+
+
+def test_runner_readiness_cli_only_skips_verified_unavailability(monkeypatch, tmp_path: Path) -> None:
+    checker = _load_checker()
+    fetcher = FakeFetcher({"actions/runners?per_page=100&page=1": _runner_page()})
+    monkeypatch.setattr(checker, "runner_api_fetcher", lambda **_kwargs: fetcher)
+    output = tmp_path / "github-output"
+    common_args = [
+        "--repository",
+        "example/remote-ops-workspace",
+        "--require-goal-targets",
+        "--require-idle",
+    ]
+
+    assert checker.main([*common_args, "--allow-unavailable", "--github-output", str(output)]) == 0
+    assert checker.main(common_args) == 1
+    assert output.read_text(encoding="utf-8") == "ready=false\n"
+
+
 def test_runner_readiness_require_idle_rejects_busy_runner() -> None:
     checker = _load_checker()
     _, errors = checker.check_platform_evidence_runner_readiness(

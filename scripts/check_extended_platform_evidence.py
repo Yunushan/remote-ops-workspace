@@ -55,6 +55,8 @@ def check_extended_platform_evidence(workflow: str | None = None) -> list[str]:
     errors: list[str] = []
     errors.extend(check_github_expression_delimiters(text))
     errors.extend(check_top_level_policy(text))
+    errors.extend(check_runner_readiness_job(text))
+    errors.extend(check_unavailable_runner_job(text))
     errors.extend(check_linux_job(text, target="linux-i386", job="linux-i386-native-evidence", runner="i386"))
     errors.extend(check_linux_job(text, target="linux-armhf", job="linux-armhf-native-evidence", runner="armhf"))
     errors.extend(check_workflow_script_dependencies(workflow_script_dependencies(text)))
@@ -117,6 +119,67 @@ def check_top_level_policy(workflow: str) -> list[str]:
     return errors
 
 
+def check_runner_readiness_job(workflow: str) -> list[str]:
+    job = "evidence-runner-readiness"
+    block = workflow_job_block(workflow, job)
+    if not block:
+        return [f"extended platform evidence workflow missing job: {job}"]
+    required_snippets = {
+        "runs-on: ubuntu-latest": "hosted runner for readiness preflight",
+        "timeout-minutes: 5": "bounded runner readiness preflight timeout",
+        "outputs:\n      ready: ${{ steps.runner-readiness.outputs.ready }}": "runner readiness output binding",
+        "permissions:\n      actions: read\n      contents: read": "read-only runner inventory permissions",
+        "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "readiness preflight checkout",
+        "persist-credentials: false": "readiness checkout credential isolation",
+        "clean: true": "readiness checkout workspace cleanup",
+        "uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6": "readiness Python setup",
+        'python-version: "3.12"': "readiness Python version pin",
+        "GH_TOKEN: ${{ github.token }}": "GitHub token binding for runner inventory",
+        "python scripts/check_platform_evidence_runner_readiness.py \\\n            --repository \"${{ github.repository }}\" \\\n            --target \"${{ inputs.target }}\" \\\n            --require-idle \\\n            --allow-unavailable \\\n            --github-output \"$GITHUB_OUTPUT\"": "target-specific idle runner readiness check",
+    }
+    errors: list[str] = []
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"{job} missing {label}: {snippet}")
+    errors.extend(
+        check_ordered_snippets(
+            block,
+            (
+                ("readiness preflight checkout", "      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6"),
+                ("readiness Python setup", "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6"),
+                (
+                    "target-specific idle runner readiness check",
+                    "      - id: runner-readiness\n        name: Check evidence runner availability",
+                ),
+            ),
+            job=job,
+        )
+    )
+    errors.extend(check_checkout_step(block, job=job))
+    return errors
+
+
+def check_unavailable_runner_job(workflow: str) -> list[str]:
+    job = "evidence-runner-unavailable"
+    block = workflow_job_block(workflow, job)
+    if not block:
+        return [f"extended platform evidence workflow missing job: {job}"]
+    required_snippets = {
+        "needs: evidence-runner-readiness": "runner readiness dependency",
+        "if: ${{ needs.evidence-runner-readiness.result == 'success' && needs.evidence-runner-readiness.outputs.ready != 'true' }}": "non-promotional unavailable-runner condition",
+        "runs-on: ubuntu-latest": "hosted reporting runner",
+        "timeout-minutes: 5": "bounded unavailable-runner report timeout",
+        "permissions:\n      contents: read": "read-only unavailable-runner report permissions",
+        "::warning::No idle protected-platform evidence runner": "unavailable-runner warning",
+        "strict release promotion remains blocked until accepted evidence exists": "strict promotion boundary",
+    }
+    errors: list[str] = []
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"{job} missing {label}: {snippet}")
+    return errors
+
+
 def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> list[str]:
     block = workflow_job_block(workflow, job)
     if not block:
@@ -161,7 +224,8 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     )
     errors: list[str] = []
     required_snippets = {
-        f"if: ${{{{ inputs.target == '{target}' }}}}": "target guard",
+        "needs: evidence-runner-readiness": "runner readiness preflight dependency",
+        f"if: ${{{{ inputs.target == '{target}' && needs.evidence-runner-readiness.outputs.ready == 'true' }}}}": "target guard",
         f"runs-on: [self-hosted, linux, {runner}]": "matching self-hosted runner labels",
         "timeout-minutes: 90": "bounded native evidence job timeout",
         "RELEASE_TAG: ${{ inputs.release_tag }}": "release-tag environment binding for native build script",

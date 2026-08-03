@@ -106,6 +106,30 @@ def load_fixture(path: Path) -> dict[str, Any]:
     return value
 
 
+def _fetch_with_gh(gh: str, url: str) -> dict[str, Any]:
+    environment = os.environ.copy()
+    if not environment.get("GH_TOKEN") and environment.get("GITHUB_TOKEN"):
+        environment["GH_TOKEN"] = environment["GITHUB_TOKEN"]
+    try:
+        completed = subprocess.run(
+            [gh, "api", url, "--header", "Accept: application/vnd.github+json"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=environment,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"gh could not read branch protection: {exc}") from exc
+    try:
+        value = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("GitHub branch-protection response was not JSON") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError("GitHub branch-protection response must be a JSON object")
+    return value
+
+
 def fetch_protection(repository: str, branch: str) -> dict[str, Any]:
     url = f"https://api.github.com/repos/{repository}/branches/{branch}/protection"
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -121,26 +145,18 @@ def fetch_protection(repository: str, branch: str) -> dict[str, Any]:
         try:
             with urlopen(request, timeout=30) as response:
                 value = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError) as exc:
+        except HTTPError as exc:
             raise RuntimeError(f"GitHub branch-protection request failed: {exc}") from exc
+        except (URLError, TimeoutError) as exc:
+            gh = shutil.which("gh")
+            if gh is None:
+                raise RuntimeError(f"GitHub branch-protection request failed: {exc}") from exc
+            value = _fetch_with_gh(gh, url)
     else:
         gh = shutil.which("gh")
         if gh is None:
             raise RuntimeError("set GH_TOKEN/GITHUB_TOKEN or install/authenticate gh to read branch protection")
-        try:
-            completed = subprocess.run(
-                [gh, "api", url, "--header", "Accept: application/vnd.github+json"],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            raise RuntimeError(f"gh could not read branch protection: {exc}") from exc
-        try:
-            value = json.loads(completed.stdout)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("GitHub branch-protection response was not JSON") from exc
+        value = _fetch_with_gh(gh, url)
     if not isinstance(value, dict):
         raise RuntimeError("GitHub branch-protection response must be a JSON object")
     return value

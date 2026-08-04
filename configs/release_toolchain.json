@@ -15,7 +15,7 @@
         "package_overrides": {
           "cryptography": "48.0.1"
         },
-        "reason": "cryptography 49 removed 32-bit Windows and Intel macOS wheels; 48.0.1 is the latest compatible wheel release and contains the preceding security fixes. This profile is not Windows XP evidence."
+        "reason": "cryptography 49 removed 32-bit Windows and Intel macOS wheels; 48.0.1 is retained only for legacy-wheel compatibility testing and packaging. pip-audit reports CVE-2026-69247, CVE-2026-69248 and CVE-2026-69249 for this exception, so it is never a modern default, production-security claim or Windows XP evidence."
       }
     ]
   },
@@ -77,8 +77,8 @@
     },
     {
       "name": "cryptography",
-      "version": "49.0.0",
-      "purpose": "Pinned modern vault encryption dependency. Windows x64 uses the upstream wheel; Windows ARM64 builds this version from source against the pinned ARM64 OpenSSL toolchain."
+      "version": "50.0.0",
+      "purpose": "Pinned modern vault encryption dependency with the current security fixes. Windows x64 uses the upstream wheel; Windows ARM64 builds this version from source against the pinned ARM64 OpenSSL toolchain."
     },
     {
       "name": "truststore",
@@ -108,7 +108,7 @@
           "windows-arm64"
         ],
         "linkage": "static",
-        "purpose": "Architecture-correct OpenSSL used only for the cryptography 49 Windows ARM64 source build; weak cipher features remain disabled."
+        "purpose": "Architecture-correct OpenSSL used only for the cryptography 50 Windows ARM64 source build; weak cipher features remain disabled."
       }
     ],
     "linux": [

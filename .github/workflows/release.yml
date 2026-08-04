@@ -240,7 +240,7 @@ jobs:
         run: |
           $ExpectedOpenSsl = ""
           if ("${{ matrix.arch }}" -eq "x86") {
-            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[security,package]"
+            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[legacy-security,package]"
             $ExpectedCryptography = "48.0.1"
           } elseif ("${{ matrix.arch }}" -eq "arm64") {
             if (-not $env:VCPKG_INSTALLATION_ROOT) {
@@ -273,11 +273,11 @@ jobs:
             $env:OPENSSL_NO_VENDOR = "1"
             python -m pip install --constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser
             python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"
-            $ExpectedCryptography = "49.0.0"
+            $ExpectedCryptography = "50.0.0"
             $ExpectedOpenSsl = "OpenSSL 3.6.3"
           } else {
             python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
-            $ExpectedCryptography = "49.0.0"
+            $ExpectedCryptography = "50.0.0"
           }
           python -c "import cryptography; from cryptography.hazmat.backends.openssl.backend import backend; actual_openssl = backend.openssl_version_text(); assert cryptography.__version__ == '$ExpectedCryptography'; assert not '$ExpectedOpenSsl' or actual_openssl.startswith('$ExpectedOpenSsl'), actual_openssl; print(f'cryptography={cryptography.__version__} openssl={actual_openssl}')"
       - name: Install Windows installer toolchains
@@ -351,11 +351,11 @@ jobs:
       - name: Install Python packaging dependencies
         run: |
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
-            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[desktop,security,package]"
+            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[desktop,legacy-security,package]"
             expected_cryptography="48.0.1"
           else
             python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
-            expected_cryptography="49.0.0"
+            expected_cryptography="50.0.0"
           fi
           EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Prepare macOS release signing keychain
@@ -435,7 +435,7 @@ jobs:
       - name: Install Python packaging dependencies
         run: |
           python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
-          python -c "import cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert cryptography.__version__ == '49.0.0'; print(f'cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+          python -c "import cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert cryptography.__version__ == '50.0.0'; print(f'cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Build Linux DEB, RPM and AppImage packages
         run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
       - name: Run Linux native installer smoke tests

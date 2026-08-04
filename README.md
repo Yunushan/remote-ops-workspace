@@ -450,6 +450,10 @@ Core design principles:
 - Store examples only under `configs/*.example.*`.
 - Use `row connect NAME --dry-run` before launching newly imported profiles.
 - Vault encryption requires the optional `security` extra: `pip install -e ".[security]"`.
+- The normal `security` extra requires maintained `cryptography>=50.0.0`. The
+  separately named `legacy-security` extra is only for the pinned
+  `48.0.1` compatibility-wheel profile on legacy architectures; it carries
+  known vulnerabilities and must not be used for production release evidence.
 - Use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv or shell history.
 - `row vault get` requires `--out`; decrypted secrets are never printed to the terminal.
 - `row keygen --passphrase-env` keeps software-key passphrases out of `ssh-keygen` argv by generating encrypted keys in-process.

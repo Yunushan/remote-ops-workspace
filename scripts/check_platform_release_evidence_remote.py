@@ -6,12 +6,15 @@ import io
 import json
 import os
 import re
+import shutil
+import ssl
+import subprocess
 import sys
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
@@ -1197,13 +1200,68 @@ def check_path_not_reserved_workspace_root(path: object, label: str) -> list[str
     return []
 
 
+def _fetch_with_gh(url: str, *, timeout: float) -> bytes:
+    """Fetch GitHub bytes through gh when Python's trust store rejects TLS.
+
+    This is an authenticated CLI transport fallback, not an insecure TLS
+    bypass. The CLI performs its own certificate validation and preserves the
+    caller's GitHub authentication context.
+    """
+
+    gh = shutil.which("gh")
+    if gh is None:
+        raise RuntimeError("gh CLI is unavailable for the GitHub transport fallback")
+    environment = os.environ.copy()
+    if not environment.get("GH_TOKEN") and environment.get("GITHUB_TOKEN"):
+        environment["GH_TOKEN"] = environment["GITHUB_TOKEN"]
+    try:
+        completed = subprocess.run(
+            [
+                gh,
+                "api",
+                url,
+                "--header",
+                "Accept: application/vnd.github+json",
+                "--header",
+                "X-GitHub-Api-Version: 2022-11-28",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=timeout,
+            env=environment,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"gh API transport fallback failed for {url}: {exc}") from exc
+    return completed.stdout
+
+
+def _fetch_transport_fallback(
+    url: str, *, timeout: float, original_error: Exception
+) -> tuple[bytes | None, list[str]]:
+    try:
+        return _fetch_with_gh(url, timeout=timeout), []
+    except RuntimeError as fallback_error:
+        return None, [
+            f"{fetch_error_message(url, original_error)}; {fallback_error}"
+        ]
+
+
 def fetch_json(url: str, *, timeout: float) -> tuple[dict[str, Any] | None, list[str]]:
     request = Request(url, headers=github_api_headers())
     try:
         with urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
-    except Exception as exc:  # pragma: no cover - exercised manually against live GitHub.
+    except HTTPError as exc:
         return None, [fetch_error_message(url, exc)]
+    except (URLError, TimeoutError, ssl.SSLError) as exc:
+        raw, errors = _fetch_transport_fallback(url, timeout=timeout, original_error=exc)
+        if errors:
+            return None, errors
+        assert raw is not None
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as parse_error:
+            return None, [f"GitHub API response was not JSON: {parse_error}"]
     if not isinstance(data, dict):
         return None, [f"GitHub API response must be a JSON object: {url}"]
     return data, []
@@ -1225,8 +1283,10 @@ def fetch_bytes(url: str, *, timeout: float) -> tuple[bytes | None, list[str]]:
     try:
         with urlopen(request, timeout=timeout) as response:
             return response.read(), []
-    except Exception as exc:  # pragma: no cover - exercised manually against live GitHub.
+    except HTTPError as exc:
         return None, [fetch_error_message(url, exc)]
+    except (URLError, TimeoutError, ssl.SSLError) as exc:
+        return _fetch_transport_fallback(url, timeout=timeout, original_error=exc)
 
 
 def fetch_error_message(url: str, exc: Exception) -> str:

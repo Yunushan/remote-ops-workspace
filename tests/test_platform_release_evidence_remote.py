@@ -9,7 +9,7 @@ import sys
 import zipfile
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -4812,6 +4812,52 @@ def test_fetch_json_rate_limit_error_mentions_authenticated_live_audit(monkeypat
     assert "GitHub API rate limit exceeded during live release evidence audit" in errors[0]
     assert "GH_TOKEN or GITHUB_TOKEN" in errors[0]
     assert "contents:read and actions:read" in errors[0]
+
+
+def test_fetch_json_uses_gh_for_python_tls_transport_failures(monkeypatch) -> None:
+    checker = _load_checker()
+    calls: list[tuple[list[str], dict[str, Any]]] = []
+
+    def fake_urlopen(*_args: Any, **_kwargs: Any) -> Any:
+        raise URLError("certificate verify failed")
+
+    def fake_run(args: list[str], **kwargs: Any) -> Any:
+        calls.append((args, kwargs))
+        return type("Completed", (), {"stdout": b'{"ok": true}'})()
+
+    monkeypatch.setattr(checker, "urlopen", fake_urlopen)
+    monkeypatch.setattr(checker.shutil, "which", lambda _name: "gh")
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+
+    data, errors = checker.fetch_json("https://api.github.com/repos/example/project", timeout=2.0)
+
+    assert data == {"ok": True}
+    assert errors == []
+    assert calls
+    assert calls[0][0][:3] == ["gh", "api", "https://api.github.com/repos/example/project"]
+    assert calls[0][1]["timeout"] == 2.0
+
+
+def test_fetch_bytes_uses_gh_for_python_tls_transport_failures(monkeypatch) -> None:
+    checker = _load_checker()
+    calls: list[list[str]] = []
+
+    def fake_urlopen(*_args: Any, **_kwargs: Any) -> Any:
+        raise URLError("certificate verify failed")
+
+    def fake_run(args: list[str], **_kwargs: Any) -> Any:
+        calls.append(args)
+        return type("Completed", (), {"stdout": b"release-bytes"})()
+
+    monkeypatch.setattr(checker, "urlopen", fake_urlopen)
+    monkeypatch.setattr(checker.shutil, "which", lambda _name: "gh")
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+
+    data, errors = checker.fetch_bytes("https://api.github.com/repos/example/archive.zip", timeout=3.0)
+
+    assert data == b"release-bytes"
+    assert errors == []
+    assert calls[0][:3] == ["gh", "api", "https://api.github.com/repos/example/archive.zip"]
 
 
 def test_fetch_bytes_rate_limit_error_mentions_authenticated_live_audit(monkeypatch) -> None:

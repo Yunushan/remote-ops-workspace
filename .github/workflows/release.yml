@@ -240,7 +240,7 @@ jobs:
         run: |
           $ExpectedOpenSsl = ""
           if ("${{ matrix.arch }}" -eq "x86") {
-            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[security,package]"
+            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[legacy-security,package]"
             $ExpectedCryptography = "48.0.1"
           } elseif ("${{ matrix.arch }}" -eq "arm64") {
             if (-not $env:VCPKG_INSTALLATION_ROOT) {
@@ -351,7 +351,7 @@ jobs:
       - name: Install Python packaging dependencies
         run: |
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
-            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[desktop,security,package]"
+            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[desktop,legacy-security,package]"
             expected_cryptography="48.0.1"
           else
             python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"

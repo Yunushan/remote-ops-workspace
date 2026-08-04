@@ -1253,6 +1253,8 @@ def fetch_json(url: str, *, timeout: float) -> tuple[dict[str, Any] | None, list
             data = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         return None, [fetch_error_message(url, exc)]
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return None, [f"GitHub API response was not JSON: {exc}"]
     except (URLError, TimeoutError, ssl.SSLError) as exc:
         raw, errors = _fetch_transport_fallback(url, timeout=timeout, original_error=exc)
         if errors:

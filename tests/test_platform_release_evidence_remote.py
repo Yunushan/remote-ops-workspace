@@ -4838,6 +4838,29 @@ def test_fetch_json_uses_gh_for_python_tls_transport_failures(monkeypatch) -> No
     assert calls[0][1]["timeout"] == 2.0
 
 
+@pytest.mark.parametrize("payload", [b"{", b"\xff"])
+def test_fetch_json_reports_malformed_primary_api_bytes(payload: bytes, monkeypatch) -> None:
+    checker = _load_checker()
+
+    class FakeResponse:
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return payload
+
+    monkeypatch.setattr(checker, "urlopen", lambda *_args, **_kwargs: FakeResponse())
+
+    data, errors = checker.fetch_json("https://api.github.com/repos/example/project", timeout=2.0)
+
+    assert data is None
+    assert len(errors) == 1
+    assert errors[0].startswith("GitHub API response was not JSON:")
+
+
 def test_fetch_bytes_uses_gh_for_python_tls_transport_failures(monkeypatch) -> None:
     checker = _load_checker()
     calls: list[list[str]] = []

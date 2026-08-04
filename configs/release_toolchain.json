@@ -77,8 +77,8 @@
     },
     {
       "name": "cryptography",
-      "version": "49.0.0",
-      "purpose": "Pinned modern vault encryption dependency. Windows x64 uses the upstream wheel; Windows ARM64 builds this version from source against the pinned ARM64 OpenSSL toolchain."
+      "version": "50.0.0",
+      "purpose": "Pinned modern vault encryption dependency with the current security fixes. Windows x64 uses the upstream wheel; Windows ARM64 builds this version from source against the pinned ARM64 OpenSSL toolchain."
     },
     {
       "name": "truststore",
@@ -108,7 +108,7 @@
           "windows-arm64"
         ],
         "linkage": "static",
-        "purpose": "Architecture-correct OpenSSL used only for the cryptography 49 Windows ARM64 source build; weak cipher features remain disabled."
+        "purpose": "Architecture-correct OpenSSL used only for the cryptography 50 Windows ARM64 source build; weak cipher features remain disabled."
       }
     ],
     "linux": [

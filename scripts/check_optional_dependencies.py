@@ -15,7 +15,7 @@ sys.path.insert(0, str(SRC))
 
 EXPECTED_EXTRA_SNIPPETS = {
     "desktop": ('"PyQt6>=6.6"',),
-    "security": ('"cryptography>=42"', '"truststore>=0.10"'),
+    "security": ('"cryptography>=50.0.0"', '"truststore>=0.10"'),
     "package": ('"build>=1.2"', '"pyinstaller>=6.0"'),
     "dev": ('"build>=1.2"', '"pytest>=8"', '"ruff>=0.5"', '"mypy>=1.10"'),
 }

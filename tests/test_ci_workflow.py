@@ -232,8 +232,8 @@ def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
 def test_ci_workflow_requires_intel_macos_compatibility_constraints() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        '          python -m pip install -c requirements-release-compat.txt -e ".[security,dev]"\n',
-        '          python -m pip install -e ".[security,dev]"\n',
+        '          python -m pip install -c requirements-release-compat.txt -e ".[legacy-security,dev]"\n',
+        '          python -m pip install -e ".[legacy-security,dev]"\n',
     )
 
     errors = checker.check_ci_workflow(workflow)

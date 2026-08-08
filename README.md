@@ -556,6 +556,13 @@ prerelease. Those installers are intentionally not production-trusted.
 When either protected native signing stack is unavailable, every native installer
 in that preview remains unsigned; production signing requires both stacks.
 
+For branch-only review, `.github/workflows/unsigned-preview.yml` is an isolated
+preview lane. It runs only from `preview` or `preview/*`, creates a uniquely named
+`unsigned-preview-*` prerelease, and uploads source/Python assets marked
+`UNSIGNED_PREVIEW.txt`. It cannot run from `main`, cannot respond to `v*` tags, and
+does not change the protected production release or merge policy. Preview assets
+are for smoke testing only and must never be treated as trusted production media.
+
 | Target | Asset |
 |---|---|
 | Python wheel | `remote_ops_workspace-1.0.15-py3-none-any.whl` |

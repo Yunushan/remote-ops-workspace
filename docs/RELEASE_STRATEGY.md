@@ -594,6 +594,13 @@ Implementation:
   clearly labeled **UNSIGNED PREVIEW** macOS installers as a prerelease; they
   are not trusted production artifacts.
 
+For branch review without a production merge, use the isolated
+`.github/workflows/unsigned-preview.yml` lane from a `preview` or `preview/*`
+branch. It publishes only a uniquely named `unsigned-preview-*` prerelease with
+source/Python assets and an `UNSIGNED_PREVIEW.txt` marker. The lane rejects
+`main`, rejects all tag triggers (including `v*`), and never changes the
+protected production release requirements or verified-commit policy.
+
 ## Phase 4: Linux native packages
 
 Status: active.

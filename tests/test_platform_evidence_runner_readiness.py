@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 def test_security_extra_includes_system_trust_store_adapter() -> None:
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 
-    assert 'security = ["cryptography>=42", "truststore>=0.10"]' in pyproject
+    assert 'security = ["cryptography>=50.0.0", "truststore>=0.10"]' in pyproject
 
 
 def test_runner_api_fetcher_uses_authenticated_gh_when_no_ci_token(monkeypatch) -> None:

@@ -450,6 +450,10 @@ Core design principles:
 - Store examples only under `configs/*.example.*`.
 - Use `row connect NAME --dry-run` before launching newly imported profiles.
 - Vault encryption requires the optional `security` extra: `pip install -e ".[security]"`.
+- The modern `security` extra requires maintained `cryptography>=50.0.0`. The
+  separately named `legacy-security` extra is only for the pinned `48.0.1`
+  compatibility-wheel profile on legacy architectures; it carries known
+  vulnerabilities and must not be used for production release evidence.
 - Use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv or shell history.
 - `row vault get` requires `--out`; decrypted secrets are never printed to the terminal.
 - `row keygen --passphrase-env` keeps software-key passphrases out of `ssh-keygen` argv by generating encrypted keys in-process.
@@ -551,6 +555,13 @@ credentials are unavailable, maintainers may use the manual
 prerelease. Those installers are intentionally not production-trusted.
 When either protected native signing stack is unavailable, every native installer
 in that preview remains unsigned; production signing requires both stacks.
+
+For branch-only review, `.github/workflows/unsigned-preview.yml` is an isolated
+preview lane. It runs only from `preview` or `preview/*`, creates a uniquely named
+`unsigned-preview-*` prerelease, and uploads source/Python assets marked
+`UNSIGNED_PREVIEW.txt`. It cannot run from `main`, cannot respond to `v*` tags, and
+does not change the protected production release or merge policy. Preview assets
+are for smoke testing only and must never be treated as trusted production media.
 
 | Target | Asset |
 |---|---|

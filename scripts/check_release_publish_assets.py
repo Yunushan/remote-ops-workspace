@@ -99,7 +99,7 @@ PROTECTED_PROMOTION_INPUT = "include_protected_platform_evidence"
 PROTECTED_PROMOTION_CONDITION = (
     "if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_protected_platform_evidence }}"
 )
-ATTEST_RELEASE_ASSETS_ACTION = "actions/attest@a1948c3f048ba23858d222213b7c278aabede763"
+ATTEST_RELEASE_ASSETS_ACTION = "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
 TAGGED_RELEASE_REF = "ref: ${{ env.RELEASE_TAG }}"
 FINAL_ACCEPTED_RECORD_RE = re.compile(
     r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"

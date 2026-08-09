@@ -21,12 +21,13 @@ Release integrity rules:
 - The PEP 517 `build-system` pins `setuptools` and `wheel` to that same
   release toolchain, so downstream sdist builds do not silently select newer
   packaging backends.
-- Modern release targets retain `cryptography==49.0.0`. Windows x86 and Intel
+- Modern release targets use maintained `cryptography==50.0.0`. Windows x86 and Intel
   macOS use the explicit `requirements-release-compat.txt` profile with
-  `cryptography==48.0.1`, the latest release that still publishes the required
-  upstream wheels. A Windows x86 wheel is not Windows XP readiness evidence;
+  `cryptography==48.0.1` only for legacy-wheel compatibility. That legacy
+  profile carries known vulnerabilities and is never a modern production
+  security claim. A Windows x86 wheel is not Windows XP readiness evidence;
   XP support still requires the separate accepted native-host records.
-- Windows ARM64 builds `cryptography==49.0.0` from source with pinned
+- Windows ARM64 builds `cryptography==50.0.0` from source with pinned
   `maturin`/CFFI build dependencies and the recorded vcpkg commit, statically
   linked OpenSSL 3.6.3 triplet, and no vendored OpenSSL fallback. The workflow
   asserts the imported cryptography and OpenSSL versions, and Windows release
@@ -592,6 +593,13 @@ Implementation:
   explicit `allow_unsigned_preview=true` manual workflow dispatch may publish
   clearly labeled **UNSIGNED PREVIEW** macOS installers as a prerelease; they
   are not trusted production artifacts.
+
+For branch review without a production merge, use the isolated
+`.github/workflows/unsigned-preview.yml` lane from a `preview` or `preview/*`
+branch. It publishes only a uniquely named `unsigned-preview-*` prerelease with
+source/Python assets and an `UNSIGNED_PREVIEW.txt` marker. The lane rejects
+`main`, rejects all tag triggers (including `v*`), and never changes the
+protected production release requirements or verified-commit policy.
 
 ## Phase 4: Linux native packages
 

@@ -1,0 +1,166 @@
+name: unsigned-preview
+
+# This lane is deliberately isolated from release.yml.  It is useful for
+# reviewing a branch before it has the verified commits and protected signing
+# material required by the production release lane.  It never runs from main,
+# never creates a v* tag, and never claims production trust.
+on:
+  push:
+    branches:
+      - preview
+      - "preview/**"
+  workflow_dispatch:
+    inputs:
+      preview_ref:
+        description: "Preview branch to build (must be preview or preview/*)"
+        required: true
+        default: preview
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unsigned-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SOURCE_DATE_EPOCH: "1704067200"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONHASHSEED: "0"
+  PREVIEW_REF: ${{ inputs.preview_ref || github.ref_name }}
+  PREVIEW_TAG: unsigned-preview-${{ github.run_id }}
+
+jobs:
+  guard:
+    name: Guard preview-only source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ env.PREVIEW_REF }}
+          persist-credentials: false
+          clean: true
+          fetch-depth: 0
+      - name: Reject production refs
+        shell: bash
+        run: |
+          case "$PREVIEW_REF" in
+            preview|preview/*) ;;
+            *)
+              echo "::error::Unsigned previews may only build the preview or preview/* branch; got $PREVIEW_REF"
+              exit 1
+              ;;
+          esac
+          if [[ "$PREVIEW_REF" == "main" || "$PREVIEW_REF" == refs/heads/main ]]; then
+            echo "::error::The unsigned preview lane cannot build main"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_NAME" == "main" || "$GITHUB_REF_NAME" == refs/heads/main ]]; then
+            echo "::error::Run the preview workflow from the preview branch, not main"
+            exit 1
+          fi
+          if [[ "$PREVIEW_REF" == refs/tags/* || "$GITHUB_REF_TYPE" == tag ]]; then
+            echo "::error::Unsigned previews cannot be tag-triggered"
+            exit 1
+          fi
+          if [[ "$PREVIEW_TAG" == v* ]]; then
+            echo "::error::Preview release tags must never use the production v* namespace"
+            exit 1
+          fi
+          echo "Unsigned preview source accepted: $PREVIEW_REF"
+
+  build:
+    name: Build unsigned preview source and Python assets
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ env.PREVIEW_REF }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install release build tools
+        run: python -m pip install --constraint requirements-release.txt pip setuptools wheel build ".[desktop,security,package]"
+      - name: Build source and Python assets
+        run: python scripts/make_release.py
+      - name: Validate source and Python assets
+        shell: bash
+        run: |
+          project_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          python scripts/check_release_publish_assets.py \
+            --assets-dir dist \
+            --tag "v${project_version}" \
+            --source-assets-only
+      - name: Mark artifacts as unsigned preview
+        shell: bash
+        run: |
+          mkdir -p preview-dist
+          for asset in dist/*; do
+            cp "$asset" "preview-dist/unsigned-preview-$(basename "$asset")"
+          done
+          cat > preview-dist/UNSIGNED_PREVIEW.txt <<EOF
+          UNSIGNED PREVIEW ARTIFACTS
+
+          Branch: ${PREVIEW_REF}
+          Commit: ${GITHUB_SHA}
+          Release tag: ${PREVIEW_TAG}
+
+          These files were built without production signing or notarization.
+          They are for review and testing only and must not be treated as trusted
+          production artifacts. Production releases use release.yml, protected
+          default-branch promotion, verified commits and signing credentials.
+          EOF
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unsigned-preview-source-python-${{ github.run_id }}
+          path: preview-dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish unsigned preview prerelease
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
+        with:
+          name: unsigned-preview-source-python-${{ github.run_id }}
+          path: preview-dist
+      - name: Write preview release notes
+        shell: bash
+        run: |
+          cat > preview-notes.md <<EOF
+          # UNSIGNED PREVIEW
+
+          This prerelease was built from **${PREVIEW_REF}** at **${GITHUB_SHA}**.
+
+          It is intentionally unsigned and is provided for branch review and
+          smoke testing only. It is not a production release, has no production
+          attestation, and must not be used as trusted installer media.
+
+          Production releases remain gated by the protected default branch,
+          verified commits, required review, and platform signing credentials.
+          EOF
+      - name: Publish clearly labeled prerelease
+        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v2
+        with:
+          tag_name: ${{ env.PREVIEW_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.PREVIEW_TAG }} (UNSIGNED PREVIEW)
+          prerelease: true
+          draft: false
+          body_path: preview-notes.md
+          files: preview-dist/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -56,8 +56,8 @@
       "path": "native-live.png",
       "preset_id": "native",
       "preset_label": "Native",
-      "sha256": "332df826b00ccad9f887f2c241f6e41618675c1904a8b9ffe0a81023d892f8a6",
-      "size_bytes": 82851
+      "sha256": "97810d88c3649ca7015464c3a58cacc75d1d5fd8a8e559a9ddc20967a0b00fd9",
+      "size_bytes": 83056
     },
     {
       "contract_evidence": {
@@ -314,7 +314,7 @@
           },
           {
             "bounds": {
-              "height": 582,
+              "height": 610,
               "width": 1145,
               "x": 275,
               "y": 113
@@ -325,10 +325,10 @@
           },
           {
             "bounds": {
-              "height": 98,
+              "height": 70,
               "width": 1145,
               "x": 275,
-              "y": 700
+              "y": 728
             },
             "id": "command-log-bottom",
             "passed": true,
@@ -383,7 +383,7 @@
             "relation": "above",
             "to": "sessionTabs",
             "to_bounds": {
-              "height": 582,
+              "height": 610,
               "width": 1145,
               "x": 275,
               "y": 113
@@ -403,7 +403,7 @@
             "relation": "left_of",
             "to": "sessionTabs",
             "to_bounds": {
-              "height": 582,
+              "height": 610,
               "width": 1145,
               "x": 275,
               "y": 113
@@ -432,7 +432,7 @@
           {
             "from": "welcomeScroll",
             "from_bounds": {
-              "height": 550,
+              "height": 578,
               "width": 1143,
               "x": 276,
               "y": 144
@@ -443,10 +443,10 @@
             "relation": "above",
             "to": "activityLog",
             "to_bounds": {
-              "height": 98,
+              "height": 70,
               "width": 1145,
               "x": 275,
-              "y": 700
+              "y": 728
             }
           },
           {
@@ -502,28 +502,28 @@
         "selected_family": "Segoe UI"
       },
       "metrics": {
-        "distinct_colors": 51,
+        "distinct_colors": 35,
         "height": 820,
         "luminance_range": 238,
-        "non_background_ratio": 0.5188,
+        "non_background_ratio": 0.4979,
         "sampled_pixels": 1862,
         "width": 1420
       },
       "path": "securecrt-live.png",
       "preset_id": "securecrt",
       "preset_label": "SecureCRT-style",
-      "sha256": "3211c7fccc84e192ebc31949107f56cb10d2151b161d6297c2c8af54bd3ba65f",
-      "size_bytes": 51156
+      "sha256": "fbb7c5a5cd7ecce82780d379a8140f26f868edb10a455d9cb2285616486c2214",
+      "size_bytes": 46363
     },
     {
       "contract_evidence": {
         "layout_measurements": [
           {
             "bounds": {
-              "height": 744,
+              "height": 734,
               "width": 292,
               "x": 0,
-              "y": 54
+              "y": 64
             },
             "id": "hosts-sidebar-width",
             "passed": true,
@@ -534,7 +534,7 @@
               "height": 79,
               "width": 272,
               "x": 10,
-              "y": 99
+              "y": 109
             },
             "id": "hosts-sidebar-chrome",
             "passed": true,
@@ -542,10 +542,10 @@
           },
           {
             "bounds": {
-              "height": 616,
+              "height": 659,
               "width": 1123,
               "x": 297,
-              "y": 54
+              "y": 64
             },
             "id": "west-tab-workspace",
             "passed": true,
@@ -553,10 +553,10 @@
           },
           {
             "bounds": {
-              "height": 123,
+              "height": 70,
               "width": 1123,
               "x": 297,
-              "y": 675
+              "y": 728
             },
             "id": "sync-activity-bottom",
             "passed": true,
@@ -567,7 +567,7 @@
               "height": 144,
               "width": 960,
               "x": 394,
-              "y": 984
+              "y": 994
             },
             "id": "workflow-evidence",
             "passed": true,
@@ -578,7 +578,7 @@
               "height": 46,
               "width": 926,
               "x": 411,
-              "y": 591
+              "y": 601
             },
             "id": "host-identity-strip",
             "passed": true,
@@ -589,7 +589,7 @@
               "height": 26,
               "width": 210,
               "x": 171,
-              "y": 29
+              "y": 39
             },
             "id": "toolbar-search",
             "passed": true,
@@ -603,7 +603,7 @@
               "height": 32,
               "width": 1420,
               "x": 0,
-              "y": 22
+              "y": 32
             },
             "gap": 0,
             "id": "toolbar-above-tabs",
@@ -611,19 +611,19 @@
             "relation": "above",
             "to": "sessionTabs",
             "to_bounds": {
-              "height": 616,
+              "height": 659,
               "width": 1123,
               "x": 297,
-              "y": 54
+              "y": 64
             }
           },
           {
             "from": "leftPanel",
             "from_bounds": {
-              "height": 744,
+              "height": 734,
               "width": 292,
               "x": 0,
-              "y": 54
+              "y": 64
             },
             "gap": 5,
             "id": "hosts-sidebar-left-of-west-tabs",
@@ -631,10 +631,10 @@
             "relation": "left_of",
             "to": "sessionTabs",
             "to_bounds": {
-              "height": 616,
+              "height": 659,
               "width": 1123,
               "x": 297,
-              "y": 54
+              "y": 64
             }
           },
           {
@@ -643,7 +643,7 @@
               "height": 888,
               "width": 960,
               "x": 394,
-              "y": 83
+              "y": 93
             },
             "gap": 13,
             "id": "workspace-surface-above-workflow",
@@ -654,16 +654,16 @@
               "height": 144,
               "width": 960,
               "x": 394,
-              "y": 984
+              "y": 994
             }
           },
           {
             "from": "welcomeScroll",
             "from_bounds": {
-              "height": 614,
+              "height": 657,
               "width": 1077,
               "x": 342,
-              "y": 55
+              "y": 65
             },
             "gap": 6,
             "id": "welcome-scroll-above-log",
@@ -671,10 +671,10 @@
             "relation": "above",
             "to": "activityLog",
             "to_bounds": {
-              "height": 123,
+              "height": 70,
               "width": 1123,
               "x": 297,
-              "y": 675
+              "y": 728
             }
           },
           {
@@ -683,7 +683,7 @@
               "height": 134,
               "width": 551,
               "x": 411,
-              "y": 821
+              "y": 831
             },
             "gap": 8,
             "id": "workspace-primary-left-of-secondary",
@@ -694,7 +694,7 @@
               "height": 134,
               "width": 367,
               "x": 970,
-              "y": 821
+              "y": 831
             }
           }
         ]
@@ -730,28 +730,28 @@
         "selected_family": "Segoe UI"
       },
       "metrics": {
-        "distinct_colors": 61,
+        "distinct_colors": 30,
         "height": 820,
-        "luminance_range": 242,
-        "non_background_ratio": 0.7766,
+        "luminance_range": 229,
+        "non_background_ratio": 0.3147,
         "sampled_pixels": 1862,
         "width": 1420
       },
       "path": "termius-live.png",
       "preset_id": "termius",
       "preset_label": "Termius-style",
-      "sha256": "3aab57eabd27ec7c48ff7502aa8f3e8febef37936b64cf6ea49365b68e6fe13c",
-      "size_bytes": 58519
+      "sha256": "4a2961846a945eb02c40c9cd26148f166a529caf503e766d18e1f221fc17ed09",
+      "size_bytes": 26665
     },
     {
       "contract_evidence": {
         "layout_measurements": [
           {
             "bounds": {
-              "height": 701,
+              "height": 732,
               "width": 320,
               "x": 0,
-              "y": 97
+              "y": 66
             },
             "id": "connection-profile-width",
             "passed": true,
@@ -762,7 +762,7 @@
               "height": 158,
               "width": 320,
               "x": 0,
-              "y": 147
+              "y": 116
             },
             "id": "profile-list-chrome",
             "passed": true,
@@ -770,10 +770,10 @@
           },
           {
             "bounds": {
-              "height": 562,
+              "height": 657,
               "width": 1095,
               "x": 325,
-              "y": 97
+              "y": 66
             },
             "id": "viewer-tabs-workspace",
             "passed": true,
@@ -781,10 +781,10 @@
           },
           {
             "bounds": {
-              "height": 134,
+              "height": 70,
               "width": 1095,
               "x": 325,
-              "y": 664
+              "y": 728
             },
             "id": "connection-activity-bottom",
             "passed": true,
@@ -795,7 +795,7 @@
               "height": 110,
               "width": 960,
               "x": 386,
-              "y": 1042
+              "y": 1011
             },
             "id": "workflow-evidence",
             "passed": true,
@@ -806,7 +806,7 @@
               "height": 26,
               "width": 210,
               "x": 171,
-              "y": 72
+              "y": 41
             },
             "id": "toolbar-search",
             "passed": true,
@@ -820,7 +820,7 @@
               "height": 32,
               "width": 1420,
               "x": 0,
-              "y": 65
+              "y": 34
             },
             "gap": 0,
             "id": "toolbar-above-viewer-tabs",
@@ -828,19 +828,19 @@
             "relation": "above",
             "to": "sessionTabs",
             "to_bounds": {
-              "height": 562,
+              "height": 657,
               "width": 1095,
               "x": 325,
-              "y": 97
+              "y": 66
             }
           },
           {
             "from": "leftPanel",
             "from_bounds": {
-              "height": 701,
+              "height": 732,
               "width": 320,
               "x": 0,
-              "y": 97
+              "y": 66
             },
             "gap": 5,
             "id": "profiles-left-of-viewer-tabs",
@@ -848,10 +848,10 @@
             "relation": "left_of",
             "to": "sessionTabs",
             "to_bounds": {
-              "height": 562,
+              "height": 657,
               "width": 1095,
               "x": 325,
-              "y": 97
+              "y": 66
             }
           },
           {
@@ -860,7 +860,7 @@
               "height": 871,
               "width": 960,
               "x": 386,
-              "y": 158
+              "y": 127
             },
             "gap": 13,
             "id": "workspace-surface-above-workflow",
@@ -871,16 +871,16 @@
               "height": 110,
               "width": 960,
               "x": 386,
-              "y": 1042
+              "y": 1011
             }
           },
           {
             "from": "welcomeScroll",
             "from_bounds": {
-              "height": 528,
+              "height": 623,
               "width": 1093,
               "x": 326,
-              "y": 130
+              "y": 99
             },
             "gap": 6,
             "id": "welcome-scroll-above-activity",
@@ -888,10 +888,10 @@
             "relation": "above",
             "to": "activityLog",
             "to_bounds": {
-              "height": 134,
+              "height": 70,
               "width": 1095,
               "x": 325,
-              "y": 664
+              "y": 728
             }
           },
           {
@@ -900,7 +900,7 @@
               "height": 170,
               "width": 551,
               "x": 403,
-              "y": 843
+              "y": 812
             },
             "gap": 8,
             "id": "workspace-primary-left-of-secondary",
@@ -911,7 +911,7 @@
               "height": 170,
               "width": 367,
               "x": 962,
-              "y": 843
+              "y": 812
             }
           }
         ]
@@ -947,18 +947,18 @@
         "selected_family": "Segoe UI"
       },
       "metrics": {
-        "distinct_colors": 78,
+        "distinct_colors": 45,
         "height": 820,
-        "luminance_range": 255,
-        "non_background_ratio": 0.6042,
+        "luminance_range": 224,
+        "non_background_ratio": 0.6096,
         "sampled_pixels": 1862,
         "width": 1420
       },
       "path": "remmina-live.png",
       "preset_id": "remmina",
       "preset_label": "Remmina-style",
-      "sha256": "dee61f1818f64798117a5778b0a7f946f1dee6d3ce036235e6819f8c4894d487",
-      "size_bytes": 69086
+      "sha256": "f3531eb84a8dc1e0106bb611ee10a23a07ebdf70aa16512ae7ac043528105a80",
+      "size_bytes": 58192
     },
     {
       "contract_evidence": {
@@ -976,7 +976,7 @@
           },
           {
             "bounds": {
-              "height": 563,
+              "height": 614,
               "width": 1060,
               "x": 360,
               "y": 109
@@ -987,10 +987,10 @@
           },
           {
             "bounds": {
-              "height": 121,
+              "height": 70,
               "width": 1060,
               "x": 360,
-              "y": 677
+              "y": 728
             },
             "id": "connection-log-bottom",
             "passed": true,
@@ -1045,7 +1045,7 @@
             "relation": "above",
             "to": "sessionTabs",
             "to_bounds": {
-              "height": 563,
+              "height": 614,
               "width": 1060,
               "x": 360,
               "y": 109
@@ -1065,7 +1065,7 @@
             "relation": "left_of",
             "to": "sessionTabs",
             "to_bounds": {
-              "height": 563,
+              "height": 614,
               "width": 1060,
               "x": 360,
               "y": 109
@@ -1114,7 +1114,7 @@
           {
             "from": "welcomeScroll",
             "from_bounds": {
-              "height": 531,
+              "height": 582,
               "width": 1058,
               "x": 361,
               "y": 140
@@ -1125,10 +1125,10 @@
             "relation": "above",
             "to": "activityLog",
             "to_bounds": {
-              "height": 121,
+              "height": 70,
               "width": 1060,
               "x": 360,
-              "y": 677
+              "y": 728
             }
           },
           {
@@ -1184,18 +1184,18 @@
         "selected_family": "Segoe UI"
       },
       "metrics": {
-        "distinct_colors": 65,
+        "distinct_colors": 48,
         "height": 820,
         "luminance_range": 255,
-        "non_background_ratio": 0.6912,
+        "non_background_ratio": 0.7701,
         "sampled_pixels": 1862,
         "width": 1420
       },
       "path": "mremoteng-live.png",
       "preset_id": "mremoteng",
       "preset_label": "mRemoteNG-style",
-      "sha256": "2f917b8c35ab85d8ad2a6b07729aaba651b5013c272ddf767584f2e56e5fdcdf",
-      "size_bytes": 70188
+      "sha256": "a1bf41ec9246201f815cf065efa76e6cfab6b2b52f2b9788c35c3b988cc1f25c",
+      "size_bytes": 60187
     }
   ],
   "common_required_widgets": {

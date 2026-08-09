@@ -73,10 +73,12 @@ Release integrity rules:
   evidence count, strict MobaXterm evidence count and the verification commands;
   `body_path: release-notes.md` is required so a release cannot be published
   with an empty or misleading description.
-- The strict local production gate also audits live `main` branch protection
-  with `python scripts/check_repository_governance.py --repository <owner/repo>`;
-  required reviews and signed commits are release prerequisites, not implied by
-  a green workflow run.
+- The local governance gate audits live `main` branch protection with
+  `python scripts/check_repository_governance.py --repository <owner/repo>`.
+  Review approval and signed-commit enforcement are optional repository
+  controls; release operators can opt into both with
+  `--require-review --require-signed-commits` when a stricter promotion policy
+  is needed. Neither setting is inferred from a green workflow run.
 - The core `release-preflight` workflow job checks out the requested immutable
   tag, requires it to match both project version declarations, then runs
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, reports

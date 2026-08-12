@@ -809,6 +809,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._rendered_terminal_text = ""
             self._pty_initial_clear_pending = False
             self._pty_startup_probe = ""
+            self._terminal_scroll_generation = 0
             self.startup_preamble = ""
             self.show_launch_command = True
             self.output_context_menu_builder: Callable[[TerminalPane], QMenu] | None = None
@@ -1326,6 +1327,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 accepted = len(payload)
             self.output.setProperty("terminalLastInputBytesRequested", len(payload))
             self.output.setProperty("terminalLastInputBytesAccepted", int(accepted))
+            self.scroll_terminal_to_end()
             if int(accepted) < len(payload):
                 self.set_status("input error", "error")
                 self.append_text(
@@ -1781,7 +1783,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self._pty_startup_probe + text
                 )[-16_384:]
                 if self.is_initial_conpty_screen_clear(self._pty_startup_probe):
-                    body = transcript.lstrip("\n")
+                    body = self.normalized_initial_pty_body(transcript)
                     self.disarm_initial_pty_clear_recovery()
                     self.set_terminal_transcript(
                         f"{self.terminal_startup_context_text()}{body}"
@@ -1799,7 +1801,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 if visible_tail.strip() or len(self._pty_startup_probe) >= 16_384:
                     self.disarm_initial_pty_clear_recovery()
+                    normalized = self.normalized_initial_pty_transcript(transcript)
+                    if normalized != transcript:
+                        self.set_terminal_transcript(normalized)
+                        self.output.setProperty(
+                            "terminalInitialPtyClearNormalized",
+                            True,
+                        )
+                        return
             self.render_terminal_transcript(transcript)
+
+        def normalized_initial_pty_body(self, transcript: str) -> str:
+            startup_context = self.terminal_startup_context_text()
+            if transcript.startswith(startup_context):
+                return transcript[len(startup_context) :].lstrip("\r\n")
+            return transcript.lstrip("\r\n")
+
+        def normalized_initial_pty_transcript(self, transcript: str) -> str:
+            startup_context = self.terminal_startup_context_text()
+            if transcript.startswith(startup_context):
+                return f"{startup_context}{self.normalized_initial_pty_body(transcript)}"
+            return transcript.lstrip("\r\n")
 
         def append_text(self, text: str) -> None:
             if not text:
@@ -1919,10 +1941,37 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 scroll_bar.setValue(scroll_value)
                 self.output.setProperty("terminalSelectionPreservedOnOutput", True)
             elif was_scrolled_to_end:
-                self.output.moveCursor(QTextCursor.MoveOperation.End)
+                self.scroll_terminal_to_end()
             else:
                 scroll_bar.setValue(scroll_value)
             self.refresh_terminal_input_security(transcript)
+
+        def scroll_terminal_to_end(self) -> None:
+            """Keep live output at the true document end after layout updates."""
+
+            self._terminal_scroll_generation += 1
+            generation = self._terminal_scroll_generation
+            scroll_bar = _required_gui_value(
+                self.output.verticalScrollBar(),
+                "terminal vertical scroll bar",
+            )
+            self.output.moveCursor(QTextCursor.MoveOperation.End)
+            self.output.ensureCursorVisible()
+            scroll_bar.setValue(scroll_bar.maximum())
+            self.output.setProperty("terminalFollowOutput", True)
+
+            def settle() -> None:
+                if generation != self._terminal_scroll_generation:
+                    return
+                bar = _required_gui_value(
+                    self.output.verticalScrollBar(),
+                    "terminal vertical scroll bar",
+                )
+                bar.setValue(bar.maximum())
+                self.output.ensureCursorVisible()
+                bar.setValue(bar.maximum())
+
+            QTimer.singleShot(0, settle)
 
         def terminal_text_format(
             self,
@@ -4073,13 +4122,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 str(selected.data(0, SFTP_ROW_KIND_ROLE) or "") if selected is not None else ""
             )
             download_ready = selected_kind in {"file", "dir"} and selected_name not in {"", ".."}
+            profile = self.profile_for_sftp_action()
+            sftp_ready = bool(
+                profile is not None
+                and profile.protocol.lower().strip() in {"ssh", "sftp"}
+                and profile.host
+            )
             for action_key, button in getattr(self, "sftp_action_buttons", {}).items():
                 operational = action_key in self.OPERATIONAL_ACTIONS
-                enabled = operational and (action_key != "download" or download_ready)
+                transfer_action = action_key in {"download", "upload"}
+                enabled = operational and (not transfer_action or sftp_ready) and (
+                    action_key != "download" or download_ready
+                )
                 button.setEnabled(enabled)
                 button.setProperty("mobaSftpActionOperational", operational)
                 button.setProperty("mobaSftpActionRuntimeEnabled", enabled)
-                if action_key == "download" and operational and not download_ready:
+                if not sftp_ready and operational and transfer_action:
+                    button.setToolTip("Connect an SSH/SFTP profile before using this action")
+                elif action_key == "download" and operational and not download_ready:
                     button.setToolTip("Select a remote file or directory to download")
 
         def handle_moba_sftp_path_entered(self) -> None:
@@ -4292,12 +4352,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             dialog = main_window.create_transfer_queue_dialog(profile)
             dialog.operations.setPlainText(operation)
             dialog.refresh_queue_preview()
+            dialog.run_queue()
             result = dialog.exec()
             if result == QDialog.DialogCode.Accepted:
                 plan = dialog.queue_plan()
                 main_window.log.append(f"QUEUE: {plan.printable()}")
             self.show_sftp_status(
-                f"SFTP {action_key} workflow {'accepted' if result == QDialog.DialogCode.Accepted else 'closed'}"
+                f"SFTP {action_key} workflow {'completed' if result == QDialog.DialogCode.Accepted else 'closed'}"
             )
             return True
 
@@ -6554,7 +6615,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.store = ProfileStore()
             # Source/CI GUI renders retain demo profiles; frozen release GUIs
             # must start with an empty private workspace.
-            self.store.init(with_examples=not getattr(sys, "frozen", False))
+            release_runtime = bool(getattr(sys, "frozen", False))
+            self.store.init(
+                with_examples=not release_runtime,
+                purge_examples=release_runtime,
+                surface="gui",
+            )
             self.layout_store = LayoutStore()
             self._last_terminal_pane: TerminalPane | None = None
             self._closing_tab_widgets: list[QWidget] = []

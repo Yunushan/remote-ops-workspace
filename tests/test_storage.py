@@ -14,6 +14,22 @@ def test_profile_store_roundtrip(tmp_path: Path) -> None:
     assert len(store.load()) == 1
 
 
+def test_no_examples_purges_only_unchanged_seeded_profiles(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.init(with_examples=True)
+
+    edited = store.get("example-ssh")
+    edited.host = "10.3.25.200"
+    store.add(edited, replace=True)
+    store.add(Profile(name="real-ops", protocol="ssh", host="10.3.25.201"))
+
+    store.init(with_examples=False)
+
+    names = {profile.name for profile in store.load(resolve=False)}
+    assert names == {"example-ssh", "real-ops"}
+    assert store.get("example-ssh").host == "10.3.25.200"
+
+
 def test_profile_store_applies_group_defaults(tmp_path: Path) -> None:
     store = ProfileStore(tmp_path / "profiles.json")
     store.set_group_defaults(

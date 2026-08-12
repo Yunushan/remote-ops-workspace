@@ -236,3 +236,36 @@ def test_initial_conpty_clear_preserves_moba_preamble_without_command_echo(
     assert "$ ssh.exe" not in output
     assert not output.startswith("\n")
     assert "\x1b" not in output
+
+
+def test_initial_conpty_padding_does_not_leave_a_blank_gap_before_prompt(
+    terminal_pane,
+) -> None:
+    _app, pane = terminal_pane
+    pane.plan = TerminalPanePlan(
+        title="edge-prod",
+        command=["ssh.exe", "-tt", "operator@edge-prod.example.invalid"],
+        source="test",
+    )
+    pane.set_launch_command_echo_visible(False)
+    pane.set_startup_preamble(
+        "\n".join(
+            [
+                "* Remote Ops Workspace *",
+                "> SSH session target: edge-prod.example.invalid:22",
+                "> Waiting for authentication and server output.",
+            ]
+        )
+    )
+    context = pane.terminal_startup_context_text()
+    pane.set_terminal_transcript(context)
+    _arm_initial_pty_clear_recovery(pane)
+
+    pane.append_process_text(
+        "\x1b[?9001h\x1b[2J" + "\r\n" * 24 + "operator@edge-prod's password:"
+    )
+
+    output = pane.output.toPlainText()
+    assert output == f"{context}operator@edge-prod's password:"
+    assert "\n\n\n" not in output
+    assert pane.output.property("terminalInitialPtyClearNormalized") is True

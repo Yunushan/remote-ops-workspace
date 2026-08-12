@@ -34,12 +34,51 @@ class ProfileStore:
         self.path = path or (ensure_data_dir() / "profiles.json")
         self.policy_path = policy_path or enterprise_policy_path(self.path.parent)
 
-    def init(self, with_examples: bool = True) -> None:
+    def init(
+        self,
+        with_examples: bool = True,
+        *,
+        purge_examples: bool | None = None,
+        surface: str = "cli",
+    ) -> None:
+        if purge_examples is None:
+            purge_examples = not with_examples
         if self.path.exists():
+            if purge_examples:
+                self.purge_seeded_examples(surface=surface)
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         profiles = example_profiles() if with_examples else []
-        self.save(profiles)
+        self.save(profiles, surface=surface)
+
+    def purge_seeded_examples(self, *, surface: str = "cli") -> list[str]:
+        """Remove only unchanged profiles created by :func:`example_profiles`.
+
+        Release upgrades may reuse an existing profile store that was initialized
+        by an older build.  Matching the complete normalized profile record keeps
+        user-edited rows, including rows with an example-like name, intact.
+        """
+
+        assert_profile_collection_change_allowed(
+            surface=surface,
+            action="purge-seeded-examples",
+            policy_path=self.policy_path,
+        )
+        profiles = self.load(resolve=False)
+        seeded = {_profile_fingerprint(profile) for profile in example_profiles()}
+        removable = [profile for profile in profiles if _profile_fingerprint(profile) in seeded]
+        if not removable:
+            return []
+        names = [profile.name for profile in removable]
+        assert_settings_write_allowed(
+            {"profile_purge_seeded_examples": names},
+            surface=surface,
+            action="purge-seeded-examples",
+            policy_path=self.policy_path,
+        )
+        remaining = [profile for profile in profiles if profile not in removable]
+        self.save(remaining, surface=surface)
+        return names
 
     def load(self, resolve: bool = True) -> list[Profile]:
         data = self._load_data()
@@ -206,6 +245,15 @@ def _profile_rows(value: object, *, source: str) -> list[dict[str, Any]]:
             row[key] = field_value
         rows.append(row)
     return rows
+
+
+def _profile_fingerprint(profile: Profile) -> str:
+    return json.dumps(
+        profile.to_dict(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def example_profiles() -> list[Profile]:

@@ -114,7 +114,7 @@ def load_release_json(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", required=True, help="GitHub repository in owner/name form")
-    parser.add_argument("--tag", required=True, help="release tag, for example v1.0.15")
+    parser.add_argument("--tag", required=True, help="release tag, for example v1.0.16")
     parser.add_argument("--channel", choices=sorted(CHANNELS), required=True)
     parser.add_argument("--release-json", type=Path, help="offline GitHub release JSON fixture")
     parser.add_argument("--timeout", type=float, default=30.0)

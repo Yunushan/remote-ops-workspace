@@ -1963,7 +1963,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             def settle() -> None:
                 if generation != self._terminal_scroll_generation:
                     return
-                bar = self.output.verticalScrollBar()
+                bar = _required_gui_value(
+                    self.output.verticalScrollBar(),
+                    "terminal vertical scroll bar",
+                )
                 bar.setValue(bar.maximum())
                 self.output.ensureCursorVisible()
                 bar.setValue(bar.maximum())

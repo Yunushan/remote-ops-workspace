@@ -22,7 +22,7 @@
   "python_packages": [
     {
       "name": "pip",
-      "version": "26.2",
+      "version": "26.2.1",
       "purpose": "Pinned installer front-end for release jobs."
     },
     {

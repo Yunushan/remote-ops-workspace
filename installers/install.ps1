@@ -13,7 +13,7 @@ if (-not (Get-Command $Python -ErrorAction SilentlyContinue)) {
 & $Python -m venv .venv
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
 & .\.venv\Scripts\python.exe -m pip install -e ".[${Extras}]"
-& .\.venv\Scripts\row.exe init --quiet
+& .\.venv\Scripts\row.exe init --quiet --no-examples
 & .\.venv\Scripts\row.exe doctor
 & .\.venv\Scripts\row.exe welcome
 

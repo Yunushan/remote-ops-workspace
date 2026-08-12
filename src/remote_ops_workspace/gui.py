@@ -6552,7 +6552,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_moba_titlebar_chrome("Remote Ops Workspace")
             self.resize(1180, 720)
             self.store = ProfileStore()
-            self.store.init(with_examples=True)
+            # Source/CI GUI renders retain demo profiles; frozen release GUIs
+            # must start with an empty private workspace.
+            self.store.init(with_examples=not getattr(sys, "frozen", False))
             self.layout_store = LayoutStore()
             self._last_terminal_pane: TerminalPane | None = None
             self._closing_tab_widgets: list[QWidget] = []

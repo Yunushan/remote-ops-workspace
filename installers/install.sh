@@ -21,7 +21,7 @@ fi
 . .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[${EXTRAS}]"
-row init --quiet
+row init --quiet --no-examples
 row doctor
 row welcome
 

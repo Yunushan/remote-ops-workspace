@@ -5,6 +5,11 @@ only when the artifact is real, reproducible, and documented.
 
 Release integrity rules:
 
+- Connection-profile examples remain repository-only documentation and are
+  excluded from published release bundles. Installers and frozen release GUIs
+  initialize an empty private workspace; users must add their own SSH/RDP
+  connections.
+
 - Release tags must match `pyproject.toml` exactly, for example `v1.0.15`.
 - Pushing a `vX.Y.Z` tag automatically builds, smoke-tests and publishes the
   standard source, Windows, macOS and Linux native assets. The tag must resolve

@@ -10,7 +10,7 @@ where %PYTHON_BIN% >nul 2>nul || (
 %PYTHON_BIN% -m venv .venv || exit /b 1
 .venv\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
 .venv\Scripts\python.exe -m pip install -e ".[%ROW_EXTRAS%]" || exit /b 1
-.venv\Scripts\row.exe init --quiet || exit /b 1
+.venv\Scripts\row.exe init --quiet --no-examples || exit /b 1
 .venv\Scripts\row.exe doctor || exit /b 1
 .venv\Scripts\row.exe welcome || exit /b 1
 echo.

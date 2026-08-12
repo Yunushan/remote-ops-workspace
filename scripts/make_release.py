@@ -78,6 +78,10 @@ EXCLUDED_NAMES = {
     "dist",
 }
 
+EXCLUDED_RELEASE_PATHS = {
+    "configs/profiles.example.json",
+}
+
 
 @dataclass(frozen=True)
 class ReleaseTarget:
@@ -493,7 +497,11 @@ def archive_name(path: Path, *, web_only: bool) -> str:
 
 
 def should_skip(path: Path) -> bool:
-    return any(part in EXCLUDED_NAMES or part.endswith(".egg-info") for part in path.relative_to(ROOT).parts)
+    relative = path.relative_to(ROOT).as_posix()
+    return relative in EXCLUDED_RELEASE_PATHS or any(
+        part in EXCLUDED_NAMES or part.endswith(".egg-info")
+        for part in path.relative_to(ROOT).parts
+    )
 
 
 def add_files_to_zip(

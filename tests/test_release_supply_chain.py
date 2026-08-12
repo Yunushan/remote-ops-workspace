@@ -32,6 +32,15 @@ def test_release_version_validation_rejects_non_release_versions() -> None:
             raise AssertionError(f"release version should be rejected: {version}")
 
 
+def test_release_source_excludes_connection_profile_examples() -> None:
+    make_release = load_make_release()
+    entries = list(make_release.iter_project_paths(make_release.PROJECT_FILES, web_only=False))
+    relatives = {relative for _, relative in entries}
+
+    assert "configs/profiles.example.json" not in relatives
+    assert "configs/release_matrix.json" in relatives
+
+
 def test_release_tag_guard_allows_manual_controller_branch(monkeypatch) -> None:
     make_release = load_make_release()
     monkeypatch.setenv("RELEASE_TAG", "v1.2.3")

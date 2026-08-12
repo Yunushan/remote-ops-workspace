@@ -14,6 +14,6 @@ python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
 python -m pip install --upgrade pip
 python -m pip install -e ".[security]"
 
-row init --quiet
+row init --quiet --no-examples
 row doctor
 row welcome

@@ -83,6 +83,18 @@ def test_release_dist_must_be_inside_repo(tmp_path: Path) -> None:
     assert make_release.resolve_dist(make_release.ROOT / "dist-test") == (make_release.ROOT / "dist-test").resolve()
 
 
+def test_release_bundles_exclude_connection_profile_examples() -> None:
+    make_release = load_make_release()
+
+    entries = {
+        relative
+        for _path, relative in make_release.iter_project_paths(make_release.PROJECT_FILES, web_only=False)
+    }
+
+    assert "configs/profiles.example.json" not in entries
+    assert "configs/release_matrix.json" in entries
+
+
 def test_file_integrity_reports_size_and_sha256(tmp_path: Path) -> None:
     make_release = load_make_release()
     artifact = tmp_path / "artifact.txt"

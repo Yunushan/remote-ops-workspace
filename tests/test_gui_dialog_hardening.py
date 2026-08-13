@@ -777,7 +777,7 @@ def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
     gui_window,
 ) -> None:
     from PyQt6.QtCore import QProcess
-    from PyQt6.QtWidgets import QLineEdit
+    from PyQt6.QtWidgets import QApplication, QLineEdit
 
     from remote_ops_workspace.terminal import TerminalPanePlan
 
@@ -791,12 +791,18 @@ def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
     process.finished.connect(pane.on_finished)
     pane.process = process
     pane.update_process_actions()
+    pane.show()
+    pane.input.setFocus()
     pane.start_macro_capture()
 
     pane.append_text("operator@example.invalid's password: ")
+    app = QApplication.instance()
+    assert app is not None
+    app.processEvents()
 
     assert pane.input.echoMode() == QLineEdit.EchoMode.Password
     assert pane.input.property("terminalSecretInputActive") is True
+    assert app.focusWidget() is pane.output
     assert "not recorded" in pane.input.placeholderText()
     assert not pane.macro_record_button.isEnabled()
     assert not pane.macro_replay_button.isEnabled()
@@ -814,6 +820,43 @@ def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
     assert pane.input.echoMode() == QLineEdit.EchoMode.Normal
     assert pane.input.property("terminalSecretInputActive") is False
     pane.cancel_macro_capture()
+    process.finish()
+    pane.deleteLater()
+
+
+def test_moba_ssh_secret_prompt_accepts_direct_native_pty_input_after_refocus(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QProcess, Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="ssh-native-secret", command=[], source="test")
+    )
+    pane.process.deleteLater()
+    process = _FakePtyProcess(pane)
+    process.process_state = QProcess.ProcessState.Running
+    process.finished.connect(pane.on_finished)
+    pane.process = process
+    pane.update_process_actions()
+    pane.show()
+    pane.input.setFocus()
+
+    pane.append_text("operator@example.invalid's password: ")
+    app = QApplication.instance()
+    assert app is not None
+    app.processEvents()
+
+    assert app.focusWidget() is pane.output
+    QTest.keyClicks(pane.output, "controlled-secret")
+    QTest.keyClick(pane.output, Qt.Key.Key_Return)
+
+    assert process.written == b"controlled-secret\r"
+    assert "controlled-secret" not in pane.output.toPlainText()
     process.finish()
     pane.deleteLater()
 

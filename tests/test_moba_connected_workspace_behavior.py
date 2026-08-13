@@ -319,3 +319,32 @@ def test_moba_tab_and_vertical_rail_use_measured_dpi_aware_chrome(
         assert label.property("mobaRailTextPixmapRenderMode") == "dpr-aware-rotated-pixmap"
         assert label.property("mobaRailTextPixmapPhysicalSize")
         assert label.property("mobaRailTextPixmapLogicalSize")
+
+
+def test_compact_text_and_icons_keep_device_pixel_rendering(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QFont
+    from PyQt6.QtWidgets import QLabel
+
+    app, window, panel, _dock = _open_connected_panel(gui_window)
+
+    assert app.font().hintingPreference() == QFont.HintingPreference.PreferFullHinting
+    assert (
+        panel.terminal_pane.output.font().hintingPreference()
+        == QFont.HintingPreference.PreferFullHinting
+    )
+    telemetry_label = panel.telemetry_bar.findChild(QLabel, "mobaTelemetryItem")
+    assert telemetry_label is not None
+    assert telemetry_label.font().hintingPreference() == QFont.HintingPreference.PreferFullHinting
+
+    icons = (
+        panel.moba_utility_icon("clip", "#f4c430"),
+        window.mremoteng_document_control_icon("ssh", size=16),
+        window.securecrt_session_manager_action_icon("folder", size=16),
+    )
+    for icon in icons:
+        pixmap = icon.pixmap(QSize(20, 20))
+        assert not pixmap.isNull()
+        assert float(pixmap.devicePixelRatio()) >= 1.0

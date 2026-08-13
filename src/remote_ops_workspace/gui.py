@@ -498,6 +498,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QColor,
             QDesktopServices,
             QFont,
+            QGuiApplication,
             QIcon,
             QKeySequence,
             QPainter,
@@ -2063,6 +2064,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input.setProperty("terminalSecretInputActive", active)
             self.output.setProperty("terminalSecretInputActive", active)
             self.update_process_actions()
+            if active:
+                # SSH can emit its password prompt after another control has
+                # taken focus. Native PTY input is delivered through the
+                # transcript widget, so restore focus before the user types.
+                QTimer.singleShot(0, self.focus_terminal_input)
 
         def on_started(self) -> None:
             self.set_status("running", "running")
@@ -5295,10 +5301,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
 
         def moba_utility_icon(self, icon_key: str, fill: str) -> QIcon:
-            pixmap = QPixmap(20, 20)
+            scale = max(1.0, float(self.devicePixelRatioF()))
+            pixel_size = max(1, int(round(20 * scale)))
+            pixmap = QPixmap(pixel_size, pixel_size)
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.scale(scale, scale)
             color = QColor(fill)
             try:
                 painter.setPen(QPen(color, 2))
@@ -5341,6 +5350,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     painter.drawRect(4, 4, 12, 12)
             finally:
                 painter.end()
+            pixmap.setDevicePixelRatio(scale)
             return QIcon(pixmap)
 
         def build_ssh_banner_slot(self) -> QFrame:
@@ -14752,15 +14762,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return panel
 
         def mremoteng_document_control_icon(self, icon_key: str, *, size: int) -> QIcon:
-            pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            try:
-                self.draw_mremoteng_document_control_icon(painter, icon_key, size)
-            finally:
-                painter.end()
-            return QIcon(pixmap)
+            return self.generated_icon(
+                size,
+                lambda painter, logical_size: self.draw_mremoteng_document_control_icon(
+                    painter, icon_key, logical_size
+                ),
+            )
 
         def draw_mremoteng_document_control_icon(self, painter: QPainter, icon_key: str, size: int) -> None:
             primary = QColor("#2f6fb1")
@@ -16226,15 +16233,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return panel
 
         def securecrt_session_manager_action_icon(self, icon_key: str, *, size: int) -> QIcon:
-            pixmap = QPixmap(size, size)
-            pixmap.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(pixmap)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            try:
-                self.draw_securecrt_session_manager_action_icon(painter, icon_key, size)
-            finally:
-                painter.end()
-            return QIcon(pixmap)
+            return self.generated_icon(
+                size,
+                lambda painter, logical_size: self.draw_securecrt_session_manager_action_icon(
+                    painter, icon_key, logical_size
+                ),
+            )
 
         def draw_securecrt_session_manager_action_icon(self, painter: QPainter, icon_key: str, size: int) -> None:
             primary = QColor("#d7a84a")
@@ -18363,7 +18367,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     set_windows_taskbar_app_id()
     app = QApplication.instance()
     if not isinstance(app, QApplication):
+        # Keep fractional per-monitor scale factors instead of rounding a
+        # 125%/150% display back to a bitmap-scaled logical size.
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
         app = QApplication(argv or sys.argv)
+    application_font = app.font()
+    application_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+    app.setFont(application_font)
     icon = QIcon(str(application_icon_path()))
     if not icon.isNull():
         app.setWindowIcon(icon)

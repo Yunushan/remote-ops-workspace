@@ -1503,6 +1503,35 @@ def test_dynamic_dialog_labels_are_plain_text_and_frames_stay_on_parent_screen(g
         dialog.close()
 
 
+def test_native_toolbar_never_elides_labels_when_the_toolbar_is_compact(gui_window) -> None:
+    from PyQt6.QtCore import Qt
+
+    app, window = gui_window
+    window.set_design_preset("native")
+    window.resize(760, 600)
+    app.processEvents()
+
+    assert window.current_design_id() == "native"
+    assert window.main_toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+    assert all(
+        button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+        and button.width() >= 44
+        and button.accessibleName() == button.text()
+        and button.toolTip()
+        for button in window.main_toolbar_buttons
+    )
+
+    window.resize(1920, 600)
+    app.processEvents()
+
+    assert window.main_toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+    assert all(
+        button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+        and button.width() >= button.sizeHint().width()
+        for button in window.main_toolbar_buttons
+    )
+
+
 class _Signal:
     def __init__(self) -> None:
         self.callbacks = []

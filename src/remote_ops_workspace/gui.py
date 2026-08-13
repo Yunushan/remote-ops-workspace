@@ -11149,7 +11149,30 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setMinimumWidth(0)
                     button.setMaximumWidth(16777215)
                     preferred_widths.append(button.sizeHint().width())
-                labels_fit = self.width() >= sum(preferred_widths) + 24
+                toolbar_layout = self.main_toolbar.layout()
+                if toolbar_layout is None:
+                    toolbar_margins = (0, 0)
+                    toolbar_spacing = 0
+                else:
+                    margins = toolbar_layout.contentsMargins()
+                    toolbar_margins = (margins.left(), margins.right())
+                    toolbar_spacing = max(0, toolbar_layout.spacing())
+                toolbar_width = max(0, self.main_toolbar.width())
+                available_toolbar_width = max(
+                    0,
+                    toolbar_width - toolbar_margins[0] - toolbar_margins[1],
+                )
+                preferred_toolbar_width = (
+                    sum(preferred_widths)
+                    + toolbar_spacing * max(0, len(preferred_widths) - 1)
+                    + 24
+                )
+                labels_fit = available_toolbar_width >= preferred_toolbar_width
+                self.main_toolbar.setToolButtonStyle(
+                    Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+                    if labels_fit
+                    else Qt.ToolButtonStyle.ToolButtonIconOnly
+                )
                 for button, preferred_width in zip(
                     self.main_toolbar_buttons,
                     preferred_widths,

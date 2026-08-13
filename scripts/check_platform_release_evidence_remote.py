@@ -196,7 +196,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--repository", help="GitHub repository in owner/name form")
-    parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.17")
+    parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.18")
     parser.add_argument("--registry", type=Path, default=EVIDENCE_PATH)
     parser.add_argument("--promotion", type=Path, default=PROMOTION_PATH)
     parser.add_argument(
@@ -253,7 +253,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "read a published finalized accepted-record JSON asset from a local file for "
             "offline byte verification, for example "
-            "https://github.com/owner/repo/releases/download/v1.0.17/platform-verified-evidence-linux-i386-final.json=record.json"
+            "https://github.com/owner/repo/releases/download/v1.0.18/platform-verified-evidence-linux-i386-final.json=record.json"
         ),
     )
     parser.add_argument(
@@ -264,7 +264,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "read a published native or review-bundle release asset from a local file for "
             "offline byte verification, for example "
-            "https://github.com/owner/repo/releases/download/v1.0.17/remote-ops-workspace-v1.0.17-linux-i386.deb=asset.deb"
+            "https://github.com/owner/repo/releases/download/v1.0.18/remote-ops-workspace-v1.0.18-linux-i386.deb=asset.deb"
         ),
     )
     parser.add_argument(

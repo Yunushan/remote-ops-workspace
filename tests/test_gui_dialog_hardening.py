@@ -777,7 +777,7 @@ def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
     gui_window,
 ) -> None:
     from PyQt6.QtCore import QProcess
-    from PyQt6.QtWidgets import QLineEdit
+    from PyQt6.QtWidgets import QApplication, QLineEdit
 
     from remote_ops_workspace.terminal import TerminalPanePlan
 
@@ -791,12 +791,18 @@ def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
     process.finished.connect(pane.on_finished)
     pane.process = process
     pane.update_process_actions()
+    pane.show()
+    pane.input.setFocus()
     pane.start_macro_capture()
 
     pane.append_text("operator@example.invalid's password: ")
+    app = QApplication.instance()
+    assert app is not None
+    app.processEvents()
 
     assert pane.input.echoMode() == QLineEdit.EchoMode.Password
     assert pane.input.property("terminalSecretInputActive") is True
+    assert app.focusWidget() is pane.output
     assert "not recorded" in pane.input.placeholderText()
     assert not pane.macro_record_button.isEnabled()
     assert not pane.macro_replay_button.isEnabled()
@@ -814,6 +820,43 @@ def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
     assert pane.input.echoMode() == QLineEdit.EchoMode.Normal
     assert pane.input.property("terminalSecretInputActive") is False
     pane.cancel_macro_capture()
+    process.finish()
+    pane.deleteLater()
+
+
+def test_moba_ssh_secret_prompt_accepts_direct_native_pty_input_after_refocus(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QProcess, Qt
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QApplication
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="ssh-native-secret", command=[], source="test")
+    )
+    pane.process.deleteLater()
+    process = _FakePtyProcess(pane)
+    process.process_state = QProcess.ProcessState.Running
+    process.finished.connect(pane.on_finished)
+    pane.process = process
+    pane.update_process_actions()
+    pane.show()
+    pane.input.setFocus()
+
+    pane.append_text("operator@example.invalid's password: ")
+    app = QApplication.instance()
+    assert app is not None
+    app.processEvents()
+
+    assert app.focusWidget() is pane.output
+    QTest.keyClicks(pane.output, "controlled-secret")
+    QTest.keyClick(pane.output, Qt.Key.Key_Return)
+
+    assert process.written == b"controlled-secret\r"
+    assert "controlled-secret" not in pane.output.toPlainText()
     process.finish()
     pane.deleteLater()
 
@@ -1458,6 +1501,35 @@ def test_dynamic_dialog_labels_are_plain_text_and_frames_stay_on_parent_screen(g
     assert dialogs[2].findChild(QFrame, "workflowFooter").isVisible()
     for dialog in dialogs:
         dialog.close()
+
+
+def test_native_toolbar_never_elides_labels_when_the_toolbar_is_compact(gui_window) -> None:
+    from PyQt6.QtCore import Qt
+
+    app, window = gui_window
+    window.set_design_preset("native")
+    window.resize(760, 600)
+    app.processEvents()
+
+    assert window.current_design_id() == "native"
+    assert window.main_toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+    assert all(
+        button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+        and button.width() >= 44
+        and button.accessibleName() == button.text()
+        and button.toolTip()
+        for button in window.main_toolbar_buttons
+    )
+
+    window.resize(1920, 600)
+    app.processEvents()
+
+    assert window.main_toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+    assert all(
+        button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+        and button.width() >= button.sizeHint().width()
+        for button in window.main_toolbar_buttons
+    )
 
 
 class _Signal:

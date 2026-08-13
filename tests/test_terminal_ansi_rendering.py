@@ -269,3 +269,37 @@ def test_initial_conpty_padding_does_not_leave_a_blank_gap_before_prompt(
     assert output == f"{context}operator@edge-prod's password:"
     assert "\n\n\n" not in output
     assert pane.output.property("terminalInitialPtyClearNormalized") is True
+
+
+def test_embedded_ssh_pipe_padding_does_not_leave_a_blank_gap_before_password_prompt(
+    terminal_pane,
+) -> None:
+    _app, pane = terminal_pane
+    pane.plan = TerminalPanePlan(
+        title="remote-ops",
+        command=["ssh.exe", "operator@10.3.25.200"],
+        source="test",
+    )
+    pane.set_launch_command_echo_visible(False)
+    pane.set_startup_preamble(
+        "\n".join(
+            [
+                "* Remote Ops Workspace *",
+                "(SSH client, SFTP browser, and remote tools)",
+                "> SSH session target: 10.3.25.200",
+                "> Waiting for authentication and server output.",
+            ]
+        )
+    )
+    context = pane.terminal_startup_context_text()
+    pane.set_terminal_transcript(context)
+    pane._pty_initial_clear_pending = False
+
+    pane.append_process_text(
+        "\r\n" * 24 + "ycogal@10.3.25.200's password:"
+    )
+
+    output = pane.output.toPlainText()
+    assert output == f"{context}ycogal@10.3.25.200's password:"
+    assert "\n\n\n" not in output
+    assert pane.output.property("terminalInitialPromptPaddingNormalized") is True

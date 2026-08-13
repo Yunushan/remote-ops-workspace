@@ -1809,6 +1809,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                             True,
                         )
                         return
+            normalized = self.normalized_initial_prompt_transcript(transcript)
+            if normalized != transcript:
+                self.set_terminal_transcript(normalized)
+                self.output.setProperty("terminalInitialPromptPaddingNormalized", True)
+                return
             self.render_terminal_transcript(transcript)
 
         def normalized_initial_pty_body(self, transcript: str) -> str:
@@ -1822,6 +1827,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if transcript.startswith(startup_context):
                 return f"{startup_context}{self.normalized_initial_pty_body(transcript)}"
             return transcript.lstrip("\r\n")
+
+        def normalized_initial_prompt_transcript(self, transcript: str) -> str:
+            """Remove pipe-backend screen padding immediately before auth prompts."""
+
+            startup_context = self.terminal_startup_context_text()
+            if not startup_context or not transcript.startswith(startup_context):
+                return transcript
+            body = transcript[len(startup_context) :]
+            if not re.fullmatch(
+                r"(?:[ \t]*\n)+[^\r\n]*(?:password|passphrase)[^:\r\n]*:\s*",
+                body,
+                flags=re.IGNORECASE,
+            ):
+                return transcript
+            padding = re.match(r"(?:[ \t]*\n)+", body)
+            if padding is None:
+                return transcript
+            return f"{startup_context}{body[padding.end():]}"
 
         def append_text(self, text: str) -> None:
             if not text:

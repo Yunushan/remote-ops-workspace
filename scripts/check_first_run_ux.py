@@ -53,7 +53,9 @@ def check_installers() -> list[str]:
         text = path.read_text(encoding="utf-8")
         relative = display(path)
         if "init --quiet --no-examples" not in text:
-            errors.append(f"{relative} must initialize quietly without example profiles")
+            errors.append(
+                f"{relative} must initialize an empty profile store before first-run guide output"
+            )
         if "doctor" not in text:
             errors.append(f"{relative} must run row doctor after installation")
         if "welcome" not in text:

@@ -82,6 +82,9 @@ EXCLUDED_RELEASE_PATHS = {
     "configs/profiles.example.json",
 }
 
+# Connection-profile examples are useful in the repository and test fixtures,
+# but must not become seeded data in a published release bundle.
+
 
 @dataclass(frozen=True)
 class ReleaseTarget:
@@ -497,10 +500,9 @@ def archive_name(path: Path, *, web_only: bool) -> str:
 
 
 def should_skip(path: Path) -> bool:
-    relative = path.relative_to(ROOT).as_posix()
-    return relative in EXCLUDED_RELEASE_PATHS or any(
-        part in EXCLUDED_NAMES or part.endswith(".egg-info")
-        for part in path.relative_to(ROOT).parts
+    relative = path.relative_to(ROOT)
+    return relative.as_posix() in EXCLUDED_RELEASE_PATHS or any(
+        part in EXCLUDED_NAMES or part.endswith(".egg-info") for part in relative.parts
     )
 
 

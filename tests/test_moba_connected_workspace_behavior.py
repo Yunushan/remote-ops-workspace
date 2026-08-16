@@ -210,9 +210,16 @@ def test_moba_sftp_editor_and_monitoring_remain_compact_and_non_synthetic(
         dock.monitoring_control_widgets["follow-terminal-folder"].isVisible()
         is True
     )
-    assert dock.monitoring_status_label.isVisible() is False
-    assert dock.monitoring_refresh_button.isVisible() is False
+    # The compact dock keeps status and the manual refresh affordance visible
+    # even while monitoring is paused, so auth-gated/unavailable states are
+    # explainable instead of looking like a dead footer.
+    assert dock.monitoring_status_label.isVisible() is True
+    assert dock.monitoring_refresh_button.isVisible() is True
+    # The timestamp is rendered inline in the status label so it does not
+    # overlap the fixed follow-folder control in the compact footer.
     assert dock.monitoring_last_refresh_label.isVisible() is False
+    assert dock.sftp_transfer_menu_button.objectName() == "mobaSftpTransferMenu"
+    assert set(dock.sftp_transfer_menu_actions) >= {"download", "upload", "refresh"}
 
 
 def test_background_sftp_is_auth_gated_and_compact_status_is_visible(

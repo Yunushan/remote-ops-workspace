@@ -2338,6 +2338,27 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 EXPECTED_MOBA_SFTP_DOCK_LAYOUT.toolbar_separator_width
             ):
                 errors.append("mobaxterm live GUI SFTP toolbar separator width metadata drifted")
+        transfer_button = window.findChild(QToolButton, "mobaSftpTransferMenu")
+        if transfer_button is None:
+            errors.append("mobaxterm live GUI SFTP transfer selector is missing")
+        else:
+            if transfer_button.text() != "Transfer":
+                errors.append("mobaxterm live GUI SFTP transfer selector label drifted")
+            if transfer_button.menu() is None:
+                errors.append("mobaxterm live GUI SFTP transfer selector menu is missing")
+            else:
+                transfer_labels = {
+                    action.text() for action in transfer_button.menu().actions() if not action.isSeparator()
+                }
+                expected_transfer_labels = {
+                    "Download selected…",
+                    "Upload files…",
+                    "Refresh remote listing",
+                }
+                if not expected_transfer_labels.issubset(transfer_labels):
+                    errors.append(
+                        "mobaxterm live GUI SFTP transfer selector actions drifted"
+                    )
         sftp_path = window.findChild(QLineEdit, "mobaSftpPath")
         if sftp_path is None:
             errors.append("mobaxterm live GUI SFTP dock missing remote path strip")
@@ -2792,16 +2813,24 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append("mobaxterm live GUI monitoring controls compact height drifted")
                 if bool(controls_frame.property("mobaRemoteMonitoringExpanded")):
                     errors.append("mobaxterm live GUI monitoring controls must not expand")
-            for detail_object in (
-                "mobaMonitoringStatus",
-                "mobaMonitoringRefresh",
-                "mobaMonitoringLastRefresh",
-            ):
+            for detail_object in ("mobaMonitoringStatus", "mobaMonitoringRefresh"):
                 detail_widget = monitoring_panel.findChild(QWidget, detail_object)
-                if detail_widget is not None and detail_widget.isVisible():
+                if detail_widget is None:
                     errors.append(
-                        f"mobaxterm live GUI compact monitoring footer exposes {detail_object}"
+                        f"mobaxterm live GUI monitoring footer missing {detail_object}"
                     )
+                elif not detail_widget.isVisible():
+                    errors.append(
+                        f"mobaxterm live GUI monitoring footer hides operational {detail_object}"
+                    )
+            # The timestamp is deliberately not a third visible control in
+            # the compact footer: it is rendered inline in the status label
+            # and remains available through its tooltip/property.  Keeping the
+            # object makes the contract inspectable without overlapping the
+            # follow-folder checkbox.
+            last_refresh = monitoring_panel.findChild(QWidget, "mobaMonitoringLastRefresh")
+            if last_refresh is None:
+                errors.append("mobaxterm live GUI monitoring footer missing mobaMonitoringLastRefresh")
         monitoring_labels = window.findChildren(QLabel, "mobaMonitoringMetric")
         monitoring_keys = {str(label.property("mobaMonitoringMetricKey") or "") for label in monitoring_labels}
         missing_monitoring_keys = sorted(EXPECTED_MOBA_MONITORING_METRIC_KEYS - monitoring_keys)

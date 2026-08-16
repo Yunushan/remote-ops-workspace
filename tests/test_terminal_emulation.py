@@ -31,6 +31,56 @@ def test_ansi_transcript_bounds_scrollback_and_supports_screen_clear() -> None:
     assert TERMINAL_EMULATOR_BACKEND == "ansi-transcript-v1"
 
 
+def test_ansi_transcript_bounds_alternate_screen_redraws_and_restores_shell() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(40, 6)
+    terminal.feed("shell prompt\n")
+
+    assert terminal.feed(
+        "\x1b[?1049h\x1b[2J\x1b[1;1Hone\n\x1b[1;1Htwo"
+    ) == "two"
+    assert terminal.screen_text().startswith("two\n")
+    assert terminal.screen_text().count("\n") == 5
+    assert terminal.feed("\x1b[?1049l") == "shell prompt\n"
+
+
+def test_ansi_transcript_handles_vim_scroll_regions_and_cursor_save_restore() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(20, 6)
+
+    terminal.feed("\x1b[?1049h\x1b[2J\x1b[1;1Hheader")
+    assert terminal.alternate_screen_active is True
+    terminal.feed("\x1b[2;1Hbefore\x1b[3;1Hmiddle\x1b[4;1Hafter")
+
+    # Vim uses a scroll region plus insert/delete line and character controls
+    # during redraw. Those controls must stay bounded inside the alternate
+    # screen rather than corrupting the normal shell transcript.
+    terminal.feed("\x1b[2;5r\x1b[3;1H\x1b[1Linserted\x1b[3;2H\x1b[1P")
+    terminal.feed("\x1b7\x1b[6;6Hz\x1b8Q")
+    assert "header" in terminal.text()
+    assert "erted" in terminal.text()
+    assert terminal.feed("\x1b[?1049l") == ""
+    assert terminal.alternate_screen_active is False
+
+
+def test_ansi_transcript_answers_full_screen_queries_and_tracks_bracketed_paste() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(80, 24)
+
+    terminal.feed("\x1b[?1049h\x1b[?2004h\x1b[6n\x1b[?1;2c")
+
+    assert terminal.alternate_screen_active is True
+    assert terminal.bracketed_paste_active is True
+    assert terminal.take_pending_responses() == (
+        b"\x1b[1;1R",
+        b"\x1b[?1;2c",
+    )
+    assert terminal.take_pending_responses() == ()
+
+    terminal.feed("\x1b[?2004l\x1b[?1049l")
+    assert terminal.bracketed_paste_active is False
+
+
 def test_ansi_transcript_rejects_non_positive_scrollback_limit() -> None:
     with pytest.raises(ValueError, match="greater than zero"):
         AnsiTerminalTranscript(max_scrollback_lines=0)

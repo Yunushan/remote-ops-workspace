@@ -1510,7 +1510,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input.setEnabled(False)
             self.append_text(self.terminal_startup_context_text())
             self.arm_initial_pty_clear_recovery()
-            runtime_command = list(self.plan.command)
+            runtime_override = self.property("terminalRuntimeCommand")
+            if isinstance(runtime_override, (list, tuple)) and runtime_override:
+                runtime_command = [str(argument) for argument in runtime_override]
+            else:
+                runtime_command = list(self.plan.command)
             process_property = getattr(self.process, "property", lambda _name: None)
             if bool(process_property("terminalOpenSshPipeFallback")):
                 runtime_command = openssh_command_with_overrides(

@@ -1497,6 +1497,39 @@ def prepare_moba_connected_reference(window: Any) -> list[str]:
     return []
 
 
+def configure_live_render_transport(window: Any, tab_label: str, ready_text: str) -> bool:
+    """Keep a reference pane alive without contacting documentation hosts.
+
+    The profile and terminal command metadata stay untouched for the visual
+    contract.  Only the QProcess runtime command is replaced with a local
+    stdin-backed transport, which makes process-count evidence independent of
+    DNS, credentials, and unavailable demo endpoints.
+    """
+
+    from PyQt6.QtWidgets import QWidget
+
+    index = find_live_tab_index(window.tabs, tab_label)
+    if index < 0:
+        return False
+    tab_widget = window.tabs.widget(index)
+    pane = tab_widget
+    if tab_widget is not None and str(tab_widget.objectName()) != "terminalPane":
+        pane = tab_widget.findChild(QWidget, "terminalPane")
+    if pane is None:
+        return False
+    harness = (
+        "import sys\n"
+        f"print({ready_text!r}, flush=True)\n"
+        "for line in sys.stdin:\n"
+        "    print(line, end='', flush=True)\n"
+    )
+    pane.setProperty(
+        "terminalRuntimeCommand",
+        [sys.executable, "-u", "-c", harness],
+    )
+    return True
+
+
 def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
     profile_name = PRESET_REFERENCE_PROFILES.get(preset_id)
     if profile_name is None:
@@ -1516,37 +1549,25 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         window.launch_profile(profile, dry_run=False, prefix="CI REFERENCE")
     except (KeyError, LauncherError, ValueError) as exc:
         return [f"{preset_id} live GUI could not open reference profile {profile_name}: {exc}"]
+    if not configure_live_render_transport(
+        window,
+        window.profile_tab_label(profile),
+        f"{preset_id.upper()} REFERENCE TRANSPORT READY",
+    ):
+        return [f"{preset_id} live GUI could not configure reference transport"]
     if hasattr(window, "select_profile"):
         window.select_profile(profile_name)
     if preset_id == "remmina":
         transfer_route = EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE
         try:
             transfer_profile = window.store.get(transfer_route.selected_profile_name)
-            # The transfer route is evidence for a second live pane, not a
-            # request to resolve the documentation host.  Use the same local
-            # stdin-backed transport as the MobaXterm reference so an
-            # unavailable demo endpoint cannot make the pane exit before the
-            # status-bar contract is captured.  The profile, tab label, and
-            # SFTP route metadata remain real; only the test transport is
-            # substituted here.
-            transfer_harness = (
-                "import sys\n"
-                "print('TRANSFER TRANSPORT READY', flush=True)\n"
-                "for line in sys.stdin:\n"
-                "    print(line, end='', flush=True)\n"
-            )
-            transfer_plan = TerminalPanePlan(
-                title=transfer_profile.name,
-                command=[sys.executable, "-u", "-c", transfer_harness],
-                source="real-gui-render-local-transport",
-            )
-            window.open_terminal_tab(
-                transfer_plan,
-                profile=transfer_profile,
-                tab_title=window.profile_tab_label(transfer_profile),
-                tab_status="CI TRANSFER",
-            )
-            window.log.append(f"CI TRANSFER: {transfer_plan.printable()}")
+            window.launch_profile(transfer_profile, dry_run=False, prefix="CI TRANSFER")
+            if not configure_live_render_transport(
+                window,
+                window.profile_tab_label(transfer_profile),
+                "REMMINA TRANSFER TRANSPORT READY",
+            ):
+                return ["remmina live GUI could not configure SFTP transfer transport"]
         except (KeyError, LauncherError, ValueError) as exc:
             return [f"remmina live GUI could not open SFTP transfer profile: {exc}"]
         # ``open_terminal_tab`` starts panes only after their tab becomes

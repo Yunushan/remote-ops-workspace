@@ -1534,6 +1534,9 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         from PyQt6.QtWidgets import QApplication
 
         app = QApplication.instance()
+        transfer_index = find_live_tab_index(window.tabs, transfer_route.active_tab_label)
+        if transfer_index >= 0:
+            window.tabs.setCurrentIndex(transfer_index)
         if app is not None:
             process_events(app)
         if hasattr(window, "select_profile"):

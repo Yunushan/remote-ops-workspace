@@ -1555,7 +1555,7 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         # reference tab is selected again.  Drain the transfer tab while it
         # is still current so the status bar can truthfully report both live
         # panes on every platform.
-        from PyQt6.QtWidgets import QApplication
+        from PyQt6.QtWidgets import QApplication, QWidget
 
         app = QApplication.instance()
         transfer_index = find_live_tab_index(window.tabs, transfer_route.active_tab_label)
@@ -1563,6 +1563,16 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
             window.tabs.setCurrentIndex(transfer_index)
         if app is not None:
             process_events(app)
+        if transfer_index >= 0:
+            transfer_widget = window.tabs.widget(transfer_index)
+            transfer_pane = transfer_widget
+            if transfer_widget is not None and str(transfer_widget.objectName()) != "terminalPane":
+                transfer_pane = transfer_widget.findChild(QWidget, "terminalPane")
+            if transfer_pane is not None and not transfer_pane.is_running():
+                transfer_pane.start()
+            if app is not None:
+                process_events(app)
+            window.update_session_status()
         if hasattr(window, "select_profile"):
             window.select_profile(profile_name)
     errors: list[str] = []
@@ -1648,6 +1658,10 @@ def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_second
     app = QApplication.instance()
     if app is None:
         return
+    if not pane.is_running():
+        start = getattr(pane, "start", None)
+        if callable(start):
+            start()
     expected_fragment = ""
     surface_route = EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES.get(preset_id)
     if surface_route is not None:

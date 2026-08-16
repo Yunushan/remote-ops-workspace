@@ -18743,7 +18743,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             profile: Profile | None = None,
             autostart: bool = True,
         ) -> TerminalPane:
-            pane = TerminalPane(plan, profile=profile, autostart=autostart)
+            # Keep the normal launch path explicit for the source-policy
+            # guard, while allowing reference-render harnesses to opt into
+            # deferred startup without changing production defaults.
+            if autostart:
+                pane = TerminalPane(plan, profile=profile)
+            else:
+                pane = TerminalPane(plan, profile=profile, autostart=False)
             pane.setProperty("terminalAutoCloseOnCleanExit", plan.source == "shell")
             pane.process.started.connect(self.update_session_status)
             pane.process.finished.connect(

@@ -107,7 +107,7 @@ class AnsiTerminalTranscript:
     _screen_columns: int = 80
     _screen_rows: int = 24
     _alternate_screen: bool = False
-    _alternate_lines: list[str] = field(default_factory=list)
+    _alternate_lines: list[list[str]] = field(default_factory=list)
     _alternate_line_styles: list[list[AnsiTextStyle]] = field(default_factory=list)
     _alternate_row: int = 0
     _alternate_column: int = 0
@@ -227,7 +227,7 @@ class AnsiTerminalTranscript:
         if not self._alternate_screen:
             return self.text()
         self._ensure_alternate_screen()
-        return "\n".join(self._alternate_lines)
+        return "\n".join("".join(line) for line in self._alternate_lines)
 
     def styled_fragments(
         self,
@@ -332,23 +332,25 @@ class AnsiTerminalTranscript:
         ):
             if line or styles:
                 last = index
-        return list(
-            zip(
+        return [
+            ("".join(line), styles)
+            for line, styles in zip(
                 self._alternate_lines[: last + 1],
                 self._alternate_line_styles[: last + 1],
                 strict=True,
             )
-        )
+        ]
 
     def _alternate_all_render_rows(self) -> list[tuple[str, list[AnsiTextStyle]]]:
         self._ensure_alternate_screen()
-        return list(
-            zip(
+        return [
+            ("".join(line), styles)
+            for line, styles in zip(
                 self._alternate_lines,
                 self._alternate_line_styles,
                 strict=True,
             )
-        )
+        ]
 
     def _feed_escape(self, char: str) -> None:
         if self._escape is None:
@@ -687,7 +689,7 @@ class AnsiTerminalTranscript:
 
     def _ensure_alternate_screen(self) -> None:
         if not self._alternate_lines:
-            self._alternate_lines = [""] * self._screen_rows
+            self._alternate_lines = [[] for _ in range(self._screen_rows)]
             self._alternate_line_styles = [[] for _ in range(self._screen_rows)]
         if len(self._alternate_lines) != self._screen_rows:
             self._resize_alternate_screen()
@@ -695,10 +697,10 @@ class AnsiTerminalTranscript:
     def _resize_alternate_screen(self) -> None:
         old_lines = self._alternate_lines
         old_styles = self._alternate_line_styles
-        self._alternate_lines = [""] * self._screen_rows
+        self._alternate_lines = [[] for _ in range(self._screen_rows)]
         self._alternate_line_styles = [[] for _ in range(self._screen_rows)]
         for row in range(min(len(old_lines), self._screen_rows)):
-            self._alternate_lines[row] = old_lines[row][: self._screen_columns]
+            self._alternate_lines[row] = list(old_lines[row][: self._screen_columns])
             self._alternate_line_styles[row] = old_styles[row][: self._screen_columns]
         self._alternate_row = min(self._alternate_row, self._screen_rows - 1)
         self._alternate_column = min(self._alternate_column, self._screen_columns - 1)
@@ -713,7 +715,7 @@ class AnsiTerminalTranscript:
 
     def _blank_alternate_row(self, row: int) -> None:
         if 0 <= row < self._screen_rows:
-            self._alternate_lines[row] = ""
+            self._alternate_lines[row] = []
             self._alternate_line_styles[row] = []
 
     def _clear_alternate_screen(self) -> None:
@@ -734,7 +736,7 @@ class AnsiTerminalTranscript:
         row = self._alternate_row
         if insert:
             for _ in range(count):
-                self._alternate_lines.insert(row, "")
+                self._alternate_lines.insert(row, [])
                 self._alternate_line_styles.insert(row, [])
                 del self._alternate_lines[self._alternate_bottom_margin + 1]
                 del self._alternate_line_styles[self._alternate_bottom_margin + 1]
@@ -742,7 +744,7 @@ class AnsiTerminalTranscript:
             for _ in range(count):
                 del self._alternate_lines[row]
                 del self._alternate_line_styles[row]
-                self._alternate_lines.insert(self._alternate_bottom_margin, "")
+                self._alternate_lines.insert(self._alternate_bottom_margin, [])
                 self._alternate_line_styles.insert(self._alternate_bottom_margin, [])
 
     def _scroll_alternate_region(self, amount: int, *, down: bool) -> None:
@@ -752,14 +754,14 @@ class AnsiTerminalTranscript:
         count = max(1, min(bottom - top + 1, int(amount)))
         for _ in range(count):
             if down:
-                self._alternate_lines.insert(top, "")
+                self._alternate_lines.insert(top, [])
                 self._alternate_line_styles.insert(top, [])
                 del self._alternate_lines[bottom + 1]
                 del self._alternate_line_styles[bottom + 1]
             else:
                 del self._alternate_lines[top]
                 del self._alternate_line_styles[top]
-                self._alternate_lines.insert(bottom, "")
+                self._alternate_lines.insert(bottom, [])
                 self._alternate_line_styles.insert(bottom, [])
 
     def _edit_alternate_columns(self, amount: int, command: str) -> None:
@@ -786,7 +788,7 @@ class AnsiTerminalTranscript:
             for index in range(column, end):
                 line[index] = " "
                 styles[index] = self._style
-        self._alternate_lines[self._alternate_row] = "".join(line[: self._screen_columns])
+        self._alternate_lines[self._alternate_row] = line[: self._screen_columns]
         self._alternate_line_styles[self._alternate_row] = styles[: self._screen_columns]
 
     def _set_alternate_cursor(self, row: int, column: int) -> None:
@@ -805,7 +807,7 @@ class AnsiTerminalTranscript:
             self._column,
         )
         self._alternate_screen = True
-        self._alternate_lines = [""] * self._screen_rows
+        self._alternate_lines = [[] for _ in range(self._screen_rows)]
         self._alternate_line_styles = [[] for _ in range(self._screen_rows)]
         self._alternate_row = 0
         self._alternate_column = 0
@@ -846,7 +848,7 @@ class AnsiTerminalTranscript:
             else:
                 self._alternate_lines.pop(top)
                 self._alternate_line_styles.pop(top)
-                self._alternate_lines.insert(bottom, "")
+                self._alternate_lines.insert(bottom, [])
                 self._alternate_line_styles.insert(bottom, [])
             return
         self._lines.append("".join(self._line))
@@ -868,13 +870,13 @@ class AnsiTerminalTranscript:
             styles = self._alternate_line_styles[self._alternate_row]
             if self._alternate_column > len(line):
                 padding = self._alternate_column - len(line)
-                line += " " * padding
+                line.extend(" " for _ in range(padding))
                 styles.extend(ANSI_DEFAULT_STYLE for _ in range(padding))
             if self._alternate_column == len(line):
-                line += char
+                line.append(char)
                 styles.append(self._style)
             else:
-                line = line[: self._alternate_column] + char + line[self._alternate_column + 1 :]
+                line[self._alternate_column] = char
                 styles[self._alternate_column] = self._style
             self._alternate_lines[self._alternate_row] = line
             self._alternate_column += 1

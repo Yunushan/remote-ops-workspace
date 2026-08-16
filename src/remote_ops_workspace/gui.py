@@ -871,7 +871,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 hide_qt_caret(0)
             self.output.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             self.output.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
-            self.output.document().setUndoRedoEnabled(False)
+            document = self.output.document()
+            if document is not None:
+                document.setUndoRedoEnabled(False)
             self.setFocusProxy(self.output)
             self.output.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.output.installEventFilter(self)
@@ -2179,7 +2181,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._rendered_terminal_text = transcript
             if alternate_screen_active:
                 self.output.setUpdatesEnabled(True)
-                self.output.viewport().update()
+                self.output_viewport.update()
                 self.output.setProperty("terminalAlternateScreenRedraw", False)
             if alternate_screen_active:
                 # The retained screen is a viewport, not scrollback.  Always
@@ -12848,19 +12850,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 pane = self.active_terminal_pane()
                 if pane is not None:
-                    QTimer.singleShot(
-                        0,
-                        lambda pane=pane, transition=transition: (
+                    def focus_if_current(pane=pane, transition=transition) -> None:
+                        if transition != self._tab_transition_generation:
+                            return
+                        current = self.tabs.currentWidget()
+                        if current is not None and (current is pane or current.isAncestorOf(pane)):
                             pane.focus_terminal_input()
-                            if transition == self._tab_transition_generation
-                            and self.tabs.currentWidget() is not None
-                            and (
-                                self.tabs.currentWidget() is pane
-                                or self.tabs.currentWidget().isAncestorOf(pane)
-                            )
-                            else None
-                        ),
-                    )
+
+                    QTimer.singleShot(0, focus_if_current)
                 return
             self.moba_tab_guard = True
             try:

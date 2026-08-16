@@ -10242,7 +10242,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.update_profile_action_states()
             self.update_layout_action_states()
+            # Layout/style polish can reapply platform-specific line-edit
+            # size hints after the product panels are shown.  Reassert the
+            # measured reference heights both now and on the next event-loop
+            # turn so the live contracts observe the same geometry on Qt
+            # offscreen and native Windows.
+            self.enforce_product_reference_filter_geometry(preset.id)
+            QTimer.singleShot(
+                0,
+                lambda preset_id=preset.id: self.enforce_product_reference_filter_geometry(preset_id),
+            )
             self.statusBar().showMessage(f"View: {preset.label}")
+
+        def enforce_product_reference_filter_geometry(self, preset_id: str) -> None:
+            filter_specs = {
+                "securecrt": (
+                    "secureCrtSessionFilter",
+                    gui_design_securecrt_session_manager_chrome().live_filter_height,
+                ),
+                "mremoteng": (
+                    "mRemoteNgDocumentFilter",
+                    gui_design_mremoteng_document_toolbar_chrome().live_filter_height,
+                ),
+            }
+            spec = filter_specs.get(preset_id)
+            if spec is None:
+                return
+            object_name, height = spec
+            widget = self.findChild(QLineEdit, object_name)
+            if widget is None:
+                return
+            widget.setMinimumHeight(height)
+            widget.setMaximumHeight(height)
 
         @staticmethod
         def apply_preset_selection_route_properties(widget, route) -> None:

@@ -1525,6 +1525,17 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
             window.launch_profile(transfer_profile, dry_run=False, prefix="CI TRANSFER")
         except (KeyError, LauncherError, ValueError) as exc:
             return [f"remmina live GUI could not open SFTP transfer profile: {exc}"]
+        # ``open_terminal_tab`` starts panes only after their tab becomes
+        # current.  Launching the transfer profile immediately before the
+        # reference profile leaves its queued start callback behind when the
+        # reference tab is selected again.  Drain the transfer tab while it
+        # is still current so the status bar can truthfully report both live
+        # panes on every platform.
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            process_events(app)
         if hasattr(window, "select_profile"):
             window.select_profile(profile_name)
     errors: list[str] = []
@@ -1578,7 +1589,7 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
     return errors
 
 
-def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_seconds: float = 1.5) -> None:
+def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_seconds: float = 3.0) -> None:
     """Drain the deferred tab-start path before collecting live evidence.
 
     Reference tabs use a real child process, but startup is queued until Qt

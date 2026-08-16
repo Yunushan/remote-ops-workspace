@@ -871,7 +871,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 hide_qt_caret(0)
             self.output.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             self.output.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
-            self.output.document().setUndoRedoEnabled(False)
+            document = self.output.document()
+            if document is not None:
+                document.setUndoRedoEnabled(False)
             self.setFocusProxy(self.output)
             self.output.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.output.installEventFilter(self)
@@ -1510,7 +1512,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input.setEnabled(False)
             self.append_text(self.terminal_startup_context_text())
             self.arm_initial_pty_clear_recovery()
-            runtime_command = list(self.plan.command)
+            runtime_override = self.property("terminalRuntimeCommand")
+            if isinstance(runtime_override, (list, tuple)) and runtime_override:
+                runtime_command = [str(argument) for argument in runtime_override]
+            else:
+                runtime_command = list(self.plan.command)
             process_property = getattr(self.process, "property", lambda _name: None)
             if bool(process_property("terminalOpenSshPipeFallback")):
                 runtime_command = openssh_command_with_overrides(
@@ -2175,7 +2181,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._rendered_terminal_text = transcript
             if alternate_screen_active:
                 self.output.setUpdatesEnabled(True)
-                self.output.viewport().update()
+                self.output_viewport.update()
                 self.output.setProperty("terminalAlternateScreenRedraw", False)
             if alternate_screen_active:
                 # The retained screen is a viewport, not scrollback.  Always
@@ -5871,7 +5877,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 # them to a few pixels when the terminal is resized, which is
                 # why values appeared as clipped/blank boxes in the bottom
                 # monitoring bar.
-                cell_frame.setMinimumWidth(geometry.width)
+                # Keep the compact contract's minimum width unconstrained so
+                # Qt can negotiate the status strip at narrow window sizes.
+                # The fixed policy, child label hint, and maximum width still
+                # preserve the measured cell width when space is available
+                # without turning the strip into a hard minimum.
+                cell_frame.setMinimumWidth(0)
                 cell_frame.setMaximumWidth(geometry.width)
                 cell_frame.setFixedHeight(geometry.height)
                 cell_frame.setSizePolicy(
@@ -10237,7 +10248,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.update_profile_action_states()
             self.update_layout_action_states()
+            # Layout/style polish can reapply platform-specific line-edit
+            # size hints after the product panels are shown.  Reassert the
+            # measured reference heights both now and on the next event-loop
+            # turn so the live contracts observe the same geometry on Qt
+            # offscreen and native Windows.
+            self.enforce_product_reference_filter_geometry(preset.id)
+            QTimer.singleShot(
+                0,
+                lambda preset_id=preset.id: self.enforce_product_reference_filter_geometry(preset_id),
+            )
             self.statusBar().showMessage(f"View: {preset.label}")
+
+        def enforce_product_reference_filter_geometry(self, preset_id: str) -> None:
+            filter_specs = {
+                "securecrt": (
+                    "secureCrtSessionFilter",
+                    gui_design_securecrt_session_manager_chrome().live_filter_height,
+                ),
+                "mremoteng": (
+                    "mRemoteNgDocumentFilter",
+                    gui_design_mremoteng_document_toolbar_chrome().live_filter_height,
+                ),
+            }
+            spec = filter_specs.get(preset_id)
+            if spec is None:
+                return
+            object_name, height = spec
+            widget = self.findChild(QLineEdit, object_name)
+            if widget is None:
+                return
+            widget.setMinimumHeight(height)
+            widget.setMaximumHeight(height)
 
         @staticmethod
         def apply_preset_selection_route_properties(widget, route) -> None:
@@ -12808,19 +12850,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 pane = self.active_terminal_pane()
                 if pane is not None:
-                    QTimer.singleShot(
-                        0,
-                        lambda pane=pane, transition=transition: (
+                    def focus_if_current(pane=pane, transition=transition) -> None:
+                        if transition != self._tab_transition_generation:
+                            return
+                        current = self.tabs.currentWidget()
+                        if current is not None and (current is pane or current.isAncestorOf(pane)):
                             pane.focus_terminal_input()
-                            if transition == self._tab_transition_generation
-                            and self.tabs.currentWidget() is not None
-                            and (
-                                self.tabs.currentWidget() is pane
-                                or self.tabs.currentWidget().isAncestorOf(pane)
-                            )
-                            else None
-                        ),
-                    )
+
+                    QTimer.singleShot(0, focus_if_current)
                 return
             self.moba_tab_guard = True
             try:
@@ -15227,7 +15264,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 filter_input.setProperty(property_name, property_value)
             filter_input.setMinimumWidth(chrome.live_filter_width)
             filter_input.setMaximumWidth(chrome.live_filter_width)
-            filter_input.setMinimumHeight(chrome.live_filter_height)
+            filter_input.setFixedHeight(chrome.live_filter_height)
             self.mremoteng_document_filter = filter_input
             self.set_interaction_state(
                 filter_input,
@@ -16708,7 +16745,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.securecrt_session_filter.setProperty("secureCrtSessionManagerLiveFilterHeight", chrome.live_filter_height)
             for property_name, property_value in filter_route_properties.items():
                 self.securecrt_session_filter.setProperty(property_name, property_value)
-            self.securecrt_session_filter.setMinimumHeight(chrome.live_filter_height)
+            self.securecrt_session_filter.setFixedHeight(chrome.live_filter_height)
             self.securecrt_session_filter.textChanged.connect(self.filter_profile_tree)
             layout.addWidget(self.securecrt_session_filter)
             panel.setVisible(False)
@@ -18706,7 +18743,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             profile: Profile | None = None,
             autostart: bool = True,
         ) -> TerminalPane:
-            pane = TerminalPane(plan, profile=profile, autostart=autostart)
+            # Keep the normal launch path explicit for the source-policy
+            # guard, while allowing reference-render harnesses to opt into
+            # deferred startup without changing production defaults.
+            if autostart:
+                pane = TerminalPane(plan, profile=profile)
+            else:
+                pane = TerminalPane(plan, profile=profile, autostart=False)
             pane.setProperty("terminalAutoCloseOnCleanExit", plan.source == "shell")
             pane.process.started.connect(self.update_session_status)
             pane.process.finished.connect(

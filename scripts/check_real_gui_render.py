@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1496,6 +1497,39 @@ def prepare_moba_connected_reference(window: Any) -> list[str]:
     return []
 
 
+def configure_live_render_transport(window: Any, tab_label: str, ready_text: str) -> bool:
+    """Keep a reference pane alive without contacting documentation hosts.
+
+    The profile and terminal command metadata stay untouched for the visual
+    contract.  Only the QProcess runtime command is replaced with a local
+    stdin-backed transport, which makes process-count evidence independent of
+    DNS, credentials, and unavailable demo endpoints.
+    """
+
+    from PyQt6.QtWidgets import QWidget
+
+    index = find_live_tab_index(window.tabs, tab_label)
+    if index < 0:
+        return False
+    tab_widget = window.tabs.widget(index)
+    pane = tab_widget
+    if tab_widget is not None and str(tab_widget.objectName()) != "terminalPane":
+        pane = tab_widget.findChild(QWidget, "terminalPane")
+    if pane is None:
+        return False
+    harness = (
+        "import sys\n"
+        f"print({ready_text!r}, flush=True)\n"
+        "for line in sys.stdin:\n"
+        "    print(line, end='', flush=True)\n"
+    )
+    pane.setProperty(
+        "terminalRuntimeCommand",
+        [sys.executable, "-u", "-c", harness],
+    )
+    return True
+
+
 def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
     profile_name = PRESET_REFERENCE_PROFILES.get(preset_id)
     if profile_name is None:
@@ -1515,6 +1549,12 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         window.launch_profile(profile, dry_run=False, prefix="CI REFERENCE")
     except (KeyError, LauncherError, ValueError) as exc:
         return [f"{preset_id} live GUI could not open reference profile {profile_name}: {exc}"]
+    if not configure_live_render_transport(
+        window,
+        window.profile_tab_label(profile),
+        f"{preset_id.upper()} REFERENCE TRANSPORT READY",
+    ):
+        return [f"{preset_id} live GUI could not configure reference transport"]
     if hasattr(window, "select_profile"):
         window.select_profile(profile_name)
     if preset_id == "remmina":
@@ -1522,8 +1562,38 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         try:
             transfer_profile = window.store.get(transfer_route.selected_profile_name)
             window.launch_profile(transfer_profile, dry_run=False, prefix="CI TRANSFER")
+            if not configure_live_render_transport(
+                window,
+                window.profile_tab_label(transfer_profile),
+                "REMMINA TRANSFER TRANSPORT READY",
+            ):
+                return ["remmina live GUI could not configure SFTP transfer transport"]
         except (KeyError, LauncherError, ValueError) as exc:
             return [f"remmina live GUI could not open SFTP transfer profile: {exc}"]
+        # ``open_terminal_tab`` starts panes only after their tab becomes
+        # current.  Launching the transfer profile immediately before the
+        # reference profile leaves its queued start callback behind when the
+        # reference tab is selected again.  Drain the transfer tab while it
+        # is still current so the status bar can truthfully report both live
+        # panes on every platform.
+        from PyQt6.QtWidgets import QApplication, QWidget
+
+        app = QApplication.instance()
+        transfer_index = find_live_tab_index(window.tabs, transfer_route.active_tab_label)
+        if transfer_index >= 0:
+            window.tabs.setCurrentIndex(transfer_index)
+        if app is not None:
+            process_events(app)
+        if transfer_index >= 0:
+            transfer_widget = window.tabs.widget(transfer_index)
+            transfer_pane = transfer_widget
+            if transfer_widget is not None and str(transfer_widget.objectName()) != "terminalPane":
+                transfer_pane = transfer_widget.findChild(QWidget, "terminalPane")
+            if transfer_pane is not None and not transfer_pane.is_running():
+                transfer_pane.start()
+            if app is not None:
+                process_events(app)
+            window.update_session_status()
         if hasattr(window, "select_profile"):
             window.select_profile(profile_name)
     errors: list[str] = []
@@ -1537,6 +1607,12 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         window.tabs.setProperty(route.activated_label_property, route.active_tab_label)
         window.tabs.setProperty(route.active_tab_property, route.active_tab_label)
         window.tabs.setProperty(route.reference_profile_property, route.reference_profile)
+        # open_terminal_tab deliberately defers process startup until the
+        # connected tab has a parent and stable geometry.  Settle that queued
+        # transition before capturing evidence; otherwise the contract sees
+        # the pre-start "No running process panes" state and an empty
+        # transcript even though the user-facing tab starts correctly.
+        settle_live_reference_runtime(window, preset_id)
         if tab_chrome_route is not None:
             errors.extend(capture_product_reference_tab_chrome(window, preset_id, reference_index))
         if surface_route is not None:
@@ -1569,6 +1645,65 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
     if focus_route is not None and hasattr(window, "apply_focus_interaction_route_for_design"):
         window.apply_focus_interaction_route_for_design(focus_route, preset_id)
     return errors
+
+
+def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_seconds: float = 3.0) -> None:
+    """Drain the deferred tab-start path before collecting live evidence.
+
+    Reference tabs use a real child process, but startup is queued until Qt
+    has laid out the selected page. A bounded event-loop wait keeps this gate
+    deterministic while allowing both the process-start signal and the
+    coalesced output timer to run on Windows and offscreen Qt.
+    """
+
+    from PyQt6.QtWidgets import QApplication, QTabWidget, QWidget
+
+    route = EXPECTED_PRESET_REFERENCE_TAB_ROUTES.get(preset_id)
+    if route is None:
+        return
+    tabs = window.findChild(QTabWidget, "sessionTabs")
+    if tabs is None:
+        return
+    reference_index = find_live_tab_index(tabs, route.active_tab_label)
+    if reference_index < 0:
+        return
+    reference_widget = tabs.widget(reference_index)
+    if reference_widget is None:
+        return
+    pane = reference_widget
+    if str(pane.objectName()) != "terminalPane":
+        pane = reference_widget.findChild(QWidget, "terminalPane")
+    if pane is None:
+        return
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    expected_fragment = ""
+    surface_route = EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES.get(preset_id)
+    if surface_route is not None:
+        expected_fragment = surface_route.command_target_fragment
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        process_events(app)
+        flush = getattr(pane, "flush_process_output_now", None)
+        if callable(flush):
+            flush()
+        output = getattr(pane, "output", None)
+        transcript = output.toPlainText() if output is not None else ""
+        command = getattr(getattr(pane, "plan", None), "printable", lambda: "")()
+        if command and command in transcript and (
+            not expected_fragment or expected_fragment in transcript
+        ):
+            break
+        time.sleep(0.01)
+    process_events(app)
+    flush = getattr(pane, "flush_process_output_now", None)
+    if callable(flush):
+        flush()
+    update_status = getattr(window, "update_session_status", None)
+    if callable(update_status):
+        update_status()
 
 
 def find_live_tab_index(tabs: Any, label: str) -> int:
@@ -2338,6 +2473,27 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 EXPECTED_MOBA_SFTP_DOCK_LAYOUT.toolbar_separator_width
             ):
                 errors.append("mobaxterm live GUI SFTP toolbar separator width metadata drifted")
+        transfer_button = window.findChild(QToolButton, "mobaSftpTransferMenu")
+        if transfer_button is None:
+            errors.append("mobaxterm live GUI SFTP transfer selector is missing")
+        else:
+            if transfer_button.text() != "Transfer":
+                errors.append("mobaxterm live GUI SFTP transfer selector label drifted")
+            if transfer_button.menu() is None:
+                errors.append("mobaxterm live GUI SFTP transfer selector menu is missing")
+            else:
+                transfer_labels = {
+                    action.text() for action in transfer_button.menu().actions() if not action.isSeparator()
+                }
+                expected_transfer_labels = {
+                    "Download selected…",
+                    "Upload files…",
+                    "Refresh remote listing",
+                }
+                if not expected_transfer_labels.issubset(transfer_labels):
+                    errors.append(
+                        "mobaxterm live GUI SFTP transfer selector actions drifted"
+                    )
         sftp_path = window.findChild(QLineEdit, "mobaSftpPath")
         if sftp_path is None:
             errors.append("mobaxterm live GUI SFTP dock missing remote path strip")
@@ -2792,16 +2948,24 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                     errors.append("mobaxterm live GUI monitoring controls compact height drifted")
                 if bool(controls_frame.property("mobaRemoteMonitoringExpanded")):
                     errors.append("mobaxterm live GUI monitoring controls must not expand")
-            for detail_object in (
-                "mobaMonitoringStatus",
-                "mobaMonitoringRefresh",
-                "mobaMonitoringLastRefresh",
-            ):
+            for detail_object in ("mobaMonitoringStatus", "mobaMonitoringRefresh"):
                 detail_widget = monitoring_panel.findChild(QWidget, detail_object)
-                if detail_widget is not None and detail_widget.isVisible():
+                if detail_widget is None:
                     errors.append(
-                        f"mobaxterm live GUI compact monitoring footer exposes {detail_object}"
+                        f"mobaxterm live GUI monitoring footer missing {detail_object}"
                     )
+                elif not detail_widget.isVisible():
+                    errors.append(
+                        f"mobaxterm live GUI monitoring footer hides operational {detail_object}"
+                    )
+            # The timestamp is deliberately not a third visible control in
+            # the compact footer: it is rendered inline in the status label
+            # and remains available through its tooltip/property.  Keeping the
+            # object makes the contract inspectable without overlapping the
+            # follow-folder checkbox.
+            last_refresh = monitoring_panel.findChild(QWidget, "mobaMonitoringLastRefresh")
+            if last_refresh is None:
+                errors.append("mobaxterm live GUI monitoring footer missing mobaMonitoringLastRefresh")
         monitoring_labels = window.findChildren(QLabel, "mobaMonitoringMetric")
         monitoring_keys = {str(label.property("mobaMonitoringMetricKey") or "") for label in monitoring_labels}
         missing_monitoring_keys = sorted(EXPECTED_MOBA_MONITORING_METRIC_KEYS - monitoring_keys)

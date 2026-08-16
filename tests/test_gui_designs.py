@@ -160,6 +160,9 @@ def test_gui_design_presets_have_valid_layout_metadata() -> None:
         assert "QWidget#terminalPane" in preset.stylesheet
         assert f"selection-background-color: {preset.colors.terminal_text}" in preset.stylesheet
         assert f"selection-color: {preset.colors.terminal}" in preset.stylesheet
+        assert "QAbstractItemView::item:selected" in preset.stylesheet
+        assert "QTreeWidget::item:selected" in preset.stylesheet
+        assert "QLineEdit" in preset.stylesheet
         assert "QFrame#terminalHeader" in preset.stylesheet
         assert "QToolButton#terminalAction" in preset.stylesheet
         assert "QDialog#workflowDialog" in preset.stylesheet

@@ -795,7 +795,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     class TerminalPane(QWidget):
         STOP_POLICY = ProcessStopPolicy()
 
-        def __init__(self, plan: TerminalPanePlan, *, profile: Profile | None = None) -> None:
+        def __init__(
+            self,
+            plan: TerminalPanePlan,
+            *,
+            profile: Profile | None = None,
+            autostart: bool = True,
+        ) -> None:
             super().__init__()
             self.setObjectName("terminalPane")
             self.plan = plan
@@ -811,12 +817,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._pty_initial_clear_pending = False
             self._pty_startup_probe = ""
             self._terminal_scroll_generation = 0
+            self._process_output_buffer = bytearray()
+            self._process_output_flush_scheduled = False
+            self._process_output_flush_count = 0
+            self.setProperty("terminalAutostart", bool(autostart))
+            self.setProperty("terminalOutputCoalescing", "8ms-event-loop-burst")
             self.startup_preamble = ""
             self.show_launch_command = True
             self.output_context_menu_builder: Callable[[TerminalPane], QMenu] | None = None
             self._stop_timer = QTimer(self)
             self._stop_timer.setSingleShot(True)
             self._stop_timer.timeout.connect(self.kill_after_stop_timeout)
+            self._process_output_timer = QTimer(self)
+            self._process_output_timer.setSingleShot(True)
+            self._process_output_timer.setInterval(8)
+            self._process_output_timer.timeout.connect(self.flush_process_output)
 
             self.title = QLabel(plan.title)
             self.title.setObjectName("terminalTitle")
@@ -846,8 +861,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 | Qt.TextInteractionFlag.TextSelectableByKeyboard
             )
             self.output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+            # The QTextEdit caret is not the remote PTY cursor.  Leaving it
+            # visible makes a tiny blinking mark appear at the document end
+            # during tab transitions and Vim redraws, which users perceive as
+            # a second miniature terminal.  Remote cursor state is retained by
+            # the ANSI screen buffer instead.
+            hide_qt_caret = getattr(self.output, "setCursorWidth", None)
+            if callable(hide_qt_caret):
+                hide_qt_caret(0)
             self.output.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             self.output.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
+            document = self.output.document()
+            if document is not None:
+                document.setUndoRedoEnabled(False)
             self.setFocusProxy(self.output)
             self.output.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.output.installEventFilter(self)
@@ -873,6 +899,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 any(argument in {"-t", "-tt"} for argument in plan.command),
             )
             self.output.setProperty("terminalDirectKeyInput", True)
+            self.output.setProperty("terminalQtCaretHidden", True)
+            self.output.setProperty("terminalAlternateScreenActive", False)
+            self.output.setProperty("terminalAlternateScreenRedraw", False)
+            self.output.setProperty("terminalBracketedPasteActive", False)
+            self.output.setProperty("terminalLastPasteWasBracketed", False)
+            self.output.setProperty("terminalEmulatorResponseCount", 0)
+            self.output.setProperty("terminalLastEmulatorResponse", b"")
+            self.output.setProperty("terminalOutputBufferedBytes", 0)
+            self.output.setProperty("terminalOutputFlushCount", 0)
             self.output.setProperty("terminalMouseMultilineSelection", True)
             self.output.setProperty(
                 "terminalKeyboardSelectionShortcuts",
@@ -1021,7 +1056,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.set_status("ready", "ready")
             self.apply_moba_macro_runtime_properties()
             self.update_process_actions()
-            self.start()
+            if autostart:
+                self.start()
 
         def terminal_button(self, label: str, icon_name: str, tooltip: str) -> QToolButton:
             button = QToolButton()
@@ -1049,16 +1085,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.resize_terminal_backend()
 
         def resize_terminal_backend(self) -> None:
-            resize = getattr(self.process, "setTerminalSize", None)
-            if resize is None:
-                return
             metrics = self.output.fontMetrics()
             cell_width = max(1, metrics.horizontalAdvance("M"))
             cell_height = max(1, metrics.lineSpacing())
             viewport = self.output_viewport.size()
             columns = max(20, viewport.width() // cell_width)
             rows = max(5, viewport.height() // cell_height)
-            resize(columns, rows)
+            self.terminal_emulator.set_screen_size(columns, rows)
+            resize = getattr(self.process, "setTerminalSize", None)
+            if resize is not None:
+                resize(columns, rows)
 
         def layout_terminal_actions(self, width: int) -> None:
             compact = width < 620
@@ -1246,6 +1282,45 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return b"\x00"
             if control and int(Qt.Key.Key_A) <= int(key) <= int(Qt.Key.Key_Z):
                 return bytes((int(key) - int(Qt.Key.Key_A) + 1,))
+            if control and not alt:
+                # Qt reports Ctrl-[ and the other control punctuation keys as
+                # printable text.  They still need their conventional TTY
+                # bytes (Ctrl-[ is Vim's canonical Escape sequence).
+                control_punctuation = {
+                    "@": b"\x00",
+                    "[": b"\x1b",
+                    "\\": b"\x1c",
+                    "]": b"\x1d",
+                    "^": b"\x1e",
+                    "_": b"\x1f",
+                }
+                punctuation_payload = control_punctuation.get(text)
+                if punctuation_payload is None:
+                    control_punctuation_keys = {
+                        getattr(Qt.Key, "Key_At", object()): b"\x00",
+                        getattr(Qt.Key, "Key_BracketLeft", object()): b"\x1b",
+                        getattr(Qt.Key, "Key_Backslash", object()): b"\x1c",
+                        getattr(Qt.Key, "Key_BracketRight", object()): b"\x1d",
+                        getattr(Qt.Key, "Key_AsciiCircum", object()): b"\x1e",
+                        getattr(Qt.Key, "Key_Underscore", object()): b"\x1f",
+                    }
+                    punctuation_payload = control_punctuation_keys.get(key)
+                    if punctuation_payload is None:
+                        # Some Windows keyboard layouts expose punctuation as
+                        # the printable ASCII key code but leave event.text()
+                        # empty while Ctrl is held.  Keep Vim's Ctrl-[ and
+                        # the remaining C0 punctuation controls reliable in
+                        # that representation too.
+                        punctuation_payload = {
+                            0x40: b"\x00",
+                            0x5B: b"\x1b",
+                            0x5C: b"\x1c",
+                            0x5D: b"\x1d",
+                            0x5E: b"\x1e",
+                            0x5F: b"\x1f",
+                        }.get(int(key))
+                if punctuation_payload is not None:
+                    return punctuation_payload
             if shift and key == Qt.Key.Key_Tab:
                 return b"\x1b[Z"
             function_keys = {
@@ -1328,7 +1403,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 accepted = len(payload)
             self.output.setProperty("terminalLastInputBytesRequested", len(payload))
             self.output.setProperty("terminalLastInputBytesAccepted", int(accepted))
-            self.scroll_terminal_to_end()
+            # Rendering the process response decides whether the user was
+            # following the live tail.  Scrolling here unconditionally makes
+            # cursor-addressed programs (notably htop) jump to the bottom on
+            # every keypress and steals a deliberate scrollback position.
+            self.output.setProperty("terminalInputPreservedScrollPosition", True)
             if int(accepted) < len(payload):
                 self.set_status("input error", "error")
                 self.append_text(
@@ -1340,7 +1419,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not text:
                 return
             if self.is_running():
-                self.send_raw_input(text.encode("utf-8"))
+                payload = text.encode("utf-8")
+                if self.terminal_emulator.bracketed_paste_active:
+                    # Vim, readline, and modern shells ask for bracketed paste
+                    # so pasted newlines are not mistaken for an immediate
+                    # sequence of commands.  Preserve that contract instead
+                    # of feeding the clipboard as an unbounded key stream.
+                    payload = b"\x1b[200~" + payload + b"\x1b[201~"
+                    self.output.setProperty("terminalLastPasteWasBracketed", True)
+                else:
+                    self.output.setProperty("terminalLastPasteWasBracketed", False)
+                self.send_raw_input(payload)
                 return
             self.input.insert(text)
             self.input.setFocus(Qt.FocusReason.OtherFocusReason)
@@ -1413,6 +1502,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
+            self._process_output_buffer.clear()
+            self._process_output_flush_scheduled = False
+            self._process_output_timer.stop()
             self.disarm_initial_pty_clear_recovery()
             self.set_status("starting", "starting")
             self.start_button.setEnabled(False)
@@ -1420,7 +1512,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input.setEnabled(False)
             self.append_text(self.terminal_startup_context_text())
             self.arm_initial_pty_clear_recovery()
-            runtime_command = list(self.plan.command)
+            runtime_override = self.property("terminalRuntimeCommand")
+            if isinstance(runtime_override, (list, tuple)) and runtime_override:
+                runtime_command = [str(argument) for argument in runtime_override]
+            else:
+                runtime_command = list(self.plan.command)
             process_property = getattr(self.process, "property", lambda _name: None)
             if bool(process_property("terminalOpenSshPipeFallback")):
                 runtime_command = openssh_command_with_overrides(
@@ -1480,6 +1576,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             self.setProperty("terminalClosing", True)
             self._stop_timer.stop()
+            self._process_output_timer.stop()
+            self._process_output_buffer.clear()
+            self._process_output_flush_scheduled = False
             self._restart_after_stop = False
 
         def stop(self, policy: ProcessStopPolicy | None = None) -> ProcessStopResult:
@@ -1524,6 +1623,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
+            self._process_output_buffer.clear()
+            self._process_output_flush_scheduled = False
+            self._process_output_timer.stop()
             if self.startup_preamble:
                 self.append_text(self.startup_preamble)
             if self.show_launch_command:
@@ -1743,14 +1845,73 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty("mobaMacroReplayCancelled", self.macro_replay_cancelled)
 
         def read_stdout(self) -> None:
-            self.append_process_text(
-                bytes(self.process.readAllStandardOutput()).decode(errors="replace")
-            )
+            self.queue_process_output(bytes(self.process.readAllStandardOutput()))
 
         def read_stderr(self) -> None:
-            self.append_process_text(
-                bytes(self.process.readAllStandardError()).decode(errors="replace")
+            self.queue_process_output(bytes(self.process.readAllStandardError()))
+
+        def queue_process_output(self, payload: bytes) -> None:
+            """Coalesce one event-loop burst before rebuilding the transcript.
+
+            Full-screen programs redraw by emitting many small chunks. Feeding
+            every chunk directly into QTextEdit can starve key events and make
+            the terminal look frozen. A bounded 8 ms timer preserves ordering,
+            collapses the burst into one render pass, and caps redraw frequency
+            when a command floods the PTY.
+            """
+
+            if not payload:
+                return
+            self._process_output_buffer.extend(payload)
+            self.output.setProperty(
+                "terminalOutputBufferedBytes",
+                len(self._process_output_buffer),
             )
+            if self._process_output_flush_scheduled:
+                return
+            self._process_output_flush_scheduled = True
+            self._process_output_timer.start()
+
+        def flush_process_output(self) -> None:
+            self._process_output_flush_scheduled = False
+            if not self._process_output_buffer:
+                return
+            # Never let one flood of output monopolize the GUI event loop.
+            # Keep the remainder queued so input, resize, and tab events can
+            # run between render batches without dropping terminal bytes.
+            batch_size = 64 * 1024
+            payload = bytes(self._process_output_buffer[:batch_size])
+            del self._process_output_buffer[:batch_size]
+            self._process_output_flush_count += 1
+            self.output.setProperty(
+                "terminalOutputBufferedBytes",
+                len(self._process_output_buffer),
+            )
+            self.output.setProperty(
+                "terminalOutputFlushCount",
+                self._process_output_flush_count,
+            )
+            self.append_process_text(payload.decode(errors="replace"))
+            if self._process_output_buffer and not self._process_output_flush_scheduled:
+                self._process_output_flush_scheduled = True
+                self._process_output_timer.start()
+
+        def flush_process_output_now(self) -> None:
+            """Drain queued output synchronously at process shutdown/error."""
+
+            self._process_output_flush_scheduled = False
+            self._process_output_timer.stop()
+            if not self._process_output_buffer:
+                return
+            payload = bytes(self._process_output_buffer)
+            self._process_output_buffer.clear()
+            self._process_output_flush_count += 1
+            self.output.setProperty("terminalOutputBufferedBytes", 0)
+            self.output.setProperty(
+                "terminalOutputFlushCount",
+                self._process_output_flush_count,
+            )
+            self.append_process_text(payload.decode(errors="replace"))
 
         @staticmethod
         def is_initial_conpty_screen_clear(text: str) -> bool:
@@ -1779,7 +1940,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not text:
                 return
             transcript = self.terminal_emulator.feed(text)
-            if self._pty_initial_clear_pending:
+            alternate_screen_active = self.terminal_emulator.alternate_screen_active
+            if alternate_screen_active:
+                # Keep the entire negotiated screen height in the document;
+                # compacting blank rows makes Vim's status/cursor appear in
+                # the middle of a giant empty pane and makes scroll state jump.
+                transcript = self.terminal_emulator.screen_text()
+            self.output.setProperty(
+                "terminalBracketedPasteActive",
+                self.terminal_emulator.bracketed_paste_active,
+            )
+            self.forward_terminal_emulator_responses()
+            if alternate_screen_active:
+                # Only the initial ConPTY shell clear may be normalized. Once
+                # Vim/ncurses owns the alternate screen, rewriting the
+                # transcript would reset its cursor and make it appear stuck.
+                self.disarm_initial_pty_clear_recovery()
+            if self._pty_initial_clear_pending and not alternate_screen_active:
                 self._pty_startup_probe = (
                     self._pty_startup_probe + text
                 )[-16_384:]
@@ -1817,6 +1994,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.render_terminal_transcript(transcript)
 
+        def forward_terminal_emulator_responses(self) -> None:
+            """Answer terminal capability/cursor queries without rendering them.
+
+            Full-screen applications such as Vim issue DA/DSR requests during
+            startup and redraw.  A transcript-only renderer must answer those
+            requests through the same PTY, otherwise the child waits for a
+            response and appears frozen or ignores the first keystrokes.
+            """
+
+            responses = self.terminal_emulator.take_pending_responses()
+            if not responses:
+                return
+            payload = b"".join(responses)
+            count = int(self.output.property("terminalEmulatorResponseCount") or 0)
+            self.output.setProperty("terminalEmulatorResponseCount", count + len(responses))
+            self.output.setProperty("terminalLastEmulatorResponse", payload)
+            if not self.is_running():
+                return
+            accepted = self.process.write(payload)
+            if accepted is None:
+                accepted = len(payload)
+            self.output.setProperty("terminalLastEmulatorResponseBytesAccepted", int(accepted))
+            if int(accepted) < len(payload):
+                self.set_status("input error", "error")
+
         def normalized_initial_pty_body(self, transcript: str) -> str:
             startup_context = self.terminal_startup_context_text()
             if transcript.startswith(startup_context):
@@ -1851,6 +2053,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not text:
                 return
             transcript = self.terminal_emulator.feed(text)
+            if self.terminal_emulator.alternate_screen_active:
+                transcript = self.terminal_emulator.screen_text()
             self.render_terminal_transcript(transcript)
 
         def set_terminal_transcript(self, text: str) -> None:
@@ -1880,7 +2084,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "terminal vertical scroll bar",
             )
             scroll_value = scroll_bar.value()
-            was_scrolled_to_end = scroll_value >= scroll_bar.maximum() - 2
+            alternate_screen_active = self.terminal_emulator.alternate_screen_active
+            was_scrolled_to_end = (
+                not alternate_screen_active
+                and scroll_value >= scroll_bar.maximum() - 2
+            )
+            self.output.setProperty(
+                "terminalAlternateScreenActive",
+                alternate_screen_active,
+            )
+            if alternate_screen_active and self.output.updatesEnabled():
+                # Vim/ncurses redraw the whole screen frequently. Suppress
+                # intermediate paint events so the user never sees a blank or
+                # half-rendered frame while the retained transcript is rebuilt.
+                self.output.setProperty("terminalAlternateScreenRedraw", True)
+                self.output.setUpdatesEnabled(False)
             if previous and transcript.startswith(previous):
                 replace_from = previous.rfind("\n") + 1
                 cursor = self.output.textCursor()
@@ -1897,8 +2115,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 fragment_source = transcript
             cursor = self.output.textCursor()
             cursor.movePosition(QTextCursor.MoveOperation.End)
-            ansi_fragments = self.terminal_emulator.styled_fragments(start=replace_from if previous and transcript.startswith(previous) else 0)
-            syntax_spans = highlight_terminal_text(fragment_source, self.syntax_rules)
+            ansi_fragments = self.terminal_emulator.styled_fragments(
+                start=replace_from if previous and transcript.startswith(previous) else 0,
+                screen=alternate_screen_active,
+            )
+            syntax_spans = (
+                ()
+                if alternate_screen_active
+                else highlight_terminal_text(fragment_source, self.syntax_rules)
+            )
             source_offset = replace_from if previous and transcript.startswith(previous) else 0
             boundaries = {0, len(fragment_source)}
             ansi_ranges = []
@@ -1954,7 +2179,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     ),
                 )
             self._rendered_terminal_text = transcript
-            if selection_text_unchanged:
+            if alternate_screen_active:
+                self.output.setUpdatesEnabled(True)
+                self.output_viewport.update()
+                self.output.setProperty("terminalAlternateScreenRedraw", False)
+            if alternate_screen_active:
+                # The retained screen is a viewport, not scrollback.  Always
+                # anchor it at row zero even if the previous shell page had a
+                # large scrollbar value.
+                scroll_bar.setValue(0)
+                self.output.setProperty("terminalFollowOutput", False)
+            elif selection_text_unchanged:
                 restored = QTextCursor(self.output.document())
                 restored.setPosition(selection_anchor)
                 restored.setPosition(
@@ -1972,6 +2207,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def scroll_terminal_to_end(self) -> None:
             """Keep live output at the true document end after layout updates."""
+
+            if self.terminal_emulator.alternate_screen_active:
+                # Alternate-screen applications own the viewport. Moving the
+                # QTextEdit cursor to document end fights Vim's cursor
+                # addressing and produces a visible flash on every redraw.
+                self._terminal_scroll_generation += 1
+                scroll_bar = _required_gui_value(
+                    self.output.verticalScrollBar(),
+                    "terminal vertical scroll bar",
+                )
+                scroll_bar.setValue(0)
+                self.output.setProperty("terminalFollowOutput", False)
+                return
 
             self._terminal_scroll_generation += 1
             generation = self._terminal_scroll_generation
@@ -2079,12 +2327,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def focus_terminal_input(self) -> None:
             """Focus the live terminal after its containing tab becomes visible."""
 
-            if not self.isVisible():
+            if not self.isVisible() or not self.isEnabled() or not self.is_running():
                 return
             self.output.setProperty("mobaTerminalFocusRequested", True)
             self.output.setFocus(Qt.FocusReason.OtherFocusReason)
 
         def on_error(self, error) -> None:
+            self.flush_process_output_now()
             self.set_status("error", "error")
             detail = str(self.process.errorString()).strip()
             suffix = f": {detail}" if detail and detail != error.name else ""
@@ -2093,6 +2342,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
             self._stop_timer.stop()
+            self.flush_process_output_now()
             self.refresh_terminal_input_security("")
             state = "ready" if exit_code == 0 else "error"
             self.set_status(f"exited {exit_code}", state)
@@ -2553,6 +2803,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 toolbar_layout.addWidget(button)
                 if action.separator_after:
                     toolbar_layout.addWidget(self.toolbar_separator(action, density))
+            transfer_button = self.build_sftp_transfer_menu_button()
+            toolbar_layout.addWidget(transfer_button)
             toolbar_layout.addStretch(1)
             self.sftp_status_badge = self.sftp_action_buttons.get("connect")
             self._sftp_status_default_icon = (
@@ -3180,7 +3432,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
             status = _literal_label("Monitoring ready", controls)
             status.setObjectName("mobaMonitoringStatus")
-            status.setGeometry(42, 30, 208, 18)
+            # The two live affordances share the row above the fixed
+            # follow-folder control.  Keeping them in that row avoids the
+            # compact footer controls painting over one another at runtime.
+            status.setGeometry(42, 29, 104, 18)
             status.setToolTip(
                 "Live values replace preview telemetry after a successful SSH refresh."
             )
@@ -3194,20 +3449,30 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             refresh_button.setIcon(
                 _widget_style(self).standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
             )
-            refresh_button.setGeometry(42, 50, 102, 23)
+            refresh_button.setGeometry(148, 27, 108, 23)
             refresh_button.clicked.connect(self.request_remote_monitoring_refresh)
             self.monitoring_refresh_button = refresh_button
             last_refresh = _literal_label("not refreshed", controls)
             last_refresh.setObjectName("mobaMonitoringLastRefresh")
-            last_refresh.setGeometry(150, 52, 100, 19)
+            # The timestamp is retained as a tooltip/property for automation
+            # and accessibility, while the compact footer renders it inline
+            # in the status label after a successful refresh.  A third visible
+            # control would overlap the fixed follow-folder row.
+            last_refresh.setGeometry(148, 50, 108, 19)
+            last_refresh.setVisible(False)
+            last_refresh.setToolTip("Last successful refresh: not refreshed")
             self.monitoring_last_refresh_label = last_refresh
             self.monitoring_detail_widgets = [
                 status,
                 refresh_button,
                 last_refresh,
             ]
-            for detail_widget in self.monitoring_detail_widgets:
-                detail_widget.setVisible(False)
+            # Keep operational feedback and the manual refresh affordance
+            # visible even while monitoring is paused.  The timestamp remains
+            # available through the status text, tooltip, and property so the
+            # compact footer does not overlap the follow-folder checkbox.
+            status.setVisible(True)
+            refresh_button.setVisible(True)
             for metric in gui_design_moba_monitoring_metrics():
                 label = _literal_label(self.monitoring_metric_text(metric), panel)
                 label.setObjectName("mobaMonitoringMetric")
@@ -3385,10 +3650,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if panel is None:
                 return
             chrome = gui_design_moba_remote_monitoring_dock_chrome()
-            for widget in getattr(self, "monitoring_detail_widgets", []):
-                widget.setVisible(False)
+            status = getattr(self, "monitoring_status_label", None)
+            refresh_button = getattr(self, "monitoring_refresh_button", None)
+            last_refresh = getattr(self, "monitoring_last_refresh_label", None)
+            if status is not None:
+                status.setVisible(True)
+            if refresh_button is not None:
+                refresh_button.setVisible(True)
+            if last_refresh is not None:
+                last_refresh.setVisible(False)
             height = chrome.static_height
             panel.setFixedHeight(height)
+            # ``Expanded`` is a geometry contract: the connected layout stays
+            # compact even while runtime monitoring is enabled.  The separate
+            # runtime-requested property carries the live toggle state.
             panel.setProperty("mobaRemoteMonitoringExpanded", False)
             panel.setProperty("mobaRemoteMonitoringRuntimeRequested", bool(expanded))
             panel.setProperty("mobaRemoteMonitoringLiveHeight", height)
@@ -3667,7 +3942,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 last_refresh.setToolTip(f"Last successful refresh: {refreshed_at}")
             self.setProperty("mobaRemoteMonitoringLastRefresh", refreshed_at)
             self.set_remote_monitoring_status(
-                "Live telemetry connected",
+                f"Live · {refreshed_at}",
                 state="live",
             )
 
@@ -3726,6 +4001,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         "mobaTelemetryDisplayText",
                         cell.display_text,
                     )
+                    label.setToolTip(_safe_tooltip_html(cell.label))
+                    label.updateGeometry()
+                frame.updateGeometry()
+            telemetry_bar.updateGeometry()
             return True
 
         def build_remote_monitoring_context_menu(self) -> QMenu:
@@ -4170,6 +4449,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     button.setToolTip("Connect an SSH/SFTP profile before using this action")
                 elif action_key == "download" and operational and not download_ready:
                     button.setToolTip("Select a remote file or directory to download")
+            transfer_actions = getattr(self, "sftp_transfer_menu_actions", {})
+            download_menu_action = transfer_actions.get("download")
+            upload_menu_action = transfer_actions.get("upload")
+            if download_menu_action is not None:
+                download_menu_action.setEnabled(
+                    bool(self.sftp_action_buttons.get("download") is not None
+                         and self.sftp_action_buttons["download"].isEnabled())
+                )
+            if upload_menu_action is not None:
+                upload_menu_action.setEnabled(
+                    bool(self.sftp_action_buttons.get("upload") is not None
+                         and self.sftp_action_buttons["upload"].isEnabled())
+                )
 
         def handle_moba_sftp_path_entered(self) -> None:
             self.navigate_moba_sftp_path(self.path.text())
@@ -4499,6 +4791,67 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             if not self.dispatch_moba_sftp_toolbar_action(action.key):
                 self.show_sftp_status(f"SFTP {action.label} did not complete")
+
+        def build_sftp_transfer_menu_button(self) -> QToolButton:
+            """Expose a WinSCP/FileZilla-style transfer action selector.
+
+            The connected dock already has individual upload/download toolbar
+            actions and a context menu.  A single labelled selector makes the
+            same workflows discoverable without relying on tiny icon-only
+            buttons or a right click, while still routing through the existing
+            guarded SFTP queue implementation.
+            """
+
+            button = QToolButton()
+            button.setObjectName("mobaSftpTransferMenu")
+            button.setText("Transfer")
+            button.setAccessibleName("File transfer actions")
+            button.setToolTip(
+                "Choose a WinSCP/FileZilla-style upload or download workflow"
+            )
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            button.setIcon(
+                self.sftp_action_icon("download", "#2f84d8", size=16)
+            )
+            button.setIconSize(QSize(16, 16))
+            button.setFixedHeight(24)
+            button.setMinimumWidth(72)
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            menu = QMenu(button)
+            menu.setObjectName("mobaSftpTransferMenuPopup")
+            download = _required_gui_value(
+                menu.addAction(
+                    "Download selected…",
+                    lambda: self.show_moba_sftp_toolbar_action("download"),
+                ),
+                "SFTP transfer download action",
+            )
+            upload = _required_gui_value(
+                menu.addAction(
+                    "Upload files…",
+                    lambda: self.show_moba_sftp_toolbar_action("upload"),
+                ),
+                "SFTP transfer upload action",
+            )
+            menu.addSeparator()
+            open_browser = _required_gui_value(
+                menu.addAction(
+                    "Refresh remote listing",
+                    lambda: self.request_sftp_refresh(reason="transfer-menu"),
+                ),
+                "SFTP transfer refresh action",
+            )
+            open_browser.setToolTip(
+                "Refresh the remote folder before choosing a transfer"
+            )
+            self.sftp_transfer_menu_actions = {
+                "download": download,
+                "upload": upload,
+                "refresh": open_browser,
+            }
+            button.setMenu(menu)
+            self.sftp_transfer_menu_button = button
+            return button
 
         def tool_button(self, action, density) -> QToolButton:
             geometry = gui_design_moba_sftp_toolbar_action_geometry_for(action.key)
@@ -5519,11 +5872,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 cell_frame.setProperty("mobaMonitoringTelemetryRouted", cell.key in route.target_metric_cell_keys)
                 cell_frame.setProperty("mobaTelemetryLivePreferredWidth", geometry.width)
                 cell_frame.setToolTip(_safe_tooltip_html(cell.label))
+                # Telemetry cells are a fixed-width status strip, not a
+                # stretchable form row.  Ignored size policies let Qt squeeze
+                # them to a few pixels when the terminal is resized, which is
+                # why values appeared as clipped/blank boxes in the bottom
+                # monitoring bar.
+                # Keep the compact contract's minimum width unconstrained so
+                # Qt can negotiate the status strip at narrow window sizes.
+                # The fixed policy, child label hint, and maximum width still
+                # preserve the measured cell width when space is available
+                # without turning the strip into a hard minimum.
                 cell_frame.setMinimumWidth(0)
                 cell_frame.setMaximumWidth(geometry.width)
                 cell_frame.setFixedHeight(geometry.height)
                 cell_frame.setSizePolicy(
-                    QSizePolicy.Policy.Ignored,
+                    QSizePolicy.Policy.Fixed,
                     QSizePolicy.Policy.Fixed,
                 )
                 self.install_moba_terminal_context_menu(cell_frame)
@@ -5554,7 +5917,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.setProperty("mobaTelemetryLabelY", geometry.label_y)
                 label.setProperty("mobaTelemetryLabelFontSize", geometry.label_font_size)
                 label.setToolTip(_safe_tooltip_html(cell.label))
-                label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+                label.setMinimumWidth(
+                    max(1, geometry.width - geometry.label_x - 8)
+                )
+                label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
                 self.install_moba_terminal_context_menu(label)
                 cell_layout.addWidget(label, 1)
                 layout.addWidget(cell_frame, geometry.width)
@@ -6953,6 +7319,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 Qt.ContextMenuPolicy.CustomContextMenu
             )
             self.moba_tab_guard = False
+            self._tab_transition_generation = 0
             self.recent_terminal_plans: list[tuple[TerminalPanePlan, Profile | None]] = []
             self.log = LiteralTextEdit()
             self.log.setObjectName("activityLog")
@@ -9881,7 +10248,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.update_profile_action_states()
             self.update_layout_action_states()
+            # Layout/style polish can reapply platform-specific line-edit
+            # size hints after the product panels are shown.  Reassert the
+            # measured reference heights both now and on the next event-loop
+            # turn so the live contracts observe the same geometry on Qt
+            # offscreen and native Windows.
+            self.enforce_product_reference_filter_geometry(preset.id)
+            QTimer.singleShot(
+                0,
+                lambda preset_id=preset.id: self.enforce_product_reference_filter_geometry(preset_id),
+            )
             self.statusBar().showMessage(f"View: {preset.label}")
+
+        def enforce_product_reference_filter_geometry(self, preset_id: str) -> None:
+            filter_specs = {
+                "securecrt": (
+                    "secureCrtSessionFilter",
+                    gui_design_securecrt_session_manager_chrome().live_filter_height,
+                ),
+                "mremoteng": (
+                    "mRemoteNgDocumentFilter",
+                    gui_design_mremoteng_document_toolbar_chrome().live_filter_height,
+                ),
+            }
+            spec = filter_specs.get(preset_id)
+            if spec is None:
+                return
+            object_name, height = spec
+            widget = self.findChild(QLineEdit, object_name)
+            if widget is None:
+                return
+            widget.setMinimumHeight(height)
+            widget.setMaximumHeight(height)
 
         @staticmethod
         def apply_preset_selection_route_properties(widget, route) -> None:
@@ -11030,8 +11428,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.main_toolbar.setMinimumHeight(0)
                 self.main_toolbar.setMaximumHeight(16777215)
                 for button in self.main_toolbar_buttons:
-                    button.setMinimumSize(QSize(72, 44))
-                    button.setMaximumSize(QSize(92, 54))
+                    # Give the native editor enough room for the label and
+                    # icon.  The responsive pass below may switch to
+                    # icon-only mode when the window genuinely cannot fit;
+                    # it must never leave a text-under-icon button with an
+                    # arbitrary 72px cap that paints ``Re...``/``Co...``.
+                    button.setMinimumSize(QSize(76, 46))
+                    button.setMaximumSize(QSize(124, 58))
             self.configure_responsive_layout_toolbar()
             if is_product_reference:
                 # SecureCRT, Termius, Remmina and mRemoteNG use a single
@@ -11148,7 +11551,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     )
                     button.setMinimumWidth(0)
                     button.setMaximumWidth(16777215)
-                    preferred_widths.append(button.sizeHint().width())
+                    text_width = button.fontMetrics().horizontalAdvance(button.text())
+                    icon_width = button.iconSize().width()
+                    preferred_widths.append(
+                        max(
+                            button.sizeHint().width(),
+                            text_width + 18,
+                            icon_width + 22,
+                            76,
+                        )
+                    )
                 toolbar_layout = self.main_toolbar.layout()
                 if toolbar_layout is None:
                     toolbar_margins = (0, 0)
@@ -11190,12 +11602,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         button.setMaximumSize(
                             QSize(preferred_width, maximum_height)
                         )
+                        button.setProperty("productToolbarLabelsVisible", True)
                     else:
                         button.setToolButtonStyle(
                             Qt.ToolButtonStyle.ToolButtonIconOnly
                         )
                         button.setMinimumSize(QSize(44, minimum_height))
                         button.setMaximumSize(QSize(72, maximum_height))
+                        button.setProperty("productToolbarLabelsVisible", False)
+                    button.setToolTip(button.toolTip() or button.text())
 
             self.layout_select.setMinimumWidth(112 if compact else 150)
             self.layout_select.setMaximumWidth(132 if compact else 190)
@@ -12210,13 +12625,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def add_workspace_tab(self, widget: QWidget, title: str, *, select: bool = True, role: str = "session") -> int:
             widget.setProperty("tabRole", role)
             new_index = self.find_tab_by_role("new-session")
-            if new_index >= 0:
-                index = self.tabs.insertTab(new_index, widget, title)
-            else:
-                index = self.tabs.addTab(widget, title)
-            self.set_literal_tab_tooltip(index, title)
-            if select:
-                self.tabs.setCurrentIndex(index)
+            self.tabs.setUpdatesEnabled(False)
+            try:
+                if new_index >= 0:
+                    index = self.tabs.insertTab(new_index, widget, title)
+                else:
+                    index = self.tabs.addTab(widget, title)
+                self.set_literal_tab_tooltip(index, title)
+                if select:
+                    self.tabs.setCurrentIndex(index)
+            finally:
+                # A selected tab may have emitted currentChanged above and
+                # entered the guarded transition.  Keep the tab widget
+                # frozen until finish_tab_transition applies final geometry;
+                # otherwise the insert helper would immediately re-enable the
+                # very intermediate paint we are suppressing.
+                if not bool(self.tabs.property("terminalTabTransitionActive")):
+                    self.tabs.setUpdatesEnabled(True)
             self.refresh_special_tab_buttons()
             return index
 
@@ -12374,27 +12799,65 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             tab_bar.updateGeometry()
 
         def handle_tab_changed(self, index: int) -> None:
+            self._tab_transition_generation += 1
+            transition = self._tab_transition_generation
+            self.tabs.setProperty("terminalTabTransitionGeneration", transition)
+            self.tabs.setProperty("terminalTabTransitionActive", True)
+            # QTabWidget can paint the page once before its new splitter/layout
+            # geometry is settled.  Suppress that one intermediate frame so a
+            # tiny, unconfigured terminal surface cannot flash in the middle
+            # of the workspace during a tab switch.
+            self.tabs.setUpdatesEnabled(False)
             if self.moba_tab_guard or index < 0:
                 self.configure_product_connected_chrome()
-                QTimer.singleShot(0, self.configure_product_connected_chrome)
                 self.refresh_moba_left_dock_for_current_tab()
+                self.tabs.setUpdatesEnabled(True)
+                self.tabs.setProperty("terminalTabTransitionActive", False)
                 return
             self.configure_product_connected_chrome()
             # QTabWidget may finish laying out the newly selected page after
             # emitting currentChanged.  Re-apply once the splitter has its
             # final geometry so the activity pane and side chrome cannot stay
             # collapsed after returning from a connected Termius document.
-            QTimer.singleShot(0, self.configure_product_connected_chrome)
+            QTimer.singleShot(
+                0,
+                lambda transition=transition: self.finish_tab_transition(transition),
+            )
+            # A newly inserted pane deliberately waits for its first selected
+            # layout before starting.  If the user changes tabs in the same
+            # event-loop turn, the original one-shot sees the pane as hidden;
+            # retry when its tab becomes active instead of leaving it stopped.
+            pane = self.active_terminal_pane()
+            if (
+                pane is not None
+                and bool(pane.property("terminalStartDeferredUntilTabReady"))
+            ):
+                QTimer.singleShot(
+                    0,
+                    lambda pane=pane, transition=transition, index=index: (
+                        self.start_deferred_terminal_pane_if_current(
+                            pane,
+                            index,
+                            transition,
+                        )
+                    ),
+                )
             if self.tab_role(index) != "new-session":
                 preset = get_gui_design_preset(self.current_design_id())
                 self.apply_interaction_state_tab_status(
                     preset,
                     gui_design_interaction_state(preset.id),
                 )
-                self.refresh_moba_left_dock_for_current_tab()
                 pane = self.active_terminal_pane()
                 if pane is not None:
-                    QTimer.singleShot(0, pane.focus_terminal_input)
+                    def focus_if_current(pane=pane, transition=transition) -> None:
+                        if transition != self._tab_transition_generation:
+                            return
+                        current = self.tabs.currentWidget()
+                        if current is not None and (current is pane or current.isAncestorOf(pane)):
+                            pane.focus_terminal_input()
+
+                    QTimer.singleShot(0, focus_if_current)
                 return
             self.moba_tab_guard = True
             try:
@@ -12402,6 +12865,39 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             finally:
                 self.moba_tab_guard = False
             self.refresh_moba_left_dock_for_current_tab()
+
+        def finish_tab_transition(self, transition: int) -> None:
+            """Apply deferred chrome only for the still-active tab transition."""
+
+            if transition != self._tab_transition_generation:
+                return
+            self.configure_product_connected_chrome()
+            self.refresh_moba_left_dock_for_current_tab()
+            self.tabs.setUpdatesEnabled(True)
+            current = self.tabs.currentWidget()
+            if current is not None:
+                current.update()
+            self.tabs.setProperty("terminalTabTransitionActive", False)
+
+        def start_deferred_terminal_pane_if_current(
+            self,
+            pane: TerminalPane,
+            index: int,
+            transition: int | None = None,
+        ) -> None:
+            """Start a pane once its selected page has stable geometry."""
+
+            if transition is not None and transition != self._tab_transition_generation:
+                return
+            if pane.property("terminalClosing") or pane.is_running():
+                return
+            if index < 0 or self.tabs.currentIndex() != index:
+                return
+            current = self.tabs.currentWidget()
+            if current is None or not (current is pane or current.isAncestorOf(pane)):
+                return
+            pane.start()
+            pane.setProperty("terminalStartDeferredUntilTabReady", False)
 
         def configure_product_connected_chrome(self) -> None:
             """Switch to the connected document chrome used by reference apps.
@@ -14768,7 +15264,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 filter_input.setProperty(property_name, property_value)
             filter_input.setMinimumWidth(chrome.live_filter_width)
             filter_input.setMaximumWidth(chrome.live_filter_width)
-            filter_input.setMinimumHeight(chrome.live_filter_height)
+            filter_input.setFixedHeight(chrome.live_filter_height)
             self.mremoteng_document_filter = filter_input
             self.set_interaction_state(
                 filter_input,
@@ -16249,7 +16745,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.securecrt_session_filter.setProperty("secureCrtSessionManagerLiveFilterHeight", chrome.live_filter_height)
             for property_name, property_value in filter_route_properties.items():
                 self.securecrt_session_filter.setProperty(property_name, property_value)
-            self.securecrt_session_filter.setMinimumHeight(chrome.live_filter_height)
+            self.securecrt_session_filter.setFixedHeight(chrome.live_filter_height)
             self.securecrt_session_filter.textChanged.connect(self.filter_profile_tree)
             layout.addWidget(self.securecrt_session_filter)
             panel.setVisible(False)
@@ -17283,7 +17779,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             tab_title: str | None = None,
             tab_status: str | None = None,
         ) -> None:
-            pane = self.new_terminal_pane(plan, profile=profile)
+            # Construct the pane before inserting the tab, but start the child
+            # only after Qt has selected and laid out the page. This prevents a
+            # transient unparented terminal surface from flashing during tab
+            # changes and gives ConPTY its final viewport dimensions.
+            pane = self.new_terminal_pane(plan, profile=profile, autostart=False)
             self.remember_terminal_plan(plan, profile=profile)
             tab_content: QWidget = pane
             reference_label = tab_title or plan.title
@@ -17314,6 +17814,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.update_session_status()
             self.apply_reference_status_bar_route_to_terminal_tab(pane, tab_title or plan.title)
             self.apply_reference_session_action_route_to_terminal_tab(pane, tab_title or plan.title, index)
+            self.start_terminal_pane_when_active(pane, index)
+
+        def start_terminal_pane_when_active(self, pane: TerminalPane, index: int) -> None:
+            """Start a deferred pane after its tab has a stable parent/layout."""
+
+            pane.setProperty("terminalStartDeferredUntilTabReady", True)
+
+            def start_if_current() -> None:
+                self.start_deferred_terminal_pane_if_current(pane, index)
+
+            QTimer.singleShot(0, start_if_current)
 
         def build_product_reference_tab_surface(self, pane: TerminalPane) -> QWidget:
             """Compose a product-native connected document around the live pane.
@@ -17620,7 +18131,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             panel = MobaConnectedSessionPanel(
                 state,
-                self.new_terminal_pane(plan, profile=profile),
+                self.new_terminal_pane(plan, profile=profile, autostart=False),
             )
             panel.moba_connected_state = state
             self.remember_terminal_plan(plan, profile=profile)
@@ -17666,7 +18177,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             else:
                 self.refresh_moba_left_dock_for_current_tab()
             self.update_session_status()
-            QTimer.singleShot(0, panel.terminal_pane.focus_terminal_input)
+            self.start_terminal_pane_when_active(panel.terminal_pane, index)
+            QTimer.singleShot(
+                0,
+                lambda panel=panel, index=index: (
+                    panel.terminal_pane.focus_terminal_input()
+                    if self.tabs.currentIndex() == index
+                    else None
+                ),
+            )
             return panel
 
         def add_split(self, direction: str) -> None:
@@ -18222,8 +18741,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             plan: TerminalPanePlan,
             *,
             profile: Profile | None = None,
+            autostart: bool = True,
         ) -> TerminalPane:
-            pane = TerminalPane(plan, profile=profile)
+            # Keep the normal launch path explicit for the source-policy
+            # guard, while allowing reference-render harnesses to opt into
+            # deferred startup without changing production defaults.
+            if autostart:
+                pane = TerminalPane(plan, profile=profile)
+            else:
+                pane = TerminalPane(plan, profile=profile, autostart=False)
             pane.setProperty("terminalAutoCloseOnCleanExit", plan.source == "shell")
             pane.process.started.connect(self.update_session_status)
             pane.process.finished.connect(

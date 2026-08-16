@@ -1658,10 +1658,6 @@ def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_second
     app = QApplication.instance()
     if app is None:
         return
-    if not pane.is_running():
-        start = getattr(pane, "start", None)
-        if callable(start):
-            start()
     expected_fragment = ""
     surface_route = EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES.get(preset_id)
     if surface_route is not None:
@@ -1684,6 +1680,9 @@ def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_second
     flush = getattr(pane, "flush_process_output_now", None)
     if callable(flush):
         flush()
+    update_status = getattr(window, "update_session_status", None)
+    if callable(update_status):
+        update_status()
 
 
 def find_live_tab_index(tabs: Any, label: str) -> int:

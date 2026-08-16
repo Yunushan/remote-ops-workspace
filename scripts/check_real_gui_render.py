@@ -1522,7 +1522,31 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         transfer_route = EXPECTED_REMMINA_SFTP_TRANSFER_ROUTE
         try:
             transfer_profile = window.store.get(transfer_route.selected_profile_name)
-            window.launch_profile(transfer_profile, dry_run=False, prefix="CI TRANSFER")
+            # The transfer route is evidence for a second live pane, not a
+            # request to resolve the documentation host.  Use the same local
+            # stdin-backed transport as the MobaXterm reference so an
+            # unavailable demo endpoint cannot make the pane exit before the
+            # status-bar contract is captured.  The profile, tab label, and
+            # SFTP route metadata remain real; only the test transport is
+            # substituted here.
+            transfer_harness = (
+                "import sys\n"
+                "print('TRANSFER TRANSPORT READY', flush=True)\n"
+                "for line in sys.stdin:\n"
+                "    print(line, end='', flush=True)\n"
+            )
+            transfer_plan = TerminalPanePlan(
+                title=transfer_profile.name,
+                command=[sys.executable, "-u", "-c", transfer_harness],
+                source="real-gui-render-local-transport",
+            )
+            window.open_terminal_tab(
+                transfer_plan,
+                profile=transfer_profile,
+                tab_title=window.profile_tab_label(transfer_profile),
+                tab_status="CI TRANSFER",
+            )
+            window.log.append(f"CI TRANSFER: {transfer_plan.printable()}")
         except (KeyError, LauncherError, ValueError) as exc:
             return [f"remmina live GUI could not open SFTP transfer profile: {exc}"]
         # ``open_terminal_tab`` starts panes only after their tab becomes

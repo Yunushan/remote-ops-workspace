@@ -6405,6 +6405,9 @@ QPushButton, QToolButton, QComboBox, QLineEdit {{
   border-radius: {radius}px;
   padding: {control_padding};
 }}
+QPushButton, QComboBox, QLineEdit {{
+  min-height: 24px;
+}}
 QPushButton:hover, QToolButton:hover, QComboBox:hover, QLineEdit:hover {{
   border-color: {colors.control_hover};
 }}
@@ -7203,6 +7206,27 @@ QToolButton#mobaSftpAction:hover {{
   border-color: {colors.terminal_accent};
   background: {colors.pane};
 }}
+QToolButton#mobaSftpTransferMenu {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_border};
+  border-radius: 2px;
+  padding: 2px 5px;
+  min-height: 22px;
+  max-height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+}}
+QToolButton#mobaSftpTransferMenu:hover,
+QToolButton#mobaSftpTransferMenu::menu-button:hover {{
+  background: {colors.control_hover};
+  color: {colors.primary_text};
+}}
+QMenu#mobaSftpTransferMenuPopup {{
+  background: {colors.control};
+  color: {colors.control_text};
+  border: 1px solid {colors.control_border};
+}}
 QFrame#mobaSftpToolbarSeparator {{
   color: {colors.pane_border};
   background: transparent;
@@ -7408,6 +7432,22 @@ QStatusBar QLabel#productStatusSegment {{
   color: {colors.sidebar_muted};
   border-left: 1px solid {colors.toolbar_border};
   padding: 0 8px;
+}}
+/* Keep selection semantics consistent across native, MobaXterm and the
+   product-reference views.  View-specific geometry may still differ, but a
+   selected row always uses the same semantic palette for that preset. */
+QAbstractItemView::item:selected,
+QTreeWidget::item:selected,
+QListWidget::item:selected,
+QListView::item:selected,
+QTableView::item:selected,
+QTableWidget::item:selected {{
+  background: {colors.sidebar_selected};
+  color: {colors.sidebar_selected_text};
+}}
+QLineEdit {{
+  selection-background-color: {colors.sidebar_selected};
+  selection-color: {colors.sidebar_selected_text};
 }}
 QLabel {{
   color: {colors.control_text};

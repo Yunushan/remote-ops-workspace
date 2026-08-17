@@ -16,12 +16,12 @@ def _load_checker():
 
 def _payload() -> dict[str, object]:
     return {
-        "tag_name": "v1.0.18",
-        "name": "v1.0.18 (UNSIGNED PREVIEW)",
+        "tag_name": "v1.0.19",
+        "name": "v1.0.19 (UNSIGNED PREVIEW)",
         "draft": False,
         "prerelease": True,
         "body": (
-            "# v1.0.18\n\n"
+            "# v1.0.19\n\n"
             "**Channel: unsigned preview.**\n\n"
             "## Support boundaries\n"
         ),
@@ -31,7 +31,7 @@ def _payload() -> dict[str, object]:
 def test_published_release_notes_accepts_unsigned_preview() -> None:
     checker = _load_checker()
 
-    assert checker.check_release_notes(_payload(), tag="v1.0.18", channel="unsigned-preview") == []
+    assert checker.check_release_notes(_payload(), tag="v1.0.19", channel="unsigned-preview") == []
 
 
 def test_published_release_notes_rejects_empty_body() -> None:
@@ -39,7 +39,7 @@ def test_published_release_notes_rejects_empty_body() -> None:
     payload = _payload()
     payload["body"] = None
 
-    errors = checker.check_release_notes(payload, tag="v1.0.18", channel="unsigned-preview")
+    errors = checker.check_release_notes(payload, tag="v1.0.19", channel="unsigned-preview")
 
     assert "published release body must contain boundary-aware release notes" in errors
 
@@ -55,7 +55,7 @@ def test_published_release_notes_main_accepts_offline_fixture(tmp_path: Path) ->
                 "--repository",
                 "Yunushan/remote-ops-workspace",
                 "--tag",
-                "v1.0.18",
+                "v1.0.19",
                 "--channel",
                 "unsigned-preview",
                 "--release-json",

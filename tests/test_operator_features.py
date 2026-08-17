@@ -2,6 +2,7 @@ from pathlib import Path
 
 import remote_ops_workspace.cli as cli_module
 import remote_ops_workspace.launcher as launcher_module
+import remote_ops_workspace.terminal as terminal_module
 from remote_ops_workspace.audit import _redact
 from remote_ops_workspace.broadcast import build_broadcast_plans, run_broadcast
 from remote_ops_workspace.cli import build_parser
@@ -30,6 +31,8 @@ from remote_ops_workspace.terminal import (
     default_shell_command,
     openssh_command_with_overrides,
     split_shell_plans,
+    ssh_command_with_control_path,
+    ssh_control_path_for_profile,
     terminal_plan_for_command,
     terminal_plan_for_profile,
     terminal_plan_for_sftp_browser,
@@ -224,6 +227,54 @@ def test_openssh_runtime_overrides_replace_prompt_capable_options_without_mutati
     assert adapted.count("StrictHostKeyChecking=yes") == 1
     assert not any("=ask" in argument or "=no" in argument for argument in adapted)
     assert adapted[-1] == "operator@example.invalid"
+
+
+def test_ssh_control_socket_reuse_is_private_and_background_clients_cannot_create_one(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(terminal_module.tempfile, "gettempdir", lambda: str(tmp_path))
+    profile = Profile(
+        name="shared-edge",
+        protocol="ssh",
+        host="192.0.2.10",
+        port=2222,
+        username="operator",
+    )
+
+    control_path = ssh_control_path_for_profile(profile)
+    assert control_path
+    assert Path(control_path).parent == tmp_path / "remote-ops-workspace" / "ssh-control"
+
+    terminal_command = ssh_command_with_control_path(
+        ["ssh", "-o", "ControlMaster=no", "operator@192.0.2.10"],
+        control_path,
+        master=True,
+    )
+    background_command = ssh_command_with_control_path(
+        ["sftp", "operator@192.0.2.10"],
+        control_path,
+        master=False,
+    )
+    assert "ControlMaster=auto" in terminal_command
+    assert "ControlPath=" + control_path in terminal_command
+    assert "ControlMaster=no" in background_command
+    assert "ControlPath=" + control_path in background_command
+
+    disabled = Profile(
+        name="no-share",
+        protocol="ssh",
+        host="192.0.2.10",
+        options={"ssh_multiplex": "false"},
+    )
+    assert ssh_control_path_for_profile(disabled) == ""
+    explicitly_disabled = Profile(
+        name="explicit-no-share",
+        protocol="ssh",
+        host="192.0.2.10",
+        options={"ControlMaster": "no"},
+    )
+    assert ssh_control_path_for_profile(explicitly_disabled) == ""
 
 
 def test_sftp_list_plan_uses_batch_stdin() -> None:

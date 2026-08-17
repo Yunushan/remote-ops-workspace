@@ -7,29 +7,29 @@ each public target badge:
 
 | Target | Asset |
 |---|---|
-| Python wheel | `remote_ops_workspace-1.0.17-py3-none-any.whl` |
-| Python sdist | `remote_ops_workspace-1.0.17.tar.gz` |
-| Source | `remote-ops-workspace-v1.0.17-source.zip` |
-| Windows | `remote-ops-workspace-v1.0.17-windows.zip` |
-| Linux | `remote-ops-workspace-v1.0.17-linux.tar.gz` |
-| macOS | `remote-ops-workspace-v1.0.17-macos.tar.gz` |
-| BSD | `remote-ops-workspace-v1.0.17-bsd.tar.gz` |
-| Solaris/illumos | `remote-ops-workspace-v1.0.17-solaris.tar.gz` |
-| Android/Termux | `remote-ops-workspace-v1.0.17-android-termux.tar.gz` |
-| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.17-web-pwa.zip` |
-| Web/PWA | `remote-ops-workspace-v1.0.17-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v1.0.17-windows-<x86\|x64\|arm64>-setup.exe` |
-| Windows native | `remote-ops-workspace-v1.0.17-windows-<x86\|x64\|arm64>.msi` |
-| Windows native | `remote-ops-workspace-v1.0.17-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v1.0.17-macos-<x64\|arm64>.dmg` |
-| macOS native | `remote-ops-workspace-v1.0.17-macos-<x64\|arm64>.pkg` |
-| macOS native | `remote-ops-workspace-v1.0.17-macos-<x64\|arm64>-native-manifest.json` |
-| Linux native | `remote-ops-workspace-v1.0.17-linux-<amd64\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v1.0.17-linux-<x86_64\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v1.0.17-linux-<x86_64\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v1.0.17-linux-<x86_64\|aarch64>-native.tar.gz` |
-| Linux native | `remote-ops-workspace-v1.0.17-linux-<x86_64\|aarch64>-native-manifest.json` |
-| Manifests | `remote-ops-workspace-v1.0.17-*-manifest.json` |
+| Python wheel | `remote_ops_workspace-1.0.18-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-1.0.18.tar.gz` |
+| Source | `remote-ops-workspace-v1.0.18-source.zip` |
+| Windows | `remote-ops-workspace-v1.0.18-windows.zip` |
+| Linux | `remote-ops-workspace-v1.0.18-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v1.0.18-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v1.0.18-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v1.0.18-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v1.0.18-android-termux.tar.gz` |
+| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.18-web-pwa.zip` |
+| Web/PWA | `remote-ops-workspace-v1.0.18-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v1.0.18-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v1.0.18-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v1.0.18-windows-<x86\|x64\|arm64>-native.zip` |
+| macOS native | `remote-ops-workspace-v1.0.18-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v1.0.18-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v1.0.18-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v1.0.18-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v1.0.18-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v1.0.18-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v1.0.18-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v1.0.18-linux-<x86_64\|aarch64>-native-manifest.json` |
+| Manifests | `remote-ops-workspace-v1.0.18-*-manifest.json` |
 
 The platform bundles include source, docs, examples, relevant installer entry
 points, and per-target release notes. They are not native protocol-client
@@ -565,7 +565,7 @@ row doctor
 Target workflows:
 
 - Web/PWA from Safari or another trusted browser.
-- Static Web/PWA asset from `remote-ops-workspace-v1.0.17-web-pwa.zip`.
+- Static Web/PWA asset from `remote-ops-workspace-v1.0.18-web-pwa.zip`.
 - iOS/iPadOS 15 through 26.x Web/PWA compatibility contract.
 - Live simulator smoke on the current GitHub macOS/Xcode runtime through the
   `ios-simulator-web` job.

@@ -206,6 +206,8 @@ from .terminal import (
     default_shell_plan,
     openssh_command_with_overrides,
     split_shell_plans,
+    ssh_command_with_control_path,
+    ssh_control_path_for_profile,
     terminal_plan_for_profile,
     terminal_plan_for_sftp_browser,
 )
@@ -804,8 +806,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         ) -> None:
             super().__init__()
             self.setObjectName("terminalPane")
-            self.plan = plan
             self.profile = profile
+            self.ssh_control_path = ""
+            if profile is not None:
+                control_path = ssh_control_path_for_profile(profile)
+                shared_command = ssh_command_with_control_path(
+                    plan.command,
+                    control_path,
+                    master=True,
+                )
+                if shared_command != plan.command:
+                    plan = replace(plan, command=shared_command)
+                    self.ssh_control_path = control_path
+            self.plan = plan
+            self.setProperty("sshControlPath", self.ssh_control_path)
             self.process, self._terminal_backend_warning = _terminal_process_backend(
                 self,
                 plan,
@@ -820,6 +834,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._process_output_buffer = bytearray()
             self._process_output_flush_scheduled = False
             self._process_output_flush_count = 0
+            self._pending_terminal_size: tuple[int, int] | None = None
             self.setProperty("terminalAutostart", bool(autostart))
             self.setProperty("terminalOutputCoalescing", "8ms-event-loop-burst")
             self.startup_preamble = ""
@@ -832,6 +847,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._process_output_timer.setSingleShot(True)
             self._process_output_timer.setInterval(8)
             self._process_output_timer.timeout.connect(self.flush_process_output)
+            self._terminal_resize_timer = QTimer(self)
+            self._terminal_resize_timer.setSingleShot(True)
+            self._terminal_resize_timer.setInterval(40)
+            self._terminal_resize_timer.timeout.connect(self.flush_terminal_resize)
 
             self.title = QLabel(plan.title)
             self.title.setObjectName("terminalTitle")
@@ -874,6 +893,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             document = self.output.document()
             if document is not None:
                 document.setUndoRedoEnabled(False)
+                # Keep a runaway command or redraw-heavy session from making
+                # QTextEdit's document grow without bound.  The ANSI model
+                # remains authoritative for the terminal screen and scrollback.
+                document.setMaximumBlockCount(10_256)
             self.setFocusProxy(self.output)
             self.output.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.output.installEventFilter(self)
@@ -1092,9 +1115,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             columns = max(20, viewport.width() // cell_width)
             rows = max(5, viewport.height() // cell_height)
             self.terminal_emulator.set_screen_size(columns, rows)
+            self._pending_terminal_size = (columns, rows)
+            if not self._terminal_resize_timer.isActive():
+                self._terminal_resize_timer.start()
+
+        def flush_terminal_resize(self) -> None:
+            pending = self._pending_terminal_size
+            self._pending_terminal_size = None
+            if pending is None:
+                return
             resize = getattr(self.process, "setTerminalSize", None)
             if resize is not None:
-                resize(columns, rows)
+                resize(*pending)
 
         def layout_terminal_actions(self, width: int) -> None:
             compact = width < 620
@@ -2689,6 +2721,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_control_widgets: dict[str, QAbstractButton] = {}
             self.monitoring_output_buffer = bytearray()
             self.runtime_shutting_down = False
+            self.background_auth_retry_attempt = 0
+            self.background_auth_retry_timer = QTimer(self)
+            self.background_auth_retry_timer.setSingleShot(True)
+            self.background_auth_retry_timer.timeout.connect(
+                self.retry_background_authentication
+            )
             self.monitoring_generation = 0
             self.monitoring_active_generation = 0
             self.monitoring_refresh_timer = QTimer(self)
@@ -2959,12 +2997,35 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             return tuple(entry for entry in entries if entry.name.strip() not in {".", ".."})
 
-        @staticmethod
-        def background_ssh_auth_capability(profile: Profile | None) -> tuple[bool, str]:
+        def shared_ssh_control_path(self) -> str:
+            """Find the running terminal that owns this session's SSH master."""
+
+            main_window = self.main_window()
+            if main_window is None or not hasattr(main_window, "tabs"):
+                return ""
+            current = main_window.tabs.currentWidget()
+            if current is None:
+                return ""
+            for pane in main_window.terminal_panes_in(current):
+                pane_profile = getattr(pane, "profile", None)
+                if (
+                    pane_profile is None
+                    or pane_profile.name != self.state.profile_name
+                    or not pane.is_running()
+                ):
+                    continue
+                control_path = str(getattr(pane, "ssh_control_path", "") or "")
+                if control_path:
+                    return control_path
+            return ""
+
+        def background_ssh_auth_capability(self, profile: Profile | None) -> tuple[bool, str]:
             """Return whether an automatic, non-interactive SSH child is defensible."""
 
             if profile is None:
                 return False, "connected profile was not found"
+            if self.shared_ssh_control_path():
+                return True, "active terminal SSH connection (shared control socket)"
             if profile.identity_file:
                 identity = Path(profile.identity_file).expanduser()
                 if identity.is_file():
@@ -2990,11 +3051,38 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "a trusted host key plus key or agent authentication",
             )
 
+        def schedule_background_auth_retry(self) -> None:
+            """Retry background clients after the interactive SSH prompt completes."""
+
+            if self.runtime_shutting_down or not self.shared_ssh_control_path():
+                return
+            self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", True)
+            self.background_auth_retry_attempt = min(
+                self.background_auth_retry_attempt + 1,
+                5,
+            )
+            delay_ms = min(
+                15_000,
+                1_000 * (2 ** (self.background_auth_retry_attempt - 1)),
+            )
+            if not self.background_auth_retry_timer.isActive():
+                self.background_auth_retry_timer.start(delay_ms)
+
+        def retry_background_authentication(self) -> None:
+            if self.runtime_shutting_down:
+                return
+            if not bool(self.property("mobaBackgroundSshWaitingForTerminalAuth")):
+                return
+            self.activate_initial_background_state()
+
         def activate_initial_background_state(self) -> None:
             if self.runtime_shutting_down:
                 return
             profile = self.profile_for_sftp_action()
             available, detail = self.background_ssh_auth_capability(profile)
+            auth_gate_forced_monitoring_off = bool(
+                self.property("mobaBackgroundSshAuthGateForcedMonitoringOff")
+            )
             for widget in (
                 self,
                 getattr(self, "browser", None),
@@ -3004,20 +3092,39 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     widget.setProperty("mobaBackgroundSshAuthAvailable", available)
                     widget.setProperty("mobaBackgroundSshAuthDetail", detail)
             if available:
+                self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", False)
+                restored_monitoring = False
+                control = self.monitoring_control_widgets.get("remote-monitoring")
+                if (
+                    auth_gate_forced_monitoring_off
+                    and self.shared_ssh_control_path()
+                    and control is not None
+                    and not control.isChecked()
+                ):
+                    restored_monitoring = True
+                    self.setProperty("mobaBackgroundSshAuthGateForcedMonitoringOff", False)
+                    control.setChecked(True)
                 self.set_sftp_runtime_status(
                     f"Initial SFTP refresh pending ({detail})",
                     state="pending",
                 )
                 self.request_sftp_refresh(reason="initial-key-agent-auth")
-                self.activate_initial_monitoring_state()
+                if not restored_monitoring:
+                    self.activate_initial_monitoring_state()
                 return
+            self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", True)
             self.set_sftp_runtime_status(
                 f"SFTP auto-refresh skipped: {detail}",
                 state="auth-required",
             )
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is not None and control.isChecked():
-                control.setChecked(False)
+                self.setProperty("mobaBackgroundSshAuthGateForcedMonitoringOff", True)
+                self.setProperty("mobaBackgroundSshApplyingAuthGate", True)
+                try:
+                    control.setChecked(False)
+                finally:
+                    self.setProperty("mobaBackgroundSshApplyingAuthGate", False)
             self.set_remote_monitoring_runtime(False, immediate=False)
             self.set_remote_monitoring_status(
                 f"Monitoring not started automatically: {detail}",
@@ -3026,10 +3133,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def set_sftp_runtime_status(self, message: str, *, state: str) -> None:
             badge = getattr(self, "sftp_status_badge", None)
+            auth_detail = (
+                "The active terminal owns a private SSH control connection, so this "
+                "background listing reuses the authenticated session."
+                if self.shared_ssh_control_path()
+                else "SFTP listing uses a separate non-interactive OpenSSH process; "
+                "password prompts from the terminal are not shared."
+            )
             tooltip = (
                 f"{message}\n"
-                "SFTP listing uses a separate non-interactive OpenSSH process; "
-                "password prompts from the terminal are not shared."
+                f"{auth_detail}"
             )
             if badge is not None:
                 badge.setProperty("state", state)
@@ -3690,11 +3803,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.update()
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is not None:
+                auth_detail = (
+                    "The active terminal owns a private SSH control connection, so this "
+                    "refresh reuses the authenticated session."
+                    if self.shared_ssh_control_path()
+                    else "Terminal password prompts are not shared. A trusted host key "
+                    "and key or agent authentication are required."
+                )
                 tooltip = (
                     f"{message}\n"
-                    "Monitoring runs through a separate non-interactive SSH process; "
-                    "terminal password prompts are not shared. A trusted host key and "
-                    "key or agent authentication are required."
+                    "Monitoring runs through a separate non-interactive SSH process. "
+                    f"{auth_detail}"
                 )
                 control.setProperty("state", state)
                 control.setProperty("mobaMonitoringStatusBadgeState", state)
@@ -3752,6 +3871,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_pending = None
             self.monitoring_refresh_timer.stop()
+            self.background_auth_retry_timer.stop()
             self.sftp_refresh_timeout.stop()
             for process in (
                 self.monitoring_process,
@@ -3840,6 +3960,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         "StrictHostKeyChecking": "yes",
                     },
                 )
+                control_path = self.shared_ssh_control_path()
+                if control_path:
+                    command = ssh_command_with_control_path(
+                        command,
+                        control_path,
+                        master=False,
+                    )
             return command
 
         def request_remote_monitoring_refresh(self, *_args) -> None:
@@ -3927,11 +4054,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     detail = (
                         "host key not trusted; verify it in the terminal, then refresh"
                     )
+                shared_control = self.shared_ssh_control_path()
                 self.set_remote_monitoring_status(
-                    f"Monitoring unavailable: {detail[:120]}",
-                    state="error",
+                    (
+                        f"Waiting for terminal SSH authentication: {detail[:120]}"
+                        if shared_control
+                        else f"Monitoring unavailable: {detail[:120]}"
+                    ),
+                    state="auth-required" if shared_control else "error",
                 )
                 self.setProperty("mobaRemoteMonitoringLastError", detail)
+                self.schedule_background_auth_retry()
                 return
             if not self.apply_live_remote_monitoring_snapshot(snapshot):
                 return
@@ -3941,6 +4074,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 last_refresh.setText(refreshed_at)
                 last_refresh.setToolTip(f"Last successful refresh: {refreshed_at}")
             self.setProperty("mobaRemoteMonitoringLastRefresh", refreshed_at)
+            self.background_auth_retry_attempt = 0
+            self.background_auth_retry_timer.stop()
+            self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", False)
             self.set_remote_monitoring_status(
                 f"Live · {refreshed_at}",
                 state="live",
@@ -4060,6 +4196,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def handle_moba_remote_monitoring_toggled(self, checked: bool) -> None:
             route = gui_design_moba_remote_monitoring_control_route()
+            auth_gate_applying = bool(
+                self.property("mobaBackgroundSshApplyingAuthGate")
+            )
+            if not checked and not auth_gate_applying:
+                self.setProperty("mobaBackgroundSshAuthGateForcedMonitoringOff", False)
             command = self.state.monitoring_plan.printable()
             refresh_seconds = gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds
             widgets = [
@@ -4192,6 +4333,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     "StrictHostKeyChecking": "yes",
                 },
             )
+            control_path = self.shared_ssh_control_path()
+            if control_path:
+                runtime_command = ssh_command_with_control_path(
+                    runtime_command,
+                    control_path,
+                    master=False,
+                )
             self.sftp_refresh_process.setProgram(runtime_command[0])
             self.sftp_refresh_process.setArguments(runtime_command[1:])
             self.sftp_refresh_process.start()
@@ -4293,11 +4441,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     f"exit {exit_code}",
                 )
                 self.setProperty("mobaSftpRefreshLastError", detail)
+                shared_control = self.shared_ssh_control_path()
                 self.set_sftp_runtime_status(
-                    f"SFTP refresh failed: {detail[:100]}",
-                    state="error",
+                    (
+                        f"Waiting for terminal SSH authentication: {detail[:100]}"
+                        if shared_control
+                        else f"SFTP refresh failed: {detail[:100]}"
+                    ),
+                    state="auth-required" if shared_control else "error",
                 )
-                self.show_sftp_status(f"SFTP refresh failed: {detail[:100]}")
+                self.show_sftp_status(
+                    f"Waiting for terminal SSH authentication: {detail[:100]}"
+                    if shared_control
+                    else f"SFTP refresh failed: {detail[:100]}"
+                )
+                self.schedule_background_auth_retry()
                 self.schedule_pending_sftp_refresh()
                 return
             entries = self.filtered_sftp_entries(parse_sftp_ls_output(output))
@@ -4307,6 +4465,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 plan=self.sftp_refresh_plan,
             )
             self.setProperty("mobaSftpRefreshLastError", "")
+            self.background_auth_retry_attempt = 0
+            self.background_auth_retry_timer.stop()
+            self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", False)
             self.set_sftp_runtime_status(
                 f"SFTP listing refreshed: {len(entries)} entries",
                 state="ready",
@@ -4381,11 +4542,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if control.key == "follow-terminal-folder":
                 return f"{control.tooltip}\n{self.state.follow_folder_plan.printable_batch()}"
             if control.key == "remote-monitoring":
+                auth_detail = (
+                    "Reuses the active terminal's authenticated SSH control connection."
+                    if self.shared_ssh_control_path()
+                    else "Terminal password prompts are not shared; a trusted host key "
+                    "plus key or agent authentication is required."
+                )
                 return (
                     f"{control.tooltip}\n{self.state.monitoring_plan.printable()}\n"
-                    "Runs as a separate non-interactive SSH process; terminal password "
-                    "prompts are not shared. Requires a trusted host key plus key or "
-                    "agent authentication."
+                    f"Runs as a separate non-interactive SSH process. {auth_detail}"
                 )
             return control.tooltip
 
@@ -18752,6 +18917,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 pane = TerminalPane(plan, profile=profile, autostart=False)
             pane.setProperty("terminalAutoCloseOnCleanExit", plan.source == "shell")
             pane.process.started.connect(self.update_session_status)
+            pane.process.started.connect(
+                lambda terminal_pane=pane: self.refresh_moba_background_after_terminal_start(
+                    terminal_pane
+                )
+            )
+            if pane.is_running():
+                # Immediate-start panes emit ``started`` during construction,
+                # before the window can attach the signal above.
+                self.refresh_moba_background_after_terminal_start(pane)
             pane.process.finished.connect(
                 lambda exit_code, _exit_status, terminal_pane=pane: self.handle_terminal_process_finished(
                     terminal_pane,
@@ -18759,6 +18933,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
             )
             return pane
+
+        def refresh_moba_background_after_terminal_start(self, pane: TerminalPane) -> None:
+            """Give an interactive SSH prompt time to authenticate before reuse."""
+
+            dock = self.moba_connected_dock
+            profile = getattr(pane, "profile", None)
+            if dock is None or profile is None:
+                return
+            if profile.name != dock.state.profile_name:
+                return
+            QTimer.singleShot(1_500, dock.activate_initial_background_state)
 
         def handle_terminal_process_finished(
             self,

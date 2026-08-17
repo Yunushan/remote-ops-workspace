@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import shlex
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import command_safety as safe
 from .file_transfer import build_sftp_interactive_plan
@@ -154,6 +157,89 @@ def openssh_command_with_overrides(
         injected.extend(["-o", f"{name}={value}"])
     result[1:1] = injected
     return result
+
+
+def ssh_control_path_for_profile(profile: Profile) -> str:
+    """Return a private, stable OpenSSH control-socket path for ``profile``.
+
+    The embedded terminal is the only process allowed to create the shared
+    connection.  SFTP and monitoring clients use the socket with
+    ``ControlMaster=no`` after the terminal has authenticated, so a password
+    prompt is never duplicated or sent to a background process.  Profiles can
+    opt out with the explicit multiplexing options below; host-key and crypto
+    policy are otherwise left unchanged.
+    """
+
+    if profile.protocol.lower().strip() not in {"ssh", "sftp", "ssh1", "sshv1"}:
+        return ""
+    normalized = {
+        str(key).strip().lower(): str(value).strip()
+        for key, value in profile.options.items()
+    }
+    disabled = {"0", "false", "no", "off", "disabled"}
+    for key in (
+        "ssh_multiplex",
+        "ssh_browser_multiplex",
+        "ssh_control_master",
+        "controlmaster",
+        "control_master",
+        "ssh_connection_sharing",
+    ):
+        if normalized.get(key, "").lower() in disabled:
+            return ""
+    # Do not override an operator-supplied socket path.  The background
+    # runtime cannot safely infer whether that external socket is usable.
+    if any(key in normalized for key in ("controlpath", "ssh_control_path")):
+        return ""
+
+    identity = str(profile.identity_file or "")
+    fingerprint = "\0".join(
+        (
+            profile.name,
+            profile.host or "",
+            str(profile.port or 22),
+            profile.username or "",
+            identity,
+            repr(sorted(normalized.items())),
+        )
+    )
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:24]
+    directory = Path(tempfile.gettempdir()) / "remote-ops-workspace" / "ssh-control"
+    try:
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name != "nt":
+            directory.chmod(0o700)
+    except OSError:
+        return ""
+    return str(directory / f"cm-{digest}")
+
+
+def ssh_command_with_control_path(
+    command: list[str],
+    control_path: str,
+    *,
+    master: bool,
+) -> list[str]:
+    """Add safe OpenSSH connection sharing to an argv copy.
+
+    ``master=True`` is reserved for the interactive terminal.  Background
+    clients explicitly use ``ControlMaster=no`` so they can only reuse an
+    already-authenticated terminal connection and can never create a hidden
+    password prompt of their own.
+    """
+
+    if not command or not control_path:
+        return list(command)
+    executable = os.path.basename(command[0]).lower()
+    if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:
+        return list(command)
+    return openssh_command_with_overrides(
+        list(command),
+        {
+            "ControlMaster": "auto" if master else "no",
+            "ControlPath": control_path,
+        },
+    )
 
 
 def terminal_plan_for_sftp_browser(profile: Profile) -> TerminalPanePlan:

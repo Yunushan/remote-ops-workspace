@@ -233,6 +233,10 @@ def test_ssh_control_socket_reuse_is_private_and_background_clients_cannot_creat
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    # The generated socket contract is intentionally POSIX-only.  Native
+    # Windows OpenSSH cannot create the AF_UNIX socket used by ControlPath.
+    if terminal_module.os.name == "nt":
+        return
     monkeypatch.setattr(terminal_module.tempfile, "gettempdir", lambda: str(tmp_path))
     profile = Profile(
         name="shared-edge",
@@ -275,6 +279,24 @@ def test_ssh_control_socket_reuse_is_private_and_background_clients_cannot_creat
         options={"ControlMaster": "no"},
     )
     assert ssh_control_path_for_profile(explicitly_disabled) == ""
+
+
+def test_native_windows_openssh_skips_control_socket_reuse(monkeypatch) -> None:
+    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    profile = Profile(
+        name="windows-edge",
+        protocol="ssh",
+        host="192.0.2.10",
+        username="operator",
+    )
+    command = ["ssh", "operator@192.0.2.10"]
+
+    assert ssh_control_path_for_profile(profile) == ""
+    assert ssh_command_with_control_path(
+        command,
+        r"C:\Users\operator\AppData\Local\Temp\cm-edge",
+        master=True,
+    ) == command
 
 
 def test_sftp_list_plan_uses_batch_stdin() -> None:

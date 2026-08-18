@@ -168,9 +168,17 @@ def ssh_control_path_for_profile(profile: Profile) -> str:
     prompt is never duplicated or sent to a background process.  Profiles can
     opt out with the explicit multiplexing options below; host-key and crypto
     policy are otherwise left unchanged.
+
+    Native Windows OpenSSH does not support the Unix-domain control sockets
+    required by ``ControlPath``.  Keep the regular interactive connection
+    path intact there and let background operations use their normal explicit
+    authentication rules instead of turning every SSH launch into a socket
+    error.
     """
 
     if profile.protocol.lower().strip() not in {"ssh", "sftp", "ssh1", "sshv1"}:
+        return ""
+    if os.name == "nt":
         return ""
     normalized = {
         str(key).strip().lower(): str(value).strip()
@@ -228,7 +236,7 @@ def ssh_command_with_control_path(
     password prompt of their own.
     """
 
-    if not command or not control_path:
+    if not command or not control_path or os.name == "nt":
         return list(command)
     executable = os.path.basename(command[0]).lower()
     if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:

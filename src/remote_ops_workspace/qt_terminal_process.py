@@ -122,6 +122,8 @@ class QtConPtyProcess(QObject):
             process_error = (
                 QProcess.ProcessError.WriteError
                 if io_error.operation.startswith("WriteFile")
+                else QProcess.ProcessError.UnknownError
+                if io_error.operation.startswith("ResizePseudoConsole")
                 else QProcess.ProcessError.ReadError
             )
             self.errorOccurred.emit(process_error)

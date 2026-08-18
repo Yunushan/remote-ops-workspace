@@ -22,7 +22,7 @@ def test_unsigned_preview_notes_report_boundaries(tmp_path: Path) -> None:
     helper = _load_release_notes()
     output = tmp_path / "release-notes.md"
     helper.write_notes(
-        tag="v1.0.18",
+        tag="v1.0.20",
         channel="unsigned-preview",
         repository="Yunushan/remote-ops-workspace",
         output=output,
@@ -30,7 +30,7 @@ def test_unsigned_preview_notes_report_boundaries(tmp_path: Path) -> None:
     )
     notes = output.read_text(encoding="utf-8")
     assert "Channel: unsigned preview" in notes
-    assert "remote-ops-workspace-v1.0.18-windows.zip" in notes
+    assert "remote-ops-workspace-v1.0.20-windows.zip" in notes
     assert "Native jobs: windows-native, macos-native, linux-native." in notes
     assert "Protected platform evidence accepted for this source is 0/4" in notes
     assert "Strict MobaXterm parity evidence accepted for this source is 0/7" in notes
@@ -41,14 +41,14 @@ def test_release_notes_reject_invalid_tag_and_channel(tmp_path: Path) -> None:
     helper = _load_release_notes()
     with pytest.raises(ValueError, match="release tag"):
         helper.write_notes(
-            tag="1.0.18",
+            tag="1.0.20",
             channel="unsigned-preview",
             repository="Yunushan/remote-ops-workspace",
             output=tmp_path / "notes.md",
         )
     with pytest.raises(ValueError, match="unsupported release channel"):
         helper.write_notes(
-            tag="v1.0.18",
+            tag="v1.0.20",
             channel="preview",
             repository="Yunushan/remote-ops-workspace",
             output=tmp_path / "notes.md",

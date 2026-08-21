@@ -1361,7 +1361,9 @@ def test_running_tab_close_is_immediate_and_cancels_pending_restart(gui_window) 
     assert pane.property("terminalClosing") is True
     assert pane._restart_after_stop is False
     assert process.terminated is True
-    QTest.qWait(30)
+    deadline = time.monotonic() + 0.5
+    while not process.killed and time.monotonic() < deadline:
+        QTest.qWait(10)
     assert process.killed is True
     assert pane not in window._closing_tab_widgets
     assert process.process_state == QProcess.ProcessState.NotRunning

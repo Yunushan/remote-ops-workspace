@@ -11942,7 +11942,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             sidebar_width = sidebar_sizes[0] if sidebar_sizes else self.profile_list.width()
             self.update_profile_tree_indentation(sidebar_width)
             self.profile_list.setRootIsDecorated(moba_chrome.root_is_decorated if is_moba else True)
-            self.profile_list.setAnimated(False)
+            self.profile_list.setAnimated(moba_chrome.animated if is_moba else False)
             self.profile_list.setAllColumnsShowFocus(True)
             self.profile_list.setItemsExpandable(True)
             self.profile_list.setExpandsOnDoubleClick(True)

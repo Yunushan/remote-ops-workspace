@@ -13,8 +13,8 @@ ACTION_PINS = {
     "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     "actions/attest": "1e69f48acb82d1966a394da916b4c1698aa569d6",
     "softprops/action-gh-release": "c12583777ecdfd3be55c69cf75464299dc01057e",
-    "github/codeql-action/init": "5595ccaf912efad79be6eef63a5619ff05969be3",
-    "github/codeql-action/analyze": "5595ccaf912efad79be6eef63a5619ff05969be3",
+    "github/codeql-action/init": "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
+    "github/codeql-action/analyze": "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
 }
 USES_RE = re.compile(r"(?m)^\s*(?:-\s+)?uses:\s*([^\s@]+)@([^\s#]+)")
 

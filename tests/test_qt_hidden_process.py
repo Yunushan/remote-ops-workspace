@@ -43,8 +43,19 @@ def test_hidden_process_round_trips_input_without_blocking_qt(qt_app) -> None:
     output = bytearray()
     finished: list[tuple[int, object]] = []
     errors: list[object] = []
-    process.readyReadStandardOutput.connect(lambda: output.extend(process.readAllStandardOutput()))
-    process.finished.connect(lambda exit_code, status: finished.append((exit_code, status)))
+    owner_thread = threading.get_ident()
+    callback_threads: list[int] = []
+
+    def collect_output() -> None:
+        callback_threads.append(threading.get_ident())
+        output.extend(process.readAllStandardOutput())
+
+    def collect_finished(exit_code: int, status: object) -> None:
+        callback_threads.append(threading.get_ident())
+        finished.append((exit_code, status))
+
+    process.readyReadStandardOutput.connect(collect_output)
+    process.finished.connect(collect_finished)
     process.errorOccurred.connect(errors.append)
     process.setProcessChannelMode(qt_core.QProcess.ProcessChannelMode.MergedChannels)
     process.setProgram(sys.executable)
@@ -70,6 +81,8 @@ def test_hidden_process_round_trips_input_without_blocking_qt(qt_app) -> None:
         assert b"GOT:background-input" in output
         assert errors == []
         assert finished == [(0, qt_core.QProcess.ExitStatus.NormalExit)]
+        assert callback_threads
+        assert set(callback_threads) == {owner_thread}
         assert process.state() == qt_core.QProcess.ProcessState.NotRunning
         assert process.property("backgroundConsoleSuppressed") is (os.name == "nt")
     finally:

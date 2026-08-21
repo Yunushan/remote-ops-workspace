@@ -348,6 +348,14 @@ class QtHiddenProcess(QObject):
         self._disposed = False
         self._finished_event = threading.Event()
         self._finished_event.set()
+        self._notification_lock = threading.Lock()
+        self._pending_stdout_ready = False
+        self._pending_stderr_ready = False
+        self._pending_errors: list[object] = []
+        self._pending_finished: tuple[int, object] | None = None
+        self._notification_timer = QTimer(self)
+        self._notification_timer.setInterval(10)
+        self._notification_timer.timeout.connect(self._dispatch_notifications)
         self.setProperty("backgroundConsoleSuppressed", os.name == "nt")
 
     def setProcessChannelMode(self, mode) -> None:  # noqa: N802
@@ -386,6 +394,11 @@ class QtHiddenProcess(QObject):
         self._stderr.clear()
         self._error_string = ""
         self._forced_termination = False
+        with self._notification_lock:
+            self._pending_stdout_ready = False
+            self._pending_stderr_ready = False
+            self._pending_errors.clear()
+            self._pending_finished = None
         self._generation += 1
         generation = self._generation
         self._finished_event = threading.Event()
@@ -415,12 +428,13 @@ class QtHiddenProcess(QObject):
             return
         self._process = process
         self._state = QProcess.ProcessState.Running
+        self._notification_timer.start()
         self.started.emit()
         readers = [
             self._start_reader(
                 process.stdout,
                 self._stdout,
-                self.readyReadStandardOutput,
+                "stdout",
                 generation,
             )
         ]
@@ -429,7 +443,7 @@ class QtHiddenProcess(QObject):
                 self._start_reader(
                     process.stderr,
                     self._stderr,
-                    self.readyReadStandardError,
+                    "stderr",
                     generation,
                 )
             )
@@ -451,7 +465,7 @@ class QtHiddenProcess(QObject):
         self,
         stream,
         target: bytearray,
-        signal,
+        notification: str,
         generation: int,
     ) -> threading.Thread | None:
         if stream is None:
@@ -465,12 +479,13 @@ class QtHiddenProcess(QObject):
                         break
                     with self._buffer_lock:
                         target.extend(payload)
-                    self._emit_signal(signal)
+                    self._queue_notification(notification, generation)
             except OSError as exc:
                 if not self._forced_termination and not self._disposed:
                     self._error_string = str(exc)
-                    self._emit_named_signal(
-                        "errorOccurred",
+                    self._queue_notification(
+                        "error",
+                        generation,
                         QProcess.ProcessError.ReadError,
                     )
             finally:
@@ -499,7 +514,11 @@ class QtHiddenProcess(QObject):
             if generation != self._generation:
                 return
             self._error_string = str(exc)
-            self._emit_named_signal("errorOccurred", QProcess.ProcessError.Crashed)
+            self._queue_notification(
+                "error",
+                generation,
+                QProcess.ProcessError.Crashed,
+            )
             return_code = -1
         for reader in readers:
             reader.join(timeout=1.0)
@@ -513,7 +532,45 @@ class QtHiddenProcess(QObject):
             if self._forced_termination
             else QProcess.ExitStatus.NormalExit
         )
-        self._emit_named_signal("finished", return_code, exit_status)
+        self._queue_notification("finished", generation, return_code, exit_status)
+
+    def _queue_notification(self, kind: str, generation: int, *arguments) -> None:
+        """Record worker-thread events for delivery by the Qt event loop."""
+
+        with self._notification_lock:
+            if self._disposed or generation != self._generation:
+                return
+            if kind == "stdout":
+                self._pending_stdout_ready = True
+            elif kind == "stderr":
+                self._pending_stderr_ready = True
+            elif kind == "error" and arguments:
+                self._pending_errors.append(arguments[0])
+            elif kind == "finished" and len(arguments) == 2:
+                self._pending_finished = (int(arguments[0]), arguments[1])
+
+    def _dispatch_notifications(self) -> None:
+        """Emit queued notifications only from the QObject's GUI thread."""
+
+        with self._notification_lock:
+            stdout_ready = self._pending_stdout_ready
+            stderr_ready = self._pending_stderr_ready
+            errors = tuple(self._pending_errors)
+            finished = self._pending_finished
+            self._pending_stdout_ready = False
+            self._pending_stderr_ready = False
+            self._pending_errors.clear()
+            self._pending_finished = None
+        if finished is not None:
+            self._notification_timer.stop()
+        if stdout_ready:
+            self._emit_named_signal("readyReadStandardOutput")
+        if stderr_ready:
+            self._emit_named_signal("readyReadStandardError")
+        for error in errors:
+            self._emit_named_signal("errorOccurred", error)
+        if finished is not None:
+            self._emit_named_signal("finished", *finished)
 
     def _emit_named_signal(self, name: str, *arguments) -> None:
         try:
@@ -595,6 +652,12 @@ class QtHiddenProcess(QObject):
     def close(self) -> None:
         self._disposed = True
         self._generation += 1
+        self._notification_timer.stop()
+        with self._notification_lock:
+            self._pending_stdout_ready = False
+            self._pending_stderr_ready = False
+            self._pending_errors.clear()
+            self._pending_finished = None
         process = self._process
         self._process = None
         self._state = QProcess.ProcessState.NotRunning

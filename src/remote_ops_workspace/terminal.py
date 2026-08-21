@@ -56,8 +56,14 @@ def terminal_plan_for_command(command: str, title: str = "Command") -> TerminalP
 
 def terminal_plan_for_profile(profile: Profile) -> TerminalPanePlan:
     plan = build_launch_plan(profile)
-    command = _embedded_terminal_command(profile, plan.command)
+    native_command = openssh_command_without_windows_connection_sharing(plan.command)
+    command = _embedded_terminal_command(profile, native_command)
     notes = list(plan.notes)
+    if native_command != plan.command:
+        notes.append(
+            "Windows OpenSSH connection sharing options were ignored because "
+            "native Windows does not support the required control socket."
+        )
     if _is_embedded_openssh(profile, plan.command):
         if not _ssh_option_is_present(plan.command, "ConnectTimeout"):
             notes.append(
@@ -159,6 +165,66 @@ def openssh_command_with_overrides(
     return result
 
 
+def openssh_command_without_windows_connection_sharing(
+    command: list[str],
+) -> list[str]:
+    """Remove Unix control-socket options from native Windows OpenSSH argv.
+
+    Older releases could persist ``ControlMaster``/``ControlPath`` options in
+    an already-built terminal plan. Merely avoiding new options is therefore
+    insufficient: a saved plan can still make Windows OpenSSH fail with
+    ``getsockname failed: Not a socket``. Strip only connection-sharing
+    options on Windows and preserve every authentication and security option.
+    """
+
+    if not command or os.name != "nt":
+        return list(command)
+    executable = os.path.basename(command[0]).lower()
+    if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:
+        return list(command)
+
+    unsupported = {"controlmaster", "controlpath", "controlpersist"}
+    result = [command[0]]
+    index = 1
+    while index < len(command):
+        argument = command[index]
+        candidate = ""
+        consumed = 1
+        if argument == "-o" and index + 1 < len(command):
+            candidate = command[index + 1].strip()
+            consumed = 2
+        elif argument.lower().startswith("-o"):
+            candidate = argument[2:].lstrip()
+        option_name = (
+            candidate.replace("=", " ", 1).split(maxsplit=1)[0].lower() if candidate else ""
+        )
+        if option_name in unsupported:
+            index += consumed
+            continue
+        # ``ssh -M`` and ``ssh -S path`` are short forms for the same Unix
+        # multiplexing feature. SFTP uses ``-S`` for a different purpose, so
+        # only remove these forms from the ssh executable.
+        if executable in {"ssh", "ssh.exe"} and argument == "-M":
+            index += 1
+            continue
+        if executable in {"ssh", "ssh.exe"} and argument == "-S" and index + 1 < len(command):
+            index += 2
+            continue
+        result.extend(command[index : index + consumed])
+        index += consumed
+    # User-level ssh_config files can still enable multiplexing after command
+    # arguments are parsed. Explicit command-line values take precedence and
+    # prevent native Windows OpenSSH from attempting a Unix control socket.
+    return openssh_command_with_overrides(
+        result,
+        {
+            "ControlMaster": "no",
+            "ControlPath": "none",
+            "ControlPersist": "no",
+        },
+    )
+
+
 def ssh_control_path_for_profile(profile: Profile) -> str:
     """Return a private, stable OpenSSH control-socket path for ``profile``.
 
@@ -236,7 +302,9 @@ def ssh_command_with_control_path(
     password prompt of their own.
     """
 
-    if not command or not control_path or os.name == "nt":
+    if os.name == "nt":
+        return openssh_command_without_windows_connection_sharing(command)
+    if not command or not control_path:
         return list(command)
     executable = os.path.basename(command[0]).lower()
     if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:

@@ -654,6 +654,12 @@ def test_moba_ssh_terminal_starts_the_configured_process(gui_window) -> None:
     assert process.start_calls == 1
     assert process.program == "ssh"
     assert process.arguments == [
+        "-o",
+        "ControlMaster=no",
+        "-o",
+        "ControlPath=none",
+        "-o",
+        "ControlPersist=no",
         "-tt",
         "-p",
         "22",
@@ -1170,7 +1176,11 @@ def test_moba_monitoring_forces_trusted_noninteractive_ssh_without_mutating_plan
     assert runtime.count("BatchMode=yes") == 1
     assert runtime.count("ConnectTimeout=5") == 1
     assert runtime.count("StrictHostKeyChecking=yes") == 1
-    assert not any("=ask" in argument or "=no" in argument for argument in runtime)
+    assert "StrictHostKeyChecking=ask" not in runtime
+    assert "BatchMode=no" not in runtime
+    assert "ControlMaster=no" in runtime
+    assert "ControlPath=none" in runtime
+    assert "ControlPersist=no" in runtime
 
     control = dock.monitoring_control_widgets["remote-monitoring"]
     control.setChecked(True)
@@ -1530,6 +1540,55 @@ def test_native_toolbar_never_elides_labels_when_the_toolbar_is_compact(gui_wind
         and button.width() >= button.sizeHint().width()
         for button in window.main_toolbar_buttons
     )
+
+
+def test_compact_native_layout_controls_remain_readable_and_accessible(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import Qt
+
+    app, window = gui_window
+    window.set_design_preset("native")
+    window.resize(1024, 768)
+    app.processEvents()
+
+    assert window.search_input.width() >= 132
+    assert window.search_input.minimumWidth() >= 132
+    assert window.find_button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+    assert window.find_button.accessibleName() == window.find_button.text()
+    assert window.find_button.toolTip()
+    assert all(
+        button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+        and button.accessibleName() == button.text()
+        and button.toolTip()
+        for button in window.layout_toolbar_buttons
+    )
+
+
+def test_sidebar_mouse_resize_survives_chrome_and_preset_refresh(gui_window) -> None:
+    app, window = gui_window
+    window.set_design_preset("native")
+    window.resize(1180, 720)
+    app.processEvents()
+
+    window.root_splitter.moveSplitter(360, 1)
+    app.processEvents()
+    dragged_width = window.root_splitter.sizes()[0]
+
+    assert dragged_width >= 350
+    assert window.root_splitter.handleWidth() >= 8
+    assert window.root_splitter.property("userResizableSidebar") is True
+    assert window.root_splitter.property("rememberedSidebarWidth") == dragged_width
+
+    window.configure_product_connected_chrome()
+    app.processEvents()
+    assert abs(window.root_splitter.sizes()[0] - dragged_width) <= 2
+
+    window.set_design_preset("mobaxterm")
+    window.set_design_preset("native")
+    app.processEvents()
+    assert abs(window.root_splitter.sizes()[0] - dragged_width) <= 2
+    assert window.profile_list.indentation() <= 15
 
 
 class _Signal:

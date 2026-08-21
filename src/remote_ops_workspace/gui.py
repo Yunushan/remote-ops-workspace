@@ -205,6 +205,7 @@ from .terminal import (
     TerminalPanePlan,
     default_shell_plan,
     openssh_command_with_overrides,
+    openssh_command_without_windows_connection_sharing,
     split_shell_plans,
     ssh_command_with_control_path,
     ssh_control_path_for_profile,
@@ -562,6 +563,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             raise RuntimeError("required GUI value is unavailable: Qt application")
         return instance
 
+    def _background_process(parent):
+        """Create a helper process without flashing a Windows console."""
+
+        if sys.platform == "win32":
+            from .qt_terminal_process import QtHiddenProcess
+
+            return QtHiddenProcess(parent)
+        return QProcess(parent)
+
     def _widget_style(widget: QWidget) -> QStyle:
         return _required_gui_value(widget.style(), f"style for {type(widget).__name__}")
 
@@ -611,7 +621,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     f"trusted-host key/agent authentication: {reason}"
                 ),
             )
-        process = QProcess(parent)
+        process = _background_process(parent)
         process.setProperty("terminalLineInputFallback", True)
         return (
             process,
@@ -620,7 +630,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         )
 
     def _openssh_pipe_fallback_process(parent):
-        process = QProcess(parent)
+        process = _background_process(parent)
         process.setProperty("terminalOpenSshPipeFallback", True)
         return process
 
@@ -836,7 +846,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._process_output_flush_count = 0
             self._pending_terminal_size: tuple[int, int] | None = None
             self.setProperty("terminalAutostart", bool(autostart))
-            self.setProperty("terminalOutputCoalescing", "8ms-event-loop-burst")
+            self.setProperty("terminalOutputCoalescing", "16ms-frame-bounded-burst")
             self.startup_preamble = ""
             self.show_launch_command = True
             self.output_context_menu_builder: Callable[[TerminalPane], QMenu] | None = None
@@ -845,7 +855,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._stop_timer.timeout.connect(self.kill_after_stop_timeout)
             self._process_output_timer = QTimer(self)
             self._process_output_timer.setSingleShot(True)
-            self._process_output_timer.setInterval(8)
+            self._process_output_timer.setInterval(16)
             self._process_output_timer.timeout.connect(self.flush_process_output)
             self._terminal_resize_timer = QTimer(self)
             self._terminal_resize_timer.setSingleShot(True)
@@ -1549,6 +1559,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 runtime_command = [str(argument) for argument in runtime_override]
             else:
                 runtime_command = list(self.plan.command)
+            runtime_command = openssh_command_without_windows_connection_sharing(runtime_command)
             process_property = getattr(self.process, "property", lambda _name: None)
             if bool(process_property("terminalOpenSshPipeFallback")):
                 runtime_command = openssh_command_with_overrides(
@@ -1887,9 +1898,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             Full-screen programs redraw by emitting many small chunks. Feeding
             every chunk directly into QTextEdit can starve key events and make
-            the terminal look frozen. A bounded 8 ms timer preserves ordering,
-            collapses the burst into one render pass, and caps redraw frequency
-            when a command floods the PTY.
+            the terminal look frozen. A frame-bounded 16 ms timer preserves
+            ordering, collapses the burst into one render pass, and leaves time
+            for keyboard, resize and tab events when a command floods the PTY.
             """
 
             if not payload:
@@ -2736,7 +2747,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_refresh_timer.timeout.connect(
                 self.request_remote_monitoring_refresh
             )
-            self.monitoring_process = QProcess(self)
+            self.monitoring_process = _background_process(self)
             self.monitoring_process.setProcessChannelMode(
                 QProcess.ProcessChannelMode.MergedChannels
             )
@@ -2755,7 +2766,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_request_path = ""
             self.sftp_refresh_pending: tuple[str, str] | None = None
-            self.sftp_refresh_process = QProcess(self)
+            self.sftp_refresh_process = _background_process(self)
             self.sftp_refresh_process.setProcessChannelMode(
                 QProcess.ProcessChannelMode.MergedChannels
             )
@@ -2785,7 +2796,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_connected_ssh_browser_state_properties(self)
             self.apply_connected_smartcard_selection_properties(self)
             self.apply_connected_text_editor_route_properties(self)
-            self.setMinimumWidth(frame.dock_width)
+            self.setMinimumWidth(min(frame.dock_width, 280))
             self.setMinimumHeight(min(frame.dock_height, 320))
 
             outer_layout = QVBoxLayout(self)
@@ -2793,7 +2804,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             outer_layout.setSpacing(0)
             browser = QFrame()
             browser.setObjectName("mobaSftpBrowser")
-            browser.setMinimumWidth(frame.dock_width)
+            browser.setMinimumWidth(min(frame.dock_width, 280))
             browser.setMinimumHeight(min(frame.dock_height, 320))
             self.browser = browser
             self.apply_connected_dock_frame_properties(browser)
@@ -3880,9 +3891,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 process.blockSignals(True)
                 if process.state() != QProcess.ProcessState.NotRunning:
                     process.kill()
-                    # Bound teardown so switching/closing a session never waits
-                    # on a slow remote host.
-                    process.waitForFinished(100)
             self.setProperty("mobaRuntimeShutdown", True)
             self.setProperty("mobaRemoteMonitoringRuntimeActive", False)
             self.set_remote_monitoring_status(
@@ -3952,6 +3960,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return command
             executable = Path(command[0]).stem.lower()
             if executable == "ssh":
+                command = openssh_command_without_windows_connection_sharing(command)
                 command = openssh_command_with_overrides(
                     command,
                     {
@@ -4014,7 +4023,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def read_remote_monitoring_output(self) -> None:
             self.monitoring_output_buffer.extend(
-                self.monitoring_process.readAllStandardOutput().data()
+                bytes(self.monitoring_process.readAllStandardOutput())
             )
 
         def handle_remote_monitoring_error(self, error) -> None:
@@ -4333,6 +4342,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     "StrictHostKeyChecking": "yes",
                 },
             )
+            runtime_command = openssh_command_without_windows_connection_sharing(runtime_command)
             control_path = self.shared_ssh_control_path()
             if control_path:
                 runtime_command = ssh_command_with_control_path(
@@ -4365,7 +4375,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def read_sftp_refresh_output(self) -> None:
             self.sftp_refresh_output_buffer.extend(
-                self.sftp_refresh_process.readAllStandardOutput().data()
+                bytes(self.sftp_refresh_process.readAllStandardOutput())
             )
 
         def handle_sftp_refresh_error(self, error) -> None:
@@ -6643,7 +6653,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.local_preview_button.clicked.connect(self.refresh_local_preview)
             self.run_button.clicked.connect(self.run_queue)
             self.cancel_queue_button.clicked.connect(self.cancel_queue)
-            self._process_factory = process_factory or QProcess
+            self._process_factory = process_factory or _background_process
             self.active_queue_plan = None
             self.active_queue_index = 0
             self.active_queue_process: QProcess | None = None
@@ -6757,8 +6767,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             command = plan.batch_commands[index]
             self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: running")
             process = self._process_factory(self)
-            process.setProgram(plan.command[0])
-            process.setArguments(plan.command[1:])
+            runtime_command = openssh_command_without_windows_connection_sharing(list(plan.command))
+            process.setProgram(runtime_command[0])
+            process.setArguments(runtime_command[1:])
             process.readyReadStandardOutput.connect(
                 lambda active=process: self.preview.append(bytes(active.readAllStandardOutput()).decode(errors="replace").rstrip())
             )
@@ -7411,12 +7422,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             self.profile_list = QTreeWidget()
             self.profile_list.setObjectName("profileTree")
-            self.profile_list.setMinimumWidth(300)
+            self.profile_list.setMinimumWidth(240)
             self.profile_list.setHeaderHidden(True)
             self.profile_list.setColumnCount(1)
             self.profile_list.setRootIsDecorated(True)
-            self.profile_list.setAnimated(True)
+            self.profile_list.setAnimated(False)
             self.profile_list.setUniformRowHeights(True)
+            self.profile_list.setTextElideMode(Qt.TextElideMode.ElideMiddle)
             self.profile_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.left_panel_header = QFrame()
             self.left_panel_header.setObjectName("leftPanelHeader")
@@ -7493,6 +7505,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             self.workspace = QSplitter(Qt.Orientation.Vertical)
             self.workspace.setObjectName("workspace")
+            self.workspace.setHandleWidth(7)
+            self.workspace.setOpaqueResize(False)
             self.workspace.addWidget(self.tabs)
             self.workspace.addWidget(self.log)
             self.workspace.setStretchFactor(0, 3)
@@ -7500,9 +7514,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             self.root_splitter = QSplitter(Qt.Orientation.Horizontal)
             self.root_splitter.setObjectName("rootWorkspace")
+            self.root_splitter.setHandleWidth(9)
+            self.root_splitter.setOpaqueResize(False)
             self.root_splitter.addWidget(self.left_panel)
             self.root_splitter.addWidget(self.workspace)
             self.root_splitter.setStretchFactor(1, 1)
+            self._sidebar_width_by_design: dict[str, int] = {}
+            self._setting_root_splitter_sizes = False
+            self.root_splitter.splitterMoved.connect(self.remember_user_sidebar_width)
             self.setCentralWidget(self.root_splitter)
             self.status_segment_labels = self.create_status_segments()
 
@@ -7604,6 +7623,66 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.configure_responsive_layout_toolbar()
             if hasattr(self, "welcome_scroll"):
                 QTimer.singleShot(0, self.configure_welcome_responsiveness)
+
+        @staticmethod
+        def sidebar_minimum_width_for_design(preset_id: str) -> int:
+            return 280 if preset_id == "mobaxterm" else 240
+
+        def preferred_sidebar_width(self, default_width: int) -> int:
+            preset_id = self.current_design_id()
+            minimum = self.sidebar_minimum_width_for_design(preset_id)
+            remembered = self._sidebar_width_by_design.get(preset_id)
+            return max(minimum, int(remembered or default_width))
+
+        def set_root_sidebar_width(
+            self,
+            width: int,
+            *,
+            collapsed: bool = False,
+        ) -> None:
+            """Resize the main dock without mistaking programmatic moves for drags."""
+
+            preset_id = self.current_design_id()
+            minimum = self.sidebar_minimum_width_for_design(preset_id)
+            target = 0 if collapsed else max(minimum, int(width))
+            self.left_panel.setMinimumWidth(0 if collapsed else minimum)
+            sizes = self.root_splitter.sizes()
+            total = sum(sizes) or max(self.width(), target + 620)
+            self._setting_root_splitter_sizes = True
+            try:
+                self.root_splitter.setSizes([target, max(1, total - target)])
+            finally:
+                self._setting_root_splitter_sizes = False
+            self.root_splitter.setProperty("userResizableSidebar", True)
+            self.root_splitter.setProperty("sidebarHandleWidth", self.root_splitter.handleWidth())
+            self.update_profile_tree_indentation(target)
+
+        def remember_user_sidebar_width(self, _position: int, handle_index: int) -> None:
+            if self._setting_root_splitter_sizes or handle_index != 1:
+                return
+            sizes = self.root_splitter.sizes()
+            if not sizes or not self.left_panel.isVisible():
+                return
+            preset_id = self.current_design_id()
+            minimum = self.sidebar_minimum_width_for_design(preset_id)
+            width = int(sizes[0])
+            if width < minimum:
+                return
+            self._sidebar_width_by_design[preset_id] = width
+            self.root_splitter.setProperty("rememberedSidebarWidth", width)
+            self.update_profile_tree_indentation(width)
+
+        def update_profile_tree_indentation(self, sidebar_width: int) -> None:
+            if self.current_design_is_moba():
+                indentation = gui_design_moba_session_tree_chrome().indentation
+            elif sidebar_width <= 300:
+                indentation = 11
+            elif sidebar_width <= 380:
+                indentation = 13
+            else:
+                indentation = 15
+            self.profile_list.setIndentation(indentation)
+            self.profile_list.setProperty("responsiveTreeIndentation", indentation)
 
         def configure_welcome_responsiveness(self) -> None:
             scroll = getattr(self, "welcome_scroll", None)
@@ -8705,7 +8784,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             panel.setProperty("mobaConnectedDockSideWidth", frame.side_width)
             panel.setProperty("mobaConnectedDockRailWidth", frame.rail_width)
             panel.setProperty("mobaConnectedDockWidth", frame.dock_width)
-            panel.setMinimumWidth(frame.side_width)
+            panel.setMinimumWidth(240)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(0)
@@ -10382,9 +10461,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_command_surface_route_for_design(command_surface_route)
             moba_frame = gui_design_moba_connected_dock_frame()
             profile_width = moba_frame.side_width if is_moba else preset.profile_width
-            self.left_panel.setMinimumWidth(min(profile_width, 430))
+            self.left_panel.setMinimumWidth(self.sidebar_minimum_width_for_design(preset.id))
             self.configure_profile_tree_for_design(is_moba, preset.list_spacing)
-            self.root_splitter.setSizes([profile_width, max(620, self.width() - profile_width)])
+            self.set_root_sidebar_width(self.preferred_sidebar_width(profile_width))
             if is_moba:
                 self.workspace.setSizes([max(620, self.height()), 0])
             else:
@@ -11698,6 +11777,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.design_select.setMaximumWidth(132 if compact else 150)
                 self.search_input.setMinimumWidth(138 if compact else 164)
                 self.search_input.setMaximumWidth(210 if compact else 250)
+                self.search_input.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Preferred,
+                )
+                self.find_button.setAccessibleName(self.find_button.text())
+                self.find_button.setAccessibleDescription(self.find_button.toolTip())
+                self.find_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+                self.find_button.setMinimumSize(QSize(30, 24))
+                self.find_button.setMaximumSize(QSize(34, 30))
                 return
 
             # A text-under-icon QToolButton needs substantially more width than
@@ -11781,8 +11869,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.layout_select.setMaximumWidth(132 if compact else 190)
             self.design_select.setMinimumWidth(112 if compact else 150)
             self.design_select.setMaximumWidth(132 if compact else 180)
-            self.search_input.setMinimumWidth(96 if compact else 120)
-            self.search_input.setMaximumWidth(116 if compact else 180)
+            self.search_input.setMinimumWidth(132 if compact else 160)
+            self.search_input.setMaximumWidth(220 if compact else 280)
+            self.search_input.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Preferred,
+            )
             if is_product_reference:
                 # Product-specific connected surfaces retain only the compact
                 # preset/search utility strip.  This branch runs on every
@@ -11846,9 +11938,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def configure_profile_tree_for_design(self, is_moba: bool, list_spacing: int) -> None:
             moba_chrome = gui_design_moba_session_tree_chrome()
-            self.profile_list.setIndentation(moba_chrome.indentation if is_moba else 18)
+            sidebar_sizes = self.root_splitter.sizes()
+            sidebar_width = sidebar_sizes[0] if sidebar_sizes else self.profile_list.width()
+            self.update_profile_tree_indentation(sidebar_width)
             self.profile_list.setRootIsDecorated(moba_chrome.root_is_decorated if is_moba else True)
-            self.profile_list.setAnimated(moba_chrome.animated if is_moba else False)
+            self.profile_list.setAnimated(False)
             self.profile_list.setAllColumnsShowFocus(True)
             self.profile_list.setItemsExpandable(True)
             self.profile_list.setExpandsOnDoubleClick(True)
@@ -12557,9 +12651,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def toggle_moba_session_panel(self, *_args) -> None:
             sizes = self.root_splitter.sizes()
-            total = sum(sizes) or max(900, self.width())
             if sizes and sizes[0] > 80:
-                self.root_splitter.setSizes([34, max(620, total - 34)])
+                self.set_root_sidebar_width(0, collapsed=True)
                 self.statusBar().showMessage("Sessions panel collapsed")
                 return
             preset_id = self.design_select.currentData() or "native"
@@ -12568,7 +12661,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 width = preset.profile_width
             except ValueError:
                 width = 395
-            self.root_splitter.setSizes([width, max(620, total - width)])
+            self.set_root_sidebar_width(self.preferred_sidebar_width(width))
             self.statusBar().showMessage("Sessions panel restored")
 
         def show_moba_sessions_rail(self, *_args) -> None:
@@ -12866,7 +12959,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.open_local_terminal_tab()
             finally:
                 self.moba_tab_guard = False
-            self.refresh_moba_left_dock_for_current_tab()
 
         def remove_new_session_tab(self) -> None:
             index = self.find_tab_by_role("new-session")
@@ -12979,7 +13071,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.tabs.setUpdatesEnabled(True)
                 self.tabs.setProperty("terminalTabTransitionActive", False)
                 return
-            self.configure_product_connected_chrome()
             # QTabWidget may finish laying out the newly selected page after
             # emitting currentChanged.  Re-apply once the splitter has its
             # final geometry so the activity pane and side chrome cannot stay
@@ -13109,7 +13200,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 # Termius still gets the compact 70px strip rather than the
                 # old oversized transcript pane.
                 self.log.setVisible(True)
-                self.root_splitter.setSizes([0, max(620, self.width())])
+                self.set_root_sidebar_width(0, collapsed=True)
                 self.workspace.setSizes([max(420, self.height() - 70), 70])
                 return
 
@@ -13129,9 +13220,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
             except ValueError:
                 profile_width = 300
-            self.root_splitter.setSizes(
-                [min(profile_width, 430), max(620, self.width() - profile_width)]
-            )
+            self.set_root_sidebar_width(self.preferred_sidebar_width(min(profile_width, 430)))
 
         def tab_context_session_action_specs(self, index: int) -> list[dict[str, object]]:
             role = self.tab_role(index)

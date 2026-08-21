@@ -157,6 +157,8 @@ def test_gui_interaction_evidence_snapshots_mutable_dispatch_details() -> None:
     assert "record_minimum_size_preset_geometry" in checker
     assert "mobaxterm-welcome-horizontal-containment-1024x768" in checker
     assert "mobaxterm-telemetry-cells-non-overlap-1024x768" in checker
+    assert "sidebar-mouse-resize-persists-through-chrome-refresh" in checker
+    assert "compact-layout-controls-have-readable-contracts" in checker
     assert "duplicated-open-layout-rename-retargets-title-tooltip-and-binding" in checker
     for preset_id in ("securecrt", "termius", "remmina", "mremoteng"):
         assert f"recovery-{preset_id}-preserves-profile-and-sftp-tab-identity" in checker

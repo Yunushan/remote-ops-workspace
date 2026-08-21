@@ -7399,6 +7399,9 @@ QTextEdit#activityLog {{
 QSplitter::handle {{
   background: {colors.toolbar_border};
 }}
+QSplitter::handle:hover {{
+  background: {colors.primary};
+}}
 QStatusBar {{
   background: {colors.toolbar};
   color: {colors.sidebar_muted};

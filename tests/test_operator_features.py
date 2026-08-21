@@ -30,6 +30,7 @@ from remote_ops_workspace.terminal import (
     _embedded_terminal_command,
     default_shell_command,
     openssh_command_with_overrides,
+    openssh_command_without_windows_connection_sharing,
     split_shell_plans,
     ssh_command_with_control_path,
     ssh_control_path_for_profile,
@@ -158,7 +159,14 @@ def test_terminal_plan_for_profile_uses_launcher() -> None:
     profile = Profile(name="edge", protocol="ssh", host="192.0.2.10", username="admin")
     plan = terminal_plan_for_profile(profile)
     assert plan.title == "edge"
-    assert plan.command[:4] == ["ssh", "-tt", "-p", "22"]
+    assert plan.command[:2] == ["ssh", "-tt"]
+    assert ["-p", "22"] == plan.command[plan.command.index("-p") : plan.command.index("-p") + 2]
+    if terminal_module.os.name == "nt":
+        assert "ControlMaster=no" in plan.command
+        assert "ControlPath=none" in plan.command
+        assert "ControlPersist=no" in plan.command
+    else:
+        assert not any(argument.startswith("Control") for argument in plan.command)
     assert "ConnectTimeout=10" in plan.command
     assert not any("StrictHostKeyChecking=" in argument for argument in plan.command)
     assert plan.command[-1] == "admin@192.0.2.10"
@@ -296,7 +304,65 @@ def test_native_windows_openssh_skips_control_socket_reuse(monkeypatch) -> None:
         command,
         r"C:\Users\operator\AppData\Local\Temp\cm-edge",
         master=True,
-    ) == command
+    ) == [
+        "ssh",
+        "-o",
+        "ControlMaster=no",
+        "-o",
+        "ControlPath=none",
+        "-o",
+        "ControlPersist=no",
+        "operator@192.0.2.10",
+    ]
+
+
+def test_native_windows_openssh_removes_stale_connection_sharing_options(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    original = [
+        "ssh.exe",
+        "-M",
+        "-S",
+        r"C:\Temp\remote-ops-control.sock",
+        "-o",
+        "ControlMaster=auto",
+        "-oControlPath=C:/Temp/remote-ops-control.sock",
+        "-o",
+        "ControlPersist=10m",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "operator@example.invalid",
+    ]
+
+    adapted = openssh_command_without_windows_connection_sharing(original)
+
+    assert original[1:4] == ["-M", "-S", r"C:\Temp\remote-ops-control.sock"]
+    assert adapted == [
+        "ssh.exe",
+        "-o",
+        "ControlMaster=no",
+        "-o",
+        "ControlPath=none",
+        "-o",
+        "ControlPersist=no",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "operator@example.invalid",
+    ]
+
+
+def test_non_windows_openssh_preserves_connection_sharing_options(monkeypatch) -> None:
+    monkeypatch.setattr(terminal_module.os, "name", "posix")
+    command = [
+        "ssh",
+        "-o",
+        "ControlMaster=auto",
+        "-oControlPath=/tmp/remote-ops.sock",
+        "operator@example.invalid",
+    ]
+
+    assert openssh_command_without_windows_connection_sharing(command) == command
 
 
 def test_sftp_list_plan_uses_batch_stdin() -> None:

@@ -28,6 +28,7 @@ def test_optional_dependency_declarations_match_expected_extras() -> None:
 def test_optional_desktop_smoke_uses_bounded_render_subprocess(monkeypatch, tmp_path: Path) -> None:
     checker = _load_optional_checker()
     calls: dict[str, object] = {}
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
 
     class FakeCompletedProcess:
         returncode = 0

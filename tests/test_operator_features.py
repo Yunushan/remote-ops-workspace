@@ -161,8 +161,12 @@ def test_terminal_plan_for_profile_uses_launcher() -> None:
     assert plan.title == "edge"
     assert plan.command[:2] == ["ssh", "-tt"]
     assert ["-p", "22"] == plan.command[plan.command.index("-p") : plan.command.index("-p") + 2]
-    assert "ControlMaster=no" in plan.command
-    assert "ControlPath=none" in plan.command
+    if terminal_module.os.name == "nt":
+        assert "ControlMaster=no" in plan.command
+        assert "ControlPath=none" in plan.command
+        assert "ControlPersist=no" in plan.command
+    else:
+        assert not any(argument.startswith("Control") for argument in plan.command)
     assert "ConnectTimeout=10" in plan.command
     assert not any("StrictHostKeyChecking=" in argument for argument in plan.command)
     assert plan.command[-1] == "admin@192.0.2.10"

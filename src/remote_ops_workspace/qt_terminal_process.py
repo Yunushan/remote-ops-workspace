@@ -7,6 +7,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Sequence
+from typing import Any
 
 from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
 
@@ -389,7 +390,7 @@ class QtHiddenProcess(QObject):
         generation = self._generation
         self._finished_event = threading.Event()
         self._state = QProcess.ProcessState.Starting
-        options: dict[str, object] = {
+        options: dict[str, Any] = {
             "stdin": subprocess.PIPE,
             "stdout": subprocess.PIPE,
             "stderr": subprocess.STDOUT if self._merged_channels else subprocess.PIPE,

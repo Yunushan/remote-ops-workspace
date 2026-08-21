@@ -13,7 +13,7 @@ def test_release_toolchain_checker_requires_pinned_python_build_backend() -> Non
     checker = _load_release_toolchain_checker()
     toolchain = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8").replace(
-        'requires = ["setuptools==84.0.0", "wheel==0.47.0"]',
+        'requires = ["setuptools==84.0.0", "wheel==0.48.0"]',
         'requires = ["setuptools>=77", "wheel"]',
     )
 

@@ -469,8 +469,8 @@ class QtHiddenProcess(QObject):
             except OSError as exc:
                 if not self._forced_termination and not self._disposed:
                     self._error_string = str(exc)
-                    self._emit_signal(
-                        self.errorOccurred,
+                    self._emit_named_signal(
+                        "errorOccurred",
                         QProcess.ProcessError.ReadError,
                     )
             finally:
@@ -499,7 +499,7 @@ class QtHiddenProcess(QObject):
             if generation != self._generation:
                 return
             self._error_string = str(exc)
-            self._emit_signal(self.errorOccurred, QProcess.ProcessError.Crashed)
+            self._emit_named_signal("errorOccurred", QProcess.ProcessError.Crashed)
             return_code = -1
         for reader in readers:
             reader.join(timeout=1.0)
@@ -513,14 +513,22 @@ class QtHiddenProcess(QObject):
             if self._forced_termination
             else QProcess.ExitStatus.NormalExit
         )
-        self._emit_signal(self.finished, return_code, exit_status)
+        self._emit_named_signal("finished", return_code, exit_status)
+
+    def _emit_named_signal(self, name: str, *arguments) -> None:
+        try:
+            signal = getattr(self, name)
+        except (AttributeError, RuntimeError):
+            self._disposed = True
+            return
+        self._emit_signal(signal, *arguments)
 
     def _emit_signal(self, signal, *arguments) -> None:
         if self._disposed:
             return
         try:
             signal.emit(*arguments)
-        except RuntimeError:
+        except (AttributeError, RuntimeError):
             self._disposed = True
 
     def readAllStandardOutput(self) -> bytes:  # noqa: N802

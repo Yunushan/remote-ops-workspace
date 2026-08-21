@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 
 import pytest
@@ -90,3 +91,28 @@ def test_hidden_process_missing_program_reports_failed_start(qt_app) -> None:
         assert process.errorString()
     finally:
         process.close()
+
+
+def test_hidden_process_threads_tolerate_deleted_qt_owner(qt_app) -> None:
+    from PyQt6 import sip
+
+    process = QtHiddenProcess()
+    process.setProgram(sys.executable)
+    process.setArguments(
+        ["-u", "-c", "import time; time.sleep(0.05); print('late output', flush=True)"]
+    )
+    thread_errors: list[threading.ExceptHookArgs] = []
+    original_hook = threading.excepthook
+    threading.excepthook = thread_errors.append
+
+    try:
+        process.start()
+        assert process.state() == qt_core.QProcess.ProcessState.Running
+        sip.delete(process)
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and not thread_errors:
+            qt_app.processEvents()
+            time.sleep(0.01)
+        assert thread_errors == []
+    finally:
+        threading.excepthook = original_hook

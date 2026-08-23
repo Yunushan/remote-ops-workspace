@@ -178,7 +178,7 @@ def test_ci_workflow_requires_independent_coverage_report_validation() -> None:
     assert any("aggregate and branch report validator" in error for error in errors)
 
 
-def test_ci_workflow_requires_stable_native_windows_coverage_runner() -> None:
+def test_ci_workflow_requires_stable_windows_coverage_runner() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
         "    runs-on: windows-2025-vs2026\n",
@@ -188,20 +188,20 @@ def test_ci_workflow_requires_stable_native_windows_coverage_runner() -> None:
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("stable native Windows coverage runner" in error for error in errors)
+    assert any("stable Windows coverage runner" in error for error in errors)
 
 
-def test_ci_workflow_requires_native_windows_qt_coverage_platform() -> None:
+def test_ci_workflow_requires_headless_qt_coverage_platform() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        '      QT_QPA_PLATFORM: "windows"\n',
         '      QT_QPA_PLATFORM: "offscreen"\n',
+        '      QT_QPA_PLATFORM: "windows"\n',
         1,
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("native Windows Qt coverage platform" in error for error in errors)
+    assert any("deterministic headless Qt coverage platform" in error for error in errors)
 
 
 def test_ci_workflow_requires_coverage_evidence_directory() -> None:

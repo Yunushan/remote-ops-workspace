@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import shlex
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import command_safety as safe
 from .file_transfer import build_sftp_interactive_plan
@@ -53,8 +56,14 @@ def terminal_plan_for_command(command: str, title: str = "Command") -> TerminalP
 
 def terminal_plan_for_profile(profile: Profile) -> TerminalPanePlan:
     plan = build_launch_plan(profile)
-    command = _embedded_terminal_command(profile, plan.command)
+    native_command = openssh_command_without_windows_connection_sharing(plan.command)
+    command = _embedded_terminal_command(profile, native_command)
     notes = list(plan.notes)
+    if native_command != plan.command:
+        notes.append(
+            "Windows OpenSSH connection sharing options were ignored because "
+            "native Windows does not support the required control socket."
+        )
     if _is_embedded_openssh(profile, plan.command):
         if not _ssh_option_is_present(plan.command, "ConnectTimeout"):
             notes.append(
@@ -154,6 +163,159 @@ def openssh_command_with_overrides(
         injected.extend(["-o", f"{name}={value}"])
     result[1:1] = injected
     return result
+
+
+def openssh_command_without_windows_connection_sharing(
+    command: list[str],
+) -> list[str]:
+    """Remove Unix control-socket options from native Windows OpenSSH argv.
+
+    Older releases could persist ``ControlMaster``/``ControlPath`` options in
+    an already-built terminal plan. Merely avoiding new options is therefore
+    insufficient: a saved plan can still make Windows OpenSSH fail with
+    ``getsockname failed: Not a socket``. Strip only connection-sharing
+    options on Windows and preserve every authentication and security option.
+    """
+
+    if not command or os.name != "nt":
+        return list(command)
+    executable = os.path.basename(command[0]).lower()
+    if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:
+        return list(command)
+
+    unsupported = {"controlmaster", "controlpath", "controlpersist"}
+    result = [command[0]]
+    index = 1
+    while index < len(command):
+        argument = command[index]
+        candidate = ""
+        consumed = 1
+        if argument == "-o" and index + 1 < len(command):
+            candidate = command[index + 1].strip()
+            consumed = 2
+        elif argument.lower().startswith("-o"):
+            candidate = argument[2:].lstrip()
+        option_name = (
+            candidate.replace("=", " ", 1).split(maxsplit=1)[0].lower() if candidate else ""
+        )
+        if option_name in unsupported:
+            index += consumed
+            continue
+        # ``ssh -M`` and ``ssh -S path`` are short forms for the same Unix
+        # multiplexing feature. SFTP uses ``-S`` for a different purpose, so
+        # only remove these forms from the ssh executable.
+        if executable in {"ssh", "ssh.exe"} and argument == "-M":
+            index += 1
+            continue
+        if executable in {"ssh", "ssh.exe"} and argument == "-S" and index + 1 < len(command):
+            index += 2
+            continue
+        result.extend(command[index : index + consumed])
+        index += consumed
+    # User-level ssh_config files can still enable multiplexing after command
+    # arguments are parsed. Explicit command-line values take precedence and
+    # prevent native Windows OpenSSH from attempting a Unix control socket.
+    return openssh_command_with_overrides(
+        result,
+        {
+            "ControlMaster": "no",
+            "ControlPath": "none",
+            "ControlPersist": "no",
+        },
+    )
+
+
+def ssh_control_path_for_profile(profile: Profile) -> str:
+    """Return a private, stable OpenSSH control-socket path for ``profile``.
+
+    The embedded terminal is the only process allowed to create the shared
+    connection.  SFTP and monitoring clients use the socket with
+    ``ControlMaster=no`` after the terminal has authenticated, so a password
+    prompt is never duplicated or sent to a background process.  Profiles can
+    opt out with the explicit multiplexing options below; host-key and crypto
+    policy are otherwise left unchanged.
+
+    Native Windows OpenSSH does not support the Unix-domain control sockets
+    required by ``ControlPath``.  Keep the regular interactive connection
+    path intact there and let background operations use their normal explicit
+    authentication rules instead of turning every SSH launch into a socket
+    error.
+    """
+
+    if profile.protocol.lower().strip() not in {"ssh", "sftp", "ssh1", "sshv1"}:
+        return ""
+    if os.name == "nt":
+        return ""
+    normalized = {
+        str(key).strip().lower(): str(value).strip()
+        for key, value in profile.options.items()
+    }
+    disabled = {"0", "false", "no", "off", "disabled"}
+    for key in (
+        "ssh_multiplex",
+        "ssh_browser_multiplex",
+        "ssh_control_master",
+        "controlmaster",
+        "control_master",
+        "ssh_connection_sharing",
+    ):
+        if normalized.get(key, "").lower() in disabled:
+            return ""
+    # Do not override an operator-supplied socket path.  The background
+    # runtime cannot safely infer whether that external socket is usable.
+    if any(key in normalized for key in ("controlpath", "ssh_control_path")):
+        return ""
+
+    identity = str(profile.identity_file or "")
+    fingerprint = "\0".join(
+        (
+            profile.name,
+            profile.host or "",
+            str(profile.port or 22),
+            profile.username or "",
+            identity,
+            repr(sorted(normalized.items())),
+        )
+    )
+    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:24]
+    directory = Path(tempfile.gettempdir()) / "remote-ops-workspace" / "ssh-control"
+    try:
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if os.name != "nt":
+            directory.chmod(0o700)
+    except OSError:
+        return ""
+    return str(directory / f"cm-{digest}")
+
+
+def ssh_command_with_control_path(
+    command: list[str],
+    control_path: str,
+    *,
+    master: bool,
+) -> list[str]:
+    """Add safe OpenSSH connection sharing to an argv copy.
+
+    ``master=True`` is reserved for the interactive terminal.  Background
+    clients explicitly use ``ControlMaster=no`` so they can only reuse an
+    already-authenticated terminal connection and can never create a hidden
+    password prompt of their own.
+    """
+
+    if os.name == "nt":
+        return openssh_command_without_windows_connection_sharing(command)
+    if not command or not control_path:
+        return list(command)
+    executable = os.path.basename(command[0]).lower()
+    if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:
+        return list(command)
+    return openssh_command_with_overrides(
+        list(command),
+        {
+            "ControlMaster": "auto" if master else "no",
+            "ControlPath": control_path,
+        },
+    )
 
 
 def terminal_plan_for_sftp_browser(profile: Profile) -> TerminalPanePlan:

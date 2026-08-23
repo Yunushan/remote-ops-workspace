@@ -113,9 +113,9 @@ def check_coverage_job(workflow: str) -> list[str]:
         return ["ci workflow missing coverage job for enforced Python branch coverage"]
     required_snippets = {
         "name: Python branch-aware coverage": "clear branch-aware coverage job label",
-        "runs-on: windows-2025-vs2026": "stable native Windows coverage runner",
+        "runs-on: windows-2025-vs2026": "stable Windows coverage runner",
         "timeout-minutes: 30": "bounded coverage job timeout",
-        'QT_QPA_PLATFORM: "windows"': "native Windows Qt coverage platform",
+        'QT_QPA_PLATFORM: "offscreen"': "deterministic headless Qt coverage platform",
         'python-version: "3.12"': "stable coverage Python version",
         'python -m pip install -e ".[desktop,security,dev]"': (
             "desktop, security and development dependency installation"

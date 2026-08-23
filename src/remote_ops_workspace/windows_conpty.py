@@ -474,8 +474,10 @@ class WindowsConPtyProcess:
         )
         self._reader_thread: threading.Thread | None = None
         self._writer_thread: threading.Thread | None = None
+        self._resize_thread: threading.Thread | None = None
         self._closer_thread: threading.Thread | None = None
         self._closing = threading.Event()
+        self._resize_closing = threading.Event()
         self._input_closing = threading.Event()
         self._output_eof = threading.Event()
         self._pseudo_console_close_started = threading.Event()
@@ -485,6 +487,9 @@ class WindowsConPtyProcess:
         self._last_output_activity = time.monotonic()
         self._write_condition = threading.Condition()
         self._pending_writes = 0
+        self._resize_lock = threading.Lock()
+        self._resize_event = threading.Event()
+        self._pending_resize: tuple[int, int] | None = None
 
     @property
     def pid(self) -> int | None:
@@ -663,6 +668,12 @@ class WindowsConPtyProcess:
             )
             self._reader_thread.start()
             self._writer_thread.start()
+            self._resize_thread = threading.Thread(
+                target=self._resize_main,
+                name=f"ConPTY-resizer-{self._pid}",
+                daemon=True,
+            )
+            self._resize_thread.start()
 
     def _mark_start_failed(self) -> None:
         """Expose one terminal state for every failure before worker startup."""
@@ -673,6 +684,8 @@ class WindowsConPtyProcess:
         self._started = False
         self._closed = True
         self._closing.set()
+        self._resize_closing.set()
+        self._resize_event.set()
         self._input_closing.set()
         self._output_eof.set()
         self.output_ready.set()
@@ -981,20 +994,50 @@ class WindowsConPtyProcess:
         return b"".join(chunks)
 
     def resize(self, columns: int, rows: int) -> None:
-        api = self._require_started()
+        self._require_started()
         columns = _validate_dimension(columns, "columns")
         rows = _validate_dimension(rows, "rows")
         with self._lifecycle_lock:
-            if self._closed or not _handle_is_open(self._pseudo_console):
+            if (
+                self._closed
+                or self._resize_closing.is_set()
+                or not _handle_is_open(self._pseudo_console)
+            ):
                 raise RuntimeError("ConPTY process is closed")
-            hresult = api.ResizePseudoConsole(
-                self._pseudo_console,
-                _COORD(columns, rows),
-            )
-            if hresult < 0:
-                raise _hresult_error("ResizePseudoConsole", hresult)
             self.columns = columns
             self.rows = rows
+        # ResizePseudoConsole can block on older Windows builds.  Never call
+        # it from the Qt event loop; keep only the newest viewport dimensions.
+        with self._resize_lock:
+            self._pending_resize = (columns, rows)
+        self._resize_event.set()
+
+    def _resize_main(self) -> None:
+        api = self._require_started()
+        while not self._resize_closing.is_set():
+            if not self._resize_event.wait(0.1):
+                continue
+            self._resize_event.clear()
+            while not self._resize_closing.is_set():
+                with self._resize_lock:
+                    pending = self._pending_resize
+                    self._pending_resize = None
+                if pending is None:
+                    break
+                columns, rows = pending
+                with self._lifecycle_lock:
+                    if (
+                        self._closed
+                        or self._resize_closing.is_set()
+                        or not _handle_is_open(self._pseudo_console)
+                    ):
+                        return
+                    hresult = api.ResizePseudoConsole(
+                        self._pseudo_console,
+                        _COORD(columns, rows),
+                    )
+                if hresult < 0:
+                    self._record_io_error(_hresult_error("ResizePseudoConsole", hresult))
 
     def poll(self) -> int | None:
         api = self._require_started()
@@ -1080,8 +1123,12 @@ class WindowsConPtyProcess:
             if self._closed:
                 return
             if not self._started:
+                self._resize_closing.set()
+                self._resize_event.set()
                 self._closed = True
                 return
+        self._resize_closing.set()
+        self._resize_event.set()
         if terminate and self.poll() is None:
             try:
                 self.terminate()
@@ -1108,6 +1155,9 @@ class WindowsConPtyProcess:
         closer = self._closer_thread
         if closer is not None and closer is not threading.current_thread():
             closer.join(timeout=max(0.0, timeout))
+        resizer = self._resize_thread
+        if resizer is not None and resizer is not threading.current_thread():
+            resizer.join(timeout=max(0.0, timeout))
 
         self._input_closing.set()
         self._closing.set()
@@ -1120,7 +1170,12 @@ class WindowsConPtyProcess:
                 api.CloseHandle(self._output_read)
                 self._output_read = wintypes.HANDLE()
 
-        for thread in (self._writer_thread, self._reader_thread, self._closer_thread):
+        for thread in (
+            self._writer_thread,
+            self._reader_thread,
+            self._resize_thread,
+            self._closer_thread,
+        ):
             if thread is not None and thread is not threading.current_thread():
                 thread.join(timeout=max(0.0, timeout))
 

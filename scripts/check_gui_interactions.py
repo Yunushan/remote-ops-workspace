@@ -676,6 +676,43 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             layout_extension.isVisible() if layout_extension is not None else "not-created",
         )
 
+    window.resize(1180, 720)
+    app.processEvents()
+    window.root_splitter.moveSplitter(360, 1)
+    app.processEvents()
+    dragged_sidebar_width = window.root_splitter.sizes()[0]
+    window.configure_product_connected_chrome()
+    app.processEvents()
+    restored_sidebar_width = window.root_splitter.sizes()[0]
+    record(
+        "sidebar-mouse-resize-persists-through-chrome-refresh",
+        dragged_sidebar_width >= 350
+        and abs(restored_sidebar_width - dragged_sidebar_width) <= 2
+        and window.root_splitter.handleWidth() >= 8,
+        {
+            "dragged": dragged_sidebar_width,
+            "restored": restored_sidebar_width,
+            "handle_width": window.root_splitter.handleWidth(),
+        },
+    )
+    record(
+        "compact-layout-controls-have-readable-contracts",
+        window.search_input.minimumWidth() >= 132
+        and bool(window.find_button.accessibleName())
+        and bool(window.find_button.toolTip())
+        and all(
+            bool(button.accessibleName()) and bool(button.toolTip())
+            for button in window.layout_toolbar_buttons
+        ),
+        {
+            "search_minimum": window.search_input.minimumWidth(),
+            "find_accessible_name": window.find_button.accessibleName(),
+            "layout_accessible_names": [
+                button.accessibleName() for button in window.layout_toolbar_buttons
+            ],
+        },
+    )
+
     preset_ids = [preset.id for preset in GUI_DESIGN_PRESETS]
     for preset_id in preset_ids:
         window.set_design_preset(preset_id)

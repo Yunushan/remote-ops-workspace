@@ -974,7 +974,6 @@ def test_native_windows_ssh_profile_gui_keyboard_round_trip(
     server = _LoopbackSshServer(paramiko_module)
     known_hosts = tmp_path / "known_hosts"
     server.write_known_hosts(known_hosts)
-    server.start()
     profile = Profile(
         name="native-windows-loopback",
         protocol="ssh",
@@ -1006,6 +1005,11 @@ def test_native_windows_ssh_profile_gui_keyboard_round_trip(
     pane: Any | None = None
     try:
         window.set_design_preset("mobaxterm")
+        # Start the bounded listener only after the first PyQt import and window
+        # construction. On a cold Python 3.15 runner those operations can take
+        # longer than the listener's accept timeout even though OpenSSH itself
+        # connects immediately once the terminal pane launches.
+        server.start()
         window.open_terminal_tab(plan, profile=profile)
         _process_events_until(
             app,

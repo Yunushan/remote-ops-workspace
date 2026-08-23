@@ -4947,13 +4947,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_active_generation = request_generation
             self.sftp_refresh_request_path = request_path
             self.sftp_refresh_output_buffer.clear()
-            self.set_sftp_runtime_status(
-                f"Refreshing SFTP listing at {request_path}",
-                state="refreshing",
+            refresh_message = (
+                f"Refreshing SFTP listing for {profile.display_target} at {request_path}"
             )
-            self.show_sftp_status(
-                f"Refreshing SFTP listing at {request_path}"
-            )
+            self.set_sftp_runtime_status(refresh_message, state="refreshing")
+            self.show_sftp_status(refresh_message)
             runtime_command = openssh_command_with_overrides(
                 list(plan.command),
                 {

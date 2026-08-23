@@ -1832,7 +1832,7 @@ def test_termius_host_identity_strip_is_shared_metadata() -> None:
     assert strip.static_title_y == 10
     assert strip.static_cell_start_x == 80
     assert strip.static_cell_gap == 6
-    assert strip.live_spacing == 6
+    assert strip.live_spacing == 3
     assert all(field.tooltip for field in strip.fields)
 
 

@@ -4233,7 +4233,7 @@ GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP = GuiTermiusHostIdentityStrip(
     live_margin_top=5,
     live_margin_right=7,
     live_margin_bottom=5,
-    live_spacing=6,
+    live_spacing=3,
 )
 
 GUI_DESIGN_TERMIUS_SYNC_ROUTE = GuiTermiusSyncRoute(

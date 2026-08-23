@@ -428,7 +428,10 @@ def openssh_command_without_windows_connection_sharing(
 
     if not command or not _is_native_windows():
         return list(command)
-    executable = os.path.basename(command[0]).lower()
+    # This path is a native Windows executable even when the behavior is
+    # validated from a non-Windows CI host. Use ntpath explicitly so a
+    # backslash-delimited path cannot bypass the OpenSSH hardening gate.
+    executable = ntpath.basename(command[0]).lower()
     if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:
         return list(command)
 

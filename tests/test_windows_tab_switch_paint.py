@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 def load_checker():
     path = Path(__file__).resolve().parents[1] / "scripts" / "check_windows_tab_switch_paint.py"
@@ -86,6 +88,7 @@ def test_localized_distance_rejects_small_centered_corruption() -> None:
 
 
 def test_native_image_distance_tolerates_only_scrollbar_sized_viewport_delta() -> None:
+    pytest.importorskip("PyQt6.QtGui")
     from PyQt6.QtGui import QColor, QImage
 
     checker = load_checker()

@@ -98,11 +98,11 @@ def _windows_command_line_to_argv(command: str, label: str) -> list[str]:
     """
 
     try:
-        win_dll: Any = getattr(ctypes, "WinDLL")
-        get_last_error: Any = getattr(ctypes, "get_last_error")
+        win_dll: Any = ctypes.__dict__["WinDLL"]
+        get_last_error: Any = ctypes.__dict__["get_last_error"]
         shell32 = win_dll("shell32", use_last_error=True)
         kernel32 = win_dll("kernel32", use_last_error=True)
-    except (AttributeError, OSError) as exc:
+    except (KeyError, OSError) as exc:
         raise CommandSafetyError(
             f"{label} cannot be parsed because the Windows command-line API is unavailable"
         ) from exc

@@ -279,6 +279,22 @@ def test_background_sftp_is_auth_gated_and_compact_status_is_visible(
     assert dock.property("mobaSftpRuntimeState") == "pending"
 
 
+def test_background_state_activation_is_parented_and_cancelled_on_shutdown(
+    gui_window,
+) -> None:
+    _app, _window, _panel, dock = _open_connected_panel(gui_window)
+
+    timer = dock.background_state_activation_timer
+    assert timer.parent() is dock
+    assert timer.isSingleShot() is True
+
+    _window.refresh_moba_background_after_terminal_start(_panel.terminal_pane)
+    assert timer.isActive() is True
+
+    dock.shutdown_runtime()
+    assert timer.isActive() is False
+
+
 def test_moba_special_tabs_stay_anchored_and_plus_acts_without_selection(
     gui_window,
     monkeypatch,

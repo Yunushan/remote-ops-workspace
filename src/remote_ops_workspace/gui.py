@@ -3369,6 +3369,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.background_auth_retry_timer.timeout.connect(
                 self.retry_background_authentication
             )
+            self.background_state_activation_timer = QTimer(self)
+            self.background_state_activation_timer.setSingleShot(True)
+            self.background_state_activation_timer.timeout.connect(
+                self.activate_initial_background_state
+            )
             self.monitoring_generation = 0
             self.monitoring_active_generation = 0
             self.monitoring_refresh_timer = QTimer(self)
@@ -3631,7 +3636,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addWidget(self.build_remote_monitoring(density))
             self.update_sftp_action_states()
             self.set_sftp_runtime_status("SFTP listing idle", state="idle")
-            QTimer.singleShot(0, self.activate_initial_background_state)
+            self.schedule_background_state_activation()
 
         @staticmethod
         def filtered_sftp_entries(entries):
@@ -3716,6 +3721,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not bool(self.property("mobaBackgroundSshWaitingForTerminalAuth")):
                 return
             self.activate_initial_background_state()
+
+        def schedule_background_state_activation(self, delay_ms: int = 0) -> None:
+            """Run background-state setup only while this dock is alive."""
+
+            if self.runtime_shutting_down:
+                return
+            self.background_state_activation_timer.start(max(0, int(delay_ms)))
 
         def activate_initial_background_state(self) -> None:
             if self.runtime_shutting_down:
@@ -4514,6 +4526,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_pending = None
             self.monitoring_refresh_timer.stop()
             self.background_auth_retry_timer.stop()
+            self.background_state_activation_timer.stop()
             self.sftp_refresh_timeout.stop()
             for process in (
                 self.monitoring_process,
@@ -19808,7 +19821,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             if profile.name != dock.state.profile_name:
                 return
-            QTimer.singleShot(1_500, dock.activate_initial_background_state)
+            if hasattr(dock, "schedule_background_state_activation"):
+                dock.schedule_background_state_activation(1_500)
 
         def handle_terminal_process_finished(
             self,

@@ -200,7 +200,7 @@ class QtConPtyProcess(QObject):
                     terminate=False,
                 )
             return
-        self._drain_output(session)
+        self._drain_output(session, force=True)
         self._finish_session(session)
 
     def _finish_session(self, session: WindowsConPtyProcess) -> None:
@@ -267,8 +267,8 @@ class QtConPtyProcess(QObject):
         )
         return True
 
-    def _drain_output(self, session: WindowsConPtyProcess) -> None:
-        if self._output_paused:
+    def _drain_output(self, session: WindowsConPtyProcess, *, force: bool = False) -> None:
+        if self._output_paused and not force:
             return
         payload = session.read_all()
         if not payload:

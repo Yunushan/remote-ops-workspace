@@ -51,6 +51,7 @@ class _LifecycleSession:
         output_eof: bool = False,
         shutdown_error: BaseException | None = None,
         eof_on_shutdown: bool = False,
+        output: bytes = b"",
     ) -> None:
         self.pid = 4242
         self.io_error = None
@@ -63,12 +64,15 @@ class _LifecycleSession:
         self.started = False
         self.shutdown_calls = 0
         self.close_calls: list[tuple[bool, float]] = []
+        self.output = bytearray(output)
 
     def start(self) -> None:
         self.started = True
 
     def read_all(self) -> bytes:
-        return b""
+        payload = bytes(self.output)
+        self.output.clear()
+        return payload
 
     def take_resize_error(self):
         return None
@@ -117,6 +121,27 @@ def test_stalled_output_eof_transitions_once_and_forces_bounded_cleanup(qt_app) 
 
     assert errors == [qt_core.QProcess.ProcessError.ReadError]
     assert finished == [(0, qt_core.QProcess.ExitStatus.CrashExit)]
+    assert session.close_calls == [(False, 0.5)]
+    assert process.state() == qt_core.QProcess.ProcessState.NotRunning
+    assert process._session is None
+
+
+def test_final_output_is_preserved_when_transport_is_paused(qt_app) -> None:
+    process = QtConPtyProcess()
+    session = _LifecycleSession(
+        poll_result=0,
+        output_eof=True,
+        output=b"retained terminal tail\r\n",
+    )
+    finished: list[tuple[int, object]] = []
+    process.finished.connect(lambda code, status: finished.append((code, status)))
+    _arm_lifecycle_session(process, session)
+    process.setOutputPaused(True)
+
+    process._poll_session()
+
+    assert process.readAllStandardOutput() == b"retained terminal tail\r\n"
+    assert finished == [(0, qt_core.QProcess.ExitStatus.NormalExit)]
     assert session.close_calls == [(False, 0.5)]
     assert process.state() == qt_core.QProcess.ProcessState.NotRunning
     assert process._session is None

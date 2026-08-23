@@ -431,6 +431,60 @@ def test_terminal_transport_backpressure_preserves_all_retained_bytes(
     pane.deleteLater()
 
 
+def test_live_terminal_transport_refills_without_another_ready_read_signal(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QProcess
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="live-bounded-source", command=[], source="test"),
+        autostart=False,
+    )
+    payload = b"live-retained-line\n" * 100
+
+    class _LiveBufferedProcess:
+        def __init__(self, data: bytes) -> None:
+            self.data = bytearray(data)
+
+        def readStandardOutput(self, max_bytes: int) -> bytes:  # noqa: N802
+            amount = min(max_bytes, len(self.data))
+            chunk = bytes(self.data[:amount])
+            del self.data[:amount]
+            return chunk
+
+        def readStandardError(self, _max_bytes: int) -> bytes:  # noqa: N802
+            return b""
+
+        def state(self):
+            return QProcess.ProcessState.Running
+
+    process = _LiveBufferedProcess(payload)
+    pane.process = process
+    pane.OUTPUT_READ_CHUNK_BYTES = 32
+    pane.OUTPUT_BUFFER_HIGH_WATER_BYTES = 256
+    pane.OUTPUT_BUFFER_LOW_WATER_BYTES = 64
+    pane.OUTPUT_RENDER_TURN_BUDGET_BYTES = 128
+
+    pane.read_stdout()
+    assert len(pane._process_output_buffer) == 256
+    assert len(process.data) == len(payload) - 256
+    assert pane.output.property("terminalOutputBackpressureAvailable") is False
+
+    for _turn in range(100):
+        if not process.data and not pane._process_output_buffer:
+            break
+        pane._process_output_timer.stop()
+        pane.flush_process_output()
+
+    assert not process.data
+    assert not pane._process_output_buffer
+    assert pane.output.toPlainText() == payload.decode()
+    pane.deleteLater()
+
+
 def test_terminal_tab_switch_freezes_before_current_page_changes(gui_window) -> None:
     from PyQt6.QtWidgets import QWidget
 

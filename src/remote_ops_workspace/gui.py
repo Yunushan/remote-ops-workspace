@@ -2353,6 +2353,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if stdout_empty and stderr_empty:
                 self._process_output_source_drained = True
 
+        def refill_process_output(self) -> None:
+            """Pull retained transport bytes whenever the GUI queue has capacity."""
+
+            if len(self._process_output_buffer) > self.OUTPUT_BUFFER_LOW_WATER_BYTES:
+                return
+            self.set_process_output_read_paused(False)
+            if self._process_output_source_end_pending:
+                self.pull_ended_process_output()
+                return
+            self.pull_process_output_channel("stdout")
+            if len(self._process_output_buffer) < self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                self.pull_process_output_channel("stderr")
+
         def schedule_process_output_flush(self, *, backlog: bool = False) -> None:
             delay_ms = 0 if backlog else 16
             if self._process_output_flush_scheduled:
@@ -2388,7 +2401,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def flush_process_output(self) -> None:
             self._process_output_flush_scheduled = False
             if not self._process_output_buffer:
-                self.pull_ended_process_output()
+                self.refill_process_output()
             if not self._process_output_buffer:
                 self.finish_deferred_process_output()
                 return
@@ -2409,8 +2422,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.append_decoded_process_output(payload)
             if len(self._process_output_buffer) <= self.OUTPUT_BUFFER_LOW_WATER_BYTES:
-                self.set_process_output_read_paused(False)
-                self.pull_ended_process_output()
+                self.refill_process_output()
             if self._process_output_buffer:
                 self.schedule_process_output_flush(backlog=True)
             else:
@@ -2445,8 +2457,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 self.append_decoded_process_output(payload)
             if len(self._process_output_buffer) <= self.OUTPUT_BUFFER_LOW_WATER_BYTES:
-                self.set_process_output_read_paused(False)
-                self.pull_ended_process_output()
+                self.refill_process_output()
             if self._process_output_buffer:
                 self.schedule_process_output_flush(backlog=True)
             else:

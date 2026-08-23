@@ -1492,6 +1492,15 @@ def prepare_moba_connected_reference(window: Any) -> list[str]:
             remote_path="/var/log",
             tab_status="CI CONNECTED",
         )
+        # The connected dock intentionally starts its background state through
+        # a parent-owned zero-delay timer.  Drain that queued transition before
+        # reading the live render contract, while keeping the interaction path
+        # free to finish its user-facing action before background status updates.
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            process_events(app)
     except (KeyError, LauncherError, ValueError) as exc:
         return [f"mobaxterm live GUI could not open connected reference profile: {exc}"]
     return []

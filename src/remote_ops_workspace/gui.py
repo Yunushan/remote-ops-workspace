@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import codecs
 import html
+import ntpath
 import os
 import posixpath
 import re
@@ -4577,8 +4578,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             command = list(self.state.monitoring_plan.command)
             if not command:
                 return command
-            executable = Path(command[0]).stem.lower()
-            if executable == "ssh":
+            executable = ntpath.basename(command[0]).lower()
+            if executable in {"ssh", "ssh.exe"}:
                 command = openssh_command_without_windows_connection_sharing(command)
                 command = openssh_command_with_overrides(
                     command,

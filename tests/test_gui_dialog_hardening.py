@@ -1198,9 +1198,14 @@ def test_visible_moba_line_fallback_completes_a_real_pipe_readline(
             pane.process.waitForFinished(1_000)
 
 
-def test_moba_ssh_terminal_starts_the_configured_process(gui_window) -> None:
+def test_moba_ssh_terminal_starts_the_configured_process(
+    gui_window,
+    monkeypatch,
+) -> None:
+    import remote_ops_workspace.terminal as terminal_module
     from remote_ops_workspace.terminal import TerminalPanePlan
 
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     _app, window = gui_window
     profile = Profile(
         name="ssh-start",
@@ -1661,7 +1666,9 @@ def test_moba_sftp_file_table_context_menu_routes_safe_actions(gui_window) -> No
 
 def test_moba_monitoring_controls_change_runtime_and_request_follow_refresh(
     gui_window,
+    monkeypatch,
 ) -> None:
+    monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
     app, window = gui_window
     _panel, dock = _open_moba_interaction_test_dock(
         window,
@@ -1722,9 +1729,13 @@ def test_moba_monitoring_controls_change_runtime_and_request_follow_refresh(
 
 def test_moba_monitoring_forces_trusted_noninteractive_ssh_without_mutating_plan(
     gui_window,
+    monkeypatch,
 ) -> None:
     from PyQt6.QtCore import QProcess
 
+    import remote_ops_workspace.terminal as terminal_module
+
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     _app, window = gui_window
     _panel, dock = _open_moba_interaction_test_dock(
         window,

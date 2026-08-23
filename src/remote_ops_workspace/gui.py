@@ -19815,14 +19815,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def refresh_moba_background_after_terminal_start(self, pane: TerminalPane) -> None:
             """Give an interactive SSH prompt time to authenticate before reuse."""
 
-            dock = self.moba_connected_dock
-            profile = getattr(pane, "profile", None)
-            if dock is None or profile is None:
+            try:
+                dock = self.moba_connected_dock
+                profile = getattr(pane, "profile", None)
+                if dock is None or profile is None:
+                    return
+                if profile.name != dock.state.profile_name:
+                    return
+                schedule_activation = getattr(
+                    dock,
+                    "schedule_background_state_activation",
+                    None,
+                )
+            except RuntimeError:
+                # A tab replacement can delete the dock between a process
+                # signal and this deferred refresh callback.
                 return
-            if profile.name != dock.state.profile_name:
-                return
-            if hasattr(dock, "schedule_background_state_activation"):
-                dock.schedule_background_state_activation(1_500)
+            if callable(schedule_activation):
+                try:
+                    schedule_activation(1_500)
+                except RuntimeError:
+                    return
 
         def handle_terminal_process_finished(
             self,

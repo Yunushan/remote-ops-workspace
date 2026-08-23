@@ -43,7 +43,7 @@ def test_windows_mux_rewrite_stops_at_destination_and_consumes_option_values(
     monkeypatch,
     tail: list[str],
 ) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
 
     adapted = openssh_command_without_windows_connection_sharing(["ssh.exe", *tail])
 
@@ -60,7 +60,7 @@ def test_windows_mux_rewrite_stops_at_destination_and_consumes_option_values(
 
 
 def test_windows_proxy_jump_separates_user_host_ipv6_and_port(monkeypatch) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     command = [
         "ssh.exe",
         "-J",
@@ -98,7 +98,7 @@ def test_windows_proxy_jump_separates_user_host_ipv6_and_port(monkeypatch) -> No
 
 
 def test_windows_proxy_jump_rewrite_ignores_remote_j_option(monkeypatch) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     command = ["ssh.exe", "target.example", "-J", "remote-argument"]
 
     adapted = openssh_command_without_windows_connection_sharing(command)

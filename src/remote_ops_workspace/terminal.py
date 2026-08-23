@@ -20,6 +20,10 @@ from .launcher import build_launch_plan
 from .models import Profile
 
 
+def _is_native_windows() -> bool:
+    return os.name == "nt"
+
+
 @dataclass(slots=True)
 class TerminalPanePlan:
     title: str
@@ -422,7 +426,7 @@ def openssh_command_without_windows_connection_sharing(
     options on Windows and preserve every authentication and security option.
     """
 
-    if not command or os.name != "nt":
+    if not command or not _is_native_windows():
         return list(command)
     executable = os.path.basename(command[0]).lower()
     if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:
@@ -550,7 +554,7 @@ def ssh_control_path_for_profile(profile: Profile) -> str:
 
     if profile.protocol.lower().strip() not in {"ssh", "sftp", "ssh1", "sshv1"}:
         return ""
-    if os.name == "nt":
+    if _is_native_windows():
         return ""
     normalized = {
         str(key).strip().lower(): str(value).strip()
@@ -587,7 +591,7 @@ def ssh_control_path_for_profile(profile: Profile) -> str:
     directory = Path(tempfile.gettempdir()) / "remote-ops-workspace" / "ssh-control"
     try:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if os.name != "nt":
+        if not _is_native_windows():
             directory.chmod(0o700)
     except OSError:
         return ""
@@ -608,7 +612,7 @@ def ssh_command_with_control_path(
     password prompt of their own.
     """
 
-    if os.name == "nt":
+    if _is_native_windows():
         return openssh_command_without_windows_connection_sharing(command)
     if not command or not control_path:
         return list(command)

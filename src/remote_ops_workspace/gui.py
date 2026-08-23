@@ -833,11 +833,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "terminalRemoteCursorTrailingCells",
                 self._remote_cursor_trailing_cells,
             )
-            self.viewport().update()
+            viewport = self.viewport()
+            if viewport is not None:
+                viewport.update()
 
         def paintEvent(self, event) -> None:  # noqa: N802
             super().paintEvent(event)
             if not self._remote_cursor_visible or self._remote_cursor_position is None:
+                return
+            viewport = self.viewport()
+            if viewport is None:
                 return
             document = self.document()
             if document is None:
@@ -856,11 +861,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self._remote_cursor_trailing_cells * cell_width,
                     0,
                 )
-            if not rectangle.intersects(self.viewport().rect()):
+            if not rectangle.intersects(viewport.rect()):
                 return
             color = self.palette().color(QPalette.ColorRole.Text)
             color.setAlpha(230)
-            painter = QPainter(self.viewport())
+            painter = QPainter(viewport)
             try:
                 cursor_width = max(2, round(self.devicePixelRatioF()))
                 painter.fillRect(

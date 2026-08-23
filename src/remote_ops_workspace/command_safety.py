@@ -5,6 +5,7 @@ import os
 import shlex
 from collections.abc import Iterable
 from ctypes import wintypes
+from typing import Any
 from urllib.parse import urlparse
 
 
@@ -97,8 +98,10 @@ def _windows_command_line_to_argv(command: str, label: str) -> list[str]:
     """
 
     try:
-        shell32 = ctypes.WinDLL("shell32", use_last_error=True)
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        win_dll: Any = getattr(ctypes, "WinDLL")
+        get_last_error: Any = getattr(ctypes, "get_last_error")
+        shell32 = win_dll("shell32", use_last_error=True)
+        kernel32 = win_dll("kernel32", use_last_error=True)
     except (AttributeError, OSError) as exc:
         raise CommandSafetyError(
             f"{label} cannot be parsed because the Windows command-line API is unavailable"
@@ -114,7 +117,7 @@ def _windows_command_line_to_argv(command: str, label: str) -> list[str]:
     argument_count = ctypes.c_int()
     parsed = command_line_to_argv(command, ctypes.byref(argument_count))
     if not parsed:
-        error_code = ctypes.get_last_error()
+        error_code = get_last_error()
         raise CommandSafetyError(
             f"{label} is not a valid Windows command line (error {error_code})"
         )

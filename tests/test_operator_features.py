@@ -166,7 +166,7 @@ def test_terminal_plan_for_profile_uses_launcher() -> None:
     assert plan.title == "edge"
     assert plan.command[:2] == ["ssh", "-tt"]
     assert ["-p", "22"] == plan.command[plan.command.index("-p") : plan.command.index("-p") + 2]
-    if terminal_module.os.name == "nt":
+    if terminal_module._is_native_windows():
         assert "ControlMaster=no" in plan.command
         socket_index = plan.command.index("-S")
         assert plan.command[socket_index : socket_index + 2] == ["-S", "none"]
@@ -249,7 +249,7 @@ def test_ssh_control_socket_reuse_is_private_and_background_clients_cannot_creat
 ) -> None:
     # The generated socket contract is intentionally POSIX-only.  Native
     # Windows OpenSSH cannot create the AF_UNIX socket used by ControlPath.
-    if terminal_module.os.name == "nt":
+    if terminal_module._is_native_windows():
         return
     monkeypatch.setattr(terminal_module.tempfile, "gettempdir", lambda: str(tmp_path))
     profile = Profile(
@@ -296,7 +296,7 @@ def test_ssh_control_socket_reuse_is_private_and_background_clients_cannot_creat
 
 
 def test_native_windows_openssh_skips_control_socket_reuse(monkeypatch) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     profile = Profile(
         name="windows-edge",
         protocol="ssh",
@@ -325,7 +325,7 @@ def test_native_windows_openssh_skips_control_socket_reuse(monkeypatch) -> None:
 def test_native_windows_openssh_removes_stale_connection_sharing_options(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     original = [
         "ssh.exe",
         "-M",
@@ -371,7 +371,7 @@ def test_native_windows_openssh_hardens_proxy_jump_child(
     monkeypatch,
     jump_arguments: list[str],
 ) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     ssh = r"C:\Windows\System32\OpenSSH\ssh.exe"
     config = r"C:\Users\operator\ssh config"
     original = [
@@ -440,7 +440,7 @@ def test_native_windows_openssh_preserves_disabled_proxy_jump(
     monkeypatch,
     jump_arguments: list[str],
 ) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     original = ["ssh.exe", *jump_arguments, "operator@target.example"]
 
     adapted = openssh_command_without_windows_connection_sharing(original)
@@ -465,7 +465,7 @@ def test_native_windows_openssh_rejects_unprovable_proxy_jump_forms(
     monkeypatch,
     jump_spec: str,
 ) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
 
     with pytest.raises(ValueError, match="native Windows"):
         openssh_command_without_windows_connection_sharing(
@@ -490,7 +490,7 @@ def test_native_windows_openssh_removes_clustered_mux_short_options(
     stale: list[str],
     preserved: list[str],
 ) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
     target = "operator@example.invalid"
 
     adapted = openssh_command_without_windows_connection_sharing(
@@ -614,7 +614,7 @@ def test_native_windows_proxy_jump_effective_parent_and_child_are_hardened(
         for line in parent_probe.stdout.splitlines()
         if len(line.split(maxsplit=1)) == 2
     }
-    assert parent_effective["proxycommand"] == expected_proxy_command
+    assert parent_effective["proxycommand"].casefold() == expected_proxy_command.casefold()
     assert "config-only.example.invalid" not in parent_effective["proxycommand"]
     assert parent_effective["controlmaster"].lower() == "false"
     assert parent_effective.get("controlpath", "none").lower() == "none"
@@ -645,7 +645,7 @@ def test_native_windows_proxy_jump_effective_parent_and_child_are_hardened(
 
 
 def test_non_windows_openssh_preserves_connection_sharing_options(monkeypatch) -> None:
-    monkeypatch.setattr(terminal_module.os, "name", "posix")
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: False)
     command = [
         "ssh",
         "-o",

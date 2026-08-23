@@ -47,6 +47,7 @@ def _open_connected_panel(gui_window):
     app.processEvents()
     dock = window.moba_connected_dock
     assert dock is not None
+    assert dock.property("mobaBackgroundSshAuthAvailable") is False
     dock.monitoring_control_widgets["remote-monitoring"].setChecked(False)
     app.processEvents()
     return app, window, panel, dock

@@ -3729,6 +3729,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.background_state_activation_timer.start(max(0, int(delay_ms)))
 
+        def initialize_background_state(self) -> None:
+            """Initialize auth and monitoring after the dock has a live window parent."""
+
+            if self.runtime_shutting_down:
+                return
+            self.background_state_activation_timer.stop()
+            self.activate_initial_background_state()
+
         def activate_initial_background_state(self) -> None:
             if self.runtime_shutting_down:
                 return
@@ -10035,6 +10043,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_connected_dock = MobaSftpDock(state)
             self.moba_left_stack.addWidget(self.moba_connected_dock)
             self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
+            self.moba_connected_dock.initialize_background_state()
             self.set_moba_quick_connect_connected_idle()
             self.set_moba_rail_active("sftp")
             title = moba_connected_window_title(state)

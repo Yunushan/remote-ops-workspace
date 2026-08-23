@@ -668,6 +668,30 @@ def test_ci_workflow_requires_python_315_linux_and_windows_arm64_smoke_rows() ->
         )
 
 
+def test_ci_workflow_requires_windows_arm64_security_source_build_in_both_jobs() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    step = """      - name: Prepare pinned Windows ARM64 security source build
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        shell: powershell
+        run: .\\scripts\\install_windows_arm64_security.ps1
+"""
+
+    assert source.count(step) == 2
+    without_first = source.replace(step, "", 1)
+    without_both = source.replace(step, "")
+
+    assert any(
+        "ci test job missing maintained Windows ARM64 security source-build step" in error
+        for error in checker.check_ci_workflow(without_first)
+    )
+    assert any(
+        "ci python315-optional-dependencies job missing maintained Windows ARM64 "
+        "security source-build step" in error
+        for error in checker.check_ci_workflow(without_both)
+    )
+
+
 def test_ci_workflow_requires_python_315_prerelease_resolution() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(

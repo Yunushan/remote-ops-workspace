@@ -219,6 +219,20 @@ def check_test_job(workflow: str) -> list[str]:
             errors.append(f"ci test job missing {label}: {snippet}")
     if '".[security,dev]"' not in block:
         errors.append("ci test job must install security and dev extras")
+    windows_arm_security_snippets = {
+        "Prepare pinned Windows ARM64 security source build": (
+            "maintained Windows ARM64 security source-build step"
+        ),
+        "runner.os == 'Windows' && runner.arch == 'ARM64'": (
+            "native Windows ARM64 source-build condition"
+        ),
+        r".\scripts\install_windows_arm64_security.ps1": (
+            "pinned Windows ARM64 OpenSSL and cryptography installer"
+        ),
+    }
+    for snippet, label in windows_arm_security_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci test job missing {label}: {snippet}")
     if "python -m pytest -q" not in block:
         errors.append("ci test job must run pytest directly")
     if "python scripts/verify.py --lint" in block:
@@ -273,6 +287,15 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
         "libgl1": "Linux Qt OpenGL runtime dependency",
         "libxkbcommon-x11-0": "Linux Qt xkbcommon runtime dependency",
         "libxcb-cursor0": "Linux Qt cursor runtime dependency",
+        "Prepare pinned Windows ARM64 security source build": (
+            "maintained Windows ARM64 security source-build step"
+        ),
+        "runner.os == 'Windows' && runner.arch == 'ARM64'": (
+            "native Windows ARM64 source-build condition"
+        ),
+        r".\scripts\install_windows_arm64_security.ps1": (
+            "pinned Windows ARM64 OpenSSL and cryptography installer"
+        ),
         'python -m pip install -e ".[desktop,security,package,dev]"': (
             "complete Python 3.15 optional dependency installation"
         ),

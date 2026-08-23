@@ -160,6 +160,10 @@ jobs:
       - name: Purge pip cache
         run: python -m pip cache purge
         continue-on-error: true
+      - name: Prepare pinned Windows ARM64 security source build
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        shell: powershell
+        run: .\scripts\install_windows_arm64_security.ps1
       - name: Install Intel macOS compatibility dependencies
         if: runner.os == 'macOS' && runner.arch == 'X64'
         env:
@@ -223,6 +227,10 @@ jobs:
             libgl1 \
             libxkbcommon-x11-0 \
             libxcb-cursor0
+      - name: Prepare pinned Windows ARM64 security source build
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        shell: powershell
+        run: .\scripts\install_windows_arm64_security.ps1
       - name: Install complete Python 3.15 verification environment
         run: python -m pip install -e ".[desktop,security,package,dev]"
       - name: Install Python 3.15 native Windows SSH evidence dependency

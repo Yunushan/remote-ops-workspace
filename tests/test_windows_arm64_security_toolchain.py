@@ -27,4 +27,8 @@ def test_windows_arm64_security_installer_uses_recorded_modern_toolchain() -> No
     assert "requirements-release-compat.txt" not in script
     assert "legacy-security" not in script
     assert "ExpectedCryptography" in script
+    assert "ROW_EXPECTED_CRYPTOGRAPHY" in script
+    assert "ROW_EXPECTED_OPENSSL" in script
+    assert "os.environ['ROW_EXPECTED_CRYPTOGRAPHY']" in script
+    assert '$Verify = @"' not in script
     assert str(cryptography["version"]) not in script

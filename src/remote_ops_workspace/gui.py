@@ -225,6 +225,10 @@ from .terminal_highlighting import (
     terminal_syntax_rule_keys,
 )
 
+# Qt requires QApplication to outlive every widget. Keep a process-wide Python
+# reference so short-lived windows and test fixtures cannot collect its wrapper.
+_QT_APPLICATION_REF: object | None = None
+
 
 class _ByteChunkQueue:
     """FIFO bytes without repeated front-deletion copies.
@@ -540,6 +544,8 @@ def set_windows_taskbar_app_id() -> None:
 
 
 def create_main_window(argv: list[str] | None = None, *, show: bool = False):
+    global _QT_APPLICATION_REF
+
     try:
         from PyQt6.QtCore import (
             QBuffer,
@@ -19964,6 +19970,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
         )
         app = QApplication(argv or sys.argv)
+    _QT_APPLICATION_REF = app
     application_font = app.font()
     application_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
     app.setFont(application_font)

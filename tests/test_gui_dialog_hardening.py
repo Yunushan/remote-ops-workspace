@@ -35,6 +35,14 @@ def test_main_window_and_application_have_a_visible_product_icon(gui_window) -> 
     assert not window.windowIcon().isNull()
 
 
+def test_main_window_retains_the_process_qapplication(gui_window) -> None:
+    from remote_ops_workspace import gui
+
+    app, _window = gui_window
+
+    assert gui._QT_APPLICATION_REF is app
+
+
 def test_product_reference_surfaces_keep_live_terminal_and_sftp_routes(gui_window) -> None:
     """Exercise the product-document wrappers used by the live render gate."""
     from PyQt6.QtWidgets import QTreeWidget, QWidget

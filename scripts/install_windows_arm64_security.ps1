@@ -74,13 +74,16 @@ if ($LASTEXITCODE -ne 0) { throw "pinned cryptography build dependency installat
 python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint $ConstraintsPath "cryptography==$ExpectedCryptography"
 if ($LASTEXITCODE -ne 0) { throw "maintained Windows ARM64 cryptography source build failed" }
 
-$Verify = @"
+$env:ROW_EXPECTED_CRYPTOGRAPHY = $ExpectedCryptography
+$env:ROW_EXPECTED_OPENSSL = $ExpectedOpenSsl
+$Verify = @'
+import os
 import cryptography
 from cryptography.hazmat.backends.openssl.backend import backend
 actual_openssl = backend.openssl_version_text()
-assert cryptography.__version__ == "$ExpectedCryptography", cryptography.__version__
-assert actual_openssl.startswith("$ExpectedOpenSsl"), actual_openssl
-print(f"cryptography={cryptography.__version__} openssl={actual_openssl}")
-"@
+assert cryptography.__version__ == os.environ['ROW_EXPECTED_CRYPTOGRAPHY'], cryptography.__version__
+assert actual_openssl.startswith(os.environ['ROW_EXPECTED_OPENSSL']), actual_openssl
+print(f'cryptography={cryptography.__version__} openssl={actual_openssl}')
+'@
 python -c $Verify
 if ($LASTEXITCODE -ne 0) { throw "Windows ARM64 cryptography runtime verification failed" }

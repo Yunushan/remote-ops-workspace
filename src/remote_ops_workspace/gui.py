@@ -3722,6 +3722,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.activate_initial_background_state()
 
+        def initialize_background_state(self) -> None:
+            """Publish auth/runtime state before deferred SSH work begins."""
+
+            if self.runtime_shutting_down:
+                return
+            self.background_state_activation_timer.stop()
+            self._apply_initial_background_state(start_runtime=False)
+            self.schedule_background_state_activation()
+
         def schedule_background_state_activation(self, delay_ms: int = 0) -> None:
             """Run background-state setup only while this dock is alive."""
 
@@ -3730,6 +3739,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.background_state_activation_timer.start(max(0, int(delay_ms)))
 
         def activate_initial_background_state(self) -> None:
+            self._apply_initial_background_state(start_runtime=True)
+
+        def _apply_initial_background_state(self, *, start_runtime: bool) -> None:
             if self.runtime_shutting_down:
                 return
             profile = self.profile_for_sftp_action()
@@ -3747,6 +3759,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     widget.setProperty("mobaBackgroundSshAuthDetail", detail)
             if available:
                 self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", False)
+                self.set_sftp_runtime_status(
+                    f"Initial SFTP refresh pending ({detail})",
+                    state="pending",
+                )
+                if not start_runtime:
+                    control = self.monitoring_control_widgets.get("remote-monitoring")
+                    self.set_remote_monitoring_runtime(
+                        bool(control is not None and control.isChecked()),
+                        immediate=False,
+                        start_periodic=False,
+                    )
+                    return
                 restored_monitoring = False
                 control = self.monitoring_control_widgets.get("remote-monitoring")
                 if (
@@ -3758,10 +3782,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     restored_monitoring = True
                     self.setProperty("mobaBackgroundSshAuthGateForcedMonitoringOff", False)
                     control.setChecked(True)
-                self.set_sftp_runtime_status(
-                    f"Initial SFTP refresh pending ({detail})",
-                    state="pending",
-                )
                 self.request_sftp_refresh(reason="initial-key-agent-auth")
                 if not restored_monitoring:
                     self.activate_initial_monitoring_state()
@@ -4564,6 +4584,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             enabled: bool,
             *,
             immediate: bool,
+            start_periodic: bool = True,
         ) -> None:
             active = bool(enabled)
             self.set_remote_monitoring_expanded(active)
@@ -4582,7 +4603,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if refresh_button is not None:
                 refresh_button.setEnabled(active)
             if active:
-                if not self.monitoring_refresh_timer.isActive():
+                if start_periodic and not self.monitoring_refresh_timer.isActive():
                     self.monitoring_refresh_timer.start()
                 self.set_remote_monitoring_status(
                     "Monitoring on · waiting for live data",
@@ -10035,6 +10056,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_connected_dock = MobaSftpDock(state)
             self.moba_left_stack.addWidget(self.moba_connected_dock)
             self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
+            self.moba_connected_dock.initialize_background_state()
             self.set_moba_quick_connect_connected_idle()
             self.set_moba_rail_active("sftp")
             title = moba_connected_window_title(state)

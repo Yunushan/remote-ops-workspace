@@ -7,7 +7,7 @@
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
 ![release](https://img.shields.io/badge/release-v1.0.20-blue)
 ![license](https://img.shields.io/badge/license-0BSD-blue)
-![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
+![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.15-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
 ![targets](https://img.shields.io/badge/targets-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20BSD%20%7C%20Solaris%20%7C%20Android%20%7C%20iOS%20%7C%20Web-green)
 ![protocols](https://img.shields.io/badge/protocols-SSH%20%7C%20RDP%20%7C%20VNC%20%7C%20SFTP%20%7C%20Mosh%20%7C%20Telnet%20%7C%20SPICE%20%7C%20X2Go-yellow)
@@ -62,6 +62,25 @@ python scripts/check_real_gui_render.py
 ---
 
 ## Quick Start
+
+Project metadata accepts standard CPython 3.10 through 3.15 for source-host
+installs. The stable `Python 3.15 readiness` context covers hosted Linux,
+Windows and macOS on modern x64/ARM64 architectures. The separate
+`Native Windows readiness` context covers the native Windows ConPTY/OpenSSH,
+GUI render, interaction and tab-paint evidence job. The live `main` branch rule
+must require both contexts for merge blocking. Release preflight also requires
+both successful jobs from the same push-CI run for the exact tagged source SHA.
+The Python 3.15 Windows x64 and ARM64 rows also rerun the real native
+OpenSSH/ConPTY loopback proofs with skipping disabled and retain their JSON/JUnit
+evidence.
+Only completed workflow runs and their retained evidence artifacts prove a
+revision.
+Protected 32-bit and other platform-specific rows keep their narrower
+evidence-backed boundaries. The 3.15 matrix follows the current upstream
+release candidate until Python 3.15 reaches GA, and that compatibility evidence
+does not turn the preview interpreter into a production recommendation. See
+[`docs/PYTHON_SUPPORT.md`](docs/PYTHON_SUPPORT.md) for the exact boundary and
+evidence requirements.
 
 ```bash
 git clone https://github.com/Yunushan/remote-ops-workspace.git
@@ -499,6 +518,8 @@ the complete six-preset renderer/artifact validator and the interaction gate. It
 uploads `gui-real-render-windows` and `gui-interactions-windows` independently
 from the Linux `gui-real-render` and `gui-interactions-linux-offscreen`
 artifacts. `python scripts/check_ci_workflow.py` keeps those gates from drifting.
+That implementation job feeds the stable `Native Windows readiness` aggregate;
+repository governance and exact-SHA release preflight require that aggregate.
 
 Run the same live interaction gate locally with `make gui-interactions`. It
 covers terminal input, context menus, selection/copy/paste, monitoring

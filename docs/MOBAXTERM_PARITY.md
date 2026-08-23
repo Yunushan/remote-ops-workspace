@@ -26,12 +26,26 @@ similarity cannot close the strict parity articles below. Real shared-session
 SSH/SFTP behavior, a full VT screen implementation, packaged auxiliary
 runtimes, and accepted native evidence remain separate requirements.
 
-Accepted release evidence for the strict articles below is tracked in
+Accepted release evidence for the eight strict articles below is tracked in
 `configs/mobaxterm_parity_evidence.json` and validated by
 `python scripts/check_mobaxterm_parity_evidence.py`. The default check keeps
 the registry schema and any accepted records honest while leaving missing
 articles visible; `--require-complete` is the hard gate for claiming every
 article has accepted product-depth evidence.
+
+Evidence creation and acceptance are deliberately separate. Run
+`python scripts/make_mobaxterm_parity_evidence_record.py` to validate an
+article bundle and emit a `status=candidate` record; that command has no
+registry-append path and cannot label its own output accepted. After a human
+review, download every referenced asset from the published GitHub release and
+run `python scripts/finalize_mobaxterm_parity_evidence_record.py` with the exact
+repository, resolved tag/source SHA, Actions run URL and attempt, review URL,
+reviewer and downloaded asset paths. Finalization re-hashes those published
+bytes, requires them to match the candidate artifact hashes, and only then can
+write or append an accepted schema-v2 record. The registry checker fails closed
+on any repository/tag/SHA/run-attempt/reviewer/release-byte provenance drift.
+These fields do not replace the external review, exact GitHub run and published
+release; they record and bind those externally obtained facts.
 
 ## Implemented or adapter-backed families
 
@@ -233,6 +247,40 @@ article has accepted product-depth evidence.
    parity requires a shared authenticated SSH transport (or equivalently
    controlled multiplexing), structured connection state, and a real terminal
    grid with alternate-screen, cursor, color, mode and mouse semantics.
+   The strict evidence catalog tracks this article as
+   `shared-authenticated-transport-terminal-grid`. Its dedicated validator is
+   `python scripts/check_moba_transport_terminal_evidence.py --evidence
+   <evidence.json> --assets-dir <artifact-dir>`. The validator fails closed
+   unless six separate SHA-bound proof records share the exact release target,
+   session/transport identity, source head SHA, GitHub Actions run URL and run
+   attempt. Those records must prove one authenticated transport for terminal,
+   SFTP and monitoring, structured connection transitions, a real cell grid,
+   alternate-screen restoration, cursor/color/mode/mouse semantics and a real
+   non-loopback connected session. Synthetic, fixture, simulated or transcript
+   fallback captures are rejected. This article still remains unaccepted: a
+   validator is only a contract, and no real reviewed connected-release record
+   has been added to `configs/mobaxterm_parity_evidence.json`.
+
+### Article 8 evidence contract
+
+The top-level evidence schema is
+`row.moba-transport-terminal.release-evidence.v1`. It records the release
+target; exact GitHub `owner/repository`, `vX.Y.Z` tag, source head SHA, Actions
+run URL/attempt and UTC capture time; and one non-loopback SSH session ID,
+transport ID and host-key SHA-256. `synthetic`, `fixture` and `simulation` must
+all be explicitly `false`.
+
+Its `proofs` object must contain exactly these six `file` plus `sha256`
+references: `shared_transport`, `connection_state`, `terminal_grid`,
+`alternate_screen`, `terminal_modes` and `connected_session`. Every referenced
+JSON file must remain under the evidence root without symlink traversal, match
+its dedicated `row.moba-transport-terminal.*-proof.v1` schema, and repeat the
+same release/session/transport/source identity. A digest-only assertion is not
+enough: the referenced proof bytes are re-hashed by the validator. The
+candidate generator also requires the validated repository, tag and target to
+match its release asset URLs and command arguments; the accepted-record checker
+then requires the final release provenance to match the validated source
+identity.
 
 The active parity target is not complete until every article above has a real
 implementation, tests, accepted release evidence in

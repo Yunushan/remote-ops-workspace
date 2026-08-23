@@ -20,9 +20,29 @@ def test_optional_dependency_declarations_match_expected_extras() -> None:
     checker = _load_optional_checker()
 
     assert checker.check_declared_extras() == []
+    assert checker.EXPECTED_EXTRA_SNIPPETS["package"] == (
+        '"build>=1.2"',
+        '"pyinstaller>=6.21"',
+    )
     assert checker.OPTIONAL_MODULES["desktop"] == ("PyQt6",)
     assert checker.OPTIONAL_MODULES["security"] == ("cryptography", "truststore")
     assert checker.OPTIONAL_MODULES["package"] == ("build", "PyInstaller")
+
+
+def test_optional_dependency_checker_rejects_pre_python315_pyinstaller_floor() -> None:
+    checker = _load_optional_checker()
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8").replace(
+        '"pyinstaller>=6.21"',
+        '"pyinstaller>=6.0"',
+        1,
+    )
+
+    errors = checker.check_declared_extras(pyproject)
+
+    assert (
+        'pyproject.toml optional extra package missing dependency "pyinstaller>=6.21"'
+        in errors
+    )
 
 
 def test_optional_desktop_smoke_uses_bounded_render_subprocess(monkeypatch, tmp_path: Path) -> None:

@@ -7,12 +7,12 @@ EXTRAS="${ROW_EXTRAS:-desktop,security}"
 echo "Remote Ops Workspace installer"
 
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
-  echo "python3 not found. Install Python 3.10+ first." >&2
+  echo "python3 not found. Install Python 3.10 through 3.15 first." >&2
   exit 1
 fi
 
-"$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' || {
-  echo "Python 3.10+ is required." >&2
+"$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if (3, 10) <= sys.version_info < (3, 16) else 1)' || {
+  echo "Python 3.10 through 3.15 is required." >&2
   exit 1
 }
 

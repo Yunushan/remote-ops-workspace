@@ -506,7 +506,12 @@ def test_ci_workflow_requires_durable_android_avd_home_and_creation_assertion() 
 def test_ci_workflow_requires_bounded_android_emulator_boot_diagnostics() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    workflow_without_step_timeout = workflow.replace("        timeout-minutes: 8\n", "", 1)
+    workflow_without_step_timeout = workflow.replace(
+        "      - name: Boot Android emulator\n"
+        "        timeout-minutes: 8\n",
+        "      - name: Boot Android emulator\n",
+        1,
+    )
     workflow_without_avd_listing = workflow.replace("          emulator -list-avds\n", "")
     workflow_without_preboot_assertion = workflow.replace(
         '            echo "::error::Android AVD row-api-${{ matrix.api-level }} missing before emulator boot; ANDROID_AVD_HOME=$ANDROID_AVD_HOME"\n',
@@ -633,7 +638,7 @@ def test_ci_workflow_requires_current_macos_intel_and_apple_silicon_smoke_runner
     source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     for runner in ("macos-26-intel", "macos-14", "macos-15", "macos-26"):
-        for version in ("3.12", "3.13", "3.14"):
+        for version in ("3.12", "3.13", "3.14", "3.15"):
             workflow = source.replace(
                 f'          - os: {runner}\n            python-version: "{version}"\n',
                 "",
@@ -642,6 +647,314 @@ def test_ci_workflow_requires_current_macos_intel_and_apple_silicon_smoke_runner
             errors = checker.check_ci_workflow(workflow)
 
             assert f"ci test matrix missing macOS smoke row: {runner} Python {version}" in errors
+
+
+def test_ci_workflow_requires_python_315_linux_and_windows_arm64_smoke_rows() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    for runner in ("ubuntu-24.04-arm", "windows-11-arm"):
+        workflow = source.replace(
+            f'          - os: {runner}\n            python-version: "3.15"\n',
+            "",
+            1,
+        )
+
+        errors = checker.check_ci_workflow(workflow)
+
+        assert (
+            f"ci test matrix missing modern ARM64 smoke row: {runner} Python 3.15"
+            in errors
+        )
+
+
+def test_ci_workflow_requires_python_315_prerelease_resolution() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        "          allow-prereleases: true\n",
+        "",
+    )
+
+    errors = checker.check_ci_workflow(workflow)
+
+    assert (
+        "ci test job must allow the Python 3.15 prerelease until upstream GA is available"
+        in errors
+    )
+
+
+def test_ci_workflow_requires_blocking_python_315_optional_dependency_job() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    missing_job = source.replace(
+        "  python315-optional-dependencies:",
+        "  python315_optional_dependencies_disabled:",
+    )
+    advisory_job = source.replace(
+        "  python315-optional-dependencies:\n",
+        "  python315-optional-dependencies:\n    continue-on-error: true\n",
+    )
+
+    assert (
+        "ci workflow missing python315-optional-dependencies job for Python 3.15 "
+        "optional dependency and distribution verification"
+        in checker.check_ci_workflow(missing_job)
+    )
+    assert (
+        "ci python315-optional-dependencies job must remain release-blocking"
+        in checker.check_ci_workflow(advisory_job)
+    )
+
+
+def test_ci_workflow_requires_python_315_qtwidgets_startup_and_real_gui_evidence() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    without_qapplication = source.replace("app = QApplication([])", "app = object()")
+    without_widget_paint = source.replace(
+        "assert not label.grab().isNull()",
+        "assert label.isVisible()",
+    )
+    without_real_renderer = source.replace(
+        "python scripts/check_real_gui_render.py --out-dir artifacts/python315-gui",
+        "python scripts/check_real_gui_render.py --preset native --out-dir artifacts/python315-gui",
+    )
+    without_gui_artifact = source.replace(
+        "name: python315-gui-${{ matrix.os }}",
+        "name: python315-imports-${{ matrix.os }}",
+    )
+    without_native_render_platform = source.replace(
+        "          QT_QPA_PLATFORM: ${{ matrix.qt_platform }}\n",
+        "",
+    )
+    without_macos_offscreen = source.replace(
+        "          - os: macos-15-intel\n"
+        "            # Hosted macOS is not guaranteed to expose a logged-in WindowServer.\n"
+        "            # Keep the full application render deterministic and headless there.\n"
+        '            qt_platform: "offscreen"',
+        "          - os: macos-15-intel\n"
+        '            qt_platform: "cocoa"',
+    )
+
+    assert any(
+        "real Python 3.15 QApplication startup" in error
+        for error in checker.check_ci_workflow(without_qapplication)
+    )
+    assert any(
+        "Python 3.15 Qt widget paint assertion" in error
+        for error in checker.check_ci_workflow(without_widget_paint)
+    )
+    assert any(
+        "Python 3.15 all-preset application GUI renderer" in error
+        for error in checker.check_ci_workflow(without_real_renderer)
+    )
+    assert (
+        "ci python315-optional-dependencies job must render the default complete preset set"
+        in checker.check_ci_workflow(without_real_renderer)
+    )
+    assert any(
+        "per-host Python 3.15 GUI artifact" in error
+        for error in checker.check_ci_workflow(without_gui_artifact)
+    )
+    assert any(
+        "host-native Python 3.15 full GUI render override" in error
+        for error in checker.check_ci_workflow(without_native_render_platform)
+    )
+    assert any(
+        "hosted macOS offscreen real-GUI render platform" in error
+        for error in checker.check_ci_workflow(without_macos_offscreen)
+    )
+
+
+def test_ci_workflow_requires_comprehensive_python_315_dependency_and_package_evidence() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    mutations = {
+        'python -m pip install -e ".[desktop,security,package,dev]"': (
+            'python -m pip install -e ".[desktop,security,dev]"',
+            "complete Python 3.15 optional dependency installation",
+        ),
+        'python -m pip install "paramiko==5.0.0"': (
+            "python -m pip list",
+            "pinned Python 3.15 loopback SSH evidence dependency",
+        ),
+        "python -m pip check": ("python -m pip list", "dependency consistency gate"),
+        "python scripts/check_optional_dependencies.py --require-extra desktop --require-extra security --require-extra package --require-extra dev": (
+            "python scripts/check_optional_dependencies.py",
+            "desktop, security, package and development extra smoke",
+        ),
+        "python -m PyInstaller --version": (
+            "python -c \"print('packager skipped')\"",
+            "PyInstaller startup smoke",
+        ),
+        "python scripts/write_python_runtime_evidence.py --expected-version 3.15": (
+            "python -c \"print('runtime unrecorded')\"",
+            "exact Python 3.15 runtime evidence producer",
+        ),
+        "python scripts/check_gui_interactions.py --require-pyqt6": (
+            "python -c \"print('interactions skipped')\"",
+            "all-preset GUI interaction gate",
+        ),
+        "python scripts/check_python_distribution_install.py": (
+            "python -c \"print('distribution install skipped')\"",
+            "clean Python 3.15 wheel and sdist installation verifier",
+        ),
+        "python -m pytest -q tests/test_windows_ssh_loopback.py": (
+            "python -m pytest -q tests/test_windows_conpty.py",
+            "real Python 3.15 native Windows OpenSSH/ConPTY loopback tests",
+        ),
+    }
+
+    for original, (replacement, expected_error) in mutations.items():
+        errors = checker.check_ci_workflow(source.replace(original, replacement, 1))
+
+        assert any(expected_error in error for error in errors)
+
+
+def test_ci_workflow_requires_durable_python_315_evidence_uploads() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_runtime_artifact = source.replace(
+        "          name: python315-runtime-${{ matrix.os }}\n",
+        "          name: python315-runtime-removed-${{ matrix.os }}\n",
+    )
+    without_windows_ssh_artifact = source.replace(
+        "          name: python315-windows-ssh-${{ matrix.os }}\n",
+        "          name: python315-windows-ssh-removed-${{ matrix.os }}\n",
+    )
+    advisory_windows_ssh = source.replace(
+        "        if: ${{ always() && runner.os == 'Windows' }}\n",
+        "        if: ${{ runner.os == 'Windows' }}\n",
+        1,
+    )
+    short_retention = source.replace("          retention-days: 90\n", "", 1)
+
+    runtime_errors = checker.check_ci_workflow(without_runtime_artifact)
+    windows_ssh_errors = checker.check_ci_workflow(without_windows_ssh_artifact)
+    advisory_windows_ssh_errors = checker.check_ci_workflow(advisory_windows_ssh)
+    retention_errors = checker.check_ci_workflow(short_retention)
+
+    assert any("per-host exact Python 3.15 runtime artifact" in error for error in runtime_errors)
+    assert any(
+        "per-host Python 3.15 native Windows SSH artifact" in error
+        for error in windows_ssh_errors
+    )
+    assert any(
+        "fail-closed retained Python 3.15 native Windows SSH evidence upload" in error
+        for error in advisory_windows_ssh_errors
+    )
+    assert (
+        "ci Python 3.15 evidence artifacts must retain all six declared groups for 90 days"
+        in retention_errors
+    )
+
+
+def test_ci_workflow_requires_fail_closed_python315_readiness_aggregate() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_normal_need = source.replace(
+        "    needs: [test, python315-optional-dependencies]\n",
+        "    needs: [python315-optional-dependencies]\n",
+        1,
+    )
+    without_always = source.replace(
+        "  python315-readiness:\n"
+        "    name: Python 3.15 readiness\n"
+        "    needs: [test, python315-optional-dependencies]\n"
+        "    if: ${{ always() }}\n",
+        "  python315-readiness:\n"
+        "    name: Python 3.15 readiness\n"
+        "    needs: [test, python315-optional-dependencies]\n",
+        1,
+    )
+    advisory = source.replace(
+        "  python315-readiness:\n",
+        "  python315-readiness:\n    continue-on-error: true\n",
+        1,
+    )
+
+    assert any(
+        "readiness aggregate missing active needs" in error
+        for error in checker.check_ci_workflow(without_normal_need)
+    )
+    assert any(
+        "readiness aggregate missing active always" in error
+        for error in checker.check_ci_workflow(without_always)
+    )
+    assert "ci Python 3.15 readiness aggregate must fail closed" in (
+        checker.check_ci_workflow(advisory)
+    )
+
+
+def test_ci_workflow_rejects_comment_only_python315_readiness_assertions() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    for command, label in (
+        ('          test "$NORMAL_MATRIX_RESULT" = "success"', "normal success assertion"),
+        (
+            '          test "$OPTIONAL_MATRIX_RESULT" = "success"',
+            "optional success assertion",
+        ),
+    ):
+        workflow = source.replace(command, f"          # {command.strip()}", 1)
+        errors = checker.check_ci_workflow(workflow)
+
+        assert any(f"missing active {label}" in error for error in errors)
+
+
+def test_ci_workflow_requires_fail_closed_native_windows_readiness_aggregate() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_gui_need = source.replace(
+        "    needs: [gui-interactions-windows]\n",
+        "    needs: []\n",
+        1,
+    )
+    without_always = source.replace(
+        "  native-windows-readiness:\n"
+        "    name: Native Windows readiness\n"
+        "    needs: [gui-interactions-windows]\n"
+        "    if: ${{ always() }}\n",
+        "  native-windows-readiness:\n"
+        "    name: Native Windows readiness\n"
+        "    needs: [gui-interactions-windows]\n",
+        1,
+    )
+    advisory = source.replace(
+        "  native-windows-readiness:\n",
+        "  native-windows-readiness:\n    continue-on-error: true\n",
+        1,
+    )
+
+    assert any(
+        "Native Windows readiness aggregate missing active needs" in error
+        for error in checker.check_ci_workflow(without_gui_need)
+    )
+    assert any(
+        "Native Windows readiness aggregate missing active always" in error
+        for error in checker.check_ci_workflow(without_always)
+    )
+    assert "ci Native Windows readiness aggregate must fail closed" in (
+        checker.check_ci_workflow(advisory)
+    )
+
+
+def test_ci_workflow_rejects_comment_only_native_windows_readiness_assertions() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    for command, label in (
+        (
+            '          test "$NATIVE_WINDOWS_RESULT" = "success"',
+            "native Windows success assertion",
+        ),
+    ):
+        workflow = source.replace(command, f"          # {command.strip()}", 1)
+        errors = checker.check_ci_workflow(workflow)
+
+        assert any(f"missing active {label}" in error for error in errors)
 
 
 def test_ci_workflow_rejects_unknown_hosted_runner_labels() -> None:
@@ -766,6 +1079,161 @@ def test_ci_workflow_requires_real_windows_conpty_transport_tests() -> None:
     errors = checker.check_ci_workflow(without_conpty_tests)
 
     assert any("real Windows ConPTY transport" in error for error in errors)
+
+
+def test_ci_workflow_requires_authenticated_windows_ssh_loopback_gate() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_loopback_gate = source.replace(
+        "      - name: Verify native Windows OpenSSH authentication through Qt ConPTY\n"
+        "        timeout-minutes: 5\n"
+        "        run: python -m pytest -q tests/test_windows_ssh_loopback.py --junitxml=artifacts/windows-ssh-loopback/junit.xml\n",
+        "",
+    )
+    without_required_mode = source.replace(
+        '      ROW_REQUIRE_WINDOWS_SSH_LOOPBACK: "1"\n',
+        "",
+    )
+    without_evidence_contract = source.replace(
+        "      ROW_WINDOWS_SSH_EVIDENCE_DIR: artifacts/windows-ssh-loopback\n",
+        "",
+    )
+    without_pinned_server = source.replace(
+        "      - name: Install pinned loopback SSH test server\n"
+        '        run: python -m pip install "paramiko==5.0.0"\n',
+        "",
+    )
+    without_evidence_upload = source.replace(
+        "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n"
+        "        with:\n"
+        "          name: windows-ssh-loopback-conpty\n"
+        "          path: artifacts/windows-ssh-loopback/*\n"
+        "          if-no-files-found: error\n",
+        "",
+    )
+
+    gate_errors = checker.check_ci_workflow(without_loopback_gate)
+    required_errors = checker.check_ci_workflow(without_required_mode)
+    evidence_contract_errors = checker.check_ci_workflow(without_evidence_contract)
+    dependency_errors = checker.check_ci_workflow(without_pinned_server)
+    artifact_errors = checker.check_ci_workflow(without_evidence_upload)
+
+    assert any("authenticated native OpenSSH" in error for error in gate_errors)
+    assert any("release-blocking native Windows SSH" in error for error in required_errors)
+    assert any(
+        "SSH structured evidence output" in error for error in evidence_contract_errors
+    )
+    assert any("pinned secret-free loopback SSH" in error for error in dependency_errors)
+    assert any("SSH loopback evidence artifact" in error for error in artifact_errors)
+
+
+def test_ci_workflow_rejects_comment_only_native_windows_ssh_and_gui_lines() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    active_lines = (
+        (
+            '      ROW_REQUIRE_WINDOWS_SSH_LOOPBACK: "1"',
+            "release-blocking native Windows SSH loopback contract",
+        ),
+        (
+            "        run: python -m pytest -q tests/test_windows_ssh_loopback.py --junitxml=artifacts/windows-ssh-loopback/junit.xml",
+            "native Windows OpenSSH loopback authentication and I/O test",
+        ),
+        (
+            "        run: python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows",
+            "native Windows all-preset GUI render gate",
+        ),
+        (
+            "        run: python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions-windows",
+            "native Windows GUI interaction gate",
+        ),
+        (
+            "        run: python scripts/check_windows_tab_switch_paint.py --require-native-windows --out-dir artifacts/gui-tab-switch-windows",
+            "native Windows real tab-bar click and transient paint gate",
+        ),
+        (
+            "          name: windows-ssh-loopback-conpty",
+            "native Windows SSH loopback evidence artifact name",
+        ),
+        (
+            "          path: artifacts/windows-ssh-loopback/*",
+            "native Windows SSH loopback evidence artifact path",
+        ),
+    )
+
+    for line, label in active_lines:
+        before_job, job_marker, native_job = source.partition("  gui-interactions-windows:\n")
+        commented = f"{line[: len(line) - len(line.lstrip())]}# {line.lstrip()}"
+        workflow = before_job + job_marker + native_job.replace(line, commented, 1)
+        errors = checker.check_ci_workflow(workflow)
+
+        assert any(f"missing active {label}" in error for error in errors)
+
+    commented_runner = source.replace(
+        "  gui-interactions-windows:\n"
+        "    name: Native Windows PyQt6 render and interactions\n"
+        "    runs-on: windows-2025-vs2026\n",
+        "  gui-interactions-windows:\n"
+        "    name: Native Windows PyQt6 render and interactions\n"
+        "    # runs-on: windows-2025-vs2026\n",
+        1,
+    )
+    commented_upload = source.replace(
+        "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n"
+        "        with:\n"
+        "          name: gui-real-render-windows\n",
+        "      # - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n"
+        "        with:\n"
+        "          name: gui-real-render-windows\n",
+        1,
+    )
+    commented_fail_closed = source.replace(
+        "          name: gui-real-render-windows\n"
+        "          path: artifacts/gui-real-windows/*\n"
+        "          if-no-files-found: error\n",
+        "          name: gui-real-render-windows\n"
+        "          path: artifacts/gui-real-windows/*\n"
+        "          # if-no-files-found: error\n",
+        1,
+    )
+
+    assert any(
+        "missing active repository-approved native Windows runner" in error
+        for error in checker.check_ci_workflow(commented_runner)
+    )
+    assert any(
+        "retain four active evidence uploads" in error
+        for error in checker.check_ci_workflow(commented_upload)
+    )
+    assert any(
+        "fail closed for all four evidence uploads" in error
+        for error in checker.check_ci_workflow(commented_fail_closed)
+    )
+
+
+def test_ci_workflow_requires_native_windows_tab_switch_paint_gate() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    without_paint_gate = source.replace(
+        "      - name: Capture native Windows terminal tab-switch paint turns\n"
+        "        timeout-minutes: 3\n"
+        "        run: python scripts/check_windows_tab_switch_paint.py --require-native-windows --out-dir artifacts/gui-tab-switch-windows\n",
+        "",
+    )
+    without_paint_evidence = source.replace(
+        "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n"
+        "        with:\n"
+        "          name: gui-tab-switch-paint-windows\n"
+        "          path: artifacts/gui-tab-switch-windows/*\n"
+        "          if-no-files-found: error\n",
+        "",
+    )
+
+    gate_errors = checker.check_ci_workflow(without_paint_gate)
+    artifact_errors = checker.check_ci_workflow(without_paint_evidence)
+
+    assert any("real tab-bar click" in error for error in gate_errors)
+    assert any("terminal tab paint artifact" in error for error in artifact_errors)
 
 
 def test_ci_workflow_requires_checkout_credentials_disabled() -> None:

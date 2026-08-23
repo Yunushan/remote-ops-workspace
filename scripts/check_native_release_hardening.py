@@ -107,8 +107,31 @@ def check_pyinstaller_launchers() -> list[str]:
         if "src/remote_ops_workspace/__main__.py" in text or "src\\remote_ops_workspace\\__main__.py" in text:
             errors.append(f"{display(path)} must not pass package __main__.py directly to PyInstaller")
 
+    for platform, path in NATIVE_SCRIPTS.items():
+        text = path.read_text(encoding="utf-8")
+        required_count = 2 if platform == "windows" else 1
+        if text.count("--collect-data remote_ops_workspace") < required_count:
+            errors.append(
+                f"{display(path)} must collect packaged runtime configuration and assets "
+                "for every PyInstaller executable"
+            )
+        config_source = "$Root\\configs;remote_ops_workspace/configs" if platform == "windows" else "$ROOT/configs:remote_ops_workspace/configs"
+        web_source = "$Root\\apps\\web;remote_ops_workspace/web" if platform == "windows" else "$ROOT/apps/web:remote_ops_workspace/web"
+        for source, label in (
+            (config_source, "runtime configuration"),
+            (web_source, "Web/PWA assets"),
+        ):
+            if text.count(source) < required_count:
+                errors.append(
+                    f"{display(path)} must bundle {label} for every PyInstaller executable"
+                )
+
     macos = NATIVE_SCRIPTS["macos"].read_text(encoding="utf-8")
-    if "remote_ops_workspace_gui_launcher.py" not in macos or 'main(["gui"])' not in macos:
+    if (
+        "remote_ops_workspace_gui_launcher.py" not in macos
+        or "sys.argv[1:]" not in macos
+        or 'main(arguments or ["gui"])' not in macos
+    ):
         errors.append("scripts/make_macos_native.sh must build PyInstaller from the GUI launcher")
     if "BundleIsRelocatable false" not in macos:
         errors.append("scripts/make_macos_native.sh must make the app bundle non-relocatable in PKG builds")

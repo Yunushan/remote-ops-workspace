@@ -54,6 +54,7 @@ OUT_DIR="$ROOT/$DIST"
 DMG="$OUT_DIR/remote-ops-workspace-v${VERSION}-macos-${ARCH}.dmg"
 PKG="$OUT_DIR/remote-ops-workspace-v${VERSION}-macos-${ARCH}.pkg"
 APP_NAME="Remote Ops Workspace.app"
+APP_EXECUTABLE_NAME="${APP_NAME%.app}"
 APP_ID="io.github.remoteopsworkspace.app"
 SMOKE_ROOT="$ROOT/build/native-smoke/macos-${ARCH}"
 MOUNT_DIR="$SMOKE_ROOT/dmg-mount"
@@ -76,6 +77,43 @@ cleanup() {
 }
 trap cleanup EXIT
 
+verify_app_runtime_resources() {
+  local app_path="$1"
+  local label="$2"
+  local executable="$app_path/Contents/MacOS/$APP_EXECUTABLE_NAME"
+  local probe_name
+  local probe_file
+  probe_name="$(printf '%s' "$label" | tr -c '[:alnum:]' '-')"
+  probe_file="$SMOKE_ROOT/runtime-resources-${probe_name}.json"
+  if [[ ! -x "$executable" ]]; then
+    echo "$label installed app executable missing: $executable" >&2
+    exit 1
+  fi
+  if ! "$executable" platforms --json >"$probe_file"; then
+    echo "$label platforms --json failed for $executable" >&2
+    exit 1
+  fi
+  python3 - "$probe_file" "$label" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+label = sys.argv[2]
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"{label} platforms --json did not return valid JSON: {exc}")
+for key in ("release_architectures", "windows_legacy_targets"):
+    if not isinstance(payload.get(key), list) or not payload[key]:
+        raise SystemExit(f"{label} packaged platform catalog has no {key}")
+PY
+  rm -f "$probe_file"
+  echo "native installer smoke runtime resources: $label platforms --json"
+}
+
 echo "native installer smoke: DMG install"
 hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -readonly -quiet
 if [[ ! -d "$MOUNT_DIR/$APP_NAME" ]]; then
@@ -86,11 +124,13 @@ ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 
 echo "native installer smoke: DMG verify"
 codesign --verify --deep --strict "$DMG_APP"
+verify_app_runtime_resources "$DMG_APP" "DMG verify"
 
 echo "native installer smoke: DMG upgrade"
 rm -rf "$DMG_APP"
 ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 codesign --verify --deep --strict "$DMG_APP"
+verify_app_runtime_resources "$DMG_APP" "DMG upgrade"
 
 echo "native installer smoke: DMG uninstall"
 rm -rf "$DMG_APP"
@@ -110,6 +150,7 @@ fi
 
 echo "native installer smoke: PKG verify"
 codesign --verify --deep --strict "$PKG_APP"
+verify_app_runtime_resources "$PKG_APP" "PKG verify"
 
 echo "native installer smoke: PKG upgrade"
 sudo installer -pkg "$PKG" -target /
@@ -118,6 +159,7 @@ if [[ ! -d "$PKG_APP" ]]; then
   exit 1
 fi
 codesign --verify --deep --strict "$PKG_APP"
+verify_app_runtime_resources "$PKG_APP" "PKG upgrade"
 
 echo "native installer smoke: PKG uninstall"
 sudo rm -rf "$PKG_APP"

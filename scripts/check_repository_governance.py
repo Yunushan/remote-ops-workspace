@@ -23,6 +23,8 @@ from urllib.request import Request, urlopen
 DEFAULT_BRANCH = "main"
 REQUIRED_CHECKS = (
     "Repository policy and lint",
+    "Python 3.15 readiness",
+    "Native Windows readiness",
     "CodeQL python",
     "CodeQL javascript-typescript",
 )

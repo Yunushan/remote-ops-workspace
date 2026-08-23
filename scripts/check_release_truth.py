@@ -42,6 +42,7 @@ RELEASE_VERSION_GATE_COMMAND = (
 RELEASE_VERIFY_COMMAND = (
     'python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"'
 )
+PYTHON315_CI_EVIDENCE_COMMAND = "python scripts/check_python315_ci_evidence.py"
 PROTECTED_PROMOTION_CONDITION = (
     "if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_protected_platform_evidence }}"
 )
@@ -293,12 +294,15 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         errors.append("release workflow must opt JavaScript actions into Node.js 24")
     if "ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION" in workflow_text:
         errors.append("release workflow must not opt JavaScript actions into an insecure Node.js runtime")
+    if not re.search(r"(?m)^  actions:\s*read\s*$", workflow_text):
+        errors.append("release workflow must grant read-only Actions access for CI evidence")
     block = workflow_job_block(workflow_text, RELEASE_PREFLIGHT_JOB)
     if not block:
         return [*errors, "release workflow missing release-preflight job"]
     errors.extend(check_checkout_step(block, job=RELEASE_PREFLIGHT_JOB))
     errors.extend(check_tagged_source_checkout(block, job=RELEASE_PREFLIGHT_JOB))
     required_snippets = {
+        "timeout-minutes: 100": "bounded release preflight timeout",
         "persist-credentials: false": "checkout credential persistence disabled",
         'python-version: "3.12"': "stable preflight Python version",
         'test "${{ github.ref_type }}" = "tag"': "automatic tag event guard",
@@ -325,10 +329,41 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"release-preflight missing {label}: {snippet}")
+    active_ci_evidence_lines = {
+        "Python 3.15 and native Windows CI evidence step": (
+            r"^      - name: Require successful Python 3\.15 and native Windows "
+            r"CI evidence for release source\s*$"
+        ),
+        "automatic GitHub token for CI evidence": (
+            r"^          GITHUB_TOKEN:\s*\$\{\{\s*github\.token\s*\}\}\s*$"
+        ),
+        "exact Python 3.15 CI evidence command": (
+            r"^          python scripts/check_python315_ci_evidence\.py\s*$"
+        ),
+        "repository-bound Python 3.15 CI evidence": (
+            r'^          --repository "\$\{\{ github\.repository \}\}"\s*$'
+        ),
+        "default-branch-bound Python 3.15 CI evidence": (
+            r'^          --branch "\$\{\{ github\.event\.repository\.default_branch \}\}"\s*$'
+        ),
+        "release-source-SHA-bound Python 3.15 CI evidence": (
+            r'^          --sha "\$\(git rev-parse HEAD\)"\s*$'
+        ),
+        "bounded Python 3.15 CI evidence wait": r"^          --wait-seconds 5400\s*$",
+        "bounded Python 3.15 CI evidence poll interval": (
+            r"^          --poll-interval-seconds 15\s*$"
+        ),
+    }
+    for label, pattern in active_ci_evidence_lines.items():
+        if re.search(pattern, block, re.MULTILINE) is None:
+            errors.append(f"release-preflight missing active {label}")
     version_gate_index = block.find(RELEASE_VERSION_GATE_COMMAND)
     verifier_index = block.find(RELEASE_VERIFY_COMMAND)
     if version_gate_index >= 0 and verifier_index >= 0 and version_gate_index > verifier_index:
         errors.append("release-preflight version gate must run before the repository verifier")
+    ci_evidence_index = block.find(PYTHON315_CI_EVIDENCE_COMMAND)
+    if verifier_index >= 0 and ci_evidence_index >= 0 and verifier_index > ci_evidence_index:
+        errors.append("release-preflight verifier must run before the Python 3.15 CI evidence gate")
     if RELEASE_TAG_RESOLVER not in workflow_text:
         errors.append(f"release workflow missing event-aware release tag resolver: {RELEASE_TAG_RESOLVER}")
     for job in RELEASE_PREFLIGHT_DEPENDENTS:

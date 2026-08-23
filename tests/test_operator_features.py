@@ -1,4 +1,9 @@
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 import remote_ops_workspace.cli as cli_module
 import remote_ops_workspace.launcher as launcher_module
@@ -163,7 +168,8 @@ def test_terminal_plan_for_profile_uses_launcher() -> None:
     assert ["-p", "22"] == plan.command[plan.command.index("-p") : plan.command.index("-p") + 2]
     if terminal_module.os.name == "nt":
         assert "ControlMaster=no" in plan.command
-        assert "ControlPath=none" in plan.command
+        socket_index = plan.command.index("-S")
+        assert plan.command[socket_index : socket_index + 2] == ["-S", "none"]
         assert "ControlPersist=no" in plan.command
     else:
         assert not any(argument.startswith("Control") for argument in plan.command)
@@ -306,10 +312,10 @@ def test_native_windows_openssh_skips_control_socket_reuse(monkeypatch) -> None:
         master=True,
     ) == [
         "ssh",
+        "-S",
+        "none",
         "-o",
         "ControlMaster=no",
-        "-o",
-        "ControlPath=none",
         "-o",
         "ControlPersist=no",
         "operator@192.0.2.10",
@@ -340,16 +346,302 @@ def test_native_windows_openssh_removes_stale_connection_sharing_options(
     assert original[1:4] == ["-M", "-S", r"C:\Temp\remote-ops-control.sock"]
     assert adapted == [
         "ssh.exe",
+        "-S",
+        "none",
         "-o",
         "ControlMaster=no",
-        "-o",
-        "ControlPath=none",
         "-o",
         "ControlPersist=no",
         "-o",
         "StrictHostKeyChecking=yes",
         "operator@example.invalid",
     ]
+
+
+@pytest.mark.parametrize(
+    "jump_arguments",
+    [
+        ["-J", "jump-user@bastion.example:2222"],
+        ["-Jjump-user@bastion.example:2222"],
+        ["-o", "ProxyJump=jump-user@bastion.example:2222"],
+        ["-oProxyJump=jump-user@bastion.example:2222"],
+    ],
+)
+def test_native_windows_openssh_hardens_proxy_jump_child(
+    monkeypatch,
+    jump_arguments: list[str],
+) -> None:
+    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    ssh = r"C:\Windows\System32\OpenSSH\ssh.exe"
+    config = r"C:\Users\operator\ssh config"
+    original = [
+        ssh,
+        "-F",
+        config,
+        *jump_arguments,
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "operator@target.example",
+    ]
+
+    adapted = openssh_command_without_windows_connection_sharing(original)
+    proxy_option = next(
+        argument for argument in adapted if argument.startswith("ProxyCommand=")
+    )
+    expected_child = subprocess.list2cmdline(
+        [
+            ssh,
+            "-F",
+            config,
+            "-S",
+            "none",
+            "-o",
+            "ControlMaster=no",
+            "-o",
+            "ControlPersist=no",
+            "-o",
+            "ControlPath=none",
+            "-o",
+            "ProxyCommand=none",
+            "-o",
+            "ProxyJump=none",
+            "-p",
+            "2222",
+            "-W",
+            "[%h]:%p",
+            "--",
+            "jump-user@bastion.example",
+        ]
+    )
+
+    assert original[-1] == "operator@target.example"
+    assert not any(
+        argument == "-J"
+        or argument.startswith("-J")
+        or "ProxyJump=jump-user" in argument
+        for argument in adapted
+    )
+    assert proxy_option == f"ProxyCommand={expected_child}"
+    assert "StrictHostKeyChecking=yes" in adapted
+    assert "StrictHostKeyChecking" not in expected_child
+    assert adapted[-1] == "operator@target.example"
+
+
+@pytest.mark.parametrize(
+    "jump_arguments",
+    [
+        ["-J", "none"],
+        ["-Jnone"],
+        ["-J", "NoNe"],
+        ["-JNoNe"],
+    ],
+)
+def test_native_windows_openssh_preserves_disabled_proxy_jump(
+    monkeypatch,
+    jump_arguments: list[str],
+) -> None:
+    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    original = ["ssh.exe", *jump_arguments, "operator@target.example"]
+
+    adapted = openssh_command_without_windows_connection_sharing(original)
+
+    assert not any(argument.startswith("ProxyCommand=") for argument in adapted)
+    start = adapted.index(jump_arguments[0])
+    assert adapted[start : start + len(jump_arguments)] == jump_arguments
+    assert adapted[-1] == "operator@target.example"
+
+
+@pytest.mark.parametrize(
+    "jump_spec",
+    [
+        "first.example,second.example",
+        "bastion.example&calc.exe",
+        "user@[fe80::1%12]",
+        " bastion.example",
+        "bastion.example:70000",
+    ],
+)
+def test_native_windows_openssh_rejects_unprovable_proxy_jump_forms(
+    monkeypatch,
+    jump_spec: str,
+) -> None:
+    monkeypatch.setattr(terminal_module.os, "name", "nt")
+
+    with pytest.raises(ValueError, match="native Windows"):
+        openssh_command_without_windows_connection_sharing(
+            ["ssh.exe", "-J", jump_spec, "target.example"]
+        )
+
+
+@pytest.mark.parametrize(
+    ("stale", "preserved"),
+    [
+        (["-MN"], ["-N"]),
+        (["-Sfoo"], []),
+        (["-MSfoo"], []),
+        (["-vMSfoo"], ["-v"]),
+        (["-NvS", "foo"], ["-Nv"]),
+        (["-vMp22"], ["-vp22"]),
+        (["-p22MSfoo"], ["-p22MSfoo"]),
+    ],
+)
+def test_native_windows_openssh_removes_clustered_mux_short_options(
+    monkeypatch,
+    stale: list[str],
+    preserved: list[str],
+) -> None:
+    monkeypatch.setattr(terminal_module.os, "name", "nt")
+    target = "operator@example.invalid"
+
+    adapted = openssh_command_without_windows_connection_sharing(
+        ["ssh.exe", *stale, target]
+    )
+
+    assert adapted[:7] == [
+        "ssh.exe",
+        "-S",
+        "none",
+        "-o",
+        "ControlMaster=no",
+        "-o",
+        "ControlPersist=no",
+    ]
+    assert adapted[7:] == [*preserved, target]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows OpenSSH contract")
+@pytest.mark.parametrize(
+    "stale",
+    [[], ["-MN"], ["-Sfoo"], ["-MSfoo"], ["-vMSfoo"]],
+)
+def test_native_windows_openssh_standalone_switch_overrides_mux_config(
+    tmp_path: Path,
+    stale: list[str],
+) -> None:
+    ssh = shutil.which("ssh.exe") or shutil.which("ssh")
+    if ssh is None:
+        pytest.skip("native OpenSSH client is unavailable")
+    config = tmp_path / "mux-enabled-ssh-config"
+    config.write_text(
+        "Host *\n"
+        "    ControlMaster auto\n"
+        "    ControlPath C:/remote-ops-workspace-test-control.sock\n"
+        "    ControlPersist 10m\n",
+        encoding="utf-8",
+    )
+    target = "operator@example.invalid"
+    runtime = openssh_command_without_windows_connection_sharing(
+        [ssh, *stale, "-F", str(config), target]
+    )
+
+    probe = subprocess.run(
+        [*runtime[:-1], "-G", target],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    effective = {
+        line.split(maxsplit=1)[0].lower(): line.split(maxsplit=1)[1].strip().lower()
+        for line in probe.stdout.splitlines()
+        if len(line.split(maxsplit=1)) == 2
+    }
+
+    assert runtime[1:3] == ["-S", "none"]
+    assert effective["controlmaster"] == "false"
+    assert effective.get("controlpath", "none") == "none"
+    assert effective["controlpersist"] in {"0", "no"}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows OpenSSH contract")
+def test_native_windows_proxy_jump_effective_parent_and_child_are_hardened(
+    tmp_path: Path,
+) -> None:
+    ssh = shutil.which("ssh.exe") or shutil.which("ssh")
+    if ssh is None:
+        pytest.skip("native OpenSSH client is unavailable")
+    known_hosts = tmp_path / "jump-known-hosts"
+    config = tmp_path / "proxy-jump-config"
+    config.write_text(
+        "Host bastion\n"
+        "    HostName bastion.example.invalid\n"
+        "    StrictHostKeyChecking yes\n"
+        f"    UserKnownHostsFile {known_hosts.as_posix()}\n"
+        "    ControlMaster auto\n"
+        "    ControlPath C:/unsafe-configured-control.sock\n"
+        "    ControlPersist yes\n"
+        "    ProxyJump nested.example.invalid\n"
+        "Host target.example.invalid\n"
+        "    ProxyJump config-only.example.invalid\n",
+        encoding="utf-8",
+    )
+    target = "target.example.invalid"
+    runtime = openssh_command_without_windows_connection_sharing(
+        [ssh, "-F", str(config), "-J", "bastion", target]
+    )
+    expected_child = [
+        ssh,
+        "-F",
+        str(config),
+        "-S",
+        "none",
+        "-o",
+        "ControlMaster=no",
+        "-o",
+        "ControlPersist=no",
+        "-o",
+        "ControlPath=none",
+        "-o",
+        "ProxyCommand=none",
+        "-o",
+        "ProxyJump=none",
+        "-W",
+        "[%h]:%p",
+        "--",
+        "bastion",
+    ]
+    expected_proxy_command = subprocess.list2cmdline(expected_child)
+
+    parent_probe = subprocess.run(
+        [*runtime[:-1], "-G", target],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    parent_effective = {
+        line.split(maxsplit=1)[0].lower(): line.split(maxsplit=1)[1].strip()
+        for line in parent_probe.stdout.splitlines()
+        if len(line.split(maxsplit=1)) == 2
+    }
+    assert parent_effective["proxycommand"] == expected_proxy_command
+    assert "config-only.example.invalid" not in parent_effective["proxycommand"]
+    assert parent_effective["controlmaster"].lower() == "false"
+    assert parent_effective.get("controlpath", "none").lower() == "none"
+    assert parent_effective["controlpersist"].lower() in {"0", "no"}
+
+    # ``-W`` is irrelevant to configuration expansion, so replace it with -G
+    # and prove the exact child flags win over the jump host's hostile mux and
+    # nested-proxy stanza without weakening that host's verification policy.
+    child_probe_args = expected_child[: expected_child.index("-W")]
+    child_probe = subprocess.run(
+        [*child_probe_args, "-G", "bastion"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    child_effective = {
+        line.split(maxsplit=1)[0].lower(): line.split(maxsplit=1)[1].strip().lower()
+        for line in child_probe.stdout.splitlines()
+        if len(line.split(maxsplit=1)) == 2
+    }
+    assert child_effective["hostname"] == "bastion.example.invalid"
+    assert child_effective["controlmaster"] == "false"
+    assert child_effective.get("controlpath", "none") == "none"
+    assert child_effective["controlpersist"] in {"0", "no"}
+    assert child_effective["stricthostkeychecking"] == "true"
+    assert "proxycommand" not in child_effective
 
 
 def test_non_windows_openssh_preserves_connection_sharing_options(monkeypatch) -> None:

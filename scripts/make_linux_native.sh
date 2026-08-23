@@ -91,6 +91,9 @@ PY
   --workpath "$PY_WORK" \
   --specpath "$BUILD_DIR" \
   --collect-submodules remote_ops_workspace \
+  --collect-data remote_ops_workspace \
+  --add-data "$ROOT/configs:remote_ops_workspace/configs" \
+  --add-data "$ROOT/apps/web:remote_ops_workspace/web" \
   --copy-metadata remote-ops-workspace \
   "$LAUNCHER"
 

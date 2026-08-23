@@ -163,7 +163,7 @@ TARGETS = [
         archive_format="tar.gz",
         install_command="./installers/install.sh",
         notes=(
-            "Targets Solaris and illumos environments with Python 3.10+.",
+            "Targets Solaris and illumos environments with standard CPython 3.10-3.14; Python 3.15 requires native dependency and smoke evidence before promotion.",
             "CLI and Web/PWA are first-class; GUI support depends on local Python/Qt packages.",
         ),
     ),

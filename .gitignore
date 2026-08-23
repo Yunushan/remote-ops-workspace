@@ -18,6 +18,10 @@ artifacts/gui-interactions-windows/
 artifacts/gui-interactions-debug/
 artifacts/gui-interactions-subagent/
 artifacts/gui-interactions-*/
+artifacts/gui-tab-switch-*/
+artifacts/windows-ssh-loopback*/
+artifacts/python315-windows-ssh*/
+artifacts/python315-frozen*/
 artifacts/coverage/
 *.egg-info/
 .pytest_cache/

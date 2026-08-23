@@ -37,6 +37,28 @@ function Test-RowVersion([string]$Path, [string]$ExpectedVersion) {
   }
 }
 
+function Test-RowRuntimeResources([string]$Path, [string]$Label) {
+  if (!(Test-Path $Path)) {
+    throw "expected installed row executable missing: $Path"
+  }
+  $Output = & $Path platforms --json
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Label platforms --json failed for $Path"
+  }
+  try {
+    $Catalog = ($Output -join "`n") | ConvertFrom-Json
+  } catch {
+    throw "$Label platforms --json did not return valid JSON: $($Output -join ' ')"
+  }
+  if (@($Catalog.release_architectures).Count -eq 0) {
+    throw "$Label packaged platform catalog has no release_architectures"
+  }
+  if (@($Catalog.windows_legacy_targets).Count -eq 0) {
+    throw "$Label packaged platform catalog has no windows_legacy_targets"
+  }
+  Write-Host "native installer smoke runtime resources: $Label platforms --json"
+}
+
 function Test-RowGuiLauncher([string]$RowPath, [string]$Arch) {
   if ($Arch -eq "x86") {
     return
@@ -146,6 +168,7 @@ $PortableInstallDir = Join-Path $SmokeRoot "portable"
 Expand-Archive -Path $NativeZip -DestinationPath $PortableInstallDir -Force
 $PortableRow = Join-Path $PortableInstallDir "bin\row.exe"
 Test-RowVersion $PortableRow $Version
+Test-RowRuntimeResources $PortableRow "portable ZIP verify"
 Test-PortableGuiLauncher $PortableInstallDir $Arch
 Test-RowVault $PortableRow "portable ZIP"
 Remove-Item -Recurse -Force $PortableInstallDir
@@ -165,10 +188,12 @@ $ExeInstallArgs = @(
 Invoke-SmokeCommand "EXE install" $SetupExe $ExeInstallArgs
 $ExeRow = Join-Path $ExeInstallDir "bin\row.exe"
 Test-RowVersion $ExeRow $Version
+Test-RowRuntimeResources $ExeRow "EXE verify"
 Test-RowGuiLauncher $ExeRow $Arch
 Test-RowVault $ExeRow "EXE install"
 Invoke-SmokeCommand "EXE upgrade" $SetupExe $ExeInstallArgs
 Test-RowVersion $ExeRow $Version
+Test-RowRuntimeResources $ExeRow "EXE upgrade"
 Test-RowGuiLauncher $ExeRow $Arch
 $Uninstaller = Get-ChildItem -Path $ExeInstallDir -Filter "unins*.exe" | Select-Object -First 1
 if (!$Uninstaller) {
@@ -188,11 +213,13 @@ $MsiLog = Join-Path $SmokeRoot "msi-smoke.log"
 Invoke-SmokeCommand "MSI install" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 $MsiRow = Find-MsiRowExe
 Test-RowVersion $MsiRow $Version
+Test-RowRuntimeResources $MsiRow "MSI verify"
 Test-RowGuiLauncher $MsiRow $Arch
 Test-RowVault $MsiRow "MSI install"
 Invoke-SmokeCommand "MSI upgrade" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 $MsiRow = Find-MsiRowExe
 Test-RowVersion $MsiRow $Version
+Test-RowRuntimeResources $MsiRow "MSI upgrade"
 Test-RowGuiLauncher $MsiRow $Arch
 Invoke-SmokeCommand "MSI uninstall" "msiexec.exe" @("/x", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 if (Test-Path $MsiRow) {

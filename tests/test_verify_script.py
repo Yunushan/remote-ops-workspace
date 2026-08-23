@@ -42,8 +42,10 @@ def test_verify_steps_include_full_checks_and_cli_smoke(tmp_path: Path) -> None:
     assert "platform verified evidence record finalizer" in names
     assert "platform review bundle artifact validator" in names
     assert "platform evidence artifact importer" in names
+    assert "MobaXterm transport and terminal evidence validator" in names
     assert "MobaXterm parity evidence registry" in names
     assert "MobaXterm parity evidence record generator" in names
+    assert "MobaXterm parity evidence record finalizer" in names
     assert "release publish asset contract" in names
     assert "optional dependency smoke" in names
     assert "native release hardening" in names
@@ -102,8 +104,10 @@ def test_verify_quick_mode_skips_pytest_but_keeps_cli_smoke(tmp_path: Path) -> N
     assert "platform verified evidence record finalizer" in names
     assert "platform review bundle artifact validator" in names
     assert "platform evidence artifact importer" in names
+    assert "MobaXterm transport and terminal evidence validator" in names
     assert "MobaXterm parity evidence registry" in names
     assert "MobaXterm parity evidence record generator" in names
+    assert "MobaXterm parity evidence record finalizer" in names
     assert "release publish asset contract" in names
     assert "optional dependency smoke" in names
     assert "native release hardening" in names

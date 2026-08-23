@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from ctypes import wintypes
+from pathlib import Path
 
 import pytest
 
@@ -135,6 +136,53 @@ def test_conpty_support_rejects_missing_runtime_exports(monkeypatch) -> None:
 def test_conpty_process_validates_geometry_and_cwd(kwargs, error: str) -> None:
     with pytest.raises((TypeError, ValueError), match=error):
         WindowsConPtyProcess(["cmd.exe"], **kwargs)
+
+
+def test_resize_failure_is_nonfatal_and_later_input_is_accepted(monkeypatch) -> None:
+    resize_called = threading.Event()
+
+    class _FailingResizeApi:
+        def ResizePseudoConsole(self, _handle, _size) -> int:
+            resize_called.set()
+            return -1
+
+    expected_error = windows_conpty.ConPtyProcessError(
+        "ResizePseudoConsole",
+        87,
+        "controlled resize failure",
+    )
+    monkeypatch.setattr(
+        windows_conpty,
+        "_hresult_error",
+        lambda _operation, _hresult: expected_error,
+    )
+    process = WindowsConPtyProcess(["cmd.exe"])
+    process._api = _FailingResizeApi()  # type: ignore[assignment]
+    process._started = True
+    process._pseudo_console = wintypes.HANDLE(1)
+    process._resize_thread = threading.Thread(target=process._resize_main, daemon=True)
+    process._resize_thread.start()
+
+    try:
+        process.resize(132, 40)
+        assert resize_called.wait(1.0)
+        deadline = time.monotonic() + 1.0
+        resize_error = None
+        while resize_error is None and time.monotonic() < deadline:
+            resize_error = process.take_resize_error()
+            if resize_error is None:
+                time.sleep(0.01)
+
+        assert resize_error is expected_error
+        assert process.io_error is None
+        assert process.write(b"input-after-resize-error") == len(
+            b"input-after-resize-error"
+        )
+        assert process._write_queue.get_nowait() == b"input-after-resize-error"
+    finally:
+        process._resize_closing.set()
+        process._resize_event.set()
+        process._resize_thread.join(timeout=1.0)
 
 
 def _read_until(
@@ -321,6 +369,54 @@ def test_executable_resolution_failure_uses_the_same_closed_state(monkeypatch) -
         process.start()
 
 
+def test_openssh_resolution_prefers_trusted_system_install_over_cwd(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    system_directory = tmp_path / "Windows" / "System32"
+    trusted_ssh = system_directory / "OpenSSH" / "ssh.exe"
+    trusted_ssh.parent.mkdir(parents=True)
+    trusted_ssh.write_bytes(b"trusted-system-openssh")
+    working_directory = tmp_path / "download"
+    working_directory.mkdir()
+    planted_ssh = working_directory / "ssh.exe"
+    planted_ssh.write_bytes(b"cwd-plant")
+    monkeypatch.chdir(working_directory)
+    monkeypatch.setenv("PATH", str(working_directory))
+    monkeypatch.setattr(
+        windows_conpty,
+        "_windows_system_directories",
+        lambda: (system_directory,),
+    )
+
+    resolved = windows_conpty._resolve_windows_executable("ssh.exe")
+
+    assert Path(resolved) == trusted_ssh.resolve()
+    assert Path(resolved) != planted_ssh.resolve()
+
+
+def test_bare_executable_resolution_excludes_current_directory(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    working_directory = tmp_path / "download"
+    trusted_path = tmp_path / "trusted-bin"
+    working_directory.mkdir()
+    trusted_path.mkdir()
+    planted = working_directory / "tool.exe"
+    expected = trusted_path / "tool.exe"
+    planted.write_bytes(b"cwd-plant")
+    expected.write_bytes(b"trusted-path")
+    monkeypatch.chdir(working_directory)
+    monkeypatch.setenv("PATH", os.pathsep.join((str(working_directory), str(trusted_path))))
+    monkeypatch.setattr(windows_conpty, "_windows_system_directories", lambda: ())
+
+    resolved = windows_conpty._resolve_windows_executable("tool.exe")
+
+    assert Path(resolved) == expected.resolve()
+    assert Path(resolved) != planted.resolve()
+
+
 def test_nonblocking_read_requires_a_started_process() -> None:
     process = WindowsConPtyProcess(["cmd.exe"])
 
@@ -397,6 +493,38 @@ def test_shutdown_drains_output_while_pre_24h2_close_can_block() -> None:
     assert events.index("close-pseudoconsole-return") < events.index(
         "close-output-handle"
     )
+
+
+def test_close_releases_process_handle_after_poll_failure(monkeypatch) -> None:
+    closed_handles: list[int] = []
+
+    class _CloseApi:
+        def CloseHandle(self, handle) -> bool:
+            closed_handles.append(int(getattr(handle, "value", handle)))
+            return True
+
+    process = WindowsConPtyProcess(["cmd.exe"])
+    process._api = _CloseApi()  # type: ignore[assignment]
+    process._started = True
+    process._process_handle = wintypes.HANDLE(303)
+    poll_error = windows_conpty.ConPtyProcessError(
+        "WaitForSingleObject",
+        6,
+        "controlled invalid handle",
+    )
+
+    def fail_status_query() -> None:
+        raise poll_error
+
+    monkeypatch.setattr(process, "poll", fail_status_query)
+    monkeypatch.setattr(process, "terminate", fail_status_query)
+    monkeypatch.setattr(process, "kill", fail_status_query)
+
+    process.close(timeout=0)
+
+    assert process.closed is True
+    assert closed_handles == [303]
+    assert windows_conpty._handle_is_open(process._process_handle) is False
 
 
 def test_constructor_does_not_mutate_the_parent_environment(monkeypatch) -> None:

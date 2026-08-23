@@ -115,6 +115,8 @@ class AnsiTerminalTranscript:
     _alternate_bottom_margin: int = 0
     _alternate_saved_cursor: tuple[int, int] | None = None
     _bracketed_paste: bool = False
+    _application_cursor_keys: bool = False
+    _cursor_visible: bool = True
     _pending_responses: list[bytes] = field(default_factory=list)
     _saved_normal_state: tuple[
         list[str],
@@ -145,6 +147,8 @@ class AnsiTerminalTranscript:
         self._alternate_bottom_margin = 0
         self._alternate_saved_cursor = None
         self._bracketed_paste = False
+        self._application_cursor_keys = False
+        self._cursor_visible = True
         self._pending_responses.clear()
         self._saved_normal_state = None
 
@@ -159,6 +163,30 @@ class AnsiTerminalTranscript:
         """Whether the application requested bracketed paste delimiters."""
 
         return self._bracketed_paste
+
+    @property
+    def application_cursor_keys_active(self) -> bool:
+        """Whether DECCKM requests SS3 cursor/navigation key payloads."""
+
+        return self._application_cursor_keys
+
+    @property
+    def cursor_visible(self) -> bool:
+        """Whether the remote application requested a visible cursor."""
+
+        return self._cursor_visible
+
+    @property
+    def cursor_row(self) -> int:
+        """Return the zero-based cursor row in the active screen buffer."""
+
+        return self._cursor_row()
+
+    @property
+    def cursor_column(self) -> int:
+        """Return the zero-based cursor column in the active screen buffer."""
+
+        return self._cursor_column()
 
     def take_pending_responses(self) -> tuple[bytes, ...]:
         """Return and clear terminal-query responses requested by the child."""
@@ -207,6 +235,58 @@ class AnsiTerminalTranscript:
                     self._write(" ")
             elif char.isprintable():
                 self._write(char)
+        return self.text()
+
+    def feed_literal(self, text: str) -> str:
+        """Append application-owned text outside the child ANSI parser.
+
+        Status and lifecycle notices are not bytes from the terminal process.
+        They must therefore remain readable even when the child stopped halfway
+        through a CSI/OSC sequence or left a non-default SGR style active.  Keep
+        the child's parser/style state for a still-running stream, but write the
+        notice itself with the default style and never interpret control
+        sequences embedded in an OS error string.
+        """
+
+        pending_escape = self._escape
+        pending_style = self._style
+        self._escape = None
+        self._style = ANSI_DEFAULT_STYLE
+        try:
+            for char in text:
+                if char == "\r":
+                    self._set_cursor_column(0)
+                elif char == "\n":
+                    self._newline()
+                elif char == "\b":
+                    self._set_cursor_column(max(0, self._cursor_column() - 1))
+                elif char == "\t":
+                    for _ in range(8 - (self._cursor_column() % 8)):
+                        self._write(" ")
+                elif char.isprintable():
+                    self._write(char)
+        finally:
+            self._escape = pending_escape
+            self._style = pending_style
+        return self.text()
+
+    def end_of_stream(self) -> str:
+        """Close child-owned terminal state at a process byte boundary.
+
+        A crashed process cannot complete a partial escape sequence or emit the
+        normal alternate-screen/style reset.  Abandon that incomplete parser
+        state, restore the primary transcript, and reset input modes before the
+        host application adds its exit diagnostics.
+        """
+
+        self._escape = None
+        self._style = ANSI_DEFAULT_STYLE
+        self._bracketed_paste = False
+        self._application_cursor_keys = False
+        self._cursor_visible = True
+        self._pending_responses.clear()
+        if self._alternate_screen:
+            self._leave_alternate_screen()
         return self.text()
 
     def text(self) -> str:
@@ -394,14 +474,10 @@ class AnsiTerminalTranscript:
             self._escape = None
             return
         if sequence == "c":
-            # RIS is uncommon in normal shell output but is a valid terminal
-            # reset used by full-screen programs when leaving a broken mode.
-            if self._alternate_screen:
-                self._clear_alternate_screen()
-                self._style = ANSI_DEFAULT_STYLE
-            else:
-                self.reset()
-            self._escape = None
+            # RIS resets screen contents and private modes.  In particular,
+            # leaving DECCKM or a hidden cursor sticky after Vim exits makes
+            # the next shell appear unable to accept navigation input.
+            self.reset()
             return
         # Consume bounded one-character ESC controls.
         if len(sequence) >= 1:
@@ -419,7 +495,11 @@ class AnsiTerminalTranscript:
         if private and command in {"h", "l"}:
             enabled = command == "h"
             for mode in values:
-                if mode in {47, 1047, 1049}:
+                if mode == 1:
+                    self._application_cursor_keys = enabled
+                elif mode == 25:
+                    self._cursor_visible = enabled
+                elif mode in {47, 1047, 1049}:
                     if enabled:
                         self._enter_alternate_screen()
                     else:

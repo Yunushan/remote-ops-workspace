@@ -7,7 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 SUPPORTED_HOSTED_RUNNERS = {
+    "ubuntu-24.04-arm",
     "ubuntu-latest",
+    "windows-11-arm",
     "windows-2025-vs2026",
     "macos-14",
     "macos-15",
@@ -34,6 +36,8 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors.extend(check_repo_policy_job(text))
     errors.extend(check_coverage_job(text))
     errors.extend(check_test_job(text))
+    errors.extend(check_python315_optional_dependencies_job(text))
+    errors.extend(check_python315_readiness_job(text))
     errors.extend(check_mobile_web_job(text))
     errors.extend(check_web_container_job(text))
     errors.extend(check_web_recovery_job(text))
@@ -41,6 +45,7 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors.extend(check_ios_simulator_web_job(text))
     errors.extend(check_gui_render_job(text))
     errors.extend(check_gui_interactions_windows_job(text))
+    errors.extend(check_native_windows_readiness_job(text))
     return errors
 
 
@@ -170,7 +175,9 @@ def check_test_job(workflow: str) -> list[str]:
         errors.append("ci test matrix must have a bounded 30 minute job timeout")
     for os_name in (
         "ubuntu-latest",
+        "ubuntu-24.04-arm",
         "windows-2025-vs2026",
+        "windows-11-arm",
         "macos-15-intel",
         "macos-26-intel",
         "macos-14",
@@ -179,13 +186,20 @@ def check_test_job(workflow: str) -> list[str]:
     ):
         if not workflow_block_contains_token(block, os_name):
             errors.append(f"ci test matrix missing OS: {os_name}")
-    for version in ("3.10", "3.11", "3.12", "3.13", "3.14"):
+    for version in ("3.10", "3.11", "3.12", "3.13", "3.14", "3.15"):
         if f'"{version}"' not in block:
             errors.append(f"ci test matrix missing Python {version}")
     for os_name in ("macos-26-intel", "macos-14", "macos-15", "macos-26"):
-        for version in ("3.12", "3.13", "3.14"):
+        for version in ("3.12", "3.13", "3.14", "3.15"):
             if not workflow_includes_matrix_entry(block, os_name=os_name, python_version=version):
                 errors.append(f"ci test matrix missing macOS smoke row: {os_name} Python {version}")
+    for os_name in ("ubuntu-24.04-arm", "windows-11-arm"):
+        if not workflow_includes_matrix_entry(block, os_name=os_name, python_version="3.15"):
+            errors.append(f"ci test matrix missing modern ARM64 smoke row: {os_name} Python 3.15")
+    if "allow-prereleases: true" not in block:
+        errors.append(
+            "ci test job must allow the Python 3.15 prerelease until upstream GA is available"
+        )
     intel_macos_snippets = {
         "Install Intel macOS compatibility dependencies": (
             "explicit Intel macOS dependency compatibility step"
@@ -209,6 +223,232 @@ def check_test_job(workflow: str) -> list[str]:
         errors.append("ci test job must run pytest directly")
     if "python scripts/verify.py --lint" in block:
         errors.append("ci test matrix must not fan out the monolithic lint verifier")
+    return errors
+
+
+def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "python315-optional-dependencies")
+    if not block:
+        return [
+            "ci workflow missing python315-optional-dependencies job for Python 3.15 "
+            "optional dependency and distribution verification"
+        ]
+    required_snippets = {
+        "name: Python 3.15 optional dependencies, GUI, and build on ${{ matrix.os }}": (
+            "clear Python 3.15 optional dependency and GUI job label"
+        ),
+        "timeout-minutes: 60": "bounded comprehensive Python 3.15 job timeout",
+        "os: [ubuntu-latest, ubuntu-24.04-arm, windows-2025-vs2026, windows-11-arm, macos-15-intel, macos-15]": (
+            "Python 3.15 x64 and ARM64 Linux, Windows and macOS host matrix"
+        ),
+        '          - os: ubuntu-latest\n            qt_platform: "offscreen"': (
+            "Linux offscreen real-GUI render platform"
+        ),
+        '          - os: ubuntu-24.04-arm\n            qt_platform: "offscreen"': (
+            "Linux ARM64 offscreen real-GUI render platform"
+        ),
+        '          - os: windows-2025-vs2026\n            qt_platform: "windows"': (
+            "native Windows real-GUI render platform"
+        ),
+        '          - os: windows-11-arm\n            qt_platform: "windows"': (
+            "native Windows ARM64 real-GUI render platform"
+        ),
+        (
+            "          - os: macos-15-intel\n"
+            "            # Hosted macOS is not guaranteed to expose a logged-in WindowServer.\n"
+            "            # Keep the full application render deterministic and headless there.\n"
+            '            qt_platform: "offscreen"'
+        ): "hosted macOS offscreen real-GUI render platform",
+        (
+            "          - os: macos-15\n"
+            "            # Hosted macOS is not guaranteed to expose a logged-in WindowServer.\n"
+            "            # Keep the full application render deterministic and headless there.\n"
+            '            qt_platform: "offscreen"'
+        ): "hosted Apple Silicon macOS offscreen real-GUI render platform",
+        'python-version: "3.15"': "Python 3.15 interpreter request",
+        "allow-prereleases: true": "Python 3.15 release-candidate resolution",
+        'QT_QPA_PLATFORM: "offscreen"': "headless Python 3.15 Qt platform",
+        "libegl1": "Linux Qt EGL runtime dependency",
+        "libgl1": "Linux Qt OpenGL runtime dependency",
+        "libxkbcommon-x11-0": "Linux Qt xkbcommon runtime dependency",
+        "libxcb-cursor0": "Linux Qt cursor runtime dependency",
+        'python -m pip install -e ".[desktop,security,package,dev]"': (
+            "complete Python 3.15 optional dependency installation"
+        ),
+        "Install Python 3.15 native Windows SSH evidence dependency": (
+            "explicit Python 3.15 native Windows SSH evidence dependency step"
+        ),
+        'python -m pip install "paramiko==5.0.0"': (
+            "pinned Python 3.15 loopback SSH evidence dependency"
+        ),
+        "python -m pip check": "Python 3.15 installed dependency consistency gate",
+        "python scripts/check_optional_dependencies.py --require-extra desktop --require-extra security --require-extra package --require-extra dev": (
+            "Python 3.15 desktop, security, package and development extra smoke"
+        ),
+        "python -m PyInstaller --version": "Python 3.15 PyInstaller startup smoke",
+        "python scripts/write_python_runtime_evidence.py --expected-version 3.15": (
+            "exact Python 3.15 runtime evidence producer"
+        ),
+        "--require-standard-gil --out artifacts/python315-runtime/runtime.json": (
+            "standard GIL-enabled runtime evidence contract"
+        ),
+        "sys.version_info[:2] == (3, 15)": "resolved Python 3.15 assertion",
+        "import cryptography, truststore": "Python 3.15 security dependency import smoke",
+        "from PyQt6.QtCore import QT_VERSION_STR": "Python 3.15 PyQt6 import smoke",
+        "from PyQt6.QtWidgets import QApplication, QLabel": (
+            "Python 3.15 QtWidgets application smoke"
+        ),
+        "app = QApplication([])": "real Python 3.15 QApplication startup",
+        "assert not label.grab().isNull()": "Python 3.15 Qt widget paint assertion",
+        "Verify Python 3.15 offscreen QtWidgets application startup": (
+            "explicit Python 3.15 offscreen QtWidgets startup step"
+        ),
+        "Run the complete test suite with Python 3.15 optional dependencies": (
+            "full Python 3.15 test suite with optional dependencies present"
+        ),
+        "run: python -m pytest -q": "direct Python 3.15 full test suite execution",
+        "Run Python 3.15 native Windows SSH and ConPTY evidence": (
+            "explicit Python 3.15 native Windows SSH and ConPTY evidence step"
+        ),
+        '          ROW_REQUIRE_WINDOWS_SSH_LOOPBACK: "1"': (
+            "fail-closed Python 3.15 native Windows SSH requirement"
+        ),
+        "          ROW_WINDOWS_SSH_EVIDENCE_DIR: artifacts/python315-windows-ssh": (
+            "Python 3.15 native Windows SSH evidence output"
+        ),
+        "python -m pytest -q tests/test_windows_ssh_loopback.py": (
+            "real Python 3.15 native Windows OpenSSH/ConPTY loopback tests"
+        ),
+        "--junitxml=artifacts/python315-windows-ssh/junit.xml": (
+            "Python 3.15 native Windows SSH JUnit evidence"
+        ),
+        "Render every real GUI preset on Python 3.15": (
+            "explicit Python 3.15 all-preset GUI render step"
+        ),
+        "timeout-minutes: 8": "bounded Python 3.15 GUI evidence steps",
+        "QT_QPA_PLATFORM: ${{ matrix.qt_platform }}": (
+            "host-native Python 3.15 full GUI render override"
+        ),
+        "python scripts/check_real_gui_render.py --out-dir artifacts/python315-gui": (
+            "Python 3.15 all-preset application GUI renderer"
+        ),
+        "--require-pyqt6 --timeout-seconds 300": (
+            "bounded Python 3.15 GUI evidence output"
+        ),
+        "python scripts/check_gui_interactions.py --require-pyqt6": (
+            "Python 3.15 all-preset GUI interaction gate"
+        ),
+        "--out-dir artifacts/python315-interactions": (
+            "Python 3.15 GUI interaction evidence output"
+        ),
+        "name: python315-gui-${{ matrix.os }}": "per-host Python 3.15 GUI artifact",
+        "path: artifacts/python315-gui": "Python 3.15 GUI artifact path",
+        "name: python315-interactions-${{ matrix.os }}": (
+            "per-host Python 3.15 GUI interaction artifact"
+        ),
+        "path: artifacts/python315-interactions": (
+            "Python 3.15 GUI interaction artifact path"
+        ),
+        "name: python315-distributions-${{ matrix.os }}": (
+            "per-host Python 3.15 distribution artifact"
+        ),
+        "path: artifacts/python315-dist": "Python 3.15 distribution artifact path",
+        "name: python315-runtime-${{ matrix.os }}": (
+            "per-host exact Python 3.15 runtime artifact"
+        ),
+        "path: artifacts/python315-runtime": "Python 3.15 runtime artifact path",
+        "python scripts/check_python_frozen_executable.py --expected-python 3.15": (
+            "real Python 3.15 frozen executable build and launch smoke"
+        ),
+        "--out-dir artifacts/python315-frozen --timeout-seconds 720": (
+            "bounded Python 3.15 frozen executable evidence"
+        ),
+        "name: python315-frozen-${{ matrix.os }}": (
+            "per-host Python 3.15 frozen executable artifact"
+        ),
+        "path: artifacts/python315-frozen": "Python 3.15 frozen executable artifact path",
+        "name: python315-windows-ssh-${{ matrix.os }}": (
+            "per-host Python 3.15 native Windows SSH artifact"
+        ),
+        "path: artifacts/python315-windows-ssh": (
+            "Python 3.15 native Windows SSH artifact path"
+        ),
+        (
+            "        if: ${{ always() && runner.os == 'Windows' }}\n"
+            "        with:\n"
+            "          name: python315-windows-ssh-${{ matrix.os }}\n"
+            "          path: artifacts/python315-windows-ssh\n"
+            "          if-no-files-found: error\n"
+            "          retention-days: 90"
+        ): "fail-closed retained Python 3.15 native Windows SSH evidence upload",
+        "if-no-files-found: error": "fail-closed Python 3.15 GUI artifact upload",
+        "python -m build --sdist --wheel --outdir artifacts/python315-dist": (
+            "Python 3.15 distribution build"
+        ),
+        "python scripts/check_python_distribution_install.py": (
+            "clean Python 3.15 wheel and sdist installation verifier"
+        ),
+        "--dist-dir artifacts/python315-dist": "Python 3.15 built distribution input",
+        "--out artifacts/python315-runtime/distribution-install.json": (
+            "machine-readable Python 3.15 distribution installation evidence"
+        ),
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(
+                f"ci python315-optional-dependencies job missing {label}: {snippet}"
+            )
+    if "continue-on-error: true" in block:
+        errors.append("ci python315-optional-dependencies job must remain release-blocking")
+    if "--preset" in block:
+        errors.append(
+            "ci python315-optional-dependencies job must render the default complete preset set"
+        )
+    if block.count("if: ${{ always() }}") < 5:
+        errors.append("ci Python 3.15 evidence uploads must run after success or failure")
+    if block.count("if-no-files-found: error") < 6:
+        errors.append("ci Python 3.15 evidence uploads must fail closed for all artifact groups")
+    if block.count("retention-days: 90") < 6:
+        errors.append(
+            "ci Python 3.15 evidence artifacts must retain all six declared groups for 90 days"
+        )
+    return errors
+
+
+def check_python315_readiness_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "python315-readiness")
+    if not block:
+        return ["ci workflow missing stable Python 3.15 readiness aggregate job"]
+
+    active_lines = {
+        "name": r'^    name: Python 3\.15 readiness\s*$',
+        "needs": (
+            r'^    needs:\s*\[\s*test\s*,\s*python315-optional-dependencies\s*\]\s*$'
+        ),
+        "always": r'^    if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$',
+        "runner": r'^    runs-on:\s*ubuntu-latest\s*$',
+        "timeout": r'^    timeout-minutes:\s*5\s*$',
+        "normal result": (
+            r'^      NORMAL_MATRIX_RESULT:\s*\$\{\{\s*needs\.test\.result\s*\}\}\s*$'
+        ),
+        "optional result": (
+            r'^      OPTIONAL_MATRIX_RESULT:\s*\$\{\{\s*'
+            r'needs\.python315-optional-dependencies\.result\s*\}\}\s*$'
+        ),
+        "normal success assertion": (
+            r'^          test "\$NORMAL_MATRIX_RESULT" = "success"\s*$'
+        ),
+        "optional success assertion": (
+            r'^          test "\$OPTIONAL_MATRIX_RESULT" = "success"\s*$'
+        ),
+    }
+    for label, pattern in active_lines.items():
+        if re.search(pattern, block, re.MULTILINE) is None:
+            errors.append(f"ci Python 3.15 readiness aggregate missing active {label}")
+    if "continue-on-error: true" in block:
+        errors.append("ci Python 3.15 readiness aggregate must fail closed")
     return errors
 
 
@@ -270,50 +510,146 @@ def check_gui_interactions_windows_job(workflow: str) -> list[str]:
         return [
             "ci workflow missing gui-interactions-windows job for native Windows PyQt6 controls"
         ]
-    required_snippets = {
-        "name: Native Windows PyQt6 render and interactions": (
+    active_lines = {
+        r"^    name: Native Windows PyQt6 render and interactions\s*$": (
             "clear native Windows render and interaction job label"
         ),
-        "runs-on: windows-2025-vs2026": "repository-approved native Windows runner",
-        "timeout-minutes: 20": "bounded native Windows GUI job timeout",
-        'QT_QPA_PLATFORM: "windows"': "native Windows Qt platform",
-        'python-version: "3.12"': "stable native Windows GUI Python version",
-        'python -m pip install -e ".[desktop,security,dev]"': "desktop verification dependencies",
-        "Verify real Windows ConPTY terminal transport": (
+        r"^    runs-on: windows-2025-vs2026\s*$": (
+            "repository-approved native Windows runner"
+        ),
+        r"^    timeout-minutes: 40\s*$": "bounded native Windows GUI job timeout",
+        r'^      QT_QPA_PLATFORM: "windows"\s*$': "native Windows Qt platform",
+        r'^      ROW_REQUIRE_WINDOWS_SSH_LOOPBACK: "1"\s*$': (
+            "release-blocking native Windows SSH loopback contract"
+        ),
+        r"^      ROW_WINDOWS_SSH_EVIDENCE_DIR: artifacts/windows-ssh-loopback\s*$": (
+            "native Windows SSH structured evidence output"
+        ),
+        r'^          python-version: "3\.12"\s*$': (
+            "stable native Windows GUI Python version"
+        ),
+        r'^        run: python -m pip install -e "\.\[desktop,security,dev\]"\s*$': (
+            "desktop verification dependencies"
+        ),
+        r'^        run: python -m pip install "paramiko==5\.0\.0"\s*$': (
+            "pinned secret-free loopback SSH test server dependency"
+        ),
+        r"^      - name: Verify real Windows ConPTY terminal transport\s*$": (
             "real Windows ConPTY transport verification step"
         ),
-        "python -m pytest -q tests/test_windows_conpty.py tests/test_qt_terminal_process.py": (
+        r"^        run: python -m pytest -q tests/test_windows_conpty\.py tests/test_qt_terminal_process\.py\s*$": (
             "real Windows ConPTY transport tests"
         ),
-        "Render full GUI on native Windows": "native Windows full GUI render step",
-        "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows": (
+        r"^      - name: Verify native Windows OpenSSH authentication through Qt ConPTY\s*$": (
+            "authenticated native OpenSSH through Qt ConPTY gate"
+        ),
+        r"^        run: python -m pytest -q tests/test_windows_ssh_loopback\.py --junitxml=artifacts/windows-ssh-loopback/junit\.xml\s*$": (
+            "native Windows OpenSSH loopback authentication and I/O test"
+        ),
+        r"^      - name: Render full GUI on native Windows\s*$": (
+            "native Windows full GUI render step"
+        ),
+        r"^        run: python scripts/check_real_gui_render\.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows\s*$": (
             "native Windows all-preset GUI render gate"
         ),
-        "Validate native Windows GUI render artifact": (
+        r"^      - name: Validate native Windows GUI render artifact\s*$": (
             "native Windows GUI artifact validation step"
         ),
-        "python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real-windows": (
+        r"^        run: python scripts/check_real_gui_render_artifact\.py --artifact-dir artifacts/gui-real-windows\s*$": (
             "native Windows GUI artifact validator"
         ),
-        "Exercise native Windows controls and responsive layouts": "native Windows interaction step",
-        "timeout-minutes: 8": "bounded native Windows interaction step timeout",
-        "python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions-windows": (
+        r"^      - name: Exercise native Windows controls and responsive layouts\s*$": (
+            "native Windows interaction step"
+        ),
+        r"^        timeout-minutes: 8\s*$": (
+            "bounded native Windows interaction step timeout"
+        ),
+        r"^        run: python scripts/check_gui_interactions\.py --require-pyqt6 --out-dir artifacts/gui-interactions-windows\s*$": (
             "native Windows GUI interaction gate"
         ),
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "native Windows GUI interaction artifact upload",
-        "name: gui-real-render-windows": "native Windows GUI render artifact name",
-        "path: artifacts/gui-real-windows/*": "native Windows GUI render artifact path",
-        "name: gui-interactions-windows": "native Windows GUI interaction artifact name",
-        "path: artifacts/gui-interactions-windows/*": "native Windows GUI interaction artifact path",
-        "if-no-files-found: error": "missing native Windows interaction artifact failure",
+        r"^      - name: Capture native Windows terminal tab-switch paint turns\s*$": (
+            "native Windows terminal tab paint capture step"
+        ),
+        r"^        run: python scripts/check_windows_tab_switch_paint\.py --require-native-windows --out-dir artifacts/gui-tab-switch-windows\s*$": (
+            "native Windows real tab-bar click and transient paint gate"
+        ),
+        r"^      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\s*$": (
+            "native Windows GUI interaction artifact upload"
+        ),
+        r"^          name: gui-real-render-windows\s*$": (
+            "native Windows GUI render artifact name"
+        ),
+        r"^          path: artifacts/gui-real-windows/\*\s*$": (
+            "native Windows GUI render artifact path"
+        ),
+        r"^          name: gui-interactions-windows\s*$": (
+            "native Windows GUI interaction artifact name"
+        ),
+        r"^          path: artifacts/gui-interactions-windows/\*\s*$": (
+            "native Windows GUI interaction artifact path"
+        ),
+        r"^          name: gui-tab-switch-paint-windows\s*$": (
+            "native Windows terminal tab paint artifact name"
+        ),
+        r"^          path: artifacts/gui-tab-switch-windows/\*\s*$": (
+            "native Windows terminal tab paint artifact path"
+        ),
+        r"^          name: windows-ssh-loopback-conpty\s*$": (
+            "native Windows SSH loopback evidence artifact name"
+        ),
+        r"^          path: artifacts/windows-ssh-loopback/\*\s*$": (
+            "native Windows SSH loopback evidence artifact path"
+        ),
     }
-    for snippet, label in required_snippets.items():
-        if snippet not in block:
-            errors.append(f"ci gui-interactions-windows job missing {label}: {snippet}")
+    for pattern, label in active_lines.items():
+        if re.search(pattern, block, re.MULTILINE) is None:
+            errors.append(f"ci gui-interactions-windows job missing active {label}")
+    upload_action_pattern = (
+        r"^      - uses: actions/upload-artifact@"
+        r"043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\s*$"
+    )
+    if len(re.findall(upload_action_pattern, block, re.MULTILINE)) != 4:
+        errors.append(
+            "ci gui-interactions-windows job must retain four active evidence uploads"
+        )
+    if len(
+        re.findall(r"^          if-no-files-found: error\s*$", block, re.MULTILINE)
+    ) != 4:
+        errors.append(
+            "ci gui-interactions-windows job must fail closed for all four evidence uploads"
+        )
     if "--preset " in block:
         errors.append(
             "ci gui-interactions-windows job must use the default all-preset native Windows render set"
         )
+    return errors
+
+
+def check_native_windows_readiness_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "native-windows-readiness")
+    if not block:
+        return ["ci workflow missing stable Native Windows readiness aggregate job"]
+
+    active_lines = {
+        "name": r"^    name: Native Windows readiness\s*$",
+        "needs": r"^    needs:\s*\[\s*gui-interactions-windows\s*\]\s*$",
+        "always": r"^    if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$",
+        "runner": r"^    runs-on:\s*ubuntu-latest\s*$",
+        "timeout": r"^    timeout-minutes:\s*5\s*$",
+        "native Windows result": (
+            r"^      NATIVE_WINDOWS_RESULT:\s*\$\{\{\s*"
+            r"needs\.gui-interactions-windows\.result\s*\}\}\s*$"
+        ),
+        "native Windows success assertion": (
+            r'^          test "\$NATIVE_WINDOWS_RESULT" = "success"\s*$'
+        ),
+    }
+    for label, pattern in active_lines.items():
+        if re.search(pattern, block, re.MULTILINE) is None:
+            errors.append(f"ci Native Windows readiness aggregate missing active {label}")
+    if "continue-on-error: true" in block:
+        errors.append("ci Native Windows readiness aggregate must fail closed")
     return errors
 
 

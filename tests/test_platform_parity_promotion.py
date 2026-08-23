@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -12,6 +13,24 @@ def test_platform_parity_promotion_checker_passes_current_tree() -> None:
     checker = _load_platform_parity_promotion_checker()
 
     assert checker.main() == 0
+
+
+def test_platform_parity_promotion_cli_rejects_unknown_arguments() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check_platform_parity_promotion.py",
+            "--require-complete",
+        ],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert "unrecognized arguments: --require-complete" in result.stderr
+    assert "platform parity promotion checks passed" not in result.stdout
 
 
 def test_platform_parity_promotion_uses_explicit_empty_promotion() -> None:

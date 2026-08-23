@@ -39,9 +39,9 @@ clients available on the target system.
 Native `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm`, and AppImage artifacts
 are built by OS-specific release jobs or matching self-hosted builders. Windows
 and macOS CI candidates can be unsigned until release signing credentials are
-configured, but production tags fail before publication in that state and never
-publish unsigned native assets. APK-style artifacts remain out of scope until
-there is a real native Android wrapper. iOS/iPadOS support is Web/PWA only; no
+configured, but production publication is withheld in that state and the
+workflow never publishes unsigned native assets. APK-style artifacts remain
+out of scope until there is a real native Android wrapper. iOS/iPadOS support is Web/PWA only; no
 native `.ipa` artifact is published.
 
 Native installer smoke coverage is declared in
@@ -514,7 +514,7 @@ Recommended external clients:
 
 ## Unix/BSD
 
-Target systems include FreeBSD, OpenBSD, NetBSD, DragonFlyBSD and other POSIX-like operator hosts with Python 3.10+.
+Target systems include FreeBSD, OpenBSD, NetBSD, DragonFlyBSD and other POSIX-like operator hosts with standard CPython 3.10-3.14. Python 3.15 remains outside this source-only platform claim until native dependency and smoke evidence is recorded; the project-level classifier covers the hosted Linux, Windows and macOS CI families instead.
 
 Use the CLI and Web/PWA first. GUI support depends on local PyQt6 availability.
 

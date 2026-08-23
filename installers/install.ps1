@@ -7,7 +7,12 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "Remote Ops Workspace installer"
 if (-not (Get-Command $Python -ErrorAction SilentlyContinue)) {
-  throw "Python command not found: $Python. Install Python 3.10+ first."
+  throw "Python command not found: $Python. Install Python 3.10 through 3.15 first."
+}
+
+& $Python -c "import sys; raise SystemExit(0 if (3, 10) <= sys.version_info < (3, 16) else 1)"
+if ($LASTEXITCODE -ne 0) {
+  throw "Python 3.10 through 3.15 is required."
 }
 
 & $Python -m venv .venv

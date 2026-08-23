@@ -4,6 +4,10 @@ Thanks for helping improve Remote Ops Workspace.
 
 ## Development setup
 
+Use standard CPython 3.10 through 3.15. Python 3.15 remains an upstream
+prerelease until its scheduled GA; see `docs/PYTHON_SUPPORT.md` before treating
+a 3.15 release-candidate result as production evidence.
+
 ```bash
 python -m venv .venv
 . .venv/bin/activate

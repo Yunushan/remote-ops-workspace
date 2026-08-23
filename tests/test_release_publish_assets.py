@@ -102,6 +102,10 @@ MOBA_PARITY_POLICY = (
     "a release_target, the exact validation command for that article, SHA-256 digests for the validated "
     "evidence JSON and evidence assets, release asset URLs under the same GitHub release tag, per-artifact "
     "SHA-256 digests, required article checks, and a validation summary proving the article evidence passed. "
+    "Acceptance additionally requires the exact GitHub repository, source head SHA and tag source head SHA, "
+    "the exact source workflow run URL and positive run attempt, reviewer provenance, and hashes of the "
+    "published release bytes matching the accepted per-artifact SHA-256 values. Candidate generation cannot "
+    "append or accept its own output; a separate reviewed finalization step is mandatory. "
     "Empty means the generated feature-family score remains separate from true product-depth parity."
 )
 
@@ -2712,7 +2716,7 @@ def _empty_evidence_registry() -> dict[str, object]:
 
 def _empty_mobaxterm_parity_registry() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "policy": MOBA_PARITY_POLICY,
         "accepted_evidence": [],
     }
@@ -2721,7 +2725,7 @@ def _empty_mobaxterm_parity_registry() -> dict[str, object]:
 def _complete_mobaxterm_parity_registry() -> dict[str, object]:
     checker = _load_mobaxterm_checker()
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "policy": MOBA_PARITY_POLICY,
         "accepted_evidence": [
             _mobaxterm_parity_record(article_id, spec)
@@ -2750,6 +2754,27 @@ def _mobaxterm_parity_record(article_id: str, spec) -> dict[str, object]:
             "passed": True,
             "errors": [],
             "summary": {"article_id": article_id},
+        },
+        "release_source": {
+            "repository": "example/remote-ops-workspace",
+            "release_tag": "v1.0.2",
+            "head_sha": "d" * 40,
+            "tag_source_head_sha": "d" * 40,
+            "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/1234",
+            "run_attempt": 2,
+        },
+        "acceptance_review": {
+            "reviewer": "release-reviewer",
+            "review_url": (
+                "https://github.com/example/remote-ops-workspace/pull/42#pullrequestreview-99"
+            ),
+            "reviewed_at": "2026-08-23T12:34:56Z",
+        },
+        "release_asset_bytes": {
+            "verified": True,
+            "verified_by": "release-reviewer",
+            "verified_at": "2026-08-23T12:34:56Z",
+            "sha256": {artifact_name: "c" * 64},
         },
     }
 

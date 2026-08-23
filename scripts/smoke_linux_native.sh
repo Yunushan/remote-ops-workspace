@@ -446,13 +446,58 @@ for artifact in "$DEB" "$RPM" "$APPIMAGE"; do
   echo "native installer smoke artifact sha256: $(basename "$artifact") $digest"
 done
 
+run_row_command() {
+  local row_bin="$1"
+  local mode="$2"
+  shift 2
+  if [[ "$mode" == "appimage" ]]; then
+    APPIMAGE_EXTRACT_AND_RUN=1 "$row_bin" "$@"
+  else
+    "$row_bin" "$@"
+  fi
+}
+
+verify_row_runtime_resources() {
+  local row_bin="$1"
+  local mode="$2"
+  local label="$3"
+  local probe_name="${label//[^[:alnum:]]/-}"
+  local probe_file="$SMOKE_ROOT/runtime-resources-${probe_name}.json"
+  if ! run_row_command "$row_bin" "$mode" platforms --json >"$probe_file"; then
+    echo "$label platforms --json failed for $row_bin" >&2
+    exit 1
+  fi
+  python3 - "$probe_file" "$label" <<'PY'
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+label = sys.argv[2]
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"{label} platforms --json did not return valid JSON: {exc}")
+for key in ("release_architectures", "windows_legacy_targets"):
+    if not isinstance(payload.get(key), list) or not payload[key]:
+        raise SystemExit(f"{label} packaged platform catalog has no {key}")
+PY
+  rm -f "$probe_file"
+  echo "native installer smoke runtime resources: $label platforms --json"
+}
+
 verify_row() {
   local row_bin="$1"
+  local mode="$2"
+  local label="$3"
   if [[ ! -x "$row_bin" ]]; then
     echo "expected executable missing: $row_bin" >&2
     exit 1
   fi
-  "$row_bin" --version | grep -F "$VERSION" >/dev/null
+  run_row_command "$row_bin" "$mode" --version | grep -F "$VERSION" >/dev/null
+  verify_row_runtime_resources "$row_bin" "$mode" "$label"
 }
 
 rm -rf "$SMOKE_ROOT"
@@ -461,10 +506,10 @@ mkdir -p "$SMOKE_ROOT/appimage"
 echo "native installer smoke: DEB install"
 sudo -n dpkg -i "$DEB"
 echo "native installer smoke: DEB verify"
-verify_row /usr/bin/row
+verify_row /usr/bin/row direct "DEB verify"
 echo "native installer smoke: DEB upgrade"
 sudo -n dpkg -i "$DEB"
-verify_row /usr/bin/row
+verify_row /usr/bin/row direct "DEB upgrade"
 echo "native installer smoke: DEB uninstall"
 sudo -n dpkg -r remote-ops-workspace
 if [[ -e /usr/bin/row ]]; then
@@ -475,10 +520,10 @@ fi
 echo "native installer smoke: RPM install"
 sudo -n rpm -Uvh --nodeps --replacepkgs "$RPM"
 echo "native installer smoke: RPM verify"
-verify_row /usr/bin/row
+verify_row /usr/bin/row direct "RPM verify"
 echo "native installer smoke: RPM upgrade"
 sudo -n rpm -Uvh --nodeps --replacepkgs "$RPM"
-verify_row /usr/bin/row
+verify_row /usr/bin/row direct "RPM upgrade"
 echo "native installer smoke: RPM uninstall"
 sudo -n rpm -e --nodeps remote-ops-workspace
 if [[ -e /usr/bin/row ]]; then
@@ -489,10 +534,10 @@ fi
 echo "native installer smoke: AppImage install"
 install -m 755 "$APPIMAGE" "$STAGED_APPIMAGE"
 echo "native installer smoke: AppImage verify"
-APPIMAGE_EXTRACT_AND_RUN=1 "$STAGED_APPIMAGE" --version | grep -F "$VERSION" >/dev/null
+verify_row "$STAGED_APPIMAGE" appimage "AppImage verify"
 echo "native installer smoke: AppImage upgrade"
 install -m 755 "$APPIMAGE" "$STAGED_APPIMAGE"
-APPIMAGE_EXTRACT_AND_RUN=1 "$STAGED_APPIMAGE" --version | grep -F "$VERSION" >/dev/null
+verify_row "$STAGED_APPIMAGE" appimage "AppImage upgrade"
 echo "native installer smoke: AppImage uninstall"
 rm -f "$STAGED_APPIMAGE"
 if [[ -e "$STAGED_APPIMAGE" ]]; then

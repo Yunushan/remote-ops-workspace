@@ -64,7 +64,7 @@
       "bits": 32,
       "release_tier": "script-supported-native",
       "github_release_channel": "manual-script-native",
-      "host_support": "32-bit x86 Linux distributions with Python 3.10+ and PyInstaller support.",
+      "host_support": "32-bit x86 Linux distributions with Python 3.10-3.14 and PyInstaller support; Python 3.15 remains outside this protected target claim until accepted target-native interpreter, dependency and package evidence exists.",
       "assets": [
         "remote-ops-workspace-v1.0.20-linux-i386.deb",
         "remote-ops-workspace-v1.0.20-linux-i686.rpm",
@@ -105,7 +105,7 @@
       "bits": 32,
       "release_tier": "script-supported-native",
       "github_release_channel": "manual-script-native",
-      "host_support": "32-bit ARM Linux distributions with Python 3.10+ and PyInstaller support.",
+      "host_support": "32-bit ARM Linux distributions with Python 3.10-3.14 and PyInstaller support; Python 3.15 remains outside this protected target claim until accepted target-native interpreter, dependency and package evidence exists.",
       "assets": [
         "remote-ops-workspace-v1.0.20-linux-armhf.deb",
         "remote-ops-workspace-v1.0.20-linux-armv7hl.rpm",
@@ -262,7 +262,7 @@
       "remote_target_tier": "supported",
       "notes": [
         "Can be managed as a remote target through RDP, VNC, SSH, Telnet, serial or raw sockets.",
-        "Native host installs depend on a compatible Python 3.10+ and external protocol clients."
+        "Native Python host installs use the project runtime boundary only on host families with matching dependency evidence; protected legacy targets keep their narrower evidence-backed boundary."
       ]
     },
     {

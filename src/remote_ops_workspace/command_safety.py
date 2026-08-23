@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import ctypes
+import os
 import shlex
 from collections.abc import Iterable
+from ctypes import wintypes
 from urllib.parse import urlparse
 
 
@@ -66,11 +69,59 @@ def url(value: str, allowed_schemes: Iterable[str] = ("http", "https")) -> str:
 
 
 def argv(command: str, label: str = "command") -> list[str]:
+    # Outer whitespace is not part of any argv item on either supported
+    # command-line grammar. Trim it before CommandLineToArgvW so its special
+    # leading-whitespace empty-argv[0] behavior cannot reject a valid command.
+    text = clean_text(command, label).strip()
+    # CommandLineToArgvW has a surprising empty-input special case: it returns
+    # the current process executable. Preserve argv()'s cross-platform
+    # fail-closed contract instead of silently launching the application.
+    if not text.strip():
+        return argv_list([], label)
+    if os.name == "nt":
+        parts = _windows_command_line_to_argv(text, label)
+        return argv_list(parts, label)
     try:
-        parts = shlex.split(clean_text(command, label))
+        parts = shlex.split(text)
     except ValueError as exc:
         raise CommandSafetyError(f"{label} is not a valid command line: {exc}") from exc
     return argv_list(parts, label)
+
+
+def _windows_command_line_to_argv(command: str, label: str) -> list[str]:
+    """Parse text with the same quoting rules used by native Windows programs.
+
+    POSIX ``shlex`` treats every backslash as an escape character, corrupting
+    ordinary Windows paths before they reach ``CreateProcessW``.  The shell32
+    parser implements the platform contract without invoking a command shell.
+    """
+
+    try:
+        shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    except (AttributeError, OSError) as exc:
+        raise CommandSafetyError(
+            f"{label} cannot be parsed because the Windows command-line API is unavailable"
+        ) from exc
+
+    command_line_to_argv = shell32.CommandLineToArgvW
+    command_line_to_argv.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
+    command_line_to_argv.restype = ctypes.POINTER(wintypes.LPWSTR)
+    local_free = kernel32.LocalFree
+    local_free.argtypes = [wintypes.HLOCAL]
+    local_free.restype = wintypes.HLOCAL
+
+    argument_count = ctypes.c_int()
+    parsed = command_line_to_argv(command, ctypes.byref(argument_count))
+    if not parsed:
+        error_code = ctypes.get_last_error()
+        raise CommandSafetyError(
+            f"{label} is not a valid Windows command line (error {error_code})"
+        )
+    try:
+        return [parsed[index] for index in range(argument_count.value)]
+    finally:
+        local_free(ctypes.cast(parsed, wintypes.HLOCAL))
 
 
 def argv_list(parts: Iterable[str], label: str = "command") -> list[str]:

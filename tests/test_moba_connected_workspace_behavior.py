@@ -180,6 +180,15 @@ def test_terminal_key_payload_covers_common_interactive_terminal_keys(
         payload(KeyEvent(Qt.Key.Key_PageDown, Qt.KeyboardModifier.AltModifier))
         == b"\x1b[6;3~"
     )
+    panel.terminal_pane.terminal_emulator.feed("\x1b[?1h")
+    assert payload(KeyEvent(Qt.Key.Key_Up)) == b"\x1bOA"
+    assert payload(KeyEvent(Qt.Key.Key_Home)) == b"\x1bOH"
+    assert (
+        payload(KeyEvent(Qt.Key.Key_Left, Qt.KeyboardModifier.ControlModifier))
+        == b"\x1b[1;5D"
+    )
+    panel.terminal_pane.terminal_emulator.feed("\x1b[?1l")
+    assert payload(KeyEvent(Qt.Key.Key_Up)) == b"\x1b[A"
 
 
 def test_moba_sftp_editor_and_monitoring_remain_compact_and_non_synthetic(

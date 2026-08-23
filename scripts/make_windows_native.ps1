@@ -346,6 +346,9 @@ raise SystemExit(main())
   --workpath $PyWork `
   --specpath $BuildDir `
   --collect-submodules remote_ops_workspace `
+  --collect-data remote_ops_workspace `
+  --add-data "$Root\configs;remote_ops_workspace/configs" `
+  --add-data "$Root\apps\web;remote_ops_workspace/web" `
   --copy-metadata remote-ops-workspace `
   --exclude-module PyQt6 `
   --exclude-module remote_ops_workspace.gui `
@@ -367,6 +370,9 @@ if ($BuildGuiLauncher) {
     --workpath $PyWork `
     --specpath $BuildDir `
     --collect-submodules remote_ops_workspace `
+    --collect-data remote_ops_workspace `
+    --add-data "$Root\configs;remote_ops_workspace/configs" `
+    --add-data "$Root\apps\web;remote_ops_workspace/web" `
     --copy-metadata remote-ops-workspace `
     --hidden-import PyQt6.QtCore `
     --hidden-import PyQt6.QtGui `

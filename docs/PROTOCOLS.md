@@ -112,6 +112,14 @@ intentionally not emitted on the command line.
 | X2Go | `session=name`, `session_type=XFCE`, `command=XFCE`, `geometry=1440x900`, `fullscreen=true`, `link=modem|isdn|adsl|wan|lan`, `pack=16m-jpeg` |
 | Serial | `baud=9600`, `data_bits=7`, `parity=none|even|odd|mark|space`, `stop_bits=1|2`, `flow=none|xonxoff|rtscts|dsrdtr`; Windows maps these to PuTTY `-sercfg`, Unix maps them fully through `picocom` when available |
 
+On native Windows, `proxy_jump` supports one `[user@]host[:port]` hop. The
+runtime gives the generated jump-host `ssh` child explicit standalone transport
+options so user or system SSH configuration cannot re-enable unsupported
+ControlMaster/ControlPath sharing. The child continues to use normal OpenSSH
+host-key verification and an explicit `-F` configuration when supplied.
+Multi-hop chains are rejected on this path instead of being downgraded to an
+unsafe command string.
+
 Examples:
 
 ```bash

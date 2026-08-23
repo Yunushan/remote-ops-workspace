@@ -20,7 +20,66 @@ def test_native_installer_smoke_contract_covers_required_formats() -> None:
         for item in platform["formats"]
     }
 
+    assert config["schema_version"] == 2
     assert formats == {"exe", "msi", "dmg", "pkg", "deb", "rpm", "AppImage"}
+    assert config["runtime_resource_probe"] == {
+        "command": "platforms --json",
+        "required_json_arrays": ["release_architectures", "windows_legacy_targets"],
+        "lifecycle_steps": ["verify", "upgrade"],
+    }
+    for platform in config["platforms"].values():
+        for item in platform["formats"]:
+            assert "platforms --json" in item["lifecycle"]["verify"]
+            assert "platforms --json" in item["lifecycle"]["upgrade"]
+
+
+def test_native_installer_smoke_checker_rejects_weakened_runtime_resource_probe() -> None:
+    checker = _load_checker()
+    config = json.loads(Path("configs/native_installer_smoke.json").read_text(encoding="utf-8"))
+    config["runtime_resource_probe"]["command"] = "--version"
+    config["platforms"]["windows"]["formats"][0]["lifecycle"]["upgrade"] = (
+        "rerun setup without consuming packaged resources"
+    )
+
+    errors = checker.check_config_schema(config)
+
+    assert "runtime_resource_probe command must be 'platforms --json'" in errors
+    assert (
+        "windows exe lifecycle upgrade must execute platforms --json from the installed artifact"
+        in errors
+    )
+
+
+def test_native_installer_smoke_scripts_consume_installed_runtime_resources() -> None:
+    windows = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
+    linux = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+    macos = Path("scripts/smoke_macos_native.sh").read_text(encoding="utf-8")
+    macos_builder = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
+
+    for source in (windows, linux, macos):
+        assert "platforms --json" in source
+        assert "release_architectures" in source
+        assert "windows_legacy_targets" in source
+        assert "native installer smoke runtime resources:" in source
+    assert "Test-RowRuntimeResources" in windows
+    assert "verify_row_runtime_resources" in linux
+    assert "verify_app_runtime_resources" in macos
+    assert "Contents/MacOS" in macos
+    assert "sys.argv[1:]" in macos_builder
+    assert 'main(arguments or ["gui"])' in macos_builder
+
+
+def test_runtime_resource_script_checker_rejects_missing_installed_probe(
+    tmp_path: Path,
+) -> None:
+    checker = _load_checker()
+    script = tmp_path / "smoke_windows_native.ps1"
+    script.write_text("install verify upgrade uninstall", encoding="utf-8")
+
+    errors = checker.check_runtime_resource_script("windows", script, script.read_text())
+
+    assert any("installed CLI platform catalog invocation" in error for error in errors)
+    assert any("release architecture resource assertion" in error for error in errors)
 
 
 def test_linux_rpm_smoke_uses_nodeps_on_ubuntu_runner() -> None:

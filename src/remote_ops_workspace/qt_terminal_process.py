@@ -17,6 +17,24 @@ from .windows_conpty import (
     conpty_support,
 )
 
+_OUTPUT_EOF_DRAIN_TIMEOUT_SECONDS = 2.0
+_SESSION_CLOSE_TIMEOUT_SECONDS = 0.5
+_HIDDEN_OUTPUT_HIGH_WATER_BYTES = 4 * 1024 * 1024
+_HIDDEN_OUTPUT_LOW_WATER_BYTES = 1 * 1024 * 1024
+_OUTPUT_READ_CHUNK_BYTES = 64 * 1024
+
+
+def _take_buffer_prefix(buffer: bytearray, max_bytes: int) -> bytes:
+    """Remove at most ``max_bytes`` while keeping unread transport bytes."""
+
+    limit = max(0, int(max_bytes))
+    if limit <= 0 or not buffer:
+        return b""
+    amount = min(limit, len(buffer))
+    payload = bytes(buffer[:amount])
+    del buffer[:amount]
+    return payload
+
 
 class QtConPtyProcess(QObject):
     """Expose :class:`WindowsConPtyProcess` through the QProcess subset used by the GUI."""
@@ -36,10 +54,12 @@ class QtConPtyProcess(QObject):
         self._state = QProcess.ProcessState.NotRunning
         self._session: WindowsConPtyProcess | None = None
         self._stdout = bytearray()
+        self._output_paused = False
         self._error_string = ""
         self._reported_io_error: BaseException | None = None
         self._pending_returncode: int | None = None
         self._output_shutdown_started = False
+        self._output_shutdown_deadline: float | None = None
         self._forced_termination = False
         self._finished_emitted = True
         self._columns = 120
@@ -81,10 +101,12 @@ class QtConPtyProcess(QObject):
             return
         self._dispose_session(terminate=True)
         self._stdout.clear()
+        self._output_paused = False
         self._error_string = ""
         self._reported_io_error = None
         self._pending_returncode = None
         self._output_shutdown_started = False
+        self._output_shutdown_deadline = None
         self._forced_termination = False
         self._finished_emitted = False
         self._state = QProcess.ProcessState.Starting
@@ -117,26 +139,48 @@ class QtConPtyProcess(QObject):
         if session is None:
             self._poll_timer.stop()
             return
-        self._drain_output(session)
-        io_error = session.io_error
-        if io_error is not None and io_error is not self._reported_io_error:
-            self._reported_io_error = io_error
-            self._error_string = str(io_error)
-            process_error = (
-                QProcess.ProcessError.WriteError
-                if io_error.operation.startswith("WriteFile")
-                else QProcess.ProcessError.UnknownError
-                if io_error.operation.startswith("ResizePseudoConsole")
-                else QProcess.ProcessError.ReadError
+        try:
+            self._drain_output(session)
+        except (OSError, RuntimeError) as exc:
+            self._fail_session(
+                session,
+                str(exc),
+                QProcess.ProcessError.ReadError,
+                terminate=True,
             )
-            self.errorOccurred.emit(process_error)
+            return
+        resize_error = session.take_resize_error()
+        if resize_error is not None:
+            # Resize is advisory: report the failed viewport update once, but
+            # keep the live input/output pipes usable for subsequent commands.
+            self._error_string = str(resize_error)
+            self.errorOccurred.emit(QProcess.ProcessError.UnknownError)
         if self._pending_returncode is None:
             try:
                 self._pending_returncode = session.poll()
             except (OSError, RuntimeError) as exc:
-                self._error_string = str(exc)
-                self.errorOccurred.emit(QProcess.ProcessError.UnknownError)
+                self._fail_session(
+                    session,
+                    str(exc),
+                    QProcess.ProcessError.UnknownError,
+                    terminate=True,
+                )
                 return
+        io_error = session.io_error
+        if io_error is not None and io_error is not self._reported_io_error:
+            self._reported_io_error = io_error
+            process_error = (
+                QProcess.ProcessError.WriteError
+                if io_error.operation.startswith("WriteFile")
+                else QProcess.ProcessError.ReadError
+            )
+            self._fail_session(
+                session,
+                str(io_error),
+                process_error,
+                terminate=self._pending_returncode is None,
+            )
+            return
         if self._pending_returncode is None:
             return
 
@@ -144,8 +188,17 @@ class QtConPtyProcess(QObject):
         # final pipe chunks into its queue.  Begin a non-blocking pseudoconsole
         # shutdown while the reader remains active, then keep the session alive
         # until the reader reports EOF and perform one last drain.
-        self._begin_output_shutdown(session)
+        if not self._begin_output_shutdown(session):
+            return
         if not session.output_eof:
+            deadline = self._output_shutdown_deadline
+            if deadline is not None and time.monotonic() >= deadline:
+                self._fail_session(
+                    session,
+                    "timed out while draining final ConPTY output after child exit",
+                    QProcess.ProcessError.ReadError,
+                    terminate=False,
+                )
             return
         self._drain_output(session)
         self._finish_session(session)
@@ -159,6 +212,7 @@ class QtConPtyProcess(QObject):
         self._finished_emitted = True
         self._poll_timer.stop()
         self._state = QProcess.ProcessState.NotRunning
+        self._output_shutdown_deadline = None
         exit_status = (
             QProcess.ExitStatus.CrashExit
             if self._forced_termination
@@ -167,17 +221,55 @@ class QtConPtyProcess(QObject):
         self._dispose_session(terminate=False)
         self.finished.emit(int(returncode), exit_status)
 
-    def _begin_output_shutdown(self, session: WindowsConPtyProcess) -> None:
-        if self._output_shutdown_started:
+    def _fail_session(
+        self,
+        session: WindowsConPtyProcess,
+        detail: str,
+        process_error: QProcess.ProcessError,
+        *,
+        terminate: bool,
+    ) -> None:
+        """Complete a broken transport once and leave the adapter restartable."""
+
+        if session is not self._session or self._finished_emitted:
             return
-        self._output_shutdown_started = True
+        returncode = self._pending_returncode
+        self._finished_emitted = True
+        self._poll_timer.stop()
+        self._state = QProcess.ProcessState.NotRunning
+        self._error_string = detail or "ConPTY transport failed"
+        self._output_shutdown_deadline = None
+        self._dispose_session(terminate=terminate)
+        # Dispose and publish NotRunning before signals so a deferred restart
+        # cannot inherit handles or state from the failed session.
+        self.errorOccurred.emit(process_error)
+        self.finished.emit(
+            int(returncode) if returncode is not None else -1,
+            QProcess.ExitStatus.CrashExit,
+        )
+
+    def _begin_output_shutdown(self, session: WindowsConPtyProcess) -> bool:
+        if self._output_shutdown_started:
+            return True
         try:
             session.begin_output_shutdown()
         except (OSError, RuntimeError) as exc:
-            self._error_string = str(exc)
-            self.errorOccurred.emit(QProcess.ProcessError.UnknownError)
+            self._fail_session(
+                session,
+                str(exc),
+                QProcess.ProcessError.UnknownError,
+                terminate=self._pending_returncode is None,
+            )
+            return False
+        self._output_shutdown_started = True
+        self._output_shutdown_deadline = (
+            time.monotonic() + _OUTPUT_EOF_DRAIN_TIMEOUT_SECONDS
+        )
+        return True
 
     def _drain_output(self, session: WindowsConPtyProcess) -> None:
+        if self._output_paused:
+            return
         payload = session.read_all()
         if not payload:
             return
@@ -185,12 +277,24 @@ class QtConPtyProcess(QObject):
         self.readyReadStandardOutput.emit()
 
     def readAllStandardOutput(self) -> bytes:  # noqa: N802
-        output = bytes(self._stdout)
-        self._stdout.clear()
-        return output
+        return self.readStandardOutput(len(self._stdout))
+
+    def readStandardOutput(self, max_bytes: int) -> bytes:  # noqa: N802
+        return _take_buffer_prefix(self._stdout, max_bytes)
 
     def readAllStandardError(self) -> bytes:  # noqa: N802
         return b""
+
+    def readStandardError(self, _max_bytes: int) -> bytes:  # noqa: N802
+        return b""
+
+    def setOutputPaused(self, paused: bool) -> None:  # noqa: N802
+        """Backpressure the bounded ConPTY queue instead of growing RAM."""
+
+        self._output_paused = bool(paused)
+        self.setProperty("terminalTransportOutputPaused", self._output_paused)
+        if not self._output_paused:
+            self._poll_session()
 
     def write(self, payload: bytes) -> int:
         session = self._session
@@ -233,8 +337,13 @@ class QtConPtyProcess(QObject):
             else:
                 self._pending_returncode = returncode
         except (OSError, RuntimeError) as exc:
-            self._error_string = str(exc)
-            self.errorOccurred.emit(QProcess.ProcessError.Crashed)
+            self._fail_session(
+                session,
+                str(exc),
+                QProcess.ProcessError.Crashed,
+                terminate=True,
+            )
+            return
         self._poll_session()
 
     def kill(self) -> None:
@@ -249,11 +358,17 @@ class QtConPtyProcess(QObject):
             else:
                 self._pending_returncode = returncode
         except (OSError, RuntimeError) as exc:
-            self._error_string = str(exc)
-            self.errorOccurred.emit(QProcess.ProcessError.Crashed)
+            self._fail_session(
+                session,
+                str(exc),
+                QProcess.ProcessError.Crashed,
+                terminate=True,
+            )
+            return
         self._poll_session()
 
     def waitForFinished(self, milliseconds: int = 30000) -> bool:  # noqa: N802
+        self.setOutputPaused(False)
         session = self._session
         if session is None:
             return True
@@ -264,19 +379,44 @@ class QtConPtyProcess(QObject):
         except subprocess.TimeoutExpired:
             return False
         except (OSError, RuntimeError) as exc:
-            self._error_string = str(exc)
-            return False
-        self._begin_output_shutdown(session)
+            self._fail_session(
+                session,
+                str(exc),
+                QProcess.ProcessError.UnknownError,
+                terminate=True,
+            )
+            return self._finished_emitted
+        if not self._begin_output_shutdown(session):
+            return self._finished_emitted
         while not session.output_eof:
             self._drain_output(session)
+            drain_deadline = self._output_shutdown_deadline
+            if drain_deadline is not None and time.monotonic() >= drain_deadline:
+                self._fail_session(
+                    session,
+                    "timed out while draining final ConPTY output after child exit",
+                    QProcess.ProcessError.ReadError,
+                    terminate=False,
+                )
+                return self._finished_emitted
             if deadline is not None:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     return False
+                if drain_deadline is not None:
+                    remaining = min(
+                        remaining,
+                        max(0.0, drain_deadline - time.monotonic()),
+                    )
                 session.output_ready.wait(min(0.01, remaining))
                 session.output_ready.clear()
             else:
-                session.output_ready.wait(0.01)
+                drain_remaining = (
+                    max(0.0, drain_deadline - time.monotonic())
+                    if drain_deadline is not None
+                    else 0.01
+                )
+                session.output_ready.wait(min(0.01, drain_remaining))
                 session.output_ready.clear()
         self._drain_output(session)
         self._finish_session(session)
@@ -284,9 +424,11 @@ class QtConPtyProcess(QObject):
 
     def close(self) -> None:
         self._poll_timer.stop()
+        self._output_paused = False
         self._finished_emitted = True
         self._pending_returncode = None
         self._output_shutdown_started = False
+        self._output_shutdown_deadline = None
         self._state = QProcess.ProcessState.NotRunning
         self._dispose_session(terminate=True)
 
@@ -296,7 +438,10 @@ class QtConPtyProcess(QObject):
         if session is None:
             return
         try:
-            session.close(terminate=terminate, timeout=0.5)
+            session.close(
+                terminate=terminate,
+                timeout=_SESSION_CLOSE_TIMEOUT_SECONDS,
+            )
         except (OSError, RuntimeError):
             pass
 
@@ -341,6 +486,8 @@ class QtHiddenProcess(QObject):
         self._stdout = bytearray()
         self._stderr = bytearray()
         self._buffer_lock = threading.Lock()
+        self._output_pause_condition = threading.Condition()
+        self._output_paused = False
         self._merged_channels = False
         self._error_string = ""
         self._forced_termination = False
@@ -357,6 +504,10 @@ class QtHiddenProcess(QObject):
         self._notification_timer.setInterval(10)
         self._notification_timer.timeout.connect(self._dispatch_notifications)
         self.setProperty("backgroundConsoleSuppressed", os.name == "nt")
+        self.setProperty(
+            "terminalTransportBufferHighWaterBytes",
+            _HIDDEN_OUTPUT_HIGH_WATER_BYTES,
+        )
 
     def setProcessChannelMode(self, mode) -> None:  # noqa: N802
         self._merged_channels = mode == QProcess.ProcessChannelMode.MergedChannels
@@ -390,6 +541,9 @@ class QtHiddenProcess(QObject):
             self._fail_start("empty process program")
             return
         self._disposed = False
+        with self._output_pause_condition:
+            self._output_paused = False
+            self._output_pause_condition.notify_all()
         self._stdout.clear()
         self._stderr.clear()
         self._error_string = ""
@@ -474,7 +628,18 @@ class QtHiddenProcess(QObject):
         def read_stream() -> None:
             try:
                 while generation == self._generation:
-                    payload = stream.read(64 * 1024)
+                    with self._output_pause_condition:
+                        while generation == self._generation and not self._disposed:
+                            with self._buffer_lock:
+                                buffer_full = (
+                                    len(target) >= _HIDDEN_OUTPUT_HIGH_WATER_BYTES
+                                )
+                            if not self._output_paused and not buffer_full:
+                                break
+                            self._output_pause_condition.wait(timeout=0.1)
+                        if generation != self._generation or self._disposed:
+                            break
+                    payload = stream.read(_OUTPUT_READ_CHUNK_BYTES)
                     if not payload:
                         break
                     with self._buffer_lock:
@@ -521,18 +686,18 @@ class QtHiddenProcess(QObject):
             )
             return_code = -1
         for reader in readers:
-            reader.join(timeout=1.0)
+            reader.join()
         if generation != self._generation:
             return
         self._process = None
         self._state = QProcess.ProcessState.NotRunning
-        self._finished_event.set()
         exit_status = (
             QProcess.ExitStatus.CrashExit
             if self._forced_termination
             else QProcess.ExitStatus.NormalExit
         )
         self._queue_notification("finished", generation, return_code, exit_status)
+        self._finished_event.set()
 
     def _queue_notification(self, kind: str, generation: int, *arguments) -> None:
         """Record worker-thread events for delivery by the Qt event loop."""
@@ -589,16 +754,37 @@ class QtHiddenProcess(QObject):
             self._disposed = True
 
     def readAllStandardOutput(self) -> bytes:  # noqa: N802
+        return self.readStandardOutput(len(self._stdout))
+
+    def readStandardOutput(self, max_bytes: int) -> bytes:  # noqa: N802
         with self._buffer_lock:
-            output = bytes(self._stdout)
-            self._stdout.clear()
-        return output
+            payload = _take_buffer_prefix(self._stdout, max_bytes)
+            should_resume = len(self._stdout) <= _HIDDEN_OUTPUT_LOW_WATER_BYTES
+        if should_resume:
+            with self._output_pause_condition:
+                self._output_pause_condition.notify_all()
+        return payload
 
     def readAllStandardError(self) -> bytes:  # noqa: N802
+        return self.readStandardError(len(self._stderr))
+
+    def readStandardError(self, max_bytes: int) -> bytes:  # noqa: N802
         with self._buffer_lock:
-            output = bytes(self._stderr)
-            self._stderr.clear()
-        return output
+            payload = _take_buffer_prefix(self._stderr, max_bytes)
+            should_resume = len(self._stderr) <= _HIDDEN_OUTPUT_LOW_WATER_BYTES
+        if should_resume:
+            with self._output_pause_condition:
+                self._output_pause_condition.notify_all()
+        return payload
+
+    def setOutputPaused(self, paused: bool) -> None:  # noqa: N802
+        """Stop pipe readers at a byte-preserving OS backpressure boundary."""
+
+        with self._output_pause_condition:
+            self._output_paused = bool(paused)
+            if not self._output_paused:
+                self._output_pause_condition.notify_all()
+        self.setProperty("terminalTransportOutputPaused", self._output_paused)
 
     def write(self, payload: bytes) -> int:
         process = self._process
@@ -647,11 +833,29 @@ class QtHiddenProcess(QObject):
 
     def waitForFinished(self, milliseconds: int = 30000) -> bool:  # noqa: N802
         timeout = None if milliseconds < 0 else max(0, milliseconds) / 1000
-        return self._finished_event.wait(timeout)
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            # This method is normally called by the owning Qt thread during a
+            # bounded shutdown. Keep delivering ready notifications so a full
+            # adapter buffer can be consumed and its pipe reader can reach EOF.
+            self._dispatch_notifications()
+            if self._finished_event.is_set():
+                self._dispatch_notifications()
+                return True
+            wait_seconds = 0.01
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                wait_seconds = min(wait_seconds, remaining)
+            self._finished_event.wait(wait_seconds)
 
     def close(self) -> None:
         self._disposed = True
         self._generation += 1
+        with self._output_pause_condition:
+            self._output_paused = False
+            self._output_pause_condition.notify_all()
         self._notification_timer.stop()
         with self._notification_lock:
             self._pending_stdout_ready = False

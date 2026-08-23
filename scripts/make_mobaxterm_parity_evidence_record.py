@@ -24,10 +24,13 @@ from remote_ops_workspace.moba_servers import validate_moba_server_release_evide
 from remote_ops_workspace.moba_smartcards import validate_smartcard_release_evidence  # noqa: E402
 from remote_ops_workspace.moba_text import validate_moba_text_release_evidence  # noqa: E402
 from remote_ops_workspace.x11 import validate_moba_x_server_release_evidence  # noqa: E402
+from scripts.check_moba_transport_terminal_evidence import (  # noqa: E402
+    validate_moba_transport_terminal_evidence,
+)
 from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
     ARTICLE_SPECS,
-    REGISTRY_PATH,
-    check_mobaxterm_parity_evidence,
+    check_candidate_record,
+    release_asset_repositories,
 )
 
 Validator = Callable[..., Any]
@@ -40,6 +43,7 @@ VALIDATORS: dict[str, Validator] = {
     "macro-recorder": validate_macro_live_replay_evidence,
     "ssh-browser-26-4-smartcard": validate_smartcard_release_evidence,
     "professional-deployment": validate_professional_deployment_evidence,
+    "shared-authenticated-transport-terminal-grid": validate_moba_transport_terminal_evidence,
 }
 
 
@@ -50,22 +54,21 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(f"mobaxterm parity evidence record: {error}", file=sys.stderr)
         return 1
-    if args.append_registry:
-        errors = append_record(record, registry_path=args.registry)
-        if errors:
-            for error in errors:
-                print(f"mobaxterm parity evidence record: {error}", file=sys.stderr)
-            return 1
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if not args.out and not args.append_registry:
+    if not args.out:
         print(json.dumps(record, indent=2, sort_keys=True))
     return 0
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate an accepted MobaXterm parity evidence registry record.")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Generate a candidate MobaXterm parity evidence record. Candidate generation never accepts "
+            "or appends evidence; use finalize_mobaxterm_parity_evidence_record.py after review."
+        )
+    )
     parser.add_argument("--article-id", required=True, choices=sorted(ARTICLE_SPECS))
     parser.add_argument("--release-tag", required=True, help="release tag such as v1.0.20")
     parser.add_argument("--release-target", required=True, help="release target such as windows-x64")
@@ -84,15 +87,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="artifact digest source as release-file-name=local-path",
     )
     parser.add_argument("--out", type=Path, help="write the generated record to this file")
-    parser.add_argument("--append-registry", action="store_true", help="append the record to the registry after validation")
-    parser.add_argument("--registry", type=Path, default=REGISTRY_PATH)
     return parser.parse_args(argv)
 
 
 def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str, Any]]:
     article_id = str(args.article_id)
     spec = ARTICLE_SPECS[article_id]
-    validator = VALIDATORS[article_id]
+    validator = VALIDATORS.get(article_id)
+    if validator is None:
+        return [
+            f"{article_id} accepted-evidence validator is not implemented; "
+            "the parity article remains incomplete"
+        ], {}
     assets_dir = args.assets_dir or args.evidence.parent
     errors: list[str] = []
     if not args.evidence.is_file():
@@ -110,10 +116,32 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
     validation_dict = validation.to_dict()
     if not validation.passed:
         return [f"{article_id} evidence validation failed: {validation.errors}"], {}
+    if article_id == "shared-authenticated-transport-terminal-grid":
+        validation_summary = validation_dict.get("summary")
+        summary = validation_summary if isinstance(validation_summary, dict) else {}
+        validated_target = summary.get("release_target")
+        validated_tag = summary.get("release_tag")
+        validated_repository = summary.get("repository")
+        if validated_target != str(args.release_target):
+            return [
+                f"{article_id} validated release_target {validated_target!r} must match "
+                f"--release-target {str(args.release_target)!r}"
+            ], {}
+        if validated_tag != str(args.release_tag):
+            return [
+                f"{article_id} validated release_tag {validated_tag!r} must match "
+                f"--release-tag {str(args.release_tag)!r}"
+            ], {}
+        asset_repositories = release_asset_repositories(args.release_asset_url)
+        if asset_repositories != {validated_repository}:
+            return [
+                f"{article_id} validated repository {validated_repository!r} must exactly match "
+                f"release asset repository {sorted(asset_repositories)!r}"
+            ], {}
 
     record = {
         "article_id": article_id,
-        "status": "accepted",
+        "status": "candidate",
         "evidence_type": spec.evidence_type,
         "release_tag": str(args.release_tag),
         "release_target": str(args.release_target),
@@ -125,30 +153,8 @@ def build_evidence_record(args: argparse.Namespace) -> tuple[list[str], dict[str
         "checks": sorted(spec.required_checks),
         "validation_summary": validation_dict,
     }
-    registry = {
-        "schema_version": 1,
-        "policy": registry_policy(),
-        "accepted_evidence": [record],
-    }
-    errors.extend(check_mobaxterm_parity_evidence(registry=registry))
+    errors.extend(check_candidate_record(record))
     return errors, record
-
-
-def append_record(record: dict[str, Any], *, registry_path: Path) -> list[str]:
-    registry = read_registry(registry_path)
-    accepted = registry.get("accepted_evidence")
-    if not isinstance(accepted, list):
-        return ["mobaxterm parity evidence accepted_evidence must be a list"]
-    article_id = str(record.get("article_id", ""))
-    if any(isinstance(item, dict) and item.get("article_id") == article_id for item in accepted):
-        return [f"{article_id} already has accepted evidence; remove or replace the existing record deliberately"]
-    updated = {**registry, "accepted_evidence": [*accepted, record]}
-    errors = check_mobaxterm_parity_evidence(registry=updated)
-    if errors:
-        return errors
-    registry_path.parent.mkdir(parents=True, exist_ok=True)
-    registry_path.write_text(json.dumps(updated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return []
 
 
 def artifact_sha256_map(items: list[str]) -> tuple[dict[str, str], list[str]]:
@@ -192,20 +198,6 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def read_registry(path: Path) -> dict[str, Any]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {
-            "schema_version": 1,
-            "policy": registry_policy(),
-            "accepted_evidence": [],
-        }
-    if not isinstance(data, dict):
-        return {"schema_version": 0, "policy": "", "accepted_evidence": None}
-    return data
-
-
 def registry_policy() -> str:
     return (
         "Only accepted evidence records in this file can close strict MobaXterm 26.4 Home/Professional parity "
@@ -213,6 +205,10 @@ def registry_policy() -> str:
         "a release_target, the exact validation command for that article, SHA-256 digests for the validated "
         "evidence JSON and evidence assets, release asset URLs under the same GitHub release tag, per-artifact "
         "SHA-256 digests, required article checks, and a validation summary proving the article evidence passed. "
+        "Acceptance additionally requires the exact GitHub repository, source head SHA and tag source head SHA, "
+        "the exact source workflow run URL and positive run attempt, reviewer provenance, and hashes of the "
+        "published release bytes matching the accepted per-artifact SHA-256 values. Candidate generation cannot "
+        "append or accept its own output; a separate reviewed finalization step is mandatory. "
         "Empty means the generated feature-family score remains separate from true product-depth parity."
     )
 

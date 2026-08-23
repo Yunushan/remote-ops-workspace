@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import codecs
 import html
 import os
 import posixpath
@@ -7,6 +8,7 @@ import re
 import shlex
 import sys
 import time
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
@@ -222,6 +224,63 @@ from .terminal_highlighting import (
     highlight_terminal_text,
     terminal_syntax_rule_keys,
 )
+
+
+class _ByteChunkQueue:
+    """FIFO bytes without repeated front-deletion copies.
+
+    Terminal output can arrive much faster than a QTextEdit can be rebuilt. A
+    ``bytearray`` plus ``del buffer[:n]`` moves the whole remaining backlog for
+    every render turn and becomes quadratic for large command output. This
+    queue keeps immutable chunks and only copies the bounded prefix returned to
+    the renderer.
+    """
+
+    __slots__ = ("_chunks", "_head_offset", "_size")
+
+    def __init__(self) -> None:
+        self._chunks: deque[bytes] = deque()
+        self._head_offset = 0
+        self._size = 0
+
+    def __bool__(self) -> bool:
+        return self._size > 0
+
+    def __len__(self) -> int:
+        return self._size
+
+    def append(self, payload: bytes) -> None:
+        data = bytes(payload)
+        if not data:
+            return
+        self._chunks.append(data)
+        self._size += len(data)
+
+    def clear(self) -> None:
+        self._chunks.clear()
+        self._head_offset = 0
+        self._size = 0
+
+    def take(self, max_bytes: int) -> bytes:
+        requested = min(self._size, max(0, int(max_bytes)))
+        if requested <= 0:
+            return b""
+        remaining = requested
+        parts: list[bytes] = []
+        while remaining:
+            chunk = self._chunks[0]
+            available = len(chunk) - self._head_offset
+            amount = min(available, remaining)
+            parts.append(chunk[self._head_offset : self._head_offset + amount])
+            self._head_offset += amount
+            self._size -= amount
+            remaining -= amount
+            if self._head_offset == len(chunk):
+                self._chunks.popleft()
+                self._head_offset = 0
+        if len(parts) == 1:
+            return parts[0]
+        return b"".join(parts)
 
 
 def _safe_tooltip_html(text: str) -> str:
@@ -486,6 +545,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QBuffer,
             QByteArray,
             QEvent,
+            QEventLoop,
             QIODevice,
             QPoint,
             QProcess,
@@ -499,6 +559,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QBrush,
             QClipboard,
             QColor,
+            QContextMenuEvent,
             QDesktopServices,
             QFont,
             QGuiApplication,
@@ -742,6 +803,76 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.setTextCursor(cursor)
             self.ensureCursorVisible()
 
+    class TerminalTextEdit(QTextEdit):
+        """Read-only transcript view with a stable remote-terminal cursor overlay."""
+
+        def __init__(self, parent=None) -> None:
+            super().__init__(parent)
+            self._remote_cursor_position: int | None = None
+            self._remote_cursor_trailing_cells = 0
+            self._remote_cursor_visible = False
+
+        def set_remote_cursor_state(
+            self,
+            position: int,
+            *,
+            trailing_cells: int = 0,
+            visible: bool,
+        ) -> None:
+            document = self.document()
+            maximum = max(0, document.characterCount() - 1) if document is not None else 0
+            self._remote_cursor_position = max(0, min(maximum, int(position)))
+            self._remote_cursor_trailing_cells = max(0, int(trailing_cells))
+            self._remote_cursor_visible = bool(visible)
+            self.setProperty("terminalRemoteCursorVisible", self._remote_cursor_visible)
+            self.setProperty(
+                "terminalRemoteCursorDocumentPosition",
+                self._remote_cursor_position,
+            )
+            self.setProperty(
+                "terminalRemoteCursorTrailingCells",
+                self._remote_cursor_trailing_cells,
+            )
+            self.viewport().update()
+
+        def paintEvent(self, event) -> None:  # noqa: N802
+            super().paintEvent(event)
+            if not self._remote_cursor_visible or self._remote_cursor_position is None:
+                return
+            document = self.document()
+            if document is None:
+                return
+            cursor = QTextCursor(document)
+            cursor.setPosition(
+                max(
+                    0,
+                    min(document.characterCount() - 1, self._remote_cursor_position),
+                )
+            )
+            rectangle = self.cursorRect(cursor)
+            if self._remote_cursor_trailing_cells:
+                cell_width = max(1, self.fontMetrics().horizontalAdvance("M"))
+                rectangle.translate(
+                    self._remote_cursor_trailing_cells * cell_width,
+                    0,
+                )
+            if not rectangle.intersects(self.viewport().rect()):
+                return
+            color = self.palette().color(QPalette.ColorRole.Text)
+            color.setAlpha(230)
+            painter = QPainter(self.viewport())
+            try:
+                cursor_width = max(2, round(self.devicePixelRatioF()))
+                painter.fillRect(
+                    rectangle.x(),
+                    rectangle.y() + 1,
+                    cursor_width,
+                    max(1, rectangle.height() - 2),
+                    color,
+                )
+            finally:
+                painter.end()
+
     TREE_ICON_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 31
     TREE_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 32
     TREE_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 33
@@ -806,6 +937,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
     class TerminalPane(QWidget):
         STOP_POLICY = ProcessStopPolicy()
+        OUTPUT_RENDER_BATCH_BYTES = 16 * 1024
+        OUTPUT_RENDER_TURN_BUDGET_BYTES = 256 * 1024
+        OUTPUT_SYNC_DRAIN_BUDGET_BYTES = 64 * 1024
+        OUTPUT_READ_CHUNK_BYTES = 64 * 1024
+        OUTPUT_BUFFER_HIGH_WATER_BYTES = 4 * 1024 * 1024
+        OUTPUT_BUFFER_LOW_WATER_BYTES = 1 * 1024 * 1024
 
         def __init__(
             self,
@@ -841,12 +978,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self._pty_initial_clear_pending = False
             self._pty_startup_probe = ""
             self._terminal_scroll_generation = 0
-            self._process_output_buffer = bytearray()
+            self._process_output_buffer = _ByteChunkQueue()
             self._process_output_flush_scheduled = False
             self._process_output_flush_count = 0
+            self._process_output_decoder = codecs.getincrementaldecoder("utf-8")(
+                errors="replace"
+            )
+            self._process_output_decode_final_pending = False
+            self._process_output_end_pending = False
+            self._process_output_source_end_pending = False
+            self._process_output_source_drained = True
+            self._process_output_trailers: list[str] = []
+            self._process_output_read_paused = False
+            self._restart_when_output_drained = False
             self._pending_terminal_size: tuple[int, int] | None = None
             self.setProperty("terminalAutostart", bool(autostart))
-            self.setProperty("terminalOutputCoalescing", "16ms-frame-bounded-burst")
+            self.setProperty(
+                "terminalOutputCoalescing",
+                "16ms-coalesce-256KiB-adaptive-turn-4MiB-backpressure",
+            )
             self.startup_preamble = ""
             self.show_launch_command = True
             self.output_context_menu_builder: Callable[[TerminalPane], QMenu] | None = None
@@ -882,7 +1032,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.command_preview.setSizePolicy(
                 QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
             )
-            self.output = QTextEdit()
+            self.output = TerminalTextEdit()
             self.output.setObjectName("terminalOutput")
             self.output.setReadOnly(True)
             self.output.setTextInteractionFlags(
@@ -937,10 +1087,49 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.setProperty("terminalAlternateScreenRedraw", False)
             self.output.setProperty("terminalBracketedPasteActive", False)
             self.output.setProperty("terminalLastPasteWasBracketed", False)
+            # Automatic mouse paste is a MobaXterm convention, not a safe
+            # cross-preset terminal default. MainWindow enables both gestures
+            # only while the MobaXterm preset is active.
+            self._terminal_right_click_paste_enabled = False
+            self._terminal_middle_click_paste_enabled = False
+            # Keep the production OS clipboard while allowing native/headless
+            # GUI gates to inject a deterministic clipboard provider. Windows
+            # service sessions can expose QClipboard without owning a desktop
+            # clipboard, which must not make terminal input tests flaky.
+            self._terminal_clipboard_provider = _application_clipboard
+            self.output.setProperty("terminalRightClickPasteEnabled", False)
+            self.output.setProperty("terminalMiddleClickPasteEnabled", False)
+            self.output.setProperty(
+                "terminalContextMenuGesture",
+                "Right-click",
+            )
+            self.output.setProperty("terminalLastPasteGesture", "")
             self.output.setProperty("terminalEmulatorResponseCount", 0)
             self.output.setProperty("terminalLastEmulatorResponse", b"")
             self.output.setProperty("terminalOutputBufferedBytes", 0)
             self.output.setProperty("terminalOutputFlushCount", 0)
+            self.output.setProperty(
+                "terminalOutputRenderBatchBytes",
+                self.OUTPUT_RENDER_BATCH_BYTES,
+            )
+            self.output.setProperty(
+                "terminalOutputRenderTurnBudgetBytes",
+                self.OUTPUT_RENDER_TURN_BUDGET_BYTES,
+            )
+            self.output.setProperty(
+                "terminalOutputSyncDrainBudgetBytes",
+                self.OUTPUT_SYNC_DRAIN_BUDGET_BYTES,
+            )
+            self.output.setProperty(
+                "terminalOutputBufferHighWaterBytes",
+                self.OUTPUT_BUFFER_HIGH_WATER_BYTES,
+            )
+            self.output.setProperty(
+                "terminalOutputBufferLowWaterBytes",
+                self.OUTPUT_BUFFER_LOW_WATER_BYTES,
+            )
+            self.output.setProperty("terminalOutputReadPaused", False)
+            self.output.setProperty("terminalOutputDeferredTrailerCount", 0)
             self.output.setProperty("terminalMouseMultilineSelection", True)
             self.output.setProperty(
                 "terminalKeyboardSelectionShortcuts",
@@ -1169,6 +1358,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if watched in terminal_targets and event.type() == QEvent.Type.MouseButtonPress:
                 self.output.setFocus(Qt.FocusReason.MouseFocusReason)
                 self.output.setProperty("terminalLastInputSurface", "viewport")
+                if (
+                    event.button() == Qt.MouseButton.MiddleButton
+                    and self._terminal_middle_click_paste_enabled
+                ):
+                    self.paste_middle_click_selection()
+                    event.accept()
+                    return True
+            if watched in terminal_targets and event.type() == QEvent.Type.ContextMenu:
+                # MobaXterm's fast path pastes on a plain right-click.  Keep
+                # the complete context menu available through Shift+Right-click
+                # (and let users switch the fast path off from that menu).
+                modifiers = event.modifiers()
+                if (
+                    self._terminal_right_click_paste_enabled
+                    and event.reason() == QContextMenuEvent.Reason.Mouse
+                    and not modifiers & Qt.KeyboardModifier.ShiftModifier
+                ):
+                    self.paste_to_terminal(gesture="right-click")
+                    event.accept()
+                    return True
             if (
                 watched is self.output_viewport
                 and event.type() == QEvent.Type.MouseButtonRelease
@@ -1406,6 +1615,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if key in tilde_navigation and (shift or alt or control):
                 modifier = 1 + int(shift) + 2 * int(alt) + 4 * int(control)
                 return f"\x1b[{tilde_navigation[key]};{modifier}~".encode("ascii")
+            application_cursor = self.terminal_emulator.application_cursor_keys_active
+            cursor_prefix = b"\x1bO" if application_cursor else b"\x1b["
             special = {
                 Qt.Key.Key_Return: (
                     b"\r" if bool(getattr(self.process, "is_pty", False)) else b"\n"
@@ -1416,12 +1627,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 Qt.Key.Key_Backspace: b"\x7f",
                 Qt.Key.Key_Tab: b"\t",
                 Qt.Key.Key_Escape: b"\x1b",
-                Qt.Key.Key_Up: b"\x1b[A",
-                Qt.Key.Key_Down: b"\x1b[B",
-                Qt.Key.Key_Right: b"\x1b[C",
-                Qt.Key.Key_Left: b"\x1b[D",
-                Qt.Key.Key_Home: b"\x1b[H",
-                Qt.Key.Key_End: b"\x1b[F",
+                Qt.Key.Key_Up: cursor_prefix + b"A",
+                Qt.Key.Key_Down: cursor_prefix + b"B",
+                Qt.Key.Key_Right: cursor_prefix + b"C",
+                Qt.Key.Key_Left: cursor_prefix + b"D",
+                Qt.Key.Key_Home: cursor_prefix + b"H",
+                Qt.Key.Key_End: cursor_prefix + b"F",
                 Qt.Key.Key_Insert: b"\x1b[2~",
                 Qt.Key.Key_Delete: b"\x1b[3~",
                 Qt.Key.Key_PageUp: b"\x1b[5~",
@@ -1456,10 +1667,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     "\n[stdin error: terminal process did not accept the complete input]\n"
                 )
 
-        def paste_to_terminal(self) -> None:
-            text = _application_clipboard().text()
+        def paste_to_terminal(self, *, gesture: str = "action") -> None:
+            self.paste_text_to_terminal(
+                self._terminal_clipboard_provider().text(),
+                gesture=gesture,
+            )
+
+        def paste_middle_click_selection(self) -> None:
+            """Paste the X11 selection when available, otherwise the clipboard."""
+
+            clipboard = self._terminal_clipboard_provider()
+            text = ""
+            if clipboard.supportsSelection():
+                text = clipboard.text(QClipboard.Mode.Selection)
+            if not text:
+                text = clipboard.text()
+            self.paste_text_to_terminal(text, gesture="middle-click")
+
+        def paste_text_to_terminal(self, text: str, *, gesture: str) -> None:
             if not text:
                 return
+            self.output.setProperty("terminalLastPasteGesture", gesture)
             if self.is_running():
                 payload = text.encode("utf-8")
                 if self.terminal_emulator.bracketed_paste_active:
@@ -1476,18 +1704,50 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input.insert(text)
             self.input.setFocus(Qt.FocusReason.OtherFocusReason)
 
+        def set_terminal_right_click_paste_enabled(self, enabled: bool) -> None:
+            self._terminal_right_click_paste_enabled = bool(enabled)
+            self.output.setProperty(
+                "terminalRightClickPasteEnabled",
+                self._terminal_right_click_paste_enabled,
+            )
+            self.output.setProperty(
+                "terminalContextMenuGesture",
+                "Shift+Right-click"
+                if self._terminal_right_click_paste_enabled
+                else "Right-click",
+            )
+
+        def set_terminal_middle_click_paste_enabled(self, enabled: bool) -> None:
+            self._terminal_middle_click_paste_enabled = bool(enabled)
+            self.output.setProperty(
+                "terminalMiddleClickPasteEnabled",
+                self._terminal_middle_click_paste_enabled,
+            )
+
         def copy_terminal_selection(self) -> None:
             selection = self.output.textCursor().selectedText().replace("\u2029", "\n")
             if selection:
                 self.output.setProperty("terminalLastCopiedText", selection)
-                _application_clipboard().setText(selection)
+                clipboard = self._terminal_clipboard_provider()
+                clipboard.setText(selection)
+                # Another Windows process can briefly hold the native
+                # clipboard. Qt retries reads in that case, but a failed first
+                # OleSetClipboard call otherwise drops this copy operation.
+                # Use the readback as one bounded retry point without sleeping
+                # or blocking the GUI event loop.
+                retried = clipboard.text() != selection
+                if retried:
+                    clipboard.setText(selection)
+                self.output.setProperty("terminalClipboardWriteRetried", retried)
 
         def build_output_context_menu(self) -> QMenu:
             if callable(self.output_context_menu_builder):
-                return self.output_context_menu_builder(self)
+                menu = self.output_context_menu_builder(self)
+                self.add_terminal_mouse_paste_menu(menu)
+                return menu
             menu = QMenu(self.output)
             selection = bool(self.output.textCursor().selectedText())
-            clipboard_text = bool(_application_clipboard().text())
+            clipboard_text = bool(self._terminal_clipboard_provider().text())
             copy_action = _required_gui_value(menu.addAction("Copy"), "copy action")
             copy_action.setEnabled(selection)
             copy_action.triggered.connect(self.copy_terminal_selection)
@@ -1502,6 +1762,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "select-all action",
             )
             select_action.triggered.connect(self.output.selectAll)
+            self.add_terminal_mouse_paste_menu(menu)
             menu.addSeparator()
             clear_action = _required_gui_value(
                 menu.addAction("Clear terminal"),
@@ -1522,6 +1783,51 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             stop_action.triggered.connect(self.request_stop)
             return menu
 
+        def add_terminal_mouse_paste_menu(self, menu: QMenu) -> None:
+            if bool(menu.property("terminalMousePasteMenuAdded")):
+                return
+            menu.setProperty("terminalMousePasteMenuAdded", True)
+            mouse_menu = _required_gui_value(
+                menu.addMenu("Mouse paste behavior (this terminal)"),
+                "terminal mouse paste menu",
+            )
+            mouse_menu.setObjectName("terminalMousePasteMenu")
+            right_click_action = _required_gui_value(
+                mouse_menu.addAction("Right-click pastes automatically"),
+                "terminal right-click paste action",
+            )
+            right_click_action.setCheckable(True)
+            right_click_action.setChecked(self._terminal_right_click_paste_enabled)
+            right_click_action.toggled.connect(
+                self.set_terminal_right_click_paste_enabled
+            )
+            middle_click_action = _required_gui_value(
+                mouse_menu.addAction("Middle-click pastes"),
+                "terminal middle-click paste action",
+            )
+            middle_click_action.setCheckable(True)
+            middle_click_action.setChecked(self._terminal_middle_click_paste_enabled)
+            middle_click_action.toggled.connect(
+                self.set_terminal_middle_click_paste_enabled
+            )
+            mouse_menu.addSeparator()
+            context_hint = _required_gui_value(
+                mouse_menu.addAction(
+                    "Shift+Right-click opens this menu"
+                    if self._terminal_right_click_paste_enabled
+                    else "Right-click opens this menu"
+                ),
+                "terminal context-menu gesture hint",
+            )
+            context_hint.setEnabled(False)
+            right_click_action.toggled.connect(
+                lambda enabled, hint=context_hint: hint.setText(
+                    "Shift+Right-click opens this menu"
+                    if enabled
+                    else "Right-click opens this menu"
+                )
+            )
+
         def show_output_context_menu(self, position: QPoint) -> None:
             menu = self.build_output_context_menu()
             menu.exec(self.output_viewport.mapToGlobal(position))
@@ -1532,6 +1838,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             if not self.plan.command:
                 self.append_text("[error] empty terminal command\n")
+                return
+            if self.process_output_pending():
+                # A finished process can still have a bounded output tail.  Do
+                # not let a manual Start/Restart clear bytes that have not yet
+                # reached the transcript.
+                self._restart_when_output_drained = True
+                self.set_status("draining output", "stopping")
+                self.schedule_process_output_flush(backlog=True)
+                self.update_process_actions()
                 return
             if self.profile is not None:
                 try:
@@ -1544,9 +1859,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
-            self._process_output_buffer.clear()
-            self._process_output_flush_scheduled = False
-            self._process_output_timer.stop()
+            self.reset_process_output_pipeline()
+            self._restart_when_output_drained = False
             self.disarm_initial_pty_clear_recovery()
             self.set_status("starting", "starting")
             self.start_button.setEnabled(False)
@@ -1619,9 +1933,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             self.setProperty("terminalClosing", True)
             self._stop_timer.stop()
-            self._process_output_timer.stop()
-            self._process_output_buffer.clear()
-            self._process_output_flush_scheduled = False
+            self.reset_process_output_pipeline()
+            self._restart_when_output_drained = False
             self._restart_after_stop = False
 
         def stop(self, policy: ProcessStopPolicy | None = None) -> ProcessStopResult:
@@ -1657,18 +1970,30 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "\n[selected output copied]\n" if selection else "\n[command copied]\n"
             )
             # Updating the transcript can invalidate delayed clipboard ownership
-            # on the Windows/offscreen Qt platform.  Publish the detached string
-            # after that document mutation so the copied value remains stable.
+            # on the Windows Qt platform.  Flush the resulting posted selection
+            # update without accepting new user input, then publish the detached
+            # string so the stale selection event cannot clear the fresh copy.
             self.output.setProperty("terminalLastCopiedText", clipboard_text)
-            _application_clipboard().setText(clipboard_text)
+            _application_instance().processEvents(
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+            )
+            clipboard = _application_clipboard()
+            clipboard.setText(clipboard_text)
+            # A different Windows process can hold the native clipboard for a
+            # short interval.  Keep this path consistent with the interactive
+            # terminal copy action: verify the write and make one bounded retry
+            # without sleeping or blocking the GUI event loop.
+            retried = clipboard.text() != clipboard_text
+            if retried:
+                clipboard.setText(clipboard_text)
+            self.output.setProperty("terminalClipboardWriteRetried", retried)
 
         def clear_output(self) -> None:
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
-            self._process_output_buffer.clear()
-            self._process_output_flush_scheduled = False
-            self._process_output_timer.stop()
+            self.reset_process_output_pipeline()
+            self._restart_when_output_drained = False
             if self.startup_preamble:
                 self.append_text(self.startup_preamble)
             if self.show_launch_command:
@@ -1888,10 +2213,142 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty("mobaMacroReplayCancelled", self.macro_replay_cancelled)
 
         def read_stdout(self) -> None:
-            self.queue_process_output(bytes(self.process.readAllStandardOutput()))
+            self.pull_process_output_channel("stdout")
 
         def read_stderr(self) -> None:
-            self.queue_process_output(bytes(self.process.readAllStandardError()))
+            self.pull_process_output_channel("stderr")
+
+        def process_output_pending(self) -> bool:
+            return bool(
+                self._process_output_buffer
+                or self._process_output_flush_scheduled
+                or self._process_output_trailers
+                or self._process_output_decode_final_pending
+                or self._process_output_end_pending
+                or (
+                    self._process_output_source_end_pending
+                    and not self._process_output_source_drained
+                )
+            )
+
+        def reset_process_output_pipeline(self) -> None:
+            """Reset one completed stream without leaving transport readers paused."""
+
+            self._process_output_timer.stop()
+            self._process_output_flush_scheduled = False
+            self._process_output_buffer.clear()
+            self._process_output_decoder.reset()
+            self._process_output_decode_final_pending = False
+            self._process_output_end_pending = False
+            self._process_output_source_end_pending = False
+            self._process_output_source_drained = True
+            self._process_output_trailers.clear()
+            self._process_output_flush_count = 0
+            self.output.setProperty("terminalOutputBufferedBytes", 0)
+            self.output.setProperty("terminalOutputFlushCount", 0)
+            self.output.setProperty("terminalOutputDeferredTrailerCount", 0)
+            # Resume last: native transports may synchronously emit retained
+            # output from their pause setter. The clean decoder/queue must be
+            # ready before that byte-preserving callback can run.
+            self.set_process_output_read_paused(False)
+
+        def set_process_output_read_paused(self, paused: bool) -> None:
+            """Apply byte-preserving transport backpressure when supported."""
+
+            enabled = bool(paused)
+            if enabled == self._process_output_read_paused:
+                return
+            self._process_output_read_paused = enabled
+            self.output.setProperty("terminalOutputReadPaused", enabled)
+            setter = getattr(self.process, "setOutputPaused", None)
+            self.output.setProperty(
+                "terminalOutputBackpressureAvailable",
+                callable(setter),
+            )
+            if callable(setter):
+                setter(enabled)
+
+        def read_process_output_chunk(self, channel: str, max_bytes: int) -> bytes:
+            """Read a bounded transport prefix without discarding the remainder."""
+
+            method_name = (
+                "readStandardError" if channel == "stderr" else "readStandardOutput"
+            )
+            bounded_reader = getattr(self.process, method_name, None)
+            if callable(bounded_reader):
+                return bytes(bounded_reader(max_bytes))
+            read = getattr(self.process, "read", None)
+            set_channel = getattr(self.process, "setReadChannel", None)
+            if callable(read) and callable(set_channel):
+                process_channel = (
+                    QProcess.ProcessChannel.StandardError
+                    if channel == "stderr"
+                    else QProcess.ProcessChannel.StandardOutput
+                )
+                set_channel(process_channel)
+                payload = read(max_bytes)
+                return bytes(payload) if payload is not None else b""
+            # Every production terminal backend supports a bounded reader.  The
+            # fallback keeps compatibility with small test doubles only.
+            fallback = getattr(
+                self.process,
+                "readAllStandardError"
+                if channel == "stderr"
+                else "readAllStandardOutput",
+            )
+            return bytes(fallback())
+
+        def pull_process_output_channel(self, channel: str) -> tuple[int, bool]:
+            """Fill the GUI queue up to its high-water mark.
+
+            The boolean result records that an empty read was observed.  Once
+            the process has ended, observing both channels empty is the safe
+            boundary for final UTF-8 decoding and lifecycle trailers.
+            """
+
+            total = 0
+            observed_empty = False
+            while len(self._process_output_buffer) < self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                allowance = (
+                    self.OUTPUT_BUFFER_HIGH_WATER_BYTES
+                    - len(self._process_output_buffer)
+                )
+                payload = self.read_process_output_chunk(
+                    channel,
+                    min(self.OUTPUT_READ_CHUNK_BYTES, allowance),
+                )
+                if not payload:
+                    observed_empty = True
+                    break
+                total += len(payload)
+                self.queue_process_output(payload)
+            if len(self._process_output_buffer) >= self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                self.set_process_output_read_paused(True)
+            return total, observed_empty
+
+        def pull_ended_process_output(self) -> None:
+            """Incrementally consume bytes retained by an ended transport."""
+
+            if not self._process_output_source_end_pending:
+                return
+            if len(self._process_output_buffer) > self.OUTPUT_BUFFER_LOW_WATER_BYTES:
+                return
+            self.set_process_output_read_paused(False)
+            _stdout_bytes, stdout_empty = self.pull_process_output_channel("stdout")
+            if len(self._process_output_buffer) >= self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                return
+            _stderr_bytes, stderr_empty = self.pull_process_output_channel("stderr")
+            if stdout_empty and stderr_empty:
+                self._process_output_source_drained = True
+
+        def schedule_process_output_flush(self, *, backlog: bool = False) -> None:
+            delay_ms = 0 if backlog else 16
+            if self._process_output_flush_scheduled:
+                if backlog and self._process_output_timer.remainingTime() > 0:
+                    self._process_output_timer.start(0)
+                return
+            self._process_output_flush_scheduled = True
+            self._process_output_timer.start(delay_ms)
 
         def queue_process_output(self, payload: bytes) -> None:
             """Coalesce one event-loop burst before rebuilding the transcript.
@@ -1905,26 +2362,30 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             if not payload:
                 return
-            self._process_output_buffer.extend(payload)
+            if bool(self.property("terminalClosing")):
+                return
+            self._process_output_buffer.append(payload)
             self.output.setProperty(
                 "terminalOutputBufferedBytes",
                 len(self._process_output_buffer),
             )
-            if self._process_output_flush_scheduled:
-                return
-            self._process_output_flush_scheduled = True
-            self._process_output_timer.start()
+            if len(self._process_output_buffer) >= self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                self.set_process_output_read_paused(True)
+            self.schedule_process_output_flush()
 
         def flush_process_output(self) -> None:
             self._process_output_flush_scheduled = False
             if not self._process_output_buffer:
+                self.pull_ended_process_output()
+            if not self._process_output_buffer:
+                self.finish_deferred_process_output()
                 return
-            # Never let one flood of output monopolize the GUI event loop.
-            # Keep the remainder queued so input, resize, and tab events can
-            # run between render batches without dropping terminal bytes.
-            batch_size = 64 * 1024
-            payload = bytes(self._process_output_buffer[:batch_size])
-            del self._process_output_buffer[:batch_size]
+            # One bounded render per event turn is substantially faster than a
+            # fixed 16 KiB/16 ms rate, while the zero-delay continuation still
+            # yields to input, resize and tab events between transcript builds.
+            payload = self._process_output_buffer.take(
+                self.OUTPUT_RENDER_TURN_BUDGET_BYTES
+            )
             self._process_output_flush_count += 1
             self.output.setProperty(
                 "terminalOutputBufferedBytes",
@@ -1934,27 +2395,130 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "terminalOutputFlushCount",
                 self._process_output_flush_count,
             )
-            self.append_process_text(payload.decode(errors="replace"))
-            if self._process_output_buffer and not self._process_output_flush_scheduled:
-                self._process_output_flush_scheduled = True
-                self._process_output_timer.start()
+            self.append_decoded_process_output(payload)
+            if len(self._process_output_buffer) <= self.OUTPUT_BUFFER_LOW_WATER_BYTES:
+                self.set_process_output_read_paused(False)
+                self.pull_ended_process_output()
+            if self._process_output_buffer:
+                self.schedule_process_output_flush(backlog=True)
+            else:
+                self.finish_deferred_process_output()
 
         def flush_process_output_now(self) -> None:
-            """Drain queued output synchronously at process shutdown/error."""
+            """Drain a bounded prefix at shutdown and defer the remainder.
+
+            A process can exit immediately after emitting megabytes of output.
+            Rendering that entire tail inside ``finished`` or ``errorOccurred``
+            blocks the Qt event loop and makes the window appear hung. Preserve
+            byte ordering while limiting the synchronous work to four normal
+            render batches; the 16 ms timer drains the remainder.
+            """
 
             self._process_output_flush_scheduled = False
             self._process_output_timer.stop()
-            if not self._process_output_buffer:
+            remaining_budget = self.OUTPUT_SYNC_DRAIN_BUDGET_BYTES
+            while self._process_output_buffer and remaining_budget > 0:
+                payload = self._process_output_buffer.take(
+                    min(self.OUTPUT_RENDER_BATCH_BYTES, remaining_budget)
+                )
+                remaining_budget -= len(payload)
+                self._process_output_flush_count += 1
+                self.output.setProperty(
+                    "terminalOutputBufferedBytes",
+                    len(self._process_output_buffer),
+                )
+                self.output.setProperty(
+                    "terminalOutputFlushCount",
+                    self._process_output_flush_count,
+                )
+                self.append_decoded_process_output(payload)
+            if len(self._process_output_buffer) <= self.OUTPUT_BUFFER_LOW_WATER_BYTES:
+                self.set_process_output_read_paused(False)
+                self.pull_ended_process_output()
+            if self._process_output_buffer:
+                self.schedule_process_output_flush(backlog=True)
+            else:
+                self.finish_deferred_process_output()
+
+        def append_decoded_process_output(self, payload: bytes) -> None:
+            """Decode one byte batch without corrupting split UTF-8 sequences."""
+
+            text = self._process_output_decoder.decode(payload, final=False)
+            if text:
+                self.append_process_text(text)
+
+        def queue_process_output_trailer(self, text: str) -> None:
+            """Render app-owned exit/error text after every queued process byte."""
+
+            if not text:
                 return
-            payload = bytes(self._process_output_buffer)
-            self._process_output_buffer.clear()
-            self._process_output_flush_count += 1
-            self.output.setProperty("terminalOutputBufferedBytes", 0)
-            self.output.setProperty(
-                "terminalOutputFlushCount",
-                self._process_output_flush_count,
-            )
-            self.append_process_text(payload.decode(errors="replace"))
+            if (
+                self._process_output_buffer
+                or self._process_output_flush_scheduled
+                or (
+                    self._process_output_source_end_pending
+                    and not self._process_output_source_drained
+                )
+                or self._process_output_decode_final_pending
+                or self._process_output_end_pending
+            ):
+                self._process_output_trailers.append(text)
+                self.output.setProperty(
+                    "terminalOutputDeferredTrailerCount",
+                    len(self._process_output_trailers),
+                )
+                self.schedule_process_output_flush(backlog=True)
+                return
+            self.append_terminal_notice(text)
+
+        def mark_process_output_end(self) -> None:
+            """Record that no new process bytes may follow the retained tail."""
+
+            self._process_output_source_end_pending = True
+            self._process_output_source_drained = False
+            self._process_output_decode_final_pending = True
+            self._process_output_end_pending = True
+            self.pull_ended_process_output()
+
+        def finish_deferred_process_output(self) -> None:
+            """Publish ordered trailers and a requested restart after tail drain."""
+
+            if self._process_output_buffer:
+                return
+            if (
+                self._process_output_source_end_pending
+                and not self._process_output_source_drained
+            ):
+                self.pull_ended_process_output()
+                if self._process_output_buffer:
+                    self.schedule_process_output_flush(backlog=True)
+                elif not self._process_output_source_drained:
+                    self.schedule_process_output_flush(backlog=True)
+                return
+            if self._process_output_decode_final_pending:
+                final_text = self._process_output_decoder.decode(b"", final=True)
+                self._process_output_decoder.reset()
+                self._process_output_decode_final_pending = False
+                if final_text:
+                    self.append_process_text(final_text)
+            if self._process_output_end_pending:
+                transcript = self.terminal_emulator.end_of_stream()
+                self._process_output_end_pending = False
+                self._process_output_source_end_pending = False
+                self._process_output_source_drained = True
+                self.output.setProperty("terminalBracketedPasteActive", False)
+                self.render_terminal_transcript(transcript)
+            trailers = self._process_output_trailers
+            self._process_output_trailers = []
+            self.output.setProperty("terminalOutputDeferredTrailerCount", 0)
+            for trailer in trailers:
+                self.append_terminal_notice(trailer)
+            if (
+                self._restart_when_output_drained
+                and not bool(self.property("terminalClosing"))
+            ):
+                self._restart_when_output_drained = False
+                QTimer.singleShot(0, self.start)
 
         @staticmethod
         def is_initial_conpty_screen_clear(text: str) -> bool:
@@ -2096,6 +2660,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if not text:
                 return
             transcript = self.terminal_emulator.feed(text)
+            if self.terminal_emulator.alternate_screen_active:
+                transcript = self.terminal_emulator.screen_text()
+            self.render_terminal_transcript(transcript)
+
+        def append_terminal_notice(self, text: str) -> None:
+            """Render app-owned text without trusting child ANSI parser state."""
+
+            if not text:
+                return
+            transcript = self.terminal_emulator.feed_literal(text)
             if self.terminal_emulator.alternate_screen_active:
                 transcript = self.terminal_emulator.screen_text()
             self.render_terminal_transcript(transcript)
@@ -2246,7 +2820,30 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.scroll_terminal_to_end()
             else:
                 scroll_bar.setValue(scroll_value)
+            self.update_remote_cursor_overlay(transcript)
             self.refresh_terminal_input_security(transcript)
+
+        def update_remote_cursor_overlay(self, transcript: str) -> None:
+            """Place the painted cursor at the emulator's active grid cell."""
+
+            lines = transcript.split("\n")
+            row = max(0, min(len(lines) - 1, self.terminal_emulator.cursor_row))
+            column = max(0, self.terminal_emulator.cursor_column)
+            line = lines[row]
+            document_position = sum(len(value) + 1 for value in lines[:row])
+            document_position += min(column, len(line))
+            trailing_cells = max(0, column - len(line))
+            self.output.setProperty("terminalRemoteCursorRow", row)
+            self.output.setProperty("terminalRemoteCursorColumn", column)
+            self.output.setProperty(
+                "terminalApplicationCursorKeysActive",
+                self.terminal_emulator.application_cursor_keys_active,
+            )
+            self.output.set_remote_cursor_state(
+                document_position,
+                trailing_cells=trailing_cells,
+                visible=self.terminal_emulator.cursor_visible and self.is_running(),
+            )
 
         def scroll_terminal_to_end(self) -> None:
             """Keep live output at the true document end after layout updates."""
@@ -2376,24 +2973,32 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.setFocus(Qt.FocusReason.OtherFocusReason)
 
         def on_error(self, error) -> None:
-            self.flush_process_output_now()
+            if self.process.state() == QProcess.ProcessState.NotRunning:
+                self.mark_process_output_end()
             self.set_status("error", "error")
             detail = str(self.process.errorString()).strip()
             suffix = f": {detail}" if detail and detail != error.name else ""
-            self.append_text(f"\n[error] {error.name}{suffix}\n")
+            self.queue_process_output_trailer(f"\n[error] {error.name}{suffix}\n")
+            self.flush_process_output_now()
             self.update_process_actions()
 
         def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
             self._stop_timer.stop()
-            self.flush_process_output_now()
+            self.mark_process_output_end()
             self.refresh_terminal_input_security("")
             state = "ready" if exit_code == 0 else "error"
             self.set_status(f"exited {exit_code}", state)
-            self.append_text(f"\n[process exited: {exit_code}, {exit_status.name}]\n")
+            self.queue_process_output_trailer(
+                f"\n[process exited: {exit_code}, {exit_status.name}]\n"
+            )
+            self.flush_process_output_now()
             self.update_process_actions()
             if self._restart_after_stop and not bool(self.property("terminalClosing")):
                 self._restart_after_stop = False
-                QTimer.singleShot(0, self.start)
+                if self._process_output_buffer or self._process_output_flush_scheduled:
+                    self._restart_when_output_drained = True
+                else:
+                    QTimer.singleShot(0, self.start)
 
         def set_status(self, text: str, state: str) -> None:
             self.status.setText(text)
@@ -2405,9 +3010,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def update_process_actions(self) -> None:
             running = self.is_running()
+            output_pending = self.process_output_pending()
             capture_active = bool(self.macro_capture_state is not None and self.macro_capture_state.active)
-            self.start_button.setEnabled(not running)
-            self.restart_button.setEnabled(bool(self.plan.command))
+            self.start_button.setEnabled(not running and not output_pending)
+            self.restart_button.setEnabled(
+                bool(self.plan.command) and (running or not output_pending)
+            )
             self.stop_button.setEnabled(running)
             self.input.setEnabled(running)
             self.macro_record_button.setEnabled(
@@ -5412,8 +6020,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             pane.output.setProperty("mobaTerminalLineInputFallback", pipe_fallback)
             pane.output.setProperty("mobaTerminalNativePty", native_pty)
             pane.output.setToolTip(
-                "Click the terminal and type. Right-click for copy, paste, save, "
-                "telemetry, and session actions."
+                "Click the terminal and type. Right-click or middle-click pastes; "
+                "Shift+Right-click opens copy, paste, save, telemetry, and session actions."
             )
             pane.output_context_menu_builder = self.build_moba_terminal_context_menu
             pane.output.setProperty("mobaTerminalTranscriptGeometryKeys", [row.key for row in geometry])
@@ -7084,6 +7692,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def __init__(self, parent=None) -> None:
             super().__init__(parent)
             self.special_tab_handler: Callable[[int], None] | None = None
+            self.tab_switch_prepare_handler: Callable[[int], None] | None = None
             self._pressed_special_key = ""
             self._stabilizing_special_tabs = False
             self.tabMoved.connect(self.stabilize_special_tabs)
@@ -7107,7 +7716,32 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if self.activate_special_tab(index):
                 event.accept()
                 return
+            if (
+                index >= 0
+                and index != self.currentIndex()
+                and callable(self.tab_switch_prepare_handler)
+            ):
+                # Freeze the old page before QTabBar changes the current page.
+                # Waiting for QTabWidget.currentChanged is one paint too late
+                # on Windows and can expose the new terminal at its transient
+                # minimum geometry in the middle of the workspace.
+                self.tab_switch_prepare_handler(index)
             super().mousePressEvent(event)
+
+        def keyPressEvent(self, event) -> None:  # noqa: N802
+            if (
+                self.count() > 1
+                and event.key()
+                in {
+                    Qt.Key.Key_Left,
+                    Qt.Key.Key_Right,
+                    Qt.Key.Key_Home,
+                    Qt.Key.Key_End,
+                }
+                and callable(self.tab_switch_prepare_handler)
+            ):
+                self.tab_switch_prepare_handler(-1)
+            super().keyPressEvent(event)
 
         def mouseMoveEvent(self, event) -> None:  # noqa: N802
             if self._pressed_special_key in {"home", "new-session"}:
@@ -7166,6 +7800,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
     class ResponsiveWorkspaceTabs(QTabWidget):
         """Keep hidden, content-rich tabs from fixing the whole window above its usable size."""
+
+        def __init__(self, parent=None) -> None:
+            super().__init__(parent)
+            self.tab_switch_prepare_handler: Callable[[int], None] | None = None
+
+        def setCurrentIndex(self, index: int) -> None:  # noqa: N802
+            if (
+                index != self.currentIndex()
+                and callable(self.tab_switch_prepare_handler)
+            ):
+                self.tab_switch_prepare_handler(index)
+            super().setCurrentIndex(index)
+
+        def setCurrentWidget(self, widget: QWidget | None) -> None:  # noqa: N802
+            if widget is not None:
+                index = self.indexOf(widget)
+                if (
+                    index != self.currentIndex()
+                    and callable(self.tab_switch_prepare_handler)
+                ):
+                    self.tab_switch_prepare_handler(index)
+            super().setCurrentWidget(widget)
 
         def minimumSizeHint(self):  # noqa: N802
             hint = super().minimumSizeHint()
@@ -7487,6 +8143,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_tab_bar = MobaWorkspaceTabBar()
             self.tabs.setTabBar(self.moba_tab_bar)
             self.moba_tab_bar.special_tab_handler = self.activate_moba_special_tab
+            self.tabs.tab_switch_prepare_handler = self.prepare_tab_transition
+            self.moba_tab_bar.tab_switch_prepare_handler = self.prepare_tab_transition
             self.tabs.setObjectName("sessionTabs")
             self.moba_tab_bar.setObjectName("sessionTabBar")
             self.tabs.setTabsClosable(True)
@@ -7497,6 +8155,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.moba_tab_guard = False
             self._tab_transition_generation = 0
+            self._tab_prepaint_guard_generation = 0
             self.recent_terminal_plans: list[tuple[TerminalPanePlan, Profile | None]] = []
             self.log = LiteralTextEdit()
             self.log.setObjectName("activityLog")
@@ -7595,6 +8254,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             _application_instance().focusChanged.connect(self.remember_terminal_focus)
             self.keyboard_shortcuts = self.create_keyboard_shortcuts()
+            # These workspace traversal keys apply to every visual preset and
+            # must win before a focused terminal translates Ctrl+Tab into a
+            # remote tab byte. They intentionally remain outside the preset
+            # command-shortcut evidence catalog.
+            self.next_workspace_tab_shortcut = QShortcut(
+                QKeySequence("Ctrl+Tab"),
+                self,
+            )
+            self.next_workspace_tab_shortcut.setObjectName("nextWorkspaceTabShortcut")
+            self.next_workspace_tab_shortcut.activated.connect(self.activate_next_tab)
+            self.previous_workspace_tab_shortcut = QShortcut(
+                QKeySequence("Ctrl+Shift+Tab"),
+                self,
+            )
+            self.previous_workspace_tab_shortcut.setObjectName(
+                "previousWorkspaceTabShortcut"
+            )
+            self.previous_workspace_tab_shortcut.activated.connect(
+                self.activate_previous_tab
+            )
             self.securecrt_host_shortcut = QShortcut(QKeySequence("Alt+P"), self)
             self.securecrt_host_shortcut.setObjectName("secureCrtHostShortcut")
             self.securecrt_host_shortcut.setProperty(
@@ -10297,6 +10976,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 else None
             )
             is_moba = preset.id == "mobaxterm"
+            self.synchronize_terminal_mouse_paste_policy_for_design(preset.id)
             self.setStyleSheet(preset.stylesheet)
             for catalog_widget in (self, self.design_select, self.main_toolbar):
                 self.apply_preset_catalog_route_properties(catalog_widget, catalog_route)
@@ -10503,6 +11183,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 lambda preset_id=preset.id: self.enforce_product_reference_filter_geometry(preset_id),
             )
             self.statusBar().showMessage(f"View: {preset.label}")
+
+        @staticmethod
+        def apply_terminal_mouse_paste_policy_for_design(
+            pane: TerminalPane,
+            preset_id: str,
+        ) -> None:
+            enabled = preset_id == "mobaxterm"
+            pane.set_terminal_right_click_paste_enabled(enabled)
+            pane.set_terminal_middle_click_paste_enabled(enabled)
+            pane.setProperty("terminalMousePastePolicyPresetId", preset_id)
+
+        def synchronize_terminal_mouse_paste_policy_for_design(
+            self,
+            preset_id: str,
+        ) -> None:
+            for pane in self.findChildren(TerminalPane):
+                # Reapplying the current visual preset must not discard a
+                # per-pane user toggle. A real preset transition resets both
+                # gestures to that preset's safe default.
+                if pane.property("terminalMousePastePolicyPresetId") == preset_id:
+                    continue
+                self.apply_terminal_mouse_paste_policy_for_design(pane, preset_id)
 
         def enforce_product_reference_filter_geometry(self, preset_id: str) -> None:
             filter_specs = {
@@ -13055,6 +13757,51 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     tab_bar.setTabButton(index, position, None)
             tab_bar.updateGeometry()
 
+        def prepare_tab_transition(self, index: int) -> None:
+            """Freeze terminal painting before Qt activates a different page."""
+
+            if index >= 0 and index == self.tabs.currentIndex():
+                return
+            if bool(self.tabs.property("terminalTabTransitionActive")):
+                return
+            if bool(self.tabs.property("terminalTabPrepaintGuardActive")):
+                return
+            self._tab_prepaint_guard_generation += 1
+            generation = self._tab_prepaint_guard_generation
+            current_index = self.tabs.currentIndex()
+            self.tabs.setProperty("terminalTabPrepaintGuardActive", True)
+            self.tabs.setProperty("terminalTabPrepaintTargetIndex", index)
+            self.tabs.setUpdatesEnabled(False)
+            # A click on a disabled/current tab or an intercepted keyboard
+            # navigation event may not produce currentChanged.  Release that
+            # speculative guard on the next event-loop turn.
+            QTimer.singleShot(
+                0,
+                lambda generation=generation, current_index=current_index: (
+                    self.release_tab_prepaint_guard_if_idle(
+                        generation,
+                        current_index,
+                    )
+                ),
+            )
+
+        def release_tab_prepaint_guard_if_idle(
+            self,
+            generation: int,
+            previous_index: int,
+        ) -> None:
+            if generation != self._tab_prepaint_guard_generation:
+                return
+            if bool(self.tabs.property("terminalTabTransitionActive")):
+                return
+            self.tabs.setProperty(
+                "terminalTabPrepaintGuardRecoveredWithoutTransition",
+                self.tabs.currentIndex() != previous_index,
+            )
+            self.tabs.setUpdatesEnabled(True)
+            self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
+            self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
+
         def handle_tab_changed(self, index: int) -> None:
             self._tab_transition_generation += 1
             transition = self._tab_transition_generation
@@ -13070,6 +13817,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.refresh_moba_left_dock_for_current_tab()
                 self.tabs.setUpdatesEnabled(True)
                 self.tabs.setProperty("terminalTabTransitionActive", False)
+                self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
+                self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
                 return
             # QTabWidget may finish laying out the newly selected page after
             # emitting currentChanged.  Re-apply once the splitter has its
@@ -13134,6 +13883,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if current is not None:
                 current.update()
             self.tabs.setProperty("terminalTabTransitionActive", False)
+            self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
+            self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
 
         def start_deferred_terminal_pane_if_current(
             self,
@@ -19004,6 +19755,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 pane = TerminalPane(plan, profile=profile)
             else:
                 pane = TerminalPane(plan, profile=profile, autostart=False)
+            self.apply_terminal_mouse_paste_policy_for_design(
+                pane,
+                self.current_design_id(),
+            )
             pane.setProperty("terminalAutoCloseOnCleanExit", plan.source == "shell")
             pane.process.started.connect(self.update_session_status)
             pane.process.started.connect(
@@ -19082,6 +19837,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if running and not self.confirm_stop_processes("Close tab", len(running)):
                 return
             title = self.tabs.tabText(index)
+            if index == self.tabs.currentIndex() and self.tabs.count() > 1:
+                successor_index = index + 1 if index + 1 < self.tabs.count() else index - 1
+                self.prepare_tab_transition(successor_index)
+                self.tabs.setProperty(
+                    "terminalActiveTabClosePrepaintGuarded",
+                    bool(self.tabs.property("terminalTabPrepaintGuardActive"))
+                    or bool(self.tabs.property("terminalTabTransitionActive")),
+                )
             self.tabs.removeTab(index)
             if running:
                 self._closing_tab_widgets.append(widget)

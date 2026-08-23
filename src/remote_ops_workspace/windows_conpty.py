@@ -18,7 +18,6 @@ import ctypes
 import math
 import os
 import queue
-import shutil
 import subprocess
 import sys
 import threading
@@ -54,6 +53,22 @@ _MAX_PIPE_CHUNK = 64 * 1024
 _MAX_QUEUED_CHUNKS = 256
 _OUTPUT_DRAIN_QUIET_SECONDS = 0.1
 _OUTPUT_DRAIN_MAX_WAIT_SECONDS = 1.0
+_TRUSTED_WINDOWS_OPENSSH_EXECUTABLES = {
+    "scp": "scp.exe",
+    "scp.exe": "scp.exe",
+    "sftp": "sftp.exe",
+    "sftp.exe": "sftp.exe",
+    "ssh": "ssh.exe",
+    "ssh.exe": "ssh.exe",
+    "ssh-add": "ssh-add.exe",
+    "ssh-add.exe": "ssh-add.exe",
+    "ssh-agent": "ssh-agent.exe",
+    "ssh-agent.exe": "ssh-agent.exe",
+    "ssh-keygen": "ssh-keygen.exe",
+    "ssh-keygen.exe": "ssh-keygen.exe",
+    "ssh-keyscan": "ssh-keyscan.exe",
+    "ssh-keyscan.exe": "ssh-keyscan.exe",
+}
 
 
 class ConPtyUnavailableError(RuntimeError):
@@ -252,12 +267,125 @@ def _validate_cwd(cwd: str | os.PathLike[str] | None) -> str | None:
 
 
 def _resolve_windows_executable(executable: str) -> str:
-    """Resolve a basename before using it as CreateProcessW.lpApplicationName."""
+    """Resolve an executable without Windows' implicit current-directory search.
 
-    resolved = shutil.which(executable)
+    A caller can intentionally select a relative or absolute path by including
+    a directory component.  Bare executable names are resolved only from
+    trusted system locations or absolute PATH entries; a planted executable in
+    the process working directory therefore cannot shadow ``ssh.exe``.
+    """
+
+    if os.path.dirname(executable):
+        explicit = Path(executable).expanduser()
+        if not explicit.is_absolute():
+            explicit = Path.cwd() / explicit
+        for suffix in _windows_executable_extensions(executable):
+            candidate = explicit if not suffix else explicit.with_name(explicit.name + suffix)
+            if candidate.is_file():
+                return str(candidate.resolve())
+        raise FileNotFoundError(2, f"executable was not found: {executable}", executable)
+
+    openssh_name = _TRUSTED_WINDOWS_OPENSSH_EXECUTABLES.get(executable.lower())
+    if openssh_name is not None:
+        for system_directory in _windows_system_directories():
+            candidate = system_directory / "OpenSSH" / openssh_name
+            if candidate.is_file():
+                return str(candidate.resolve())
+
+    resolved = _resolve_from_absolute_windows_path(executable)
     if resolved is None:
         raise FileNotFoundError(2, f"executable was not found on PATH: {executable}", executable)
-    return str(Path(resolved).resolve())
+    return str(resolved)
+
+
+def resolve_windows_executable(executable: str) -> str:
+    """Public trusted resolver for native Windows child-process commands."""
+
+    return _resolve_windows_executable(executable)
+
+
+def _windows_system_directories() -> tuple[Path, ...]:
+    """Return OS-owned system directories, including the WOW64 native view."""
+
+    candidates: list[Path] = []
+    windows_directory = _windows_directory_from_api("GetWindowsDirectoryW")
+    system_directory = _windows_directory_from_api("GetSystemDirectoryW")
+    if windows_directory is not None and os.environ.get("PROCESSOR_ARCHITEW6432"):
+        candidates.append(windows_directory / "Sysnative")
+    if system_directory is not None:
+        candidates.append(system_directory)
+    if windows_directory is not None:
+        candidates.append(windows_directory / "System32")
+    elif system_root := os.environ.get("SystemRoot") or os.environ.get("WINDIR"):
+        # The Win32 API is authoritative.  Environment fallback exists only
+        # for constrained runtimes where that API cannot be loaded.
+        candidates.append(Path(system_root) / "System32")
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = os.path.normcase(os.path.abspath(os.fspath(candidate)))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(candidate)
+    return tuple(unique)
+
+
+def _windows_directory_from_api(export: str) -> Path | None:
+    if not _running_on_windows() or not hasattr(ctypes, "WinDLL"):
+        return None
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_directory = getattr(kernel32, export)
+        get_directory.argtypes = [wintypes.LPWSTR, wintypes.UINT]
+        get_directory.restype = wintypes.UINT
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = int(get_directory(buffer, len(buffer)))
+    except (AttributeError, OSError):
+        return None
+    if not 0 < length < len(buffer):
+        return None
+    return Path(buffer.value)
+
+
+def _resolve_from_absolute_windows_path(executable: str) -> Path | None:
+    """Search absolute PATH entries while excluding the working directory."""
+
+    current_directory = Path.cwd().resolve()
+    extensions = _windows_executable_extensions(executable)
+    for raw_entry in os.environ.get("PATH", "").split(os.pathsep):
+        entry = os.path.expandvars(raw_entry.strip().strip('"'))
+        if not entry:
+            continue
+        directory = Path(entry).expanduser()
+        if not directory.is_absolute():
+            continue
+        try:
+            resolved_directory = directory.resolve()
+        except OSError:
+            continue
+        if os.path.normcase(str(resolved_directory)) == os.path.normcase(
+            str(current_directory)
+        ):
+            continue
+        for suffix in extensions:
+            candidate = resolved_directory / f"{executable}{suffix}"
+            if candidate.is_file():
+                return candidate.resolve()
+    return None
+
+
+def _windows_executable_extensions(executable: str) -> tuple[str, ...]:
+    if Path(executable).suffix:
+        return ("",)
+    configured = os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+    extensions = tuple(
+        extension if extension.startswith(".") else f".{extension}"
+        for extension in configured.split(";")
+        if extension
+    )
+    return ("", *extensions)
 
 
 class _Kernel32Api:
@@ -465,6 +593,12 @@ class WindowsConPtyProcess:
         self._read_lock = threading.Lock()
         self._io_error_lock = threading.Lock()
         self._io_error: ConPtyProcessError | None = None
+        # A failed viewport resize does not mean that either ConPTY pipe is
+        # unusable.  Keep resize diagnostics separate from the sticky pipe
+        # error consumed by write()/flush(), otherwise one transient HRESULT
+        # permanently rejects all later terminal input while the child lives.
+        self._resize_error_lock = threading.Lock()
+        self._resize_error: ConPtyProcessError | None = None
         self._read_remainder = b""
         self._output_queue: queue.Queue[bytes | object] = queue.Queue(
             maxsize=_MAX_QUEUED_CHUNKS
@@ -511,6 +645,14 @@ class WindowsConPtyProcess:
     def io_error(self) -> ConPtyProcessError | None:
         with self._io_error_lock:
             return self._io_error
+
+    def take_resize_error(self) -> ConPtyProcessError | None:
+        """Return one nonfatal resize diagnostic without poisoning pipe I/O."""
+
+        with self._resize_error_lock:
+            error = self._resize_error
+            self._resize_error = None
+        return error
 
     def start(self) -> None:
         """Create the pseudo-console and child process exactly once."""
@@ -704,6 +846,14 @@ class WindowsConPtyProcess:
         self.output_ready.set()
         with self._write_condition:
             self._write_condition.notify_all()
+
+    def _record_resize_error(self, error: ConPtyProcessError) -> None:
+        if self._closing.is_set() or self._resize_closing.is_set():
+            return
+        with self._resize_error_lock:
+            self._resize_error = error
+        # Wake adapters that also wait on output_ready instead of polling.
+        self.output_ready.set()
 
     def raise_for_io_error(self) -> None:
         error = self.io_error
@@ -1037,7 +1187,9 @@ class WindowsConPtyProcess:
                         _COORD(columns, rows),
                     )
                 if hresult < 0:
-                    self._record_io_error(_hresult_error("ResizePseudoConsole", hresult))
+                    self._record_resize_error(
+                        _hresult_error("ResizePseudoConsole", hresult)
+                    )
 
     def poll(self) -> int | None:
         api = self._require_started()
@@ -1119,6 +1271,15 @@ class WindowsConPtyProcess:
     def close(self, *, terminate: bool = True, timeout: float = 1.0) -> None:
         """Release process, pipe, thread, and pseudo-console resources."""
 
+        timeout = max(0.0, float(timeout))
+        deadline = time.monotonic() + timeout
+
+        def remaining_timeout() -> float:
+            # One shared deadline bounds the whole cleanup operation.  Using
+            # the original timeout for every join could otherwise multiply a
+            # nominal 500 ms GUI cleanup into several seconds.
+            return max(0.0, deadline - time.monotonic())
+
         with self._lifecycle_lock:
             if self._closed:
                 return
@@ -1129,19 +1290,28 @@ class WindowsConPtyProcess:
                 return
         self._resize_closing.set()
         self._resize_event.set()
-        if terminate and self.poll() is None:
+        child_may_be_running = False
+        if terminate:
+            try:
+                child_may_be_running = self.poll() is None
+            except (OSError, RuntimeError):
+                # A failed wait/query is precisely when forced cleanup matters
+                # most. Continue closing handles even if termination itself
+                # cannot obtain a reliable child status.
+                child_may_be_running = True
+        if child_may_be_running:
             try:
                 self.terminate()
-                self.wait(timeout=timeout)
+                self.wait(timeout=remaining_timeout())
             except (ConPtyProcessError, subprocess.TimeoutExpired):
                 try:
                     self.kill()
-                    self.wait(timeout=timeout)
+                    self.wait(timeout=remaining_timeout())
                 except (ConPtyProcessError, subprocess.TimeoutExpired):
                     pass
 
         try:
-            self.flush(timeout=timeout)
+            self.flush(timeout=remaining_timeout())
         except (ConPtyProcessError, TimeoutError):
             pass
 
@@ -1151,13 +1321,13 @@ class WindowsConPtyProcess:
         self.begin_output_shutdown()
         reader = self._reader_thread
         if reader is not None and reader is not threading.current_thread():
-            reader.join(timeout=max(0.0, timeout))
+            reader.join(timeout=remaining_timeout())
         closer = self._closer_thread
         if closer is not None and closer is not threading.current_thread():
-            closer.join(timeout=max(0.0, timeout))
+            closer.join(timeout=remaining_timeout())
         resizer = self._resize_thread
         if resizer is not None and resizer is not threading.current_thread():
-            resizer.join(timeout=max(0.0, timeout))
+            resizer.join(timeout=remaining_timeout())
 
         self._input_closing.set()
         self._closing.set()
@@ -1177,7 +1347,7 @@ class WindowsConPtyProcess:
             self._closer_thread,
         ):
             if thread is not None and thread is not threading.current_thread():
-                thread.join(timeout=max(0.0, timeout))
+                thread.join(timeout=remaining_timeout())
 
         with self._lifecycle_lock:
             if self._api is not None and _handle_is_open(self._process_handle):

@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -35,6 +36,7 @@ env:
 jobs:
   release-preflight:
     runs-on: ubuntu-latest
+    timeout-minutes: 100
     environment: release
     outputs:
       windows_release_signing_ready: ${{ steps.signing-readiness.outputs.windows_ready }}
@@ -67,6 +69,16 @@ jobs:
         run: python scripts/check_release_version.py --release-tag "$RELEASE_TAG"
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
+      - name: Require successful Python 3.15 and native Windows CI evidence for release source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_python315_ci_evidence.py
+          --repository "${{ github.repository }}"
+          --branch "${{ github.event.repository.default_branch }}"
+          --sha "$(git rev-parse HEAD)"
+          --wait-seconds 5400
+          --poll-interval-seconds 15
       - name: Report protected platform readiness requirements
         run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --show-requirements
       - name: Detect release signing readiness

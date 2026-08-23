@@ -48,12 +48,12 @@ def test_gui_interaction_gate_inventories_every_visible_toolbar_command() -> Non
     assert (1180, 720) in checker.SUPPORTED_WINDOW_SIZES
 
 
-def test_gui_interaction_gate_runs_on_linux_and_native_windows_ci() -> None:
+def test_gui_interaction_gate_runs_on_linux_native_windows_and_python315_ci() -> None:
     workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8"
     )
 
-    assert workflow.count("scripts/check_gui_interactions.py --require-pyqt6") == 2
+    assert workflow.count("scripts/check_gui_interactions.py --require-pyqt6") == 3
     assert "gui-interactions-windows:" in workflow
     assert "runs-on: windows-2025-vs2026" in workflow
     assert 'QT_QPA_PLATFORM: "windows"' in workflow

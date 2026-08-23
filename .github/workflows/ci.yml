@@ -108,7 +108,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-2025-vs2026, macos-15-intel]
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
           - os: macos-26-intel
             python-version: "3.12"
@@ -116,24 +116,36 @@ jobs:
             python-version: "3.13"
           - os: macos-26-intel
             python-version: "3.14"
+          - os: macos-26-intel
+            python-version: "3.15"
           - os: macos-14
             python-version: "3.12"
           - os: macos-14
             python-version: "3.13"
           - os: macos-14
             python-version: "3.14"
+          - os: macos-14
+            python-version: "3.15"
           - os: macos-15
             python-version: "3.12"
           - os: macos-15
             python-version: "3.13"
           - os: macos-15
             python-version: "3.14"
+          - os: macos-15
+            python-version: "3.15"
           - os: macos-26
             python-version: "3.12"
           - os: macos-26
             python-version: "3.13"
           - os: macos-26
             python-version: "3.14"
+          - os: macos-26
+            python-version: "3.15"
+          - os: ubuntu-24.04-arm
+            python-version: "3.15"
+          - os: windows-11-arm
+            python-version: "3.15"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -141,6 +153,10 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
+          # Python 3.15 is release-candidate software until its upstream GA.
+          # Keep it blocking in the normal matrix rather than hiding it in an
+          # advisory job; stable matrix rows still resolve stable interpreters.
+          allow-prereleases: true
       - name: Purge pip cache
         run: python -m pip cache purge
         continue-on-error: true
@@ -158,6 +174,176 @@ jobs:
           python -m pip install -e ".[security,dev]"
       - name: Pytest
         run: python -m pytest -q
+
+  python315-optional-dependencies:
+    name: Python 3.15 optional dependencies, GUI, and build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_CACHE_DIR: "1"
+      QT_QPA_PLATFORM: "offscreen"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-2025-vs2026, windows-11-arm, macos-15-intel, macos-15]
+        include:
+          - os: ubuntu-latest
+            qt_platform: "offscreen"
+          - os: ubuntu-24.04-arm
+            qt_platform: "offscreen"
+          - os: windows-2025-vs2026
+            qt_platform: "windows"
+          - os: windows-11-arm
+            qt_platform: "windows"
+          - os: macos-15-intel
+            # Hosted macOS is not guaranteed to expose a logged-in WindowServer.
+            # Keep the full application render deterministic and headless there.
+            qt_platform: "offscreen"
+          - os: macos-15
+            # Hosted macOS is not guaranteed to expose a logged-in WindowServer.
+            # Keep the full application render deterministic and headless there.
+            qt_platform: "offscreen"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.15"
+          allow-prereleases: true
+      - name: Install Linux Qt runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            fontconfig \
+            fonts-dejavu-core \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0
+      - name: Install complete Python 3.15 verification environment
+        run: python -m pip install -e ".[desktop,security,package,dev]"
+      - name: Install Python 3.15 native Windows SSH evidence dependency
+        if: runner.os == 'Windows'
+        run: python -m pip install "paramiko==5.0.0"
+      - name: Verify complete Python 3.15 dependency environment
+        run: |
+          python -m pip check
+          python scripts/check_optional_dependencies.py --require-extra desktop --require-extra security --require-extra package --require-extra dev
+          python -m PyInstaller --version
+      - name: Build and launch a real Python 3.15 frozen CLI executable
+        timeout-minutes: 15
+        run: >-
+          python scripts/check_python_frozen_executable.py --expected-python 3.15
+          --out-dir artifacts/python315-frozen --timeout-seconds 720
+      - name: Record exact Python 3.15 runtime evidence
+        run: >-
+          python scripts/write_python_runtime_evidence.py --expected-version 3.15
+          --require-standard-gil --out artifacts/python315-runtime/runtime.json
+      - name: Verify Python 3.15 offscreen QtWidgets application startup
+        run: >-
+          python -c "import sys; assert sys.version_info[:2] == (3, 15), sys.version;
+          import cryptography, truststore; from PyQt6.QtCore import QT_VERSION_STR;
+          from PyQt6.QtWidgets import QApplication, QLabel; app = QApplication([]);
+          label = QLabel('Python 3.15 QtWidgets smoke'); label.resize(320, 80);
+          label.show(); app.processEvents(); assert label.isVisible();
+          assert not label.grab().isNull(); label.close(); app.processEvents();
+          print(sys.version); print('Qt', QT_VERSION_STR)"
+      - name: Run the complete test suite with Python 3.15 optional dependencies
+        timeout-minutes: 15
+        run: python -m pytest -q
+      - name: Run Python 3.15 native Windows SSH and ConPTY evidence
+        if: runner.os == 'Windows'
+        timeout-minutes: 5
+        env:
+          QT_QPA_PLATFORM: "windows"
+          ROW_REQUIRE_WINDOWS_SSH_LOOPBACK: "1"
+          ROW_WINDOWS_SSH_EVIDENCE_DIR: artifacts/python315-windows-ssh
+        run: >-
+          python -m pytest -q tests/test_windows_ssh_loopback.py
+          --junitxml=artifacts/python315-windows-ssh/junit.xml
+      - name: Render every real GUI preset on Python 3.15
+        timeout-minutes: 8
+        env:
+          QT_QPA_PLATFORM: ${{ matrix.qt_platform }}
+        run: >-
+          python scripts/check_real_gui_render.py --out-dir artifacts/python315-gui
+          --require-pyqt6 --timeout-seconds 300
+      - name: Exercise every GUI preset interaction on Python 3.15
+        timeout-minutes: 8
+        env:
+          QT_QPA_PLATFORM: ${{ matrix.qt_platform }}
+        run: >-
+          python scripts/check_gui_interactions.py --require-pyqt6
+          --out-dir artifacts/python315-interactions
+      - name: Build Python 3.15 source and wheel distributions
+        run: python -m build --sdist --wheel --outdir artifacts/python315-dist
+      - name: Install and smoke Python 3.15 wheel and source distributions
+        timeout-minutes: 10
+        run: >-
+          python scripts/check_python_distribution_install.py
+          --dist-dir artifacts/python315-dist
+          --out artifacts/python315-runtime/distribution-install.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: python315-gui-${{ matrix.os }}
+          path: artifacts/python315-gui
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: python315-interactions-${{ matrix.os }}
+          path: artifacts/python315-interactions
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: python315-distributions-${{ matrix.os }}
+          path: artifacts/python315-dist
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: python315-runtime-${{ matrix.os }}
+          path: artifacts/python315-runtime
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: python315-frozen-${{ matrix.os }}
+          path: artifacts/python315-frozen
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() && runner.os == 'Windows' }}
+        with:
+          name: python315-windows-ssh-${{ matrix.os }}
+          path: artifacts/python315-windows-ssh
+          if-no-files-found: error
+          retention-days: 90
+
+  python315-readiness:
+    name: Python 3.15 readiness
+    needs: [test, python315-optional-dependencies]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NORMAL_MATRIX_RESULT: ${{ needs.test.result }}
+      OPTIONAL_MATRIX_RESULT: ${{ needs.python315-optional-dependencies.result }}
+    steps:
+      - name: Require Python 3.15 matrices to succeed
+        shell: bash
+        run: |
+          test "$NORMAL_MATRIX_RESULT" = "success"
+          test "$OPTIONAL_MATRIX_RESULT" = "success"
 
   mobile-web:
     name: Mobile Web/PWA contract
@@ -537,11 +723,13 @@ jobs:
   gui-interactions-windows:
     name: Native Windows PyQt6 render and interactions
     runs-on: windows-2025-vs2026
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PIP_NO_CACHE_DIR: "1"
       QT_QPA_PLATFORM: "windows"
+      ROW_REQUIRE_WINDOWS_SSH_LOOPBACK: "1"
+      ROW_WINDOWS_SSH_EVIDENCE_DIR: artifacts/windows-ssh-loopback
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -551,9 +739,14 @@ jobs:
           python-version: "3.12"
       - name: Install desktop verification dependencies
         run: python -m pip install -e ".[desktop,security,dev]"
+      - name: Install pinned loopback SSH test server
+        run: python -m pip install "paramiko==5.0.0"
       - name: Verify real Windows ConPTY terminal transport
         timeout-minutes: 5
         run: python -m pytest -q tests/test_windows_conpty.py tests/test_qt_terminal_process.py
+      - name: Verify native Windows OpenSSH authentication through Qt ConPTY
+        timeout-minutes: 5
+        run: python -m pytest -q tests/test_windows_ssh_loopback.py --junitxml=artifacts/windows-ssh-loopback/junit.xml
       - name: Render full GUI on native Windows
         timeout-minutes: 8
         run: python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real-windows
@@ -563,6 +756,9 @@ jobs:
       - name: Exercise native Windows controls and responsive layouts
         timeout-minutes: 8
         run: python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions-windows
+      - name: Capture native Windows terminal tab-switch paint turns
+        timeout-minutes: 3
+        run: python scripts/check_windows_tab_switch_paint.py --require-native-windows --out-dir artifacts/gui-tab-switch-windows
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: gui-real-render-windows
@@ -573,3 +769,27 @@ jobs:
           name: gui-interactions-windows
           path: artifacts/gui-interactions-windows/*
           if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gui-tab-switch-paint-windows
+          path: artifacts/gui-tab-switch-windows/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-ssh-loopback-conpty
+          path: artifacts/windows-ssh-loopback/*
+          if-no-files-found: error
+
+  native-windows-readiness:
+    name: Native Windows readiness
+    needs: [gui-interactions-windows]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NATIVE_WINDOWS_RESULT: ${{ needs.gui-interactions-windows.result }}
+    steps:
+      - name: Require native Windows verification to succeed
+        shell: bash
+        run: |
+          test "$NATIVE_WINDOWS_RESULT" = "success"

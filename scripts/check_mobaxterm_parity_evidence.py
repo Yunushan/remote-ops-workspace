@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 import sys
@@ -12,10 +13,23 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
+GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
 RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
+GITHUB_REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 GITHUB_RELEASE_ASSET_RE = re.compile(
-    r"^https://github\.com/([^/]+/[^/]+)/releases/download/(v\d+\.\d+\.\d+)/.+"
+    r"^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/releases/download/"
+    r"(v\d+\.\d+\.\d+)/([A-Za-z0-9][A-Za-z0-9._+-]*)$"
 )
+GITHUB_WORKFLOW_RUN_RE = re.compile(
+    r"^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/actions/runs/([1-9]\d*)$"
+)
+GITHUB_REVIEW_RE = re.compile(
+    r"^https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/"
+    r"(?:pull/([1-9]\d*)#(?:pullrequestreview|issuecomment)-([1-9]\d*)|"
+    r"issues/([1-9]\d*)#issuecomment-([1-9]\d*))$"
+)
+GITHUB_LOGIN_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?")
+UTC_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 
 
 @dataclass(frozen=True)
@@ -148,6 +162,25 @@ ARTICLE_SPECS: dict[str, ArticleSpec] = {
             }
         ),
     ),
+    "shared-authenticated-transport-terminal-grid": ArticleSpec(
+        article_id="shared-authenticated-transport-terminal-grid",
+        evidence_type="moba-shared-transport-terminal-grid-release",
+        validation_command=(
+            "python scripts/check_moba_transport_terminal_evidence.py "
+            "--evidence <evidence.json> --assets-dir <artifact-dir>"
+        ),
+        required_checks=frozenset(
+            {
+                "shared_authenticated_transport",
+                "structured_connection_state",
+                "real_terminal_grid",
+                "alternate_screen_semantics",
+                "cursor_color_mode_mouse_semantics",
+                "real_connected_session",
+                "release_asset_attachment",
+            }
+        ),
+    ),
 }
 
 
@@ -212,8 +245,8 @@ def check_mobaxterm_parity_evidence(
 
 def check_schema(registry: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if registry.get("schema_version") != 1:
-        errors.append("configs/mobaxterm_parity_evidence.json schema_version must be 1")
+    if registry.get("schema_version") != 2:
+        errors.append("configs/mobaxterm_parity_evidence.json schema_version must be 2")
     policy = str(registry.get("policy", ""))
     for snippet in (
         "Only accepted evidence records",
@@ -224,6 +257,11 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
         "SHA-256",
         "release asset URLs",
         "per-artifact SHA-256",
+        "exact GitHub repository",
+        "source head SHA",
+        "run attempt",
+        "reviewer provenance",
+        "published release bytes",
     ):
         if snippet not in policy:
             errors.append(f"mobaxterm parity evidence policy missing required wording: {snippet}")
@@ -233,13 +271,28 @@ def check_schema(registry: dict[str, Any]) -> list[str]:
 
 
 def check_record(row: dict[str, Any]) -> list[str]:
+    return check_article_record(row, expected_status="accepted", require_acceptance_provenance=True)
+
+
+def check_candidate_record(row: dict[str, Any]) -> list[str]:
+    """Validate generator output without treating it as accepted evidence."""
+
+    return check_article_record(row, expected_status="candidate", require_acceptance_provenance=False)
+
+
+def check_article_record(
+    row: dict[str, Any],
+    *,
+    expected_status: str,
+    require_acceptance_provenance: bool,
+) -> list[str]:
     article_id = str(row.get("article_id", ""))
     spec = ARTICLE_SPECS.get(article_id)
     if spec is None:
         return [f"accepted_evidence article_id is unknown: {article_id}"]
     errors: list[str] = []
-    if row.get("status") != "accepted":
-        errors.append(f"{article_id} status must be accepted")
+    if row.get("status") != expected_status:
+        errors.append(f"{article_id} status must be {expected_status}")
     if row.get("evidence_type") != spec.evidence_type:
         errors.append(f"{article_id} evidence_type must be {spec.evidence_type}")
     release_tag = str(row.get("release_tag", ""))
@@ -253,7 +306,107 @@ def check_record(row: dict[str, Any]) -> list[str]:
     errors.extend(check_sha_map(row.get("evidence_assets_sha256"), f"{article_id} evidence_assets_sha256"))
     errors.extend(check_required_checks(row, spec))
     errors.extend(check_validation_summary(article_id, row.get("validation_summary")))
+    if article_id == "shared-authenticated-transport-terminal-grid":
+        errors.extend(
+            check_transport_terminal_validation_identity(
+                row,
+                require_acceptance_provenance=require_acceptance_provenance,
+            )
+        )
     errors.extend(check_release_assets(article_id, release_tag, row.get("release_asset_urls"), row.get("artifact_sha256")))
+    if require_acceptance_provenance:
+        errors.extend(check_acceptance_provenance(article_id, release_tag, row))
+    return errors
+
+
+def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    source = row.get("release_source")
+    if not isinstance(source, dict):
+        return [f"{article_id} release_source must be an object"]
+    repository = source.get("repository")
+    if not isinstance(repository, str) or not GITHUB_REPOSITORY_RE.fullmatch(repository):
+        errors.append(f"{article_id} release_source.repository must be an exact GitHub owner/name value")
+        repository = ""
+    source_tag = source.get("release_tag")
+    if source_tag != release_tag:
+        errors.append(f"{article_id} release_source.release_tag must match release_tag {release_tag}")
+    head_sha = source.get("head_sha")
+    if not isinstance(head_sha, str) or not GIT_SHA_RE.fullmatch(head_sha):
+        errors.append(f"{article_id} release_source.head_sha must be a 40-character lowercase Git SHA")
+        head_sha = ""
+    tag_source_head_sha = source.get("tag_source_head_sha")
+    if not isinstance(tag_source_head_sha, str) or not GIT_SHA_RE.fullmatch(tag_source_head_sha):
+        errors.append(f"{article_id} release_source.tag_source_head_sha must be a 40-character lowercase Git SHA")
+    elif head_sha and tag_source_head_sha != head_sha:
+        errors.append(f"{article_id} release_source.tag_source_head_sha must match release_source.head_sha")
+    workflow_run_url = source.get("workflow_run_url")
+    workflow_match = (
+        GITHUB_WORKFLOW_RUN_RE.fullmatch(workflow_run_url)
+        if isinstance(workflow_run_url, str)
+        else None
+    )
+    if workflow_match is None:
+        errors.append(f"{article_id} release_source.workflow_run_url must be an exact GitHub Actions run URL")
+    elif repository and workflow_match.group(1) != repository:
+        errors.append(
+            f"{article_id} release_source.workflow_run_url repository must match "
+            f"release_source.repository {repository}"
+        )
+    run_attempt = source.get("run_attempt")
+    if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
+        errors.append(f"{article_id} release_source.run_attempt must be a positive integer")
+
+    asset_repositories = release_asset_repositories(row.get("release_asset_urls"))
+    if repository and asset_repositories != {repository}:
+        errors.append(
+            f"{article_id} release asset repository must exactly match "
+            f"release_source.repository {repository}, got {sorted(asset_repositories)}"
+        )
+
+    review = row.get("acceptance_review")
+    reviewer = ""
+    reviewed_at = ""
+    if not isinstance(review, dict):
+        errors.append(f"{article_id} acceptance_review must be an object")
+    else:
+        raw_reviewer = review.get("reviewer")
+        if not isinstance(raw_reviewer, str) or not GITHUB_LOGIN_RE.fullmatch(raw_reviewer):
+            errors.append(f"{article_id} acceptance_review.reviewer must be an exact GitHub login")
+        else:
+            reviewer = raw_reviewer
+        review_url = review.get("review_url")
+        review_match = GITHUB_REVIEW_RE.fullmatch(review_url) if isinstance(review_url, str) else None
+        if review_match is None:
+            errors.append(f"{article_id} acceptance_review.review_url must be an exact GitHub review URL")
+        elif repository and review_match.group(1) != repository:
+            errors.append(
+                f"{article_id} acceptance_review.review_url repository must match "
+                f"release_source.repository {repository}"
+            )
+        raw_reviewed_at = review.get("reviewed_at")
+        if not valid_utc_timestamp(raw_reviewed_at):
+            errors.append(f"{article_id} acceptance_review.reviewed_at must be an exact UTC RFC3339 timestamp")
+        else:
+            reviewed_at = str(raw_reviewed_at)
+
+    byte_proof = row.get("release_asset_bytes")
+    if not isinstance(byte_proof, dict):
+        errors.append(f"{article_id} release_asset_bytes must be an object")
+    else:
+        if byte_proof.get("verified") is not True:
+            errors.append(f"{article_id} release_asset_bytes.verified must be true")
+        if reviewer and byte_proof.get("verified_by") != reviewer:
+            errors.append(f"{article_id} release_asset_bytes.verified_by must match acceptance reviewer")
+        if reviewed_at and byte_proof.get("verified_at") != reviewed_at:
+            errors.append(f"{article_id} release_asset_bytes.verified_at must match acceptance review time")
+        byte_hashes = byte_proof.get("sha256")
+        errors.extend(check_sha_map(byte_hashes, f"{article_id} release_asset_bytes.sha256"))
+        artifact_hashes = row.get("artifact_sha256")
+        if isinstance(byte_hashes, dict) and isinstance(artifact_hashes, dict) and byte_hashes != artifact_hashes:
+            errors.append(
+                f"{article_id} release_asset_bytes.sha256 must exactly match artifact_sha256"
+            )
     return errors
 
 
@@ -279,6 +432,62 @@ def check_validation_summary(article_id: str, summary: Any) -> list[str]:
     if errors not in ([], None):
         return [f"{article_id} validation_summary.errors must be empty"]
     return []
+
+
+def check_transport_terminal_validation_identity(
+    row: dict[str, Any],
+    *,
+    require_acceptance_provenance: bool,
+) -> list[str]:
+    article_id = "shared-authenticated-transport-terminal-grid"
+    validation = row.get("validation_summary")
+    summary = validation.get("summary") if isinstance(validation, dict) else None
+    if not isinstance(summary, dict):
+        return [f"{article_id} validation_summary.summary must bind source provenance"]
+    errors: list[str] = []
+    repository = summary.get("repository")
+    if not isinstance(repository, str) or not GITHUB_REPOSITORY_RE.fullmatch(repository):
+        errors.append(f"{article_id} validation summary repository must be an exact GitHub owner/name")
+        repository = ""
+    if summary.get("release_tag") != row.get("release_tag"):
+        errors.append(f"{article_id} validation summary release_tag must match record release_tag")
+    if summary.get("release_target") != row.get("release_target"):
+        errors.append(f"{article_id} validation summary release_target must match record release_target")
+    source_head_sha = summary.get("source_head_sha")
+    if not isinstance(source_head_sha, str) or not GIT_SHA_RE.fullmatch(source_head_sha):
+        errors.append(f"{article_id} validation summary source_head_sha must be a lowercase Git SHA")
+        source_head_sha = ""
+    workflow_run_url = summary.get("workflow_run_url")
+    workflow_match = (
+        GITHUB_WORKFLOW_RUN_RE.fullmatch(workflow_run_url)
+        if isinstance(workflow_run_url, str)
+        else None
+    )
+    if workflow_match is None:
+        errors.append(f"{article_id} validation summary workflow_run_url must be exact")
+    elif repository and workflow_match.group(1) != repository:
+        errors.append(f"{article_id} validation summary workflow_run_url repository must match")
+    run_attempt = summary.get("run_attempt")
+    if not isinstance(run_attempt, int) or isinstance(run_attempt, bool) or run_attempt < 1:
+        errors.append(f"{article_id} validation summary run_attempt must be a positive integer")
+    if require_acceptance_provenance:
+        source = row.get("release_source")
+        if not isinstance(source, dict):
+            errors.append(f"{article_id} release_source must bind validated source provenance")
+        else:
+            expected = {
+                "repository": repository,
+                "release_tag": summary.get("release_tag"),
+                "head_sha": source_head_sha,
+                "workflow_run_url": workflow_run_url,
+                "run_attempt": run_attempt,
+            }
+            for key, value in expected.items():
+                if source.get(key) != value:
+                    errors.append(
+                        f"{article_id} release_source.{key} must match validation summary provenance"
+                    )
+    return errors
 
 
 def check_release_assets(article_id: str, release_tag: str, raw_urls: Any, raw_hashes: Any) -> list[str]:
@@ -317,6 +526,29 @@ def check_release_assets(article_id: str, release_tag: str, raw_urls: Any, raw_h
     if seen_names and unexpected:
         errors.append(f"{article_id} artifact_sha256 references files not in release_asset_urls: {unexpected}")
     return errors
+
+
+def release_asset_repositories(raw_urls: Any) -> set[str]:
+    if not isinstance(raw_urls, list):
+        return set()
+    repositories: set[str] = set()
+    for value in raw_urls:
+        if not isinstance(value, str):
+            continue
+        match = GITHUB_RELEASE_ASSET_RE.fullmatch(value)
+        if match:
+            repositories.add(match.group(1))
+    return repositories
+
+
+def valid_utc_timestamp(value: Any) -> bool:
+    if not isinstance(value, str) or not UTC_TIMESTAMP_RE.fullmatch(value):
+        return False
+    try:
+        parsed = dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return False
+    return parsed.tzinfo is None
 
 
 def check_sha(value: Any, label: str) -> list[str]:

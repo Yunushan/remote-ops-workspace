@@ -16,15 +16,18 @@ sys.path.insert(0, str(SRC))
 EXPECTED_EXTRA_SNIPPETS = {
     "desktop": ('"PyQt6>=6.6"',),
     "security": ('"cryptography>=50.0.0"', '"truststore>=0.10"'),
-    "legacy-security": ('"cryptography==48.0.1"', '"truststore>=0.10"'),
     "package": ('"build>=1.2"', '"pyinstaller>=6.21"'),
     "dev": ('"build>=1.2"', '"pytest>=8"', '"ruff>=0.5"', '"mypy>=1.10"'),
 }
+FORBIDDEN_DECLARATIONS = {
+    "legacy-security = [": "the vulnerable legacy-security extra",
+    '"cryptography==48.0.1"': "the known-vulnerable cryptography 48.0.1 pin",
+}
+
 
 OPTIONAL_MODULES = {
     "desktop": ("PyQt6",),
     "security": ("cryptography", "truststore"),
-    "legacy-security": ("cryptography", "truststore"),
     "package": ("build", "PyInstaller"),
     "dev": ("pytest", "ruff", "mypy"),
 }
@@ -78,6 +81,9 @@ def check_declared_extras(text: str | None = None) -> list[str]:
         for snippet in snippets:
             if snippet not in text:
                 errors.append(f"pyproject.toml optional extra {extra} missing dependency {snippet}")
+    for snippet, label in FORBIDDEN_DECLARATIONS.items():
+        if snippet in text:
+            errors.append(f"pyproject.toml must not declare {label}")
     return errors
 
 

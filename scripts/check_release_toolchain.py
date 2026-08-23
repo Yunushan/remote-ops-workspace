@@ -78,6 +78,7 @@ def check_python_constraints(toolchain: dict[str, object]) -> list[str]:
         name = str(row.get("name", ""))
         profile_file = str(row.get("constraints_file", ""))
         overrides = row.get("package_overrides")
+        excluded = row.get("excluded_packages", [])
         targets = row.get("targets")
         if not name or name in names:
             errors.append("python.compatibility_profiles names must be non-empty and unique")
@@ -86,13 +87,30 @@ def check_python_constraints(toolchain: dict[str, object]) -> list[str]:
         if not profile_file or not isinstance(overrides, dict):
             errors.append(f"compatibility profile {name} must declare constraints_file and package_overrides")
             continue
+        if not isinstance(excluded, list) or not all(isinstance(item, str) for item in excluded):
+            errors.append(f"compatibility profile {name} excluded_packages must be a string list")
+            continue
         if not isinstance(targets, list) or not targets or not all(isinstance(item, str) for item in targets):
             errors.append(f"compatibility profile {name} must declare non-empty string targets")
-        profile_expected = dict(expected)
+        normalized_excluded = {
+            normalize_package_name(package)
+            for package in excluded
+        }
+        for package in normalized_excluded:
+            if package not in expected:
+                errors.append(f"compatibility profile {name} excludes unknown package {package}")
+        profile_expected = {
+            package: version
+            for package, version in expected.items()
+            if package not in normalized_excluded
+        }
         for package, version in overrides.items():
             normalized = normalize_package_name(str(package))
             if normalized not in expected:
                 errors.append(f"compatibility profile {name} overrides unknown package {package}")
+                continue
+            if normalized in normalized_excluded:
+                errors.append(f"compatibility profile {name} both excludes and overrides {package}")
                 continue
             profile_expected[normalized] = str(version)
         profile_actual = parse_requirement_pins(ROOT / profile_file, errors)
@@ -157,27 +175,42 @@ def check_workflow(
         for row in required_list(python, "compatibility_profiles", errors)
         if isinstance(row, dict)
     }
-    compatibility = profiles.get("legacy-wheel-architectures", {})
+    compatibility = profiles.get("windows-x86-vault-fail-closed", {})
     compatibility_file = str(compatibility.get("constraints_file", ""))
-    if set(compatibility.get("targets", [])) != {"windows-x86", "macos-x64"}:
+    if compatibility.get("targets") != ["windows-x86"]:
         errors.append(
-            "legacy-wheel-architectures profile must target exactly windows-x86 and macos-x64"
+            "windows-x86-vault-fail-closed profile must target exactly windows-x86"
         )
-    if compatibility.get("package_overrides") != {"cryptography": "48.0.1"}:
+    if compatibility.get("package_overrides") != {}:
+        errors.append("windows-x86-vault-fail-closed profile must not override packages")
+    if set(compatibility.get("excluded_packages", [])) != {"cryptography", "truststore"}:
         errors.append(
-            "legacy-wheel-architectures profile must pin cryptography 48.0.1"
+            "windows-x86-vault-fail-closed profile must exclude cryptography and truststore"
         )
+    expected_backend = {
+        "feature": "encrypted-vault",
+        "state": "unavailable-fail-closed",
+        "minimum_safe_cryptography": "50.0.0",
+    }
+    if compatibility.get("security_backend") != expected_backend:
+        errors.append("windows-x86-vault-fail-closed profile has invalid backend policy")
+    if "legacy-security" in workflow:
+        errors.append("release workflow must not install the vulnerable legacy-security extra")
     for snippet, label in {
         f"--only-binary=cryptography --constraint {constraints_file}": (
             "binary-only modern cryptography installs"
         ),
-        f"--only-binary=cryptography --constraint {compatibility_file}": (
-            "binary-only compatibility cryptography installs"
+        f'--constraint {compatibility_file} pip setuptools wheel ".[package]"': (
+            "Windows x86 fail-closed package install"
         ),
         'if ("${{ matrix.arch }}" -eq "x86")': "explicit Windows x86 compatibility branch",
-        'if [[ "${{ matrix.arch }}" == "x64" ]]': "explicit Intel macOS compatibility branch",
-        "$ExpectedCryptography = \"48.0.1\"": "Windows compatibility version assertion",
-        'expected_cryptography="48.0.1"': "macOS compatibility version assertion",
+        'if [[ "${{ matrix.arch }}" == "x64" ]]': "explicit Intel macOS source-build branch",
+        "python -m pip uninstall -y cryptography truststore": "Windows x86 backend exclusion",
+        "find_spec('cryptography') is None": "Windows x86 backend absence assertion",
+        '--no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"': (
+            "maintained Intel macOS cryptography source build"
+        ),
+        'expected_cryptography="50.0.0"': "macOS maintained version assertion",
         "backend.openssl_version_text()": "cryptography/OpenSSL runtime import smoke",
     }.items():
         if snippet not in workflow:
@@ -284,10 +317,13 @@ def check_windows_native_smoke(script_text: str | None = None) -> list[str]:
         "function Test-RowVault": "packaged vault smoke helper",
         "vault init": "packaged vault initialization smoke",
         "vault status --json": "packaged vault status smoke",
-        "$Status.backend_available": "packaged cryptography backend assertion",
-        "Test-RowVault $PortableRow": "portable ZIP vault smoke",
-        "Test-RowVault $ExeRow": "installed EXE vault smoke",
-        "Test-RowVault $MsiRow": "installed MSI vault smoke",
+        '$ExpectedVaultBackend = $Arch -ne "x86"': "architecture-specific vault expectation",
+        "vault backend availability did not match expected state": "backend state assertion",
+        "vault init unexpectedly succeeded without a maintained backend": "fail-closed init assertion",
+        "vault did not remain uninitialized and fail closed": "fail-closed persistence assertion",
+        'Test-RowVault $PortableRow "portable ZIP" $ExpectedVaultBackend': "portable ZIP vault smoke",
+        'Test-RowVault $ExeRow "EXE install" $ExpectedVaultBackend': "installed EXE vault smoke",
+        'Test-RowVault $MsiRow "MSI install" $ExpectedVaultBackend': "installed MSI vault smoke",
     }.items():
         if snippet not in script:
             errors.append(f"smoke_windows_native.ps1 missing {label}: {snippet}")

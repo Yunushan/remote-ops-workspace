@@ -252,8 +252,10 @@ jobs:
         run: |
           $ExpectedOpenSsl = ""
           if ("${{ matrix.arch }}" -eq "x86") {
-            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[legacy-security,package]"
-            $ExpectedCryptography = "48.0.1"
+            python -m pip uninstall -y cryptography truststore
+            python -m pip install --constraint requirements-release-compat.txt pip setuptools wheel ".[package]"
+            $ExpectedCryptography = ""
+            python -c "import importlib.util; assert importlib.util.find_spec('cryptography') is None; print('cryptography=unavailable vault=fail-closed')"
           } elseif ("${{ matrix.arch }}" -eq "arm64") {
             if (-not $env:VCPKG_INSTALLATION_ROOT) {
               throw "windows-11-arm runner did not provide VCPKG_INSTALLATION_ROOT"
@@ -291,7 +293,11 @@ jobs:
             python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
             $ExpectedCryptography = "50.0.0"
           }
-          python -c "import cryptography; from cryptography.hazmat.backends.openssl.backend import backend; actual_openssl = backend.openssl_version_text(); assert cryptography.__version__ == '$ExpectedCryptography'; assert not '$ExpectedOpenSsl' or actual_openssl.startswith('$ExpectedOpenSsl'), actual_openssl; print(f'cryptography={cryptography.__version__} openssl={actual_openssl}')"
+          if ($ExpectedCryptography) {
+            python -c "import cryptography; from cryptography.hazmat.backends.openssl.backend import backend; actual_openssl = backend.openssl_version_text(); assert cryptography.__version__ == '$ExpectedCryptography'; assert not '$ExpectedOpenSsl' or actual_openssl.startswith('$ExpectedOpenSsl'), actual_openssl; print(f'cryptography={cryptography.__version__} openssl={actual_openssl}')"
+          } else {
+            Write-Host "Windows x86 encrypted vault backend intentionally unavailable and fail-closed"
+          }
       - name: Install Windows installer toolchains
         shell: powershell
         run: |
@@ -363,8 +369,9 @@ jobs:
       - name: Install Python packaging dependencies
         run: |
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
-            python -m pip install --only-binary=cryptography --constraint requirements-release-compat.txt pip setuptools wheel ".[desktop,legacy-security,package]"
-            expected_cryptography="48.0.1"
+            python -m pip install --constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser
+            python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"
+            expected_cryptography="50.0.0"
           else
             python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
             expected_cryptography="50.0.0"

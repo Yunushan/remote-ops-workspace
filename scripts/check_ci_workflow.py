@@ -201,14 +201,17 @@ def check_test_job(workflow: str) -> list[str]:
             "ci test job must allow the Python 3.15 prerelease until upstream GA is available"
         )
     intel_macos_snippets = {
-        "Install Intel macOS compatibility dependencies": (
-            "explicit Intel macOS dependency compatibility step"
+        "Build maintained Intel macOS security dependencies": (
+            "explicit Intel macOS maintained-security source-build step"
         ),
         "runner.os == 'macOS' && runner.arch == 'X64'": (
             "Intel macOS architecture condition"
         ),
-        "-c requirements-release-compat.txt": (
-            "Intel macOS release compatibility constraints"
+        "--constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser": (
+            "pinned Intel macOS cryptography build dependencies"
+        ),
+        "--no-build-isolation --no-binary=cryptography": (
+            "maintained Intel macOS cryptography source build"
         ),
         "runner.os != 'macOS' || runner.arch != 'X64'": (
             "non-Intel-macOS dependency condition"
@@ -219,6 +222,8 @@ def check_test_job(workflow: str) -> list[str]:
             errors.append(f"ci test job missing {label}: {snippet}")
     if '".[security,dev]"' not in block:
         errors.append("ci test job must install security and dev extras")
+    if "legacy-security" in block:
+        errors.append("ci test job must not install the vulnerable legacy-security extra")
     windows_arm_security_snippets = {
         "Prepare pinned Windows ARM64 security source build": (
             "maintained Windows ARM64 security source-build step"

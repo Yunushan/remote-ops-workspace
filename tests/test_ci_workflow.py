@@ -229,16 +229,16 @@ def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
     assert "ci test matrix must not fan out the monolithic lint verifier" in errors
 
 
-def test_ci_workflow_requires_intel_macos_compatibility_constraints() -> None:
+def test_ci_workflow_requires_intel_macos_maintained_security_source_build() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        '          python -m pip install -c requirements-release-compat.txt -e ".[legacy-security,dev]"\n',
+        '          python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt -e ".[security,dev]"\n',
         '          python -m pip install -e ".[security,dev]"\n',
     )
 
     errors = checker.check_ci_workflow(workflow)
 
-    assert any("Intel macOS release compatibility constraints" in error for error in errors)
+    assert any("maintained Intel macOS cryptography source build" in error for error in errors)
 
 
 def test_ci_workflow_requires_bounded_test_matrix_timeout() -> None:

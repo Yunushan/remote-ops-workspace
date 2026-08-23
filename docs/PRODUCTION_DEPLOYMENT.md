@@ -138,10 +138,13 @@ Dependabot tracks `pip`, GitHub Actions, and Docker updates weekly through
 normal protected-branch policy; automated update tooling does not replace
 release validation or platform signing.
 
-The modern and legacy-wheel release profiles use the same pinned `build`,
-`wheel`, and PyInstaller versions. Only cryptography is intentionally lower in
-the legacy profile, because its x86 Windows and Intel macOS wheel availability
-is independently constrained and guarded by the release-toolchain contract.
+All vault-capable release profiles require maintained `cryptography==50.0.0`.
+Intel macOS builds it from source. The Windows x86 compatibility profile uses
+the same pinned `build`, `wheel`, and PyInstaller versions but excludes
+cryptography and truststore because no reviewed maintained source-build
+toolchain exists for that architecture. Its release smoke requires encrypted
+vault commands to fail closed; no known-vulnerable cryptography fallback is
+packaged.
 
 Tag-triggered releases fail before building any partial asset set unless both
 the Windows signing and macOS signing/notarization secret sets are available in

@@ -6,16 +6,22 @@
     "source_date_epoch": 1704067200,
     "compatibility_profiles": [
       {
-        "name": "legacy-wheel-architectures",
+        "name": "windows-x86-vault-fail-closed",
         "constraints_file": "requirements-release-compat.txt",
         "targets": [
-          "windows-x86",
-          "macos-x64"
+          "windows-x86"
         ],
-        "package_overrides": {
-          "cryptography": "48.0.1"
+        "package_overrides": {},
+        "excluded_packages": [
+          "cryptography",
+          "truststore"
+        ],
+        "security_backend": {
+          "feature": "encrypted-vault",
+          "state": "unavailable-fail-closed",
+          "minimum_safe_cryptography": "50.0.0"
         },
-        "reason": "cryptography 49 removed 32-bit Windows and Intel macOS wheels; 48.0.1 is retained only for legacy-wheel compatibility testing and packaging. pip-audit reports CVE-2026-69247, CVE-2026-69248 and CVE-2026-69249 for this exception, so it is never a modern default, production-security claim or Windows XP evidence."
+        "reason": "cryptography 50 has no maintained 32-bit Windows wheel and this repository has no reviewed Windows x86 source-build toolchain. Known-vulnerable fallback releases are excluded; packaged vault commands must report the backend unavailable and fail closed. This artifact is not Windows XP readiness evidence."
       }
     ]
   },

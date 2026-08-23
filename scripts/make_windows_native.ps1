@@ -459,6 +459,10 @@ if ($BuildGuiLauncher) {
 } else {
   $PortableNotes += "PyQt6 does not publish 32-bit Windows wheels, so this x86 bundle does not include row-gui.exe."
   $InstallerNotes += "PyQt6 does not publish 32-bit Windows wheels, so this x86 installer does not include row-gui.exe."
+  $PortableNotes += "Encrypted vault support is unavailable and fail-closed because no reviewed cryptography 50 Windows x86 toolchain exists."
+  $InstallerNotes += "Encrypted vault support is unavailable and fail-closed because no reviewed cryptography 50 Windows x86 toolchain exists."
+  $PortableNotes += "Known-vulnerable cryptography fallback releases are intentionally excluded."
+  $InstallerNotes += "Known-vulnerable cryptography fallback releases are intentionally excluded."
 }
 
 $Manifest = @(

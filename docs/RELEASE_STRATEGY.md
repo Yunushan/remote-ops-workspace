@@ -26,17 +26,21 @@ Release integrity rules:
 - The PEP 517 `build-system` pins `setuptools` and `wheel` to that same
   release toolchain, so downstream sdist builds do not silently select newer
   packaging backends.
-- Modern release targets use maintained `cryptography==50.0.0`. Windows x86 and Intel
-  macOS use the explicit `requirements-release-compat.txt` profile with
-  `cryptography==48.0.1` only for legacy-wheel compatibility. That legacy
-  profile carries known vulnerabilities and is never a modern production
-  security claim. A Windows x86 wheel is not Windows XP readiness evidence;
-  XP support still requires the separate accepted native-host records.
+- Modern release targets use maintained `cryptography==50.0.0`. Intel macOS
+  builds that version from source because upstream no longer publishes its
+  architecture wheel. Windows x86 uses the explicit
+  `requirements-release-compat.txt` profile with cryptography and truststore
+  excluded. Its packaged vault status must report the backend unavailable and
+  vault initialization must fail closed. A Windows x86 build is not Windows XP
+  readiness evidence; XP support still requires separate accepted native-host
+  records.
 - Windows ARM64 builds `cryptography==50.0.0` from source with pinned
   `maturin`/CFFI build dependencies and the recorded vcpkg commit, statically
   linked OpenSSL 3.6.3 triplet, and no vendored OpenSSL fallback. The workflow
   asserts the imported cryptography and OpenSSL versions, and Windows release
-  smoke initializes the encrypted vault from the portable ZIP, EXE and MSI.
+  smoke initializes the encrypted vault from maintained-backend portable ZIP,
+  EXE, and MSI artifacts. Windows x86 smoke instead proves that all three
+  package forms keep the unavailable vault backend fail closed.
 - The GitHub release workflow avoids unbounded `pip install --upgrade` commands.
 - Every artifact entry in release manifests includes `size_bytes` and `sha256`.
 - Release manifests record the release toolchain contract used for the build.

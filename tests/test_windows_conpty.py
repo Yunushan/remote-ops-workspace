@@ -70,6 +70,8 @@ def test_conpty_startup_explicitly_blocks_redirected_parent_handles() -> None:
 
     assert startup.StartupInfo.cb == ctypes.sizeof(windows_conpty._STARTUPINFOEXW)
     assert startup.StartupInfo.dwFlags & windows_conpty._STARTF_USESTDHANDLES
+    assert startup.StartupInfo.dwFlags & windows_conpty._STARTF_USESHOWWINDOW
+    assert startup.StartupInfo.wShowWindow == windows_conpty._SW_HIDE
     assert windows_conpty._handle_is_open(startup.StartupInfo.hStdInput) is False
     assert windows_conpty._handle_is_open(startup.StartupInfo.hStdOutput) is False
     assert windows_conpty._handle_is_open(startup.StartupInfo.hStdError) is False

@@ -18,7 +18,7 @@ from remote_ops_workspace.file_transfer import (
     build_sftp_put_plan,
 )
 from remote_ops_workspace.keys import build_keygen_plan
-from remote_ops_workspace.launcher import LauncherError, build_launch_plan
+from remote_ops_workspace.launcher import LauncherError, LaunchPlan, build_launch_plan
 from remote_ops_workspace.layouts import (
     Layout,
     LayoutPane,
@@ -34,6 +34,7 @@ from remote_ops_workspace.snippets import Snippet, SnippetStore
 from remote_ops_workspace.terminal import (
     _embedded_terminal_command,
     default_shell_command,
+    harden_terminal_pane_plan_for_native_windows,
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     split_shell_plans,
@@ -700,6 +701,67 @@ def test_terminal_plan_for_sftp_browser_uses_interactive_sftp() -> None:
     assert plan.command[0] == "sftp"
     assert plan.command[-1] == "admin@192.0.2.10"
     assert plan.source == "sftp:files"
+
+
+def test_native_windows_sftp_browser_removes_stale_connection_sharing_options(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
+    monkeypatch.setattr(
+        terminal_module,
+        "build_sftp_interactive_plan",
+        lambda _profile: LaunchPlan(
+            "sftp",
+            [
+                "sftp.exe",
+                "-o",
+                "ControlMaster=auto",
+                "-oControlPath=C:/Temp/remote-ops-control.sock",
+                "-o",
+                "ControlPersist=10m",
+                "admin@example.invalid",
+            ],
+            ["restored SFTP plan"],
+        ),
+    )
+
+    plan = terminal_plan_for_sftp_browser(
+        Profile(name="files", protocol="ssh", host="example.invalid", username="admin")
+    )
+
+    assert "ControlPath=none" in plan.command
+    assert "ControlMaster=no" in plan.command
+    assert "ControlPersist=no" in plan.command
+    assert not any("remote-ops-control.sock" in argument for argument in plan.command)
+    assert any("connection sharing options were ignored" in note for note in plan.notes)
+
+
+def test_native_windows_restored_terminal_plan_is_hardened(monkeypatch) -> None:
+    monkeypatch.setattr(terminal_module, "_is_native_windows", lambda: True)
+    plan = harden_terminal_pane_plan_for_native_windows(
+        terminal_module.TerminalPanePlan(
+            title="restored",
+            command=[
+                "ssh.exe",
+                "-S",
+                r"C:\Temp\remote-ops-control.sock",
+                "-o",
+                "ControlMaster=auto",
+                "operator@example.invalid",
+            ],
+            source="restored-layout",
+        )
+    )
+
+    assert plan.command[1:7] == [
+        "-S",
+        "none",
+        "-o",
+        "ControlMaster=no",
+        "-o",
+        "ControlPersist=no",
+    ]
+    assert any("connection sharing options were ignored" in note for note in plan.notes)
 
 
 def test_keygen_plan_uses_ssh_keygen(tmp_path: Path) -> None:

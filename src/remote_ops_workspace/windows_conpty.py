@@ -33,6 +33,8 @@ MINIMUM_CONPTY_BUILD = 17763
 _PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
 _EXTENDED_STARTUPINFO_PRESENT = 0x00080000
 _STARTF_USESTDHANDLES = 0x00000100
+_STARTF_USESHOWWINDOW = 0x00000001
+_SW_HIDE = 0
 _HANDLE_FLAG_INHERIT = 0x00000001
 _WAIT_OBJECT_0 = 0x00000000
 _WAIT_TIMEOUT = 0x00000102
@@ -553,6 +555,10 @@ def _configure_conpty_startup_info(startup: _STARTUPINFOEXW) -> None:
     startup.StartupInfo.hStdOutput = wintypes.HANDLE()
     startup.StartupInfo.hStdError = wintypes.HANDLE()
     startup.StartupInfo.dwFlags |= _STARTF_USESTDHANDLES
+    # Keep the ConPTY transport flags intact while preventing the child from
+    # briefly presenting its own console window during tab transitions.
+    startup.StartupInfo.dwFlags |= _STARTF_USESHOWWINDOW
+    startup.StartupInfo.wShowWindow = _SW_HIDE
 
 
 class WindowsConPtyProcess:

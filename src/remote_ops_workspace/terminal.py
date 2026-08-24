@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import command_safety as safe
@@ -22,6 +22,12 @@ from .models import Profile
 
 def _is_native_windows() -> bool:
     return os.name == "nt"
+
+
+_WINDOWS_OPENSSH_CONNECTION_SHARING_NOTE = (
+    "Windows OpenSSH connection sharing options were ignored because "
+    "native Windows does not support the required control socket."
+)
 
 
 @dataclass(slots=True)
@@ -69,10 +75,7 @@ def terminal_plan_for_profile(profile: Profile) -> TerminalPanePlan:
     command = _embedded_terminal_command(profile, native_command)
     notes = list(plan.notes)
     if native_command != plan.command:
-        notes.append(
-            "Windows OpenSSH connection sharing options were ignored because "
-            "native Windows does not support the required control socket."
-        )
+        notes.append(_WINDOWS_OPENSSH_CONNECTION_SHARING_NOTE)
     if _is_embedded_openssh(profile, plan.command):
         if not _ssh_option_is_present(plan.command, "ConnectTimeout"):
             notes.append(
@@ -538,6 +541,23 @@ def openssh_command_without_windows_connection_sharing(
     )
 
 
+def harden_terminal_pane_plan_for_native_windows(plan: TerminalPanePlan) -> TerminalPanePlan:
+    """Remove stale Windows OpenSSH mux settings from any terminal plan.
+
+    Plans can come from saved layouts or restored tabs rather than the normal
+    profile builder. Normalize those plans at the terminal boundary as well so
+    an older persisted command cannot reintroduce a Unix control socket.
+    """
+
+    native_command = openssh_command_without_windows_connection_sharing(plan.command)
+    if native_command == plan.command:
+        return plan
+    notes = list(plan.notes)
+    if _WINDOWS_OPENSSH_CONNECTION_SHARING_NOTE not in notes:
+        notes.append(_WINDOWS_OPENSSH_CONNECTION_SHARING_NOTE)
+    return replace(plan, command=native_command, notes=notes)
+
+
 def ssh_control_path_for_profile(profile: Profile) -> str:
     """Return a private, stable OpenSSH control-socket path for ``profile``.
 
@@ -633,9 +653,10 @@ def ssh_command_with_control_path(
 
 def terminal_plan_for_sftp_browser(profile: Profile) -> TerminalPanePlan:
     plan = build_sftp_interactive_plan(profile)
-    return TerminalPanePlan(
+    pane_plan = TerminalPanePlan(
         title=f"Files: {profile.name}",
         command=plan.command,
         source=f"sftp:{profile.name}",
         notes=["Interactive SFTP browser pane.", *plan.notes],
     )
+    return harden_terminal_pane_plan_for_native_windows(pane_plan)

@@ -234,6 +234,31 @@ def test_terminal_output_accepts_direct_keys_and_has_operational_context_menu(
     assert process.written.endswith(b"-middle-")
     assert pane.output.property("terminalLastPasteGesture") == "middle-click"
 
+    # Windows styles can expose only the mouse press to an embedded viewport.
+    # The Moba fast path must work there too, while a later context event must
+    # not replay the same clipboard payload.
+    clipboard.setText("-right-press-")
+    before_right_press = process.written
+    QTest.mousePress(pane.output_viewport, Qt.MouseButton.RightButton)
+    QTest.mouseRelease(pane.output_viewport, Qt.MouseButton.RightButton)
+    assert process.written == before_right_press + b"-right-press-"
+    assert pane.output.property("terminalLastPasteGesture") == "right-click"
+
+    clipboard.setText("-right-second-press-")
+    QTest.mousePress(pane.output_viewport, Qt.MouseButton.RightButton)
+    QTest.mouseRelease(pane.output_viewport, Qt.MouseButton.RightButton)
+    expected_right_presses = (
+        before_right_press + b"-right-press-" + b"-right-second-press-"
+    )
+    assert process.written == expected_right_presses
+    duplicate_context = QContextMenuEvent(
+        QContextMenuEvent.Reason.Mouse,
+        pane.output_viewport.rect().center(),
+        pane.output_viewport.mapToGlobal(pane.output_viewport.rect().center()),
+    )
+    assert pane.eventFilter(pane.output_viewport, duplicate_context) is True
+    assert process.written == expected_right_presses
+
     clipboard.setText("-right-")
     right_click = QContextMenuEvent(
         QContextMenuEvent.Reason.Mouse,
@@ -2229,6 +2254,98 @@ def test_sidebar_mouse_resize_survives_chrome_and_preset_refresh(gui_window) -> 
     app.processEvents()
     assert abs(window.root_splitter.sizes()[0] - dragged_width) <= 2
     assert window.profile_list.indentation() <= 15
+
+
+def test_moba_session_tab_width_is_mouse_resizable_and_preserved(gui_window) -> None:
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    window.set_design_preset("mobaxterm")
+    window.resize(1280, 760)
+    app.processEvents()
+
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="resizable-tab", command=[], source="test"),
+        autostart=False,
+    )
+    index = window.add_workspace_tab(pane, "resizable-tab", role="terminal")
+    window.apply_moba_tab_chrome(
+        index,
+        key="inactive-session",
+        icon_key="ssh",
+        tooltip="Resizable tab",
+        closeable=True,
+    )
+    app.processEvents()
+
+    tab_bar = window.moba_tab_bar
+    before = tab_bar.tabRect(index)
+    assert before.width() > 0
+    assert tab_bar.property("mobaTabWidthsUserResizable") is True
+
+    handle = QPoint(before.right(), before.center().y())
+    QTest.mousePress(tab_bar, Qt.MouseButton.LeftButton, pos=handle)
+    QTest.mouseMove(tab_bar, QPoint(handle.x() + 48, handle.y()))
+    QTest.mouseRelease(
+        tab_bar,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(handle.x() + 48, handle.y()),
+    )
+    app.processEvents()
+
+    resized = tab_bar.tabData(index)
+    assert isinstance(resized, dict)
+    assert resized["moba_user_width"] is True
+    assert resized["moba_width"] > before.width()
+    width = int(resized["moba_width"])
+    assert tab_bar.tabRect(index).width() == width
+
+    left_handle = tab_bar.tabRect(index).left()
+    left_handle_y = tab_bar.tabRect(index).center().y()
+    QTest.mousePress(
+        tab_bar,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(left_handle, left_handle_y),
+    )
+    QTest.mouseMove(
+        tab_bar,
+        QPoint(left_handle - 24, left_handle_y),
+    )
+    QTest.mouseRelease(
+        tab_bar,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(left_handle - 24, left_handle_y),
+    )
+    app.processEvents()
+
+    resized_from_left = tab_bar.tabData(index)
+    assert isinstance(resized_from_left, dict)
+    assert resized_from_left["moba_width"] > width
+    width = int(resized_from_left["moba_width"])
+    assert tab_bar.tabRect(index).width() == width
+
+    window.apply_moba_tab_chrome(
+        index,
+        key="active-session",
+        icon_key="ssh",
+        tooltip="Resizable tab",
+        closeable=True,
+    )
+    app.processEvents()
+    refreshed = tab_bar.tabData(index)
+    assert isinstance(refreshed, dict)
+    assert refreshed["moba_width"] == width
+    assert refreshed["moba_user_width"] is True
+
+    new_session_index = window.find_tab_by_role("new-session")
+    assert new_session_index >= 0
+    assert tab_bar.tabData(new_session_index)["moba_width"] == 32
+
+    window.tabs.removeTab(index)
+    pane.deleteLater()
 
 
 class _Signal:

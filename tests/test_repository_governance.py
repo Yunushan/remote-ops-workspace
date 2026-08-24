@@ -84,7 +84,11 @@ def test_fetch_protection_uses_gh_after_python_tls_failure(monkeypatch) -> None:
         raise URLError("certificate verify failed")
 
     def fake_run(args, **kwargs):
-        assert args[:3] == ["gh.exe", "api", "https://api.github.com/repos/example/project/branches/main/protection"]
+        assert args[:3] == [
+            "gh.exe",
+            "api",
+            "repos/example/project/branches/main/protection",
+        ]
         assert kwargs["env"]["GH_TOKEN"] == "test-token"
         return SimpleNamespace(stdout=json.dumps(protection))
 

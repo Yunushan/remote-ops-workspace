@@ -207,6 +207,7 @@ from .storage import ProfileStore
 from .terminal import (
     TerminalPanePlan,
     default_shell_plan,
+    harden_terminal_pane_plan_for_native_windows,
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     split_shell_plans,
@@ -965,6 +966,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         ) -> None:
             super().__init__()
             self.setObjectName("terminalPane")
+            # Saved layouts and restored tabs can carry plans created before
+            # the native-Windows OpenSSH socket guard existed. Apply the same
+            # normalization at the live terminal boundary as at plan build.
+            plan = harden_terminal_pane_plan_for_native_windows(plan)
             self.profile = profile
             self.ssh_control_path = ""
             if profile is not None:
@@ -1104,6 +1109,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             # only while the MobaXterm preset is active.
             self._terminal_right_click_paste_enabled = False
             self._terminal_middle_click_paste_enabled = False
+            # Some Windows Qt styles deliver a context-menu event after the
+            # right-button press; others deliver only the press to an embedded
+            # terminal viewport.  Paste on the press for the Moba fast path
+            # and remember the dispatch briefly so a later context event does
+            # not paste the same clipboard text twice.
+            self._terminal_right_click_paste_pending = False
+            self._terminal_right_click_paste_generation = 0
             # Keep the production OS clipboard while allowing native/headless
             # GUI gates to inject a deterministic clipboard provider. Windows
             # service sessions can expose QClipboard without owning a desktop
@@ -1377,6 +1389,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self.paste_middle_click_selection()
                     event.accept()
                     return True
+                if (
+                    event.button() == Qt.MouseButton.RightButton
+                    and self._terminal_right_click_paste_enabled
+                    and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                ):
+                    # A second genuine click must never be swallowed just
+                    # because the first click is waiting for Qt's synthetic
+                    # context-menu event.
+                    self._cancel_right_click_paste_suppression()
+                    self._arm_right_click_paste_suppression()
+                    self.paste_to_terminal(gesture="right-click")
+                    event.accept()
+                    return True
             if watched in terminal_targets and event.type() == QEvent.Type.ContextMenu:
                 # MobaXterm's fast path pastes on a plain right-click.  Keep
                 # the complete context menu available through Shift+Right-click
@@ -1387,6 +1412,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     and event.reason() == QContextMenuEvent.Reason.Mouse
                     and not modifiers & Qt.KeyboardModifier.ShiftModifier
                 ):
+                    if self._terminal_right_click_paste_pending:
+                        self._cancel_right_click_paste_suppression()
+                        event.accept()
+                        return True
                     self.paste_to_terminal(gesture="right-click")
                     event.accept()
                     return True
@@ -1435,6 +1464,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self.send_raw_input(payload)
                     return True
             return super().eventFilter(watched, event)
+
+        def _arm_right_click_paste_suppression(self) -> None:
+            """Avoid duplicate Moba paste when Qt also emits a context event."""
+
+            self._terminal_right_click_paste_generation += 1
+            generation = self._terminal_right_click_paste_generation
+            self._terminal_right_click_paste_pending = True
+            QTimer.singleShot(
+                500,
+                lambda generation=generation: self._clear_right_click_paste_suppression(
+                    generation
+                ),
+            )
+
+        def _cancel_right_click_paste_suppression(self) -> None:
+            self._terminal_right_click_paste_generation += 1
+            self._terminal_right_click_paste_pending = False
+
+        def _clear_right_click_paste_suppression(self, generation: int) -> None:
+            if generation == self._terminal_right_click_paste_generation:
+                self._terminal_right_click_paste_pending = False
 
         @staticmethod
         def is_terminal_selection_navigation(event) -> bool:
@@ -1717,6 +1767,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input.setFocus(Qt.FocusReason.OtherFocusReason)
 
         def set_terminal_right_click_paste_enabled(self, enabled: bool) -> None:
+            self._cancel_right_click_paste_suppression()
             self._terminal_right_click_paste_enabled = bool(enabled)
             self.output.setProperty(
                 "terminalRightClickPasteEnabled",
@@ -1991,6 +2042,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             clipboard = _application_clipboard()
             clipboard.setText(clipboard_text)
+            _application_instance().processEvents(
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+            )
             # A different Windows process can hold the native clipboard for a
             # short interval.  Keep this path consistent with the interactive
             # terminal copy action: verify the write and make one bounded retry
@@ -1998,6 +2052,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             retried = clipboard.text() != clipboard_text
             if retried:
                 clipboard.setText(clipboard_text)
+                _application_instance().processEvents(
+                    QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+                )
             self.output.setProperty("terminalClipboardWriteRetried", retried)
 
         def clear_output(self) -> None:
@@ -7744,12 +7801,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     class MobaWorkspaceTabBar(QTabBar):
         """Apply measured tab widths only while the Moba preset is active."""
 
+        TAB_RESIZE_HIT_WIDTH = 6
+        TAB_RESIZE_MIN_WIDTH = 140
+        TAB_RESIZE_MAX_WIDTH = 640
+
         def __init__(self, parent=None) -> None:
             super().__init__(parent)
             self.special_tab_handler: Callable[[int], None] | None = None
             self.tab_switch_prepare_handler: Callable[[int], None] | None = None
             self._pressed_special_key = ""
             self._stabilizing_special_tabs = False
+            self._tab_resize_index = -1
+            self._tab_resize_edge = ""
+            self._tab_resize_start_x = 0
+            self._tab_resize_start_width = 0
+            self.setMouseTracking(True)
+            self.setProperty("mobaTabWidthsUserResizable", True)
             self.tabMoved.connect(self.stabilize_special_tabs)
 
         def moba_tab_key(self, index: int) -> str:
@@ -7766,6 +7833,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return True
 
         def mousePressEvent(self, event) -> None:  # noqa: N802
+            if event.button() == Qt.MouseButton.LeftButton:
+                resize_target = self._tab_resize_target(event.position().toPoint())
+                if resize_target is not None:
+                    index, edge = resize_target
+                    rect = self.tabRect(index)
+                    self._tab_resize_index = index
+                    self._tab_resize_edge = edge
+                    self._tab_resize_start_x = event.position().toPoint().x()
+                    self._tab_resize_start_width = rect.width()
+                    self.setCursor(Qt.CursorShape.SizeHorCursor)
+                    event.accept()
+                    return
             index = self.tabAt(event.position().toPoint())
             self._pressed_special_key = self.moba_tab_key(index)
             if self.activate_special_tab(index):
@@ -7799,12 +7878,31 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             super().keyPressEvent(event)
 
         def mouseMoveEvent(self, event) -> None:  # noqa: N802
+            position = event.position().toPoint()
+            if self._tab_resize_index >= 0:
+                self._resize_tab_width(position.x())
+                event.accept()
+                return
             if self._pressed_special_key in {"home", "new-session"}:
                 event.accept()
                 return
+            if self._tab_resize_target(position) is not None:
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            else:
+                self.unsetCursor()
             super().mouseMoveEvent(event)
 
         def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+            if self._tab_resize_index >= 0:
+                position = event.position().toPoint()
+                self._resize_tab_width(position.x())
+                self._tab_resize_index = -1
+                self._tab_resize_edge = ""
+                self._tab_resize_start_x = 0
+                self._tab_resize_start_width = 0
+                self.unsetCursor()
+                event.accept()
+                return
             special_key = self._pressed_special_key
             self._pressed_special_key = ""
             if special_key == "new-session":
@@ -7839,6 +7937,78 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self.moveTab(new_session_index, self.count() - 1)
             finally:
                 self._stabilizing_special_tabs = False
+
+        def leaveEvent(self, event) -> None:  # noqa: N802
+            if self._tab_resize_index < 0:
+                self.unsetCursor()
+            super().leaveEvent(event)
+
+        def _tab_resize_target(self, position) -> tuple[int, str] | None:
+            if not bool(self.property("mobaCompactTabWidths")):
+                return None
+            hit_width = self.TAB_RESIZE_HIT_WIDTH
+            candidates: list[tuple[int, int, str]] = []
+            for index in range(self.count()):
+                if self.moba_tab_key(index) in {"home", "new-session"}:
+                    continue
+                rect = self.tabRect(index)
+                if rect.isNull() or not rect.adjusted(-hit_width, -hit_width, hit_width, hit_width).contains(position):
+                    continue
+                left_distance = abs(position.x() - rect.left())
+                right_distance = abs(position.x() - rect.right())
+                if left_distance <= hit_width:
+                    candidates.append((left_distance, index, "left"))
+                if right_distance <= hit_width:
+                    candidates.append((right_distance, index, "right"))
+            if not candidates:
+                return None
+            _distance, index, edge = min(candidates, key=lambda item: item[0])
+            return index, edge
+
+        def _resize_tab_width(self, position_x: int) -> None:
+            index = self._tab_resize_index
+            if index < 0 or index >= self.count() or self._tab_resize_start_width <= 0:
+                return
+            delta = int(position_x) - self._tab_resize_start_x
+            if self._tab_resize_edge == "left":
+                width = self._tab_resize_start_width - delta
+            else:
+                width = self._tab_resize_start_width + delta
+            width = max(self.TAB_RESIZE_MIN_WIDTH, min(self.TAB_RESIZE_MAX_WIDTH, width))
+            data = self.tabData(index)
+            if not isinstance(data, dict):
+                return
+            if int(data.get("moba_width", 0) or 0) == width and data.get("moba_user_width") is True:
+                return
+            resized_data = dict(data)
+            resized_data["moba_width"] = width
+            resized_data["moba_user_width"] = True
+            self.setTabData(index, resized_data)
+            self._refresh_tab_layout(index)
+            widget = self.parentWidget()
+            if widget is not None:
+                widget.updateGeometry()
+            self.setProperty("mobaLastResizedTabIndex", index)
+            self.setProperty("mobaLastResizedTabWidth", width)
+            self.updateGeometry()
+            self.update()
+
+        def _refresh_tab_layout(self, index: int) -> None:
+            """Make a changed ``tabSizeHint`` reach the live tab geometry."""
+
+            # QTabBar caches tab rectangles. Re-setting the unchanged label is
+            # a public Qt route that invalidates that cache without reaching
+            # into private layout APIs or changing the visible tab text.
+            self.setTabText(index, self.tabText(index))
+            self.updateGeometry()
+            parent = self.parentWidget()
+            if parent is None:
+                return
+            parent.updateGeometry()
+            layout = parent.layout()
+            if layout is not None:
+                layout.invalidate()
+                layout.activate()
 
         def tabSizeHint(self, index: int):  # noqa: N802
             hint = super().tabSizeHint(index)
@@ -13775,15 +13945,33 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget = self.tabs.widget(index)
             geometry = moba_connected_tab_chrome_geometry_for(key)
             tab_bar = self.moba_tab_bar
+            previous_data = tab_bar.tabData(index)
+            custom_width = (
+                previous_data.get("moba_width")
+                if isinstance(previous_data, dict)
+                and previous_data.get("moba_user_width") is True
+                else None
+            )
+            width = (
+                max(
+                    MobaWorkspaceTabBar.TAB_RESIZE_MIN_WIDTH,
+                    min(MobaWorkspaceTabBar.TAB_RESIZE_MAX_WIDTH, int(custom_width)),
+                )
+                if isinstance(custom_width, int)
+                and key not in {"home", "new-session"}
+                else geometry.width
+            )
             tab_bar.setTabData(
                 index,
                 {
                     "moba_key": key,
-                    "moba_width": geometry.width,
+                    "moba_width": width,
                     "moba_height": geometry.height,
+                    "moba_user_width": width != geometry.width,
                 },
             )
             tab_bar.setProperty("mobaCompactTabWidths", True)
+            tab_bar._refresh_tab_layout(index)
             self.tabs.setProperty(
                 "mobaTabChromeGeometryKeys",
                 [item.key for item in moba_connected_tab_chrome_geometry_items()],
@@ -13792,7 +13980,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty("mobaTabChromeKey", key)
                 widget.setProperty("mobaTabIconKey", icon_key)
                 widget.setProperty("mobaTabCloseable", closeable)
-                widget.setProperty("mobaTabStaticWidth", geometry.width)
+                widget.setProperty("mobaTabStaticWidth", width)
+                widget.setProperty("mobaTabUserWidth", width != geometry.width)
+                widget.setProperty(
+                    "mobaTabResizeRange",
+                    [
+                        MobaWorkspaceTabBar.TAB_RESIZE_MIN_WIDTH,
+                        MobaWorkspaceTabBar.TAB_RESIZE_MAX_WIDTH,
+                    ],
+                )
                 widget.setProperty("mobaTabStaticHeight", geometry.height)
                 widget.setProperty("mobaTabCornerRadius", geometry.corner_radius)
                 widget.setProperty("mobaTabIconX", geometry.icon_x)

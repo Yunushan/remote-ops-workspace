@@ -23,6 +23,8 @@ artifacts/windows-ssh-loopback*/
 artifacts/python315-windows-ssh*/
 artifacts/python315-frozen*/
 artifacts/coverage/
+artifacts/pytest-tmp-offscreen/
+artifacts/real-gui-render-final/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
@@ -31,6 +33,7 @@ artifacts/coverage/
 htmlcov/
 .verify-row-home/
 .tmp/
+.pytest-tmp-local*/
 
 # Remote Ops Workspace private data
 .row/

@@ -65,8 +65,15 @@ and the production output batcher. It captures every mouse, Ctrl+Tab and
 active-close event turn and rejects blank, miniature, wrong-tab,
 non-alternate-screen, stopped-process or no-output-batch frames.
 
+In the MobaXterm preset, the left and right edges of a normal session tab are
+bounded mouse resize handles. Session widths stay between 140 and 640 logical
+pixels, preserve the user's width when active-tab chrome is refreshed, and do
+not resize the fixed Home or new-session tabs. Terminal splitters and the
+sidebar remain independently mouse-resizable.
+
 The MobaXterm preset enables its native mouse-paste convention: a plain
-right-click pastes the clipboard, middle-click pastes the platform selection
+right-button press pastes the clipboard (with a later Qt context event
+deduplicated), middle-click pastes the platform selection
 when one exists (falling back to the clipboard), and Shift+Right-click opens
 the complete terminal context menu. Other presets keep ordinary right-click
 menus by default. When the remote application negotiates bracketed paste, all

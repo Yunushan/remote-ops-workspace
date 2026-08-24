@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 DEFAULT_BRANCH = "main"
@@ -121,12 +122,18 @@ def load_fixture(path: Path) -> dict[str, Any]:
 
 
 def _fetch_with_gh(gh: str, url: str) -> dict[str, Any]:
+    parsed = urlsplit(url)
+    endpoint = url
+    if parsed.netloc == "api.github.com" and parsed.path:
+        endpoint = parsed.path.lstrip("/")
+        if parsed.query:
+            endpoint = f"{endpoint}?{parsed.query}"
     environment = os.environ.copy()
     if not environment.get("GH_TOKEN") and environment.get("GITHUB_TOKEN"):
         environment["GH_TOKEN"] = environment["GITHUB_TOKEN"]
     try:
         completed = subprocess.run(
-            [gh, "api", url, "--header", "Accept: application/vnd.github+json"],
+            [gh, "api", endpoint, "--header", "Accept: application/vnd.github+json"],
             check=True,
             capture_output=True,
             text=True,

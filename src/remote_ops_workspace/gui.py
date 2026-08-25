@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import codecs
 import html
+import ntpath
 import os
 import posixpath
 import re
 import shlex
 import sys
 import time
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
@@ -204,6 +207,7 @@ from .storage import ProfileStore
 from .terminal import (
     TerminalPanePlan,
     default_shell_plan,
+    harden_terminal_pane_plan_for_native_windows,
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     split_shell_plans,
@@ -222,6 +226,67 @@ from .terminal_highlighting import (
     highlight_terminal_text,
     terminal_syntax_rule_keys,
 )
+
+# Qt requires QApplication to outlive every widget. Keep a process-wide Python
+# reference so short-lived windows and test fixtures cannot collect its wrapper.
+_QT_APPLICATION_REF: object | None = None
+
+
+class _ByteChunkQueue:
+    """FIFO bytes without repeated front-deletion copies.
+
+    Terminal output can arrive much faster than a QTextEdit can be rebuilt. A
+    ``bytearray`` plus ``del buffer[:n]`` moves the whole remaining backlog for
+    every render turn and becomes quadratic for large command output. This
+    queue keeps immutable chunks and only copies the bounded prefix returned to
+    the renderer.
+    """
+
+    __slots__ = ("_chunks", "_head_offset", "_size")
+
+    def __init__(self) -> None:
+        self._chunks: deque[bytes] = deque()
+        self._head_offset = 0
+        self._size = 0
+
+    def __bool__(self) -> bool:
+        return self._size > 0
+
+    def __len__(self) -> int:
+        return self._size
+
+    def append(self, payload: bytes) -> None:
+        data = bytes(payload)
+        if not data:
+            return
+        self._chunks.append(data)
+        self._size += len(data)
+
+    def clear(self) -> None:
+        self._chunks.clear()
+        self._head_offset = 0
+        self._size = 0
+
+    def take(self, max_bytes: int) -> bytes:
+        requested = min(self._size, max(0, int(max_bytes)))
+        if requested <= 0:
+            return b""
+        remaining = requested
+        parts: list[bytes] = []
+        while remaining:
+            chunk = self._chunks[0]
+            available = len(chunk) - self._head_offset
+            amount = min(available, remaining)
+            parts.append(chunk[self._head_offset : self._head_offset + amount])
+            self._head_offset += amount
+            self._size -= amount
+            remaining -= amount
+            if self._head_offset == len(chunk):
+                self._chunks.popleft()
+                self._head_offset = 0
+        if len(parts) == 1:
+            return parts[0]
+        return b"".join(parts)
 
 
 def _safe_tooltip_html(text: str) -> str:
@@ -480,12 +545,20 @@ def set_windows_taskbar_app_id() -> None:
         return
 
 
-def create_main_window(argv: list[str] | None = None, *, show: bool = False):
+def create_main_window(
+    argv: list[str] | None = None,
+    *,
+    show: bool = False,
+    preview_samples: bool = False,
+):
+    global _QT_APPLICATION_REF
+
     try:
         from PyQt6.QtCore import (
             QBuffer,
             QByteArray,
             QEvent,
+            QEventLoop,
             QIODevice,
             QPoint,
             QProcess,
@@ -499,6 +572,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QBrush,
             QClipboard,
             QColor,
+            QContextMenuEvent,
             QDesktopServices,
             QFont,
             QGuiApplication,
@@ -528,6 +602,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QGridLayout,
             QHBoxLayout,
             QHeaderView,
+            QInputDialog,
             QLabel,
             QLineEdit,
             QMainWindow,
@@ -563,11 +638,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             raise RuntimeError("required GUI value is unavailable: Qt application")
         return instance
 
-    def _background_process(parent):
-        """Create a helper process without flashing a Windows console."""
+    def _background_process(parent, *, interactive_auth: bool = False):
+        """Create a hidden helper process, optionally with a private PTY.
+
+        Native Windows OpenSSH only accepts password input from a console/PTY.
+        The normal helper path remains pipe-backed and non-interactive; the
+        explicit vault-authenticated Moba tools path opts into a hidden ConPTY
+        so a password can be submitted without creating a console window.
+        """
 
         if sys.platform == "win32":
-            from .qt_terminal_process import QtHiddenProcess
+            from .qt_terminal_process import QtConPtyProcess, QtHiddenProcess
+
+            if interactive_auth:
+                try:
+                    from .windows_conpty import conpty_support
+
+                    if conpty_support().supported:
+                        process = QtConPtyProcess(parent)
+                        process.setProperty("backgroundAuthTransport", "windows-conpty")
+                        return process
+                except (ImportError, OSError, RuntimeError):
+                    pass
 
             return QtHiddenProcess(parent)
         return QProcess(parent)
@@ -582,7 +674,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     ):
         """Select a real local pseudo-console for interactive Windows sessions."""
 
-        program_name = Path(plan.command[0]).name.lower() if plan.command else ""
+        # Saved Windows profiles can carry an absolute backslash-delimited
+        # executable path even when a POSIX-hosted render/evidence check is
+        # exercising the native-Windows selection logic.
+        program_name = ntpath.basename(plan.command[0]).lower() if plan.command else ""
         openssh_program = program_name in {"ssh", "ssh.exe", "sftp", "sftp.exe"}
         local_shell_program = bool(
             plan.source == "shell"
@@ -601,6 +696,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             and (openssh_program or local_shell_program)
         )
         if not use_windows_conpty:
+            if sys.platform == "win32":
+                # Console commands opened from a terminal tab still need the
+                # pipe adapter when ConPTY is not appropriate. Plain QProcess
+                # can briefly create a visible console during tab activation;
+                # use the same hidden startup contract as monitoring/SFTP.
+                process = _background_process(parent)
+                process.setProperty("terminalWindowsConsoleSuppressed", True)
+                return process, ""
             return QProcess(parent), ""
         try:
             from .qt_terminal_process import QtConPtyProcess
@@ -742,6 +845,83 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.setTextCursor(cursor)
             self.ensureCursorVisible()
 
+    class TerminalTextEdit(QTextEdit):
+        """Read-only transcript view with a stable remote-terminal cursor overlay."""
+
+        def __init__(self, parent=None) -> None:
+            super().__init__(parent)
+            self._remote_cursor_position: int | None = None
+            self._remote_cursor_trailing_cells = 0
+            self._remote_cursor_visible = False
+
+        def set_remote_cursor_state(
+            self,
+            position: int,
+            *,
+            trailing_cells: int = 0,
+            visible: bool,
+        ) -> None:
+            document = self.document()
+            maximum = max(0, document.characterCount() - 1) if document is not None else 0
+            self._remote_cursor_position = max(0, min(maximum, int(position)))
+            self._remote_cursor_trailing_cells = max(0, int(trailing_cells))
+            self._remote_cursor_visible = bool(visible)
+            self.setProperty("terminalRemoteCursorVisible", self._remote_cursor_visible)
+            self.setProperty(
+                "terminalRemoteCursorDocumentPosition",
+                self._remote_cursor_position,
+            )
+            self.setProperty(
+                "terminalRemoteCursorTrailingCells",
+                self._remote_cursor_trailing_cells,
+            )
+            viewport = self.viewport()
+            if viewport is not None:
+                viewport.update()
+
+        def paintEvent(self, event) -> None:  # noqa: N802
+            if bool(self.property("terminalTabPaintFrozen")):
+                return
+            super().paintEvent(event)
+            if not self._remote_cursor_visible or self._remote_cursor_position is None:
+                return
+            viewport = self.viewport()
+            if viewport is None:
+                return
+            document = self.document()
+            if document is None:
+                return
+            cursor = QTextCursor(document)
+            cursor.setPosition(
+                max(
+                    0,
+                    min(document.characterCount() - 1, self._remote_cursor_position),
+                )
+            )
+            rectangle = self.cursorRect(cursor)
+            if self._remote_cursor_trailing_cells:
+                cell_width = max(1, self.fontMetrics().horizontalAdvance("M"))
+                rectangle.translate(
+                    self._remote_cursor_trailing_cells * cell_width,
+                    0,
+                )
+            if not rectangle.intersects(viewport.rect()):
+                return
+            color = self.palette().color(QPalette.ColorRole.Text)
+            color.setAlpha(230)
+            painter = QPainter(viewport)
+            try:
+                cursor_width = max(2, round(self.devicePixelRatioF()))
+                painter.fillRect(
+                    rectangle.x(),
+                    rectangle.y() + 1,
+                    cursor_width,
+                    max(1, rectangle.height() - 2),
+                    color,
+                )
+            finally:
+                painter.end()
+
     TREE_ICON_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 31
     TREE_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 32
     TREE_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 33
@@ -806,6 +986,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
     class TerminalPane(QWidget):
         STOP_POLICY = ProcessStopPolicy()
+        OUTPUT_RENDER_BATCH_BYTES = 16 * 1024
+        OUTPUT_RENDER_TURN_BUDGET_BYTES = 256 * 1024
+        OUTPUT_SYNC_DRAIN_BUDGET_BYTES = 64 * 1024
+        OUTPUT_READ_CHUNK_BYTES = 64 * 1024
+        OUTPUT_BUFFER_HIGH_WATER_BYTES = 4 * 1024 * 1024
+        OUTPUT_BUFFER_LOW_WATER_BYTES = 1 * 1024 * 1024
 
         def __init__(
             self,
@@ -816,6 +1002,20 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         ) -> None:
             super().__init__()
             self.setObjectName("terminalPane")
+            # A terminal page is a fill surface, never a size-hint-driven
+            # floating child.  Explicitly keeping a zero minimum and an
+            # expanding policy prevents QStackedWidget/QSplitter from
+            # exposing a transient miniature page while another tab is being
+            # activated or its ConPTY is negotiating a resize.
+            self.setMinimumSize(0, 0)
+            self.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
+            # Saved layouts and restored tabs can carry plans created before
+            # the native-Windows OpenSSH socket guard existed. Apply the same
+            # normalization at the live terminal boundary as at plan build.
+            plan = harden_terminal_pane_plan_for_native_windows(plan)
             self.profile = profile
             self.ssh_control_path = ""
             if profile is not None:
@@ -838,15 +1038,29 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
             self._restart_after_stop = False
             self._rendered_terminal_text = ""
+            self._pending_terminal_transcript: str | None = None
             self._pty_initial_clear_pending = False
             self._pty_startup_probe = ""
             self._terminal_scroll_generation = 0
-            self._process_output_buffer = bytearray()
+            self._process_output_buffer = _ByteChunkQueue()
             self._process_output_flush_scheduled = False
             self._process_output_flush_count = 0
+            self._process_output_decoder = codecs.getincrementaldecoder("utf-8")(
+                errors="replace"
+            )
+            self._process_output_decode_final_pending = False
+            self._process_output_end_pending = False
+            self._process_output_source_end_pending = False
+            self._process_output_source_drained = True
+            self._process_output_trailers: list[str] = []
+            self._process_output_read_paused = False
+            self._restart_when_output_drained = False
             self._pending_terminal_size: tuple[int, int] | None = None
             self.setProperty("terminalAutostart", bool(autostart))
-            self.setProperty("terminalOutputCoalescing", "16ms-frame-bounded-burst")
+            self.setProperty(
+                "terminalOutputCoalescing",
+                "16ms-coalesce-256KiB-adaptive-turn-4MiB-backpressure",
+            )
             self.startup_preamble = ""
             self.show_launch_command = True
             self.output_context_menu_builder: Callable[[TerminalPane], QMenu] | None = None
@@ -882,7 +1096,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.command_preview.setSizePolicy(
                 QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
             )
-            self.output = QTextEdit()
+            self.output = TerminalTextEdit()
             self.output.setObjectName("terminalOutput")
             self.output.setReadOnly(True)
             self.output.setTextInteractionFlags(
@@ -927,20 +1141,79 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 if bool(getattr(self.process, "is_pty", False))
                 else "qt-process-pipe",
             )
+            process_property = getattr(self.process, "property", lambda _name: None)
+            self.output.setProperty(
+                "terminalConsoleSuppressed",
+                bool(process_property("terminalConsoleSuppressed")),
+            )
+            self.output.setProperty(
+                "terminalChildWindowPolicy",
+                str(process_property("terminalChildWindowPolicy") or "unspecified"),
+            )
             self.output.setProperty(
                 "terminalRemotePtyRequested",
                 any(argument in {"-t", "-tt"} for argument in plan.command),
             )
             self.output.setProperty("terminalDirectKeyInput", True)
             self.output.setProperty("terminalQtCaretHidden", True)
+            self.output.setProperty("terminalTabPaintFrozen", False)
             self.output.setProperty("terminalAlternateScreenActive", False)
             self.output.setProperty("terminalAlternateScreenRedraw", False)
             self.output.setProperty("terminalBracketedPasteActive", False)
+            self.output.setProperty("terminalOriginModeActive", False)
+            self.output.setProperty("terminalInsertModeActive", False)
+            self.output.setProperty("terminalAutoWrapActive", True)
             self.output.setProperty("terminalLastPasteWasBracketed", False)
+            # Automatic mouse paste is a MobaXterm convention, not a safe
+            # cross-preset terminal default. MainWindow enables both gestures
+            # only while the MobaXterm preset is active.
+            self._terminal_right_click_paste_enabled = False
+            self._terminal_middle_click_paste_enabled = False
+            # Some Windows Qt styles deliver a context-menu event after the
+            # right-button press; others deliver only the press to an embedded
+            # terminal viewport.  Paste on the press for the Moba fast path
+            # and remember the dispatch briefly so a later context event does
+            # not paste the same clipboard text twice.
+            self._terminal_right_click_paste_pending = False
+            self._terminal_right_click_paste_generation = 0
+            # Keep the production OS clipboard while allowing native/headless
+            # GUI gates to inject a deterministic clipboard provider. Windows
+            # service sessions can expose QClipboard without owning a desktop
+            # clipboard, which must not make terminal input tests flaky.
+            self._terminal_clipboard_provider = _application_clipboard
+            self.output.setProperty("terminalRightClickPasteEnabled", False)
+            self.output.setProperty("terminalMiddleClickPasteEnabled", False)
+            self.output.setProperty(
+                "terminalContextMenuGesture",
+                "Right-click",
+            )
+            self.output.setProperty("terminalLastPasteGesture", "")
             self.output.setProperty("terminalEmulatorResponseCount", 0)
             self.output.setProperty("terminalLastEmulatorResponse", b"")
             self.output.setProperty("terminalOutputBufferedBytes", 0)
             self.output.setProperty("terminalOutputFlushCount", 0)
+            self.output.setProperty(
+                "terminalOutputRenderBatchBytes",
+                self.OUTPUT_RENDER_BATCH_BYTES,
+            )
+            self.output.setProperty(
+                "terminalOutputRenderTurnBudgetBytes",
+                self.OUTPUT_RENDER_TURN_BUDGET_BYTES,
+            )
+            self.output.setProperty(
+                "terminalOutputSyncDrainBudgetBytes",
+                self.OUTPUT_SYNC_DRAIN_BUDGET_BYTES,
+            )
+            self.output.setProperty(
+                "terminalOutputBufferHighWaterBytes",
+                self.OUTPUT_BUFFER_HIGH_WATER_BYTES,
+            )
+            self.output.setProperty(
+                "terminalOutputBufferLowWaterBytes",
+                self.OUTPUT_BUFFER_LOW_WATER_BYTES,
+            )
+            self.output.setProperty("terminalOutputReadPaused", False)
+            self.output.setProperty("terminalOutputDeferredTrailerCount", 0)
             self.output.setProperty("terminalMouseMultilineSelection", True)
             self.output.setProperty(
                 "terminalKeyboardSelectionShortcuts",
@@ -1092,6 +1365,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if autostart:
                 self.start()
 
+        def set_terminal_paint_frozen(self, frozen: bool) -> None:
+            """Hold the terminal viewport steady while its workspace tab settles."""
+
+            frozen = bool(frozen)
+            self.setProperty("terminalTabPaintFrozen", frozen)
+            self.output.setProperty("terminalTabPaintFrozen", frozen)
+            alternate_redraw_active = bool(
+                self.output.property("terminalAlternateScreenRedraw")
+            )
+            self.output.setUpdatesEnabled(not frozen and not alternate_redraw_active)
+            if not frozen:
+                pending_transcript = self._pending_terminal_transcript
+                self._pending_terminal_transcript = None
+                if pending_transcript is not None:
+                    self.render_terminal_transcript(pending_transcript)
+                # Output may have arrived while painting was suppressed. One
+                # queued repaint exposes the already-rendered transcript after
+                # the final tab geometry is in place without blocking the UI.
+                self.output_viewport.update()
+                self.output.update()
+
         def terminal_button(self, label: str, icon_name: str, tooltip: str) -> QToolButton:
             button = QToolButton()
             button.setObjectName("terminalAction")
@@ -1169,6 +1463,43 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if watched in terminal_targets and event.type() == QEvent.Type.MouseButtonPress:
                 self.output.setFocus(Qt.FocusReason.MouseFocusReason)
                 self.output.setProperty("terminalLastInputSurface", "viewport")
+                if (
+                    event.button() == Qt.MouseButton.MiddleButton
+                    and self._terminal_middle_click_paste_enabled
+                ):
+                    self.paste_middle_click_selection()
+                    event.accept()
+                    return True
+                if (
+                    event.button() == Qt.MouseButton.RightButton
+                    and self._terminal_right_click_paste_enabled
+                    and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                ):
+                    # A second genuine click must never be swallowed just
+                    # because the first click is waiting for Qt's synthetic
+                    # context-menu event.
+                    self._cancel_right_click_paste_suppression()
+                    self._arm_right_click_paste_suppression()
+                    self.paste_to_terminal(gesture="right-click")
+                    event.accept()
+                    return True
+            if watched in terminal_targets and event.type() == QEvent.Type.ContextMenu:
+                # MobaXterm's fast path pastes on a plain right-click.  Keep
+                # the complete context menu available through Shift+Right-click
+                # (and let users switch the fast path off from that menu).
+                modifiers = event.modifiers()
+                if (
+                    self._terminal_right_click_paste_enabled
+                    and event.reason() == QContextMenuEvent.Reason.Mouse
+                    and not modifiers & Qt.KeyboardModifier.ShiftModifier
+                ):
+                    if self._terminal_right_click_paste_pending:
+                        self._cancel_right_click_paste_suppression()
+                        event.accept()
+                        return True
+                    self.paste_to_terminal(gesture="right-click")
+                    event.accept()
+                    return True
             if (
                 watched is self.output_viewport
                 and event.type() == QEvent.Type.MouseButtonRelease
@@ -1187,6 +1518,32 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     event.accept()
                     return True
             if watched in terminal_targets and event.type() == QEvent.Type.KeyPress:
+                # The terminal event filter normally owns key delivery so
+                # that readline, Vim, and ncurses receive exact TTY bytes.
+                # Ctrl+Tab is the workspace traversal gesture, however; if
+                # it reaches terminal_key_payload it becomes a remote Tab
+                # byte before the window-level QShortcut can activate.
+                if (
+                    event.key() == Qt.Key.Key_Tab
+                    and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                    and not event.modifiers()
+                    & (
+                        Qt.KeyboardModifier.AltModifier
+                        | Qt.KeyboardModifier.MetaModifier
+                    )
+                ):
+                    workspace = self.window()
+                    activate = getattr(
+                        workspace,
+                        "activate_previous_tab"
+                        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                        else "activate_next_tab",
+                        None,
+                    )
+                    if callable(activate):
+                        activate()
+                        event.accept()
+                        return True
                 selection = self.output.textCursor().selectedText()
                 if self.is_terminal_selection_navigation(event):
                     # A terminal still needs a usable local scrollback selection.
@@ -1214,6 +1571,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self.send_raw_input(payload)
                     return True
             return super().eventFilter(watched, event)
+
+        def _arm_right_click_paste_suppression(self) -> None:
+            """Avoid duplicate Moba paste when Qt also emits a context event."""
+
+            self._terminal_right_click_paste_generation += 1
+            generation = self._terminal_right_click_paste_generation
+            self._terminal_right_click_paste_pending = True
+            QTimer.singleShot(
+                500,
+                lambda generation=generation: self._clear_right_click_paste_suppression(
+                    generation
+                ),
+            )
+
+        def _cancel_right_click_paste_suppression(self) -> None:
+            self._terminal_right_click_paste_generation += 1
+            self._terminal_right_click_paste_pending = False
+
+        def _clear_right_click_paste_suppression(self, generation: int) -> None:
+            if generation == self._terminal_right_click_paste_generation:
+                self._terminal_right_click_paste_pending = False
 
         @staticmethod
         def is_terminal_selection_navigation(event) -> bool:
@@ -1406,6 +1784,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if key in tilde_navigation and (shift or alt or control):
                 modifier = 1 + int(shift) + 2 * int(alt) + 4 * int(control)
                 return f"\x1b[{tilde_navigation[key]};{modifier}~".encode("ascii")
+            application_cursor = self.terminal_emulator.application_cursor_keys_active
+            cursor_prefix = b"\x1bO" if application_cursor else b"\x1b["
             special = {
                 Qt.Key.Key_Return: (
                     b"\r" if bool(getattr(self.process, "is_pty", False)) else b"\n"
@@ -1416,12 +1796,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 Qt.Key.Key_Backspace: b"\x7f",
                 Qt.Key.Key_Tab: b"\t",
                 Qt.Key.Key_Escape: b"\x1b",
-                Qt.Key.Key_Up: b"\x1b[A",
-                Qt.Key.Key_Down: b"\x1b[B",
-                Qt.Key.Key_Right: b"\x1b[C",
-                Qt.Key.Key_Left: b"\x1b[D",
-                Qt.Key.Key_Home: b"\x1b[H",
-                Qt.Key.Key_End: b"\x1b[F",
+                Qt.Key.Key_Up: cursor_prefix + b"A",
+                Qt.Key.Key_Down: cursor_prefix + b"B",
+                Qt.Key.Key_Right: cursor_prefix + b"C",
+                Qt.Key.Key_Left: cursor_prefix + b"D",
+                Qt.Key.Key_Home: cursor_prefix + b"H",
+                Qt.Key.Key_End: cursor_prefix + b"F",
                 Qt.Key.Key_Insert: b"\x1b[2~",
                 Qt.Key.Key_Delete: b"\x1b[3~",
                 Qt.Key.Key_PageUp: b"\x1b[5~",
@@ -1456,10 +1836,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     "\n[stdin error: terminal process did not accept the complete input]\n"
                 )
 
-        def paste_to_terminal(self) -> None:
-            text = _application_clipboard().text()
+        def paste_to_terminal(self, *, gesture: str = "action") -> None:
+            self.paste_text_to_terminal(
+                self._terminal_clipboard_provider().text(),
+                gesture=gesture,
+            )
+
+        def paste_middle_click_selection(self) -> None:
+            """Paste the X11 selection when available, otherwise the clipboard."""
+
+            clipboard = self._terminal_clipboard_provider()
+            text = ""
+            if clipboard.supportsSelection():
+                text = clipboard.text(QClipboard.Mode.Selection)
+            if not text:
+                text = clipboard.text()
+            self.paste_text_to_terminal(text, gesture="middle-click")
+
+        def paste_text_to_terminal(self, text: str, *, gesture: str) -> None:
             if not text:
                 return
+            self.output.setProperty("terminalLastPasteGesture", gesture)
             if self.is_running():
                 payload = text.encode("utf-8")
                 if self.terminal_emulator.bracketed_paste_active:
@@ -1476,18 +1873,51 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.input.insert(text)
             self.input.setFocus(Qt.FocusReason.OtherFocusReason)
 
+        def set_terminal_right_click_paste_enabled(self, enabled: bool) -> None:
+            self._cancel_right_click_paste_suppression()
+            self._terminal_right_click_paste_enabled = bool(enabled)
+            self.output.setProperty(
+                "terminalRightClickPasteEnabled",
+                self._terminal_right_click_paste_enabled,
+            )
+            self.output.setProperty(
+                "terminalContextMenuGesture",
+                "Shift+Right-click"
+                if self._terminal_right_click_paste_enabled
+                else "Right-click",
+            )
+
+        def set_terminal_middle_click_paste_enabled(self, enabled: bool) -> None:
+            self._terminal_middle_click_paste_enabled = bool(enabled)
+            self.output.setProperty(
+                "terminalMiddleClickPasteEnabled",
+                self._terminal_middle_click_paste_enabled,
+            )
+
         def copy_terminal_selection(self) -> None:
             selection = self.output.textCursor().selectedText().replace("\u2029", "\n")
             if selection:
                 self.output.setProperty("terminalLastCopiedText", selection)
-                _application_clipboard().setText(selection)
+                clipboard = self._terminal_clipboard_provider()
+                clipboard.setText(selection)
+                # Another Windows process can briefly hold the native
+                # clipboard. Qt retries reads in that case, but a failed first
+                # OleSetClipboard call otherwise drops this copy operation.
+                # Use the readback as one bounded retry point without sleeping
+                # or blocking the GUI event loop.
+                retried = clipboard.text() != selection
+                if retried:
+                    clipboard.setText(selection)
+                self.output.setProperty("terminalClipboardWriteRetried", retried)
 
         def build_output_context_menu(self) -> QMenu:
             if callable(self.output_context_menu_builder):
-                return self.output_context_menu_builder(self)
+                menu = self.output_context_menu_builder(self)
+                self.add_terminal_mouse_paste_menu(menu)
+                return menu
             menu = QMenu(self.output)
             selection = bool(self.output.textCursor().selectedText())
-            clipboard_text = bool(_application_clipboard().text())
+            clipboard_text = bool(self._terminal_clipboard_provider().text())
             copy_action = _required_gui_value(menu.addAction("Copy"), "copy action")
             copy_action.setEnabled(selection)
             copy_action.triggered.connect(self.copy_terminal_selection)
@@ -1502,6 +1932,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "select-all action",
             )
             select_action.triggered.connect(self.output.selectAll)
+            self.add_terminal_mouse_paste_menu(menu)
             menu.addSeparator()
             clear_action = _required_gui_value(
                 menu.addAction("Clear terminal"),
@@ -1522,6 +1953,51 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             stop_action.triggered.connect(self.request_stop)
             return menu
 
+        def add_terminal_mouse_paste_menu(self, menu: QMenu) -> None:
+            if bool(menu.property("terminalMousePasteMenuAdded")):
+                return
+            menu.setProperty("terminalMousePasteMenuAdded", True)
+            mouse_menu = _required_gui_value(
+                menu.addMenu("Mouse paste behavior (this terminal)"),
+                "terminal mouse paste menu",
+            )
+            mouse_menu.setObjectName("terminalMousePasteMenu")
+            right_click_action = _required_gui_value(
+                mouse_menu.addAction("Right-click pastes automatically"),
+                "terminal right-click paste action",
+            )
+            right_click_action.setCheckable(True)
+            right_click_action.setChecked(self._terminal_right_click_paste_enabled)
+            right_click_action.toggled.connect(
+                self.set_terminal_right_click_paste_enabled
+            )
+            middle_click_action = _required_gui_value(
+                mouse_menu.addAction("Middle-click pastes"),
+                "terminal middle-click paste action",
+            )
+            middle_click_action.setCheckable(True)
+            middle_click_action.setChecked(self._terminal_middle_click_paste_enabled)
+            middle_click_action.toggled.connect(
+                self.set_terminal_middle_click_paste_enabled
+            )
+            mouse_menu.addSeparator()
+            context_hint = _required_gui_value(
+                mouse_menu.addAction(
+                    "Shift+Right-click opens this menu"
+                    if self._terminal_right_click_paste_enabled
+                    else "Right-click opens this menu"
+                ),
+                "terminal context-menu gesture hint",
+            )
+            context_hint.setEnabled(False)
+            right_click_action.toggled.connect(
+                lambda enabled, hint=context_hint: hint.setText(
+                    "Shift+Right-click opens this menu"
+                    if enabled
+                    else "Right-click opens this menu"
+                )
+            )
+
         def show_output_context_menu(self, position: QPoint) -> None:
             menu = self.build_output_context_menu()
             menu.exec(self.output_viewport.mapToGlobal(position))
@@ -1532,6 +2008,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             if not self.plan.command:
                 self.append_text("[error] empty terminal command\n")
+                return
+            if self.process_output_pending():
+                # A finished process can still have a bounded output tail.  Do
+                # not let a manual Start/Restart clear bytes that have not yet
+                # reached the transcript.
+                self._restart_when_output_drained = True
+                self.set_status("draining output", "stopping")
+                self.schedule_process_output_flush(backlog=True)
+                self.update_process_actions()
                 return
             if self.profile is not None:
                 try:
@@ -1544,9 +2029,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
-            self._process_output_buffer.clear()
-            self._process_output_flush_scheduled = False
-            self._process_output_timer.stop()
+            self.reset_process_output_pipeline()
+            self._restart_when_output_drained = False
             self.disarm_initial_pty_clear_recovery()
             self.set_status("starting", "starting")
             self.start_button.setEnabled(False)
@@ -1619,9 +2103,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             self.setProperty("terminalClosing", True)
             self._stop_timer.stop()
-            self._process_output_timer.stop()
-            self._process_output_buffer.clear()
-            self._process_output_flush_scheduled = False
+            self.reset_process_output_pipeline()
+            self._restart_when_output_drained = False
             self._restart_after_stop = False
 
         def stop(self, policy: ProcessStopPolicy | None = None) -> ProcessStopResult:
@@ -1657,18 +2140,36 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "\n[selected output copied]\n" if selection else "\n[command copied]\n"
             )
             # Updating the transcript can invalidate delayed clipboard ownership
-            # on the Windows/offscreen Qt platform.  Publish the detached string
-            # after that document mutation so the copied value remains stable.
+            # on the Windows Qt platform.  Flush the resulting posted selection
+            # update without accepting new user input, then publish the detached
+            # string so the stale selection event cannot clear the fresh copy.
             self.output.setProperty("terminalLastCopiedText", clipboard_text)
-            _application_clipboard().setText(clipboard_text)
+            _application_instance().processEvents(
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+            )
+            clipboard = self._terminal_clipboard_provider()
+            clipboard.setText(clipboard_text)
+            _application_instance().processEvents(
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+            )
+            # A different Windows process can hold the native clipboard for a
+            # short interval.  Keep this path consistent with the interactive
+            # terminal copy action: verify the write and make one bounded retry
+            # without sleeping or blocking the GUI event loop.
+            retried = clipboard.text() != clipboard_text
+            if retried:
+                clipboard.setText(clipboard_text)
+                _application_instance().processEvents(
+                    QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
+                )
+            self.output.setProperty("terminalClipboardWriteRetried", retried)
 
         def clear_output(self) -> None:
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
-            self._process_output_buffer.clear()
-            self._process_output_flush_scheduled = False
-            self._process_output_timer.stop()
+            self.reset_process_output_pipeline()
+            self._restart_when_output_drained = False
             if self.startup_preamble:
                 self.append_text(self.startup_preamble)
             if self.show_launch_command:
@@ -1888,10 +2389,155 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty("mobaMacroReplayCancelled", self.macro_replay_cancelled)
 
         def read_stdout(self) -> None:
-            self.queue_process_output(bytes(self.process.readAllStandardOutput()))
+            self.pull_process_output_channel("stdout")
 
         def read_stderr(self) -> None:
-            self.queue_process_output(bytes(self.process.readAllStandardError()))
+            self.pull_process_output_channel("stderr")
+
+        def process_output_pending(self) -> bool:
+            return bool(
+                self._process_output_buffer
+                or self._process_output_flush_scheduled
+                or self._process_output_trailers
+                or self._process_output_decode_final_pending
+                or self._process_output_end_pending
+                or (
+                    self._process_output_source_end_pending
+                    and not self._process_output_source_drained
+                )
+            )
+
+        def reset_process_output_pipeline(self) -> None:
+            """Reset one completed stream without leaving transport readers paused."""
+
+            self._process_output_timer.stop()
+            self._process_output_flush_scheduled = False
+            self._process_output_buffer.clear()
+            self._process_output_decoder.reset()
+            self._process_output_decode_final_pending = False
+            self._process_output_end_pending = False
+            self._process_output_source_end_pending = False
+            self._process_output_source_drained = True
+            self._process_output_trailers.clear()
+            self._process_output_flush_count = 0
+            self.output.setProperty("terminalOutputBufferedBytes", 0)
+            self.output.setProperty("terminalOutputFlushCount", 0)
+            self.output.setProperty("terminalOutputDeferredTrailerCount", 0)
+            # Resume last: native transports may synchronously emit retained
+            # output from their pause setter. The clean decoder/queue must be
+            # ready before that byte-preserving callback can run.
+            self.set_process_output_read_paused(False)
+
+        def set_process_output_read_paused(self, paused: bool) -> None:
+            """Apply byte-preserving transport backpressure when supported."""
+
+            enabled = bool(paused)
+            if enabled == self._process_output_read_paused:
+                return
+            self._process_output_read_paused = enabled
+            self.output.setProperty("terminalOutputReadPaused", enabled)
+            setter = getattr(self.process, "setOutputPaused", None)
+            self.output.setProperty(
+                "terminalOutputBackpressureAvailable",
+                callable(setter),
+            )
+            if callable(setter):
+                setter(enabled)
+
+        def read_process_output_chunk(self, channel: str, max_bytes: int) -> bytes:
+            """Read a bounded transport prefix without discarding the remainder."""
+
+            method_name = (
+                "readStandardError" if channel == "stderr" else "readStandardOutput"
+            )
+            bounded_reader = getattr(self.process, method_name, None)
+            if callable(bounded_reader):
+                return bytes(bounded_reader(max_bytes))
+            read = getattr(self.process, "read", None)
+            set_channel = getattr(self.process, "setReadChannel", None)
+            if callable(read) and callable(set_channel):
+                process_channel = (
+                    QProcess.ProcessChannel.StandardError
+                    if channel == "stderr"
+                    else QProcess.ProcessChannel.StandardOutput
+                )
+                set_channel(process_channel)
+                payload = read(max_bytes)
+                return bytes(payload) if payload is not None else b""
+            # Every production terminal backend supports a bounded reader.  The
+            # fallback keeps compatibility with small test doubles only.
+            fallback = getattr(
+                self.process,
+                "readAllStandardError"
+                if channel == "stderr"
+                else "readAllStandardOutput",
+            )
+            return bytes(fallback())
+
+        def pull_process_output_channel(self, channel: str) -> tuple[int, bool]:
+            """Fill the GUI queue up to its high-water mark.
+
+            The boolean result records that an empty read was observed.  Once
+            the process has ended, observing both channels empty is the safe
+            boundary for final UTF-8 decoding and lifecycle trailers.
+            """
+
+            total = 0
+            observed_empty = False
+            while len(self._process_output_buffer) < self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                allowance = (
+                    self.OUTPUT_BUFFER_HIGH_WATER_BYTES
+                    - len(self._process_output_buffer)
+                )
+                payload = self.read_process_output_chunk(
+                    channel,
+                    min(self.OUTPUT_READ_CHUNK_BYTES, allowance),
+                )
+                if not payload:
+                    observed_empty = True
+                    break
+                total += len(payload)
+                self.queue_process_output(payload)
+            if len(self._process_output_buffer) >= self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                self.set_process_output_read_paused(True)
+            return total, observed_empty
+
+        def pull_ended_process_output(self) -> None:
+            """Incrementally consume bytes retained by an ended transport."""
+
+            if not self._process_output_source_end_pending:
+                return
+            if len(self._process_output_buffer) > self.OUTPUT_BUFFER_LOW_WATER_BYTES:
+                return
+            self.set_process_output_read_paused(False)
+            _stdout_bytes, stdout_empty = self.pull_process_output_channel("stdout")
+            if len(self._process_output_buffer) >= self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                return
+            _stderr_bytes, stderr_empty = self.pull_process_output_channel("stderr")
+            if stdout_empty and stderr_empty:
+                self._process_output_source_drained = True
+
+        def refill_process_output(self) -> None:
+            """Pull retained transport bytes whenever the GUI queue has capacity."""
+
+            if len(self._process_output_buffer) > self.OUTPUT_BUFFER_LOW_WATER_BYTES:
+                return
+            self.set_process_output_read_paused(False)
+            if self._process_output_source_end_pending:
+                self.pull_ended_process_output()
+                return
+            self.pull_process_output_channel("stdout")
+            if len(self._process_output_buffer) < self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                self.pull_process_output_channel("stderr")
+
+        def schedule_process_output_flush(self, *, backlog: bool = False) -> None:
+            delay_ms = 0 if backlog else 16
+            if self._process_output_flush_scheduled:
+                if backlog and self._process_output_timer.remainingTime() > 0:
+                    self._process_output_timer.start(0)
+                return
+            self._process_output_flush_scheduled = True
+            self._process_output_timer.start(delay_ms)
 
         def queue_process_output(self, payload: bytes) -> None:
             """Coalesce one event-loop burst before rebuilding the transcript.
@@ -1905,26 +2551,30 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             if not payload:
                 return
-            self._process_output_buffer.extend(payload)
+            if bool(self.property("terminalClosing")):
+                return
+            self._process_output_buffer.append(payload)
             self.output.setProperty(
                 "terminalOutputBufferedBytes",
                 len(self._process_output_buffer),
             )
-            if self._process_output_flush_scheduled:
-                return
-            self._process_output_flush_scheduled = True
-            self._process_output_timer.start()
+            if len(self._process_output_buffer) >= self.OUTPUT_BUFFER_HIGH_WATER_BYTES:
+                self.set_process_output_read_paused(True)
+            self.schedule_process_output_flush()
 
         def flush_process_output(self) -> None:
             self._process_output_flush_scheduled = False
             if not self._process_output_buffer:
+                self.refill_process_output()
+            if not self._process_output_buffer:
+                self.finish_deferred_process_output()
                 return
-            # Never let one flood of output monopolize the GUI event loop.
-            # Keep the remainder queued so input, resize, and tab events can
-            # run between render batches without dropping terminal bytes.
-            batch_size = 64 * 1024
-            payload = bytes(self._process_output_buffer[:batch_size])
-            del self._process_output_buffer[:batch_size]
+            # One bounded render per event turn is substantially faster than a
+            # fixed 16 KiB/16 ms rate, while the zero-delay continuation still
+            # yields to input, resize and tab events between transcript builds.
+            payload = self._process_output_buffer.take(
+                self.OUTPUT_RENDER_TURN_BUDGET_BYTES
+            )
             self._process_output_flush_count += 1
             self.output.setProperty(
                 "terminalOutputBufferedBytes",
@@ -1934,27 +2584,128 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "terminalOutputFlushCount",
                 self._process_output_flush_count,
             )
-            self.append_process_text(payload.decode(errors="replace"))
-            if self._process_output_buffer and not self._process_output_flush_scheduled:
-                self._process_output_flush_scheduled = True
-                self._process_output_timer.start()
+            self.append_decoded_process_output(payload)
+            if len(self._process_output_buffer) <= self.OUTPUT_BUFFER_LOW_WATER_BYTES:
+                self.refill_process_output()
+            if self._process_output_buffer:
+                self.schedule_process_output_flush(backlog=True)
+            else:
+                self.finish_deferred_process_output()
 
         def flush_process_output_now(self) -> None:
-            """Drain queued output synchronously at process shutdown/error."""
+            """Drain a bounded prefix at shutdown and defer the remainder.
+
+            A process can exit immediately after emitting megabytes of output.
+            Rendering that entire tail inside ``finished`` or ``errorOccurred``
+            blocks the Qt event loop and makes the window appear hung. Preserve
+            byte ordering while limiting the synchronous work to four normal
+            render batches; the 16 ms timer drains the remainder.
+            """
 
             self._process_output_flush_scheduled = False
             self._process_output_timer.stop()
-            if not self._process_output_buffer:
+            remaining_budget = self.OUTPUT_SYNC_DRAIN_BUDGET_BYTES
+            while self._process_output_buffer and remaining_budget > 0:
+                payload = self._process_output_buffer.take(
+                    min(self.OUTPUT_RENDER_BATCH_BYTES, remaining_budget)
+                )
+                remaining_budget -= len(payload)
+                self._process_output_flush_count += 1
+                self.output.setProperty(
+                    "terminalOutputBufferedBytes",
+                    len(self._process_output_buffer),
+                )
+                self.output.setProperty(
+                    "terminalOutputFlushCount",
+                    self._process_output_flush_count,
+                )
+                self.append_decoded_process_output(payload)
+            if len(self._process_output_buffer) <= self.OUTPUT_BUFFER_LOW_WATER_BYTES:
+                self.refill_process_output()
+            if self._process_output_buffer:
+                self.schedule_process_output_flush(backlog=True)
+            else:
+                self.finish_deferred_process_output()
+
+        def append_decoded_process_output(self, payload: bytes) -> None:
+            """Decode one byte batch without corrupting split UTF-8 sequences."""
+
+            text = self._process_output_decoder.decode(payload, final=False)
+            if text:
+                self.append_process_text(text)
+
+        def queue_process_output_trailer(self, text: str) -> None:
+            """Render app-owned exit/error text after every queued process byte."""
+
+            if not text:
                 return
-            payload = bytes(self._process_output_buffer)
-            self._process_output_buffer.clear()
-            self._process_output_flush_count += 1
-            self.output.setProperty("terminalOutputBufferedBytes", 0)
-            self.output.setProperty(
-                "terminalOutputFlushCount",
-                self._process_output_flush_count,
-            )
-            self.append_process_text(payload.decode(errors="replace"))
+            if (
+                self._process_output_buffer
+                or self._process_output_flush_scheduled
+                or (
+                    self._process_output_source_end_pending
+                    and not self._process_output_source_drained
+                )
+                or self._process_output_decode_final_pending
+                or self._process_output_end_pending
+            ):
+                self._process_output_trailers.append(text)
+                self.output.setProperty(
+                    "terminalOutputDeferredTrailerCount",
+                    len(self._process_output_trailers),
+                )
+                self.schedule_process_output_flush(backlog=True)
+                return
+            self.append_terminal_notice(text)
+
+        def mark_process_output_end(self) -> None:
+            """Record that no new process bytes may follow the retained tail."""
+
+            self._process_output_source_end_pending = True
+            self._process_output_source_drained = False
+            self._process_output_decode_final_pending = True
+            self._process_output_end_pending = True
+            self.pull_ended_process_output()
+
+        def finish_deferred_process_output(self) -> None:
+            """Publish ordered trailers and a requested restart after tail drain."""
+
+            if self._process_output_buffer:
+                return
+            if (
+                self._process_output_source_end_pending
+                and not self._process_output_source_drained
+            ):
+                self.pull_ended_process_output()
+                if self._process_output_buffer:
+                    self.schedule_process_output_flush(backlog=True)
+                elif not self._process_output_source_drained:
+                    self.schedule_process_output_flush(backlog=True)
+                return
+            if self._process_output_decode_final_pending:
+                final_text = self._process_output_decoder.decode(b"", final=True)
+                self._process_output_decoder.reset()
+                self._process_output_decode_final_pending = False
+                if final_text:
+                    self.append_process_text(final_text)
+            if self._process_output_end_pending:
+                transcript = self.terminal_emulator.end_of_stream()
+                self._process_output_end_pending = False
+                self._process_output_source_end_pending = False
+                self._process_output_source_drained = True
+                self.sync_terminal_emulator_mode_properties()
+                self.render_terminal_transcript(transcript)
+            trailers = self._process_output_trailers
+            self._process_output_trailers = []
+            self.output.setProperty("terminalOutputDeferredTrailerCount", 0)
+            for trailer in trailers:
+                self.append_terminal_notice(trailer)
+            if (
+                self._restart_when_output_drained
+                and not bool(self.property("terminalClosing"))
+            ):
+                self._restart_when_output_drained = False
+                QTimer.singleShot(0, self.start)
 
         @staticmethod
         def is_initial_conpty_screen_clear(text: str) -> bool:
@@ -1989,10 +2740,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 # compacting blank rows makes Vim's status/cursor appear in
                 # the middle of a giant empty pane and makes scroll state jump.
                 transcript = self.terminal_emulator.screen_text()
-            self.output.setProperty(
-                "terminalBracketedPasteActive",
-                self.terminal_emulator.bracketed_paste_active,
-            )
+            self.sync_terminal_emulator_mode_properties()
             self.forward_terminal_emulator_responses()
             if alternate_screen_active:
                 # Only the initial ConPTY shell clear may be normalized. Once
@@ -2036,6 +2784,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.output.setProperty("terminalInitialPromptPaddingNormalized", True)
                 return
             self.render_terminal_transcript(transcript)
+
+        def sync_terminal_emulator_mode_properties(self) -> None:
+            """Expose negotiated VT modes for diagnostics and interaction evidence."""
+
+            self.output.setProperty(
+                "terminalBracketedPasteActive",
+                self.terminal_emulator.bracketed_paste_active,
+            )
+            self.output.setProperty(
+                "terminalOriginModeActive",
+                self.terminal_emulator.origin_mode_active,
+            )
+            self.output.setProperty(
+                "terminalInsertModeActive",
+                self.terminal_emulator.insert_mode_active,
+            )
+            self.output.setProperty(
+                "terminalAutoWrapActive",
+                self.terminal_emulator.auto_wrap_active,
+            )
 
         def forward_terminal_emulator_responses(self) -> None:
             """Answer terminal capability/cursor queries without rendering them.
@@ -2098,6 +2866,17 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             transcript = self.terminal_emulator.feed(text)
             if self.terminal_emulator.alternate_screen_active:
                 transcript = self.terminal_emulator.screen_text()
+            self.sync_terminal_emulator_mode_properties()
+            self.render_terminal_transcript(transcript)
+
+        def append_terminal_notice(self, text: str) -> None:
+            """Render app-owned text without trusting child ANSI parser state."""
+
+            if not text:
+                return
+            transcript = self.terminal_emulator.feed_literal(text)
+            if self.terminal_emulator.alternate_screen_active:
+                transcript = self.terminal_emulator.screen_text()
             self.render_terminal_transcript(transcript)
 
         def set_terminal_transcript(self, text: str) -> None:
@@ -2109,6 +2888,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.render_terminal_transcript(self.terminal_emulator.feed(text))
 
         def render_terminal_transcript(self, transcript: str) -> None:
+            if bool(self.output.property("terminalTabPaintFrozen")):
+                # A live SSH session may deliver a burst while Qt is settling
+                # a tab close/switch. Keep emulator state current but avoid
+                # rebuilding the QTextDocument on every chunk; the latest
+                # transcript is rendered once the viewport is unfrozen.
+                self._pending_terminal_transcript = transcript
+                return
             previous = self._rendered_terminal_text
             selected_cursor = self.output.textCursor()
             selection_anchor = selected_cursor.anchor()
@@ -2128,6 +2914,33 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             scroll_value = scroll_bar.value()
             alternate_screen_active = self.terminal_emulator.alternate_screen_active
+            tab_paint_frozen = bool(
+                self.output.property("terminalTabPaintFrozen")
+            )
+            # An alternate-screen application owns a fixed terminal grid, not
+            # the transcript's scrollback.  Keeping QTextEdit's scrollbar
+            # visible while replacing that grid lets Qt change the viewport
+            # width and vertical offset between redraws, which produces the
+            # one-frame gaps seen during tab switches and Vim repaints.
+            alternate_scrollbars_hidden = bool(
+                self.output.property("terminalAlternateScreenScrollbarsHidden")
+            )
+            if alternate_screen_active != alternate_scrollbars_hidden:
+                scrollbar_policy = (
+                    Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+                    if alternate_screen_active
+                    else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+                )
+                self.output.setVerticalScrollBarPolicy(
+                    scrollbar_policy
+                )
+                self.output.setHorizontalScrollBarPolicy(
+                    scrollbar_policy
+                )
+                self.output.setProperty(
+                    "terminalAlternateScreenScrollbarsHidden",
+                    alternate_screen_active,
+                )
             was_scrolled_to_end = (
                 not alternate_screen_active
                 and scroll_value >= scroll_bar.maximum() - 2
@@ -2223,8 +3036,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
             self._rendered_terminal_text = transcript
             if alternate_screen_active:
-                self.output.setUpdatesEnabled(True)
-                self.output_viewport.update()
+                if not tab_paint_frozen:
+                    self.output.setUpdatesEnabled(True)
+                    self.output_viewport.update()
+                else:
+                    self.output.setUpdatesEnabled(False)
                 self.output.setProperty("terminalAlternateScreenRedraw", False)
             if alternate_screen_active:
                 # The retained screen is a viewport, not scrollback.  Always
@@ -2246,7 +3062,35 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.scroll_terminal_to_end()
             else:
                 scroll_bar.setValue(scroll_value)
+            if not alternate_screen_active:
+                self.output.setProperty(
+                    "terminalAlternateScreenScrollbarsHidden",
+                    False,
+                )
+            self.update_remote_cursor_overlay(transcript)
             self.refresh_terminal_input_security(transcript)
+
+        def update_remote_cursor_overlay(self, transcript: str) -> None:
+            """Place the painted cursor at the emulator's active grid cell."""
+
+            lines = transcript.split("\n")
+            row = max(0, min(len(lines) - 1, self.terminal_emulator.cursor_row))
+            column = max(0, self.terminal_emulator.cursor_column)
+            line = lines[row]
+            document_position = sum(len(value) + 1 for value in lines[:row])
+            document_position += min(column, len(line))
+            trailing_cells = max(0, column - len(line))
+            self.output.setProperty("terminalRemoteCursorRow", row)
+            self.output.setProperty("terminalRemoteCursorColumn", column)
+            self.output.setProperty(
+                "terminalApplicationCursorKeysActive",
+                self.terminal_emulator.application_cursor_keys_active,
+            )
+            self.output.set_remote_cursor_state(
+                document_position,
+                trailing_cells=trailing_cells,
+                visible=self.terminal_emulator.cursor_visible and self.is_running(),
+            )
 
         def scroll_terminal_to_end(self) -> None:
             """Keep live output at the true document end after layout updates."""
@@ -2376,24 +3220,32 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.setFocus(Qt.FocusReason.OtherFocusReason)
 
         def on_error(self, error) -> None:
-            self.flush_process_output_now()
+            if self.process.state() == QProcess.ProcessState.NotRunning:
+                self.mark_process_output_end()
             self.set_status("error", "error")
             detail = str(self.process.errorString()).strip()
             suffix = f": {detail}" if detail and detail != error.name else ""
-            self.append_text(f"\n[error] {error.name}{suffix}\n")
+            self.queue_process_output_trailer(f"\n[error] {error.name}{suffix}\n")
+            self.flush_process_output_now()
             self.update_process_actions()
 
         def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
             self._stop_timer.stop()
-            self.flush_process_output_now()
+            self.mark_process_output_end()
             self.refresh_terminal_input_security("")
             state = "ready" if exit_code == 0 else "error"
             self.set_status(f"exited {exit_code}", state)
-            self.append_text(f"\n[process exited: {exit_code}, {exit_status.name}]\n")
+            self.queue_process_output_trailer(
+                f"\n[process exited: {exit_code}, {exit_status.name}]\n"
+            )
+            self.flush_process_output_now()
             self.update_process_actions()
             if self._restart_after_stop and not bool(self.property("terminalClosing")):
                 self._restart_after_stop = False
-                QTimer.singleShot(0, self.start)
+                if self._process_output_buffer or self._process_output_flush_scheduled:
+                    self._restart_when_output_drained = True
+                else:
+                    QTimer.singleShot(0, self.start)
 
         def set_status(self, text: str, state: str) -> None:
             self.status.setText(text)
@@ -2405,9 +3257,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def update_process_actions(self) -> None:
             running = self.is_running()
+            output_pending = self.process_output_pending()
             capture_active = bool(self.macro_capture_state is not None and self.macro_capture_state.active)
-            self.start_button.setEnabled(not running)
-            self.restart_button.setEnabled(bool(self.plan.command))
+            self.start_button.setEnabled(not running and not output_pending)
+            self.restart_button.setEnabled(
+                bool(self.plan.command) and (running or not output_pending)
+            )
             self.stop_button.setEnabled(running)
             self.input.setEnabled(running)
             self.macro_record_button.setEnabled(
@@ -2733,10 +3588,25 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_output_buffer = bytearray()
             self.runtime_shutting_down = False
             self.background_auth_retry_attempt = 0
+            self._background_password: bytearray | None = None
+            self.setProperty("mobaBackgroundSshCredentialSource", "")
+            self._background_auth_prompt_buffers = {
+                "monitoring": bytearray(),
+                "sftp": bytearray(),
+            }
+            self._background_auth_password_sent = {
+                "monitoring": False,
+                "sftp": False,
+            }
             self.background_auth_retry_timer = QTimer(self)
             self.background_auth_retry_timer.setSingleShot(True)
             self.background_auth_retry_timer.timeout.connect(
                 self.retry_background_authentication
+            )
+            self.background_state_activation_timer = QTimer(self)
+            self.background_state_activation_timer.setSingleShot(True)
+            self.background_state_activation_timer.timeout.connect(
+                self.activate_initial_background_state
             )
             self.monitoring_generation = 0
             self.monitoring_active_generation = 0
@@ -2747,7 +3617,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_refresh_timer.timeout.connect(
                 self.request_remote_monitoring_refresh
             )
-            self.monitoring_process = _background_process(self)
+            self.monitoring_process = _background_process(self, interactive_auth=True)
             self.monitoring_process.setProcessChannelMode(
                 QProcess.ProcessChannelMode.MergedChannels
             )
@@ -2766,7 +3636,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_request_path = ""
             self.sftp_refresh_pending: tuple[str, str] | None = None
-            self.sftp_refresh_process = _background_process(self)
+            self.sftp_refresh_process = _background_process(self, interactive_auth=True)
             self.sftp_refresh_process.setProcessChannelMode(
                 QProcess.ProcessChannelMode.MergedChannels
             )
@@ -2786,6 +3656,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_timeout.setSingleShot(True)
             self.sftp_refresh_timeout.timeout.connect(
                 self.cancel_sftp_refresh_timeout
+            )
+            self.sftp_auth_probe_timer = QTimer(self)
+            self.sftp_auth_probe_timer.setSingleShot(True)
+            self.sftp_auth_probe_timer.setInterval(1200)
+            self.sftp_auth_probe_timer.timeout.connect(
+                lambda: self.write_sftp_refresh_batch(force=True)
             )
             frame = gui_design_moba_connected_dock_frame()
             density = gui_design_moba_sftp_dock_layout()
@@ -3000,7 +3876,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.addWidget(self.build_remote_monitoring(density))
             self.update_sftp_action_states()
             self.set_sftp_runtime_status("SFTP listing idle", state="idle")
-            QTimer.singleShot(0, self.activate_initial_background_state)
+            self.schedule_background_state_activation()
 
         @staticmethod
         def filtered_sftp_entries(entries):
@@ -3035,6 +3911,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             if profile is None:
                 return False, "connected profile was not found"
+            if self._background_password and self.background_auth_password_supported():
+                return True, "encrypted-vault credential loaded for this session"
             if self.shared_ssh_control_path():
                 return True, "active terminal SSH connection (shared control socket)"
             if profile.identity_file:
@@ -3059,8 +3937,228 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return (
                 False,
                 "background SSH uses a separate non-interactive process and requires "
-                "a trusted host key plus key or agent authentication",
+                "a trusted host key plus key or agent authentication; use "
+                "Authenticate background tools to load a vault credential or enter "
+                "a session password",
             )
+
+        def background_auth_transport_is_pty(self) -> bool:
+            """Return whether both hidden background clients can accept a password."""
+
+            return bool(
+                getattr(self.monitoring_process, "is_pty", False)
+                and getattr(self.sftp_refresh_process, "is_pty", False)
+            )
+
+        def background_auth_password_supported(self) -> bool:
+            """Return whether this platform can use a session password for background SSH."""
+
+            # POSIX keeps the established QProcess pipe-based authentication path;
+            # native Windows OpenSSH requires ConPTY so password prompts are not
+            # sent to an invisible or unrelated console window.
+            return sys.platform != "win32" or self.background_auth_transport_is_pty()
+
+        def background_ssh_auth_detail(self) -> str:
+            """Describe the authentication route currently used by background tools."""
+
+            if self._background_password and self.background_auth_password_supported():
+                source = str(self.property("mobaBackgroundSshCredentialSource") or "")
+                source_detail = (
+                    "a profile credential loaded from the encrypted vault"
+                    if source == "encrypted-vault"
+                    else "a password entered for this GUI session"
+                )
+                return (
+                    "A separate non-interactive SSH process uses "
+                    f"{source_detail}; the secret "
+                    "is submitted through hidden native terminal transports."
+                )
+            if self.shared_ssh_control_path():
+                return (
+                    "The active terminal owns a private SSH control connection, so this "
+                    "background request reuses the authenticated session."
+                )
+            return (
+                "This background request uses a separate non-interactive SSH process; "
+                "terminal password prompts are not shared. A trusted host key and key "
+                "or agent authentication are required, or use Authenticate background "
+                "tools for a session-only password."
+            )
+
+        def _clear_background_password(self) -> None:
+            password = self._background_password
+            self._background_password = None
+            if password is not None:
+                password.clear()
+            for buffer in self._background_auth_prompt_buffers.values():
+                buffer.clear()
+            for process_kind in self._background_auth_password_sent:
+                self._background_auth_password_sent[process_kind] = False
+            self.setProperty("mobaBackgroundSshCredentialLoaded", False)
+            self.setProperty("mobaBackgroundSshCredentialSource", "")
+
+        def background_ssh_overrides(self) -> dict[str, str]:
+            """Build the runtime-only auth policy for one hidden SSH child."""
+
+            if not self._background_password:
+                return {
+                    "BatchMode": "yes",
+                    "ConnectTimeout": "5",
+                    "StrictHostKeyChecking": "yes",
+                }
+            return {
+                "BatchMode": "no",
+                "ConnectTimeout": "5",
+                "StrictHostKeyChecking": "yes",
+                "PasswordAuthentication": "yes",
+                "KbdInteractiveAuthentication": "yes",
+                "PreferredAuthentications": "password,keyboard-interactive",
+                "NumberOfPasswordPrompts": "1",
+            }
+
+        def _submit_background_password_if_prompt(
+            self,
+            process_kind: str,
+            payload: bytes,
+        ) -> None:
+            """Answer one OpenSSH prompt through the hidden ConPTY only."""
+
+            password = self._background_password
+            if not password or process_kind not in self._background_auth_prompt_buffers:
+                return
+            if self._background_auth_password_sent[process_kind]:
+                return
+            prompt_buffer = self._background_auth_prompt_buffers[process_kind]
+            prompt_buffer.extend(payload)
+            del prompt_buffer[:-1024]
+            prompt = prompt_buffer.decode(errors="replace")[-768:]
+            if not re.search(
+                r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
+                prompt,
+            ):
+                return
+            process = (
+                self.monitoring_process
+                if process_kind == "monitoring"
+                else self.sftp_refresh_process
+            )
+            accepted = process.write(bytes(password) + b"\r")
+            if accepted <= 0:
+                return
+            self._background_auth_password_sent[process_kind] = True
+            prompt_buffer.clear()
+            if process_kind == "sftp":
+                self.sftp_auth_probe_timer.stop()
+                QTimer.singleShot(
+                    0,
+                    lambda: self.write_sftp_refresh_batch(force=True),
+                )
+
+        def authenticate_background_tools(self) -> bool:
+            """Unlock one profile credential for this GUI session only."""
+
+            profile = self.profile_for_sftp_action()
+            if profile is None:
+                message = "Background SSH authentication requires a connected profile."
+                self.set_sftp_runtime_status(message, state="auth-required")
+                self.set_remote_monitoring_status(message, state="auth-required")
+                self.show_sftp_status(message)
+                return False
+            credential_ref = str(profile.credential_ref or "").strip() if profile else ""
+            if not self.background_auth_password_supported():
+                message = (
+                    "Background password authentication needs native Windows ConPTY; "
+                    "configure a key or SSH agent on this platform."
+                )
+                self.set_sftp_runtime_status(message, state="auth-required")
+                self.set_remote_monitoring_status(message, state="auth-required")
+                self.show_sftp_status(message)
+                return False
+            if credential_ref:
+                prompt, accepted = QInputDialog.getText(
+                    self,
+                    "Authenticate background tools",
+                    f"Vault passphrase for {credential_ref}:",
+                    QLineEdit.EchoMode.Password,
+                )
+                source = "encrypted-vault"
+                if not accepted:
+                    self.show_sftp_status("Background SSH authentication cancelled")
+                    return False
+                if not prompt:
+                    self.show_sftp_status("Vault passphrase is required")
+                    return False
+                try:
+                    from .vault import LocalVault
+
+                    secret = LocalVault().get(credential_ref, prompt)
+                except Exception as exc:  # noqa: BLE001 - fail closed at the GUI boundary
+                    detail = str(exc).strip() or "credential could not be loaded"
+                    self.set_sftp_runtime_status(
+                        f"Background authentication failed: {detail[:120]}",
+                        state="error",
+                    )
+                    self.set_remote_monitoring_status(
+                        f"Background authentication failed: {detail[:120]}",
+                        state="error",
+                    )
+                    self.show_sftp_status(f"Background authentication failed: {detail[:120]}")
+                    return False
+                empty_message = "Vault credential is empty"
+            else:
+                target = f"{profile.username or 'user'}@{profile.host or 'host'}"
+                secret, accepted = QInputDialog.getText(
+                    self,
+                    "Authenticate background tools",
+                    f"SSH password for {target}:",
+                    QLineEdit.EchoMode.Password,
+                )
+                source = "session-prompt"
+                if not accepted:
+                    self.show_sftp_status("Background SSH authentication cancelled")
+                    return False
+                if not secret:
+                    self.show_sftp_status("SSH password is required")
+                    return False
+                empty_message = "SSH password is empty"
+            secret_bytes = secret.encode("utf-8")
+            del secret
+            if not secret_bytes:
+                self.show_sftp_status(empty_message)
+                return False
+            self._clear_background_password()
+            self._background_password = bytearray(secret_bytes)
+            del secret_bytes
+            self.setProperty("mobaBackgroundSshCredentialRef", credential_ref)
+            self.setProperty("mobaBackgroundSshCredentialSource", source)
+            self.setProperty("mobaBackgroundSshCredentialLoaded", True)
+            self.show_sftp_status(
+                "Background SSH credential loaded for this session"
+            )
+            self._apply_initial_background_state(start_runtime=True)
+            return True
+
+        def ensure_background_authentication_for_request(
+            self,
+            *,
+            allow_prompt: bool = False,
+        ) -> bool:
+            """Require background auth without opening an implicit modal prompt."""
+
+            profile = self.profile_for_sftp_action()
+            available, _detail = self.background_ssh_auth_capability(profile)
+            if available:
+                return True
+            if profile is not None and allow_prompt:
+                return self.authenticate_background_tools()
+            if profile is not None:
+                detail = self.background_ssh_auth_detail()
+                message = f"Background SSH authentication required: {detail}"
+                self.set_sftp_runtime_status(message, state="auth-required")
+                self.set_remote_monitoring_status(message, state="auth-required")
+                self.show_sftp_status(message)
+                return False
+            return True
 
         def schedule_background_auth_retry(self) -> None:
             """Retry background clients after the interactive SSH prompt completes."""
@@ -3086,7 +4184,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.activate_initial_background_state()
 
+        def initialize_background_state(self) -> None:
+            """Publish auth/runtime state before deferred SSH work begins."""
+
+            if self.runtime_shutting_down:
+                return
+            self.background_state_activation_timer.stop()
+            self._apply_initial_background_state(start_runtime=False)
+            self.schedule_background_state_activation()
+
+        def schedule_background_state_activation(self, delay_ms: int = 0) -> None:
+            """Run background-state setup only while this dock is alive."""
+
+            if self.runtime_shutting_down:
+                return
+            self.background_state_activation_timer.start(max(0, int(delay_ms)))
+
         def activate_initial_background_state(self) -> None:
+            self._apply_initial_background_state(start_runtime=True)
+
+        def _apply_initial_background_state(self, *, start_runtime: bool) -> None:
             if self.runtime_shutting_down:
                 return
             profile = self.profile_for_sftp_action()
@@ -3104,6 +4221,18 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     widget.setProperty("mobaBackgroundSshAuthDetail", detail)
             if available:
                 self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", False)
+                self.set_sftp_runtime_status(
+                    f"Initial SFTP refresh pending ({detail})",
+                    state="pending",
+                )
+                if not start_runtime:
+                    control = self.monitoring_control_widgets.get("remote-monitoring")
+                    self.set_remote_monitoring_runtime(
+                        bool(control is not None and control.isChecked()),
+                        immediate=False,
+                        start_periodic=False,
+                    )
+                    return
                 restored_monitoring = False
                 control = self.monitoring_control_widgets.get("remote-monitoring")
                 if (
@@ -3115,10 +4244,6 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     restored_monitoring = True
                     self.setProperty("mobaBackgroundSshAuthGateForcedMonitoringOff", False)
                     control.setChecked(True)
-                self.set_sftp_runtime_status(
-                    f"Initial SFTP refresh pending ({detail})",
-                    state="pending",
-                )
                 self.request_sftp_refresh(reason="initial-key-agent-auth")
                 if not restored_monitoring:
                     self.activate_initial_monitoring_state()
@@ -3144,13 +4269,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def set_sftp_runtime_status(self, message: str, *, state: str) -> None:
             badge = getattr(self, "sftp_status_badge", None)
-            auth_detail = (
-                "The active terminal owns a private SSH control connection, so this "
-                "background listing reuses the authenticated session."
-                if self.shared_ssh_control_path()
-                else "SFTP listing uses a separate non-interactive OpenSSH process; "
-                "password prompts from the terminal are not shared."
-            )
+            auth_detail = self.background_ssh_auth_detail()
             tooltip = (
                 f"{message}\n"
                 f"{auth_detail}"
@@ -3814,16 +4933,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.update()
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is not None:
-                auth_detail = (
-                    "The active terminal owns a private SSH control connection, so this "
-                    "refresh reuses the authenticated session."
-                    if self.shared_ssh_control_path()
-                    else "Terminal password prompts are not shared. A trusted host key "
-                    "and key or agent authentication are required."
-                )
+                auth_detail = self.background_ssh_auth_detail()
                 tooltip = (
                     f"{message}\n"
-                    "Monitoring runs through a separate non-interactive SSH process. "
                     f"{auth_detail}"
                 )
                 control.setProperty("state", state)
@@ -3883,7 +4995,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_pending = None
             self.monitoring_refresh_timer.stop()
             self.background_auth_retry_timer.stop()
+            self.background_state_activation_timer.stop()
             self.sftp_refresh_timeout.stop()
+            self.sftp_auth_probe_timer.stop()
             for process in (
                 self.monitoring_process,
                 self.sftp_refresh_process,
@@ -3891,6 +5005,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 process.blockSignals(True)
                 if process.state() != QProcess.ProcessState.NotRunning:
                     process.kill()
+                close_process = getattr(process, "close", None)
+                if callable(close_process):
+                    close_process()
+            self._clear_background_password()
             self.setProperty("mobaRuntimeShutdown", True)
             self.setProperty("mobaRemoteMonitoringRuntimeActive", False)
             self.set_remote_monitoring_status(
@@ -3920,6 +5038,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             enabled: bool,
             *,
             immediate: bool,
+            start_periodic: bool = True,
         ) -> None:
             active = bool(enabled)
             self.set_remote_monitoring_expanded(active)
@@ -3938,7 +5057,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if refresh_button is not None:
                 refresh_button.setEnabled(active)
             if active:
-                if not self.monitoring_refresh_timer.isActive():
+                if start_periodic and not self.monitoring_refresh_timer.isActive():
                     self.monitoring_refresh_timer.start()
                 self.set_remote_monitoring_status(
                     "Monitoring on · waiting for live data",
@@ -3958,17 +5077,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             command = list(self.state.monitoring_plan.command)
             if not command:
                 return command
-            executable = Path(command[0]).stem.lower()
-            if executable == "ssh":
+            executable = ntpath.basename(command[0]).lower()
+            if executable in {"ssh", "ssh.exe"}:
                 command = openssh_command_without_windows_connection_sharing(command)
-                command = openssh_command_with_overrides(
-                    command,
-                    {
-                        "BatchMode": "yes",
-                        "ConnectTimeout": "5",
-                        "StrictHostKeyChecking": "yes",
-                    },
-                )
+                command = openssh_command_with_overrides(command, self.background_ssh_overrides())
                 control_path = self.shared_ssh_control_path()
                 if control_path:
                     command = ssh_command_with_control_path(
@@ -3983,6 +5095,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is None or not control.isChecked():
+                return
+            if not self.ensure_background_authentication_for_request():
+                self.setProperty("mobaBackgroundSshApplyingAuthGate", True)
+                try:
+                    control.setChecked(False)
+                finally:
+                    self.setProperty("mobaBackgroundSshApplyingAuthGate", False)
                 return
             count = int(
                 self.property("mobaRemoteMonitoringRefreshRequestCount") or 0
@@ -4013,6 +5132,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_output_buffer.clear()
             self.monitoring_generation += 1
             self.monitoring_active_generation = self.monitoring_generation
+            self._background_auth_prompt_buffers["monitoring"].clear()
+            self._background_auth_password_sent["monitoring"] = False
             self.set_remote_monitoring_status(
                 "Refreshing live telemetry…",
                 state="refreshing",
@@ -4022,9 +5143,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_process.start()
 
         def read_remote_monitoring_output(self) -> None:
-            self.monitoring_output_buffer.extend(
-                bytes(self.monitoring_process.readAllStandardOutput())
-            )
+            payload = bytes(self.monitoring_process.readAllStandardOutput())
+            self._submit_background_password_if_prompt("monitoring", payload)
+            self.monitoring_output_buffer.extend(payload)
 
         def handle_remote_monitoring_error(self, error) -> None:
             request_is_current = self.remote_monitoring_request_is_current()
@@ -4176,6 +5297,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             refresh_action.setEnabled(
                 bool(control is not None and control.isChecked())
             )
+            auth_action = _required_gui_value(
+                menu.addAction(
+                    "Authenticate background tools",
+                    self.authenticate_background_tools,
+                ),
+                "monitoring-authentication action",
+            )
+            profile = self.profile_for_sftp_action()
+            auth_action.setEnabled(
+                bool(profile is not None)
+                and not bool(self._background_password)
+            )
+            auth_action.setToolTip(
+                "Load a vault credential or enter an SSH password for this session"
+            )
             follow_control = self.monitoring_control_widgets.get(
                 "follow-terminal-folder"
             )
@@ -4282,6 +5418,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def request_sftp_refresh(self, *, reason: str = "manual") -> None:
             if self.runtime_shutting_down:
                 return
+            if not self.ensure_background_authentication_for_request():
+                return
             count = int(self.property("mobaSftpRefreshRequestCount") or 0) + 1
             for widget in (
                 self,
@@ -4327,20 +5465,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_active_generation = request_generation
             self.sftp_refresh_request_path = request_path
             self.sftp_refresh_output_buffer.clear()
-            self.set_sftp_runtime_status(
-                f"Refreshing SFTP listing at {request_path}",
-                state="refreshing",
+            refresh_message = (
+                f"Refreshing SFTP listing for {profile.display_target} at {request_path}"
             )
-            self.show_sftp_status(
-                f"Refreshing SFTP listing at {request_path}"
-            )
+            self.set_sftp_runtime_status(refresh_message, state="refreshing")
+            self.show_sftp_status(refresh_message)
             runtime_command = openssh_command_with_overrides(
                 list(plan.command),
-                {
-                    "BatchMode": "yes",
-                    "ConnectTimeout": "5",
-                    "StrictHostKeyChecking": "yes",
-                },
+                self.background_ssh_overrides(),
             )
             runtime_command = openssh_command_without_windows_connection_sharing(runtime_command)
             control_path = self.shared_ssh_control_path()
@@ -4352,15 +5484,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
             self.sftp_refresh_process.setProgram(runtime_command[0])
             self.sftp_refresh_process.setArguments(runtime_command[1:])
+            self._background_auth_prompt_buffers["sftp"].clear()
+            self._background_auth_password_sent["sftp"] = False
             self.sftp_refresh_process.start()
             self.sftp_refresh_timeout.start(10_000)
 
-        def write_sftp_refresh_batch(self) -> None:
+        def write_sftp_refresh_batch(self, *, force: bool = False) -> None:
             if (
                 self.runtime_shutting_down
                 or self.sftp_refresh_active_generation == 0
             ):
                 return
+            if self._background_password and not force:
+                if not self.sftp_auth_probe_timer.isActive():
+                    self.sftp_auth_probe_timer.start()
+                return
+            self.sftp_auth_probe_timer.stop()
             plan = self.sftp_refresh_plan
             if plan is None:
                 return
@@ -4374,12 +5513,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
 
         def read_sftp_refresh_output(self) -> None:
-            self.sftp_refresh_output_buffer.extend(
-                bytes(self.sftp_refresh_process.readAllStandardOutput())
-            )
+            payload = bytes(self.sftp_refresh_process.readAllStandardOutput())
+            self._submit_background_password_if_prompt("sftp", payload)
+            self.sftp_refresh_output_buffer.extend(payload)
 
         def handle_sftp_refresh_error(self, error) -> None:
             self.sftp_refresh_timeout.stop()
+            self.sftp_auth_probe_timer.stop()
             request_is_current = self.sftp_refresh_request_is_current()
             self.sftp_refresh_active_generation = 0
             if request_is_current:
@@ -4394,6 +5534,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def cancel_sftp_refresh_timeout(self) -> None:
             if self.sftp_refresh_process.state() == QProcess.ProcessState.NotRunning:
                 return
+            self.sftp_auth_probe_timer.stop()
             self.sftp_refresh_process.kill()
             if self.sftp_refresh_request_is_current():
                 self.setProperty("mobaSftpRefreshLastError", "timeout")
@@ -4436,6 +5577,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             _exit_status: QProcess.ExitStatus,
         ) -> None:
             self.sftp_refresh_timeout.stop()
+            self.sftp_auth_probe_timer.stop()
             request_is_current = self.sftp_refresh_request_is_current()
             self.read_sftp_refresh_output()
             output = self.sftp_refresh_output_buffer.decode(errors="replace")
@@ -4552,15 +5694,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if control.key == "follow-terminal-folder":
                 return f"{control.tooltip}\n{self.state.follow_folder_plan.printable_batch()}"
             if control.key == "remote-monitoring":
-                auth_detail = (
-                    "Reuses the active terminal's authenticated SSH control connection."
-                    if self.shared_ssh_control_path()
-                    else "Terminal password prompts are not shared; a trusted host key "
-                    "plus key or agent authentication is required."
-                )
+                auth_detail = self.background_ssh_auth_detail()
                 return (
                     f"{control.tooltip}\n{self.state.monitoring_plan.printable()}\n"
-                    f"Runs as a separate non-interactive SSH process. {auth_detail}"
+                    f"{auth_detail}"
                 )
             return control.tooltip
 
@@ -4770,6 +5907,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             menu.addAction(
                 "Parent folder",
                 lambda: self.show_moba_sftp_toolbar_action("parent-folder"),
+            )
+            auth_action = _required_gui_value(
+                menu.addAction(
+                    "Authenticate background tools",
+                    self.authenticate_background_tools,
+                ),
+                "SFTP authenticate action",
+            )
+            profile = self.profile_for_sftp_action()
+            auth_action.setEnabled(
+                bool(profile is not None)
+                and not bool(self._background_password)
+            )
+            auth_action.setToolTip(
+                "Load a vault credential or enter an SSH password for this session"
             )
             menu.addAction(
                 "Refresh listing",
@@ -5019,10 +6171,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             open_browser.setToolTip(
                 "Refresh the remote folder before choosing a transfer"
             )
+            auth_action = _required_gui_value(
+                menu.addAction(
+                    "Authenticate background tools",
+                    self.authenticate_background_tools,
+                ),
+                "SFTP transfer authenticate action",
+            )
+            profile = self.profile_for_sftp_action()
+            auth_action.setEnabled(
+                bool(profile is not None)
+                and not bool(self._background_password)
+            )
+            auth_action.setToolTip(
+                "Load a vault credential or enter an SSH password for this session"
+            )
             self.sftp_transfer_menu_actions = {
                 "download": download,
                 "upload": upload,
                 "refresh": open_browser,
+                "authenticate": auth_action,
             }
             button.setMenu(menu)
             self.sftp_transfer_menu_button = button
@@ -5213,6 +6381,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def __init__(self, state: MobaConnectedSessionState, terminal_pane: TerminalPane) -> None:
             super().__init__()
             self.setObjectName("mobaConnectedSession")
+            self.setMinimumSize(0, 0)
+            self.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             self.state = state
             self.moba_connected_state = state
             self.terminal_pane = terminal_pane
@@ -5295,6 +6468,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_terminal_area(self) -> QWidget:
             area = QWidget()
             area.setObjectName("mobaTerminalArea")
+            area.setMinimumSize(0, 0)
+            area.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             self.apply_connected_session_route_properties(area)
             self.apply_sftp_terminal_folder_route_properties(area)
             area.setProperty("mobaFixedBannerVisible", False)
@@ -5305,6 +6483,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.setSpacing(0)
             terminal_stack = QWidget()
             terminal_stack.setObjectName("mobaTerminalStack")
+            terminal_stack.setMinimumSize(0, 0)
+            terminal_stack.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             stack_layout = QVBoxLayout(terminal_stack)
             stack_layout.setContentsMargins(0, 0, 0, 0)
             stack_layout.setSpacing(0)
@@ -5312,6 +6495,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_moba_plain_terminal_mode()
             self.terminal_splitter = QSplitter(Qt.Orientation.Horizontal)
             self.terminal_splitter.setObjectName("mobaTerminalSplitter")
+            self.terminal_splitter.setMinimumSize(0, 0)
+            self.terminal_splitter.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             self.terminal_splitter.setChildrenCollapsible(False)
             self.terminal_splitter.addWidget(self.terminal_pane)
             self.terminal_splitter.setCollapsible(0, False)
@@ -5412,8 +6600,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             pane.output.setProperty("mobaTerminalLineInputFallback", pipe_fallback)
             pane.output.setProperty("mobaTerminalNativePty", native_pty)
             pane.output.setToolTip(
-                "Click the terminal and type. Right-click for copy, paste, save, "
-                "telemetry, and session actions."
+                "Click the terminal and type. Right-click or middle-click pastes; "
+                "Shift+Right-click opens copy, paste, save, telemetry, and session actions."
             )
             pane.output_context_menu_builder = self.build_moba_terminal_context_menu
             pane.output.setProperty("mobaTerminalTranscriptGeometryKeys", [row.key for row in geometry])
@@ -7081,11 +8269,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     class MobaWorkspaceTabBar(QTabBar):
         """Apply measured tab widths only while the Moba preset is active."""
 
+        TAB_RESIZE_HIT_WIDTH = 6
+        TAB_RESIZE_MIN_WIDTH = 140
+        TAB_RESIZE_MAX_WIDTH = 640
+
         def __init__(self, parent=None) -> None:
             super().__init__(parent)
             self.special_tab_handler: Callable[[int], None] | None = None
+            self.tab_switch_prepare_handler: Callable[[int], None] | None = None
             self._pressed_special_key = ""
             self._stabilizing_special_tabs = False
+            self._tab_resize_index = -1
+            self._tab_resize_edge = ""
+            self._tab_resize_start_x = 0
+            self._tab_resize_start_width = 0
+            self.setMouseTracking(True)
+            self.setProperty("mobaTabWidthsUserResizable", True)
             self.tabMoved.connect(self.stabilize_special_tabs)
 
         def moba_tab_key(self, index: int) -> str:
@@ -7102,20 +8301,76 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return True
 
         def mousePressEvent(self, event) -> None:  # noqa: N802
+            if event.button() == Qt.MouseButton.LeftButton:
+                resize_target = self._tab_resize_target(event.position().toPoint())
+                if resize_target is not None:
+                    index, edge = resize_target
+                    rect = self.tabRect(index)
+                    self._tab_resize_index = index
+                    self._tab_resize_edge = edge
+                    self._tab_resize_start_x = event.position().toPoint().x()
+                    self._tab_resize_start_width = rect.width()
+                    self.setCursor(Qt.CursorShape.SizeHorCursor)
+                    event.accept()
+                    return
             index = self.tabAt(event.position().toPoint())
             self._pressed_special_key = self.moba_tab_key(index)
             if self.activate_special_tab(index):
                 event.accept()
                 return
+            if (
+                index >= 0
+                and index != self.currentIndex()
+                and callable(self.tab_switch_prepare_handler)
+            ):
+                # Freeze the old page before QTabBar changes the current page.
+                # Waiting for QTabWidget.currentChanged is one paint too late
+                # on Windows and can expose the new terminal at its transient
+                # minimum geometry in the middle of the workspace.
+                self.tab_switch_prepare_handler(index)
             super().mousePressEvent(event)
 
+        def keyPressEvent(self, event) -> None:  # noqa: N802
+            if (
+                self.count() > 1
+                and event.key()
+                in {
+                    Qt.Key.Key_Left,
+                    Qt.Key.Key_Right,
+                    Qt.Key.Key_Home,
+                    Qt.Key.Key_End,
+                }
+                and callable(self.tab_switch_prepare_handler)
+            ):
+                self.tab_switch_prepare_handler(-1)
+            super().keyPressEvent(event)
+
         def mouseMoveEvent(self, event) -> None:  # noqa: N802
+            position = event.position().toPoint()
+            if self._tab_resize_index >= 0:
+                self._resize_tab_width(position.x())
+                event.accept()
+                return
             if self._pressed_special_key in {"home", "new-session"}:
                 event.accept()
                 return
+            if self._tab_resize_target(position) is not None:
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+            else:
+                self.unsetCursor()
             super().mouseMoveEvent(event)
 
         def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+            if self._tab_resize_index >= 0:
+                position = event.position().toPoint()
+                self._resize_tab_width(position.x())
+                self._tab_resize_index = -1
+                self._tab_resize_edge = ""
+                self._tab_resize_start_x = 0
+                self._tab_resize_start_width = 0
+                self.unsetCursor()
+                event.accept()
+                return
             special_key = self._pressed_special_key
             self._pressed_special_key = ""
             if special_key == "new-session":
@@ -7151,6 +8406,78 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             finally:
                 self._stabilizing_special_tabs = False
 
+        def leaveEvent(self, event) -> None:  # noqa: N802
+            if self._tab_resize_index < 0:
+                self.unsetCursor()
+            super().leaveEvent(event)
+
+        def _tab_resize_target(self, position) -> tuple[int, str] | None:
+            if not bool(self.property("mobaCompactTabWidths")):
+                return None
+            hit_width = self.TAB_RESIZE_HIT_WIDTH
+            candidates: list[tuple[int, int, str]] = []
+            for index in range(self.count()):
+                if self.moba_tab_key(index) in {"home", "new-session"}:
+                    continue
+                rect = self.tabRect(index)
+                if rect.isNull() or not rect.adjusted(-hit_width, -hit_width, hit_width, hit_width).contains(position):
+                    continue
+                left_distance = abs(position.x() - rect.left())
+                right_distance = abs(position.x() - rect.right())
+                if left_distance <= hit_width:
+                    candidates.append((left_distance, index, "left"))
+                if right_distance <= hit_width:
+                    candidates.append((right_distance, index, "right"))
+            if not candidates:
+                return None
+            _distance, index, edge = min(candidates, key=lambda item: item[0])
+            return index, edge
+
+        def _resize_tab_width(self, position_x: int) -> None:
+            index = self._tab_resize_index
+            if index < 0 or index >= self.count() or self._tab_resize_start_width <= 0:
+                return
+            delta = int(position_x) - self._tab_resize_start_x
+            if self._tab_resize_edge == "left":
+                width = self._tab_resize_start_width - delta
+            else:
+                width = self._tab_resize_start_width + delta
+            width = max(self.TAB_RESIZE_MIN_WIDTH, min(self.TAB_RESIZE_MAX_WIDTH, width))
+            data = self.tabData(index)
+            if not isinstance(data, dict):
+                return
+            if int(data.get("moba_width", 0) or 0) == width and data.get("moba_user_width") is True:
+                return
+            resized_data = dict(data)
+            resized_data["moba_width"] = width
+            resized_data["moba_user_width"] = True
+            self.setTabData(index, resized_data)
+            self._refresh_tab_layout(index)
+            widget = self.parentWidget()
+            if widget is not None:
+                widget.updateGeometry()
+            self.setProperty("mobaLastResizedTabIndex", index)
+            self.setProperty("mobaLastResizedTabWidth", width)
+            self.updateGeometry()
+            self.update()
+
+        def _refresh_tab_layout(self, index: int) -> None:
+            """Make a changed ``tabSizeHint`` reach the live tab geometry."""
+
+            # QTabBar caches tab rectangles. Re-setting the unchanged label is
+            # a public Qt route that invalidates that cache without reaching
+            # into private layout APIs or changing the visible tab text.
+            self.setTabText(index, self.tabText(index))
+            self.updateGeometry()
+            parent = self.parentWidget()
+            if parent is None:
+                return
+            parent.updateGeometry()
+            layout = parent.layout()
+            if layout is not None:
+                layout.invalidate()
+                layout.activate()
+
         def tabSizeHint(self, index: int):  # noqa: N802
             hint = super().tabSizeHint(index)
             if not bool(self.property("mobaCompactTabWidths")):
@@ -7167,6 +8494,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     class ResponsiveWorkspaceTabs(QTabWidget):
         """Keep hidden, content-rich tabs from fixing the whole window above its usable size."""
 
+        def __init__(self, parent=None) -> None:
+            super().__init__(parent)
+            self.tab_switch_prepare_handler: Callable[[int], None] | None = None
+
+        def setCurrentIndex(self, index: int) -> None:  # noqa: N802
+            if (
+                index != self.currentIndex()
+                and callable(self.tab_switch_prepare_handler)
+            ):
+                self.tab_switch_prepare_handler(index)
+            super().setCurrentIndex(index)
+
+        def setCurrentWidget(self, widget: QWidget | None) -> None:  # noqa: N802
+            if widget is not None:
+                index = self.indexOf(widget)
+                if (
+                    index != self.currentIndex()
+                    and callable(self.tab_switch_prepare_handler)
+                ):
+                    self.tab_switch_prepare_handler(index)
+            super().setCurrentWidget(widget)
+
         def minimumSizeHint(self):  # noqa: N802
             hint = super().minimumSizeHint()
             return QSize(min(hint.width(), 520), min(hint.height(), 320))
@@ -7180,7 +8529,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "main status bar",
             )
 
-        def __init__(self) -> None:
+        def __init__(self, *, preview_samples: bool = False) -> None:
             super().__init__()
             self.setObjectName("remoteOpsMain")
             self.setWindowTitle("Remote Ops Workspace")
@@ -7188,17 +8537,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_moba_titlebar_chrome("Remote Ops Workspace")
             self.resize(1180, 720)
             self.store = ProfileStore()
-            # Source/CI GUI renders retain demo profiles; frozen release GUIs
-            # must start with an empty private workspace.
-            release_runtime = bool(getattr(sys, "frozen", False))
+            # Production GUI starts empty. Render and interaction harnesses can
+            # opt into deterministic sample rows without changing that default.
+            self.setProperty("guiPreviewSamples", bool(preview_samples))
             self.store.init(
-                with_examples=not release_runtime,
-                purge_examples=release_runtime,
+                with_examples=bool(preview_samples),
+                purge_examples=not preview_samples,
                 surface="gui",
             )
             self.layout_store = LayoutStore()
             self._last_terminal_pane: TerminalPane | None = None
             self._closing_tab_widgets: list[QWidget] = []
+            self._status_message_override: str | None = None
+            self._status_message_override_deadline = 0.0
 
             self.build_menu_bar()
             self.main_toolbar = QToolBar("Main")
@@ -7487,6 +8838,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_tab_bar = MobaWorkspaceTabBar()
             self.tabs.setTabBar(self.moba_tab_bar)
             self.moba_tab_bar.special_tab_handler = self.activate_moba_special_tab
+            self.tabs.tab_switch_prepare_handler = self.prepare_tab_transition
+            self.moba_tab_bar.tab_switch_prepare_handler = self.prepare_tab_transition
             self.tabs.setObjectName("sessionTabs")
             self.moba_tab_bar.setObjectName("sessionTabBar")
             self.tabs.setTabsClosable(True)
@@ -7497,6 +8850,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             self.moba_tab_guard = False
             self._tab_transition_generation = 0
+            self._tab_prepaint_guard_generation = 0
             self.recent_terminal_plans: list[tuple[TerminalPanePlan, Profile | None]] = []
             self.log = LiteralTextEdit()
             self.log.setObjectName("activityLog")
@@ -7595,6 +8949,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             _application_instance().focusChanged.connect(self.remember_terminal_focus)
             self.keyboard_shortcuts = self.create_keyboard_shortcuts()
+            # These workspace traversal keys apply to every visual preset and
+            # must win before a focused terminal translates Ctrl+Tab into a
+            # remote tab byte. They intentionally remain outside the preset
+            # command-shortcut evidence catalog.
+            self.next_workspace_tab_shortcut = QShortcut(
+                QKeySequence("Ctrl+Tab"),
+                self,
+            )
+            self.next_workspace_tab_shortcut.setObjectName("nextWorkspaceTabShortcut")
+            self.next_workspace_tab_shortcut.activated.connect(self.activate_next_tab)
+            self.previous_workspace_tab_shortcut = QShortcut(
+                QKeySequence("Ctrl+Shift+Tab"),
+                self,
+            )
+            self.previous_workspace_tab_shortcut.setObjectName(
+                "previousWorkspaceTabShortcut"
+            )
+            self.previous_workspace_tab_shortcut.activated.connect(
+                self.activate_previous_tab
+            )
             self.securecrt_host_shortcut = QShortcut(QKeySequence("Alt+P"), self)
             self.securecrt_host_shortcut.setObjectName("secureCrtHostShortcut")
             self.securecrt_host_shortcut.setProperty(
@@ -9322,6 +10696,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.moba_connected_dock = MobaSftpDock(state)
             self.moba_left_stack.addWidget(self.moba_connected_dock)
             self.moba_left_stack.setCurrentWidget(self.moba_connected_dock)
+            self.moba_connected_dock.initialize_background_state()
             self.set_moba_quick_connect_connected_idle()
             self.set_moba_rail_active("sftp")
             title = moba_connected_window_title(state)
@@ -10297,6 +11672,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 else None
             )
             is_moba = preset.id == "mobaxterm"
+            self.synchronize_terminal_mouse_paste_policy_for_design(preset.id)
             self.setStyleSheet(preset.stylesheet)
             for catalog_widget in (self, self.design_select, self.main_toolbar):
                 self.apply_preset_catalog_route_properties(catalog_widget, catalog_route)
@@ -10503,6 +11879,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 lambda preset_id=preset.id: self.enforce_product_reference_filter_geometry(preset_id),
             )
             self.statusBar().showMessage(f"View: {preset.label}")
+
+        @staticmethod
+        def apply_terminal_mouse_paste_policy_for_design(
+            pane: TerminalPane,
+            preset_id: str,
+        ) -> None:
+            enabled = preset_id == "mobaxterm"
+            pane.set_terminal_right_click_paste_enabled(enabled)
+            pane.set_terminal_middle_click_paste_enabled(enabled)
+            pane.setProperty("terminalMousePastePolicyPresetId", preset_id)
+
+        def synchronize_terminal_mouse_paste_policy_for_design(
+            self,
+            preset_id: str,
+        ) -> None:
+            for pane in self.findChildren(TerminalPane):
+                # Reapplying the current visual preset must not discard a
+                # per-pane user toggle. A real preset transition resets both
+                # gestures to that preset's safe default.
+                if pane.property("terminalMousePastePolicyPresetId") == preset_id:
+                    continue
+                self.apply_terminal_mouse_paste_policy_for_design(pane, preset_id)
 
         def enforce_product_reference_filter_geometry(self, preset_id: str) -> None:
             filter_specs = {
@@ -12734,7 +14132,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.show_moba_connected_dock(state)
             self.show_moba_sftp_rail()
-            self.statusBar().showMessage(f"SFTP attached to {state.target} at {state.remote_path}")
+            self.show_transient_status_message(
+                f"SFTP attached to {state.target} at {state.remote_path}"
+            )
 
         def show_moba_macros_status(self, *_args) -> None:
             self.set_moba_rail_active("macros")
@@ -12880,8 +14280,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     return index
             return -1
 
+        def set_workspace_tab_index(self, index: int) -> None:
+            """Select a workspace page only after arming the paint guard."""
+
+            if index < 0 or index >= self.tabs.count():
+                return
+            if index != self.tabs.currentIndex():
+                self.prepare_tab_transition(index)
+            self.tabs.setCurrentIndex(index)
+
         def add_workspace_tab(self, widget: QWidget, title: str, *, select: bool = True, role: str = "session") -> int:
             widget.setProperty("tabRole", role)
+            if role in {"terminal", "split"}:
+                # Keep the page root independent of its content size hint.
+                # This matters for a newly inserted Moba wrapper: until its
+                # first layout pass, a preferred-size child can otherwise
+                # flash at its minimum geometry during tab activation.
+                widget.setMinimumSize(0, 0)
+                widget.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Expanding,
+                )
             new_index = self.find_tab_by_role("new-session")
             self.tabs.setUpdatesEnabled(False)
             try:
@@ -12891,7 +14310,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     index = self.tabs.addTab(widget, title)
                 self.set_literal_tab_tooltip(index, title)
                 if select:
-                    self.tabs.setCurrentIndex(index)
+                    self.set_workspace_tab_index(index)
             finally:
                 # A selected tab may have emitted currentChanged above and
                 # entered the guarded transition.  Keep the tab widget
@@ -13017,15 +14436,33 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             widget = self.tabs.widget(index)
             geometry = moba_connected_tab_chrome_geometry_for(key)
             tab_bar = self.moba_tab_bar
+            previous_data = tab_bar.tabData(index)
+            custom_width = (
+                previous_data.get("moba_width")
+                if isinstance(previous_data, dict)
+                and previous_data.get("moba_user_width") is True
+                else None
+            )
+            width = (
+                max(
+                    MobaWorkspaceTabBar.TAB_RESIZE_MIN_WIDTH,
+                    min(MobaWorkspaceTabBar.TAB_RESIZE_MAX_WIDTH, int(custom_width)),
+                )
+                if isinstance(custom_width, int)
+                and key not in {"home", "new-session"}
+                else geometry.width
+            )
             tab_bar.setTabData(
                 index,
                 {
                     "moba_key": key,
-                    "moba_width": geometry.width,
+                    "moba_width": width,
                     "moba_height": geometry.height,
+                    "moba_user_width": width != geometry.width,
                 },
             )
             tab_bar.setProperty("mobaCompactTabWidths", True)
+            tab_bar._refresh_tab_layout(index)
             self.tabs.setProperty(
                 "mobaTabChromeGeometryKeys",
                 [item.key for item in moba_connected_tab_chrome_geometry_items()],
@@ -13034,7 +14471,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 widget.setProperty("mobaTabChromeKey", key)
                 widget.setProperty("mobaTabIconKey", icon_key)
                 widget.setProperty("mobaTabCloseable", closeable)
-                widget.setProperty("mobaTabStaticWidth", geometry.width)
+                widget.setProperty("mobaTabStaticWidth", width)
+                widget.setProperty("mobaTabUserWidth", width != geometry.width)
+                widget.setProperty(
+                    "mobaTabResizeRange",
+                    [
+                        MobaWorkspaceTabBar.TAB_RESIZE_MIN_WIDTH,
+                        MobaWorkspaceTabBar.TAB_RESIZE_MAX_WIDTH,
+                    ],
+                )
                 widget.setProperty("mobaTabStaticHeight", geometry.height)
                 widget.setProperty("mobaTabCornerRadius", geometry.corner_radius)
                 widget.setProperty("mobaTabIconX", geometry.icon_x)
@@ -13055,6 +14500,61 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     tab_bar.setTabButton(index, position, None)
             tab_bar.updateGeometry()
 
+        def set_terminal_tab_paint_frozen(self, frozen: bool) -> None:
+            """Freeze every embedded terminal while a workspace page changes."""
+
+            frozen = bool(frozen)
+            self.tabs.setProperty("terminalTabPaintFrozen", frozen)
+            for pane in self.all_terminal_panes():
+                pane.set_terminal_paint_frozen(frozen)
+
+        def prepare_tab_transition(self, index: int) -> None:
+            """Freeze terminal painting before Qt activates a different page."""
+
+            if index >= 0 and index == self.tabs.currentIndex():
+                return
+            if bool(self.tabs.property("terminalTabTransitionActive")):
+                return
+            if bool(self.tabs.property("terminalTabPrepaintGuardActive")):
+                return
+            self._tab_prepaint_guard_generation += 1
+            generation = self._tab_prepaint_guard_generation
+            current_index = self.tabs.currentIndex()
+            self.tabs.setProperty("terminalTabPrepaintGuardActive", True)
+            self.tabs.setProperty("terminalTabPrepaintTargetIndex", index)
+            self.set_terminal_tab_paint_frozen(True)
+            self.tabs.setUpdatesEnabled(False)
+            # A click on a disabled/current tab or an intercepted keyboard
+            # navigation event may not produce currentChanged.  Release that
+            # speculative guard on the next event-loop turn.
+            QTimer.singleShot(
+                0,
+                lambda generation=generation, current_index=current_index: (
+                    self.release_tab_prepaint_guard_if_idle(
+                        generation,
+                        current_index,
+                    )
+                ),
+            )
+
+        def release_tab_prepaint_guard_if_idle(
+            self,
+            generation: int,
+            previous_index: int,
+        ) -> None:
+            if generation != self._tab_prepaint_guard_generation:
+                return
+            if bool(self.tabs.property("terminalTabTransitionActive")):
+                return
+            self.tabs.setProperty(
+                "terminalTabPrepaintGuardRecoveredWithoutTransition",
+                self.tabs.currentIndex() != previous_index,
+            )
+            self.set_terminal_tab_paint_frozen(False)
+            self.tabs.setUpdatesEnabled(True)
+            self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
+            self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
+
         def handle_tab_changed(self, index: int) -> None:
             self._tab_transition_generation += 1
             transition = self._tab_transition_generation
@@ -13064,12 +14564,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             # geometry is settled.  Suppress that one intermediate frame so a
             # tiny, unconfigured terminal surface cannot flash in the middle
             # of the workspace during a tab switch.
+            self.set_terminal_tab_paint_frozen(True)
             self.tabs.setUpdatesEnabled(False)
             if self.moba_tab_guard or index < 0:
                 self.configure_product_connected_chrome()
                 self.refresh_moba_left_dock_for_current_tab()
+                self.set_terminal_tab_paint_frozen(False)
                 self.tabs.setUpdatesEnabled(True)
                 self.tabs.setProperty("terminalTabTransitionActive", False)
+                self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
+                self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
                 return
             # QTabWidget may finish laying out the newly selected page after
             # emitting currentChanged.  Re-apply once the splitter has its
@@ -13129,11 +14633,55 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.configure_product_connected_chrome()
             self.refresh_moba_left_dock_for_current_tab()
-            self.tabs.setUpdatesEnabled(True)
             current = self.tabs.currentWidget()
+            if current is not None:
+                # Activate the page and its embedded splitters while paints
+                # are still frozen.  Releasing updates before this synchronous
+                # layout pass is what allows Qt to expose a one-frame tiny
+                # terminal surface on fast tab changes.
+                current.setMinimumSize(0, 0)
+                current.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Expanding,
+                )
+                current.updateGeometry()
+                current_layout = current.layout()
+                if current_layout is not None:
+                    current_layout.activate()
+                layout_widgets: list[QWidget] = []
+                if isinstance(current, QSplitter):
+                    layout_widgets.append(current)
+                layout_widgets.extend(current.findChildren(QSplitter))
+                layout_widgets.extend(self.terminal_panes_in(current))
+                seen_layout_widgets: set[int] = set()
+                for child in layout_widgets:
+                    identity = id(child)
+                    if identity in seen_layout_widgets:
+                        continue
+                    seen_layout_widgets.add(identity)
+                    child_layout = child.layout()
+                    if child_layout is not None:
+                        child_layout.activate()
+                    child.updateGeometry()
+            tabs_layout = self.tabs.layout()
+            if tabs_layout is not None:
+                tabs_layout.activate()
+            self.tabs.updateGeometry()
+            self.tabs.setProperty(
+                "terminalTabGeometryStabilized",
+                bool(
+                    current is not None
+                    and current.width() > 0
+                    and current.height() > 0
+                ),
+            )
+            self.set_terminal_tab_paint_frozen(False)
+            self.tabs.setUpdatesEnabled(True)
             if current is not None:
                 current.update()
             self.tabs.setProperty("terminalTabTransitionActive", False)
+            self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
+            self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
 
         def start_deferred_terminal_pane_if_current(
             self,
@@ -13151,6 +14699,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             current = self.tabs.currentWidget()
             if current is None or not (current is pane or current.isAncestorOf(pane)):
+                return
+            # A newly selected page can still be inside the one-event-turn
+            # transition guard even when it already has its final tab index.
+            # Defer the child launch until that guard releases so ConPTY (or
+            # the hidden pipe fallback) never paints a transient tiny surface.
+            if bool(self.tabs.property("terminalTabTransitionActive")) or bool(
+                self.tabs.property("terminalTabPrepaintGuardActive")
+            ):
+                QTimer.singleShot(
+                    0,
+                    lambda pane=pane, index=index, transition=transition: (
+                        self.start_deferred_terminal_pane_if_current(
+                            pane,
+                            index,
+                            transition,
+                        )
+                    ),
+                )
                 return
             pane.start()
             pane.setProperty("terminalStartDeferredUntilTabReady", False)
@@ -13376,7 +14942,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if index < 0:
                 return
             if self.tab_role(index) != "new-session":
-                self.tabs.setCurrentIndex(index)
+                self.set_workspace_tab_index(index)
             menu = self.build_tab_context_menu(index)
             if menu is not None:
                 try:
@@ -18455,7 +20021,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 source_pane = current.terminal_pane
                 plan = source_pane.plan
                 profile = source_pane.profile
-                pane = self.new_terminal_pane(plan, profile=profile)
+                pane = self.new_terminal_pane(
+                    plan,
+                    profile=profile,
+                    autostart=False,
+                )
                 current.add_terminal_split(pane, orientation)
                 self.remember_terminal_plan(plan, profile=profile)
                 self.set_literal_tab_tooltip(
@@ -18465,6 +20035,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 self.refresh_moba_left_dock_for_current_tab()
                 self.update_session_status()
+                self.start_terminal_pane_when_active(pane, current_index)
                 return
 
             if (
@@ -18474,7 +20045,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             ):
                 current.setOrientation(orientation)
                 plan = default_shell_plan()
-                current.addWidget(self.new_terminal_pane(plan))
+                pane = self.new_terminal_pane(plan, autostart=False)
+                current.addWidget(pane)
                 self.remember_terminal_plan(plan)
                 self.equalize_ad_hoc_splitter(current)
                 self.tabs.setTabText(current_index, f"{label} {current.count()}")
@@ -18483,6 +20055,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     f"{label}: {current.count()} active panes",
                 )
                 self.update_session_status()
+                self.start_terminal_pane_when_active(pane, current_index)
                 return
 
             splitter = QSplitter(orientation)
@@ -18506,7 +20079,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self.tabs.removeTab(current_index)
                     splitter.addWidget(current)
                     plan = default_shell_plan()
-                    splitter.addWidget(self.new_terminal_pane(plan))
+                    pane = self.new_terminal_pane(plan, autostart=False)
+                    splitter.addWidget(pane)
                     self.remember_terminal_plan(plan)
                     splitter.setProperty("tabRole", "split")
                     new_index = self.tabs.insertTab(
@@ -18515,7 +20089,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                         f"{title} · {label}",
                     )
                     self.set_literal_tab_tooltip(new_index, f"{tooltip} · {label}")
-                    self.tabs.setCurrentIndex(new_index)
+                    self.set_workspace_tab_index(new_index)
                 finally:
                     self.moba_tab_guard = previous_guard
                 preset = get_gui_design_preset(self.current_design_id())
@@ -18527,6 +20101,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.refresh_special_tab_buttons()
                 self.refresh_moba_left_dock_for_current_tab()
                 self.update_session_status()
+                self.start_terminal_pane_when_active(pane, new_index)
                 return
 
             active = self.active_terminal_pane()
@@ -18535,14 +20110,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 if active is not None
                 else [(plan, None) for plan in split_shell_plans(2)]
             )
+            new_panes: list[TerminalPane] = []
             for plan, profile in sessions:
-                splitter.addWidget(self.new_terminal_pane(plan, profile=profile))
+                pane = self.new_terminal_pane(
+                    plan,
+                    profile=profile,
+                    autostart=False,
+                )
+                splitter.addWidget(pane)
+                new_panes.append(pane)
                 self.remember_terminal_plan(plan, profile=profile)
-            self.add_workspace_tab(
+            new_index = self.add_workspace_tab(
                 splitter, f"{label} {self.count_closeable_tabs() + 1}", role="split"
             )
             self.equalize_ad_hoc_splitter(splitter)
             self.update_session_status()
+            for pane in new_panes:
+                self.start_terminal_pane_when_active(pane, new_index)
 
         @staticmethod
         def equalize_ad_hoc_splitter(splitter: QSplitter) -> None:
@@ -18584,16 +20168,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     )
                     orientation = widget.terminal_splitter.orientation()
                     for source_pane in source_panes[1:]:
+                        duplicate_pane = self.new_terminal_pane(
+                            source_pane.plan,
+                            profile=source_pane.profile,
+                            autostart=False,
+                        )
                         duplicate.add_terminal_split(
-                            self.new_terminal_pane(
-                                source_pane.plan,
-                                profile=source_pane.profile,
-                            ),
+                            duplicate_pane,
                             orientation,
                         )
                         self.remember_terminal_plan(
                             source_pane.plan,
                             profile=source_pane.profile,
+                        )
+                    duplicate_index = self.tabs.indexOf(duplicate)
+                    for duplicate_pane in self.terminal_panes_in(duplicate):
+                        self.start_terminal_pane_when_active(
+                            duplicate_pane,
+                            duplicate_index,
                         )
                     source_sizes = [max(1, int(size)) for size in widget.terminal_splitter.sizes()]
                     if len(source_sizes) == duplicate.terminal_splitter.count():
@@ -18618,15 +20210,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             else:
                 splitter = QSplitter(Qt.Orientation.Horizontal)
                 for pane in panes:
-                    splitter.addWidget(self.new_terminal_pane(pane.plan, profile=pane.profile))
+                    splitter.addWidget(
+                        self.new_terminal_pane(
+                            pane.plan,
+                            profile=pane.profile,
+                            autostart=False,
+                        )
+                    )
                     self.remember_terminal_plan(pane.plan, profile=pane.profile)
                 self.equalize_ad_hoc_splitter(splitter)
             source_role = self.tab_role(index)
             duplicate_role = source_role if source_role in {"layout", "split"} else "split"
-            self.add_workspace_tab(splitter, f"{title} copy", role=duplicate_role)
+            duplicate_index = self.add_workspace_tab(
+                splitter,
+                f"{title} copy",
+                role=duplicate_role,
+            )
             self.bind_cloned_layout_persistence(splitter)
             self.log.append(f"TAB DUPLICATED: {title}")
             self.update_session_status()
+            for duplicate_pane in self.terminal_panes_in(splitter):
+                self.start_terminal_pane_when_active(duplicate_pane, duplicate_index)
 
         def terminal_splitter_clone_supported(self, source: QSplitter) -> bool:
             for index in range(source.count()):
@@ -18650,7 +20254,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 child = source.widget(index)
                 duplicate: QWidget
                 if isinstance(child, TerminalPane):
-                    duplicate = self.new_terminal_pane(child.plan, profile=child.profile)
+                    duplicate = self.new_terminal_pane(
+                        child.plan,
+                        profile=child.profile,
+                        autostart=False,
+                    )
                     self.remember_terminal_plan(child.plan, profile=child.profile)
                 elif isinstance(child, QSplitter):
                     duplicate = self.clone_terminal_splitter(child)
@@ -18691,8 +20299,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             current = self.tabs.currentIndex()
             for offset in range(1, count + 1):
                 index = (current + step * offset) % count
-                if self.tab_role(index) != "new-session":
-                    self.tabs.setCurrentIndex(index)
+                if self.tab_role(index) not in {"home", "new-session"}:
+                    self.set_workspace_tab_index(index)
                     return
 
         def close_other_tabs(self, keep_index: int) -> None:
@@ -18882,9 +20490,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.bind_layout_resize_persistence(layout.name, widget)
                 for plan, profile in zip(plans, profiles, strict=True):
                     self.remember_terminal_plan(plan, profile=profile)
-                self.add_workspace_tab(widget, layout.name, role="layout")
+                tab_index = self.add_workspace_tab(widget, layout.name, role="layout")
                 self.log.append(f"LAYOUT: {layout.name} ({len(plans)} panes)")
                 self.update_session_status()
+                for pane in self.terminal_panes_in(widget):
+                    self.start_terminal_pane_when_active(pane, tab_index)
             except (KeyError, LauncherError, ValueError) as exc:
                 _literal_message_box(
                     self,
@@ -18916,17 +20526,33 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             profiles: list[Profile],
         ) -> QWidget:
             if len(plans) == 1:
-                return self.new_terminal_pane(plans[0], profile=profiles[0])
+                return self.new_terminal_pane(
+                    plans[0],
+                    profile=profiles[0],
+                    autostart=False,
+                )
             if layout.orientation == "vertical":
                 splitter = QSplitter(Qt.Orientation.Vertical)
                 for plan, profile in zip(plans, profiles, strict=True):
-                    splitter.addWidget(self.new_terminal_pane(plan, profile=profile))
+                    splitter.addWidget(
+                        self.new_terminal_pane(
+                            plan,
+                            profile=profile,
+                            autostart=False,
+                        )
+                    )
                 self.restore_layout_splitter_sizes(splitter, layout.splitter_sizes)
                 return splitter
             if layout.orientation == "horizontal":
                 splitter = QSplitter(Qt.Orientation.Horizontal)
                 for plan, profile in zip(plans, profiles, strict=True):
-                    splitter.addWidget(self.new_terminal_pane(plan, profile=profile))
+                    splitter.addWidget(
+                        self.new_terminal_pane(
+                            plan,
+                            profile=profile,
+                            autostart=False,
+                        )
+                    )
                 self.restore_layout_splitter_sizes(splitter, layout.splitter_sizes)
                 return splitter
             root = QSplitter(Qt.Orientation.Vertical)
@@ -18937,7 +20563,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     profiles[offset : offset + 2],
                     strict=True,
                 ):
-                    row.addWidget(self.new_terminal_pane(plan, profile=profile))
+                    row.addWidget(
+                        self.new_terminal_pane(
+                            plan,
+                            profile=profile,
+                            autostart=False,
+                        )
+                    )
                 root.addWidget(row)
             self.restore_layout_splitter_sizes(root, layout.splitter_sizes)
             return root
@@ -19004,12 +20636,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 pane = TerminalPane(plan, profile=profile)
             else:
                 pane = TerminalPane(plan, profile=profile, autostart=False)
+            self.apply_terminal_mouse_paste_policy_for_design(
+                pane,
+                self.current_design_id(),
+            )
             pane.setProperty("terminalAutoCloseOnCleanExit", plan.source == "shell")
             pane.process.started.connect(self.update_session_status)
             pane.process.started.connect(
                 lambda terminal_pane=pane: self.refresh_moba_background_after_terminal_start(
                     terminal_pane
                 )
+            )
+            pane.process.errorOccurred.connect(
+                lambda _error: self.update_session_status()
             )
             if pane.is_running():
                 # Immediate-start panes emit ``started`` during construction,
@@ -19021,18 +20660,39 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     exit_code,
                 )
             )
+            # Hidden-process startup can fail synchronously (for example when
+            # an executable is missing), before the signal connections above
+            # exist. Publish that failure immediately so the status bar cannot
+            # remain stale after an SSH or helper launch error.
+            error_string_getter = getattr(pane.process, "errorString", None)
+            if callable(error_string_getter) and error_string_getter():
+                self.update_session_status()
             return pane
 
         def refresh_moba_background_after_terminal_start(self, pane: TerminalPane) -> None:
             """Give an interactive SSH prompt time to authenticate before reuse."""
 
-            dock = self.moba_connected_dock
-            profile = getattr(pane, "profile", None)
-            if dock is None or profile is None:
+            try:
+                dock = self.moba_connected_dock
+                profile = getattr(pane, "profile", None)
+                if dock is None or profile is None:
+                    return
+                if profile.name != dock.state.profile_name:
+                    return
+                schedule_activation = getattr(
+                    dock,
+                    "schedule_background_state_activation",
+                    None,
+                )
+            except RuntimeError:
+                # A tab replacement can delete the dock between a process
+                # signal and this deferred refresh callback.
                 return
-            if profile.name != dock.state.profile_name:
-                return
-            QTimer.singleShot(1_500, dock.activate_initial_background_state)
+            if callable(schedule_activation):
+                try:
+                    schedule_activation(1_500)
+                except RuntimeError:
+                    return
 
         def handle_terminal_process_finished(
             self,
@@ -19072,7 +20732,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             role = self.tab_role(index)
             if role == "home":
-                self.tabs.setCurrentIndex(index)
+                self.set_workspace_tab_index(index)
                 self.statusBar().showMessage("Home tab stays open")
                 return
             if role == "new-session":
@@ -19082,6 +20742,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if running and not self.confirm_stop_processes("Close tab", len(running)):
                 return
             title = self.tabs.tabText(index)
+            if index == self.tabs.currentIndex() and self.tabs.count() > 1:
+                successor_index = index + 1 if index + 1 < self.tabs.count() else index - 1
+                self.prepare_tab_transition(successor_index)
+                self.tabs.setProperty(
+                    "terminalActiveTabClosePrepaintGuarded",
+                    bool(self.tabs.property("terminalTabPrepaintGuardActive"))
+                    or bool(self.tabs.property("terminalTabTransitionActive")),
+                )
             self.tabs.removeTab(index)
             if running:
                 self._closing_tab_widgets.append(widget)
@@ -19159,8 +20827,45 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             return answer == QMessageBox.StandardButton.Yes
 
+        def show_transient_status_message(
+            self,
+            message: str,
+            timeout_ms: int = 1800,
+        ) -> None:
+            """Keep a completed workflow result visible across late process signals."""
+
+            timeout_ms = max(1, int(timeout_ms))
+            self._status_message_override = message
+            self._status_message_override_deadline = (
+                time.monotonic() + timeout_ms / 1000
+            )
+            self.statusBar().showMessage(message, timeout_ms)
+            QTimer.singleShot(timeout_ms, self.expire_transient_status_message)
+
+        def expire_transient_status_message(self) -> None:
+            if self._status_message_override is None:
+                return
+            if time.monotonic() < self._status_message_override_deadline:
+                return
+            self._status_message_override = None
+            self._status_message_override_deadline = 0.0
+            self.update_session_status()
+
         def update_session_status(self) -> None:
             try:
+                if self._status_message_override is not None:
+                    remaining_ms = int(
+                        (self._status_message_override_deadline - time.monotonic())
+                        * 1000
+                    )
+                    if remaining_ms > 0:
+                        self.statusBar().showMessage(
+                            self._status_message_override,
+                            max(1, remaining_ms),
+                        )
+                        return
+                    self._status_message_override = None
+                    self._status_message_override_deadline = 0.0
                 running = len(self.running_terminal_panes())
                 if running:
                     self.statusBar().showMessage(f"Running process panes: {running}")
@@ -19185,6 +20890,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for pane in running:
                 pane.prepare_for_close()
                 pane.process.kill()
+                close_process = getattr(pane.process, "close", None)
+                if callable(close_process):
+                    close_process()
             event.accept()
 
     set_windows_taskbar_app_id()
@@ -19196,13 +20904,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
         )
         app = QApplication(argv or sys.argv)
+    _QT_APPLICATION_REF = app
     application_font = app.font()
     application_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
     app.setFont(application_font)
     icon = QIcon(str(application_icon_path()))
     if not icon.isNull():
         app.setWindowIcon(icon)
-    window = MainWindow()
+    window = MainWindow(preview_samples=preview_samples)
     if show:
         window.show()
     return app, window

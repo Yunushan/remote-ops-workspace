@@ -7,7 +7,7 @@
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
 ![release](https://img.shields.io/badge/release-v1.0.20-blue)
 ![license](https://img.shields.io/badge/license-0BSD-blue)
-![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.14-orange)
+![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.15-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
 ![targets](https://img.shields.io/badge/targets-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20BSD%20%7C%20Solaris%20%7C%20Android%20%7C%20Web-green)
 ![protocols](https://img.shields.io/badge/protocols-SSH%20%7C%20RDP%20%7C%20VNC%20%7C%20SFTP%20%7C%20Mosh%20%7C%20Telnet%20%7C%20SPICE%20%7C%20X2Go-yellow)
@@ -31,6 +31,23 @@ Proje bilincli olarak **adapter-first** tasarlanmistir: CLI, profil deposu, guve
 ---
 
 ## Hizli Baslangic
+
+Proje metadatasi kaynak kurulumlar icin standart CPython 3.10 ile 3.15 arasini
+kabul eder. Kararli `Python 3.15 readiness` baglami modern x64/ARM64
+mimarilerindeki barindirilan Linux, Windows ve macOS kosucularini kapsar.
+Ayri `Native Windows readiness` baglami yerel Windows ConPTY/OpenSSH, GUI cizim,
+etkilesim ve sekme boyama kanitlarini kapsar. Merge engeli icin canli `main` dal
+kurali iki baglami da zorunlu tutmalidir. Yayin on kontrolu de tam etiketlenmis
+kaynak SHA icin ayni push-CI kosusundaki iki basarili isi zorunlu tutar. Bir
+revizyonu yalnizca tamamlanmis is akisi ve saklanan kanit
+artefaktlari kanitlar. Python 3.15 Windows x64 ve ARM64 satirlari da atlamayi
+devre disi birakarak gercek yerel OpenSSH/ConPTY dongu kanitlarini yeniden
+calistirir ve JSON/JUnit artefaktlarini saklar. Korumali 32-bit ve diger platform
+satirlari daha dar, kanita dayali
+sinirlarini korur. Matris Python 3.15 genel kullanima (GA) ulasana kadar guncel
+upstream surum adayini izler ve bu uyumluluk kaniti onizleme yorumlayicisini
+uretim onerisine donusturmez. Kesin sinirlar ve kanit kosullari icin
+[`docs/PYTHON_SUPPORT.md`](docs/PYTHON_SUPPORT.md) belgesine bakin.
 
 ```bash
 git clone https://github.com/Yunushan/remote-ops-workspace.git

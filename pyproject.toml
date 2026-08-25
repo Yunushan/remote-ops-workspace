@@ -7,7 +7,7 @@ name = "remote-ops-workspace"
 version = "1.0.20"
 description = "Operator-first cross-platform remote terminal and connection workspace."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.16"
 license = "0BSD"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "remote-ops-workspace contributors"}]
@@ -27,16 +27,16 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: System :: Networking",
   "Topic :: Terminals",
 ]
 dependencies = []
 
 [project.optional-dependencies]
-desktop = ["PyQt6>=6.6"]
+desktop = ["PyQt6>=6.11.0"]
 security = ["cryptography>=50.0.0", "truststore>=0.10"]
-legacy-security = ["cryptography==48.0.1", "truststore>=0.10"]
-package = ["build>=1.2", "pyinstaller>=6.0"]
+package = ["build>=1.2", "pyinstaller>=6.21"]
 dev = ["build>=1.2", "pytest>=8", "pytest-cov>=6.3", "ruff>=0.5", "mypy>=1.10"]
 
 [project.urls]
@@ -70,7 +70,7 @@ relative_files = true
 source = ["remote_ops_workspace"]
 
 [tool.coverage.report]
-fail_under = 70
+fail_under = 75
 precision = 1
 show_missing = true
 

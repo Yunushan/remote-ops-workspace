@@ -19,6 +19,7 @@ from typing import Any
 from . import command_safety as safe
 from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
+from .process_launch import popen_hidden, run_hidden
 
 WhichResolver = Callable[[str], str | None]
 DisplayProbe = Callable[[str], bool]
@@ -524,7 +525,7 @@ def write_moba_x_server_runtime_bundle(plan: XServerRuntimeBundlePlan) -> XServe
 def run_x_server(plan: XServerPlan, dry_run: bool = False) -> XServerPlan:
     if not dry_run:
         safe.argv_list(plan.command, "x server command")
-        subprocess.Popen(plan.command)  # noqa: S603 - argv list, no shell
+        popen_hidden(plan.command)
     return plan
 
 
@@ -533,7 +534,7 @@ def start_moba_x_server(
     *,
     dry_run: bool = False,
     state_path: Path | None = None,
-    popen_factory: Callable[..., Any] = subprocess.Popen,
+    popen_factory: Callable[..., Any] | None = None,
 ) -> XServerLifecycleRecord:
     safe.argv_list(plan.command, "managed x server command")
     target_state_path = moba_x_server_state_path(state_path)
@@ -552,7 +553,8 @@ def start_moba_x_server(
         )
     if not plan.runtime.available:
         raise ValueError(f"X server runtime is not available: {plan.runtime.label}")
-    process = popen_factory(plan.command, env={**os.environ, **plan.environment})  # noqa: S603 - argv list, no shell
+    factory = popen_hidden if popen_factory is None else popen_factory
+    process = factory(plan.command, env={**os.environ, **plan.environment})
     pid = int(process.pid)
     record = XServerLifecycleRecord(
         display=plan.display,
@@ -630,7 +632,7 @@ def run_moba_x_server_smoke(
     pid_probe: PidProbe | None = None,
     probe_command: str | None = None,
     timeout_seconds: float = 5.0,
-    runner: ProbeRunner = subprocess.run,
+    runner: ProbeRunner = run_hidden,
 ) -> XServerSmokeEvidence:
     display = safe.display(display)
     if timeout_seconds <= 0:
@@ -1224,7 +1226,7 @@ def _pid_exists(pid: int) -> bool:
         return False
     if os.name == "nt":
         try:
-            completed = subprocess.run(
+            completed = run_hidden(
                 ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
                 check=False,
                 capture_output=True,
@@ -1247,7 +1249,7 @@ def _pid_exists(pid: int) -> bool:
 
 def _terminate_pid(pid: int) -> None:
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T"], check=False, capture_output=True, text=True)
+        run_hidden(["taskkill", "/PID", str(pid), "/T"], check=False, capture_output=True, text=True)
         return
     os.kill(pid, signal.SIGTERM)
 

@@ -86,9 +86,12 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$OUT_DIR" "$PY_DIST" "$PY_WORK"
 
 cat > "$LAUNCHER" <<'PY'
+import sys
+
 from remote_ops_workspace.cli import main
 
-raise SystemExit(main(["gui"]))
+arguments = [argument for argument in sys.argv[1:] if not argument.startswith("-psn_")]
+raise SystemExit(main(arguments or ["gui"]))
 PY
 
 "$PYTHON_BIN" -m PyInstaller \
@@ -100,6 +103,9 @@ PY
   --workpath "$PY_WORK" \
   --specpath "$BUILD_DIR" \
   --collect-submodules remote_ops_workspace \
+  --collect-data remote_ops_workspace \
+  --add-data "$ROOT/configs:remote_ops_workspace/configs" \
+  --add-data "$ROOT/apps/web:remote_ops_workspace/web" \
   --copy-metadata remote-ops-workspace \
   "$LAUNCHER"
 

@@ -346,6 +346,9 @@ raise SystemExit(main())
   --workpath $PyWork `
   --specpath $BuildDir `
   --collect-submodules remote_ops_workspace `
+  --collect-data remote_ops_workspace `
+  --add-data "$Root\configs;remote_ops_workspace/configs" `
+  --add-data "$Root\apps\web;remote_ops_workspace/web" `
   --copy-metadata remote-ops-workspace `
   --exclude-module PyQt6 `
   --exclude-module remote_ops_workspace.gui `
@@ -367,6 +370,9 @@ if ($BuildGuiLauncher) {
     --workpath $PyWork `
     --specpath $BuildDir `
     --collect-submodules remote_ops_workspace `
+    --collect-data remote_ops_workspace `
+    --add-data "$Root\configs;remote_ops_workspace/configs" `
+    --add-data "$Root\apps\web;remote_ops_workspace/web" `
     --copy-metadata remote-ops-workspace `
     --hidden-import PyQt6.QtCore `
     --hidden-import PyQt6.QtGui `
@@ -453,6 +459,10 @@ if ($BuildGuiLauncher) {
 } else {
   $PortableNotes += "PyQt6 does not publish 32-bit Windows wheels, so this x86 bundle does not include row-gui.exe."
   $InstallerNotes += "PyQt6 does not publish 32-bit Windows wheels, so this x86 installer does not include row-gui.exe."
+  $PortableNotes += "Encrypted vault support is unavailable and fail-closed because no reviewed cryptography 50 Windows x86 toolchain exists."
+  $InstallerNotes += "Encrypted vault support is unavailable and fail-closed because no reviewed cryptography 50 Windows x86 toolchain exists."
+  $PortableNotes += "Known-vulnerable cryptography fallback releases are intentionally excluded."
+  $InstallerNotes += "Known-vulnerable cryptography fallback releases are intentionally excluded."
 }
 
 $Manifest = @(

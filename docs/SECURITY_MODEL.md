@@ -28,6 +28,11 @@ Profile and command launch hardening:
 - ports must be explicit valid TCP/UDP-style port numbers when a protocol has no safe default, such as raw sockets;
 - HTTP/HTTPS profiles only open `http://` or `https://` URLs, reject embedded URL passwords, and use direct browser-launch helpers instead of Windows `cmd /c start`;
 - SSH `proxy_jump` is the preferred jump-host path; `proxy_command` is rejected unless the profile explicitly sets `allow_unsafe_proxy_command=true`;
+- native Windows rewrites a single-hop SSH/SFTP/SCP `proxy_jump` into an
+  explicit child `ssh` command with connection sharing and further proxy
+  recursion disabled; the child still uses the selected SSH configuration and
+  its host-key policy. Windows rejects multi-hop and non-`[user@]host[:port]`
+  jump values rather than embedding unprovable command text;
 - SSHv1 requires an explicit `ssh1`/`sshv1` profile protocol,
   `allow_insecure_sshv1=true`, `legacy_target=windows-xp-32` or
   `windows-xp-64`, and `allow_legacy_crypto=true`; when enabled it adds `-1`

@@ -68,6 +68,92 @@ def test_release_truth_checker_requires_version_gate_before_verifier() -> None:
     assert "release-preflight version gate must run before the repository verifier" in errors
 
 
+def test_release_truth_checker_requires_exact_python315_ci_evidence_gate() -> None:
+    checker = _load_release_truth_checker()
+    source = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    without_gate = source.replace(
+        "      - name: Require successful Python 3.15 and native Windows CI evidence for release source\n"
+        "        env:\n"
+        "          GITHUB_TOKEN: ${{ github.token }}\n"
+        "        run: >-\n"
+        "          python scripts/check_python315_ci_evidence.py\n"
+        '          --repository "${{ github.repository }}"\n'
+        '          --branch "${{ github.event.repository.default_branch }}"\n'
+        '          --sha "$(git rev-parse HEAD)"\n'
+        "          --wait-seconds 5400\n"
+        "          --poll-interval-seconds 15\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_release_preflight(without_gate)
+
+    assert any("exact Python 3.15 CI evidence command" in error for error in errors)
+
+
+def test_release_truth_checker_requires_bounded_python315_ci_evidence_wait() -> None:
+    checker = _load_release_truth_checker()
+    source = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    without_wait = source.replace("          --wait-seconds 5400\n", "", 1)
+    without_poll = source.replace("          --poll-interval-seconds 15\n", "", 1)
+    without_timeout = source.replace("    timeout-minutes: 100\n", "", 1)
+
+    assert any(
+        "bounded Python 3.15 CI evidence wait" in error
+        for error in checker.check_release_preflight(without_wait)
+    )
+    assert any(
+        "bounded Python 3.15 CI evidence poll interval" in error
+        for error in checker.check_release_preflight(without_poll)
+    )
+    assert any(
+        "bounded release preflight timeout" in error
+        for error in checker.check_release_preflight(without_timeout)
+    )
+
+
+def test_release_truth_checker_rejects_comment_only_python315_ci_evidence_gate() -> None:
+    checker = _load_release_truth_checker()
+    source = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = source.replace(
+        "          python scripts/check_python315_ci_evidence.py\n",
+        "          # python scripts/check_python315_ci_evidence.py\n",
+        1,
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("exact Python 3.15 CI evidence command" in error for error in errors)
+
+
+def test_release_truth_checker_requires_explicit_native_windows_ci_evidence_step() -> None:
+    checker = _load_release_truth_checker()
+    source = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = source.replace(
+        "      - name: Require successful Python 3.15 and native Windows CI evidence for release source\n",
+        "      # - name: Require successful Python 3.15 and native Windows CI evidence for release source\n",
+        1,
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert any("native Windows CI evidence step" in error for error in errors)
+
+
+def test_release_truth_checker_requires_actions_read_for_ci_evidence() -> None:
+    checker = _load_release_truth_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
+        "  actions: read\n",
+        "",
+        1,
+    )
+
+    errors = checker.check_release_preflight(workflow)
+
+    assert "release workflow must grant read-only Actions access for CI evidence" in errors
+
+
 def test_release_truth_checker_requires_manual_only_unsigned_preview_guard() -> None:
     checker = _load_release_truth_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

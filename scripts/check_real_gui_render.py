@@ -1180,7 +1180,11 @@ def _capture_live_gui(
         if preset is None:
             errors.append(f"unknown GUI preset requested: {preset_id}")
             continue
-        app, window = gui.create_main_window(["row-real-gui-render-check", preset.id], show=True)
+        app, window = gui.create_main_window(
+            ["row-real-gui-render-check", preset.id],
+            show=True,
+            preview_samples=True,
+        )
         window.resize(*REQUESTED_SIZE)
         window.show()
         process_events(app)
@@ -1492,6 +1496,15 @@ def prepare_moba_connected_reference(window: Any) -> list[str]:
             remote_path="/var/log",
             tab_status="CI CONNECTED",
         )
+        # The connected dock intentionally starts its background state through
+        # a parent-owned zero-delay timer.  Drain that queued transition before
+        # reading the live render contract, while keeping the interaction path
+        # free to finish its user-facing action before background status updates.
+        from PyQt6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            process_events(app)
     except (KeyError, LauncherError, ValueError) as exc:
         return [f"mobaxterm live GUI could not open connected reference profile: {exc}"]
     return []

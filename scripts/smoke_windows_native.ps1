@@ -37,6 +37,28 @@ function Test-RowVersion([string]$Path, [string]$ExpectedVersion) {
   }
 }
 
+function Test-RowRuntimeResources([string]$Path, [string]$Label) {
+  if (!(Test-Path $Path)) {
+    throw "expected installed row executable missing: $Path"
+  }
+  $Output = & $Path platforms --json
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Label platforms --json failed for $Path"
+  }
+  try {
+    $Catalog = ($Output -join "`n") | ConvertFrom-Json
+  } catch {
+    throw "$Label platforms --json did not return valid JSON: $($Output -join ' ')"
+  }
+  if (@($Catalog.release_architectures).Count -eq 0) {
+    throw "$Label packaged platform catalog has no release_architectures"
+  }
+  if (@($Catalog.windows_legacy_targets).Count -eq 0) {
+    throw "$Label packaged platform catalog has no windows_legacy_targets"
+  }
+  Write-Host "native installer smoke runtime resources: $Label platforms --json"
+}
+
 function Test-RowGuiLauncher([string]$RowPath, [string]$Arch) {
   if ($Arch -eq "x86") {
     return
@@ -61,13 +83,50 @@ function Test-PortableGuiLauncher([string]$InstallDir, [string]$Arch) {
   }
 }
 
-function Test-RowVault([string]$Path, [string]$Label) {
+function Test-RowVault([string]$Path, [string]$Label, [bool]$ExpectedBackend) {
   $OldRowHome = [Environment]::GetEnvironmentVariable("ROW_HOME", "Process")
   $OldVaultPassword = [Environment]::GetEnvironmentVariable("ROW_VAULT_PASSWORD", "Process")
   $VaultHome = Join-Path $SmokeRoot ("vault-" + [Guid]::NewGuid().ToString("N"))
   try {
     $env:ROW_HOME = $VaultHome
     $env:ROW_VAULT_PASSWORD = "release-native-vault-smoke-passphrase"
+
+    $InitialStatusOutput = & $Path vault status --json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      throw "$Label initial vault status failed: $($InitialStatusOutput -join ' ')"
+    }
+    try {
+      $InitialStatus = ($InitialStatusOutput -join [Environment]::NewLine) | ConvertFrom-Json
+    } catch {
+      throw "$Label initial vault status did not return valid JSON: $($InitialStatusOutput -join ' ')"
+    }
+    if ([bool]$InitialStatus.backend_available -ne $ExpectedBackend) {
+      throw "$Label vault backend availability did not match expected state $ExpectedBackend"
+    }
+    if (-not $ExpectedBackend) {
+      $InitOutput = & $Path vault init 2>&1
+      $InitExitCode = $LASTEXITCODE
+      if ($InitExitCode -eq 0) {
+        throw "$Label vault init unexpectedly succeeded without a maintained backend"
+      }
+      if (($InitOutput -join " ") -notmatch "\.\[security\]") {
+        throw "$Label vault init did not explain the maintained security extra: $($InitOutput -join ' ')"
+      }
+      $AfterStatusOutput = & $Path vault status --json 2>&1
+      if ($LASTEXITCODE -ne 0) {
+        throw "$Label post-failure vault status failed: $($AfterStatusOutput -join ' ')"
+      }
+      try {
+        $AfterStatus = ($AfterStatusOutput -join [Environment]::NewLine) | ConvertFrom-Json
+      } catch {
+        throw "$Label post-failure vault status did not return valid JSON: $($AfterStatusOutput -join ' ')"
+      }
+      if ($AfterStatus.initialized -or $AfterStatus.backend_available) {
+        throw "$Label vault did not remain uninitialized and fail closed"
+      }
+      Write-Host "native installer smoke: $Label vault backend unavailable and fail-closed"
+      return
+    }
 
     $InitOutput = & $Path vault init 2>&1
     if ($LASTEXITCODE -ne 0) {
@@ -126,6 +185,7 @@ function Find-MsiRowExe {
 if (!$Version) {
   $Version = Get-ProjectVersion
 }
+$ExpectedVaultBackend = $Arch -ne "x86"
 
 $OutDir = Resolve-Path (Join-Path $Root $Dist)
 $NativeZip = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch-native.zip"
@@ -146,8 +206,9 @@ $PortableInstallDir = Join-Path $SmokeRoot "portable"
 Expand-Archive -Path $NativeZip -DestinationPath $PortableInstallDir -Force
 $PortableRow = Join-Path $PortableInstallDir "bin\row.exe"
 Test-RowVersion $PortableRow $Version
+Test-RowRuntimeResources $PortableRow "portable ZIP verify"
 Test-PortableGuiLauncher $PortableInstallDir $Arch
-Test-RowVault $PortableRow "portable ZIP"
+Test-RowVault $PortableRow "portable ZIP" $ExpectedVaultBackend
 Remove-Item -Recurse -Force $PortableInstallDir
 if (Test-Path $PortableInstallDir) {
   throw "portable zip cleanup left extracted files behind"
@@ -165,10 +226,12 @@ $ExeInstallArgs = @(
 Invoke-SmokeCommand "EXE install" $SetupExe $ExeInstallArgs
 $ExeRow = Join-Path $ExeInstallDir "bin\row.exe"
 Test-RowVersion $ExeRow $Version
+Test-RowRuntimeResources $ExeRow "EXE verify"
 Test-RowGuiLauncher $ExeRow $Arch
-Test-RowVault $ExeRow "EXE install"
+Test-RowVault $ExeRow "EXE install" $ExpectedVaultBackend
 Invoke-SmokeCommand "EXE upgrade" $SetupExe $ExeInstallArgs
 Test-RowVersion $ExeRow $Version
+Test-RowRuntimeResources $ExeRow "EXE upgrade"
 Test-RowGuiLauncher $ExeRow $Arch
 $Uninstaller = Get-ChildItem -Path $ExeInstallDir -Filter "unins*.exe" | Select-Object -First 1
 if (!$Uninstaller) {
@@ -188,11 +251,13 @@ $MsiLog = Join-Path $SmokeRoot "msi-smoke.log"
 Invoke-SmokeCommand "MSI install" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 $MsiRow = Find-MsiRowExe
 Test-RowVersion $MsiRow $Version
+Test-RowRuntimeResources $MsiRow "MSI verify"
 Test-RowGuiLauncher $MsiRow $Arch
-Test-RowVault $MsiRow "MSI install"
+Test-RowVault $MsiRow "MSI install" $ExpectedVaultBackend
 Invoke-SmokeCommand "MSI upgrade" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 $MsiRow = Find-MsiRowExe
 Test-RowVersion $MsiRow $Version
+Test-RowRuntimeResources $MsiRow "MSI upgrade"
 Test-RowGuiLauncher $MsiRow $Arch
 Invoke-SmokeCommand "MSI uninstall" "msiexec.exe" @("/x", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
 if (Test-Path $MsiRow) {

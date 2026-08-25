@@ -26,17 +26,21 @@ Release integrity rules:
 - The PEP 517 `build-system` pins `setuptools` and `wheel` to that same
   release toolchain, so downstream sdist builds do not silently select newer
   packaging backends.
-- Modern release targets use maintained `cryptography==50.0.0`. Windows x86 and Intel
-  macOS use the explicit `requirements-release-compat.txt` profile with
-  `cryptography==48.0.1` only for legacy-wheel compatibility. That legacy
-  profile carries known vulnerabilities and is never a modern production
-  security claim. A Windows x86 wheel is not Windows XP readiness evidence;
-  XP support still requires the separate accepted native-host records.
+- Modern release targets use maintained `cryptography==50.0.0`. Intel macOS
+  builds that version from source because upstream no longer publishes its
+  architecture wheel. Windows x86 uses the explicit
+  `requirements-release-compat.txt` profile with cryptography and truststore
+  excluded. Its packaged vault status must report the backend unavailable and
+  vault initialization must fail closed. A Windows x86 build is not Windows XP
+  readiness evidence; XP support still requires separate accepted native-host
+  records.
 - Windows ARM64 builds `cryptography==50.0.0` from source with pinned
   `maturin`/CFFI build dependencies and the recorded vcpkg commit, statically
   linked OpenSSL 3.6.3 triplet, and no vendored OpenSSL fallback. The workflow
   asserts the imported cryptography and OpenSSL versions, and Windows release
-  smoke initializes the encrypted vault from the portable ZIP, EXE and MSI.
+  smoke initializes the encrypted vault from maintained-backend portable ZIP,
+  EXE, and MSI artifacts. Windows x86 smoke instead proves that all three
+  package forms keep the unavailable vault backend fail closed.
 - The GitHub release workflow avoids unbounded `pip install --upgrade` commands.
 - Every artifact entry in release manifests includes `size_bytes` and `sha256`.
 - Release manifests record the release toolchain contract used for the build.
@@ -80,6 +84,10 @@ Release integrity rules:
   with an empty or misleading description.
 - The local governance gate audits live `main` branch protection with
   `python scripts/check_repository_governance.py --repository <owner/repo>`.
+  The live rule must require both stable aggregates, `Python 3.15 readiness`
+  and `Native Windows readiness`; tracked workflow files cannot install that
+  remote policy. Exact-SHA release preflight validates both jobs from one
+  accepted push run and attempt.
   Review approval and signed-commit enforcement are optional repository
   controls; release operators can opt into both with
   `--require-review --require-signed-commits` when a stricter promotion policy
@@ -468,28 +476,59 @@ asset checker validates that registry so malformed accepted records cannot ship
 quietly. A maintainer can add `--require-mobaxterm-parity-complete` to
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag>`
 when a release intends to claim complete strict MobaXterm parity; that mode
-fails until all seven article IDs have accepted, SHA-bound release evidence
-records generated from real passing article verifiers.
+fails until all eight article IDs have accepted, SHA-bound release evidence
+records generated from real passing article verifiers. Candidate generation is
+not acceptance: `make_mobaxterm_parity_evidence_record.py` can emit only a
+candidate and cannot append the registry. A reviewed
+`finalize_mobaxterm_parity_evidence_record.py` run must bind the exact GitHub
+repository, release tag, source/tag head SHA, Actions run and attempt, reviewer
+URL/login, and hashes re-read from the published release bytes before an
+accepted record can enter the schema-v2 registry.
+
+The eighth article, `shared-authenticated-transport-terminal-grid`, now has a
+strict candidate validator:
+
+```bash
+python scripts/check_moba_transport_terminal_evidence.py \
+  --evidence <evidence.json> \
+  --assets-dir <artifact-dir>
+```
+
+Passing this command does not claim parity or accept evidence. It only proves
+that the candidate contains six separate SHA-bound records for the same exact
+release target, remote session, authenticated transport, source head SHA,
+Actions run and run attempt. Candidate generation remains separate from
+reviewed finalization, and the article remains incomplete until the real
+published bytes and reviewer provenance are accepted in the registry.
 
 ## Native installer smoke tests
 
 Every default native installer format has an install, verify, upgrade and
-uninstall smoke path before upload:
+uninstall smoke path before upload. Each verify and upgrade phase also runs an
+installed-artifact runtime-resource probe: the artifact's own entrypoint must
+execute `platforms --json`, return valid JSON, and load non-empty
+`release_architectures` and `windows_legacy_targets` arrays from the packaged
+`platform_targets.json`. This catches installers that preserve an executable
+but omit or misplace its bundled runtime configuration. The macOS app launcher
+defaults to `gui` when opened normally and forwards explicitly supplied CLI
+arguments, including this bounded installed-artifact probe:
 
 - Windows `.exe`: silent Inno Setup install into a smoke directory, `row.exe
-  --version`, `row-gui.exe` presence on x64/ARM64, silent reinstall, generated
-  uninstaller cleanup.
+  --version`, `row.exe platforms --json`, `row-gui.exe` presence on x64/ARM64,
+  silent reinstall, generated uninstaller cleanup.
 - Windows `.msi`: quiet `msiexec` install, Program Files `row.exe --version`,
-  `row-gui.exe` presence on x64/ARM64, quiet reinstall, quiet uninstall.
-- macOS `.dmg`: read-only mount, app bundle copy, `codesign --verify`, bundle
-  replacement, bundle cleanup and detach.
-- macOS `.pkg`: `sudo installer`, `/Applications` app verification, reinstall,
-  app removal and receipt cleanup.
-- Linux `.deb`: `sudo -n dpkg -i`, `/usr/bin/row --version`, reinstall, `sudo -n dpkg -r`.
+  `row.exe platforms --json`, `row-gui.exe` presence on x64/ARM64, quiet
+  reinstall, quiet uninstall.
+- macOS `.dmg`: read-only mount, app bundle copy, `codesign --verify`, app
+  executable `platforms --json`, bundle replacement, bundle cleanup and detach.
+- macOS `.pkg`: `sudo installer`, `/Applications` app signature and
+  `platforms --json` verification, reinstall, app removal and receipt cleanup.
+- Linux `.deb`: `sudo -n dpkg -i`, `/usr/bin/row --version` and
+  `/usr/bin/row platforms --json`, reinstall, `sudo -n dpkg -r`.
 - Linux `.rpm`: `sudo -n rpm -Uvh --replacepkgs`, `/usr/bin/row --version`,
-  reinstall, `sudo -n rpm -e`.
+  `platforms --json`, reinstall, `sudo -n rpm -e`.
 - Linux AppImage: stage executable copy, `APPIMAGE_EXTRACT_AND_RUN=1
-  --version`, overwrite staged copy, remove staged copy.
+  --version` and `platforms --json`, overwrite staged copy, remove staged copy.
 
 ## Repository cleanup before tagging
 

@@ -63,6 +63,31 @@ def test_ansi_transcript_handles_vim_scroll_regions_and_cursor_save_restore() ->
     assert terminal.alternate_screen_active is False
 
 
+def test_ansi_transcript_handles_vim_origin_insert_and_wrap_modes() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(20, 6)
+
+    terminal.feed("\x1b[?1049h\x1b[2;5r\x1b[?6h\x1b[1;1Horigin")
+
+    assert terminal.origin_mode_active is True
+    assert terminal.cursor_row == 1
+    assert terminal.text().splitlines()[1].startswith("origin")
+
+    terminal.feed("\x1b[?6l\x1b[2J\x1b[?7l\x1b[1;20HX")
+    terminal.feed("Y")
+    assert terminal.screen_text().splitlines()[0][-1] == "Y"
+    assert terminal.screen_text().splitlines()[1].strip() == ""
+
+    terminal.feed("\x1b[?7h\x1b[1;20HX")
+    terminal.feed("Y")
+    assert terminal.screen_text().splitlines()[1].startswith("Y")
+
+    terminal.feed("\x1b[1;1HAB\x1b[1;2H\x1b[4hX")
+    assert terminal.insert_mode_active is True
+    assert terminal.screen_text().splitlines()[0].startswith("AXB")
+    terminal.feed("\x1b[4l\x1b[?1049l")
+
+
 def test_ansi_transcript_answers_full_screen_queries_and_tracks_bracketed_paste() -> None:
     terminal = AnsiTerminalTranscript()
     terminal.set_screen_size(80, 24)
@@ -79,6 +104,60 @@ def test_ansi_transcript_answers_full_screen_queries_and_tracks_bracketed_paste(
 
     terminal.feed("\x1b[?2004l\x1b[?1049l")
     assert terminal.bracketed_paste_active is False
+
+
+def test_literal_notice_is_not_consumed_or_styled_by_child_escape_state() -> None:
+    terminal = AnsiTerminalTranscript()
+
+    terminal.feed("prefix\x1b[")
+    assert terminal.feed_literal("[host notice]\n") == "prefix[host notice]\n"
+    terminal.feed("31mred")
+
+    fragments = terminal.styled_fragments()
+    notice = next(fragment for fragment in fragments if "[host notice]" in fragment.text)
+    red = next(fragment for fragment in fragments if fragment.text == "red")
+    assert notice.style.foreground is None
+    assert notice.style.background is None
+    assert red.style.foreground == ANSI_16_COLOR_PALETTE[1]
+
+
+def test_end_of_stream_discards_partial_ansi_and_restores_primary_screen() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(40, 8)
+    terminal.feed("shell prompt\n")
+    terminal.feed("\x1b[?1h\x1b[?2004h\x1b[?25l\x1b[?1049hALT\x1b[")
+
+    assert terminal.end_of_stream() == "shell prompt\n"
+    assert terminal.alternate_screen_active is False
+    assert terminal.application_cursor_keys_active is False
+    assert terminal.bracketed_paste_active is False
+    assert terminal.cursor_visible is True
+    assert terminal.feed_literal("[process exited]\n") == (
+        "shell prompt\n[process exited]\n"
+    )
+
+
+def test_ansi_transcript_tracks_application_cursor_keys_and_remote_cursor() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(40, 8)
+
+    terminal.feed("\x1b[?1h\x1b[?25l\x1b[?1049h\x1b[4;7H")
+
+    assert terminal.application_cursor_keys_active is True
+    assert terminal.cursor_visible is False
+    assert terminal.cursor_row == 3
+    assert terminal.cursor_column == 6
+
+    terminal.feed("\x1b[?1l\x1b[?25h")
+    assert terminal.application_cursor_keys_active is False
+    assert terminal.cursor_visible is True
+
+    terminal.feed("\x1bc")
+    assert terminal.alternate_screen_active is False
+    assert terminal.application_cursor_keys_active is False
+    assert terminal.cursor_visible is True
+    assert terminal.cursor_row == 0
+    assert terminal.cursor_column == 0
 
 
 def test_ansi_transcript_rejects_non_positive_scrollback_limit() -> None:
@@ -177,3 +256,18 @@ def test_ansi_transcript_slices_fragments_and_consumes_osc_payloads() -> None:
     assert fragments[-1].end == 7
     assert fragments[0].style.foreground == ANSI_16_COLOR_PALETTE[4]
     assert fragments[1].text == "\n"
+
+
+def test_ansi_transcript_incremental_fragments_seek_into_large_scrollback() -> None:
+    terminal = AnsiTerminalTranscript(max_scrollback_lines=3_000)
+    terminal.feed("".join(f"line-{index}\n" for index in range(2_000)))
+    terminal.feed("\x1b[31mlatest")
+
+    source = terminal.text()
+    start = source.rfind("latest")
+    fragments = terminal.styled_fragments(start=start, end=len(source))
+
+    assert "".join(fragment.text for fragment in fragments) == "latest"
+    assert fragments[0].start == start
+    assert fragments[-1].end == len(source)
+    assert fragments[0].style.foreground == ANSI_16_COLOR_PALETTE[1]

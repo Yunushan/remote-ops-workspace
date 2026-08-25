@@ -1,6 +1,17 @@
 {
-  "schema_version": 1,
-  "contract": "Every default native installer artifact must have an install, verify, upgrade-or-reinstall, and uninstall smoke path before release upload.",
+  "schema_version": 2,
+  "contract": "Every default native installer artifact must have an install, verify, upgrade-or-reinstall, and uninstall smoke path before release upload, and its installed entrypoint must consume packaged runtime resources.",
+  "runtime_resource_probe": {
+    "command": "platforms --json",
+    "required_json_arrays": [
+      "release_architectures",
+      "windows_legacy_targets"
+    ],
+    "lifecycle_steps": [
+      "verify",
+      "upgrade"
+    ]
+  },
   "required_formats": [
     "exe",
     "msi",
@@ -21,8 +32,8 @@
           "artifact_glob": "remote-ops-workspace-v*-windows-*-setup.exe",
           "lifecycle": {
             "install": "Inno Setup silent install into build/native-smoke/windows-<arch>/exe-install",
-            "verify": "installed bin/row.exe --version and bin/row-gui.exe exists on x64/ARM64",
-            "upgrade": "rerun the same setup.exe silently over the installed copy",
+            "verify": "installed bin/row.exe --version and platforms --json consume the packaged platform catalog; bin/row-gui.exe exists on x64/ARM64",
+            "upgrade": "rerun the same setup.exe silently over the installed copy, then rerun bin/row.exe --version and platforms --json",
             "uninstall": "run generated unins*.exe silently and verify row.exe and row-gui.exe are removed"
           }
         },
@@ -31,8 +42,8 @@
           "artifact_glob": "remote-ops-workspace-v*-windows-*.msi",
           "lifecycle": {
             "install": "msiexec /i <artifact> /qn /norestart",
-            "verify": "installed Program Files row.exe --version and row-gui.exe exists on x64/ARM64",
-            "upgrade": "msiexec /i <artifact> /qn /norestart over the installed product",
+            "verify": "installed Program Files row.exe --version and platforms --json consume the packaged platform catalog; row-gui.exe exists on x64/ARM64",
+            "upgrade": "msiexec /i <artifact> /qn /norestart over the installed product, then rerun row.exe --version and platforms --json",
             "uninstall": "msiexec /x <artifact> /qn /norestart and verify row.exe and row-gui.exe are removed"
           }
         }
@@ -48,8 +59,8 @@
           "artifact_glob": "remote-ops-workspace-v*-macos-*.dmg",
           "lifecycle": {
             "install": "hdiutil attach read-only DMG and copy Remote Ops Workspace.app into a smoke Applications directory",
-            "verify": "codesign --verify --deep --strict on the copied app bundle",
-            "upgrade": "replace the copied app bundle from the mounted DMG",
+            "verify": "codesign --verify --deep --strict on the copied app bundle and run its executable with platforms --json to consume the packaged platform catalog",
+            "upgrade": "replace the copied app bundle from the mounted DMG, reverify its signature, and rerun its executable with platforms --json",
             "uninstall": "remove the copied app bundle and detach the DMG"
           }
         },
@@ -58,8 +69,8 @@
           "artifact_glob": "remote-ops-workspace-v*-macos-*.pkg",
           "lifecycle": {
             "install": "sudo installer -pkg <artifact> -target /",
-            "verify": "installed /Applications/Remote Ops Workspace.app exists and passes codesign verification",
-            "upgrade": "sudo installer -pkg <artifact> -target / over the installed package",
+            "verify": "installed /Applications/Remote Ops Workspace.app exists, passes codesign verification, and its executable runs platforms --json against the packaged platform catalog",
+            "upgrade": "sudo installer -pkg <artifact> -target / over the installed package, reverify its signature, and rerun its executable with platforms --json",
             "uninstall": "remove /Applications/Remote Ops Workspace.app and forget the package receipt"
           }
         }
@@ -75,8 +86,8 @@
           "artifact_glob": "remote-ops-workspace-v*-linux-*.deb",
           "lifecycle": {
             "install": "sudo -n dpkg -i <artifact>",
-            "verify": "/usr/bin/row --version",
-            "upgrade": "sudo -n dpkg -i <artifact> over the installed package",
+            "verify": "/usr/bin/row --version and platforms --json consume the packaged platform catalog",
+            "upgrade": "sudo -n dpkg -i <artifact> over the installed package, then rerun /usr/bin/row --version and platforms --json",
             "uninstall": "sudo -n dpkg -r remote-ops-workspace and verify /usr/bin/row is removed"
           }
         },
@@ -85,8 +96,8 @@
           "artifact_glob": "remote-ops-workspace-v*-linux-*.rpm",
           "lifecycle": {
             "install": "sudo -n rpm -Uvh --nodeps --replacepkgs <artifact> on Ubuntu CI runners",
-            "verify": "/usr/bin/row --version",
-            "upgrade": "sudo -n rpm -Uvh --nodeps --replacepkgs <artifact> over the installed package on Ubuntu CI runners",
+            "verify": "/usr/bin/row --version and platforms --json consume the packaged platform catalog",
+            "upgrade": "sudo -n rpm -Uvh --nodeps --replacepkgs <artifact> over the installed package on Ubuntu CI runners, then rerun /usr/bin/row --version and platforms --json",
             "uninstall": "sudo -n rpm -e --nodeps remote-ops-workspace and verify /usr/bin/row is removed"
           }
         },
@@ -95,8 +106,8 @@
           "artifact_glob": "remote-ops-workspace-v*-linux-*.AppImage",
           "lifecycle": {
             "install": "install -m 755 <artifact> build/native-smoke/linux-<arch>/appimage/row.AppImage",
-            "verify": "APPIMAGE_EXTRACT_AND_RUN=1 row.AppImage --version",
-            "upgrade": "overwrite the staged AppImage with the same artifact and run --version again",
+            "verify": "APPIMAGE_EXTRACT_AND_RUN=1 row.AppImage --version and platforms --json consume the packaged platform catalog",
+            "upgrade": "overwrite the staged AppImage with the same artifact and rerun --version and platforms --json",
             "uninstall": "remove the staged AppImage"
           }
         }

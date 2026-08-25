@@ -73,8 +73,17 @@ def test_release_dist_must_be_inside_repo(tmp_path: Path) -> None:
     else:
         raise AssertionError("release dist must not be repository root")
 
+    # pytest's basetemp may be configured inside the checkout. Walk upward
+    # before constructing the negative-case path so this test still proves
+    # the repository-boundary guard under that configuration.
+    repository_root = make_release.ROOT.resolve()
+    outside_root = tmp_path.resolve()
+    while outside_root == repository_root or repository_root in outside_root.parents:
+        outside_root = outside_root.parent
+    outside_dist = outside_root / "release-dist-outside-test"
+
     try:
-        make_release.resolve_dist(tmp_path)
+        make_release.resolve_dist(outside_dist)
     except SystemExit as exc:
         assert "inside the repository" in str(exc)
     else:

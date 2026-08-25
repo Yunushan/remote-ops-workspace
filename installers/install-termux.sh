@@ -6,8 +6,8 @@ echo "Remote Ops Workspace Termux installer"
 pkg update
 pkg install -y python git openssh termux-api
 
-python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' || {
-  echo "Python 3.10+ is required." >&2
+python -c 'import sys; raise SystemExit(0 if (3, 10) <= sys.version_info < (3, 16) else 1)' || {
+  echo "Python 3.10 through 3.15 is required." >&2
   exit 1
 }
 

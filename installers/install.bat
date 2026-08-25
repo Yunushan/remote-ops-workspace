@@ -4,7 +4,11 @@ if not defined PYTHON_BIN set PYTHON_BIN=python
 if not defined ROW_EXTRAS set ROW_EXTRAS=desktop,security
 echo Remote Ops Workspace installer
 where %PYTHON_BIN% >nul 2>nul || (
-  echo Python command not found: %PYTHON_BIN%. Install Python 3.10+ first.
+  echo Python command not found: %PYTHON_BIN%. Install Python 3.10 through 3.15 first.
+  exit /b 1
+)
+%PYTHON_BIN% -c "import sys; raise SystemExit(0 if (3, 10) <= sys.version_info ^< (3, 16) else 1)" || (
+  echo Python 3.10 through 3.15 is required.
   exit /b 1
 )
 %PYTHON_BIN% -m venv .venv || exit /b 1

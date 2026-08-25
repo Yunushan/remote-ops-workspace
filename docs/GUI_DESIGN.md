@@ -1053,8 +1053,10 @@ and uploads `gui-real-render-windows`, then runs and uploads
 and menu actions, correction-preserving profile and layout dialogs, searchable
 terminal output, split-pane identity and sizing, saved-layout isolation, and
 exact supported window sizes after live terminal creation. It remains distinct
-from static preview resemblance; both Linux and Windows now also publish the
-all-preset pixel/topology render artifact.
+from both the Linux evidence and static preview resemblance, and it feeds the
+stable `Native Windows readiness` aggregate required by live repository
+governance and exact-SHA release preflight. Both Linux and Windows now also
+publish the all-preset pixel/topology render artifact.
 
 The minimum readiness-gated GUI window boundary is **1024x768**. At that exact
 size, the live gate switches through every preset and requires all visible

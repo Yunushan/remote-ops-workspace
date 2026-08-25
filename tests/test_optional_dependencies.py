@@ -20,9 +20,60 @@ def test_optional_dependency_declarations_match_expected_extras() -> None:
     checker = _load_optional_checker()
 
     assert checker.check_declared_extras() == []
+    assert checker.EXPECTED_EXTRA_SNIPPETS["package"] == (
+        '"build>=1.2"',
+        '"pyinstaller>=6.21"',
+    )
     assert checker.OPTIONAL_MODULES["desktop"] == ("PyQt6",)
     assert checker.OPTIONAL_MODULES["security"] == ("cryptography", "truststore")
     assert checker.OPTIONAL_MODULES["package"] == ("build", "PyInstaller")
+    assert "legacy-security" not in checker.EXPECTED_EXTRA_SNIPPETS
+
+
+def test_optional_dependency_checker_rejects_pre_python315_pyinstaller_floor() -> None:
+    checker = _load_optional_checker()
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8").replace(
+        '"pyinstaller>=6.21"',
+        '"pyinstaller>=6.0"',
+        1,
+    )
+
+    errors = checker.check_declared_extras(pyproject)
+
+    assert (
+        'pyproject.toml optional extra package missing dependency "pyinstaller>=6.21"'
+        in errors
+    )
+
+
+def test_optional_dependency_checker_rejects_pre_python315_pyqt_floor() -> None:
+    checker = _load_optional_checker()
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8").replace(
+        '"PyQt6>=6.11.0"',
+        '"PyQt6>=6.6"',
+        1,
+    )
+
+    errors = checker.check_declared_extras(pyproject)
+
+    assert (
+        'pyproject.toml optional extra desktop missing dependency "PyQt6>=6.11.0"'
+        in errors
+    )
+
+
+def test_optional_dependency_checker_rejects_vulnerable_legacy_security_extra() -> None:
+    checker = _load_optional_checker()
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    pyproject += (
+        "\nlegacy-security = "
+        '["cryptography==48.0.1", "truststore>=0.10"]\n'
+    )
+
+    errors = checker.check_declared_extras(pyproject)
+
+    assert "pyproject.toml must not declare the vulnerable legacy-security extra" in errors
+    assert "pyproject.toml must not declare the known-vulnerable cryptography 48.0.1 pin" in errors
 
 
 def test_optional_desktop_smoke_uses_bounded_render_subprocess(monkeypatch, tmp_path: Path) -> None:

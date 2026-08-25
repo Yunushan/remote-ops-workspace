@@ -171,7 +171,9 @@ def test_gui_parity_rejects_user_specific_tokens_in_gui_evidence_files(monkeypat
 
     errors = checker.check_no_user_specific_samples(criteria)
 
-    assert errors == [f"{bad_file.as_posix()} must not include user-specific sample token: yunus"]
+    assert errors == [
+        f"{checker.display(bad_file)} must not include user-specific sample token: yunus"
+    ]
 
 
 def test_gui_parity_rejects_unsanitized_reference_view_policy() -> None:

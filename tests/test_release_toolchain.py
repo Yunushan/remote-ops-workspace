@@ -41,12 +41,14 @@ def test_release_constraints_match_manifest() -> None:
     assert actual == expected
 
 
-def test_release_compatibility_constraints_apply_only_declared_overrides() -> None:
+def test_windows_x86_constraints_exclude_unavailable_security_backend() -> None:
     manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
     profile = manifest["python"]["compatibility_profiles"][0]
+    excluded = {checker_name(name) for name in profile["excluded_packages"]}
     expected = {
         checker_name(row["name"]): row["version"]
         for row in manifest["python_packages"]
+        if checker_name(row["name"]) not in excluded
     }
     expected.update(
         {checker_name(name): version for name, version in profile["package_overrides"].items()}
@@ -59,8 +61,15 @@ def test_release_compatibility_constraints_apply_only_declared_overrides() -> No
         name, version = line.split("==", 1)
         actual[checker_name(name)] = version
 
-    assert set(profile["targets"]) == {"windows-x86", "macos-x64"}
-    assert profile["package_overrides"] == {"cryptography": "48.0.1"}
+    assert profile["name"] == "windows-x86-vault-fail-closed"
+    assert profile["targets"] == ["windows-x86"]
+    assert profile["package_overrides"] == {}
+    assert excluded == {"cryptography", "truststore"}
+    assert profile["security_backend"] == {
+        "feature": "encrypted-vault",
+        "state": "unavailable-fail-closed",
+        "minimum_safe_cryptography": "50.0.0",
+    }
     assert actual == expected
 
 
@@ -93,7 +102,7 @@ def test_release_toolchain_checker_requires_pinned_arm64_build_isolation_policy(
 def test_release_toolchain_checker_requires_packaged_msi_vault_smoke() -> None:
     checker = _load_release_toolchain_checker()
     script = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8").replace(
-        'Test-RowVault $MsiRow "MSI install"',
+        'Test-RowVault $MsiRow "MSI install" $ExpectedVaultBackend',
         'Write-Host "MSI vault smoke disabled"',
     )
 

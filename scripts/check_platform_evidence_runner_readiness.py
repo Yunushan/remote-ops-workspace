@@ -328,8 +328,6 @@ class GitHubCliRunnerApiFetcher:
         command = [
             "gh",
             "api",
-            "--method",
-            "GET",
             f"repos/{self.repository}/{endpoint}",
         ]
         try:

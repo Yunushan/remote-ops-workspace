@@ -14,6 +14,8 @@ def _protection() -> dict:
             "strict": True,
             "contexts": [
                 "Repository policy and lint",
+                "Python 3.15 readiness",
+                "Native Windows readiness",
                 "CodeQL python",
                 "CodeQL javascript-typescript",
             ],
@@ -55,6 +57,24 @@ def test_missing_required_check_is_blocking() -> None:
     assert "required status check missing: CodeQL python" in errors
 
 
+def test_missing_python315_readiness_check_is_blocking() -> None:
+    protection = _protection()
+    protection["required_status_checks"]["contexts"].remove("Python 3.15 readiness")
+
+    errors = audit_protection(protection)
+
+    assert "required status check missing: Python 3.15 readiness" in errors
+
+
+def test_missing_native_windows_readiness_check_is_blocking() -> None:
+    protection = _protection()
+    protection["required_status_checks"]["contexts"].remove("Native Windows readiness")
+
+    errors = audit_protection(protection)
+
+    assert "required status check missing: Native Windows readiness" in errors
+
+
 def test_fetch_protection_uses_gh_after_python_tls_failure(monkeypatch) -> None:
     protection = _protection()
     monkeypatch.setenv("GH_TOKEN", "test-token")
@@ -64,7 +84,11 @@ def test_fetch_protection_uses_gh_after_python_tls_failure(monkeypatch) -> None:
         raise URLError("certificate verify failed")
 
     def fake_run(args, **kwargs):
-        assert args[:3] == ["gh.exe", "api", "https://api.github.com/repos/example/project/branches/main/protection"]
+        assert args[:3] == [
+            "gh.exe",
+            "api",
+            "repos/example/project/branches/main/protection",
+        ]
         assert kwargs["env"]["GH_TOKEN"] == "test-token"
         return SimpleNamespace(stdout=json.dumps(protection))
 

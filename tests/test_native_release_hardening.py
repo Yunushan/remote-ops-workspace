@@ -31,6 +31,31 @@ def test_native_pyinstaller_entrypoints_use_launchers() -> None:
         text = checker.NATIVE_SCRIPTS[platform].read_text(encoding="utf-8")
         assert "row_launcher.py" in text
         assert "__main__.py" not in text
+    macos = checker.NATIVE_SCRIPTS["macos"].read_text(encoding="utf-8")
+    assert "sys.argv[1:]" in macos
+    assert 'main(arguments or ["gui"])' in macos
+
+
+def test_native_pyinstaller_builds_collect_runtime_configuration_and_assets() -> None:
+    checker = _load_checker()
+
+    assert checker.check_pyinstaller_launchers() == []
+    for platform, path in checker.NATIVE_SCRIPTS.items():
+        text = path.read_text(encoding="utf-8")
+        required_count = 2 if platform == "windows" else 1
+        assert text.count("--collect-data remote_ops_workspace") >= required_count
+        config_source = (
+            "$Root\\configs;remote_ops_workspace/configs"
+            if platform == "windows"
+            else "$ROOT/configs:remote_ops_workspace/configs"
+        )
+        web_source = (
+            "$Root\\apps\\web;remote_ops_workspace/web"
+            if platform == "windows"
+            else "$ROOT/apps/web:remote_ops_workspace/web"
+        )
+        assert text.count(config_source) >= required_count
+        assert text.count(web_source) >= required_count
 
 
 def test_native_workflow_uploads_fail_if_assets_missing() -> None:

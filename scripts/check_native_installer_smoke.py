@@ -11,6 +11,9 @@ CONFIG_PATH = ROOT / "configs" / "native_installer_smoke.json"
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 REQUIRED_LIFECYCLE_STEPS = ("install", "verify", "upgrade", "uninstall")
+RUNTIME_RESOURCE_COMMAND = "platforms --json"
+RUNTIME_RESOURCE_ARRAYS = ("release_architectures", "windows_legacy_targets")
+RUNTIME_RESOURCE_LIFECYCLE_STEPS = ("verify", "upgrade")
 REQUIRED_FORMATS = {"exe", "msi", "dmg", "pkg", "deb", "rpm", "AppImage"}
 FORMAT_SUFFIXES = {
     "exe": "-setup.exe",
@@ -50,8 +53,26 @@ def main() -> int:
 
 def check_config_schema(config: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if config.get("schema_version") != 1:
-        errors.append("configs/native_installer_smoke.json schema_version must be 1")
+    if config.get("schema_version") != 2:
+        errors.append("configs/native_installer_smoke.json schema_version must be 2")
+    resource_probe = require_mapping(config, "runtime_resource_probe", errors)
+    if resource_probe.get("command") != RUNTIME_RESOURCE_COMMAND:
+        errors.append(
+            "runtime_resource_probe command must be "
+            f"{RUNTIME_RESOURCE_COMMAND!r}"
+        )
+    resource_arrays = tuple(resource_probe.get("required_json_arrays", []))
+    if resource_arrays != RUNTIME_RESOURCE_ARRAYS:
+        errors.append(
+            "runtime_resource_probe required_json_arrays must be "
+            f"{list(RUNTIME_RESOURCE_ARRAYS)!r}"
+        )
+    resource_steps = tuple(resource_probe.get("lifecycle_steps", []))
+    if resource_steps != RUNTIME_RESOURCE_LIFECYCLE_STEPS:
+        errors.append(
+            "runtime_resource_probe lifecycle_steps must be "
+            f"{list(RUNTIME_RESOURCE_LIFECYCLE_STEPS)!r}"
+        )
     required = {str(item) for item in config.get("required_formats", [])}
     if required != REQUIRED_FORMATS:
         errors.append(
@@ -90,6 +111,12 @@ def check_config_schema(config: dict[str, Any]) -> list[str]:
             for step in REQUIRED_LIFECYCLE_STEPS:
                 if not str(lifecycle.get(step, "")).strip():
                     errors.append(f"{platform} {format_name} lifecycle missing {step}")
+            for step in RUNTIME_RESOURCE_LIFECYCLE_STEPS:
+                if RUNTIME_RESOURCE_COMMAND not in str(lifecycle.get(step, "")):
+                    errors.append(
+                        f"{platform} {format_name} lifecycle {step} must execute "
+                        f"{RUNTIME_RESOURCE_COMMAND} from the installed artifact"
+                    )
     if seen_formats != REQUIRED_FORMATS:
         errors.append(
             "native installer smoke formats must match required formats "
@@ -118,8 +145,56 @@ def check_scripts_exist(config: dict[str, Any]) -> list[str]:
         for step in REQUIRED_LIFECYCLE_STEPS:
             if step not in text.lower():
                 errors.append(f"{repo_path(script)} must mention {step} smoke lifecycle")
+        errors.extend(check_runtime_resource_script(str(platform), script, text))
         if str(platform) == "linux":
             errors.extend(check_linux_smoke_source_binding(script, text))
+    return errors
+
+
+def check_runtime_resource_script(platform: str, script: Path, text: str) -> list[str]:
+    errors: list[str] = []
+    required_snippets = {
+        "windows": {
+            "Test-RowRuntimeResources": "installed CLI resource-probe helper",
+            "platforms --json": "installed CLI platform catalog invocation",
+            "ConvertFrom-Json": "platform catalog JSON parsing",
+            "release_architectures": "release architecture resource assertion",
+            "windows_legacy_targets": "legacy Windows resource assertion",
+            "native installer smoke runtime resources:": "resource-probe evidence line",
+        },
+        "linux": {
+            "verify_row_runtime_resources": "installed CLI resource-probe helper",
+            "platforms --json": "installed CLI platform catalog invocation",
+            "release_architectures": "release architecture resource assertion",
+            "windows_legacy_targets": "legacy Windows resource assertion",
+            "native installer smoke runtime resources:": "resource-probe evidence line",
+        },
+        "macos": {
+            "verify_app_runtime_resources": "installed app resource-probe helper",
+            "platforms --json": "installed app platform catalog invocation",
+            "Contents/MacOS": "installed app executable invocation",
+            "release_architectures": "release architecture resource assertion",
+            "windows_legacy_targets": "legacy Windows resource assertion",
+            "native installer smoke runtime resources:": "resource-probe evidence line",
+        },
+    }.get(platform, {})
+    for snippet, label in required_snippets.items():
+        if snippet not in text:
+            errors.append(
+                f"{repo_path(script)} missing {platform} runtime-resource {label}: {snippet}"
+            )
+
+    if platform == "macos":
+        build_script = ROOT / "scripts" / "make_macos_native.sh"
+        build_text = build_script.read_text(encoding="utf-8") if build_script.exists() else ""
+        for snippet, label in {
+            "sys.argv[1:]": "forwarded installed-app CLI arguments",
+            'main(arguments or ["gui"])': "default GUI with explicit CLI probe forwarding",
+        }.items():
+            if snippet not in build_text:
+                errors.append(
+                    f"{repo_path(build_script)} missing macOS runtime-resource {label}: {snippet}"
+                )
     return errors
 
 
@@ -253,6 +328,7 @@ def check_docs(config: dict[str, Any]) -> list[str]:
         "configs/native_installer_smoke.json",
         "scripts/check_native_installer_smoke.py",
         "install, verify, upgrade and uninstall",
+        "installed-artifact runtime-resource probe",
     ):
         if snippet not in combined:
             errors.append(f"native installer smoke docs missing required wording: {snippet}")

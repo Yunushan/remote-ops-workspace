@@ -33,7 +33,7 @@ def test_unsigned_preview_notes_report_boundaries(tmp_path: Path) -> None:
     assert "remote-ops-workspace-v1.0.20-windows.zip" in notes
     assert "Native jobs: windows-native, macos-native, linux-native." in notes
     assert "Protected platform evidence accepted for this source is 0/4" in notes
-    assert "Strict MobaXterm parity evidence accepted for this source is 0/7" in notes
+    assert "Strict MobaXterm parity evidence accepted for this source is 0/8" in notes
     assert "must not be treated as trusted production artifacts" in notes
 
 

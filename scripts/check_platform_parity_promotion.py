@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -196,7 +197,11 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
 }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Validate protected-platform parity promotion contracts."
+    )
+    parser.parse_args([] if argv is None else argv)
     errors = check_platform_parity_promotion()
     if errors:
         for error in errors:
@@ -1048,4 +1053,4 @@ def normalize_text(text: str) -> str:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

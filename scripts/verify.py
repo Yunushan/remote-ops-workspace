@@ -49,6 +49,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "Python 3.10-3.15 support boundary",
+            [python, "scripts/check_python_support.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "production deployment readiness",
             [python, "scripts/check_production_deployment.py"],
             env=_source_env(),
@@ -301,6 +306,11 @@ def build_steps(
             else []
         ),
         VerifyStep(
+            "MobaXterm transport and terminal evidence validator",
+            [python, "scripts/check_moba_transport_terminal_evidence.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "MobaXterm parity evidence registry",
             [python, "scripts/check_mobaxterm_parity_evidence.py"],
             env=_source_env(),
@@ -308,6 +318,11 @@ def build_steps(
         VerifyStep(
             "MobaXterm parity evidence record generator",
             [python, "scripts/make_mobaxterm_parity_evidence_record.py", "--help"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "MobaXterm parity evidence record finalizer",
+            [python, "scripts/finalize_mobaxterm_parity_evidence_record.py", "--help"],
             env=_source_env(),
         ),
         VerifyStep(

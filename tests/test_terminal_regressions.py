@@ -125,6 +125,15 @@ def test_proxy_jump_child_uses_trusted_windows_resolver(monkeypatch) -> None:
     assert child == expected
 
 
+def test_embedded_openssh_detection_uses_windows_path_semantics() -> None:
+    profile = SimpleNamespace(protocol="ssh")
+
+    assert terminal_module._is_embedded_openssh(
+        profile,
+        [r"C:\Windows\System32\OpenSSH\ssh.exe", "operator@host"],
+    ) is True
+
+
 def test_explicit_extensionless_windows_path_honors_pathext(
     monkeypatch,
     tmp_path: Path,

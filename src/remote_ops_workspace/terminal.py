@@ -120,7 +120,10 @@ def _embedded_terminal_command(profile: Profile, command: list[str]) -> list[str
 def _is_embedded_openssh(profile: Profile, command: list[str]) -> bool:
     if not command or profile.protocol.lower() not in {"ssh", "ssh1", "sshv1"}:
         return False
-    return os.path.basename(command[0]).lower() in {"ssh", "ssh.exe"}
+    # Native-Windows launch plans may be inspected by POSIX-hosted evidence
+    # runners.  Keep executable detection independent of the verifier host's
+    # path dialect so a saved ``C:\\...\\ssh.exe`` plan remains interactive.
+    return ntpath.basename(command[0]).lower() in {"ssh", "ssh.exe"}
 
 
 _OPENSSH_SHORT_OPTIONS_WITH_VALUE = frozenset("BbcDEeFIiJLlmOoPpQRSWw")

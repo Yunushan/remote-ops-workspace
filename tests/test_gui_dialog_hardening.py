@@ -1433,6 +1433,8 @@ def test_moba_ssh_terminal_starts_the_configured_process(
         "ControlMaster=no",
         "-o",
         "ControlPersist=no",
+        "-o",
+        "ControlPath=none",
         "-tt",
         "-p",
         "22",

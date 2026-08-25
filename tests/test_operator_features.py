@@ -319,6 +319,8 @@ def test_native_windows_openssh_skips_control_socket_reuse(monkeypatch) -> None:
         "ControlMaster=no",
         "-o",
         "ControlPersist=no",
+        "-o",
+        "ControlPath=none",
         "operator@192.0.2.10",
     ]
 
@@ -353,6 +355,8 @@ def test_native_windows_openssh_removes_stale_connection_sharing_options(
         "ControlMaster=no",
         "-o",
         "ControlPersist=no",
+        "-o",
+        "ControlPath=none",
         "-o",
         "StrictHostKeyChecking=yes",
         "operator@example.invalid",
@@ -507,7 +511,7 @@ def test_native_windows_openssh_removes_clustered_mux_short_options(
         "-o",
         "ControlPersist=no",
     ]
-    assert adapted[7:] == [*preserved, target]
+    assert adapted[7:] == ["-o", "ControlPath=none", *preserved, target]
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="native Windows OpenSSH contract")

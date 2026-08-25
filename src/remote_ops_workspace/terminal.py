@@ -523,13 +523,19 @@ def openssh_command_without_windows_connection_sharing(
     # configured control path could still enter the mux-client path and leave
     # the live connection attached to a non-socket handle, producing
     # ``getsockname failed: Not a socket`` immediately after authentication.
-    # ``-S none`` is OpenSSH's explicit standalone-transport contract.
+    # ``-S none`` is OpenSSH's explicit standalone-transport contract.  Keep
+    # the equivalent long option explicit too: some Windows OpenSSH builds
+    # still consult a configured ControlPath while preparing the mux client,
+    # which produces ``getsockname failed: Not a socket`` before authentication.
     overrides = {
         "ControlMaster": "no",
         "ControlPersist": "no",
     }
     if executable in {"ssh", "ssh.exe"}:
-        standalone = openssh_command_with_overrides(result, overrides)
+        standalone = openssh_command_with_overrides(
+            result,
+            {**overrides, "ControlPath": "none"},
+        )
         standalone[1:1] = ["-S", "none"]
         return standalone
 

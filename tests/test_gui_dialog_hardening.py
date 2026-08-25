@@ -2307,6 +2307,8 @@ def gui_window(monkeypatch, tmp_path):
         monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     monkeypatch.setenv("ROW_HOME", str(tmp_path / "row-home"))
     pytest.importorskip("PyQt6")
+    from PyQt6.QtCore import QCoreApplication
+
     from remote_ops_workspace.gui import create_main_window
 
     app, window = create_main_window(
@@ -2322,6 +2324,7 @@ def gui_window(monkeypatch, tmp_path):
     # A second event-loop pump after close can deliver a queued PyQt slot to a
     # teardown object on macOS/Python 3.15 and abort the interpreter.
     window.close()
+    QCoreApplication.removePostedEvents(None)
     window.deleteLater()
 
 

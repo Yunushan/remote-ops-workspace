@@ -47,7 +47,7 @@ def test_windows_mux_rewrite_stops_at_destination_and_consumes_option_values(
 
     adapted = openssh_command_without_windows_connection_sharing(["ssh.exe", *tail])
 
-    assert adapted[:7] == [
+    assert adapted[:9] == [
         "ssh.exe",
         "-S",
         "none",
@@ -55,8 +55,10 @@ def test_windows_mux_rewrite_stops_at_destination_and_consumes_option_values(
         "ControlMaster=no",
         "-o",
         "ControlPersist=no",
+        "-o",
+        "ControlPath=none",
     ]
-    assert adapted[7:] == tail
+    assert adapted[9:] == tail
 
 
 def test_windows_proxy_jump_separates_user_host_ipv6_and_port(monkeypatch) -> None:

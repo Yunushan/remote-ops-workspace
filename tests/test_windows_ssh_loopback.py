@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import importlib
 import json
 import os
@@ -41,6 +42,188 @@ _BRACKETED_PASTE_MODE_READY = b"ROW-SSH-BRACKETED-PASTE-MODE-READY"
 _BRACKETED_PASTE_ECHO = b"ROW-SSH-BRACKETED-PASTE"
 _BYE = b"ROW-SSH-BYE"
 _SOCKET_REGRESSION = b"getsockname failed: not a socket"
+
+
+def _visible_top_level_windows_for_process_tree(
+    process_ids: set[int],
+) -> list[dict[str, object]]:
+    """Return visible top-level windows owned by a native terminal process tree.
+
+    ConPTY normally gives the child no desktop surface.  Tracking descendants
+    as well as the OpenSSH PID catches a visible ``conhost.exe`` if a launch
+    regression allocates one while tabs are being switched.
+    """
+
+    if sys.platform != "win32" or not process_ids:
+        return []
+
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+    class _PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", wintypes.WCHAR * 260),
+        ]
+
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.Process32FirstW.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_PROCESSENTRY32W),
+    ]
+    kernel32.Process32FirstW.restype = wintypes.BOOL
+    kernel32.Process32NextW.argtypes = [
+        wintypes.HANDLE,
+        ctypes.POINTER(_PROCESSENTRY32W),
+    ]
+    kernel32.Process32NextW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+    invalid_handle = ctypes.c_void_p(-1).value
+    if not snapshot or getattr(snapshot, "value", snapshot) == invalid_handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    try:
+        entry = _PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(entry)
+        parent_by_pid: dict[int, int] = {}
+        first = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
+        while first:
+            parent_by_pid[int(entry.th32ProcessID)] = int(entry.th32ParentProcessID)
+            first = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+    tracked = {int(pid) for pid in process_ids if int(pid) > 0}
+    changed = True
+    while changed:
+        changed = False
+        for child_pid, parent_pid in parent_by_pid.items():
+            if parent_pid in tracked and child_pid not in tracked:
+                tracked.add(child_pid)
+                changed = True
+
+    get_window_pid = user32.GetWindowThreadProcessId
+    get_window_pid.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    get_window_pid.restype = wintypes.DWORD
+    is_visible = user32.IsWindowVisible
+    is_visible.argtypes = [wintypes.HWND]
+    is_visible.restype = wintypes.BOOL
+    get_rect = user32.GetWindowRect
+    get_rect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    get_rect.restype = wintypes.BOOL
+    get_title_length = user32.GetWindowTextLengthW
+    get_title_length.argtypes = [wintypes.HWND]
+    get_title_length.restype = ctypes.c_int
+    get_title = user32.GetWindowTextW
+    get_title.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    get_title.restype = ctypes.c_int
+    get_class = user32.GetClassNameW
+    get_class.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    get_class.restype = ctypes.c_int
+
+    records: list[dict[str, object]] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(hwnd: wintypes.HWND, _lparam: wintypes.LPARAM) -> bool:
+        if not is_visible(hwnd):
+            return True
+        owner_pid = wintypes.DWORD()
+        get_window_pid(hwnd, ctypes.byref(owner_pid))
+        if int(owner_pid.value) not in tracked:
+            return True
+        rect = wintypes.RECT()
+        if not get_rect(hwnd, ctypes.byref(rect)):
+            return True
+        title_buffer = ctypes.create_unicode_buffer(get_title_length(hwnd) + 1)
+        get_title(hwnd, title_buffer, len(title_buffer))
+        class_buffer = ctypes.create_unicode_buffer(256)
+        get_class(hwnd, class_buffer, len(class_buffer))
+        records.append(
+            {
+                "hwnd": int(getattr(hwnd, "value", hwnd) or 0),
+                "pid": int(owner_pid.value),
+                "class": class_buffer.value,
+                "title": title_buffer.value,
+                "rect": [
+                    int(rect.left),
+                    int(rect.top),
+                    int(rect.right),
+                    int(rect.bottom),
+                ],
+            }
+        )
+        return True
+
+    enum_windows = user32.EnumWindows
+    enum_windows.argtypes = [
+        ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM),
+        wintypes.LPARAM,
+    ]
+    enum_windows.restype = wintypes.BOOL
+    if not enum_windows(visit, 0):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return records
+
+
+class _VisibleWindowSampler:
+    """Sample native descendants while a Qt tab transition is in flight."""
+
+    def __init__(self, process_ids: set[int], *, interval_seconds: float = 0.004) -> None:
+        self.process_ids = set(process_ids)
+        self.interval_seconds = max(0.001, float(interval_seconds))
+        self.samples: list[dict[str, object]] = []
+        self.errors: list[str] = []
+        self._stop = threading.Event()
+        self._started_at = 0.0
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self) -> _VisibleWindowSampler:
+        self._started_at = time.monotonic()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="remote-ops-visible-window-sampler",
+            daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        self._thread = None
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.interval_seconds):
+            try:
+                visible = _visible_top_level_windows_for_process_tree(self.process_ids)
+            except Exception as exc:  # pragma: no cover - native API failure
+                self.errors.append(str(exc))
+                return
+            self.samples.append(
+                {
+                    "elapsed_ms": round((time.monotonic() - self._started_at) * 1000, 3),
+                    "visible_child_windows": visible,
+                }
+            )
+
+    @property
+    def violations(self) -> list[dict[str, object]]:
+        return [sample for sample in self.samples if sample["visible_child_windows"]]
 
 
 def _optional_paramiko() -> Any | None:
@@ -530,20 +713,28 @@ def _write_gui_ci_evidence(
     windows_build: int | None,
     command: list[str],
     transcript: str,
+    production_route: str = "direct-terminal-tab",
 ) -> None:
     evidence_dir = os.environ.get("ROW_WINDOWS_SSH_EVIDENCE_DIR", "").strip()
     if not evidence_dir:
         return
+    production_path = (
+        "Profile -> terminal_plan_for_profile -> "
+        + (
+            "MainWindow.open_moba_connected_session_tab -> MobaConnectedSessionPanel -> "
+            if production_route == "moba-connected-session-tab"
+            else "MainWindow.open_terminal_tab -> "
+        )
+        + "TerminalPane -> Qt keyboard/mouse/clipboard events -> "
+        + "QtConPtyProcess/WindowsConPtyProcess"
+    )
     payload = {
         "schema_version": 1,
         "platform": "windows-native",
         "windows_build": windows_build,
         "client_path": ssh,
-        "production_path": (
-            "Profile -> terminal_plan_for_profile -> MainWindow.open_terminal_tab -> "
-            "TerminalPane -> Qt keyboard/mouse/clipboard events -> "
-            "QtConPtyProcess/WindowsConPtyProcess"
-        ),
+        "production_path": production_path,
+        "production_route": production_route,
         "runtime_command": command,
         "proofs": {
             "profile_launch_plan_used": True,
@@ -953,11 +1144,17 @@ def test_native_windows_proxy_jump_two_hop_auth_input_output_over_qt_conpty(
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="native Windows SSH/ConPTY gate")
+@pytest.mark.parametrize(
+    "open_via_moba_connected_session",
+    [False, True],
+    ids=["direct-terminal-tab", "moba-connected-session-tab"],
+)
 def test_native_windows_ssh_profile_gui_keyboard_round_trip(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    open_via_moba_connected_session: bool,
 ) -> None:
-    """Prove the complete profile-to-GUI input path used by the desktop app."""
+    """Prove the complete profile-to-GUI input paths used by the desktop app."""
 
     paramiko_module = _optional_paramiko()
     if paramiko_module is None:
@@ -1001,6 +1198,7 @@ def test_native_windows_ssh_profile_gui_keyboard_round_trip(
     app, window = gui.create_main_window(
         ["remote-ops-workspace-windows-ssh-gui-loopback"],
         show=True,
+        preview_samples=True,
     )
     pane: Any | None = None
     try:
@@ -1010,14 +1208,31 @@ def test_native_windows_ssh_profile_gui_keyboard_round_trip(
         # longer than the listener's accept timeout even though OpenSSH itself
         # connects immediately once the terminal pane launches.
         server.start()
-        window.open_terminal_tab(plan, profile=profile)
+        if open_via_moba_connected_session:
+            connected_panel = window.open_moba_connected_session_tab(
+                profile,
+                plan,
+                remote_path="/",
+                tab_title="native-windows-moba-loopback",
+            )
+            pane = connected_panel.terminal_pane
+            assert (
+                window.tabs.property("mobaConnectedRouteConnectedPanelObject")
+                == connected_panel.objectName()
+            )
+            assert (
+                window.tabs.property("mobaConnectedRouteTerminalOutputObject")
+                == pane.output.objectName()
+            )
+            assert window.tabs.currentWidget() is connected_panel
+        else:
+            window.open_terminal_tab(plan, profile=profile)
+            pane = window.all_terminal_panes()[-1]
         _process_events_until(
             app,
-            lambda: (
-                bool(window.all_terminal_panes()) and window.all_terminal_panes()[-1].is_running()
-            ),
+            lambda: pane is not None and pane.is_running(),
         )
-        pane = window.all_terminal_panes()[-1]
+        assert pane is not None
         assert bool(getattr(pane.process, "is_pty", False))
         assert pane.output.property("terminalProcessBackend") == "windows-conpty"
         assert pane.focusProxy() is pane.output
@@ -1138,6 +1353,11 @@ def test_native_windows_ssh_profile_gui_keyboard_round_trip(
             windows_build=support.windows_build,
             command=plan.command,
             transcript=transcript,
+            production_route=(
+                "moba-connected-session-tab"
+                if open_via_moba_connected_session
+                else "direct-terminal-tab"
+            ),
         )
     finally:
         if pane is not None and pane.is_running():
@@ -1147,3 +1367,426 @@ def test_native_windows_ssh_profile_gui_keyboard_round_trip(
         window.close()
         app.processEvents()
         server.close()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="native Windows SSH/ConPTY gate")
+@pytest.mark.parametrize(
+    "open_via_moba_connected_session",
+    [False, True],
+    ids=["direct-terminal-tabs", "moba-connected-tabs"],
+)
+def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    open_via_moba_connected_session: bool,
+) -> None:
+    """Keep two real SSH panes full-sized and live across both tab compositions."""
+
+    paramiko_module = _optional_paramiko()
+    if paramiko_module is None:
+        if _REQUIRE_LOOPBACK:
+            pytest.fail("required Paramiko loopback SSH server dependency is unavailable")
+        pytest.skip("Paramiko loopback SSH server dependency is unavailable")
+
+    support = conpty_support()
+    assert support.supported, support.reason
+    ssh = shutil.which("ssh.exe") or shutil.which("ssh")
+    assert ssh is not None, "native Windows OpenSSH client is unavailable"
+
+    monkeypatch.setenv("ROW_HOME", str(tmp_path / "row-home"))
+    servers = [_LoopbackSshServer(paramiko_module) for _ in range(2)]
+    known_hosts = tmp_path / "known_hosts"
+    for index, server in enumerate(servers):
+        server.write_known_hosts(known_hosts, append=index > 0)
+    profiles = [
+        Profile(
+            name=f"native-windows-tab-{index}",
+            protocol="ssh",
+            host="127.0.0.1",
+            port=server.port,
+            username=_USERNAME,
+            options={
+                "connect_timeout": "10",
+                "strict_host_key_checking": "yes",
+                "user_known_hosts_file": known_hosts.as_posix(),
+                "log_level": "error",
+            },
+        )
+        for index, server in enumerate(servers, start=1)
+    ]
+    plans = [terminal_plan_for_profile(profile) for profile in profiles]
+
+    gui = importlib.import_module("remote_ops_workspace.gui")
+    qt_core = importlib.import_module("PyQt6.QtCore")
+    qt_test = importlib.import_module("PyQt6.QtTest")
+    app, window = gui.create_main_window(
+        ["remote-ops-workspace-windows-ssh-tab-switch"],
+        show=True,
+        preview_samples=True,
+    )
+    panes: list[Any] = []
+    tab_pages: list[Any] = []
+    try:
+        window.set_design_preset("mobaxterm")
+        for server in servers:
+            server.start()
+
+        for index, (profile, plan, server) in enumerate(
+            zip(profiles, plans, servers, strict=True),
+            start=1,
+        ):
+            if open_via_moba_connected_session:
+                connected_panel = window.open_moba_connected_session_tab(
+                    profile,
+                    plan,
+                    remote_path="/",
+                    tab_title=f"Moba SSH tab {index}",
+                )
+                pane = connected_panel.terminal_pane
+                tab_page = connected_panel
+            else:
+                window.open_terminal_tab(
+                    plan,
+                    profile=profile,
+                    tab_title=f"SSH tab {index}",
+                )
+                pane = window.all_terminal_panes()[-1]
+                tab_page = pane
+            panes.append(pane)
+            tab_pages.append(tab_page)
+            _process_events_until(app, lambda pane=pane: pane.is_running())
+            _process_events_until(
+                app,
+                lambda pane=pane: "password:" in pane.output.toPlainText().lower(),
+            )
+            pane.output.setFocus(qt_core.Qt.FocusReason.OtherFocusReason)
+            qt_test.QTest.keyClicks(pane.output, _PASSWORD)
+            qt_test.QTest.keyClick(pane.output, qt_core.Qt.Key.Key_Return)
+            _process_events_until(
+                app,
+                lambda pane=pane: _READY.decode() in pane.output.toPlainText(),
+            )
+            assert server.authenticated
+
+        records: list[dict[str, object]] = []
+        continuous_window_samples: list[dict[str, object]] = []
+        continuous_window_violations: list[dict[str, object]] = []
+
+        def terminal_process_ids() -> set[int]:
+            return {
+                int(pane.process.processId())
+                for pane in panes
+                if int(pane.process.processId()) > 0
+            }
+
+        def visible_terminal_windows() -> list[dict[str, object]]:
+            return _visible_top_level_windows_for_process_tree(terminal_process_ids())
+
+        def record_continuous_window_samples(
+            phase: str,
+            sampler: _VisibleWindowSampler,
+        ) -> None:
+            assert not sampler.errors, f"native window sampler failed at {phase}: {sampler.errors!r}"
+            continuous_window_samples.extend(sampler.samples)
+            continuous_window_violations.extend(
+                {
+                    "phase": phase,
+                    **sample,
+                }
+                for sample in sampler.violations
+            )
+            assert not sampler.violations, (
+                "native SSH process tree owned a visible top-level window during "
+                f"{phase}: {sampler.violations!r}"
+            )
+
+        for cycle in range(2):
+            for _index, (pane, tab_page) in enumerate(
+                zip(panes, tab_pages, strict=True)
+            ):
+                tab_index = window.tabs.indexOf(tab_page)
+                assert tab_index >= 0
+                window.tabs.setCurrentIndex(tab_index)
+                _process_events_until(
+                    app,
+                    lambda pane=pane, tab_page=tab_page, tab_index=tab_index: (
+                        window.tabs.currentWidget() is tab_page
+                        and (tab_page is pane or tab_page.isAncestorOf(pane))
+                        and pane.isVisibleTo(window)
+                        and not bool(window.tabs.property("terminalTabTransitionActive"))
+                        and not bool(window.tabs.property("terminalTabPrepaintGuardActive"))
+                    ),
+                )
+                viewport = pane.output_viewport.rect()
+                assert viewport.width() >= max(300, int(window.width() * 0.35))
+                assert viewport.height() >= max(180, int(window.height() * 0.35))
+                assert pane.is_running()
+                assert pane.output.property("terminalProcessBackend") == "windows-conpty"
+                visible_windows = visible_terminal_windows()
+                assert visible_windows == [], (
+                    "native SSH process tree owns a visible top-level window: "
+                    f"{visible_windows!r}"
+                )
+                records.append(
+                    {
+                        "cycle": cycle + 1,
+                        "tab_index": tab_index,
+                        "viewport": [viewport.width(), viewport.height()],
+                        "backend": pane.output.property("terminalProcessBackend"),
+                        "tab_route": (
+                            "moba-connected-session-tab"
+                            if open_via_moba_connected_session
+                            else "direct-terminal-tab"
+                        ),
+                        "transition_active": bool(
+                            window.tabs.property("terminalTabTransitionActive")
+                        ),
+                        "prepaint_guard_active": bool(
+                            window.tabs.property("terminalTabPrepaintGuardActive")
+                        ),
+                        "visible_child_windows": visible_windows,
+                    }
+                )
+
+        def assert_no_visible_terminal_windows(
+            phase: str,
+            evidence: list[dict[str, object]],
+        ) -> None:
+            visible_windows = visible_terminal_windows()
+            assert visible_windows == [], (
+                "native SSH process tree owns a visible top-level window at "
+                f"{phase}: {visible_windows!r}"
+            )
+            evidence.append(
+                {
+                    "phase": phase,
+                    "visible_child_windows": visible_windows,
+                }
+            )
+
+        # Exercise the actual Ctrl+Tab shortcut route against live ConPTY
+        # panes. The generic paint gate covers the shortcut with a probe pane;
+        # this route also proves that real OpenSSH descendants stay windowless.
+        keyboard_switches = 0
+        keyboard_event_boundary_windows: list[dict[str, object]] = []
+        for _cycle in range(3):
+            current_index = window.tabs.currentIndex()
+            source_page = window.tabs.currentWidget()
+            assert source_page is not None
+            source_position = next(
+                (
+                    position
+                    for position, page in enumerate(tab_pages)
+                    if window.tabs.indexOf(page) == current_index
+                ),
+                -1,
+            )
+            assert source_position >= 0
+            target_position = (source_position + 1) % len(tab_pages)
+            target_page = tab_pages[target_position]
+            target_pane = panes[target_position]
+            source_pane = panes[source_position]
+            source_pane.output.setFocus(qt_core.Qt.FocusReason.OtherFocusReason)
+            with _VisibleWindowSampler(terminal_process_ids()) as sampler:
+                qt_test.QTest.keyPress(
+                    source_pane.output,
+                    qt_core.Qt.Key.Key_Tab,
+                    qt_core.Qt.KeyboardModifier.ControlModifier,
+                )
+                time.sleep(0.01)
+            record_continuous_window_samples("ctrl-tab-key-press", sampler)
+            assert_no_visible_terminal_windows(
+                "ctrl-tab-key-press",
+                keyboard_event_boundary_windows,
+            )
+            with _VisibleWindowSampler(terminal_process_ids()) as sampler:
+                qt_test.QTest.keyRelease(
+                    source_pane.output,
+                    qt_core.Qt.Key.Key_Tab,
+                    qt_core.Qt.KeyboardModifier.ControlModifier,
+                )
+                time.sleep(0.01)
+            record_continuous_window_samples("ctrl-tab-key-release", sampler)
+            assert_no_visible_terminal_windows(
+                "ctrl-tab-key-release",
+                keyboard_event_boundary_windows,
+            )
+            keyboard_switches += 1
+            _process_events_until(
+                app,
+                lambda target_page=target_page, target_pane=target_pane: (
+                    window.tabs.currentWidget() is target_page
+                    and target_pane.isVisibleTo(window)
+                    and not bool(window.tabs.property("terminalTabTransitionActive"))
+                    and not bool(window.tabs.property("terminalTabPrepaintGuardActive"))
+                ),
+            )
+            viewport = target_pane.output_viewport.rect()
+            assert viewport.width() >= max(300, int(window.width() * 0.35))
+            assert viewport.height() >= max(180, int(window.height() * 0.35))
+            assert target_pane.is_running()
+            assert target_pane.output.property("terminalProcessBackend") == "windows-conpty"
+
+        # Exercise the actual Moba tab-bar mouse route as well as the public
+        # setCurrentIndex route above. Press/release pairs are intentionally
+        # sent back-to-back so a fast user switch cannot expose a page before
+        # its wrapper and ConPTY viewport have settled.
+        tab_bar = window.moba_tab_bar
+        mouse_switches = 0
+        mouse_event_boundary_windows: list[dict[str, object]] = []
+
+        for _cycle in range(3):
+            for pane, tab_page in reversed(list(zip(panes, tab_pages, strict=True))):
+                tab_index = window.tabs.indexOf(tab_page)
+                assert tab_index >= 0
+                target = tab_bar.tabRect(tab_index).center()
+                qt_test.QTest.mouseMove(tab_bar, target)
+                with _VisibleWindowSampler(terminal_process_ids()) as sampler:
+                    qt_test.QTest.mousePress(
+                        tab_bar,
+                        qt_core.Qt.MouseButton.LeftButton,
+                        qt_core.Qt.KeyboardModifier.NoModifier,
+                        target,
+                    )
+                    time.sleep(0.01)
+                record_continuous_window_samples("mouse-press", sampler)
+                assert_no_visible_terminal_windows(
+                    "mouse-press",
+                    mouse_event_boundary_windows,
+                )
+                with _VisibleWindowSampler(terminal_process_ids()) as sampler:
+                    qt_test.QTest.mouseRelease(
+                        tab_bar,
+                        qt_core.Qt.MouseButton.LeftButton,
+                        qt_core.Qt.KeyboardModifier.NoModifier,
+                        target,
+                    )
+                    time.sleep(0.01)
+                record_continuous_window_samples("mouse-release", sampler)
+                assert_no_visible_terminal_windows(
+                    "mouse-release",
+                    mouse_event_boundary_windows,
+                )
+                mouse_switches += 1
+                _process_events_until(
+                    app,
+                    lambda pane=pane, tab_page=tab_page, tab_index=tab_index: (
+                        window.tabs.currentWidget() is tab_page
+                        and (tab_page is pane or tab_page.isAncestorOf(pane))
+                        and window.tabs.currentIndex() == tab_index
+                        and pane.isVisibleTo(window)
+                        and not bool(window.tabs.property("terminalTabTransitionActive"))
+                        and not bool(window.tabs.property("terminalTabPrepaintGuardActive"))
+                    ),
+                )
+                viewport = pane.output_viewport.rect()
+                assert viewport.width() >= max(300, int(window.width() * 0.35))
+                assert viewport.height() >= max(180, int(window.height() * 0.35))
+                assert pane.is_running()
+                assert window.tabs.property("terminalTabGeometryStabilized") is True
+                visible_windows = visible_terminal_windows()
+                assert visible_windows == [], (
+                    "native SSH process tree owns a visible top-level window during "
+                    f"mouse tab switch: {visible_windows!r}"
+                )
+
+        assert all(server.failure is None for server in servers)
+        evidence_dir = os.environ.get("ROW_WINDOWS_SSH_EVIDENCE_DIR", "").strip()
+        if evidence_dir:
+            tab_route = (
+                "moba-connected-session-tab"
+                if open_via_moba_connected_session
+                else "direct-terminal-tab"
+            )
+            payload = json.dumps(
+                {
+                    "schema_version": 1,
+                    "platform": "windows-native",
+                    "windows_build": support.windows_build,
+                    "client_path": ssh,
+                    "tab_route": tab_route,
+                    "production_path": (
+                        "two Profile -> terminal_plan_for_profile -> "
+                        + (
+                            "MainWindow.open_moba_connected_session_tab -> "
+                            "MobaConnectedSessionPanel -> TerminalPane -> "
+                            if open_via_moba_connected_session
+                            else "MainWindow.open_terminal_tab -> TerminalPane -> "
+                        )
+                        + "QtConPtyProcess/WindowsConPtyProcess tabs"
+                    ),
+                    "proofs": {
+                        "two_live_ssh_panes": True,
+                        "strict_host_key_verification": True,
+                        "native_windows_conpty_for_each_pane": all(
+                            record["backend"] == "windows-conpty" for record in records
+                        ),
+                        "full_size_viewport_after_each_switch": all(
+                            record["viewport"][0] >= 300
+                            and record["viewport"][1] >= 180
+                            for record in records
+                        ),
+                        "prepaint_guard_released_after_each_switch": all(
+                            not record["transition_active"]
+                            and not record["prepaint_guard_active"]
+                            for record in records
+                        ),
+                        "both_servers_authenticated": all(
+                            server.authenticated for server in servers
+                        ),
+                        "mouse_tab_switch_route_exercised": mouse_switches >= 6,
+                        "keyboard_tab_switch_route_exercised": keyboard_switches >= 3,
+                        "server_failures_absent": all(
+                            server.failure is None for server in servers
+                        ),
+                        "native_child_windows_absent": all(
+                            not record["visible_child_windows"] for record in records
+                        )
+                        and all(
+                            not record["visible_child_windows"]
+                            for record in mouse_event_boundary_windows
+                        ),
+                        "keyboard_child_windows_absent": all(
+                            not record["visible_child_windows"]
+                            for record in keyboard_event_boundary_windows
+                        ),
+                        "continuous_transition_samples_observed": len(
+                            continuous_window_samples
+                        )
+                        > 0,
+                        "continuous_transition_visible_windows_absent": not continuous_window_violations,
+                    },
+                    "keyboard_switches": keyboard_switches,
+                    "keyboard_event_boundary_windows": keyboard_event_boundary_windows,
+                    "mouse_switches": mouse_switches,
+                    "mouse_event_boundary_windows": mouse_event_boundary_windows,
+                    "continuous_window_sample_count": len(continuous_window_samples),
+                    "continuous_window_violations": continuous_window_violations,
+                    "switches": records,
+                },
+                indent=2,
+                sort_keys=True,
+            ) + "\n"
+            destination = Path(evidence_dir) / f"ssh-tab-switch-evidence-{tab_route}.json"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(payload, encoding="utf-8")
+            # Preserve the established artifact name for downstream release
+            # tooling while retaining a separate record for each tab route.
+            (destination.parent / "ssh-tab-switch-evidence.json").write_text(
+                payload,
+                encoding="utf-8",
+            )
+    finally:
+        for pane in panes:
+            if pane.is_running():
+                pane.prepare_for_close()
+                pane.process.kill()
+                _process_events_until(
+                    app,
+                    lambda pane=pane: not pane.is_running(),
+                    timeout=5.0,
+                )
+        window.close()
+        app.processEvents()
+        for server in servers:
+            server.close()

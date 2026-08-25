@@ -547,6 +547,108 @@ def test_terminal_tab_switch_freezes_before_current_page_changes(gui_window) -> 
         widget.deleteLater()
 
 
+def test_terminal_tab_set_current_widget_uses_prepaint_guard(gui_window) -> None:
+    from PyQt6.QtWidgets import QWidget
+
+    app, window = gui_window
+    first = QWidget()
+    second = QWidget()
+    first_index = window.add_workspace_tab(first, "widget-first", role="test")
+    window.add_workspace_tab(
+        second,
+        "widget-second",
+        select=False,
+        role="test",
+    )
+    app.processEvents()
+    window.tabs.setCurrentIndex(first_index)
+    app.processEvents()
+
+    window.tabs.setCurrentWidget(second)
+
+    assert window.tabs.currentWidget() is second
+    assert window.tabs.updatesEnabled() is False
+    assert window.tabs.property("terminalTabPrepaintGuardActive") is True
+    assert window.tabs.property("terminalTabPrepaintTargetIndex") == window.tabs.indexOf(second)
+
+    app.processEvents()
+    assert window.tabs.updatesEnabled() is True
+    assert window.tabs.property("terminalTabPrepaintGuardActive") is False
+    assert window.tabs.property("terminalTabTransitionActive") is False
+
+    for widget in (first, second):
+        index = window.tabs.indexOf(widget)
+        if index >= 0:
+            window.tabs.removeTab(index)
+        widget.deleteLater()
+
+
+def test_new_terminal_tab_starts_after_transition_guard_releases(gui_window) -> None:
+    import sys
+    import time
+
+    from PyQt6.QtCore import QProcess
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    window.set_design_preset("native")
+    window.resize(1280, 760)
+    app.processEvents()
+
+    plan = TerminalPanePlan(
+        title="deferred-transition-start",
+        command=[
+            sys.executable,
+            "-u",
+            "-c",
+            "import time; print('DEFERRED_READY', flush=True); time.sleep(30)",
+        ],
+        source="test",
+    )
+    window.open_terminal_tab(plan)
+    index = window.find_tab_by_label(plan.title)
+    assert index >= 0
+    pane = window.tabs.widget(index)
+    assert pane is not None
+    started_during_transition: list[bool] = []
+    pane.process.started.connect(
+        lambda: started_during_transition.append(
+            bool(window.tabs.property("terminalTabTransitionActive"))
+            or bool(window.tabs.property("terminalTabPrepaintGuardActive"))
+        )
+    )
+
+    assert pane.property("terminalStartDeferredUntilTabReady") is True
+    assert pane.is_running() is False
+    assert window.tabs.property("terminalTabTransitionActive") is True
+
+    try:
+        deadline = time.monotonic() + 2.0
+        while (
+            pane.process.state() != QProcess.ProcessState.Running
+            or not started_during_transition
+        ) and time.monotonic() < deadline:
+            app.processEvents()
+            QTest.qWait(10)
+        assert pane.process.state() == QProcess.ProcessState.Running
+        assert started_during_transition == [False]
+        assert pane.property("terminalStartDeferredUntilTabReady") is False
+    finally:
+        pane.prepare_for_close()
+        if pane.is_running():
+            pane.process.kill()
+            deadline = time.monotonic() + 1.0
+            while pane.is_running() and time.monotonic() < deadline:
+                app.processEvents()
+                QTest.qWait(10)
+        current_index = window.tabs.indexOf(pane)
+        if current_index >= 0:
+            window.tabs.removeTab(current_index)
+        pane.deleteLater()
+
+
 @pytest.mark.parametrize(
     ("key", "modifiers", "step"),
     [
@@ -812,6 +914,9 @@ def test_terminal_output_submits_return_to_a_real_pipe_process(gui_window) -> No
             QTest.qWait(10)
 
         assert pane.output.property("terminalProcessBackend") == "qt-process-pipe"
+        if sys.platform == "win32":
+            assert pane.process.property("backgroundConsoleSuppressed") is True
+            assert pane.process.property("terminalWindowsConsoleSuppressed") is True
         assert "DIRECT:70697065696e7075740a" in pane.output.toPlainText()
     finally:
         if pane.is_running():
@@ -1028,7 +1133,6 @@ def test_terminal_copy_retries_one_transient_clipboard_write(gui_window) -> None
 
 def test_terminal_copy_command_survives_pending_selection_clear(gui_window) -> None:
     from PyQt6.QtGui import QTextCursor
-    from PyQt6.QtWidgets import QApplication
 
     from remote_ops_workspace.terminal import TerminalPanePlan
 
@@ -1041,13 +1145,26 @@ def test_terminal_copy_command_survives_pending_selection_clear(gui_window) -> N
     cursor.setPosition(0)
     cursor.setPosition(len("alpha"), QTextCursor.MoveMode.KeepAnchor)
     pane.output.setTextCursor(cursor)
-    QApplication.clipboard().setText("clipboard-probe")
+
+    class _Clipboard:
+        def __init__(self) -> None:
+            self.value = ""
+
+        def setText(self, value: str) -> None:  # noqa: N802
+            self.value = value
+
+        def text(self, _mode=None) -> str:
+            return self.value
+
+    clipboard = _Clipboard()
+    pane._terminal_clipboard_provider = lambda: clipboard
+    clipboard.setText("clipboard-probe")
 
     pane.copy_command()
     app.processEvents()
 
     assert pane.output.property("terminalLastCopiedText") == "alpha"
-    assert QApplication.clipboard().text() == "alpha"
+    assert clipboard.text() == "alpha"
     pane.deleteLater()
 
 
@@ -1846,6 +1963,11 @@ def test_moba_monitoring_forces_trusted_noninteractive_ssh_without_mutating_plan
     assert "ControlPersist=no" in runtime
 
     control = dock.monitoring_control_widgets["remote-monitoring"]
+    monkeypatch.setattr(
+        dock,
+        "ensure_background_authentication_for_request",
+        lambda: True,
+    )
     control.setChecked(True)
     dock.monitoring_generation = 7
     dock.monitoring_active_generation = 7
@@ -1903,8 +2025,20 @@ def test_moba_runtime_shutdown_invalidates_late_monitoring_results(
 
 def test_moba_sftp_supersedes_stale_path_results_and_opens_current_row(
     gui_window,
+    monkeypatch,
 ) -> None:
     from PyQt6.QtCore import QProcess
+    from PyQt6.QtWidgets import QInputDialog
+
+    monkeypatch.setattr(
+        QInputDialog,
+        "getText",
+        staticmethod(
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("automatic path refresh must not open an auth dialog")
+            )
+        ),
+    )
 
     _app, window = gui_window
     _panel, dock = _open_moba_interaction_test_dock(
@@ -2032,6 +2166,29 @@ def test_running_tab_close_is_immediate_and_cancels_pending_restart(gui_window) 
     assert process.process_state == QProcess.ProcessState.NotRunning
 
 
+def test_main_window_close_closes_custom_terminal_transport(gui_window) -> None:
+    from PyQt6.QtCore import QProcess
+    from PyQt6.QtGui import QCloseEvent
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="window-close-test", command=[], source="test")
+    )
+    process = _install_fake_terminal_process(pane)
+    process.process_state = QProcess.ProcessState.Running
+    window.add_workspace_tab(pane, "window-close-test", role="terminal")
+    window.confirm_stop_processes = lambda *_args: True
+
+    event = QCloseEvent()
+    window.closeEvent(event)
+
+    assert event.isAccepted()
+    assert process.killed is True
+    assert process.closed is True
+
+
 def test_terminal_status_ignores_deleted_tabs_from_late_process_signal(gui_window) -> None:
     _app, window = gui_window
 
@@ -2046,6 +2203,38 @@ def test_terminal_status_ignores_deleted_tabs_from_late_process_signal(gui_windo
         window.update_session_status()
     finally:
         window.tabs = original_tabs
+
+
+def test_terminal_start_error_refreshes_window_status(gui_window, monkeypatch, tmp_path) -> None:
+    from PyQt6.QtTest import QTest
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    callbacks: list[None] = []
+
+    def record_status_refresh() -> None:
+        callbacks.append(None)
+
+    monkeypatch.setattr(window, "update_session_status", record_status_refresh)
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(
+            title="missing-command",
+            command=[str(tmp_path / "command-that-does-not-exist")],
+            source="test",
+        )
+    )
+
+    try:
+        deadline = time.monotonic() + 1.0
+        while not callbacks and time.monotonic() < deadline:
+            app.processEvents()
+            QTest.qWait(10)
+        assert callbacks
+    finally:
+        if pane.is_running():
+            pane.process.kill()
+            pane.process.waitForFinished(1_000)
 
 
 def test_moba_sftp_dock_routes_supported_actions_and_disables_stubs(gui_window) -> None:
@@ -2118,7 +2307,11 @@ def gui_window(monkeypatch, tmp_path):
     pytest.importorskip("PyQt6")
     from remote_ops_workspace.gui import create_main_window
 
-    app, window = create_main_window(["gui-dialog-hardening"], show=False)
+    app, window = create_main_window(
+        ["gui-dialog-hardening"],
+        show=False,
+        preview_samples=True,
+    )
     window.resize(800, 600)
     window.move(0, 0)
     window.show()
@@ -2385,6 +2578,7 @@ class _FakeProcess:
         self.stderr = b""
         self.terminated = False
         self.killed = False
+        self.closed = False
         self.deleted = False
         self.properties = {}
 
@@ -2443,6 +2637,12 @@ class _FakeProcess:
         self.killed = True
         self.process_state = QProcess.ProcessState.NotRunning
         self.finished.emit(-1, QProcess.ExitStatus.CrashExit)
+
+    def close(self) -> None:
+        from PyQt6.QtCore import QProcess
+
+        self.closed = True
+        self.process_state = QProcess.ProcessState.NotRunning
 
     def finish(self, exit_code: int = 0) -> None:
         from PyQt6.QtCore import QProcess

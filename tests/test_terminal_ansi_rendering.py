@@ -21,7 +21,11 @@ def terminal_pane(monkeypatch, tmp_path):
     pytest.importorskip("PyQt6")
     from remote_ops_workspace.gui import create_main_window
 
-    app, window = create_main_window(["terminal-ansi-rendering"], show=False)
+    app, window = create_main_window(
+        ["terminal-ansi-rendering"],
+        show=False,
+        preview_samples=True,
+    )
     pane = window.new_terminal_pane(
         TerminalPanePlan(title="ansi-render", command=[], source="test")
     )

@@ -52,6 +52,7 @@ class _LifecycleSession:
         shutdown_error: BaseException | None = None,
         eof_on_shutdown: bool = False,
         output: bytes = b"",
+        resize_error: BaseException | None = None,
     ) -> None:
         self.pid = 4242
         self.io_error = None
@@ -61,9 +62,12 @@ class _LifecycleSession:
         self.poll_error = poll_error
         self.shutdown_error = shutdown_error
         self.eof_on_shutdown = eof_on_shutdown
+        self.resize_error = resize_error
         self.started = False
         self.shutdown_calls = 0
         self.close_calls: list[tuple[bool, float]] = []
+        self.writes: list[bytes] = []
+        self.close_input_calls = 0
         self.output = bytearray(output)
 
     def start(self) -> None:
@@ -75,7 +79,9 @@ class _LifecycleSession:
         return payload
 
     def take_resize_error(self):
-        return None
+        error = self.resize_error
+        self.resize_error = None
+        return error
 
     def poll(self) -> int | None:
         if self.poll_error is not None:
@@ -89,6 +95,13 @@ class _LifecycleSession:
         if self.eof_on_shutdown:
             self.output_eof = True
 
+    def write(self, payload: bytes) -> int:
+        self.writes.append(bytes(payload))
+        return len(payload)
+
+    def close_input(self) -> None:
+        self.close_input_calls += 1
+
     def close(self, *, terminate: bool, timeout: float) -> None:
         self.close_calls.append((terminate, timeout))
 
@@ -101,6 +114,15 @@ def _arm_lifecycle_session(process, session: _LifecycleSession) -> None:
     process._output_shutdown_started = False
     process._output_shutdown_deadline = None
     process._finished_emitted = False
+
+
+def test_conpty_process_publishes_hidden_window_policy() -> None:
+    process = QtConPtyProcess()
+
+    assert process.property("terminalTransportStartupAsync") is True
+    assert process.property("terminalConsoleSuppressed") is True
+    assert process.property("terminalChildWindowPolicy") == "conpty-hidden"
+    process.close()
 
 
 def test_stalled_output_eof_transitions_once_and_forces_bounded_cleanup(qt_app) -> None:
@@ -178,10 +200,116 @@ def test_shutdown_failure_completes_once_and_allows_a_fresh_start(
     process.setProgram("cmd.exe")
     process.start()
 
+    _process_events_until(qt_app, lambda: process._session is replacement)
     assert replacement.started is True
     assert process._session is replacement
     assert process.state() == qt_core.QProcess.ProcessState.Running
     process.close()
+
+
+def test_conpty_startup_does_not_block_the_qt_caller(qt_app, monkeypatch) -> None:
+    class SlowSession(_LifecycleSession):
+        def start(self) -> None:
+            time.sleep(0.2)
+            super().start()
+
+    session = SlowSession(poll_result=None)
+    monkeypatch.setattr(
+        qt_terminal_process,
+        "WindowsConPtyProcess",
+        lambda *_args, **_kwargs: session,
+    )
+    process = QtConPtyProcess()
+    process.setProgram("cmd.exe")
+
+    try:
+        started_at = time.monotonic()
+        process.start()
+        elapsed = time.monotonic() - started_at
+
+        assert elapsed < 0.1
+        assert process.state() == qt_core.QProcess.ProcessState.Starting
+        _process_events_until(qt_app, lambda: process._session is session)
+        assert process.state() == qt_core.QProcess.ProcessState.Running
+    finally:
+        process.close()
+
+
+def test_starting_process_flushes_early_input_and_close_request(
+    qt_app,
+    monkeypatch,
+) -> None:
+    class SlowSession(_LifecycleSession):
+        def start(self) -> None:
+            time.sleep(0.15)
+            super().start()
+
+    session = SlowSession(poll_result=None)
+    monkeypatch.setattr(
+        qt_terminal_process,
+        "WindowsConPtyProcess",
+        lambda *_args, **_kwargs: session,
+    )
+    process = QtConPtyProcess()
+    process.setProgram("cmd.exe")
+    payload = b"exit\r"
+
+    try:
+        process.start()
+        assert process.state() == qt_core.QProcess.ProcessState.Starting
+        assert process.write(payload) == len(payload)
+        process.closeWriteChannel()
+
+        _process_events_until(
+            qt_app,
+            lambda: (
+                process._session is session
+                and session.writes == [payload]
+                and session.close_input_calls == 1
+            ),
+        )
+        assert process.state() == qt_core.QProcess.ProcessState.Running
+    finally:
+        process.close()
+
+
+def test_terminate_cancels_slow_conpty_start_without_adopting_session(
+    qt_app,
+    monkeypatch,
+) -> None:
+    class SlowSession(_LifecycleSession):
+        def start(self) -> None:
+            time.sleep(0.15)
+            super().start()
+
+    session = SlowSession(poll_result=None)
+    monkeypatch.setattr(
+        qt_terminal_process,
+        "WindowsConPtyProcess",
+        lambda *_args, **_kwargs: session,
+    )
+    process = QtConPtyProcess()
+    finished: list[tuple[int, object]] = []
+    process.finished.connect(
+        lambda exit_code, exit_status: finished.append((exit_code, exit_status))
+    )
+    process.setProgram("cmd.exe")
+
+    try:
+        process.start()
+        assert process.state() == qt_core.QProcess.ProcessState.Starting
+        process.terminate()
+
+        assert process.state() == qt_core.QProcess.ProcessState.NotRunning
+        assert finished == [(-1, qt_core.QProcess.ExitStatus.CrashExit)]
+        _process_events_until(qt_app, lambda: bool(session.close_calls))
+        assert len(session.close_calls) == 1
+        terminate, timeout = session.close_calls[0]
+        assert terminate is True
+        assert 0 < timeout <= 0.5
+        assert process._session is None
+    finally:
+        process.close()
 
 
 def test_abrupt_poll_failure_transitions_once_and_releases_session(qt_app) -> None:
@@ -201,6 +329,25 @@ def test_abrupt_poll_failure_transitions_once_and_releases_session(qt_app) -> No
     assert session.close_calls == [(True, 0.5)]
     assert process.state() == qt_core.QProcess.ProcessState.NotRunning
     assert process._session is None
+
+
+def test_transient_resize_failure_does_not_fail_live_terminal(qt_app) -> None:
+    process = QtConPtyProcess()
+    session = _LifecycleSession(resize_error=RuntimeError("stale viewport"))
+    errors: list[object] = []
+    process.errorOccurred.connect(errors.append)
+    _arm_lifecycle_session(process, session)
+
+    process._poll_session()
+
+    assert errors == []
+    assert process.state() == qt_core.QProcess.ProcessState.Running
+    assert process.property("terminalTransportResizeWarning") == "stale viewport"
+    assert process.property("terminalTransportResizeWarningCount") == 1
+
+    process._poll_session()
+    assert process.property("terminalTransportResizeWarningCount") == 1
+    process.close()
 
 
 def test_real_cmd_round_trips_output_and_input_through_qt_events(
@@ -267,7 +414,7 @@ def test_missing_executable_emits_failed_to_start_with_useful_detail(
 
     try:
         process.start()
-        qt_app.processEvents()
+        _process_events_until(qt_app, lambda: bool(errors))
 
         assert errors == [qt_core.QProcess.ProcessError.FailedToStart]
         assert process.state() == qt_core.QProcess.ProcessState.NotRunning

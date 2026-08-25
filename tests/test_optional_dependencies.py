@@ -46,6 +46,22 @@ def test_optional_dependency_checker_rejects_pre_python315_pyinstaller_floor() -
     )
 
 
+def test_optional_dependency_checker_rejects_pre_python315_pyqt_floor() -> None:
+    checker = _load_optional_checker()
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8").replace(
+        '"PyQt6>=6.11.0"',
+        '"PyQt6>=6.6"',
+        1,
+    )
+
+    errors = checker.check_declared_extras(pyproject)
+
+    assert (
+        'pyproject.toml optional extra desktop missing dependency "PyQt6>=6.11.0"'
+        in errors
+    )
+
+
 def test_optional_dependency_checker_rejects_vulnerable_legacy_security_extra() -> None:
     checker = _load_optional_checker()
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")

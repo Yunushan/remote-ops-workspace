@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
 
 
@@ -21,6 +22,45 @@ def test_runner_api_fetcher_uses_authenticated_gh_when_no_ci_token(monkeypatch) 
     fetcher = checker.runner_api_fetcher(repository="example/remote-ops-workspace", timeout=20.0)
 
     assert isinstance(fetcher, checker.GitHubCliRunnerApiFetcher)
+
+
+def test_authenticated_gh_runner_fetch_uses_default_get_route(monkeypatch) -> None:
+    checker = _load_checker()
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"total_count": 0, "runners": []}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+    fetcher = checker.GitHubCliRunnerApiFetcher(
+        repository="example/remote-ops-workspace",
+        timeout=12.5,
+    )
+
+    assert fetcher("actions/runners?per_page=100&page=1") == {
+        "total_count": 0,
+        "runners": [],
+    }
+    assert calls == [
+        (
+            [
+                "gh",
+                "api",
+                "repos/example/remote-ops-workspace/actions/runners?per_page=100&page=1",
+            ],
+            {
+                "check": False,
+                "capture_output": True,
+                "text": True,
+                "timeout": 12.5,
+            },
+        )
+    ]
 
 
 def test_runner_readiness_accepts_all_goal_targets_with_idle_runners() -> None:

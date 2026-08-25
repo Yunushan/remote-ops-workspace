@@ -16,7 +16,11 @@ def gui_window(monkeypatch, tmp_path):
     pytest.importorskip("PyQt6")
     from remote_ops_workspace.gui import create_main_window
 
-    app, window = create_main_window(["moba-connected-workspace-behavior"], show=False)
+    app, window = create_main_window(
+        ["moba-connected-workspace-behavior"],
+        show=False,
+        preview_samples=True,
+    )
     window.resize(1280, 800)
     window.move(0, 0)
     window.show()
@@ -277,6 +281,95 @@ def test_background_sftp_is_auth_gated_and_compact_status_is_visible(
     assert monitoring_starts == [True]
     assert dock.property("mobaBackgroundSshAuthAvailable") is True
     assert dock.property("mobaSftpRuntimeState") == "pending"
+
+
+def test_background_auth_uses_vault_credential_for_session_only(
+    gui_window,
+    monkeypatch,
+) -> None:
+    from PyQt6.QtWidgets import QInputDialog
+
+    _app, _window, _panel, dock = _open_connected_panel(gui_window)
+    profile = Profile(
+        name="vault-auth",
+        protocol="ssh",
+        host="vault-auth.example.invalid",
+        username="operator",
+        credential_ref="prod/vault-auth-password",
+    )
+    activated: list[bool] = []
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(
+        dock,
+        "_apply_initial_background_state",
+        lambda *, start_runtime: activated.append(start_runtime),
+    )
+    monkeypatch.setattr(
+        QInputDialog,
+        "getText",
+        staticmethod(lambda *_args, **_kwargs: ("vault-passphrase", True)),
+    )
+
+    from remote_ops_workspace.vault import LocalVault
+
+    monkeypatch.setattr(
+        LocalVault,
+        "get",
+        lambda _vault, name, passphrase: (
+            "ssh-password"
+            if name == profile.credential_ref and passphrase == "vault-passphrase"
+            else (_ for _ in ()).throw(AssertionError("unexpected vault lookup"))
+        ),
+    )
+
+    assert dock.authenticate_background_tools() is True
+    assert dock.property("mobaBackgroundSshCredentialRef") == profile.credential_ref
+    assert dock.property("mobaBackgroundSshCredentialLoaded") is True
+    assert dock._background_password == bytearray(b"ssh-password")
+    assert activated == [True]
+    assert dock.background_ssh_auth_capability(profile)[0] is True
+
+    dock.shutdown_runtime()
+    assert dock._background_password is None
+    assert dock.property("mobaBackgroundSshCredentialLoaded") is False
+
+
+def test_background_auth_can_use_direct_password_for_password_only_profile(
+    gui_window,
+    monkeypatch,
+) -> None:
+    from PyQt6.QtWidgets import QInputDialog
+
+    _app, _window, _panel, dock = _open_connected_panel(gui_window)
+    profile = Profile(
+        name="password-only-auth",
+        protocol="ssh",
+        host="password-only.example.invalid",
+        username="operator",
+    )
+    activated: list[bool] = []
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(
+        dock,
+        "_apply_initial_background_state",
+        lambda *, start_runtime: activated.append(start_runtime),
+    )
+    monkeypatch.setattr(
+        QInputDialog,
+        "getText",
+        staticmethod(lambda *_args, **_kwargs: ("ssh-password", True)),
+    )
+
+    assert dock.authenticate_background_tools() is True
+    assert dock.property("mobaBackgroundSshCredentialSource") == "session-prompt"
+    assert dock.property("mobaBackgroundSshCredentialLoaded") is True
+    assert dock._background_password == bytearray(b"ssh-password")
+    assert activated == [True]
+    assert "password entered" in dock.background_ssh_auth_detail()
+
+    dock.shutdown_runtime()
+    assert dock._background_password is None
+    assert dock.property("mobaBackgroundSshCredentialSource") == ""
 
 
 def test_background_state_activation_is_parented_and_cancelled_on_shutdown(

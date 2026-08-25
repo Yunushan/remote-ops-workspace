@@ -396,7 +396,11 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         if saved:
             captured_images.append(path)
 
-    app, window = create_main_window(["check-gui-interactions"], show=True)
+    app, window = create_main_window(
+        ["check-gui-interactions"],
+        show=True,
+        preview_samples=True,
+    )
     app.processEvents()
 
     def bounds_in(container, widgets) -> tuple[dict[str, int], list[dict[str, int | str]]]:

@@ -26,7 +26,9 @@ scheduled for 2026-10-01. The repository therefore distinguishes two claims:
   PyInstaller or printing its version alone is not accepted as packaged-runtime
   compatibility. The package extra requires PyInstaller 6.21 or newer because
   6.21 is the first upstream release with Python 3.15 support; older PyInstaller
-  releases cannot satisfy this runtime contract.
+  releases cannot satisfy this runtime contract. The desktop extra requires
+  PyQt6 6.11.0 or newer, matching the GUI stack used by the release toolchain;
+  older PyQt6 releases are not part of the Python 3.15 support claim.
   Both native Windows rows additionally install the
   pinned loopback SSH server dependency and rerun the real OpenSSH/ConPTY,
   ProxyJump, terminal-input and GUI terminal-pane proofs with skip-to-pass

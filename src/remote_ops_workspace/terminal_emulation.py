@@ -10,6 +10,8 @@ retained beside (not inside) the plain-text transcript so copying, searching,
 and selecting output never exposes escape sequences.
 """
 
+from bisect import bisect_right
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 TERMINAL_EMULATOR_BACKEND = "ansi-transcript-v1"
@@ -117,6 +119,9 @@ class AnsiTerminalTranscript:
     _bracketed_paste: bool = False
     _application_cursor_keys: bool = False
     _cursor_visible: bool = True
+    _origin_mode: bool = False
+    _insert_mode: bool = False
+    _auto_wrap: bool = True
     _pending_responses: list[bytes] = field(default_factory=list)
     _saved_normal_state: tuple[
         list[str],
@@ -125,12 +130,24 @@ class AnsiTerminalTranscript:
         list[AnsiTextStyle],
         int,
     ] | None = None
+    _render_rows_cache: tuple[tuple[str, list[AnsiTextStyle]], ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _render_row_offsets_cache: tuple[int, ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _text_cache: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.max_scrollback_lines < 1:
             raise ValueError("max_scrollback_lines must be greater than zero")
 
     def reset(self) -> None:
+        self._invalidate_render_cache()
         self._lines.clear()
         self._line_styles.clear()
         self._line.clear()
@@ -149,6 +166,9 @@ class AnsiTerminalTranscript:
         self._bracketed_paste = False
         self._application_cursor_keys = False
         self._cursor_visible = True
+        self._origin_mode = False
+        self._insert_mode = False
+        self._auto_wrap = True
         self._pending_responses.clear()
         self._saved_normal_state = None
 
@@ -175,6 +195,24 @@ class AnsiTerminalTranscript:
         """Whether the remote application requested a visible cursor."""
 
         return self._cursor_visible
+
+    @property
+    def origin_mode_active(self) -> bool:
+        """Whether cursor addresses are relative to the active scroll region."""
+
+        return self._origin_mode
+
+    @property
+    def insert_mode_active(self) -> bool:
+        """Whether printable characters insert instead of replacing cells."""
+
+        return self._insert_mode
+
+    @property
+    def auto_wrap_active(self) -> bool:
+        """Whether a write past the last screen column wraps to the next row."""
+
+        return self._auto_wrap
 
     @property
     def cursor_row(self) -> int:
@@ -218,6 +256,7 @@ class AnsiTerminalTranscript:
         as raw escape characters or control payloads.
         """
 
+        self._invalidate_render_cache()
         for char in text:
             if self._escape is not None:
                 self._feed_escape(char)
@@ -248,6 +287,7 @@ class AnsiTerminalTranscript:
         sequences embedded in an OS error string.
         """
 
+        self._invalidate_render_cache()
         pending_escape = self._escape
         pending_style = self._style
         self._escape = None
@@ -284,6 +324,9 @@ class AnsiTerminalTranscript:
         self._bracketed_paste = False
         self._application_cursor_keys = False
         self._cursor_visible = True
+        self._origin_mode = False
+        self._insert_mode = False
+        self._auto_wrap = True
         self._pending_responses.clear()
         if self._alternate_screen:
             self._leave_alternate_screen()
@@ -292,8 +335,11 @@ class AnsiTerminalTranscript:
     def text(self) -> str:
         if self._alternate_screen:
             return "\n".join(line for line, _styles in self._alternate_render_rows())
-        rows = [*self._lines, "".join(self._line)]
-        return "\n".join(rows)
+        if self._text_cache is None:
+            self._text_cache = "\n".join(
+                row for row, _styles in self._cached_render_rows()
+            )
+        return self._text_cache
 
     def screen_text(self) -> str:
         """Return the visible screen, including blank rows, for a full-screen app.
@@ -329,16 +375,20 @@ class AnsiTerminalTranscript:
         if lower == upper:
             return ()
 
-        rows = (
-            self._alternate_all_render_rows()
-            if screen and self._alternate_screen
-            else self._render_rows()
-        )
+        rows: Sequence[tuple[str, list[AnsiTextStyle]]]
+        if screen and self._alternate_screen:
+            rows = self._alternate_all_render_rows()
+            row_start_index = 0
+            position = 0
+        else:
+            rows = self._cached_render_rows()
+            offsets = self._cached_render_row_offsets()
+            row_start_index = max(0, bisect_right(offsets, lower) - 1)
+            position = offsets[row_start_index]
         fragments: list[AnsiTerminalFragment] = []
         fragment_start = lower
         fragment_text: list[str] = []
         fragment_style: AnsiTextStyle | None = None
-        position = 0
 
         def append_character(char: str, style: AnsiTextStyle) -> None:
             nonlocal fragment_start, fragment_style
@@ -361,7 +411,8 @@ class AnsiTerminalTranscript:
                 fragment_style = style
             fragment_text.append(char)
 
-        for row_index, (row, styles) in enumerate(rows):
+        for row_index in range(row_start_index, len(rows)):
+            row, styles = rows[row_index]
             row_start = position
             visible_start = max(0, lower - row_start)
             visible_end = min(len(row), upper - row_start)
@@ -394,6 +445,41 @@ class AnsiTerminalTranscript:
                 )
             )
         return tuple(fragments)
+
+    def _invalidate_render_cache(self) -> None:
+        self._render_rows_cache = None
+        self._render_row_offsets_cache = None
+        self._text_cache = None
+
+    def _cached_render_rows(self) -> tuple[tuple[str, list[AnsiTextStyle]], ...]:
+        if self._render_rows_cache is None:
+            self._render_rows_cache = tuple(
+                [
+                    *(
+                        (line, styles)
+                        for line, styles in zip(
+                            self._lines,
+                            self._line_styles,
+                            strict=True,
+                        )
+                    ),
+                    ("".join(self._line), self._styles),
+                ]
+            )
+        return self._render_rows_cache
+
+    def _cached_render_row_offsets(self) -> tuple[int, ...]:
+        if self._render_row_offsets_cache is None:
+            offsets: list[int] = []
+            position = 0
+            rows = self._cached_render_rows()
+            for row_index, (row, _styles) in enumerate(rows):
+                offsets.append(position)
+                position += len(row)
+                if row_index < len(rows) - 1:
+                    position += 1
+            self._render_row_offsets_cache = tuple(offsets)
+        return self._render_row_offsets_cache
 
     def _render_rows(self) -> list[tuple[str, list[AnsiTextStyle]]]:
         if self._alternate_screen:
@@ -499,6 +585,15 @@ class AnsiTerminalTranscript:
                     self._application_cursor_keys = enabled
                 elif mode == 25:
                     self._cursor_visible = enabled
+                elif mode == 6:
+                    self._origin_mode = enabled
+                    if self._alternate_screen:
+                        self._set_alternate_cursor(
+                            self._alternate_top_margin if enabled else 0,
+                            0,
+                        )
+                elif mode == 7:
+                    self._auto_wrap = enabled
                 elif mode in {47, 1047, 1049}:
                     if enabled:
                         self._enter_alternate_screen()
@@ -558,6 +653,12 @@ class AnsiTerminalTranscript:
         """Apply cursor and erase controls to the bounded alternate screen."""
 
         first = values[0] if values else 0
+        if command in {"h", "l"}:
+            enabled = command == "h"
+            for mode in values:
+                if mode == 4:
+                    self._insert_mode = enabled
+            return
         if command == "r":
             top = (values[0] if values and values[0] else 1) - 1
             bottom = (
@@ -611,16 +712,23 @@ class AnsiTerminalTranscript:
         if command in {"H", "f"}:
             row = (values[0] if values and values[0] else 1) - 1
             column = (values[1] if len(values) > 1 and values[1] else 1) - 1
+            if self._origin_mode:
+                row += self._alternate_top_margin
             self._set_alternate_cursor(row, column)
             return
-        if command in {"A", "B", "E", "F", "d"}:
+        if command in {"A", "B", "E", "F"}:
             amount = first or 1
+            top, bottom = self._alternate_row_limits()
             if command in {"A", "F"}:
-                self._alternate_row = max(0, self._alternate_row - amount)
+                self._alternate_row = max(top, self._alternate_row - amount)
             else:
-                self._alternate_row = min(self._screen_rows - 1, self._alternate_row + amount)
+                self._alternate_row = min(bottom, self._alternate_row + amount)
             if command in {"E", "F"}:
                 self._alternate_column = 0
+            return
+        if command == "d":
+            top, bottom = self._alternate_row_limits()
+            self._alternate_row = max(top, min(bottom, top + (first or 1) - 1))
             return
         if command == "G":
             self._alternate_column = max(0, min(self._screen_columns - 1, (first or 1) - 1))
@@ -802,7 +910,7 @@ class AnsiTerminalTranscript:
         self._ensure_alternate_screen()
         for row in range(self._screen_rows):
             self._blank_alternate_row(row)
-        self._alternate_row = 0
+        self._alternate_row = self._alternate_top_margin if self._origin_mode else 0
         self._alternate_column = 0
 
     def _blank_alternate_row_data(self) -> tuple[str, list[AnsiTextStyle]]:
@@ -873,8 +981,14 @@ class AnsiTerminalTranscript:
 
     def _set_alternate_cursor(self, row: int, column: int) -> None:
         self._ensure_alternate_screen()
-        self._alternate_row = max(0, min(self._screen_rows - 1, int(row)))
+        top, bottom = self._alternate_row_limits()
+        self._alternate_row = max(top, min(bottom, int(row)))
         self._alternate_column = max(0, min(self._screen_columns - 1, int(column)))
+
+    def _alternate_row_limits(self) -> tuple[int, int]:
+        if self._origin_mode:
+            return self._alternate_top_margin, self._alternate_bottom_margin
+        return 0, self._screen_rows - 1
 
     def _enter_alternate_screen(self) -> None:
         if self._alternate_screen:
@@ -945,21 +1059,38 @@ class AnsiTerminalTranscript:
         if self._alternate_screen:
             self._ensure_alternate_screen()
             if self._alternate_column >= self._screen_columns:
-                self._newline()
+                if self._auto_wrap:
+                    self._newline()
+                else:
+                    self._alternate_column = self._screen_columns - 1
             line = self._alternate_lines[self._alternate_row]
             styles = self._alternate_line_styles[self._alternate_row]
             if self._alternate_column > len(line):
                 padding = self._alternate_column - len(line)
                 line.extend(" " for _ in range(padding))
                 styles.extend(ANSI_DEFAULT_STYLE for _ in range(padding))
-            if self._alternate_column == len(line):
+            if self._insert_mode:
+                line[self._alternate_column : self._alternate_column] = [char]
+                styles[self._alternate_column : self._alternate_column] = [self._style]
+                del line[self._screen_columns :]
+                del styles[self._screen_columns :]
+            elif self._alternate_column == len(line):
                 line.append(char)
                 styles.append(self._style)
             else:
                 line[self._alternate_column] = char
                 styles[self._alternate_column] = self._style
             self._alternate_lines[self._alternate_row] = line
-            self._alternate_column += 1
+            if self._auto_wrap:
+                self._alternate_column = min(
+                    self._screen_columns,
+                    self._alternate_column + 1,
+                )
+            else:
+                self._alternate_column = min(
+                    self._screen_columns - 1,
+                    self._alternate_column + 1,
+                )
             return
         if self._column > len(self._line):
             padding = self._column - len(self._line)

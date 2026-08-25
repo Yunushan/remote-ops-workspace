@@ -418,7 +418,11 @@ def run(
         from remote_ops_workspace.gui import create_main_window
         from remote_ops_workspace.terminal import TerminalPanePlan
 
-        app, window = create_main_window(["check-windows-tab-switch-paint"], show=True)
+        app, window = create_main_window(
+            ["check-windows-tab-switch-paint"],
+            show=True,
+            preview_samples=True,
+        )
         window.set_design_preset("mobaxterm")
         screen = window.screen()
         available = screen.availableGeometry()

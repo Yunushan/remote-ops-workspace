@@ -60,10 +60,13 @@ release; they record and bind those externally obtained facts.
   confirmation mode and live table column widths.
   The folder-follow control currently keeps the browser on its selected remote
   path; it does not observe the interactive shell's working directory.
-  Background SFTP and monitoring also start separate OpenSSH processes, so
-  password-only authentication from the visible terminal is not shared with
-  those helpers. Key or agent authentication is currently required for
-  unattended background refreshes.
+  Background SFTP and monitoring also start separate OpenSSH processes. Key or
+  agent authentication works automatically; password-only profiles can use the
+  explicit **Authenticate background tools** action with either a local encrypted
+  vault `credential_ref` or a direct session password. The credential is held
+  only for the current GUI session, submitted through a hidden native Windows
+  ConPTY, and wiped when the connected dock closes. The visible terminal password
+  is never copied or inferred.
 - MobaTextEditor/MobaDiff-style `row text preview/write/diff/remote-plan`
   workflow with local text previews, SHA-256 evidence, guarded saves, backup
   creation, unified diffs and SFTP get/put staging plans for remote files.

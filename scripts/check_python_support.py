@@ -35,6 +35,10 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         errors.append(
             "pyproject.toml package extra must require pyinstaller>=6.21 for Python 3.15"
         )
+    if 'desktop = ["PyQt6>=6.11.0"]' not in pyproject:
+        errors.append(
+            "pyproject.toml desktop extra must require PyQt6>=6.11.0 for Python 3.15"
+        )
     for version in range(10, 16):
         classifier = f'"Programming Language :: Python :: 3.{version}"'
         if classifier not in pyproject:

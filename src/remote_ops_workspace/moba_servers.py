@@ -9,7 +9,6 @@ import platform
 import re
 import shutil
 import signal
-import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -20,6 +19,7 @@ from typing import Any
 from . import command_safety as safe
 from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
+from .process_launch import popen_hidden, run_hidden
 
 WhichResolver = Callable[[str], str | None]
 PidProbe = Callable[[int], bool]
@@ -929,7 +929,7 @@ def start_moba_server(
     *,
     dry_run: bool = False,
     state_dir: Path | None = None,
-    popen_factory: Callable[..., Any] = subprocess.Popen,
+    popen_factory: Callable[..., Any] | None = None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     safe.argv_list(plan.command, "embedded server command")
     target_state_path = moba_server_state_path(plan.service, state_dir=state_dir)
@@ -946,7 +946,8 @@ def start_moba_server(
         )
     if not plan.runtime.available:
         raise ValueError(f"embedded server runtime is not available: {plan.runtime.label}")
-    process = popen_factory(plan.command, env={**os.environ, **plan.environment})
+    factory = popen_hidden if popen_factory is None else popen_factory
+    process = factory(plan.command, env={**os.environ, **plan.environment})
     record = MobaEmbeddedServerLifecycleRecord(
         service=plan.service,
         host=plan.host,
@@ -1502,7 +1503,7 @@ def _pid_running(pid: int) -> bool:
 
 def _terminate_pid(pid: int) -> None:
     if platform.system().lower() == "windows":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T"], check=False, capture_output=True, text=True)
+        run_hidden(["taskkill", "/PID", str(pid), "/T"], check=False, capture_output=True, text=True)
         return
     os.kill(pid, signal.SIGTERM)
 

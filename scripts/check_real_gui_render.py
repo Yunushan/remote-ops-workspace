@@ -1180,7 +1180,11 @@ def _capture_live_gui(
         if preset is None:
             errors.append(f"unknown GUI preset requested: {preset_id}")
             continue
-        app, window = gui.create_main_window(["row-real-gui-render-check", preset.id], show=True)
+        app, window = gui.create_main_window(
+            ["row-real-gui-render-check", preset.id],
+            show=True,
+            preview_samples=True,
+        )
         window.resize(*REQUESTED_SIZE)
         window.show()
         process_events(app)

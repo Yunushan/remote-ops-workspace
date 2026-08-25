@@ -63,6 +63,31 @@ def test_ansi_transcript_handles_vim_scroll_regions_and_cursor_save_restore() ->
     assert terminal.alternate_screen_active is False
 
 
+def test_ansi_transcript_handles_vim_origin_insert_and_wrap_modes() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(20, 6)
+
+    terminal.feed("\x1b[?1049h\x1b[2;5r\x1b[?6h\x1b[1;1Horigin")
+
+    assert terminal.origin_mode_active is True
+    assert terminal.cursor_row == 1
+    assert terminal.text().splitlines()[1].startswith("origin")
+
+    terminal.feed("\x1b[?6l\x1b[2J\x1b[?7l\x1b[1;20HX")
+    terminal.feed("Y")
+    assert terminal.screen_text().splitlines()[0][-1] == "Y"
+    assert terminal.screen_text().splitlines()[1].strip() == ""
+
+    terminal.feed("\x1b[?7h\x1b[1;20HX")
+    terminal.feed("Y")
+    assert terminal.screen_text().splitlines()[1].startswith("Y")
+
+    terminal.feed("\x1b[1;1HAB\x1b[1;2H\x1b[4hX")
+    assert terminal.insert_mode_active is True
+    assert terminal.screen_text().splitlines()[0].startswith("AXB")
+    terminal.feed("\x1b[4l\x1b[?1049l")
+
+
 def test_ansi_transcript_answers_full_screen_queries_and_tracks_bracketed_paste() -> None:
     terminal = AnsiTerminalTranscript()
     terminal.set_screen_size(80, 24)
@@ -231,3 +256,18 @@ def test_ansi_transcript_slices_fragments_and_consumes_osc_payloads() -> None:
     assert fragments[-1].end == 7
     assert fragments[0].style.foreground == ANSI_16_COLOR_PALETTE[4]
     assert fragments[1].text == "\n"
+
+
+def test_ansi_transcript_incremental_fragments_seek_into_large_scrollback() -> None:
+    terminal = AnsiTerminalTranscript(max_scrollback_lines=3_000)
+    terminal.feed("".join(f"line-{index}\n" for index in range(2_000)))
+    terminal.feed("\x1b[31mlatest")
+
+    source = terminal.text()
+    start = source.rfind("latest")
+    fragments = terminal.styled_fragments(start=start, end=len(source))
+
+    assert "".join(fragment.text for fragment in fragments) == "latest"
+    assert fragments[0].start == start
+    assert fragments[-1].end == len(source)
+    assert fragments[0].style.foreground == ANSI_16_COLOR_PALETTE[1]

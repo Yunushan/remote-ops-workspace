@@ -545,7 +545,12 @@ def set_windows_taskbar_app_id() -> None:
         return
 
 
-def create_main_window(argv: list[str] | None = None, *, show: bool = False):
+def create_main_window(
+    argv: list[str] | None = None,
+    *,
+    show: bool = False,
+    preview_samples: bool = False,
+):
     global _QT_APPLICATION_REF
 
     try:
@@ -597,6 +602,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             QGridLayout,
             QHBoxLayout,
             QHeaderView,
+            QInputDialog,
             QLabel,
             QLineEdit,
             QMainWindow,
@@ -632,11 +638,28 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             raise RuntimeError("required GUI value is unavailable: Qt application")
         return instance
 
-    def _background_process(parent):
-        """Create a helper process without flashing a Windows console."""
+    def _background_process(parent, *, interactive_auth: bool = False):
+        """Create a hidden helper process, optionally with a private PTY.
+
+        Native Windows OpenSSH only accepts password input from a console/PTY.
+        The normal helper path remains pipe-backed and non-interactive; the
+        explicit vault-authenticated Moba tools path opts into a hidden ConPTY
+        so a password can be submitted without creating a console window.
+        """
 
         if sys.platform == "win32":
-            from .qt_terminal_process import QtHiddenProcess
+            from .qt_terminal_process import QtConPtyProcess, QtHiddenProcess
+
+            if interactive_auth:
+                try:
+                    from .windows_conpty import conpty_support
+
+                    if conpty_support().supported:
+                        process = QtConPtyProcess(parent)
+                        process.setProperty("backgroundAuthTransport", "windows-conpty")
+                        return process
+                except (ImportError, OSError, RuntimeError):
+                    pass
 
             return QtHiddenProcess(parent)
         return QProcess(parent)
@@ -670,6 +693,14 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             and (openssh_program or local_shell_program)
         )
         if not use_windows_conpty:
+            if sys.platform == "win32":
+                # Console commands opened from a terminal tab still need the
+                # pipe adapter when ConPTY is not appropriate. Plain QProcess
+                # can briefly create a visible console during tab activation;
+                # use the same hidden startup contract as monitoring/SFTP.
+                process = _background_process(parent)
+                process.setProperty("terminalWindowsConsoleSuppressed", True)
+                return process, ""
             return QProcess(parent), ""
         try:
             from .qt_terminal_process import QtConPtyProcess
@@ -966,6 +997,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         ) -> None:
             super().__init__()
             self.setObjectName("terminalPane")
+            # A terminal page is a fill surface, never a size-hint-driven
+            # floating child.  Explicitly keeping a zero minimum and an
+            # expanding policy prevents QStackedWidget/QSplitter from
+            # exposing a transient miniature page while another tab is being
+            # activated or its ConPTY is negotiating a resize.
+            self.setMinimumSize(0, 0)
+            self.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             # Saved layouts and restored tabs can carry plans created before
             # the native-Windows OpenSSH socket guard existed. Apply the same
             # normalization at the live terminal boundary as at plan build.
@@ -1094,6 +1135,15 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 if bool(getattr(self.process, "is_pty", False))
                 else "qt-process-pipe",
             )
+            process_property = getattr(self.process, "property", lambda _name: None)
+            self.output.setProperty(
+                "terminalConsoleSuppressed",
+                bool(process_property("terminalConsoleSuppressed")),
+            )
+            self.output.setProperty(
+                "terminalChildWindowPolicy",
+                str(process_property("terminalChildWindowPolicy") or "unspecified"),
+            )
             self.output.setProperty(
                 "terminalRemotePtyRequested",
                 any(argument in {"-t", "-tt"} for argument in plan.command),
@@ -1103,6 +1153,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.output.setProperty("terminalAlternateScreenActive", False)
             self.output.setProperty("terminalAlternateScreenRedraw", False)
             self.output.setProperty("terminalBracketedPasteActive", False)
+            self.output.setProperty("terminalOriginModeActive", False)
+            self.output.setProperty("terminalInsertModeActive", False)
+            self.output.setProperty("terminalAutoWrapActive", True)
             self.output.setProperty("terminalLastPasteWasBracketed", False)
             # Automatic mouse paste is a MobaXterm convention, not a safe
             # cross-preset terminal default. MainWindow enables both gestures
@@ -1437,6 +1490,32 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     event.accept()
                     return True
             if watched in terminal_targets and event.type() == QEvent.Type.KeyPress:
+                # The terminal event filter normally owns key delivery so
+                # that readline, Vim, and ncurses receive exact TTY bytes.
+                # Ctrl+Tab is the workspace traversal gesture, however; if
+                # it reaches terminal_key_payload it becomes a remote Tab
+                # byte before the window-level QShortcut can activate.
+                if (
+                    event.key() == Qt.Key.Key_Tab
+                    and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                    and not event.modifiers()
+                    & (
+                        Qt.KeyboardModifier.AltModifier
+                        | Qt.KeyboardModifier.MetaModifier
+                    )
+                ):
+                    workspace = self.window()
+                    activate = getattr(
+                        workspace,
+                        "activate_previous_tab"
+                        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                        else "activate_next_tab",
+                        None,
+                    )
+                    if callable(activate):
+                        activate()
+                        event.accept()
+                        return True
                 selection = self.output.textCursor().selectedText()
                 if self.is_terminal_selection_navigation(event):
                     # A terminal still needs a usable local scrollback selection.
@@ -2040,7 +2119,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             _application_instance().processEvents(
                 QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
             )
-            clipboard = _application_clipboard()
+            clipboard = self._terminal_clipboard_provider()
             clipboard.setText(clipboard_text)
             _application_instance().processEvents(
                 QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
@@ -2586,7 +2665,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self._process_output_end_pending = False
                 self._process_output_source_end_pending = False
                 self._process_output_source_drained = True
-                self.output.setProperty("terminalBracketedPasteActive", False)
+                self.sync_terminal_emulator_mode_properties()
                 self.render_terminal_transcript(transcript)
             trailers = self._process_output_trailers
             self._process_output_trailers = []
@@ -2633,10 +2712,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 # compacting blank rows makes Vim's status/cursor appear in
                 # the middle of a giant empty pane and makes scroll state jump.
                 transcript = self.terminal_emulator.screen_text()
-            self.output.setProperty(
-                "terminalBracketedPasteActive",
-                self.terminal_emulator.bracketed_paste_active,
-            )
+            self.sync_terminal_emulator_mode_properties()
             self.forward_terminal_emulator_responses()
             if alternate_screen_active:
                 # Only the initial ConPTY shell clear may be normalized. Once
@@ -2680,6 +2756,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.output.setProperty("terminalInitialPromptPaddingNormalized", True)
                 return
             self.render_terminal_transcript(transcript)
+
+        def sync_terminal_emulator_mode_properties(self) -> None:
+            """Expose negotiated VT modes for diagnostics and interaction evidence."""
+
+            self.output.setProperty(
+                "terminalBracketedPasteActive",
+                self.terminal_emulator.bracketed_paste_active,
+            )
+            self.output.setProperty(
+                "terminalOriginModeActive",
+                self.terminal_emulator.origin_mode_active,
+            )
+            self.output.setProperty(
+                "terminalInsertModeActive",
+                self.terminal_emulator.insert_mode_active,
+            )
+            self.output.setProperty(
+                "terminalAutoWrapActive",
+                self.terminal_emulator.auto_wrap_active,
+            )
 
         def forward_terminal_emulator_responses(self) -> None:
             """Answer terminal capability/cursor queries without rendering them.
@@ -2742,6 +2838,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             transcript = self.terminal_emulator.feed(text)
             if self.terminal_emulator.alternate_screen_active:
                 transcript = self.terminal_emulator.screen_text()
+            self.sync_terminal_emulator_mode_properties()
             self.render_terminal_transcript(transcript)
 
         def append_terminal_notice(self, text: str) -> None:
@@ -3421,6 +3518,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_output_buffer = bytearray()
             self.runtime_shutting_down = False
             self.background_auth_retry_attempt = 0
+            self._background_password: bytearray | None = None
+            self.setProperty("mobaBackgroundSshCredentialSource", "")
+            self._background_auth_prompt_buffers = {
+                "monitoring": bytearray(),
+                "sftp": bytearray(),
+            }
+            self._background_auth_password_sent = {
+                "monitoring": False,
+                "sftp": False,
+            }
             self.background_auth_retry_timer = QTimer(self)
             self.background_auth_retry_timer.setSingleShot(True)
             self.background_auth_retry_timer.timeout.connect(
@@ -3440,7 +3547,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_refresh_timer.timeout.connect(
                 self.request_remote_monitoring_refresh
             )
-            self.monitoring_process = _background_process(self)
+            self.monitoring_process = _background_process(self, interactive_auth=True)
             self.monitoring_process.setProcessChannelMode(
                 QProcess.ProcessChannelMode.MergedChannels
             )
@@ -3459,7 +3566,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_request_path = ""
             self.sftp_refresh_pending: tuple[str, str] | None = None
-            self.sftp_refresh_process = _background_process(self)
+            self.sftp_refresh_process = _background_process(self, interactive_auth=True)
             self.sftp_refresh_process.setProcessChannelMode(
                 QProcess.ProcessChannelMode.MergedChannels
             )
@@ -3479,6 +3586,12 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.sftp_refresh_timeout.setSingleShot(True)
             self.sftp_refresh_timeout.timeout.connect(
                 self.cancel_sftp_refresh_timeout
+            )
+            self.sftp_auth_probe_timer = QTimer(self)
+            self.sftp_auth_probe_timer.setSingleShot(True)
+            self.sftp_auth_probe_timer.setInterval(1200)
+            self.sftp_auth_probe_timer.timeout.connect(
+                lambda: self.write_sftp_refresh_batch(force=True)
             )
             frame = gui_design_moba_connected_dock_frame()
             density = gui_design_moba_sftp_dock_layout()
@@ -3728,6 +3841,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
             if profile is None:
                 return False, "connected profile was not found"
+            if self._background_password and self.background_auth_transport_is_pty():
+                return True, "encrypted-vault credential loaded for this session"
             if self.shared_ssh_control_path():
                 return True, "active terminal SSH connection (shared control socket)"
             if profile.identity_file:
@@ -3752,8 +3867,220 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             return (
                 False,
                 "background SSH uses a separate non-interactive process and requires "
-                "a trusted host key plus key or agent authentication",
+                "a trusted host key plus key or agent authentication; use "
+                "Authenticate background tools to load a vault credential or enter "
+                "a session password",
             )
+
+        def background_auth_transport_is_pty(self) -> bool:
+            """Return whether both hidden background clients can accept a password."""
+
+            return bool(
+                getattr(self.monitoring_process, "is_pty", False)
+                and getattr(self.sftp_refresh_process, "is_pty", False)
+            )
+
+        def background_ssh_auth_detail(self) -> str:
+            """Describe the authentication route currently used by background tools."""
+
+            if self._background_password and self.background_auth_transport_is_pty():
+                source = str(self.property("mobaBackgroundSshCredentialSource") or "")
+                source_detail = (
+                    "a profile credential loaded from the encrypted vault"
+                    if source == "encrypted-vault"
+                    else "a password entered for this GUI session"
+                )
+                return (
+                    "A separate non-interactive SSH process uses "
+                    f"{source_detail}; the secret "
+                    "is submitted through hidden native terminal transports."
+                )
+            if self.shared_ssh_control_path():
+                return (
+                    "The active terminal owns a private SSH control connection, so this "
+                    "background request reuses the authenticated session."
+                )
+            return (
+                "This background request uses a separate non-interactive SSH process; "
+                "terminal password prompts are not shared. A trusted host key and key "
+                "or agent authentication are required, or use Authenticate background "
+                "tools for a session-only password."
+            )
+
+        def _clear_background_password(self) -> None:
+            password = self._background_password
+            self._background_password = None
+            if password is not None:
+                password.clear()
+            for buffer in self._background_auth_prompt_buffers.values():
+                buffer.clear()
+            for process_kind in self._background_auth_password_sent:
+                self._background_auth_password_sent[process_kind] = False
+            self.setProperty("mobaBackgroundSshCredentialLoaded", False)
+            self.setProperty("mobaBackgroundSshCredentialSource", "")
+
+        def background_ssh_overrides(self) -> dict[str, str]:
+            """Build the runtime-only auth policy for one hidden SSH child."""
+
+            if not self._background_password:
+                return {
+                    "BatchMode": "yes",
+                    "ConnectTimeout": "5",
+                    "StrictHostKeyChecking": "yes",
+                }
+            return {
+                "BatchMode": "no",
+                "ConnectTimeout": "5",
+                "StrictHostKeyChecking": "yes",
+                "PasswordAuthentication": "yes",
+                "KbdInteractiveAuthentication": "yes",
+                "PreferredAuthentications": "password,keyboard-interactive",
+                "NumberOfPasswordPrompts": "1",
+            }
+
+        def _submit_background_password_if_prompt(
+            self,
+            process_kind: str,
+            payload: bytes,
+        ) -> None:
+            """Answer one OpenSSH prompt through the hidden ConPTY only."""
+
+            password = self._background_password
+            if not password or process_kind not in self._background_auth_prompt_buffers:
+                return
+            if self._background_auth_password_sent[process_kind]:
+                return
+            prompt_buffer = self._background_auth_prompt_buffers[process_kind]
+            prompt_buffer.extend(payload)
+            del prompt_buffer[:-1024]
+            prompt = prompt_buffer.decode(errors="replace")[-768:]
+            if not re.search(
+                r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
+                prompt,
+            ):
+                return
+            process = (
+                self.monitoring_process
+                if process_kind == "monitoring"
+                else self.sftp_refresh_process
+            )
+            accepted = process.write(bytes(password) + b"\r")
+            if accepted <= 0:
+                return
+            self._background_auth_password_sent[process_kind] = True
+            prompt_buffer.clear()
+            if process_kind == "sftp":
+                self.sftp_auth_probe_timer.stop()
+                QTimer.singleShot(
+                    0,
+                    lambda: self.write_sftp_refresh_batch(force=True),
+                )
+
+        def authenticate_background_tools(self) -> bool:
+            """Unlock one profile credential for this GUI session only."""
+
+            profile = self.profile_for_sftp_action()
+            if profile is None:
+                message = "Background SSH authentication requires a connected profile."
+                self.set_sftp_runtime_status(message, state="auth-required")
+                self.set_remote_monitoring_status(message, state="auth-required")
+                self.show_sftp_status(message)
+                return False
+            credential_ref = str(profile.credential_ref or "").strip() if profile else ""
+            if not self.background_auth_transport_is_pty():
+                message = (
+                    "Background password authentication needs native Windows ConPTY; "
+                    "configure a key or SSH agent on this platform."
+                )
+                self.set_sftp_runtime_status(message, state="auth-required")
+                self.set_remote_monitoring_status(message, state="auth-required")
+                self.show_sftp_status(message)
+                return False
+            if credential_ref:
+                prompt, accepted = QInputDialog.getText(
+                    self,
+                    "Authenticate background tools",
+                    f"Vault passphrase for {credential_ref}:",
+                    QLineEdit.EchoMode.Password,
+                )
+                source = "encrypted-vault"
+                if not accepted:
+                    self.show_sftp_status("Background SSH authentication cancelled")
+                    return False
+                if not prompt:
+                    self.show_sftp_status("Vault passphrase is required")
+                    return False
+                try:
+                    from .vault import LocalVault
+
+                    secret = LocalVault().get(credential_ref, prompt)
+                except Exception as exc:  # noqa: BLE001 - fail closed at the GUI boundary
+                    detail = str(exc).strip() or "credential could not be loaded"
+                    self.set_sftp_runtime_status(
+                        f"Background authentication failed: {detail[:120]}",
+                        state="error",
+                    )
+                    self.set_remote_monitoring_status(
+                        f"Background authentication failed: {detail[:120]}",
+                        state="error",
+                    )
+                    self.show_sftp_status(f"Background authentication failed: {detail[:120]}")
+                    return False
+                empty_message = "Vault credential is empty"
+            else:
+                target = f"{profile.username or 'user'}@{profile.host or 'host'}"
+                secret, accepted = QInputDialog.getText(
+                    self,
+                    "Authenticate background tools",
+                    f"SSH password for {target}:",
+                    QLineEdit.EchoMode.Password,
+                )
+                source = "session-prompt"
+                if not accepted:
+                    self.show_sftp_status("Background SSH authentication cancelled")
+                    return False
+                if not secret:
+                    self.show_sftp_status("SSH password is required")
+                    return False
+                empty_message = "SSH password is empty"
+            secret_bytes = secret.encode("utf-8")
+            del secret
+            if not secret_bytes:
+                self.show_sftp_status(empty_message)
+                return False
+            self._clear_background_password()
+            self._background_password = bytearray(secret_bytes)
+            del secret_bytes
+            self.setProperty("mobaBackgroundSshCredentialRef", credential_ref)
+            self.setProperty("mobaBackgroundSshCredentialSource", source)
+            self.setProperty("mobaBackgroundSshCredentialLoaded", True)
+            self.show_sftp_status(
+                "Background SSH credential loaded for this session"
+            )
+            self._apply_initial_background_state(start_runtime=True)
+            return True
+
+        def ensure_background_authentication_for_request(
+            self,
+            *,
+            allow_prompt: bool = False,
+        ) -> bool:
+            """Require background auth without opening an implicit modal prompt."""
+
+            profile = self.profile_for_sftp_action()
+            available, _detail = self.background_ssh_auth_capability(profile)
+            if available:
+                return True
+            if profile is not None and allow_prompt:
+                return self.authenticate_background_tools()
+            if profile is not None:
+                detail = self.background_ssh_auth_detail()
+                message = f"Background SSH authentication required: {detail}"
+                self.set_sftp_runtime_status(message, state="auth-required")
+                self.set_remote_monitoring_status(message, state="auth-required")
+                self.show_sftp_status(message)
+                return False
+            return True
 
         def schedule_background_auth_retry(self) -> None:
             """Retry background clients after the interactive SSH prompt completes."""
@@ -3864,13 +4191,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def set_sftp_runtime_status(self, message: str, *, state: str) -> None:
             badge = getattr(self, "sftp_status_badge", None)
-            auth_detail = (
-                "The active terminal owns a private SSH control connection, so this "
-                "background listing reuses the authenticated session."
-                if self.shared_ssh_control_path()
-                else "SFTP listing uses a separate non-interactive OpenSSH process; "
-                "password prompts from the terminal are not shared."
-            )
+            auth_detail = self.background_ssh_auth_detail()
             tooltip = (
                 f"{message}\n"
                 f"{auth_detail}"
@@ -4534,16 +4855,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 label.update()
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is not None:
-                auth_detail = (
-                    "The active terminal owns a private SSH control connection, so this "
-                    "refresh reuses the authenticated session."
-                    if self.shared_ssh_control_path()
-                    else "Terminal password prompts are not shared. A trusted host key "
-                    "and key or agent authentication are required."
-                )
+                auth_detail = self.background_ssh_auth_detail()
                 tooltip = (
                     f"{message}\n"
-                    "Monitoring runs through a separate non-interactive SSH process. "
                     f"{auth_detail}"
                 )
                 control.setProperty("state", state)
@@ -4605,6 +4919,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.background_auth_retry_timer.stop()
             self.background_state_activation_timer.stop()
             self.sftp_refresh_timeout.stop()
+            self.sftp_auth_probe_timer.stop()
             for process in (
                 self.monitoring_process,
                 self.sftp_refresh_process,
@@ -4612,6 +4927,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 process.blockSignals(True)
                 if process.state() != QProcess.ProcessState.NotRunning:
                     process.kill()
+                close_process = getattr(process, "close", None)
+                if callable(close_process):
+                    close_process()
+            self._clear_background_password()
             self.setProperty("mobaRuntimeShutdown", True)
             self.setProperty("mobaRemoteMonitoringRuntimeActive", False)
             self.set_remote_monitoring_status(
@@ -4683,14 +5002,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             executable = ntpath.basename(command[0]).lower()
             if executable in {"ssh", "ssh.exe"}:
                 command = openssh_command_without_windows_connection_sharing(command)
-                command = openssh_command_with_overrides(
-                    command,
-                    {
-                        "BatchMode": "yes",
-                        "ConnectTimeout": "5",
-                        "StrictHostKeyChecking": "yes",
-                    },
-                )
+                command = openssh_command_with_overrides(command, self.background_ssh_overrides())
                 control_path = self.shared_ssh_control_path()
                 if control_path:
                     command = ssh_command_with_control_path(
@@ -4705,6 +5017,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is None or not control.isChecked():
+                return
+            if not self.ensure_background_authentication_for_request():
+                self.setProperty("mobaBackgroundSshApplyingAuthGate", True)
+                try:
+                    control.setChecked(False)
+                finally:
+                    self.setProperty("mobaBackgroundSshApplyingAuthGate", False)
                 return
             count = int(
                 self.property("mobaRemoteMonitoringRefreshRequestCount") or 0
@@ -4735,6 +5054,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_output_buffer.clear()
             self.monitoring_generation += 1
             self.monitoring_active_generation = self.monitoring_generation
+            self._background_auth_prompt_buffers["monitoring"].clear()
+            self._background_auth_password_sent["monitoring"] = False
             self.set_remote_monitoring_status(
                 "Refreshing live telemetry…",
                 state="refreshing",
@@ -4744,9 +5065,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.monitoring_process.start()
 
         def read_remote_monitoring_output(self) -> None:
-            self.monitoring_output_buffer.extend(
-                bytes(self.monitoring_process.readAllStandardOutput())
-            )
+            payload = bytes(self.monitoring_process.readAllStandardOutput())
+            self._submit_background_password_if_prompt("monitoring", payload)
+            self.monitoring_output_buffer.extend(payload)
 
         def handle_remote_monitoring_error(self, error) -> None:
             request_is_current = self.remote_monitoring_request_is_current()
@@ -4898,6 +5219,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             refresh_action.setEnabled(
                 bool(control is not None and control.isChecked())
             )
+            auth_action = _required_gui_value(
+                menu.addAction(
+                    "Authenticate background tools",
+                    self.authenticate_background_tools,
+                ),
+                "monitoring-authentication action",
+            )
+            profile = self.profile_for_sftp_action()
+            auth_action.setEnabled(
+                bool(profile is not None)
+                and not bool(self._background_password)
+            )
+            auth_action.setToolTip(
+                "Load a vault credential or enter an SSH password for this session"
+            )
             follow_control = self.monitoring_control_widgets.get(
                 "follow-terminal-folder"
             )
@@ -5004,6 +5340,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def request_sftp_refresh(self, *, reason: str = "manual") -> None:
             if self.runtime_shutting_down:
                 return
+            if not self.ensure_background_authentication_for_request():
+                return
             count = int(self.property("mobaSftpRefreshRequestCount") or 0) + 1
             for widget in (
                 self,
@@ -5056,11 +5394,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.show_sftp_status(refresh_message)
             runtime_command = openssh_command_with_overrides(
                 list(plan.command),
-                {
-                    "BatchMode": "yes",
-                    "ConnectTimeout": "5",
-                    "StrictHostKeyChecking": "yes",
-                },
+                self.background_ssh_overrides(),
             )
             runtime_command = openssh_command_without_windows_connection_sharing(runtime_command)
             control_path = self.shared_ssh_control_path()
@@ -5072,15 +5406,22 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
             self.sftp_refresh_process.setProgram(runtime_command[0])
             self.sftp_refresh_process.setArguments(runtime_command[1:])
+            self._background_auth_prompt_buffers["sftp"].clear()
+            self._background_auth_password_sent["sftp"] = False
             self.sftp_refresh_process.start()
             self.sftp_refresh_timeout.start(10_000)
 
-        def write_sftp_refresh_batch(self) -> None:
+        def write_sftp_refresh_batch(self, *, force: bool = False) -> None:
             if (
                 self.runtime_shutting_down
                 or self.sftp_refresh_active_generation == 0
             ):
                 return
+            if self._background_password and not force:
+                if not self.sftp_auth_probe_timer.isActive():
+                    self.sftp_auth_probe_timer.start()
+                return
+            self.sftp_auth_probe_timer.stop()
             plan = self.sftp_refresh_plan
             if plan is None:
                 return
@@ -5094,12 +5435,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
 
         def read_sftp_refresh_output(self) -> None:
-            self.sftp_refresh_output_buffer.extend(
-                bytes(self.sftp_refresh_process.readAllStandardOutput())
-            )
+            payload = bytes(self.sftp_refresh_process.readAllStandardOutput())
+            self._submit_background_password_if_prompt("sftp", payload)
+            self.sftp_refresh_output_buffer.extend(payload)
 
         def handle_sftp_refresh_error(self, error) -> None:
             self.sftp_refresh_timeout.stop()
+            self.sftp_auth_probe_timer.stop()
             request_is_current = self.sftp_refresh_request_is_current()
             self.sftp_refresh_active_generation = 0
             if request_is_current:
@@ -5114,6 +5456,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def cancel_sftp_refresh_timeout(self) -> None:
             if self.sftp_refresh_process.state() == QProcess.ProcessState.NotRunning:
                 return
+            self.sftp_auth_probe_timer.stop()
             self.sftp_refresh_process.kill()
             if self.sftp_refresh_request_is_current():
                 self.setProperty("mobaSftpRefreshLastError", "timeout")
@@ -5156,6 +5499,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             _exit_status: QProcess.ExitStatus,
         ) -> None:
             self.sftp_refresh_timeout.stop()
+            self.sftp_auth_probe_timer.stop()
             request_is_current = self.sftp_refresh_request_is_current()
             self.read_sftp_refresh_output()
             output = self.sftp_refresh_output_buffer.decode(errors="replace")
@@ -5272,15 +5616,10 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             if control.key == "follow-terminal-folder":
                 return f"{control.tooltip}\n{self.state.follow_folder_plan.printable_batch()}"
             if control.key == "remote-monitoring":
-                auth_detail = (
-                    "Reuses the active terminal's authenticated SSH control connection."
-                    if self.shared_ssh_control_path()
-                    else "Terminal password prompts are not shared; a trusted host key "
-                    "plus key or agent authentication is required."
-                )
+                auth_detail = self.background_ssh_auth_detail()
                 return (
                     f"{control.tooltip}\n{self.state.monitoring_plan.printable()}\n"
-                    f"Runs as a separate non-interactive SSH process. {auth_detail}"
+                    f"{auth_detail}"
                 )
             return control.tooltip
 
@@ -5490,6 +5829,21 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             menu.addAction(
                 "Parent folder",
                 lambda: self.show_moba_sftp_toolbar_action("parent-folder"),
+            )
+            auth_action = _required_gui_value(
+                menu.addAction(
+                    "Authenticate background tools",
+                    self.authenticate_background_tools,
+                ),
+                "SFTP authenticate action",
+            )
+            profile = self.profile_for_sftp_action()
+            auth_action.setEnabled(
+                bool(profile is not None)
+                and not bool(self._background_password)
+            )
+            auth_action.setToolTip(
+                "Load a vault credential or enter an SSH password for this session"
             )
             menu.addAction(
                 "Refresh listing",
@@ -5739,10 +6093,26 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             open_browser.setToolTip(
                 "Refresh the remote folder before choosing a transfer"
             )
+            auth_action = _required_gui_value(
+                menu.addAction(
+                    "Authenticate background tools",
+                    self.authenticate_background_tools,
+                ),
+                "SFTP transfer authenticate action",
+            )
+            profile = self.profile_for_sftp_action()
+            auth_action.setEnabled(
+                bool(profile is not None)
+                and not bool(self._background_password)
+            )
+            auth_action.setToolTip(
+                "Load a vault credential or enter an SSH password for this session"
+            )
             self.sftp_transfer_menu_actions = {
                 "download": download,
                 "upload": upload,
                 "refresh": open_browser,
+                "authenticate": auth_action,
             }
             button.setMenu(menu)
             self.sftp_transfer_menu_button = button
@@ -5933,6 +6303,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def __init__(self, state: MobaConnectedSessionState, terminal_pane: TerminalPane) -> None:
             super().__init__()
             self.setObjectName("mobaConnectedSession")
+            self.setMinimumSize(0, 0)
+            self.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             self.state = state
             self.moba_connected_state = state
             self.terminal_pane = terminal_pane
@@ -6015,6 +6390,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
         def build_terminal_area(self) -> QWidget:
             area = QWidget()
             area.setObjectName("mobaTerminalArea")
+            area.setMinimumSize(0, 0)
+            area.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             self.apply_connected_session_route_properties(area)
             self.apply_sftp_terminal_folder_route_properties(area)
             area.setProperty("mobaFixedBannerVisible", False)
@@ -6025,6 +6405,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             layout.setSpacing(0)
             terminal_stack = QWidget()
             terminal_stack.setObjectName("mobaTerminalStack")
+            terminal_stack.setMinimumSize(0, 0)
+            terminal_stack.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             stack_layout = QVBoxLayout(terminal_stack)
             stack_layout.setContentsMargins(0, 0, 0, 0)
             stack_layout.setSpacing(0)
@@ -6032,6 +6417,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_moba_plain_terminal_mode()
             self.terminal_splitter = QSplitter(Qt.Orientation.Horizontal)
             self.terminal_splitter.setObjectName("mobaTerminalSplitter")
+            self.terminal_splitter.setMinimumSize(0, 0)
+            self.terminal_splitter.setSizePolicy(
+                QSizePolicy.Policy.Expanding,
+                QSizePolicy.Policy.Expanding,
+            )
             self.terminal_splitter.setChildrenCollapsible(False)
             self.terminal_splitter.addWidget(self.terminal_pane)
             self.terminal_splitter.setCollapsible(0, False)
@@ -8061,7 +8451,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 "main status bar",
             )
 
-        def __init__(self) -> None:
+        def __init__(self, *, preview_samples: bool = False) -> None:
             super().__init__()
             self.setObjectName("remoteOpsMain")
             self.setWindowTitle("Remote Ops Workspace")
@@ -8069,17 +8459,19 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             self.apply_moba_titlebar_chrome("Remote Ops Workspace")
             self.resize(1180, 720)
             self.store = ProfileStore()
-            # Source/CI GUI renders retain demo profiles; frozen release GUIs
-            # must start with an empty private workspace.
-            release_runtime = bool(getattr(sys, "frozen", False))
+            # Production GUI starts empty. Render and interaction harnesses can
+            # opt into deterministic sample rows without changing that default.
+            self.setProperty("guiPreviewSamples", bool(preview_samples))
             self.store.init(
-                with_examples=not release_runtime,
-                purge_examples=release_runtime,
+                with_examples=bool(preview_samples),
+                purge_examples=not preview_samples,
                 surface="gui",
             )
             self.layout_store = LayoutStore()
             self._last_terminal_pane: TerminalPane | None = None
             self._closing_tab_widgets: list[QWidget] = []
+            self._status_message_override: str | None = None
+            self._status_message_override_deadline = 0.0
 
             self.build_menu_bar()
             self.main_toolbar = QToolBar("Main")
@@ -13662,7 +14054,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.show_moba_connected_dock(state)
             self.show_moba_sftp_rail()
-            self.statusBar().showMessage(f"SFTP attached to {state.target} at {state.remote_path}")
+            self.show_transient_status_message(
+                f"SFTP attached to {state.target} at {state.remote_path}"
+            )
 
         def show_moba_macros_status(self, *_args) -> None:
             self.set_moba_rail_active("macros")
@@ -13810,6 +14204,16 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
 
         def add_workspace_tab(self, widget: QWidget, title: str, *, select: bool = True, role: str = "session") -> int:
             widget.setProperty("tabRole", role)
+            if role in {"terminal", "split"}:
+                # Keep the page root independent of its content size hint.
+                # This matters for a newly inserted Moba wrapper: until its
+                # first layout pass, a preferred-size child can otherwise
+                # flash at its minimum geometry during tab activation.
+                widget.setMinimumSize(0, 0)
+                widget.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Expanding,
+                )
             new_index = self.find_tab_by_role("new-session")
             self.tabs.setUpdatesEnabled(False)
             try:
@@ -14130,8 +14534,49 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             self.configure_product_connected_chrome()
             self.refresh_moba_left_dock_for_current_tab()
-            self.tabs.setUpdatesEnabled(True)
             current = self.tabs.currentWidget()
+            if current is not None:
+                # Activate the page and its embedded splitters while paints
+                # are still frozen.  Releasing updates before this synchronous
+                # layout pass is what allows Qt to expose a one-frame tiny
+                # terminal surface on fast tab changes.
+                current.setMinimumSize(0, 0)
+                current.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Expanding,
+                )
+                current.updateGeometry()
+                current_layout = current.layout()
+                if current_layout is not None:
+                    current_layout.activate()
+                layout_widgets: list[QWidget] = []
+                if isinstance(current, QSplitter):
+                    layout_widgets.append(current)
+                layout_widgets.extend(current.findChildren(QSplitter))
+                layout_widgets.extend(self.terminal_panes_in(current))
+                seen_layout_widgets: set[int] = set()
+                for child in layout_widgets:
+                    identity = id(child)
+                    if identity in seen_layout_widgets:
+                        continue
+                    seen_layout_widgets.add(identity)
+                    child_layout = child.layout()
+                    if child_layout is not None:
+                        child_layout.activate()
+                    child.updateGeometry()
+            tabs_layout = self.tabs.layout()
+            if tabs_layout is not None:
+                tabs_layout.activate()
+            self.tabs.updateGeometry()
+            self.tabs.setProperty(
+                "terminalTabGeometryStabilized",
+                bool(
+                    current is not None
+                    and current.width() > 0
+                    and current.height() > 0
+                ),
+            )
+            self.tabs.setUpdatesEnabled(True)
             if current is not None:
                 current.update()
             self.tabs.setProperty("terminalTabTransitionActive", False)
@@ -14154,6 +14599,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 return
             current = self.tabs.currentWidget()
             if current is None or not (current is pane or current.isAncestorOf(pane)):
+                return
+            # A newly selected page can still be inside the one-event-turn
+            # transition guard even when it already has its final tab index.
+            # Defer the child launch until that guard releases so ConPTY (or
+            # the hidden pipe fallback) never paints a transient tiny surface.
+            if bool(self.tabs.property("terminalTabTransitionActive")) or bool(
+                self.tabs.property("terminalTabPrepaintGuardActive")
+            ):
+                QTimer.singleShot(
+                    0,
+                    lambda pane=pane, index=index, transition=transition: (
+                        self.start_deferred_terminal_pane_if_current(
+                            pane,
+                            index,
+                            transition,
+                        )
+                    ),
+                )
                 return
             pane.start()
             pane.setProperty("terminalStartDeferredUntilTabReady", False)
@@ -19458,7 +19921,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 source_pane = current.terminal_pane
                 plan = source_pane.plan
                 profile = source_pane.profile
-                pane = self.new_terminal_pane(plan, profile=profile)
+                pane = self.new_terminal_pane(
+                    plan,
+                    profile=profile,
+                    autostart=False,
+                )
                 current.add_terminal_split(pane, orientation)
                 self.remember_terminal_plan(plan, profile=profile)
                 self.set_literal_tab_tooltip(
@@ -19468,6 +19935,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 )
                 self.refresh_moba_left_dock_for_current_tab()
                 self.update_session_status()
+                self.start_terminal_pane_when_active(pane, current_index)
                 return
 
             if (
@@ -19477,7 +19945,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             ):
                 current.setOrientation(orientation)
                 plan = default_shell_plan()
-                current.addWidget(self.new_terminal_pane(plan))
+                pane = self.new_terminal_pane(plan, autostart=False)
+                current.addWidget(pane)
                 self.remember_terminal_plan(plan)
                 self.equalize_ad_hoc_splitter(current)
                 self.tabs.setTabText(current_index, f"{label} {current.count()}")
@@ -19486,6 +19955,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     f"{label}: {current.count()} active panes",
                 )
                 self.update_session_status()
+                self.start_terminal_pane_when_active(pane, current_index)
                 return
 
             splitter = QSplitter(orientation)
@@ -19509,7 +19979,8 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     self.tabs.removeTab(current_index)
                     splitter.addWidget(current)
                     plan = default_shell_plan()
-                    splitter.addWidget(self.new_terminal_pane(plan))
+                    pane = self.new_terminal_pane(plan, autostart=False)
+                    splitter.addWidget(pane)
                     self.remember_terminal_plan(plan)
                     splitter.setProperty("tabRole", "split")
                     new_index = self.tabs.insertTab(
@@ -19530,6 +20001,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.refresh_special_tab_buttons()
                 self.refresh_moba_left_dock_for_current_tab()
                 self.update_session_status()
+                self.start_terminal_pane_when_active(pane, new_index)
                 return
 
             active = self.active_terminal_pane()
@@ -19538,14 +20010,23 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 if active is not None
                 else [(plan, None) for plan in split_shell_plans(2)]
             )
+            new_panes: list[TerminalPane] = []
             for plan, profile in sessions:
-                splitter.addWidget(self.new_terminal_pane(plan, profile=profile))
+                pane = self.new_terminal_pane(
+                    plan,
+                    profile=profile,
+                    autostart=False,
+                )
+                splitter.addWidget(pane)
+                new_panes.append(pane)
                 self.remember_terminal_plan(plan, profile=profile)
-            self.add_workspace_tab(
+            new_index = self.add_workspace_tab(
                 splitter, f"{label} {self.count_closeable_tabs() + 1}", role="split"
             )
             self.equalize_ad_hoc_splitter(splitter)
             self.update_session_status()
+            for pane in new_panes:
+                self.start_terminal_pane_when_active(pane, new_index)
 
         @staticmethod
         def equalize_ad_hoc_splitter(splitter: QSplitter) -> None:
@@ -19587,16 +20068,24 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     )
                     orientation = widget.terminal_splitter.orientation()
                     for source_pane in source_panes[1:]:
+                        duplicate_pane = self.new_terminal_pane(
+                            source_pane.plan,
+                            profile=source_pane.profile,
+                            autostart=False,
+                        )
                         duplicate.add_terminal_split(
-                            self.new_terminal_pane(
-                                source_pane.plan,
-                                profile=source_pane.profile,
-                            ),
+                            duplicate_pane,
                             orientation,
                         )
                         self.remember_terminal_plan(
                             source_pane.plan,
                             profile=source_pane.profile,
+                        )
+                    duplicate_index = self.tabs.indexOf(duplicate)
+                    for duplicate_pane in self.terminal_panes_in(duplicate):
+                        self.start_terminal_pane_when_active(
+                            duplicate_pane,
+                            duplicate_index,
                         )
                     source_sizes = [max(1, int(size)) for size in widget.terminal_splitter.sizes()]
                     if len(source_sizes) == duplicate.terminal_splitter.count():
@@ -19621,15 +20110,27 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             else:
                 splitter = QSplitter(Qt.Orientation.Horizontal)
                 for pane in panes:
-                    splitter.addWidget(self.new_terminal_pane(pane.plan, profile=pane.profile))
+                    splitter.addWidget(
+                        self.new_terminal_pane(
+                            pane.plan,
+                            profile=pane.profile,
+                            autostart=False,
+                        )
+                    )
                     self.remember_terminal_plan(pane.plan, profile=pane.profile)
                 self.equalize_ad_hoc_splitter(splitter)
             source_role = self.tab_role(index)
             duplicate_role = source_role if source_role in {"layout", "split"} else "split"
-            self.add_workspace_tab(splitter, f"{title} copy", role=duplicate_role)
+            duplicate_index = self.add_workspace_tab(
+                splitter,
+                f"{title} copy",
+                role=duplicate_role,
+            )
             self.bind_cloned_layout_persistence(splitter)
             self.log.append(f"TAB DUPLICATED: {title}")
             self.update_session_status()
+            for duplicate_pane in self.terminal_panes_in(splitter):
+                self.start_terminal_pane_when_active(duplicate_pane, duplicate_index)
 
         def terminal_splitter_clone_supported(self, source: QSplitter) -> bool:
             for index in range(source.count()):
@@ -19653,7 +20154,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 child = source.widget(index)
                 duplicate: QWidget
                 if isinstance(child, TerminalPane):
-                    duplicate = self.new_terminal_pane(child.plan, profile=child.profile)
+                    duplicate = self.new_terminal_pane(
+                        child.plan,
+                        profile=child.profile,
+                        autostart=False,
+                    )
                     self.remember_terminal_plan(child.plan, profile=child.profile)
                 elif isinstance(child, QSplitter):
                     duplicate = self.clone_terminal_splitter(child)
@@ -19694,7 +20199,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             current = self.tabs.currentIndex()
             for offset in range(1, count + 1):
                 index = (current + step * offset) % count
-                if self.tab_role(index) != "new-session":
+                if self.tab_role(index) not in {"home", "new-session"}:
                     self.tabs.setCurrentIndex(index)
                     return
 
@@ -19885,9 +20390,11 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                 self.bind_layout_resize_persistence(layout.name, widget)
                 for plan, profile in zip(plans, profiles, strict=True):
                     self.remember_terminal_plan(plan, profile=profile)
-                self.add_workspace_tab(widget, layout.name, role="layout")
+                tab_index = self.add_workspace_tab(widget, layout.name, role="layout")
                 self.log.append(f"LAYOUT: {layout.name} ({len(plans)} panes)")
                 self.update_session_status()
+                for pane in self.terminal_panes_in(widget):
+                    self.start_terminal_pane_when_active(pane, tab_index)
             except (KeyError, LauncherError, ValueError) as exc:
                 _literal_message_box(
                     self,
@@ -19919,17 +20426,33 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             profiles: list[Profile],
         ) -> QWidget:
             if len(plans) == 1:
-                return self.new_terminal_pane(plans[0], profile=profiles[0])
+                return self.new_terminal_pane(
+                    plans[0],
+                    profile=profiles[0],
+                    autostart=False,
+                )
             if layout.orientation == "vertical":
                 splitter = QSplitter(Qt.Orientation.Vertical)
                 for plan, profile in zip(plans, profiles, strict=True):
-                    splitter.addWidget(self.new_terminal_pane(plan, profile=profile))
+                    splitter.addWidget(
+                        self.new_terminal_pane(
+                            plan,
+                            profile=profile,
+                            autostart=False,
+                        )
+                    )
                 self.restore_layout_splitter_sizes(splitter, layout.splitter_sizes)
                 return splitter
             if layout.orientation == "horizontal":
                 splitter = QSplitter(Qt.Orientation.Horizontal)
                 for plan, profile in zip(plans, profiles, strict=True):
-                    splitter.addWidget(self.new_terminal_pane(plan, profile=profile))
+                    splitter.addWidget(
+                        self.new_terminal_pane(
+                            plan,
+                            profile=profile,
+                            autostart=False,
+                        )
+                    )
                 self.restore_layout_splitter_sizes(splitter, layout.splitter_sizes)
                 return splitter
             root = QSplitter(Qt.Orientation.Vertical)
@@ -19940,7 +20463,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     profiles[offset : offset + 2],
                     strict=True,
                 ):
-                    row.addWidget(self.new_terminal_pane(plan, profile=profile))
+                    row.addWidget(
+                        self.new_terminal_pane(
+                            plan,
+                            profile=profile,
+                            autostart=False,
+                        )
+                    )
                 root.addWidget(row)
             self.restore_layout_splitter_sizes(root, layout.splitter_sizes)
             return root
@@ -20018,6 +20547,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     terminal_pane
                 )
             )
+            pane.process.errorOccurred.connect(
+                lambda _error: self.update_session_status()
+            )
             if pane.is_running():
                 # Immediate-start panes emit ``started`` during construction,
                 # before the window can attach the signal above.
@@ -20028,6 +20560,13 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
                     exit_code,
                 )
             )
+            # Hidden-process startup can fail synchronously (for example when
+            # an executable is missing), before the signal connections above
+            # exist. Publish that failure immediately so the status bar cannot
+            # remain stale after an SSH or helper launch error.
+            error_string_getter = getattr(pane.process, "errorString", None)
+            if callable(error_string_getter) and error_string_getter():
+                self.update_session_status()
             return pane
 
         def refresh_moba_background_after_terminal_start(self, pane: TerminalPane) -> None:
@@ -20188,8 +20727,45 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             )
             return answer == QMessageBox.StandardButton.Yes
 
+        def show_transient_status_message(
+            self,
+            message: str,
+            timeout_ms: int = 1800,
+        ) -> None:
+            """Keep a completed workflow result visible across late process signals."""
+
+            timeout_ms = max(1, int(timeout_ms))
+            self._status_message_override = message
+            self._status_message_override_deadline = (
+                time.monotonic() + timeout_ms / 1000
+            )
+            self.statusBar().showMessage(message, timeout_ms)
+            QTimer.singleShot(timeout_ms, self.expire_transient_status_message)
+
+        def expire_transient_status_message(self) -> None:
+            if self._status_message_override is None:
+                return
+            if time.monotonic() < self._status_message_override_deadline:
+                return
+            self._status_message_override = None
+            self._status_message_override_deadline = 0.0
+            self.update_session_status()
+
         def update_session_status(self) -> None:
             try:
+                if self._status_message_override is not None:
+                    remaining_ms = int(
+                        (self._status_message_override_deadline - time.monotonic())
+                        * 1000
+                    )
+                    if remaining_ms > 0:
+                        self.statusBar().showMessage(
+                            self._status_message_override,
+                            max(1, remaining_ms),
+                        )
+                        return
+                    self._status_message_override = None
+                    self._status_message_override_deadline = 0.0
                 running = len(self.running_terminal_panes())
                 if running:
                     self.statusBar().showMessage(f"Running process panes: {running}")
@@ -20214,6 +20790,9 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
             for pane in running:
                 pane.prepare_for_close()
                 pane.process.kill()
+                close_process = getattr(pane.process, "close", None)
+                if callable(close_process):
+                    close_process()
             event.accept()
 
     set_windows_taskbar_app_id()
@@ -20232,7 +20811,7 @@ def create_main_window(argv: list[str] | None = None, *, show: bool = False):
     icon = QIcon(str(application_icon_path()))
     if not icon.isNull():
         app.setWindowIcon(icon)
-    window = MainWindow()
+    window = MainWindow(preview_samples=preview_samples)
     if show:
         window.show()
     return app, window

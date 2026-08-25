@@ -125,9 +125,9 @@ def test_ci_workflow_requires_enforced_branch_coverage_job() -> None:
 def test_ci_workflow_rejects_reduced_or_advisory_coverage_gate() -> None:
     checker = _load_checker()
     source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    reduced_threshold = source.replace("--cov-fail-under=77", "--cov-fail-under=76")
-    reduced_validated_total = source.replace("--min-total 77", "--min-total 76")
-    reduced_branch_threshold = source.replace("--min-branches 62", "--min-branches 61")
+    reduced_threshold = source.replace("--cov-fail-under=77.5", "--cov-fail-under=77.4")
+    reduced_validated_total = source.replace("--min-total 77.5", "--min-total 77.4")
+    reduced_branch_threshold = source.replace("--min-branches 62.5", "--min-branches 62.4")
     advisory_gate = source.replace(
         "  coverage:\n    name: Python branch-aware coverage\n",
         "  coverage:\n    continue-on-error: true\n    name: Python branch-aware coverage\n",

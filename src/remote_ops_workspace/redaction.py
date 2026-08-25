@@ -16,6 +16,24 @@ SENSITIVE_KEY_TOKENS = (
     "token",
 )
 
+SHARE_SENSITIVE_KEY_TOKENS = (
+    "access_key",
+    "api_key",
+    "apikey",
+    "authorization",
+    "bearer",
+    "cookie",
+    "credential",
+    "identity_file",
+    "key_path",
+    "passphrase",
+    "passwd",
+    "password",
+    "private_key",
+    "secret",
+    "token",
+)
+
 SENSITIVE_ARG_NAMES = {
     "-N",
     "--new-passphrase",
@@ -34,7 +52,9 @@ SENSITIVE_ASSIGNMENT_KEYS = {
     "bearer",
     "cookie",
     "credential",
+    "identity_file",
     "key",
+    "key_path",
     "pass",
     "passwd",
     "passphrase",
@@ -51,8 +71,15 @@ URL_PASSWORD_RE = re.compile(r"(?P<prefix>[A-Za-z][A-Za-z0-9+.-]*://[^\s/@:]+):(
 
 
 def is_sensitive_key(key: object) -> bool:
-    text = str(key).lower()
-    return any(token in text for token in SENSITIVE_KEY_TOKENS)
+    normalized = str(key).strip().lstrip("-/").replace("-", "_").lower()
+    return normalized in SENSITIVE_ASSIGNMENT_KEYS or any(
+        token in normalized for token in SENSITIVE_KEY_TOKENS
+    )
+
+
+def is_share_sensitive_key(key: object) -> bool:
+    normalized = str(key).strip().lstrip("-/").replace("-", "_").lower()
+    return any(token in normalized for token in SHARE_SENSITIVE_KEY_TOKENS)
 
 
 def redact_value(value: Any) -> Any:
@@ -101,7 +128,7 @@ def _redact_string_arg(value: str) -> str:
     windows_match = WINDOWS_SECRET_SWITCH_RE.fullmatch(value)
     if windows_match:
         return f"/{windows_match.group('key')}:{REDACTED}"
-    if "=" in value:
+    if "=" in value and "://" not in value:
         key, separator, remainder = value.partition("=")
         if _assignment_key_is_sensitive(key):
             return f"{key}{separator}{REDACTED}"
@@ -126,12 +153,13 @@ def _redact_url_password(value: str) -> str:
         return value
     username = parsed.username or ""
     hostname = parsed.hostname or ""
-    if not username or not hostname:
+    if not hostname:
         return value
     try:
         parsed_port = parsed.port
     except ValueError:
         parsed_port = None
     port = f":{parsed_port}" if parsed_port is not None else ""
-    netloc = f"{username}:{REDACTED}@{hostname}{port}"
+    display_hostname = f"[{hostname}]" if ":" in hostname else hostname
+    netloc = f"{username}:{REDACTED}@{display_hostname}{port}"
     return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))

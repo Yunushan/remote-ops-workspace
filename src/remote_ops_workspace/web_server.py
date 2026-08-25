@@ -7,12 +7,14 @@ import secrets
 import socketserver
 from functools import partial
 from pathlib import Path
+from typing import BinaryIO
 from urllib.parse import urlparse
 
 from . import command_safety as safe
 from .enterprise_policy import load_enterprise_policy
 from .models import Profile
 from .paths import runtime_web_dir
+from .redaction import is_share_sensitive_key
 from .storage import ProfileStore
 
 SECURITY_HEADERS = {
@@ -36,9 +38,7 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
 }
-
-SENSITIVE_OPTION_TOKENS = ("password", "passphrase", "secret", "token", "credential", "private_key")
-
+MAX_REQUEST_BODY_BYTES = 64 * 1024
 
 class WebProfileApi:
     """Small same-origin API for the Web/PWA profile catalogue.
@@ -69,12 +69,10 @@ class WebProfileApi:
     def add_profile(self, payload: object) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("profile payload must be a JSON object")
-        forbidden = {"credential_ref", "identity_file", "password", "secret", "token"}
         profile_data = payload.get("profile", payload)
         if not isinstance(profile_data, dict):
             raise ValueError("profile must be a JSON object")
-        supplied = {str(key).lower() for key in profile_data}
-        blocked = sorted(forbidden & supplied)
+        blocked = sorted(str(key) for key in profile_data if _is_sensitive_option_key(str(key)))
         if blocked:
             raise ValueError(f"web API refuses secret-bearing fields: {', '.join(blocked)}")
         raw_options = profile_data.get("options", {})
@@ -120,7 +118,7 @@ class WebProfileApi:
 
 
 def _is_sensitive_option_key(key: str) -> bool:
-    return any(token in key.lower() for token in SENSITIVE_OPTION_TOKENS)
+    return is_share_sensitive_key(key)
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -146,21 +144,35 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - http.server API
         if urlparse(self.path).path != "/api/v1/profiles":
             self.send_error(404, "Not found")
+            self._discard_request_body()
             return
         if not self._api_authorized():
+            self._discard_request_body()
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length < 1 or length > 64 * 1024:
+            if length < 1 or length > MAX_REQUEST_BODY_BYTES:
                 raise ValueError("request body must be between 1 and 65536 bytes")
+            body = self.rfile.read(length)
+            if len(body) != length:
+                raise ValueError("request body does not match Content-Length")
             content_type = self.headers.get("Content-Type", "")
-            if not content_type.lower().startswith("application/json"):
+            media_type = content_type.partition(";")[0].strip().lower()
+            if media_type != "application/json":
                 raise ValueError("Content-Type must be application/json")
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            payload = json.loads(body.decode("utf-8"))
             api = self._require_api()
             self._send_json(201, api.add_profile(payload))
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             self._send_json(400, {"error": str(exc)})
+
+    def send_head(self) -> BinaryIO | None:
+        root = Path(self.directory or Path.cwd()).resolve()
+        requested = Path(self.translate_path(self.path)).resolve()
+        if not requested.is_relative_to(root):
+            self.send_error(404, "Not found")
+            return None
+        return super().send_head()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         print(f"web: {format % args}")
@@ -176,6 +188,14 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 
     def _send_enterprise_policy(self) -> None:
         self._send_json(200, load_enterprise_policy().to_public_dict())
+
+    def _discard_request_body(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return
+        if 0 < length <= MAX_REQUEST_BODY_BYTES:
+            self.rfile.read(length)
 
     def _require_api(self) -> WebProfileApi:
         if self.api is None:
@@ -196,10 +216,9 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
         return True
 
     def _send_api_health(self) -> None:
-        try:
-            self._send_json(200, self._require_api().health())
-        except ValueError as exc:
-            self._send_json(404, {"error": str(exc)})
+        if not self._api_authorized():
+            return
+        self._send_json(200, self._require_api().health())
 
     def _send_api_profiles(self) -> None:
         if not self._api_authorized():

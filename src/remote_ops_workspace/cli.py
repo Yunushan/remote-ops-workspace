@@ -1107,9 +1107,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="allow binding Web/PWA to a non-loopback interface",
     )
-    web.add_argument(
+    web_api_token = web.add_mutually_exclusive_group()
+    web_api_token.add_argument(
         "--api-token",
-        help="enable the loopback browser profile API; requires this 24+ character bearer token",
+        help=(
+            "enable the loopback browser profile API with a 24+ character bearer token; "
+            "prefer --api-token-env so the token is not visible in process listings"
+        ),
+    )
+    web_api_token.add_argument(
+        "--api-token-env",
+        metavar="NAME",
+        help="read the loopback browser API bearer token from this environment variable",
     )
     web.set_defaults(func=cmd_serve_web)
 
@@ -3048,11 +3057,14 @@ def _run_frozen_windows_gui_launcher() -> int | None:
 
 
 def cmd_serve_web(args: argparse.Namespace) -> int:
+    api_token = args.api_token
+    if args.api_token_env:
+        api_token = _secret_from_env(args.api_token_env, "web API token")
     serve_web(
         host=args.host,
         port=args.port,
         allow_public_bind=args.allow_public_bind,
-        api_token=args.api_token,
+        api_token=api_token,
     )
     return 0
 

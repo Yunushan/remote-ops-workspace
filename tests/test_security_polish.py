@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from remote_ops_workspace.models import Profile
-from remote_ops_workspace.redaction import REDACTED, redact_value
+from remote_ops_workspace.redaction import REDACTED, redact_text, redact_value
 
 
 def load_security_checker():
@@ -44,6 +44,51 @@ def test_redaction_covers_assignment_style_and_url_secrets() -> None:
         "prod/router-password",
     ):
         assert secret not in serialized
+
+
+def test_redaction_covers_sensitive_key_aliases_and_nested_sequences() -> None:
+    payload = {
+        "api_key": "api-secret",
+        "identity-file": "C:/Users/operator/.ssh/id_ed25519",
+        "nested": ("safe", {"authorization": "Bearer nested-secret"}),
+        "safe_label": "visible",
+    }
+
+    redacted = redact_value(payload)
+
+    assert redacted["api_key"] == REDACTED
+    assert redacted["identity-file"] == REDACTED
+    assert redacted["nested"] == ("safe", {"authorization": REDACTED})
+    assert redacted["safe_label"] == "visible"
+
+
+def test_redaction_handles_direct_urls_assignments_and_non_string_values() -> None:
+    values = redact_value(
+        [
+            "api_key=assignment-secret",
+            "https://admin:url-secret@example.invalid:8443/path?mode=read",
+            "https://admin:port-secret@example.invalid:not-a-port/path",
+            "https://admin:ipv6-secret@[::1]:8443/path",
+            "https://:missing-user@example.invalid/path",
+            "https://[invalid-ipv6",
+            42,
+        ]
+    )
+
+    assert values[0] == f"api_key={REDACTED}"
+    assert values[1] == f"https://admin:{REDACTED}@example.invalid:8443/path?mode=read"
+    assert values[2] == f"https://admin:{REDACTED}@example.invalid/path"
+    assert values[3] == f"https://admin:{REDACTED}@[::1]:8443/path"
+    assert values[4] == f"https://:{REDACTED}@example.invalid/path"
+    assert values[5] == "https://[invalid-ipv6"
+    assert values[6] == 42
+    assert redact_text("prefix api_key=callback-secret suffix") == (
+        f"prefix api_key={REDACTED} suffix"
+    )
+    assert redact_text("https://user:hostless-secret@/path") == (
+        f"https://user:{REDACTED}@/path"
+    )
+    assert redact_value(["mode=read"]) == ["mode=read"]
 
 
 def test_security_polish_checker_passes() -> None:

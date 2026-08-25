@@ -1038,6 +1038,7 @@ def create_main_window(
             self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
             self._restart_after_stop = False
             self._rendered_terminal_text = ""
+            self._pending_terminal_transcript: str | None = None
             self._pty_initial_clear_pending = False
             self._pty_startup_probe = ""
             self._terminal_scroll_generation = 0
@@ -1375,6 +1376,10 @@ def create_main_window(
             )
             self.output.setUpdatesEnabled(not frozen and not alternate_redraw_active)
             if not frozen:
+                pending_transcript = self._pending_terminal_transcript
+                self._pending_terminal_transcript = None
+                if pending_transcript is not None:
+                    self.render_terminal_transcript(pending_transcript)
                 # Output may have arrived while painting was suppressed. One
                 # queued repaint exposes the already-rendered transcript after
                 # the final tab geometry is in place without blocking the UI.
@@ -2883,6 +2888,13 @@ def create_main_window(
             self.render_terminal_transcript(self.terminal_emulator.feed(text))
 
         def render_terminal_transcript(self, transcript: str) -> None:
+            if bool(self.output.property("terminalTabPaintFrozen")):
+                # A live SSH session may deliver a burst while Qt is settling
+                # a tab close/switch. Keep emulator state current but avoid
+                # rebuilding the QTextDocument on every chunk; the latest
+                # transcript is rendered once the viewport is unfrozen.
+                self._pending_terminal_transcript = transcript
+                return
             previous = self._rendered_terminal_text
             selected_cursor = self.output.textCursor()
             selection_anchor = selected_cursor.anchor()

@@ -1291,6 +1291,31 @@ def test_terminal_tab_transition_freezes_embedded_terminal_viewports(gui_window)
         pane.deleteLater()
 
 
+def test_terminal_tab_paint_freeze_defers_transcript_rebuild_until_release(
+    gui_window,
+) -> None:
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="paint-freeze-transcript", command=[], source="test"),
+        autostart=False,
+    )
+    pane.set_terminal_transcript("before\n")
+    pane.set_terminal_paint_frozen(True)
+
+    pane.append_text("during-freeze\n")
+
+    assert "during-freeze" not in pane.output.toPlainText()
+    assert pane._pending_terminal_transcript is not None
+
+    pane.set_terminal_paint_frozen(False)
+
+    assert "during-freeze" in pane.output.toPlainText()
+    assert pane._pending_terminal_transcript is None
+    pane.deleteLater()
+
+
 def test_visible_moba_terminal_routes_keys_from_the_actual_mouse_focus(
     gui_window,
 ) -> None:

@@ -880,6 +880,8 @@ def create_main_window(
                 viewport.update()
 
         def paintEvent(self, event) -> None:  # noqa: N802
+            if bool(self.property("terminalTabPaintFrozen")):
+                return
             super().paintEvent(event)
             if not self._remote_cursor_visible or self._remote_cursor_position is None:
                 return
@@ -1153,6 +1155,7 @@ def create_main_window(
             )
             self.output.setProperty("terminalDirectKeyInput", True)
             self.output.setProperty("terminalQtCaretHidden", True)
+            self.output.setProperty("terminalTabPaintFrozen", False)
             self.output.setProperty("terminalAlternateScreenActive", False)
             self.output.setProperty("terminalAlternateScreenRedraw", False)
             self.output.setProperty("terminalBracketedPasteActive", False)
@@ -1360,6 +1363,23 @@ def create_main_window(
             self.update_process_actions()
             if autostart:
                 self.start()
+
+        def set_terminal_paint_frozen(self, frozen: bool) -> None:
+            """Hold the terminal viewport steady while its workspace tab settles."""
+
+            frozen = bool(frozen)
+            self.setProperty("terminalTabPaintFrozen", frozen)
+            self.output.setProperty("terminalTabPaintFrozen", frozen)
+            alternate_redraw_active = bool(
+                self.output.property("terminalAlternateScreenRedraw")
+            )
+            self.output.setUpdatesEnabled(not frozen and not alternate_redraw_active)
+            if not frozen:
+                # Output may have arrived while painting was suppressed. One
+                # queued repaint exposes the already-rendered transcript after
+                # the final tab geometry is in place without blocking the UI.
+                self.output_viewport.update()
+                self.output.update()
 
         def terminal_button(self, label: str, icon_name: str, tooltip: str) -> QToolButton:
             button = QToolButton()
@@ -2882,6 +2902,33 @@ def create_main_window(
             )
             scroll_value = scroll_bar.value()
             alternate_screen_active = self.terminal_emulator.alternate_screen_active
+            tab_paint_frozen = bool(
+                self.output.property("terminalTabPaintFrozen")
+            )
+            # An alternate-screen application owns a fixed terminal grid, not
+            # the transcript's scrollback.  Keeping QTextEdit's scrollbar
+            # visible while replacing that grid lets Qt change the viewport
+            # width and vertical offset between redraws, which produces the
+            # one-frame gaps seen during tab switches and Vim repaints.
+            alternate_scrollbars_hidden = bool(
+                self.output.property("terminalAlternateScreenScrollbarsHidden")
+            )
+            if alternate_screen_active != alternate_scrollbars_hidden:
+                scrollbar_policy = (
+                    Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+                    if alternate_screen_active
+                    else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+                )
+                self.output.setVerticalScrollBarPolicy(
+                    scrollbar_policy
+                )
+                self.output.setHorizontalScrollBarPolicy(
+                    scrollbar_policy
+                )
+                self.output.setProperty(
+                    "terminalAlternateScreenScrollbarsHidden",
+                    alternate_screen_active,
+                )
             was_scrolled_to_end = (
                 not alternate_screen_active
                 and scroll_value >= scroll_bar.maximum() - 2
@@ -2977,8 +3024,11 @@ def create_main_window(
                 )
             self._rendered_terminal_text = transcript
             if alternate_screen_active:
-                self.output.setUpdatesEnabled(True)
-                self.output_viewport.update()
+                if not tab_paint_frozen:
+                    self.output.setUpdatesEnabled(True)
+                    self.output_viewport.update()
+                else:
+                    self.output.setUpdatesEnabled(False)
                 self.output.setProperty("terminalAlternateScreenRedraw", False)
             if alternate_screen_active:
                 # The retained screen is a viewport, not scrollback.  Always
@@ -3000,6 +3050,11 @@ def create_main_window(
                 self.scroll_terminal_to_end()
             else:
                 scroll_bar.setValue(scroll_value)
+            if not alternate_screen_active:
+                self.output.setProperty(
+                    "terminalAlternateScreenScrollbarsHidden",
+                    False,
+                )
             self.update_remote_cursor_overlay(transcript)
             self.refresh_terminal_input_security(transcript)
 
@@ -14424,6 +14479,14 @@ def create_main_window(
                     tab_bar.setTabButton(index, position, None)
             tab_bar.updateGeometry()
 
+        def set_terminal_tab_paint_frozen(self, frozen: bool) -> None:
+            """Freeze every embedded terminal while a workspace page changes."""
+
+            frozen = bool(frozen)
+            self.tabs.setProperty("terminalTabPaintFrozen", frozen)
+            for pane in self.all_terminal_panes():
+                pane.set_terminal_paint_frozen(frozen)
+
         def prepare_tab_transition(self, index: int) -> None:
             """Freeze terminal painting before Qt activates a different page."""
 
@@ -14438,6 +14501,7 @@ def create_main_window(
             current_index = self.tabs.currentIndex()
             self.tabs.setProperty("terminalTabPrepaintGuardActive", True)
             self.tabs.setProperty("terminalTabPrepaintTargetIndex", index)
+            self.set_terminal_tab_paint_frozen(True)
             self.tabs.setUpdatesEnabled(False)
             # A click on a disabled/current tab or an intercepted keyboard
             # navigation event may not produce currentChanged.  Release that
@@ -14465,6 +14529,7 @@ def create_main_window(
                 "terminalTabPrepaintGuardRecoveredWithoutTransition",
                 self.tabs.currentIndex() != previous_index,
             )
+            self.set_terminal_tab_paint_frozen(False)
             self.tabs.setUpdatesEnabled(True)
             self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
             self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
@@ -14478,10 +14543,12 @@ def create_main_window(
             # geometry is settled.  Suppress that one intermediate frame so a
             # tiny, unconfigured terminal surface cannot flash in the middle
             # of the workspace during a tab switch.
+            self.set_terminal_tab_paint_frozen(True)
             self.tabs.setUpdatesEnabled(False)
             if self.moba_tab_guard or index < 0:
                 self.configure_product_connected_chrome()
                 self.refresh_moba_left_dock_for_current_tab()
+                self.set_terminal_tab_paint_frozen(False)
                 self.tabs.setUpdatesEnabled(True)
                 self.tabs.setProperty("terminalTabTransitionActive", False)
                 self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
@@ -14587,6 +14654,7 @@ def create_main_window(
                     and current.height() > 0
                 ),
             )
+            self.set_terminal_tab_paint_frozen(False)
             self.tabs.setUpdatesEnabled(True)
             if current is not None:
                 current.update()

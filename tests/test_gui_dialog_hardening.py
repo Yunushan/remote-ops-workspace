@@ -1214,6 +1214,83 @@ def test_terminal_mouse_drag_selects_across_scrollback_lines(gui_window) -> None
     pane.deleteLater()
 
 
+def test_alternate_screen_uses_a_fixed_scrollbar_free_viewport(gui_window) -> None:
+    from PyQt6.QtCore import Qt
+
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    pane = window.new_terminal_pane(
+        TerminalPanePlan(title="alternate-screen-scrollbar-test", command=[], source="test")
+    )
+
+    assert pane.output.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert pane.output.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+
+    pane.append_text("\x1b[?1049h\x1b[2J\x1b[Hvim-like grid\n" + ("grid row\n" * 24))
+    app.processEvents()
+
+    assert pane.terminal_emulator.alternate_screen_active is True
+    assert pane.output.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert pane.output.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert pane.output.property("terminalAlternateScreenScrollbarsHidden") is True
+
+    pane.append_text("\x1b[?1049l\nrestored shell\n")
+    app.processEvents()
+
+    assert pane.terminal_emulator.alternate_screen_active is False
+    assert pane.output.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert pane.output.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert pane.output.property("terminalAlternateScreenScrollbarsHidden") is False
+    pane.deleteLater()
+
+
+def test_terminal_tab_transition_freezes_embedded_terminal_viewports(gui_window) -> None:
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    app, window = gui_window
+    first = window.new_terminal_pane(
+        TerminalPanePlan(title="paint-freeze-first", command=[], source="test"),
+        autostart=False,
+    )
+    second = window.new_terminal_pane(
+        TerminalPanePlan(title="paint-freeze-second", command=[], source="test"),
+        autostart=False,
+    )
+    first_index = window.add_workspace_tab(first, "paint-freeze-first", role="terminal")
+    second_index = window.add_workspace_tab(
+        second,
+        "paint-freeze-second",
+        select=False,
+        role="terminal",
+    )
+    app.processEvents()
+    window.tabs.setCurrentIndex(first_index)
+    app.processEvents()
+
+    window.tabs.setCurrentIndex(second_index)
+
+    assert window.tabs.property("terminalTabPaintFrozen") is True
+    assert first.output.property("terminalTabPaintFrozen") is True
+    assert second.output.property("terminalTabPaintFrozen") is True
+    assert first.output.updatesEnabled() is False
+    assert second.output.updatesEnabled() is False
+
+    app.processEvents()
+
+    assert window.tabs.property("terminalTabPaintFrozen") is False
+    assert first.output.property("terminalTabPaintFrozen") is False
+    assert second.output.property("terminalTabPaintFrozen") is False
+    assert first.output.updatesEnabled() is True
+    assert second.output.updatesEnabled() is True
+
+    for pane in (first, second):
+        index = window.tabs.indexOf(pane)
+        if index >= 0:
+            window.tabs.removeTab(index)
+        pane.deleteLater()
+
+
 def test_visible_moba_terminal_routes_keys_from_the_actual_mouse_focus(
     gui_window,
 ) -> None:

@@ -14280,6 +14280,15 @@ def create_main_window(
                     return index
             return -1
 
+        def set_workspace_tab_index(self, index: int) -> None:
+            """Select a workspace page only after arming the paint guard."""
+
+            if index < 0 or index >= self.tabs.count():
+                return
+            if index != self.tabs.currentIndex():
+                self.prepare_tab_transition(index)
+            self.tabs.setCurrentIndex(index)
+
         def add_workspace_tab(self, widget: QWidget, title: str, *, select: bool = True, role: str = "session") -> int:
             widget.setProperty("tabRole", role)
             if role in {"terminal", "split"}:
@@ -14301,7 +14310,7 @@ def create_main_window(
                     index = self.tabs.addTab(widget, title)
                 self.set_literal_tab_tooltip(index, title)
                 if select:
-                    self.tabs.setCurrentIndex(index)
+                    self.set_workspace_tab_index(index)
             finally:
                 # A selected tab may have emitted currentChanged above and
                 # entered the guarded transition.  Keep the tab widget
@@ -14933,7 +14942,7 @@ def create_main_window(
             if index < 0:
                 return
             if self.tab_role(index) != "new-session":
-                self.tabs.setCurrentIndex(index)
+                self.set_workspace_tab_index(index)
             menu = self.build_tab_context_menu(index)
             if menu is not None:
                 try:
@@ -20080,7 +20089,7 @@ def create_main_window(
                         f"{title} · {label}",
                     )
                     self.set_literal_tab_tooltip(new_index, f"{tooltip} · {label}")
-                    self.tabs.setCurrentIndex(new_index)
+                    self.set_workspace_tab_index(new_index)
                 finally:
                     self.moba_tab_guard = previous_guard
                 preset = get_gui_design_preset(self.current_design_id())
@@ -20291,7 +20300,7 @@ def create_main_window(
             for offset in range(1, count + 1):
                 index = (current + step * offset) % count
                 if self.tab_role(index) not in {"home", "new-session"}:
-                    self.tabs.setCurrentIndex(index)
+                    self.set_workspace_tab_index(index)
                     return
 
         def close_other_tabs(self, keep_index: int) -> None:
@@ -20723,7 +20732,7 @@ def create_main_window(
                 return
             role = self.tab_role(index)
             if role == "home":
-                self.tabs.setCurrentIndex(index)
+                self.set_workspace_tab_index(index)
                 self.statusBar().showMessage("Home tab stays open")
                 return
             if role == "new-session":

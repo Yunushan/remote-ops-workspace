@@ -583,6 +583,44 @@ def test_terminal_tab_set_current_widget_uses_prepaint_guard(gui_window) -> None
         widget.deleteLater()
 
 
+def test_programmatic_terminal_tab_selection_arms_prepaint_guard(gui_window) -> None:
+    from PyQt6.QtWidgets import QWidget
+
+    app, window = gui_window
+    first = QWidget()
+    second = QWidget()
+    first_index = window.add_workspace_tab(first, "programmatic-first", role="test")
+    second_index = window.add_workspace_tab(
+        second,
+        "programmatic-second",
+        select=False,
+        role="test",
+    )
+    app.processEvents()
+    window.set_workspace_tab_index(first_index)
+    app.processEvents()
+
+    observed: list[tuple[int, bool]] = []
+    window.tabs.currentChanged.connect(
+        lambda index: observed.append(
+            (index, bool(window.tabs.property("terminalTabPrepaintGuardActive")))
+        )
+    )
+    window.set_workspace_tab_index(second_index)
+
+    assert observed[-1] == (second_index, True)
+    assert window.tabs.property("terminalTabPrepaintTargetIndex") == second_index
+    app.processEvents()
+    assert window.tabs.property("terminalTabPrepaintGuardActive") is False
+    assert window.tabs.property("terminalTabTransitionActive") is False
+
+    for widget in (first, second):
+        index = window.tabs.indexOf(widget)
+        if index >= 0:
+            window.tabs.removeTab(index)
+        widget.deleteLater()
+
+
 def test_new_terminal_tab_starts_after_transition_guard_releases(gui_window) -> None:
     import sys
     import time

@@ -2319,8 +2319,9 @@ def gui_window(monkeypatch, tmp_path):
     window.show()
     app.processEvents()
     yield app, window
+    # A second event-loop pump after close can deliver a queued PyQt slot to a
+    # teardown object on macOS/Python 3.15 and abort the interpreter.
     window.close()
-    app.processEvents()
 
 
 def test_dynamic_dialog_labels_are_plain_text_and_frames_stay_on_parent_screen(gui_window) -> None:

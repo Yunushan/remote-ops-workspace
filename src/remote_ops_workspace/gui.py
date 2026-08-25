@@ -3841,7 +3841,7 @@ def create_main_window(
 
             if profile is None:
                 return False, "connected profile was not found"
-            if self._background_password and self.background_auth_transport_is_pty():
+            if self._background_password and self.background_auth_password_supported():
                 return True, "encrypted-vault credential loaded for this session"
             if self.shared_ssh_control_path():
                 return True, "active terminal SSH connection (shared control socket)"
@@ -3880,10 +3880,18 @@ def create_main_window(
                 and getattr(self.sftp_refresh_process, "is_pty", False)
             )
 
+        def background_auth_password_supported(self) -> bool:
+            """Return whether this platform can use a session password for background SSH."""
+
+            # POSIX keeps the established QProcess pipe-based authentication path;
+            # native Windows OpenSSH requires ConPTY so password prompts are not
+            # sent to an invisible or unrelated console window.
+            return sys.platform != "win32" or self.background_auth_transport_is_pty()
+
         def background_ssh_auth_detail(self) -> str:
             """Describe the authentication route currently used by background tools."""
 
-            if self._background_password and self.background_auth_transport_is_pty():
+            if self._background_password and self.background_auth_password_supported():
                 source = str(self.property("mobaBackgroundSshCredentialSource") or "")
                 source_detail = (
                     "a profile credential loaded from the encrypted vault"
@@ -3987,7 +3995,7 @@ def create_main_window(
                 self.show_sftp_status(message)
                 return False
             credential_ref = str(profile.credential_ref or "").strip() if profile else ""
-            if not self.background_auth_transport_is_pty():
+            if not self.background_auth_password_supported():
                 message = (
                     "Background password authentication needs native Windows ConPTY; "
                     "configure a key or SSH agent on this platform."

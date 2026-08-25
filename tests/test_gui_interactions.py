@@ -48,6 +48,13 @@ def test_gui_interaction_gate_inventories_every_visible_toolbar_command() -> Non
     assert len(checker.SUPPORTED_WINDOW_SIZES) == 5
     assert checker.SUPPORTED_WINDOW_SIZES[0] == (1024, 768)
     assert (1180, 720) in checker.SUPPORTED_WINDOW_SIZES
+    assert checker.RESPONSIVENESS_SAMPLE_COUNT == 20
+    assert checker.RESPONSIVENESS_BUDGETS_MS == {
+        "qt-event-loop-roundtrip": {"p95": 100.0, "maximum": 500.0},
+        "workspace-terminal-tab-switch": {"p95": 250.0, "maximum": 1000.0},
+        "profile-tree-filter": {"p95": 250.0, "maximum": 1000.0},
+        "terminal-transcript-append": {"p95": 400.0, "maximum": 1500.0},
+    }
 
 
 def test_gui_interaction_gate_runs_on_linux_native_windows_and_python315_ci() -> None:

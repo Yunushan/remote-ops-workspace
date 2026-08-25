@@ -20,15 +20,15 @@ python -m pytest -q \
   --cov-report=term-missing \
   --cov-report=xml:artifacts/coverage/coverage.xml \
   --cov-report=json:artifacts/coverage/coverage.json \
-  --cov-fail-under=75
+  --cov-fail-under=77
 python scripts/check_coverage_report.py \
   --report artifacts/coverage/coverage.json \
-  --min-total 75 \
-  --min-branches 60
+  --min-total 77 \
+  --min-branches 62
 ```
 
-The release-blocking baseline requires at least 75% aggregate line-and-branch
-coverage and at least 60% pure branch-decision coverage. These are floors, not
+The release-blocking baseline requires at least 77% aggregate line-and-branch
+coverage and at least 62% pure branch-decision coverage. These are floors, not
 targets or readiness claims. They may be raised as coverage improves, but
 repository policy rejects reducing either threshold or making the job advisory.
 CI retains XML and JSON reports for both successful and failed test runs so a

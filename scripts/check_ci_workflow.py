@@ -149,18 +149,18 @@ def check_coverage_job(workflow: str) -> list[str]:
     threshold_match = re.search(r"--cov-fail-under(?:=|\s+)(\d+(?:\.\d+)?)", block)
     if threshold_match is None:
         errors.append("ci coverage job missing an explicit branch coverage failure threshold")
-    elif float(threshold_match.group(1)) < 75:
-        errors.append("ci coverage job aggregate coverage failure threshold must be at least 75")
+    elif float(threshold_match.group(1)) < 77:
+        errors.append("ci coverage job aggregate coverage failure threshold must be at least 77")
     total_match = re.search(r"--min-total(?:=|\s+)(\d+(?:\.\d+)?)", block)
     if total_match is None:
         errors.append("ci coverage job missing validated aggregate coverage threshold")
-    elif float(total_match.group(1)) < 75:
-        errors.append("ci coverage job validated aggregate coverage threshold must be at least 75")
+    elif float(total_match.group(1)) < 77:
+        errors.append("ci coverage job validated aggregate coverage threshold must be at least 77")
     branch_match = re.search(r"--min-branches(?:=|\s+)(\d+(?:\.\d+)?)", block)
     if branch_match is None:
         errors.append("ci coverage job missing pure branch coverage threshold")
-    elif float(branch_match.group(1)) < 60:
-        errors.append("ci coverage job pure branch coverage threshold must be at least 60")
+    elif float(branch_match.group(1)) < 62:
+        errors.append("ci coverage job pure branch coverage threshold must be at least 62")
     if "continue-on-error: true" in block:
         errors.append("ci coverage job must remain release-blocking")
     return errors

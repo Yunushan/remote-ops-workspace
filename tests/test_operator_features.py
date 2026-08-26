@@ -7,6 +7,7 @@ import pytest
 
 import remote_ops_workspace.cli as cli_module
 import remote_ops_workspace.launcher as launcher_module
+import remote_ops_workspace.snippets as snippets_module
 import remote_ops_workspace.terminal as terminal_module
 from remote_ops_workspace.audit import _redact
 from remote_ops_workspace.broadcast import build_broadcast_plans, run_broadcast
@@ -30,7 +31,7 @@ from remote_ops_workspace.layouts import (
 )
 from remote_ops_workspace.models import Profile, Tunnel
 from remote_ops_workspace.network_tools import build_network_tool_plan
-from remote_ops_workspace.snippets import Snippet, SnippetStore
+from remote_ops_workspace.snippets import Snippet, SnippetStore, run_snippet
 from remote_ops_workspace.terminal import (
     _embedded_terminal_command,
     default_shell_command,
@@ -61,6 +62,40 @@ def test_snippet_rejects_empty_command() -> None:
         assert "must not be empty" in str(exc) or "is required" in str(exc)
     else:
         raise AssertionError("empty snippet commands should be rejected")
+
+
+def test_snippet_store_replaces_removes_and_reports_missing_names(tmp_path: Path) -> None:
+    store = SnippetStore(tmp_path / "snippets.json")
+    store.add(Snippet(name="uptime", command="uptime"))
+
+    with pytest.raises(ValueError, match="already exists"):
+        store.add(Snippet(name="uptime", command="uptime --pretty"))
+
+    store.add(Snippet(name="uptime", command="uptime --pretty"), replace=True)
+    assert store.get("uptime").command == "uptime --pretty"
+
+    store.remove("uptime")
+    with pytest.raises(KeyError, match="uptime"):
+        store.get("uptime")
+    with pytest.raises(KeyError, match="uptime"):
+        store.remove("uptime")
+
+
+def test_run_snippet_supports_dry_run_and_checked_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], bool]] = []
+    monkeypatch.setattr(
+        snippets_module.subprocess,
+        "run",
+        lambda argv, *, check: calls.append((argv, check)),
+    )
+    snippet = Snippet(name="ready", command="echo ready")
+
+    assert run_snippet(snippet, dry_run=True) == ["echo", "ready"]
+    assert calls == []
+    assert run_snippet(snippet) == ["echo", "ready"]
+    assert calls == [(["echo", "ready"], True)]
 
 
 def test_layout_store_roundtrip(tmp_path: Path) -> None:

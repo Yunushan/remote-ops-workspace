@@ -409,10 +409,11 @@ def parse_quick_connect_profile(text: str) -> QuickConnectCandidate | None:
         return None
     if looks_like_url(query):
         return quick_connect_url_candidate(query)
-    parsed_uri = urlparse(query)
+    try:
+        parsed_uri = urlparse(query)
+    except ValueError:
+        return None
     if parsed_uri.scheme.lower() in QUICK_CONNECT_PROTOCOLS and parsed_uri.netloc:
-        if parsed_uri.scheme.lower() in {"http", "https"}:
-            return quick_connect_url_candidate(query)
         try:
             parsed_port = parsed_uri.port
         except ValueError:
@@ -489,13 +490,13 @@ def quick_connect_url_candidate(url: str) -> QuickConnectCandidate | None:
 
 
 def parse_quick_connect_endpoint(target: str) -> tuple[str, int | None, str | None] | None:
-    parsed = urlparse(f"//{target.strip()}")
-    host = parsed.hostname
-    if not host:
-        return None
     try:
+        parsed = urlparse(f"//{target.strip()}")
+        host = parsed.hostname
         port = parsed.port
     except ValueError:
+        return None
+    if not host:
         return None
     return host, port, parsed.username
 
@@ -861,8 +862,11 @@ def create_main_window(
             trailing_cells: int = 0,
             visible: bool,
         ) -> None:
-            document = self.document()
-            maximum = max(0, document.characterCount() - 1) if document is not None else 0
+            document = _required_gui_value(
+                self.document(),
+                "terminal text document",
+            )
+            maximum = max(0, document.characterCount() - 1)
             self._remote_cursor_position = max(0, min(maximum, int(position)))
             self._remote_cursor_trailing_cells = max(0, int(trailing_cells))
             self._remote_cursor_visible = bool(visible)
@@ -875,9 +879,10 @@ def create_main_window(
                 "terminalRemoteCursorTrailingCells",
                 self._remote_cursor_trailing_cells,
             )
-            viewport = self.viewport()
-            if viewport is not None:
-                viewport.update()
+            _required_gui_value(
+                self.viewport(),
+                "terminal text viewport",
+            ).update()
 
         def paintEvent(self, event) -> None:  # noqa: N802
             if bool(self.property("terminalTabPaintFrozen")):
@@ -885,12 +890,14 @@ def create_main_window(
             super().paintEvent(event)
             if not self._remote_cursor_visible or self._remote_cursor_position is None:
                 return
-            viewport = self.viewport()
-            if viewport is None:
-                return
-            document = self.document()
-            if document is None:
-                return
+            viewport = _required_gui_value(
+                self.viewport(),
+                "terminal paint viewport",
+            )
+            document = _required_gui_value(
+                self.document(),
+                "terminal paint document",
+            )
             cursor = QTextCursor(document)
             cursor.setPosition(
                 max(
@@ -1109,18 +1116,18 @@ def create_main_window(
             # during tab transitions and Vim redraws, which users perceive as
             # a second miniature terminal.  Remote cursor state is retained by
             # the ANSI screen buffer instead.
-            hide_qt_caret = getattr(self.output, "setCursorWidth", None)
-            if callable(hide_qt_caret):
-                hide_qt_caret(0)
+            self.output.setCursorWidth(0)
             self.output.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             self.output.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
-            document = self.output.document()
-            if document is not None:
-                document.setUndoRedoEnabled(False)
-                # Keep a runaway command or redraw-heavy session from making
-                # QTextEdit's document grow without bound.  The ANSI model
-                # remains authoritative for the terminal screen and scrollback.
-                document.setMaximumBlockCount(10_256)
+            document = _required_gui_value(
+                self.output.document(),
+                "terminal output document",
+            )
+            document.setUndoRedoEnabled(False)
+            # Keep a runaway command or redraw-heavy session from making
+            # QTextEdit's document grow without bound.  The ANSI model
+            # remains authoritative for the terminal screen and scrollback.
+            document.setMaximumBlockCount(10_256)
             self.setFocusProxy(self.output)
             self.output.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.output.installEventFilter(self)
@@ -1449,9 +1456,11 @@ def create_main_window(
                 button.setToolButtonStyle(style)
                 self.action_grid.addWidget(button, index // columns, index % columns)
             self.action_grid.invalidate()
-            header_layout = self.header.layout()
-            if header_layout is not None:
-                header_layout.invalidate()
+            header_layout = _required_gui_value(
+                self.header.layout(),
+                "terminal header layout",
+            )
+            header_layout.invalidate()
             self.header.updateGeometry()
             self.updateGeometry()
 
@@ -2631,8 +2640,9 @@ def create_main_window(
             """Decode one byte batch without corrupting split UTF-8 sequences."""
 
             text = self._process_output_decoder.decode(payload, final=False)
-            if text:
-                self.append_process_text(text)
+            if not text:
+                return
+            self.append_process_text(text)
 
         def queue_process_output_trailer(self, text: str) -> None:
             """Render app-owned exit/error text after every queued process byte."""
@@ -2855,10 +2865,13 @@ def create_main_window(
                 flags=re.IGNORECASE,
             ):
                 return transcript
-            padding = re.match(r"(?:[ \t]*\n)+", body)
-            if padding is None:
-                return transcript
-            return f"{startup_context}{body[padding.end():]}"
+            normalized_body = re.sub(
+                r"\A(?:[ \t]*\n)+",
+                "",
+                body,
+                count=1,
+            )
+            return f"{startup_context}{normalized_body}"
 
         def append_text(self, text: str) -> None:
             if not text:
@@ -2914,9 +2927,6 @@ def create_main_window(
             )
             scroll_value = scroll_bar.value()
             alternate_screen_active = self.terminal_emulator.alternate_screen_active
-            tab_paint_frozen = bool(
-                self.output.property("terminalTabPaintFrozen")
-            )
             # An alternate-screen application owns a fixed terminal grid, not
             # the transcript's scrollback.  Keeping QTextEdit's scrollbar
             # visible while replacing that grid lets Qt change the viewport
@@ -3036,11 +3046,8 @@ def create_main_window(
                 )
             self._rendered_terminal_text = transcript
             if alternate_screen_active:
-                if not tab_paint_frozen:
-                    self.output.setUpdatesEnabled(True)
-                    self.output_viewport.update()
-                else:
-                    self.output.setUpdatesEnabled(False)
+                self.output.setUpdatesEnabled(True)
+                self.output_viewport.update()
                 self.output.setProperty("terminalAlternateScreenRedraw", False)
             if alternate_screen_active:
                 # The retained screen is a viewport, not scrollback.  Always
@@ -4388,14 +4395,17 @@ def create_main_window(
                 editor.clear()
             finally:
                 editor.blockSignals(previous)
+            save_button = getattr(self, "text_editor_save_button", None)
+            diff_button = getattr(self, "text_editor_diff_button", None)
+            toolbar = getattr(self, "text_editor_toolbar", None)
             widgets = [
                 self,
                 getattr(self, "browser", None),
                 getattr(self, "file_table", None),
                 editor,
-                getattr(self, "text_editor_save_button", None),
-                getattr(self, "text_editor_diff_button", None),
-                getattr(self, "text_editor_toolbar", None),
+                save_button,
+                diff_button,
+                toolbar,
             ]
             for widget in widgets:
                 if widget is None:
@@ -4410,11 +4420,14 @@ def create_main_window(
             editor.setPlaceholderText(
                 f"{remote_path} is not loaded; use Download to retrieve its real contents."
             )
-            self.text_editor_toolbar.setVisible(True)
+            if toolbar is not None:
+                toolbar.setVisible(True)
             editor.setVisible(True)
             self.setProperty("mobaTextEditorOnDemandVisible", True)
-            self.text_editor_save_button.setEnabled(False)
-            self.text_editor_diff_button.setEnabled(False)
+            if save_button is not None:
+                save_button.setEnabled(False)
+            if diff_button is not None:
+                diff_button.setEnabled(False)
 
         def hide_moba_text_editor(self, *_args) -> None:
             toolbar = getattr(self, "text_editor_toolbar", None)
@@ -11379,7 +11392,12 @@ def create_main_window(
             return parts or ["default"]
 
         def current_design_id(self) -> str:
-            return str(self.design_select.currentData() or "native")
+            preset_id = str(self.design_select.currentData() or "native")
+            try:
+                get_gui_design_preset(preset_id)
+            except ValueError:
+                return "native"
+            return preset_id
 
         def profile_group_label(self, part: str) -> str:
             design_id = self.current_design_id()
@@ -11611,6 +11629,12 @@ def create_main_window(
                 preset = get_gui_design_preset(str(preset_id))
             except ValueError:
                 preset = get_gui_design_preset("native")
+                native_index = self.design_select.findData(preset.id)
+                signals_were_blocked = self.design_select.blockSignals(True)
+                try:
+                    self.design_select.setCurrentIndex(native_index)
+                finally:
+                    self.design_select.blockSignals(signals_were_blocked)
             catalog_route = gui_design_preset_catalog_route()
             isolation_route = gui_design_preset_isolation_route(preset.id)
             selection_route = gui_design_preset_selection_route(preset.id)
@@ -11858,9 +11882,8 @@ def create_main_window(
             self.main_toolbar.setVisible(True)
             self.left_panel.setVisible(True)
             self.layout_toolbar.setVisible(not is_moba)
-            tab_bar = self.tabs.tabBar()
-            if tab_bar is not None:
-                tab_bar.setVisible(True)
+            tab_bar = _required_gui_value(self.tabs.tabBar(), "workspace tab bar")
+            tab_bar.setVisible(True)
             self.log.setVisible(not is_moba)
             self.configure_product_connected_chrome()
             self.log.setPlaceholderText(
@@ -12270,8 +12293,6 @@ def create_main_window(
             if route is None:
                 return
             focused_widget = focus_widgets.get(route.focused_control)
-            if focused_widget is not None and focused_widget not in route_widgets:
-                route_widgets.append(focused_widget)
             toolbar_states = self.captured_toolbar_interaction_states(preset_id)
             captured_focus_state = (
                 str(focused_widget.property(route.focused_state_property) or "")
@@ -13184,6 +13205,23 @@ def create_main_window(
                 self.find_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
                 self.find_button.setMinimumSize(QSize(30, 24))
                 self.find_button.setMaximumSize(QSize(34, 30))
+                # Reapply the compact product utility strip on every resize.
+                # Qt can otherwise restore the generic layout controls after
+                # a preset transition and squeeze the product search surface.
+                for widget in (self.layout_label, self.layout_select, self.view_label):
+                    self.set_toolbar_widget_visible(widget, False)
+                for button in self.layout_toolbar_buttons:
+                    self.set_toolbar_widget_visible(button, False)
+                self.set_toolbar_widget_visible(self.design_select, True)
+                self.set_toolbar_widget_visible(self.search_input, True)
+                self.set_toolbar_widget_visible(self.find_button, True)
+                self.layout_toolbar.setMinimumHeight(30)
+                self.layout_toolbar.setMaximumHeight(32)
+                self.layout_toolbar.setIconSize(QSize(14, 14))
+                self.design_select.setMinimumSize(QSize(108, 24))
+                self.design_select.setMaximumSize(QSize(132, 26))
+                self.search_input.setMinimumSize(QSize(138, 24))
+                self.search_input.setMaximumSize(QSize(210, 26))
                 return
 
             # A text-under-icon QToolButton needs substantially more width than
@@ -13212,14 +13250,13 @@ def create_main_window(
                             76,
                         )
                     )
-                toolbar_layout = self.main_toolbar.layout()
-                if toolbar_layout is None:
-                    toolbar_margins = (0, 0)
-                    toolbar_spacing = 0
-                else:
-                    margins = toolbar_layout.contentsMargins()
-                    toolbar_margins = (margins.left(), margins.right())
-                    toolbar_spacing = max(0, toolbar_layout.spacing())
+                toolbar_layout = _required_gui_value(
+                    self.main_toolbar.layout(),
+                    "main toolbar layout",
+                )
+                margins = toolbar_layout.contentsMargins()
+                toolbar_margins = (margins.left(), margins.right())
+                toolbar_spacing = max(0, toolbar_layout.spacing())
                 toolbar_width = max(0, self.main_toolbar.width())
                 available_toolbar_width = max(
                     0,
@@ -13273,29 +13310,6 @@ def create_main_window(
                 QSizePolicy.Policy.Expanding,
                 QSizePolicy.Policy.Preferred,
             )
-            if is_product_reference:
-                # Product-specific connected surfaces retain only the compact
-                # preset/search utility strip.  This branch runs on every
-                # resize so Qt cannot restore the generic editor row after a
-                # window resize or preset transition.
-                for widget in (self.layout_label, self.layout_select, self.view_label):
-                    self.set_toolbar_widget_visible(widget, False)
-                for button in self.layout_toolbar_buttons:
-                    self.set_toolbar_widget_visible(button, False)
-                self.set_toolbar_widget_visible(self.design_select, True)
-                self.set_toolbar_widget_visible(self.search_input, True)
-                self.set_toolbar_widget_visible(self.find_button, True)
-                self.layout_toolbar.setMinimumHeight(30)
-                self.layout_toolbar.setMaximumHeight(32)
-                self.layout_toolbar.setIconSize(QSize(14, 14))
-                self.design_select.setMinimumSize(QSize(108, 24))
-                self.design_select.setMaximumSize(QSize(132, 26))
-                self.search_input.setMinimumSize(QSize(138, 24))
-                self.search_input.setMaximumSize(QSize(210, 26))
-                self.find_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-                self.find_button.setMinimumSize(QSize(26, 24))
-                self.find_button.setMaximumSize(QSize(30, 26))
-                return
             compact_auxiliary_labels = self.width() < 1280
             for button in self.layout_toolbar_buttons:
                 button.setAccessibleName(button.text())
@@ -14383,11 +14397,13 @@ def create_main_window(
             index = self.find_tab_by_role("new-session")
             if index < 0:
                 return
-            widget = self.tabs.widget(index)
+            widget = _required_gui_value(
+                self.tabs.widget(index),
+                "new-session tab widget",
+            )
             self.tabs.removeTab(index)
-            if widget is not None:
-                self.clear_deleted_tab_object_names(widget)
-                widget.deleteLater()
+            self.clear_deleted_tab_object_names(widget)
+            widget.deleteLater()
 
         def refresh_special_tab_buttons(self) -> None:
             tab_bar = self.moba_tab_bar
@@ -14400,14 +14416,16 @@ def create_main_window(
                     tab_bar.setTabButton(index, position, None)
             new_index = self.find_tab_by_role("new-session")
             if new_index >= 0 and new_index != self.tabs.count() - 1:
-                widget = self.tabs.widget(new_index)
-                if widget is not None:
-                    self.tabs.removeTab(new_index)
-                    self.tabs.addTab(widget, "+")
-                    self.set_literal_tab_tooltip(
-                        self.tabs.count() - 1,
-                        "Open a new local terminal",
-                    )
+                widget = _required_gui_value(
+                    self.tabs.widget(new_index),
+                    "new-session tab widget",
+                )
+                self.tabs.removeTab(new_index)
+                self.tabs.addTab(widget, "+")
+                self.set_literal_tab_tooltip(
+                    self.tabs.count() - 1,
+                    "Open a new local terminal",
+                )
             new_index = self.find_tab_by_role("new-session")
             if new_index >= 0:
                 self.apply_moba_tab_chrome(
@@ -14419,8 +14437,7 @@ def create_main_window(
                 )
                 for position in [QTabBar.ButtonPosition.LeftSide, QTabBar.ButtonPosition.RightSide]:
                     tab_bar.setTabButton(new_index, position, None)
-            if isinstance(tab_bar, MobaWorkspaceTabBar):
-                tab_bar.stabilize_special_tabs()
+            tab_bar.stabilize_special_tabs()
 
         def apply_moba_tab_chrome(
             self,
@@ -14433,7 +14450,10 @@ def create_main_window(
         ) -> None:
             if index < 0:
                 return
-            widget = self.tabs.widget(index)
+            widget = _required_gui_value(
+                self.tabs.widget(index),
+                "Moba workspace tab widget",
+            )
             geometry = moba_connected_tab_chrome_geometry_for(key)
             tab_bar = self.moba_tab_bar
             previous_data = tab_bar.tabData(index)
@@ -14467,31 +14487,30 @@ def create_main_window(
                 "mobaTabChromeGeometryKeys",
                 [item.key for item in moba_connected_tab_chrome_geometry_items()],
             )
-            if widget is not None:
-                widget.setProperty("mobaTabChromeKey", key)
-                widget.setProperty("mobaTabIconKey", icon_key)
-                widget.setProperty("mobaTabCloseable", closeable)
-                widget.setProperty("mobaTabStaticWidth", width)
-                widget.setProperty("mobaTabUserWidth", width != geometry.width)
-                widget.setProperty(
-                    "mobaTabResizeRange",
-                    [
-                        MobaWorkspaceTabBar.TAB_RESIZE_MIN_WIDTH,
-                        MobaWorkspaceTabBar.TAB_RESIZE_MAX_WIDTH,
-                    ],
-                )
-                widget.setProperty("mobaTabStaticHeight", geometry.height)
-                widget.setProperty("mobaTabCornerRadius", geometry.corner_radius)
-                widget.setProperty("mobaTabIconX", geometry.icon_x)
-                widget.setProperty("mobaTabIconY", geometry.icon_y)
-                widget.setProperty("mobaTabIconSize", geometry.icon_size)
-                widget.setProperty("mobaTabLabelX", geometry.label_x)
-                widget.setProperty("mobaTabLabelY", geometry.label_y)
-                widget.setProperty("mobaTabCloseRightOffset", geometry.close_right_offset)
-                widget.setProperty("mobaTabCloseY", geometry.close_y)
-                widget.setProperty("mobaTabPlusX", geometry.plus_x)
-                widget.setProperty("mobaTabPlusY", geometry.plus_y)
-                widget.setProperty("mobaTabGapAfter", geometry.gap_after)
+            widget.setProperty("mobaTabChromeKey", key)
+            widget.setProperty("mobaTabIconKey", icon_key)
+            widget.setProperty("mobaTabCloseable", closeable)
+            widget.setProperty("mobaTabStaticWidth", width)
+            widget.setProperty("mobaTabUserWidth", width != geometry.width)
+            widget.setProperty(
+                "mobaTabResizeRange",
+                [
+                    MobaWorkspaceTabBar.TAB_RESIZE_MIN_WIDTH,
+                    MobaWorkspaceTabBar.TAB_RESIZE_MAX_WIDTH,
+                ],
+            )
+            widget.setProperty("mobaTabStaticHeight", geometry.height)
+            widget.setProperty("mobaTabCornerRadius", geometry.corner_radius)
+            widget.setProperty("mobaTabIconX", geometry.icon_x)
+            widget.setProperty("mobaTabIconY", geometry.icon_y)
+            widget.setProperty("mobaTabIconSize", geometry.icon_size)
+            widget.setProperty("mobaTabLabelX", geometry.label_x)
+            widget.setProperty("mobaTabLabelY", geometry.label_y)
+            widget.setProperty("mobaTabCloseRightOffset", geometry.close_right_offset)
+            widget.setProperty("mobaTabCloseY", geometry.close_y)
+            widget.setProperty("mobaTabPlusX", geometry.plus_x)
+            widget.setProperty("mobaTabPlusY", geometry.plus_y)
+            widget.setProperty("mobaTabGapAfter", geometry.gap_after)
             self.tabs.setIconSize(QSize(16, 16))
             self.tabs.setTabIcon(index, self.moba_ribbon_icon(icon_key, "#d6a72d", size=18))
             self.set_literal_tab_tooltip(index, tooltip)
@@ -15689,14 +15708,6 @@ def create_main_window(
                 select=self.tabs.count() == 0 if select is None else select,
                 role="home",
             )
-            if self.current_design_is_moba():
-                self.apply_moba_tab_chrome(
-                    index,
-                    key="home",
-                    icon_key="home",
-                    tooltip="Home",
-                    closeable=False,
-                )
             QTimer.singleShot(0, self.configure_welcome_responsiveness)
 
         def home_action_callbacks_for_design(
@@ -16631,11 +16642,14 @@ def create_main_window(
                 )
                 terminal_drawer.setVisible(False)
                 root.addWidget(terminal_drawer)
-                if terminal_toggle is not None:
-                    terminal_toggle.clicked.connect(
-                        lambda _checked=False, drawer=terminal_drawer, button=terminal_toggle:
-                        self.toggle_product_terminal_drawer(drawer, button)
-                    )
+                terminal_button = _required_gui_value(
+                    terminal_toggle,
+                    "Termius terminal toggle",
+                )
+                terminal_button.clicked.connect(
+                    lambda _checked=False, drawer=terminal_drawer, button=terminal_button:
+                    self.toggle_product_terminal_drawer(drawer, button)
+                )
             return panel
 
         def open_sftp_context_item(self, item: QTreeWidgetItem | None) -> None:
@@ -16742,11 +16756,14 @@ def create_main_window(
                 )
                 terminal_drawer.setVisible(False)
                 root.addWidget(terminal_drawer)
-                if terminal_toggle is not None:
-                    terminal_toggle.clicked.connect(
-                        lambda _checked=False, drawer=terminal_drawer, button=terminal_toggle:
-                        self.toggle_product_terminal_drawer(drawer, button)
-                    )
+                terminal_button = _required_gui_value(
+                    terminal_toggle,
+                    "Remmina terminal toggle",
+                )
+                terminal_button.clicked.connect(
+                    lambda _checked=False, drawer=terminal_drawer, button=terminal_button:
+                    self.toggle_product_terminal_drawer(drawer, button)
+                )
             return panel
 
         def toggle_product_terminal_drawer(
@@ -16762,10 +16779,9 @@ def create_main_window(
             button.setText("Hide terminal" if visible else "Terminal")
             button.setProperty("productTerminalDrawerState", state)
             button.setAccessibleName("Hide terminal" if visible else "Show terminal")
-            style = button.style()
-            if style is not None:
-                style.unpolish(button)
-                style.polish(button)
+            style = _widget_style(button)
+            style.unpolish(button)
+            style.polish(button)
             self.statusBar().showMessage(
                 "Terminal drawer opened" if visible else "Terminal drawer closed",
                 1800,
@@ -20132,9 +20148,11 @@ def create_main_window(
         def equalize_ad_hoc_splitter(splitter: QSplitter) -> None:
             splitter.setChildrenCollapsible(False)
             for index in range(splitter.count()):
-                child = splitter.widget(index)
-                if child is not None:
-                    child.show()
+                child = _required_gui_value(
+                    splitter.widget(index),
+                    "ad-hoc splitter child",
+                )
+                child.show()
                 splitter.setCollapsible(index, False)
                 splitter.setStretchFactor(index, 1)
             splitter.setSizes([1000] * splitter.count())
@@ -20188,8 +20206,7 @@ def create_main_window(
                             duplicate_index,
                         )
                     source_sizes = [max(1, int(size)) for size in widget.terminal_splitter.sizes()]
-                    if len(source_sizes) == duplicate.terminal_splitter.count():
-                        duplicate.terminal_splitter.setSizes(source_sizes)
+                    duplicate.terminal_splitter.setSizes(source_sizes)
                     self.log.append(f"TAB DUPLICATED: {title}")
                     return
             if isinstance(widget, TerminalPane):
@@ -20271,8 +20288,7 @@ def create_main_window(
                 clone.setCollapsible(index, False)
                 clone.setStretchFactor(index, 1)
             sizes = [max(1, int(size)) for size in source.sizes()]
-            if len(sizes) == clone.count():
-                clone.setSizes(sizes)
+            clone.setSizes(sizes)
             return clone
 
         def bind_cloned_layout_persistence(self, root: QWidget) -> None:

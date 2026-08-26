@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import remote_ops_workspace.cli as cli_module
@@ -15,6 +16,8 @@ def test_doctor_marks_sshv1_as_legacy_opt_in(monkeypatch) -> None:
     )
 
     result = run_doctor()
+
+    assert json.loads(result.to_json()) == result.to_dict()
 
     assert result.executables["ssh1"]["ssh"] is True
     assert result.executables["sshv1"]["ssh"] is True

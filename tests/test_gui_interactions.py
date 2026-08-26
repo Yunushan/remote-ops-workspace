@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_checker():
     path = Path(__file__).resolve().parents[1] / "scripts" / "check_gui_interactions.py"
@@ -46,6 +48,13 @@ def test_gui_interaction_gate_inventories_every_visible_toolbar_command() -> Non
     assert len(checker.SUPPORTED_WINDOW_SIZES) == 5
     assert checker.SUPPORTED_WINDOW_SIZES[0] == (1024, 768)
     assert (1180, 720) in checker.SUPPORTED_WINDOW_SIZES
+    assert checker.RESPONSIVENESS_SAMPLE_COUNT == 20
+    assert checker.RESPONSIVENESS_BUDGETS_MS == {
+        "qt-event-loop-roundtrip": {"p95": 100.0, "maximum": 500.0},
+        "workspace-terminal-tab-switch": {"p95": 250.0, "maximum": 1000.0},
+        "profile-tree-filter": {"p95": 250.0, "maximum": 1000.0},
+        "terminal-transcript-append": {"p95": 400.0, "maximum": 1500.0},
+    }
 
 
 def test_gui_interaction_gate_runs_on_linux_native_windows_and_python315_ci() -> None:
@@ -111,6 +120,59 @@ def test_gui_interaction_responsive_bounds_reject_clipping_and_overlap() -> None
             container,
         )
     )
+
+
+def test_gui_interaction_latency_summary_uses_nearest_rank_percentiles() -> None:
+    checker = _load_checker()
+
+    summary = checker.summarize_latency_samples_ms([10.0, 1.0, 5.0, 20.0, 2.0])
+
+    assert summary == {
+        "sample_count": 5,
+        "minimum_ms": 1.0,
+        "p50_ms": 5.0,
+        "p95_ms": 20.0,
+        "maximum_ms": 20.0,
+        "samples_ms": [10.0, 1.0, 5.0, 20.0, 2.0],
+    }
+    with pytest.raises(ValueError, match="must not be empty"):
+        checker.summarize_latency_samples_ms([])
+    with pytest.raises(ValueError, match="finite non-negative"):
+        checker.latency_percentile_ms([float("inf")], 95)
+
+
+def test_gui_interaction_latency_budget_rejects_sustained_delay_and_freeze() -> None:
+    checker = _load_checker()
+
+    assert checker.latency_budget_errors(
+        "proof", [10.0] * 20, p95_budget_ms=20.0, maximum_budget_ms=40.0
+    ) == []
+    errors = checker.latency_budget_errors(
+        "proof",
+        [10.0] * 18 + [30.0, 75.0],
+        p95_budget_ms=20.0,
+        maximum_budget_ms=40.0,
+    )
+
+    assert any("p95 30.0 ms exceeds 20.0 ms" in error for error in errors)
+    assert any("maximum 75.0 ms exceeds 40.0 ms" in error for error in errors)
+
+
+def test_gui_interaction_gate_records_release_blocking_responsiveness_evidence() -> None:
+    checker = (
+        Path(__file__).resolve().parents[1] / "scripts" / "check_gui_interactions.py"
+    ).read_text(encoding="utf-8")
+
+    assert '"responsiveness_budgets_ms": RESPONSIVENESS_BUDGETS_MS' in checker
+    assert '"responsiveness_metrics": responsiveness_metrics' in checker
+    for metric in (
+        "qt-event-loop-roundtrip",
+        "workspace-terminal-tab-switch",
+        "profile-tree-filter",
+        "terminal-transcript-append",
+    ):
+        assert checker.count(f'"{metric}"') >= 2
+    assert "terminal-incremental-render-stays-at-bottom" in checker
 
 
 def test_gui_interaction_manifest_records_fail_closed_font_render_evidence() -> None:

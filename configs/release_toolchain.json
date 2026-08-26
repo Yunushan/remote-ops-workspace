@@ -13,6 +13,7 @@
         ],
         "package_overrides": {},
         "excluded_packages": [
+          "bcrypt",
           "cryptography",
           "truststore"
         ],
@@ -21,7 +22,7 @@
           "state": "unavailable-fail-closed",
           "minimum_safe_cryptography": "50.0.0"
         },
-        "reason": "cryptography 50 has no maintained 32-bit Windows wheel and this repository has no reviewed Windows x86 source-build toolchain. Known-vulnerable fallback releases are excluded; packaged vault commands must report the backend unavailable and fail closed. This artifact is not Windows XP readiness evidence."
+        "reason": "The maintained bcrypt/cryptography security stack has no reviewed Windows x86 build chain in this repository. Known-vulnerable fallback releases are excluded; packaged vault and encrypted OpenSSH-key commands must report their backends unavailable and fail closed. This artifact is not Windows XP readiness evidence."
       }
     ]
   },
@@ -80,6 +81,11 @@
       "name": "PyQt6-sip",
       "version": "13.12.0",
       "purpose": "Pinned PyQt6 SIP runtime dependency."
+    },
+    {
+      "name": "bcrypt",
+      "version": "5.0.0",
+      "purpose": "Pinned OpenSSH private-key encryption KDF dependency used by cryptography-backed in-process key generation."
     },
     {
       "name": "cryptography",

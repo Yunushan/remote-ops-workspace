@@ -4,10 +4,12 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import os
 import platform
 import sys
 import tempfile
+import time
 from collections.abc import MutableMapping
 from pathlib import Path
 
@@ -29,6 +31,13 @@ except ModuleNotFoundError:
     )
 
 SUPPORTED_WINDOW_SIZES = ((1024, 768), (1180, 720), (1366, 768), (1420, 820), (1920, 1080))
+RESPONSIVENESS_SAMPLE_COUNT = 20
+RESPONSIVENESS_BUDGETS_MS = {
+    "qt-event-loop-roundtrip": {"p95": 100.0, "maximum": 500.0},
+    "workspace-terminal-tab-switch": {"p95": 250.0, "maximum": 1000.0},
+    "profile-tree-filter": {"p95": 250.0, "maximum": 1000.0},
+    "terminal-transcript-append": {"p95": 400.0, "maximum": 1500.0},
+}
 PRODUCT_KEYS = (
     "refresh",
     "new",
@@ -257,11 +266,71 @@ def validate_responsive_bounds(
     return errors
 
 
+def latency_percentile_ms(samples_ms: list[float], percentile: float) -> float:
+    """Return a deterministic nearest-rank percentile for latency evidence."""
+
+    if not samples_ms:
+        raise ValueError("latency samples must not be empty")
+    if not 0 < percentile <= 100:
+        raise ValueError("latency percentile must be greater than zero and at most 100")
+    normalized = [float(sample) for sample in samples_ms]
+    if any(not math.isfinite(sample) or sample < 0 for sample in normalized):
+        raise ValueError("latency samples must be finite non-negative milliseconds")
+    ordered = sorted(normalized)
+    rank = max(0, math.ceil((percentile / 100.0) * len(ordered)) - 1)
+    return ordered[rank]
+
+
+def summarize_latency_samples_ms(samples_ms: list[float]) -> dict[str, object]:
+    """Build stable, machine-readable latency evidence."""
+
+    p50_ms = latency_percentile_ms(samples_ms, 50)
+    p95_ms = latency_percentile_ms(samples_ms, 95)
+    return {
+        "sample_count": len(samples_ms),
+        "minimum_ms": round(min(samples_ms), 3),
+        "p50_ms": round(p50_ms, 3),
+        "p95_ms": round(p95_ms, 3),
+        "maximum_ms": round(max(samples_ms), 3),
+        "samples_ms": [round(sample, 3) for sample in samples_ms],
+    }
+
+
+def latency_budget_errors(
+    name: str,
+    samples_ms: list[float],
+    *,
+    p95_budget_ms: float,
+    maximum_budget_ms: float,
+) -> list[str]:
+    """Reject sustained latency and isolated UI freezes independently."""
+
+    summary = summarize_latency_samples_ms(samples_ms)
+    errors: list[str] = []
+    if float(summary["p95_ms"]) > p95_budget_ms:
+        errors.append(
+            f"{name} p95 {summary['p95_ms']} ms exceeds {p95_budget_ms:.1f} ms"
+        )
+    if float(summary["maximum_ms"]) > maximum_budget_ms:
+        errors.append(
+            f"{name} maximum {summary['maximum_ms']} ms exceeds "
+            f"{maximum_budget_ms:.1f} ms"
+        )
+    return errors
+
+
 def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]], list[str]]:
     configure_qt_platform_environment()
     os.environ["ROW_HOME"] = tempfile.mkdtemp(prefix="row-gui-interactions-")
     try:
-        from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, QPoint, Qt, QTimer
+        from PyQt6.QtCore import (
+            PYQT_VERSION_STR,
+            QT_VERSION_STR,
+            QEventLoop,
+            QPoint,
+            Qt,
+            QTimer,
+        )
         from PyQt6.QtGui import QPalette
         from PyQt6.QtTest import QTest
         from PyQt6.QtWidgets import (
@@ -318,6 +387,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
     checks: list[dict[str, object]] = []
     errors: list[str] = []
     captured_images: list[Path] = []
+    responsiveness_metrics: dict[str, dict[str, object]] = {}
 
     def record(name: str, passed: bool, detail: object = "") -> None:
         detail_snapshot = copy.deepcopy(detail)
@@ -326,6 +396,30 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         )
         if not passed:
             errors.append(f"{name}: {detail_snapshot}")
+
+    def record_latency(
+        name: str,
+        samples_ms: list[float],
+        **detail: object,
+    ) -> None:
+        budgets = RESPONSIVENESS_BUDGETS_MS[name]
+        budget_errors = latency_budget_errors(
+            name,
+            samples_ms,
+            p95_budget_ms=budgets["p95"],
+            maximum_budget_ms=budgets["maximum"],
+        )
+        summary = summarize_latency_samples_ms(samples_ms)
+        summary.update(
+            {
+                "p95_budget_ms": budgets["p95"],
+                "maximum_budget_ms": budgets["maximum"],
+                "budget_errors": budget_errors,
+                **detail,
+            }
+        )
+        responsiveness_metrics[name] = summary
+        record(f"responsiveness-{name}", not budget_errors, summary)
 
     app = QApplication.instance()
     if app is None:
@@ -368,6 +462,8 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
                 ),
             },
             "supported_window_sizes": [list(size) for size in SUPPORTED_WINDOW_SIZES],
+            "responsiveness_budgets_ms": RESPONSIVENESS_BUDGETS_MS,
+            "responsiveness_metrics": responsiveness_metrics,
             "checks": checks,
             "images": [],
             "errors": errors,
@@ -3876,6 +3972,156 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             app.processEvents()
         record_minimum_size_preset_geometry(preset_id)
 
+    event_loop_samples_ms: list[float] = []
+    for _ in range(RESPONSIVENESS_SAMPLE_COUNT):
+        loop = QEventLoop()
+        started_ns = time.perf_counter_ns()
+        QTimer.singleShot(0, loop.quit)
+        loop.exec()
+        event_loop_samples_ms.append((time.perf_counter_ns() - started_ns) / 1_000_000)
+    record_latency("qt-event-loop-roundtrip", event_loop_samples_ms)
+
+    existing_profiles = window.store.load(resolve=False)
+    responsiveness_profiles = [
+        profile_from_editor_data(
+            {
+                "name": f"responsiveness-profile-{index:03d}",
+                "protocol": "ssh",
+                "host": f"192.0.2.{(index % 250) + 1}",
+                "port": "22",
+                "group": f"responsiveness/group-{index % 8}",
+            }
+        )
+        for index in range(128)
+    ]
+    window.store.save(existing_profiles + responsiveness_profiles)
+    window.refresh_profiles()
+    app.processEvents()
+    profile_filter_samples_ms: list[float] = []
+    profile_filter_needles = (
+        "responsiveness-profile-1",
+        "group-3",
+        "no-profile-matches-this-filter",
+        "",
+    )
+    for index in range(RESPONSIVENESS_SAMPLE_COUNT):
+        started_ns = time.perf_counter_ns()
+        window.filter_profile_tree(
+            profile_filter_needles[index % len(profile_filter_needles)]
+        )
+        app.processEvents()
+        profile_filter_samples_ms.append(
+            (time.perf_counter_ns() - started_ns) / 1_000_000
+        )
+    window.filter_profile_tree("")
+    app.processEvents()
+    record_latency(
+        "profile-tree-filter",
+        profile_filter_samples_ms,
+        profile_count=len(window.store.load(resolve=False)),
+    )
+
+    responsiveness_panes = [
+        window.new_terminal_pane(
+            TerminalPanePlan(
+                title=f"Responsiveness proof {index + 1}",
+                command=[sys.executable, "-c", "pass"],
+                source=f"responsiveness-proof-{index + 1}",
+            ),
+            autostart=False,
+        )
+        for index in range(2)
+    ]
+    responsiveness_tab_indices = [
+        window.add_workspace_tab(
+            pane,
+            pane.plan.title,
+            select=False,
+            role="terminal",
+        )
+        for pane in responsiveness_panes
+    ]
+    window.set_workspace_tab_index(responsiveness_tab_indices[0])
+    for _ in range(4):
+        app.processEvents()
+    tab_switch_samples_ms: list[float] = []
+    transitions_settled = True
+    for index in range(RESPONSIVENESS_SAMPLE_COUNT):
+        target_index = responsiveness_tab_indices[(index + 1) % 2]
+        started_ns = time.perf_counter_ns()
+        window.set_workspace_tab_index(target_index)
+        for _ in range(4):
+            app.processEvents()
+            if not bool(window.tabs.property("terminalTabTransitionActive")) and not bool(
+                window.tabs.property("terminalTabPrepaintGuardActive")
+            ):
+                break
+        tab_switch_samples_ms.append((time.perf_counter_ns() - started_ns) / 1_000_000)
+        transitions_settled = transitions_settled and not bool(
+            window.tabs.property("terminalTabTransitionActive")
+        ) and not bool(window.tabs.property("terminalTabPrepaintGuardActive"))
+    record_latency(
+        "workspace-terminal-tab-switch",
+        tab_switch_samples_ms,
+        transitions_settled=transitions_settled,
+    )
+    record(
+        "terminal-tab-switch-transitions-settle",
+        transitions_settled,
+        {
+            "transition_active": bool(
+                window.tabs.property("terminalTabTransitionActive")
+            ),
+            "prepaint_guard_active": bool(
+                window.tabs.property("terminalTabPrepaintGuardActive")
+            ),
+        },
+    )
+
+    render_pane = responsiveness_panes[0]
+    render_index = window.tabs.indexOf(render_pane)
+    window.set_workspace_tab_index(render_index)
+    for _ in range(3):
+        app.processEvents()
+    render_pane.set_terminal_transcript(
+        "".join(f"initial terminal line {index:03d}\n" for index in range(160))
+    )
+    app.processEvents()
+    terminal_append_samples_ms: list[float] = []
+    append_payload = "terminal responsiveness payload " + ("x" * 2016) + "\n"
+    for index in range(RESPONSIVENESS_SAMPLE_COUNT):
+        started_ns = time.perf_counter_ns()
+        render_pane.append_text(f"{index:03d} {append_payload}")
+        app.processEvents()
+        app.processEvents()
+        terminal_append_samples_ms.append(
+            (time.perf_counter_ns() - started_ns) / 1_000_000
+        )
+    terminal_scroll = render_pane.output.verticalScrollBar()
+    terminal_scrolled_to_end = (
+        terminal_scroll.value() >= terminal_scroll.maximum() - 2
+    )
+    record_latency(
+        "terminal-transcript-append",
+        terminal_append_samples_ms,
+        appended_bytes=len(append_payload.encode("utf-8"))
+        * RESPONSIVENESS_SAMPLE_COUNT,
+        scrolled_to_end=terminal_scrolled_to_end,
+    )
+    record(
+        "terminal-incremental-render-stays-at-bottom",
+        terminal_scrolled_to_end,
+        {
+            "value": terminal_scroll.value(),
+            "maximum": terminal_scroll.maximum(),
+        },
+    )
+    for pane in responsiveness_panes:
+        tab_index = window.tabs.indexOf(pane)
+        if tab_index >= 0:
+            window.close_tab(tab_index)
+            app.processEvents()
+
     image_records = []
     for path in sorted(set(captured_images)):
         image_records.append(
@@ -3897,6 +4143,8 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             "device_pixel_ratio": screen.devicePixelRatio() if screen is not None else None,
         },
         "supported_window_sizes": [list(size) for size in SUPPORTED_WINDOW_SIZES],
+        "responsiveness_budgets_ms": RESPONSIVENESS_BUDGETS_MS,
+        "responsiveness_metrics": responsiveness_metrics,
         "checks": checks,
         "images": image_records,
         "errors": errors,

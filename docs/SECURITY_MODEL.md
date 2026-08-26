@@ -113,7 +113,11 @@ The local vault uses `cryptography` with Scrypt-derived Fernet keys. It is optio
 
 Operational rules:
 
-- use a strong passphrase;
+- new vaults require a passphrase of at least 12 characters;
+- vault format version 2 stores an encrypted verifier so every `set` operation
+  authenticates the passphrase before changing entries; writes to legacy version
+  1 vaults with entries authenticate an existing token before migration, while an
+  empty legacy vault establishes its verifier on the first write;
 - do not store vault passphrases in shell history;
 - prefer `ROW_VAULT_PASSWORD` only for short-lived automation contexts;
 - use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv;
@@ -141,7 +145,7 @@ Permissions are best-effort on platforms that do not expose POSIX mode bits cons
 
 ## SSH key generation
 
-`row keygen` avoids placing non-empty key passphrases on `ssh-keygen` command lines. When `--passphrase-env` is used with software keys (`ed25519`, `ecdsa`, `rsa`), Remote Ops Workspace generates the encrypted OpenSSH key pair in-process through the optional `cryptography` backend and redacts the dry-run display. Hardware/FIDO key types (`ed25519-sk`, `ecdsa-sk`) must prompt interactively through `ssh-keygen`; `--passphrase-env` is rejected for those types to avoid leaking passphrases through process arguments.
+`row keygen` avoids placing non-empty key passphrases on `ssh-keygen` command lines. When `--passphrase-env` is used with software keys (`ed25519`, `ecdsa`, `rsa`), Remote Ops Workspace generates the encrypted OpenSSH key pair in-process through the optional `cryptography` backend and its declared `bcrypt` OpenSSH encryption dependency, then redacts the dry-run display. Hardware/FIDO key types (`ed25519-sk`, `ecdsa-sk`) must prompt interactively through `ssh-keygen`; `--passphrase-env` is rejected for those types to avoid leaking passphrases through process arguments.
 
 Operational rules:
 

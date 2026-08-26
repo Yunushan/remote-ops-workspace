@@ -11,6 +11,8 @@ from remote_ops_workspace.gui import _required_gui_value, _safe_tooltip_html
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.profile_importers import ProfileImportResult
 
+_GUI_PROCESS_WAIT_STEPS = 500
+
 
 def test_safe_tooltip_html_escapes_markup_and_preserves_lines() -> None:
     assert _safe_tooltip_html("<b>literal</b>\nnext & final") == (
@@ -932,7 +934,7 @@ def test_terminal_output_submits_return_to_a_real_pipe_process(gui_window) -> No
     )
 
     try:
-        for _ in range(100):
+        for _ in range(_GUI_PROCESS_WAIT_STEPS):
             app.processEvents()
             if "READY" in pane.output.toPlainText():
                 break
@@ -945,7 +947,7 @@ def test_terminal_output_submits_return_to_a_real_pipe_process(gui_window) -> No
         )
         QTest.keyClicks(pane.output, "pipeinput")
         QTest.keyClick(pane.output, Qt.Key.Key_Return)
-        for _ in range(100):
+        for _ in range(_GUI_PROCESS_WAIT_STEPS):
             app.processEvents()
             if "DIRECT:70697065696e7075740a" in pane.output.toPlainText():
                 break
@@ -975,7 +977,7 @@ def test_clean_local_shell_exit_closes_its_standalone_tab(gui_window) -> None:
     pane = window.new_terminal_pane(plan)
     window.add_workspace_tab(pane, plan.title, role="terminal")
 
-    for _ in range(100):
+    for _ in range(_GUI_PROCESS_WAIT_STEPS):
         app.processEvents()
         if pane.is_running():
             break
@@ -1447,7 +1449,7 @@ def test_visible_moba_terminal_writes_through_a_real_qprocess(gui_window) -> Non
     pane = panel.terminal_pane
 
     try:
-        for _ in range(100):
+        for _ in range(_GUI_PROCESS_WAIT_STEPS):
             app.processEvents()
             if "READY" in pane.output.toPlainText():
                 break
@@ -1467,7 +1469,7 @@ def test_visible_moba_terminal_writes_through_a_real_qprocess(gui_window) -> Non
         assert focus is pane.output
         QTest.keyClicks(focus, "ping")
 
-        for _ in range(100):
+        for _ in range(_GUI_PROCESS_WAIT_STEPS):
             app.processEvents()
             if "RECEIVED:70696e67" in pane.output.toPlainText():
                 break
@@ -1515,14 +1517,14 @@ def test_visible_moba_line_fallback_completes_a_real_pipe_readline(
     pane = panel.terminal_pane
 
     try:
-        for _ in range(100):
+        for _ in range(_GUI_PROCESS_WAIT_STEPS):
             app.processEvents()
             if "READY" in pane.output.toPlainText():
                 break
             QTest.qWait(10)
         pane.input.setText("line-mode")
         pane.send_input()
-        for _ in range(100):
+        for _ in range(_GUI_PROCESS_WAIT_STEPS):
             app.processEvents()
             if "LINE:6c696e652d6d6f64650a" in pane.output.toPlainText():
                 break

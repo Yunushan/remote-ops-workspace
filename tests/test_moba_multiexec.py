@@ -25,6 +25,10 @@ def test_moba_multiexec_plan_builds_broadcast_commands_for_ssh_profiles() -> Non
     assert plan.route.profile_count == 2
     assert plan.route.broadcast_commands[0][-1] == "hostname"
     assert "ssh -p 22 admin@192.0.2.10 hostname" in plan.route.command_preview[0]
+    assert plan.printable_commands() == (
+        "ssh -p 22 admin@192.0.2.10 hostname",
+        "ssh -p 22 admin@192.0.2.11 hostname",
+    )
     assert plan.to_dict()["route"]["route_role"] == "ribbon-multiexec-to-ssh-broadcast"
 
 

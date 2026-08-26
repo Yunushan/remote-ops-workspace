@@ -1,5 +1,9 @@
+import json
 from pathlib import Path
 
+import pytest
+
+from remote_ops_workspace import team_sync
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.storage import ProfileStore
 from remote_ops_workspace.team_sync import (
@@ -7,6 +11,7 @@ from remote_ops_workspace.team_sync import (
     TeamSyncBusyError,
     TeamSyncClient,
     TeamSyncConflictError,
+    team_profile_dict,
 )
 
 
@@ -39,6 +44,25 @@ def test_team_sync_push_pull_preserves_local_credential_references(tmp_path: Pat
     assert target_store.get("edge").credential_ref == "vault:local"
 
 
+def test_team_sync_filters_secret_aliases_without_dropping_auth_metadata() -> None:
+    shared = team_profile_dict(
+        Profile(
+            name="edge",
+            protocol="ssh",
+            options={
+                "api_key": "api-secret",
+                "Authorization": "Bearer secret",
+                "cookie": "session=secret",
+                "identity-file": "/private/id_ed25519",
+                "smartcard_auth": "true",
+                "keepalive_interval": "30",
+            },
+        )
+    )
+
+    assert shared["options"] == {"smartcard_auth": "true", "keepalive_interval": "30"}
+
+
 def test_team_sync_rejects_stale_optimistic_concurrency_version(tmp_path: Path) -> None:
     backend = TeamSyncBackend(tmp_path / "team")
     first = ProfileStore(tmp_path / "first.json")
@@ -65,12 +89,97 @@ def test_team_sync_rejects_unsafe_team_identifiers(tmp_path: Path) -> None:
         raise AssertionError("unsafe team identifiers must be rejected")
 
 
-def test_team_sync_refuses_concurrent_writer_lock(tmp_path: Path) -> None:
-    backend = TeamSyncBackend(tmp_path, lock_timeout_seconds=0.01)
+def test_team_sync_refuses_concurrent_writer_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = TeamSyncBackend(tmp_path, lock_timeout_seconds=0.1)
     (tmp_path / "ops.team-sync.lock").write_text("held", encoding="utf-8")
+    monotonic_values = iter((10.0, 10.01, 10.2))
+    sleeps: list[float] = []
+    monkeypatch.setattr(team_sync.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(team_sync.time, "sleep", sleeps.append)
     try:
         backend.write("ops", [Profile(name="edge", protocol="ssh", host="edge.example.invalid")], expected_version=0)
     except TeamSyncBusyError as exc:
         assert "busy" in str(exc)
     else:
         raise AssertionError("a held team lock must prevent concurrent writes")
+    assert sleeps == [0.05]
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ({"schema_version": 2}, "invalid team sync record"),
+        (
+            {"schema_version": 1, "team": "other", "version": 1, "profiles": []},
+            "does not match requested team",
+        ),
+        (
+            {"schema_version": 1, "team": "ops", "version": 0, "profiles": []},
+            "version must be a positive integer",
+        ),
+        (
+            {"schema_version": 1, "team": "ops", "version": True, "profiles": []},
+            "version must be a positive integer",
+        ),
+        (
+            {"schema_version": 1, "team": "ops", "version": 1, "profiles": {}},
+            "profiles must be a list",
+        ),
+        (
+            {"schema_version": 1, "team": "ops", "version": 1, "profiles": ["bad"]},
+            "profiles must contain JSON objects",
+        ),
+    ],
+)
+def test_team_sync_rejects_corrupt_shared_records(
+    tmp_path: Path,
+    payload: dict[str, object],
+    message: str,
+) -> None:
+    path = tmp_path / "ops.team-sync.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        TeamSyncBackend(tmp_path).read("ops")
+
+
+@pytest.mark.parametrize("version", [-1, True, 1.5])
+def test_team_sync_rejects_invalid_expected_versions(tmp_path: Path, version: object) -> None:
+    with pytest.raises(ValueError, match="non-negative integer"):
+        TeamSyncBackend(tmp_path).write("ops", [], expected_version=version)  # type: ignore[arg-type]
+
+
+def test_team_sync_rejects_duplicate_profile_names_and_invalid_lock_timeout(tmp_path: Path) -> None:
+    duplicate = Profile(name="edge", protocol="ssh", host="edge.example.invalid")
+    with pytest.raises(ValueError, match="profile names must be unique"):
+        TeamSyncBackend(tmp_path / "duplicates").write(
+            "ops",
+            [duplicate, duplicate],
+            expected_version=0,
+        )
+
+    with pytest.raises(ValueError, match="lock timeout must be positive"):
+        TeamSyncBackend(tmp_path / "timeout", lock_timeout_seconds=0).write(
+            "ops",
+            [],
+            expected_version=0,
+        )
+
+
+def test_team_sync_pull_supports_replace_and_new_profile_merge(tmp_path: Path) -> None:
+    backend = TeamSyncBackend(tmp_path / "team")
+    backend.write(
+        "ops",
+        [Profile(name="remote", protocol="ssh", host="remote.example.invalid")],
+        expected_version=0,
+    )
+
+    merged_store = ProfileStore(tmp_path / "merged.json")
+    merged_store.add(Profile(name="local", protocol="ssh", host="local.example.invalid"))
+    TeamSyncClient(merged_store, backend).pull("ops")
+    assert [profile.name for profile in merged_store.load()] == ["local", "remote"]
+
+    replaced_store = ProfileStore(tmp_path / "replaced.json")
+    replaced_store.add(Profile(name="local", protocol="ssh", host="local.example.invalid"))
+    TeamSyncClient(replaced_store, backend).pull("ops", replace=True)
+    assert [profile.name for profile in replaced_store.load()] == ["remote"]

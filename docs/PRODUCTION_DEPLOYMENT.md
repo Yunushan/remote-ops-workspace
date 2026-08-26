@@ -138,12 +138,13 @@ Dependabot tracks `pip`, GitHub Actions, and Docker updates weekly through
 normal protected-branch policy; automated update tooling does not replace
 release validation or platform signing.
 
-All vault-capable release profiles require maintained `cryptography==50.0.0`.
-Intel macOS builds it from source. The Windows x86 compatibility profile uses
-the same pinned `build`, `wheel`, and PyInstaller versions but excludes
-cryptography and truststore because no reviewed maintained source-build
-toolchain exists for that architecture. Its release smoke requires encrypted
-vault commands to fail closed; no known-vulnerable cryptography fallback is
+All vault-capable release profiles require maintained `cryptography==50.0.0`,
+and encrypted OpenSSH key generation additionally requires `bcrypt==5.0.0`.
+Intel macOS builds cryptography from source. The Windows x86 compatibility
+profile uses the same pinned `build`, `wheel`, and PyInstaller versions but
+excludes bcrypt, cryptography, and truststore because no reviewed maintained
+source-build chain exists for that architecture. Its release smoke requires
+affected security commands to fail closed; no known-vulnerable fallback is
 packaged.
 
 Tag-triggered releases fail before building any partial asset set unless both

@@ -1,6 +1,7 @@
 # Exact direct Python packages for the Windows x86 release target.
-# The encrypted-vault backend is deliberately absent because no reviewed
-# cryptography>=50 build exists for this architecture.
+# The encrypted-vault and encrypted OpenSSH-key backends are deliberately
+# absent because no reviewed bcrypt/cryptography build chain exists for this
+# architecture.
 pip==26.2.1
 setuptools==84.0.0
 wheel==0.48.0

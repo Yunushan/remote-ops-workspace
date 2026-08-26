@@ -85,6 +85,7 @@ def run_keygen(plan: KeygenPlan, dry_run: bool = False) -> KeygenPlan:
 
 def _write_native_key_pair(plan: KeygenPlan) -> None:
     try:
+        from cryptography.exceptions import UnsupportedAlgorithm
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
     except Exception as exc:  # pragma: no cover - depends on optional package
@@ -107,11 +108,17 @@ def _write_native_key_pair(plan: KeygenPlan) -> None:
 
     passphrase = plan.passphrase.encode("utf-8")
     encryption = serialization.BestAvailableEncryption(passphrase)
-    private_bytes = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.OpenSSH,
-        encryption_algorithm=encryption,
-    )
+    try:
+        private_bytes = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.OpenSSH,
+            encryption_algorithm=encryption,
+        )
+    except UnsupportedAlgorithm as exc:
+        raise ValueError(
+            "encrypted OpenSSH key generation requires bcrypt; "
+            "install with: pip install -e '.[security]'"
+        ) from exc
     public_bytes = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.OpenSSH,
         format=serialization.PublicFormat.OpenSSH,

@@ -453,8 +453,6 @@ def openssh_command_without_windows_connection_sharing(
     def without_ssh_mux_short_options(argument: str) -> tuple[str | None, bool]:
         """Return ``(replacement, consume_next)`` for one ssh short argv item."""
 
-        if not argument.startswith("-") or argument.startswith("--") or len(argument) < 2:
-            return argument, False
         cluster = argument[1:]
         if "M" not in cluster and "S" not in cluster:
             return argument, False
@@ -623,8 +621,7 @@ def ssh_control_path_for_profile(profile: Profile) -> str:
     directory = Path(tempfile.gettempdir()) / "remote-ops-workspace" / "ssh-control"
     try:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if not _is_native_windows():
-            directory.chmod(0o700)
+        directory.chmod(0o700)
     except OSError:
         return ""
     return str(directory / f"cm-{digest}")

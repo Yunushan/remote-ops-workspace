@@ -135,10 +135,9 @@ def argv_list(parts: Iterable[str], label: str = "command") -> list[str]:
 
 
 def shellish_text(value: str | None, label: str) -> str:
-    text = clean_text(value, label)
-    if "\n" in text or "\r" in text:
+    if value is not None and ("\n" in str(value) or "\r" in str(value)):
         raise CommandSafetyError(f"{label} must be a single line")
-    return text
+    return clean_text(value, label)
 
 
 def display(value: str | None) -> str:

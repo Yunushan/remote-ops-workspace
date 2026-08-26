@@ -1,7 +1,9 @@
+import copy
 import hashlib
 import json
 from pathlib import Path
 
+import remote_ops_workspace.features as features_module
 from remote_ops_workspace.features import (
     _platform_verified_readiness,
     _release_source_run_attempt_conflicts,
@@ -3655,3 +3657,1368 @@ def _xp_native_evidence_contract_sha256() -> str:
 def _json_sha256(data: dict[str, object]) -> str:
     payload = json.dumps(data, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+_DELETE = object()
+
+
+def _mutated(record: dict[str, object], path: tuple[str, ...], value: object) -> dict[str, object]:
+    result = copy.deepcopy(record)
+    cursor: dict[str, object] = result
+    for key in path[:-1]:
+        nested = cursor[key]
+        assert isinstance(nested, dict)
+        cursor = nested
+    if value is _DELETE:
+        del cursor[path[-1]]
+    else:
+        cursor[path[-1]] = value
+    return result
+
+
+def test_feature_summary_scoring_and_override_edges(monkeypatch) -> None:
+    manifest = {
+        "features": [
+            {
+                "id": "feature.one",
+                "category": "terminal",
+                "status": "implemented",
+                "inspired_by": ["Product"],
+            }
+        ]
+    }
+    monkeypatch.setattr(features_module, "load_feature_manifest", lambda: manifest)
+    assert features_module.feature_summary() == [
+        {
+            "id": "feature.one",
+            "category": "terminal",
+            "status": "implemented",
+            "coverage": "Product",
+        }
+    ]
+
+    defaults = {"implemented": 1.0}
+    assert features_module._status_weights(
+        {"legacy": {"partial": 0.5}},
+        "missing",
+        defaults,
+        fallback_key="legacy",
+    ) == {"implemented": 1.0, "partial": 0.5}
+    assert features_module._status_weights({"weights": []}, "weights", defaults) == defaults
+
+    scored = features_module._score_features(
+        "Product",
+        [{"id": "feature.one", "status": "implemented"}],
+        defaults,
+        100.0,
+        {
+            "feature.one": {
+                "weight": 0.75,
+                "rationale": "verified elsewhere",
+                "evidence": "report.json",
+            }
+        },
+    )
+    assert scored["current_percent"] == 75.0
+    assert scored["overrides_applied"][0]["override_weight"] == 0.75
+    assert features_module._score_features("Empty", [], defaults, 100.0, {})[
+        "current_percent"
+    ] == 0.0
+
+    normalized = features_module._normalise_product_overrides(
+        {
+            "ignored": [],
+            "Product": {
+                "feature.one": {
+                    "weight": 0.8,
+                    "rationale": "tested",
+                    "evidence": "evidence.json",
+                },
+                "feature.two": 0.5,
+            },
+        }
+    )
+    assert "ignored" not in normalized
+    assert normalized["Product"]["feature.one"]["rationale"] == "tested"
+    assert normalized["Product"]["feature.two"] == {
+        "weight": 0.5,
+        "rationale": "",
+        "evidence": "",
+    }
+    assert features_module._normalise_target_overrides(
+        {"ignored": 1, "Product": {"weight": 0.6}}
+    ) == {
+        "Product": {"weight": 0.6, "rationale": "", "evidence": ""}
+    }
+    assert features_module._normalise_product_feature_mappings(
+        {"ignored": "feature.one", "Product": ["feature.one", 2]}
+    ) == {"Product": {"feature.one", "2"}}
+
+    merged = features_module._product_overrides(
+        "Product",
+        [
+            {"id": ""},
+            {"id": "existing"},
+            {"id": "with-extension", "extension_point": "module:function"},
+            {"id": "plain"},
+        ],
+        {"existing": {"weight": 1.0}},
+        {
+            "weight": 0.7,
+            "rationale": "{product} target",
+            "evidence": "target report",
+        },
+    )
+    assert merged["existing"] == {"weight": 1.0}
+    assert merged["with-extension"]["rationale"] == "Product target"
+    assert merged["with-extension"]["evidence"] == "target report / module:function"
+    assert merged["plain"]["evidence"] == "target report"
+
+    assert features_module._product_mapping_source("Product", {"id": "missing"}, {}) == (
+        "implicit-product-match"
+    )
+
+
+def test_feature_config_and_unclassified_readiness_edges(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr(features_module, "runtime_config_path", lambda _name: config_path)
+
+    assert features_module._platform_verified_evidence_registry() == {
+        "schema_version": 1,
+        "accepted_evidence": [],
+    }
+    platform = features_module._platform_verified_readiness(evidence_registry={})
+    assert platform["targets"] == []
+    assert platform["overall"]["target_count"] == 0
+
+    config_path.write_text("not-json", encoding="utf-8")
+    assert features_module._platform_verified_evidence_registry()["accepted_evidence"] == []
+    assert features_module._promotion_config_sha256() == ""
+    assert features_module._xp_native_evidence_contract_sha256() == ""
+    assert features_module._platform_parity_promotion_config() == {"protected_targets": []}
+
+    config_path.write_text("[]", encoding="utf-8")
+    assert features_module._platform_verified_evidence_registry()["accepted_evidence"] == []
+    assert features_module._promotion_config_sha256() == ""
+    assert features_module._xp_native_evidence_contract_sha256() == ""
+    assert features_module._platform_parity_promotion_config() == {"protected_targets": []}
+
+    assert features_module._release_target_readiness({"github_release_channel": "unknown"})[
+        :2
+    ] == (50.0, "declared-unclassified")
+    assert features_module._legacy_windows_readiness({"host_tier": "unknown"})[:2] == (
+        30.0,
+        "legacy-unclassified",
+    )
+
+
+def test_release_asset_source_binding_rejects_each_malformed_field() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    source = valid["release_asset_source"]
+    assert isinstance(source, dict)
+    files = source["contains_files"]
+    assert isinstance(files, list)
+    candidates = [
+        _mutated(valid, ("release_asset_source",), None),
+        _mutated(valid, ("release_asset_source", "type"), "local-file"),
+        _mutated(valid, ("release_asset_source", "workflow"), "wrong.yml"),
+        _mutated(valid, ("release_asset_source", "workflow_run_url"), "not-a-run-url"),
+        _mutated(
+            valid,
+            ("release_asset_urls",),
+            [
+                str(url).replace("example/remote-ops-workspace", "other/repository")
+                for url in valid["release_asset_urls"]
+            ],
+        ),
+        _mutated(valid, ("workflow_run_url",), "https://github.com/example/remote-ops-workspace/actions/runs/999"),
+        _mutated(valid, ("release_asset_source", "artifact_name"), "wrong-artifact"),
+        _mutated(valid, ("release_asset_source", "head_sha"), "bad-sha"),
+        _mutated(valid, ("release_asset_source", "run_attempt"), True),
+        _mutated(valid, ("release_asset_source", "contains_files"), None),
+        _mutated(valid, ("release_asset_source", "contains_files"), [1]),
+        _mutated(valid, ("release_asset_source", "contains_files"), [files[0], files[0]]),
+        _mutated(valid, ("release_asset_source", "contains_files"), ["../escape"]),
+        _mutated(valid, ("release_asset_source", "contains_files"), files[:-1]),
+    ]
+
+    assert features_module._has_release_asset_source_binding(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_release_asset_source_binding(candidate, target), index
+
+
+def test_xp_host_identity_rejects_each_malformed_field() -> None:
+    target = "windows-xp-native-x64"
+    valid = _xp_host_identity(target)
+    candidates = [
+        None,
+        {**valid, "unexpected": True},
+        _mutated(valid, ("schema_version",), True),
+        _mutated(valid, ("target",), "windows-xp-native-x86"),
+        _mutated(valid, ("host_label",), "?"),
+        _mutated(valid, ("evidence_run_id",), "short"),
+        _mutated(valid, ("observed_at_utc",), "not-utc"),
+        _mutated(valid, ("operator_private_data_redacted",), False),
+        _mutated(valid, ("os",), None),
+        _mutated(valid, ("os", "unexpected"), True),
+        _mutated(valid, ("os", "name"), "Windows 11"),
+        _mutated(valid, ("os", "architecture"), "x86"),
+        _mutated(valid, ("os", "service_pack"), "SP1"),
+        _mutated(valid, ("os", "edition"), "Home"),
+        _mutated(valid, ("toolchain",), None),
+        _mutated(valid, ("toolchain", "unexpected"), True),
+        _mutated(valid, ("toolchain", "separate_legacy_toolchain"), False),
+        _mutated(valid, ("toolchain", "description"), "short"),
+    ]
+
+    assert features_module._has_xp_host_identity(valid, target, "v1.0.2")
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_xp_host_identity(candidate, target, "v1.0.2"), index
+
+
+def test_xp_evidence_sources_reject_each_malformed_field() -> None:
+    target = "windows-xp-native-x86"
+    valid = _xp_accepted_evidence(target)
+    summary = valid["xp_evidence_summary"]
+    assert isinstance(summary, dict)
+    smoke_files = summary["smoke_evidence_files"]
+    assert isinstance(smoke_files, dict)
+    smoke_id = sorted(features_module.XP_ACCEPTED_EVIDENCE_SMOKE_IDS)[0]
+    candidates = [
+        _mutated(valid, ("xp_evidence_sources",), None),
+        _mutated(valid, ("xp_evidence_sources", "unexpected"), {}),
+        _mutated(valid, ("xp_evidence_sources", "evidence"), None),
+        _mutated(valid, ("workflow_inputs",), None),
+        _mutated(valid, ("xp_evidence_sources", "evidence", "file"), "wrong.json"),
+        _mutated(valid, ("xp_evidence_sources", "evidence", "path"), "wrong/path.json"),
+        _mutated(valid, ("xp_evidence_sources", "evidence", "sha256"), "0" * 64),
+        _mutated(valid, ("xp_evidence_sources", "evidence", "size_bytes"), 0),
+        _mutated(valid, ("xp_evidence_summary",), None),
+        _mutated(valid, ("xp_evidence_summary", "smoke_evidence_files"), None),
+        _mutated(valid, ("xp_smoke_evidence_sha256",), None),
+        _mutated(valid, ("xp_evidence_sources", "smoke_evidence"), None),
+        _mutated(valid, ("xp_evidence_sources", "smoke_evidence", "unexpected"), {}),
+        _mutated(valid, ("xp_evidence_sources", "smoke_evidence", smoke_id), None),
+        _mutated(
+            valid,
+            ("xp_evidence_sources", "smoke_evidence", smoke_id, "file"),
+            "wrong.txt",
+        ),
+        _mutated(
+            valid,
+            ("xp_evidence_sources", "smoke_evidence", smoke_id, "sha256"),
+            "0" * 64,
+        ),
+        _mutated(
+            valid,
+            ("xp_evidence_sources", "smoke_evidence", smoke_id, "size_bytes"),
+            False,
+        ),
+    ]
+
+    assert features_module._has_xp_evidence_sources(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_xp_evidence_sources(candidate, target), index
+
+
+def test_xp_evidence_summary_rejects_each_malformed_field() -> None:
+    target = "windows-xp-native-x64"
+    valid = _xp_accepted_evidence(target)
+    candidates = [
+        _mutated(valid, ("xp_evidence_summary",), None),
+        _mutated(valid, ("xp_evidence_summary", "unexpected"), True),
+        _mutated(valid, ("xp_evidence_summary", "target"), "windows-xp-native-x86"),
+        _mutated(valid, ("xp_evidence_summary", "release_source"), None),
+        _mutated(valid, ("xp_evidence_summary", "host_identity"), None),
+        _mutated(valid, ("xp_evidence_summary", "os"), None),
+        _mutated(valid, ("xp_evidence_summary", "os", "unexpected"), True),
+        _mutated(valid, ("xp_evidence_summary", "os", "name"), "Windows 11"),
+        _mutated(valid, ("xp_evidence_summary", "os", "architecture"), "x86"),
+        _mutated(valid, ("xp_evidence_summary", "os", "service_pack"), "SP1"),
+        _mutated(valid, ("xp_evidence_summary", "os", "edition"), "Home"),
+        _mutated(valid, ("xp_evidence_summary", "toolchain"), None),
+        _mutated(valid, ("xp_evidence_summary", "toolchain", "unexpected"), True),
+        _mutated(valid, ("xp_evidence_summary", "toolchain", "separate_legacy_toolchain"), False),
+        _mutated(valid, ("xp_evidence_summary", "security"), None),
+        _mutated(valid, ("xp_evidence_summary", "security", "unexpected"), True),
+        _mutated(valid, ("xp_evidence_summary", "security", "legacy_crypto_profile_scoped"), False),
+        _mutated(valid, ("xp_evidence_summary", "security", "patch_evidence"), None),
+        _mutated(valid, ("xp_evidence_summary", "smoke_ids"), None),
+        _mutated(valid, ("xp_evidence_summary", "smoke_evidence_files"), None),
+        _mutated(valid, ("xp_evidence_summary", "smoke_commands"), None),
+    ]
+
+    assert features_module._has_xp_evidence_summary(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_xp_evidence_summary(candidate, target), index
+
+
+def test_linux_smoke_summary_rejects_each_malformed_field() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    candidates = [
+        _mutated(valid, ("linux_smoke_summary",), None),
+        _mutated(valid, ("linux_smoke_summary", "unexpected"), True),
+        _mutated(valid, ("release_asset_source",), None),
+        _mutated(valid, ("release_asset_source", "head_sha"), "bad"),
+        _mutated(valid, ("linux_smoke_summary", "target"), "linux-armhf"),
+        _mutated(valid, ("linux_smoke_summary", "workflow_run_url"), "wrong"),
+        _mutated(valid, ("linux_smoke_summary", "workflow_run_attempt"), 0),
+        _mutated(valid, ("linux_smoke_summary", "source_head_sha"), "b" * 40),
+        _mutated(valid, ("linux_smoke_summary", "target_arch"), "armhf"),
+        _mutated(valid, ("linux_smoke_summary", "uname_machine"), "x86_64"),
+        _mutated(valid, ("linux_smoke_summary", "dpkg_architecture"), "amd64"),
+        _mutated(valid, ("linux_smoke_summary", "userland_bits"), "64"),
+        _mutated(valid, ("linux_smoke_summary", "host_label"), "bad"),
+        _mutated(valid, ("linux_smoke_summary", "os_release"), ""),
+    ]
+
+    assert features_module._has_linux_smoke_summary(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_linux_smoke_summary(candidate, target), index
+
+
+def test_safe_evidence_path_and_path_relationship_edges() -> None:
+    target = "windows-xp-native-x86"
+    release_tag = "v1.0.2"
+    valid = f"platform-evidence/{target}/{release_tag}/evidence.json"
+    assert features_module._is_safe_xp_validation_path(
+        valid,
+        target=target,
+        release_tag=release_tag,
+        require_json_hint=True,
+        require_target_release_scope=True,
+    )
+    assert features_module._is_safe_xp_validation_path(
+        f"platform-evidence\\{target}\\{release_tag}\\evidence.json",
+        target=target,
+        release_tag=release_tag,
+        require_json_hint=True,
+        require_target_release_scope=True,
+    )
+    reserved = sorted(features_module.RESERVED_WORKSPACE_ROOTS)[0]
+    invalid = [
+        "",
+        "<placeholder>",
+        "wild*.json",
+        "C:\\absolute\\evidence.json",
+        "platform-evidence/../escape.json",
+        ".",
+        f"{reserved}/evidence.json",
+        ".private/evidence.json",
+    ]
+    for path in invalid:
+        assert not features_module._is_safe_xp_validation_path(path)
+    assert not features_module._is_safe_xp_validation_path(
+        "platform-evidence/file.json",
+        require_directory_hint=True,
+    )
+    assert not features_module._is_safe_xp_validation_path(
+        "platform-evidence/evidence.txt",
+        require_json_hint=True,
+    )
+    assert not features_module._is_safe_xp_validation_path(
+        "platform-evidence/other/v1.0.1/evidence.json",
+        target=target,
+        release_tag=release_tag,
+        require_target_release_scope=True,
+    )
+    assert features_module._directory_path_has_file_suffix("") is False
+    assert features_module._paths_overlap("", "other") is False
+    assert features_module._paths_overlap("root/child", "root") is True
+    assert features_module._relative_path_parts("root\\child") == ("root", "child")
+
+
+def test_xp_accepted_record_rejects_each_contract_layer() -> None:
+    target = "windows-xp-native-x86"
+    valid = _xp_accepted_evidence(target)
+    smoke_hashes = valid["xp_smoke_evidence_sha256"]
+    assert isinstance(smoke_hashes, dict)
+    smoke_id = sorted(smoke_hashes)[0]
+    candidates = [
+        _mutated(valid, ("evidence_type",), "wrong"),
+        _mutated(valid, ("workflow",), "wrong.yml"),
+        _mutated(valid, ("architecture",), "x64"),
+        _mutated(valid, ("separate_legacy_toolchain",), False),
+        _mutated(valid, ("current_python_pyqt6_stack",), True),
+        _mutated(valid, ("native_evidence_validation_command",), "bad command"),
+        _mutated(valid, ("workflow_inputs",), None),
+        _mutated(valid, ("xp_evidence_sha256",), "bad"),
+        _mutated(valid, ("xp_evidence_contract_sha256",), "bad"),
+        _mutated(valid, ("xp_evidence_summary",), None),
+        _mutated(valid, ("xp_host_identity_sha256",), "bad"),
+        _mutated(valid, ("xp_smoke_evidence_sha256",), None),
+        _mutated(valid, ("xp_smoke_evidence_sha256", "unexpected"), "a" * 64),
+        _mutated(valid, ("xp_smoke_evidence_sha256", smoke_id), "bad"),
+        _mutated(valid, ("xp_evidence_sources",), None),
+        _mutated(valid, ("checks",), []),
+    ]
+
+    assert features_module._is_xp_accepted_evidence_entry(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._is_xp_accepted_evidence_entry(candidate, target), index
+
+
+def test_linux_builder_identity_rejects_each_malformed_field() -> None:
+    target = "linux-i386"
+    valid = _builder_identity(target)
+    candidates = [
+        None,
+        {**valid, "unexpected": True},
+        _mutated(valid, ("schema_version",), True),
+        _mutated(valid, ("sys_platform",), "win32"),
+        _mutated(valid, ("platform_machine",), "x86_64"),
+        _mutated(valid, ("uname_machine",), "x86_64"),
+        _mutated(valid, ("python_version",), "3.9.19"),
+        _mutated(valid, ("os_release",), ""),
+        _mutated(valid, ("sudo_non_interactive",), False),
+        _mutated(valid, ("required_tools",), None),
+        _mutated(valid, ("security_patch_evidence",), None),
+    ]
+
+    assert features_module._has_linux_builder_identity(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_linux_builder_identity(candidate, target), index
+
+    tools = valid["required_tools"]
+    assert isinstance(tools, dict)
+    first_tool = sorted(tools)[0]
+    assert not features_module._has_linux_required_tool_paths(None)
+    assert not features_module._has_linux_required_tool_paths({**tools, "unexpected": "/bin/tool"})
+    assert not features_module._has_linux_required_tool_paths({**tools, first_tool: "relative"})
+
+
+def test_xp_workflow_inputs_reject_each_malformed_binding() -> None:
+    target = "windows-xp-native-x86"
+    valid = _xp_accepted_evidence(target)
+    workflow_inputs = valid["workflow_inputs"]
+    assert isinstance(workflow_inputs, dict)
+    candidates = [
+        _mutated(valid, ("workflow_inputs",), None),
+        _mutated(valid, ("workflow_inputs", "unexpected"), True),
+        _mutated(valid, ("workflow_inputs", "target"), "windows-xp-native-x64"),
+        _mutated(valid, ("workflow_inputs", "release_asset_base_url"), "not-a-url"),
+        _mutated(valid, ("release_asset_source", "workflow_run_url"), "https://github.com/other/repo/actions/runs/1"),
+        _mutated(valid, ("release_asset_urls",), None),
+        _mutated(valid, ("release_asset_urls",), ["https://github.com/other/repo/releases/download/v1.0.2/wrong"]),
+        _mutated(valid, ("workflow_inputs", "evidence_file"), "different/evidence.json"),
+        _mutated(valid, ("workflow_inputs", "assets_dir"), "../escape"),
+    ]
+
+    assert features_module._has_xp_workflow_inputs(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_xp_workflow_inputs(candidate, target), index
+
+
+def test_linux_smoke_host_runtime_and_security_rejections() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    summary = valid["linux_smoke_summary"]
+    builder = valid["builder_identity"]
+    assert isinstance(summary, dict)
+    assert isinstance(builder, dict)
+    host_candidates = [
+        _mutated(summary, ("host_label",), "?"),
+        _mutated(summary, ("host_label",), "other-builder"),
+        _mutated(summary, ("host_label",), f"{target}-different"),
+        _mutated(summary, ("evidence_run_id",), "short"),
+        _mutated(summary, ("evidence_run_id",), "other-evidence-run"),
+        _mutated(summary, ("evidence_run_id",), f"{target}-different-run"),
+        _mutated(summary, ("observed_at_utc",), "not-utc"),
+        _mutated(summary, ("observed_at_utc",), "2020-01-01T00:00:00Z"),
+    ]
+    for index, candidate in enumerate(host_candidates):
+        assert not features_module._has_linux_smoke_summary_host_binding(
+            candidate,
+            builder,
+            target,
+        ), index
+    builder_without_host = copy.deepcopy(builder)
+    builder_without_host["host_identity"] = None
+    assert features_module._has_linux_smoke_summary_host_binding(
+        summary,
+        builder_without_host,
+        target,
+    )
+
+    runtime_candidates = [
+        _mutated(summary, ("kernel_release",), "other-kernel"),
+        _mutated(summary, ("python_ssl_openssl",), "<placeholder>"),
+        _mutated(summary, ("openssl_cli_version",), "different OpenSSL"),
+        _mutated(summary, ("security",), None),
+    ]
+    for index, candidate in enumerate(runtime_candidates):
+        assert not features_module._has_linux_smoke_summary_runtime_binding(
+            candidate,
+            builder,
+        ), index
+
+    security = summary["security"]
+    builder_security = builder["security_patch_evidence"]
+    assert isinstance(security, dict)
+    assert isinstance(builder_security, dict)
+    assert not features_module._has_linux_smoke_summary_security(None, builder_security)
+    assert not features_module._has_linux_smoke_summary_security(
+        {**security, "unexpected": True},
+        builder_security,
+    )
+    assert not features_module._has_linux_smoke_summary_security(
+        {**security, "weak_crypto_global_default": True},
+        builder_security,
+    )
+    assert not features_module._has_linux_smoke_summary_security(
+        {**security, "security_update_channel": "placeholder"},
+        builder_security,
+    )
+    assert not features_module._has_linux_smoke_summary_security(
+        security,
+        {**builder_security, "tls_minimum_modern_profiles": "TLS 1.3"},
+    )
+
+
+def test_linux_builder_binding_sources_and_hash_rejections() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    candidates = [
+        _mutated(valid, ("builder_identity",), None),
+        _mutated(valid, ("builder_identity_sha256",), "bad"),
+        _mutated(valid, ("builder_identity", "release_tag"), "v9.9.9"),
+        _mutated(valid, ("builder_identity", "workflow_run_url"), "wrong"),
+        _mutated(valid, ("release_asset_source",), None),
+        _mutated(valid, ("builder_identity", "observed_git_head_sha"), "b" * 40),
+        _mutated(valid, ("builder_identity", "workflow_ref"), "wrong"),
+        _mutated(valid, ("builder_identity", "workflow_sha"), "b" * 40),
+        _mutated(valid, ("builder_identity", "git_worktree_clean"), False),
+        _mutated(valid, ("builder_identity", "workflow_run_attempt"), 0),
+        _mutated(valid, ("builder_identity", "host_identity"), None),
+        _mutated(valid, ("builder_identity", "host_identity", "workflow_run_attempt"), 0),
+        _mutated(valid, ("builder_identity", "host_identity", "unexpected"), True),
+        _mutated(valid, ("builder_identity", "host_identity", "schema_version"), True),
+        _mutated(valid, ("builder_identity", "python_version"), "3.9"),
+    ]
+    assert features_module._has_linux_builder_identity_binding(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_linux_builder_identity_binding(candidate, target), index
+
+    source_candidates = [
+        _mutated(valid, ("linux_evidence_sources",), None),
+        _mutated(valid, ("linux_evidence_sources", "unexpected"), {}),
+        _mutated(valid, ("linux_evidence_sources", "builder_identity"), None),
+        _mutated(valid, ("linux_evidence_sources", "builder_identity", "file"), "wrong.json"),
+        _mutated(valid, ("linux_evidence_sources", "builder_identity", "sha256"), "0" * 64),
+        _mutated(valid, ("linux_evidence_sources", "builder_identity", "size_bytes"), 0),
+    ]
+    assert features_module._has_linux_evidence_sources(valid, target)
+    for index, candidate in enumerate(source_candidates):
+        assert not features_module._has_linux_evidence_sources(candidate, target), index
+
+    assert not features_module._has_linux_smoke_evidence_hashes(
+        _mutated(valid, ("linux_smoke_evidence_sha256",), None)
+    )
+    assert not features_module._has_linux_smoke_evidence_hashes(
+        _mutated(valid, ("linux_smoke_evidence_sha256", "unexpected"), "a" * 64)
+    )
+    assert not features_module._has_linux_smoke_evidence_hashes(
+        _mutated(valid, ("linux_smoke_evidence_sha256", "native_smoke"), "bad")
+    )
+
+
+def test_security_provenance_and_patch_evidence_rejections() -> None:
+    linux = _security_patch_evidence()
+    linux["python_ssl_openssl"] = "OpenSSL 3.0.13"
+    linux["openssl_cli_version"] = "OpenSSL 3.0.13"
+    assert not features_module._has_linux_security_patch_evidence(None)
+    assert not features_module._has_linux_security_patch_evidence({**linux, "unexpected": True})
+    assert not features_module._has_linux_security_patch_evidence(
+        {**linux, "python_ssl_openssl": ""}
+    )
+    assert not features_module._has_xp_security_patch_evidence(
+        {**_xp_security_patch_evidence(), "unexpected": True}
+    )
+    assert features_module._has_reserved_security_provenance_url(
+        "http://security.example.org/advisory"
+    )
+    assert features_module._has_reserved_security_provenance_url(
+        "https://example.com/advisory"
+    )
+    assert features_module._has_reserved_security_provenance_url(
+        "https://updates.invalid/advisory"
+    )
+    assert features_module._has_reserved_security_provenance_url("https://[broken")
+    assert features_module._python_version_tuple("not-a-version") == (0, 0)
+
+
+def test_accepted_registry_and_common_record_contract_edges() -> None:
+    valid = _linux_accepted_evidence("linux-i386")
+    assert features_module._accepted_evidence_entries(None) == []
+    assert features_module._accepted_evidence_entries({"accepted_evidence": {}}) == []
+    assert features_module._accepted_evidence_entries(
+        {"accepted_evidence": ["invalid", {"target": ""}]}
+    ) == []
+    assert features_module._accepted_evidence_entries(
+        {"accepted_evidence": [valid, copy.deepcopy(valid)]}
+    ) == []
+
+    for candidate in (
+        _mutated(valid, ("status",), "pending"),
+        _mutated(valid, ("readiness_percent",), 99.0),
+        _mutated(valid, ("release_tag",), "latest"),
+    ):
+        assert not features_module._is_accepted_evidence_entry(candidate)
+    assert not features_module._is_accepted_evidence_entry(
+        {"target": "unsupported"}
+    )
+    assert not features_module._has_exact_accepted_evidence_keys({}, "unsupported")
+    assert not features_module._has_exact_evidence_checks(None, {"one"})
+    assert not features_module._has_exact_evidence_checks(["one", "one"], {"one"})
+    assert features_module._requirement_list("not-a-list") == []
+    assert features_module._release_tag_version_tuple("latest") == (0, 0, 0)
+
+    assert features_module._release_source_head({}) == ""
+    assert features_module._release_source_head({"release_asset_source": {"head_sha": "bad"}}) == ""
+    assert features_module._release_source_run_attempt({}) == 0
+    assert features_module._release_source_run_attempt(
+        {"release_asset_source": {"run_attempt": True}}
+    ) == 0
+    assert features_module._release_source_workflow_run_url({}) == ""
+    assert features_module._release_source_workflow_run_url(
+        {"release_asset_source": {"workflow_run_url": "not-a-run"}}
+    ) == ""
+    assert features_module._release_source_workflow_from_entry({}, "linux-i386") == ""
+    assert features_module._release_source_workflow_from_entry(
+        {"release_asset_source": {"workflow": "wrong"}},
+        "linux-i386",
+    ) == ""
+    assert features_module._release_source_run_attempt_conflicts(
+        {"linux-i386": "run"},
+        {"linux-i386": 0},
+    ) == {}
+    assert features_module._release_asset_repositories(None) == set()
+    assert features_module._release_asset_repositories(["not-a-release-url"]) == set()
+
+    assert features_module._release_source_artifact_name("unsupported", "v1.0.2") == ""
+    assert features_module._release_source_workflow("unsupported") == ""
+    assert features_module._review_bundle_stem("unsupported", "v1.0.2") == ""
+    assert features_module._review_bundle_expected_files("unsupported", "v1.0.2") == {}
+    assert features_module._expected_accepted_artifact_names("unsupported", "v1.0.2") == set()
+    assert features_module._local_evidence_preflight_allowed_flags("unsupported") == (
+        features_module.COMMON_LOCAL_EVIDENCE_PREFLIGHT_FLAGS
+    )
+
+
+def test_release_asset_hash_contract_rejects_each_malformed_field() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    urls = valid["release_asset_urls"]
+    hashes = valid["artifact_sha256"]
+    assert isinstance(urls, list)
+    assert isinstance(hashes, dict)
+    first_name = sorted(hashes)[0]
+    candidates = [
+        (valid, "unsupported"),
+        (_mutated(valid, ("release_asset_urls",), None), target),
+        (_mutated(valid, ("artifact_sha256",), None), target),
+        (
+            _mutated(
+                valid,
+                ("release_asset_urls",),
+                [str(url).replace("/v1.0.2/", "/v9.9.9/") for url in urls],
+            ),
+            target,
+        ),
+        (
+            _mutated(
+                valid,
+                ("release_asset_urls",),
+                [*urls[:-1], "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/"],
+            ),
+            target,
+        ),
+        (
+            _mutated(
+                valid,
+                ("release_asset_urls",),
+                [*urls[:-1], str(urls[-1]).replace("example/remote-ops-workspace", "other/repo")],
+            ),
+            target,
+        ),
+        (_mutated(valid, ("release_asset_urls",), [urls[0], urls[0]]), target),
+        (_mutated(valid, ("release_asset_urls",), urls[:-1]), target),
+        (_mutated(valid, ("artifact_sha256", first_name), "BAD"), target),
+    ]
+
+    assert features_module._has_release_assets_and_hashes(valid, target)
+    for index, (candidate, candidate_target) in enumerate(candidates):
+        assert not features_module._has_release_assets_and_hashes(
+            candidate,
+            candidate_target,
+        ), index
+
+
+def test_review_bundle_contract_rejects_each_malformed_field() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    bundle = valid["review_bundle"]
+    assert isinstance(bundle, dict)
+    urls = bundle["release_asset_urls"]
+    assert isinstance(urls, list)
+    candidates = [
+        _mutated(valid, ("review_bundle",), None),
+        _mutated(valid, ("review_bundle", "unexpected"), True),
+        _mutated(valid, ("review_bundle", "bundle_type"), "wrong"),
+        _mutated(valid, ("review_bundle", "manifest"), None),
+        _mutated(valid, ("review_bundle", "manifest", "unexpected"), True),
+        _mutated(valid, ("review_bundle", "manifest", "file"), "wrong.json"),
+        _mutated(valid, ("review_bundle", "manifest", "sha256"), "bad"),
+        _mutated(valid, ("review_bundle", "manifest", "size_bytes"), 0),
+        _mutated(valid, ("review_bundle", "release_asset_urls"), None),
+    ]
+    assert features_module._has_review_bundle_binding(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_review_bundle_binding(candidate, target), index
+    assert not features_module._has_review_bundle_binding(valid, "unsupported")
+
+    expected_files = set(features_module._review_bundle_expected_files(target, "v1.0.2").values())
+    assert not features_module._has_review_bundle_release_asset_urls(
+        None,
+        release_tag="v1.0.2",
+        expected_files=expected_files,
+        native_release_assets=valid["release_asset_urls"],
+    )
+    assert not features_module._has_review_bundle_release_asset_urls(
+        urls,
+        release_tag="v1.0.2",
+        expected_files=expected_files,
+        native_release_assets=None,
+    )
+    bundle_url_candidates = [
+        ["not-a-url"],
+        [str(url).replace("/v1.0.2/", "/v9.9.9/") for url in urls],
+        [str(url).replace("example/remote-ops-workspace", "other/repo") for url in urls],
+        [urls[0], urls[0]],
+        urls[:-1],
+    ]
+    for candidate in bundle_url_candidates:
+        assert not features_module._has_review_bundle_release_asset_urls(
+            candidate,
+            release_tag="v1.0.2",
+            expected_files=expected_files,
+            native_release_assets=valid["release_asset_urls"],
+        )
+
+
+def test_finalized_record_url_rejects_filename_and_repository_mismatches() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    no_repositories = _mutated(valid, ("release_asset_urls",), None)
+    no_repositories = _mutated(no_repositories, ("review_bundle", "release_asset_urls"), None)
+    candidates = [
+        _mutated(valid, ("finalized_record_release_asset_url",), "not-a-url"),
+        _mutated(
+            valid,
+            ("finalized_record_release_asset_url",),
+            "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/wrong.json",
+        ),
+        no_repositories,
+        _mutated(
+            valid,
+            ("review_bundle", "release_asset_urls"),
+            [
+                "https://github.com/other/repo/releases/download/v1.0.2/"
+                "extended-linux-evidence-bundle-linux-i386-v1.0.2.json"
+            ],
+        ),
+    ]
+    assert features_module._has_finalized_record_release_asset_url(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_finalized_record_release_asset_url(candidate, target), index
+
+
+def _with_command_value(
+    record: dict[str, object],
+    field: str,
+    flag: str,
+    replacement: str,
+) -> dict[str, object]:
+    result = copy.deepcopy(record)
+    command = str(result[field])
+    values = features_module._command_values(command, flag)
+    assert len(values) == 1
+    result[field] = command.replace(
+        f"{flag} {values[0]}",
+        f"{flag} {replacement}",
+        1,
+    )
+    return result
+
+
+def test_common_local_preflight_rejects_each_command_contract_failure() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    command = str(valid["local_evidence_preflight_command"])
+    candidates = [
+        _mutated(valid, ("local_evidence_preflight_command",), "python wrong.py"),
+        _mutated(valid, ("local_evidence_preflight_command",), f"{command} --unexpected value"),
+        _with_command_value(valid, "local_evidence_preflight_command", "--release-tag", "v9.9.9"),
+        _with_command_value(valid, "local_evidence_preflight_command", "--target", "linux-armhf"),
+        _mutated(valid, ("release_asset_urls",), None),
+        _with_command_value(valid, "local_evidence_preflight_command", "--repository", "other/repo"),
+        _with_command_value(valid, "local_evidence_preflight_command", "--assets-dir", "<assets>"),
+        _with_command_value(valid, "artifact_validation_command", "--assets-dir", "other/assets"),
+        _with_command_value(valid, "local_evidence_preflight_command", "--root", "other-root"),
+    ]
+    assert features_module._has_local_evidence_preflight_command(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_local_evidence_preflight_command(candidate, target), index
+
+    unknown = {
+        "release_tag": "v1.0.2",
+        "release_asset_urls": valid["release_asset_urls"],
+        "artifact_validation_command": (
+            "python scripts/check_platform_promotion_artifacts.py --target unsupported "
+            "--assets-dir staged/unsupported/v1.0.2 --tag v1.0.2 --strict"
+        ),
+        "local_evidence_preflight_command": (
+            "python scripts/check_platform_goal_local_evidence.py --root . "
+            "--release-tag v1.0.2 --target unsupported "
+            "--assets-dir staged/unsupported/v1.0.2 "
+            "--repository example/remote-ops-workspace"
+        ),
+    }
+    assert not features_module._has_local_evidence_preflight_command(unknown, "unsupported")
+
+
+def test_platform_specific_local_preflight_rejections() -> None:
+    linux_target = "linux-i386"
+    linux = _linux_accepted_evidence(linux_target)
+    linux_command = str(linux["local_evidence_preflight_command"])
+    linux_candidates = [
+        _mutated(
+            linux,
+            ("local_evidence_preflight_command",),
+            f"{linux_command} --xp-evidence evidence/xp.json",
+        ),
+        _with_command_value(
+            linux,
+            "local_evidence_preflight_command",
+            "--linux-builder-evidence",
+            f"evidence/{linux_target}/v1.0.2/wrong.json",
+        ),
+        _with_command_value(
+            linux,
+            "local_evidence_preflight_command",
+            "--linux-smoke-evidence",
+            f"evidence/{linux_target}/v1.0.2/wrong.log",
+        ),
+        _with_command_value(
+            linux,
+            "local_evidence_preflight_command",
+            "--linux-builder-evidence",
+            f"other/v1.0.2/builder-identity-{linux_target}.json",
+        ),
+        _with_command_value(
+            linux,
+            "local_evidence_preflight_command",
+            "--linux-smoke-evidence",
+            f"other/v1.0.2/native-smoke-{linux_target}.log",
+        ),
+        _mutated(linux, ("release_asset_source",), None),
+    ]
+    for index, candidate in enumerate(linux_candidates):
+        assert not features_module._has_linux_local_evidence_preflight_command(
+            candidate,
+            linux_target,
+            str(candidate["local_evidence_preflight_command"]),
+        ), index
+
+    xp_target = "windows-xp-native-x86"
+    xp = _xp_accepted_evidence(xp_target)
+    xp_command = str(xp["local_evidence_preflight_command"])
+    xp_candidates = [
+        _mutated(
+            xp,
+            ("local_evidence_preflight_command",),
+            f"{xp_command} --linux-builder-evidence evidence/linux.json",
+        ),
+        _mutated(
+            xp,
+            ("local_evidence_preflight_command",),
+            f"{xp_command} --allow-extra-artifacts",
+        ),
+        _mutated(xp, ("release_asset_source",), None),
+        _with_command_value(
+            xp,
+            "local_evidence_preflight_command",
+            "--xp-source-run-attempt",
+            "2",
+        ),
+        _with_command_value(
+            xp,
+            "local_evidence_preflight_command",
+            "--xp-evidence",
+            "other/evidence.json",
+        ),
+    ]
+    for index, candidate in enumerate(xp_candidates):
+        assert not features_module._has_xp_local_evidence_preflight_command(
+            candidate,
+            xp_target,
+            str(candidate["local_evidence_preflight_command"]),
+        ), index
+
+
+def test_staged_upload_and_validation_command_rejections() -> None:
+    linux_target = "linux-i386"
+    linux = _linux_accepted_evidence(linux_target)
+    command = str(linux["staged_upload_command"])
+    candidates = [
+        _mutated(linux, ("staged_upload_command",), "python wrong.py"),
+        _mutated(linux, ("staged_upload_command",), f"{command} --unexpected value"),
+        _with_command_value(linux, "staged_upload_command", "--target", "linux-armhf"),
+        _with_command_value(linux, "staged_upload_command", "--release-tag", "v9.9.9"),
+        _mutated(linux, ("staged_upload_command",), command.replace(" --force", "")),
+        _mutated(linux, ("artifact_validation_command",), "python wrong.py"),
+    ]
+    for index, candidate in enumerate(candidates):
+        assert not features_module._has_staged_upload_command(candidate, linux_target), index
+    assert not features_module._has_staged_upload_command(linux, "unsupported")
+    assert not features_module._has_artifact_validation_command(
+        _mutated(linux, ("artifact_validation_command",), "python wrong.py"),
+        linux_target,
+    )
+
+    xp_target = "windows-xp-native-x86"
+    xp = _xp_accepted_evidence(xp_target)
+    assert not features_module._has_xp_native_evidence_validation_command(
+        _with_command_value(
+            xp,
+            "native_evidence_validation_command",
+            "--evidence",
+            "../escape.json",
+        )
+    )
+    assert not features_module._has_xp_native_evidence_validation_command(
+        _with_command_value(
+            xp,
+            "native_evidence_validation_command",
+            "--assets-dir",
+            "native-dist/file.zip",
+        )
+    )
+    assert not features_module._has_xp_workflow_inputs(
+        _with_command_value(
+            xp,
+            "native_evidence_validation_command",
+            "--evidence-dir",
+            "../escape",
+        ),
+        xp_target,
+    )
+
+
+def test_linux_accepted_record_and_workflow_rejections() -> None:
+    target = "linux-i386"
+    valid = _linux_accepted_evidence(target)
+    candidates = [
+        _mutated(valid, ("evidence_type",), "wrong"),
+        _mutated(valid, ("workflow",), "wrong.yml"),
+        _mutated(valid, ("workflow_inputs",), None),
+        _mutated(valid, ("workflow_run_url",), "not-a-run"),
+        _mutated(
+            valid,
+            ("release_asset_urls",),
+            [
+                str(url).replace("example/remote-ops-workspace", "other/repo")
+                for url in valid["release_asset_urls"]
+            ],
+        ),
+        _mutated(valid, ("artifact_name",), "wrong"),
+        _mutated(valid, ("native_build_command",), "wrong"),
+        _mutated(valid, ("native_smoke_command",), "wrong"),
+        _mutated(valid, ("runner_labels",), []),
+        _mutated(valid, ("checks",), []),
+    ]
+    assert features_module._is_linux_accepted_evidence_entry(valid, target)
+    for index, candidate in enumerate(candidates):
+        assert not features_module._is_linux_accepted_evidence_entry(candidate, target), index
+
+    workflow_candidates = [
+        _mutated(valid, ("workflow_inputs",), None),
+        _mutated(valid, ("workflow_inputs", "target"), "linux-armhf"),
+        _mutated(valid, ("workflow_inputs", "release_asset_base_url"), "not-a-url"),
+        _mutated(valid, ("release_asset_urls",), None),
+    ]
+    assert features_module._has_linux_workflow_inputs(valid, target)
+    for index, candidate in enumerate(workflow_candidates):
+        assert not features_module._has_linux_workflow_inputs(candidate, target), index
+
+
+def test_xp_smoke_file_command_and_digest_rejections() -> None:
+    target = "windows-xp-native-x86"
+    valid = _xp_accepted_evidence(target)
+    summary = valid["xp_evidence_summary"]
+    assert isinstance(summary, dict)
+    files = summary["smoke_evidence_files"]
+    commands = summary["smoke_commands"]
+    host_identity = summary["host_identity"]
+    release_source = summary["release_source"]
+    security = summary["security"]
+    assert isinstance(files, dict)
+    assert isinstance(commands, dict)
+    smoke_id = sorted(files)[0]
+
+    file_candidates = [
+        None,
+        {**files, "unexpected": "unexpected.txt"},
+        {**files, sorted(files)[1]: files[smoke_id]},
+        {**files, smoke_id: "wrong.txt"},
+        {**files, smoke_id: "xp-smoke-evidence/<placeholder>.txt"},
+        {**files, smoke_id: "../escape.txt"},
+    ]
+    assert features_module._has_xp_smoke_evidence_files(files)
+    for index, candidate in enumerate(file_candidates):
+        assert not features_module._has_xp_smoke_evidence_files(candidate), index
+
+    assert not features_module._has_xp_smoke_commands(
+        None,
+        files,
+        host_identity,
+        release_source,
+        security,
+        target,
+        "v1.0.2",
+    )
+    assert not features_module._has_xp_smoke_commands(
+        commands,
+        None,
+        host_identity,
+        release_source,
+        security,
+        target,
+        "v1.0.2",
+    )
+    assert not features_module._has_xp_smoke_commands(
+        commands,
+        files,
+        None,
+        release_source,
+        security,
+        target,
+        "v1.0.2",
+    )
+    assert not features_module._has_xp_smoke_commands(
+        commands,
+        files,
+        host_identity,
+        None,
+        security,
+        target,
+        "v1.0.2",
+    )
+    assert not features_module._has_xp_smoke_commands(
+        {**commands, "unexpected": "command"},
+        files,
+        host_identity,
+        release_source,
+        security,
+        target,
+        "v1.0.2",
+    )
+    security_smoke = "legacy_crypto_profile_scoped"
+    assert not features_module._xp_smoke_command_bound(
+        str(commands[security_smoke]),
+        target,
+        "v1.0.2",
+        security_smoke,
+        str(files[security_smoke]),
+        host_identity,
+        release_source,
+        None,
+    )
+
+    assert not features_module._has_xp_summary_release_source(
+        {**release_source, "unexpected": True},
+        valid["release_asset_source"],
+    )
+    assert not features_module._has_xp_host_identity_digest(
+        _mutated(valid, ("xp_evidence_summary",), None),
+        target,
+    )
+    assert not features_module._has_xp_host_identity_digest(
+        _mutated(valid, ("xp_evidence_summary", "host_identity"), None),
+        target,
+    )
+
+
+def test_defensive_security_type_guards(monkeypatch) -> None:
+    monkeypatch.setattr(features_module, "_has_security_patch_evidence", lambda _value: True)
+    assert not features_module._has_xp_security_patch_evidence("not-a-dict")
+    assert not features_module._has_linux_security_patch_evidence("not-a-dict")
+
+
+def test_windows_xp_pair_consistency_guards(monkeypatch) -> None:
+    required = ["windows-xp-native-x86", "windows-xp-native-x64"]
+
+    def entry(target: str) -> dict[str, object]:
+        return {
+            "target": target,
+            "release_tag": "v1.0.2",
+            "release_asset_urls": [
+                f"https://github.com/example/repo/releases/download/v1.0.2/{target}.zip"
+            ],
+            "release_asset_source": {
+                "head_sha": "a" * 40,
+                "workflow_run_url": f"https://github.com/example/repo/actions/runs/{1 if target.endswith('x86') else 2}",
+                "run_attempt": 1,
+            },
+        }
+
+    entries = [entry(target) for target in required]
+    monkeypatch.setattr(features_module, "_accepted_evidence_entries", lambda _registry: entries)
+    assert features_module._has_windows_xp_native_evidence({})
+
+    entries[1]["release_tag"] = "v1.0.3"
+    assert not features_module._has_windows_xp_native_evidence({})
+    entries[1]["release_tag"] = "v1.0.2"
+
+    entries[1]["release_asset_urls"] = []
+    assert not features_module._has_windows_xp_native_evidence({})
+    entries[1]["release_asset_urls"] = [
+        f"https://github.com/other/repo/releases/download/v1.0.2/{required[1]}.zip"
+    ]
+    assert not features_module._has_windows_xp_native_evidence({})
+    entries[1]["release_asset_urls"] = [
+        f"https://github.com/example/repo/releases/download/v1.0.2/{required[1]}.zip"
+    ]
+
+    source = entries[1]["release_asset_source"]
+    assert isinstance(source, dict)
+    source["workflow_run_url"] = ""
+    assert not features_module._has_windows_xp_native_evidence({})
+    source["workflow_run_url"] = "https://github.com/example/repo/actions/runs/2"
+    source["run_attempt"] = 0
+    assert not features_module._has_windows_xp_native_evidence({})
+
+
+def test_protected_goal_scope_status_and_requirement_edges(monkeypatch) -> None:
+    targets = list(features_module.PROTECTED_PLATFORM_GOAL_TARGETS)
+
+    def grouped_entry(
+        target: str,
+        *,
+        repository: str = "example/repo",
+        release_tag: str = "v1.0.2",
+        head_sha: str = "a" * 40,
+        include_source_run: bool = False,
+    ) -> dict[str, object]:
+        source: dict[str, object] = {
+            "head_sha": head_sha,
+            "workflow": features_module._release_source_workflow(target),
+        }
+        if include_source_run:
+            source.update(
+                {
+                    "workflow_run_url": f"https://github.com/{repository}/actions/runs/{targets.index(target) + 1}",
+                    "run_attempt": 1,
+                }
+            )
+        return {
+            "target": target,
+            "release_tag": release_tag,
+            "release_asset_urls": [
+                f"https://github.com/{repository}/releases/download/{release_tag}/{target}.zip"
+            ],
+            "release_asset_source": source,
+        }
+
+    entries = [grouped_entry(target) for target in targets]
+    monkeypatch.setattr(features_module, "_accepted_evidence_entries", lambda _registry: entries)
+    goal = features_module._protected_platform_goal_parity({})
+    assert goal["status"] == "missing-release-source-provenance"
+
+    entries = [
+        grouped_entry(target, repository="example/one" if index < 2 else "example/two")
+        for index, target in enumerate(targets)
+    ]
+    goal = features_module._protected_platform_goal_parity({})
+    assert goal["status"] == "mixed-release-repository-evidence"
+
+    entries_by_target = {
+        targets[0]: grouped_entry(targets[0], release_tag=""),
+        targets[1]: grouped_entry(targets[1], repository="example/other"),
+        targets[2]: grouped_entry(targets[2], head_sha="b" * 40),
+        targets[3]: {
+            "target": targets[3],
+            "release_tag": "v1.0.2",
+            "release_asset_urls": [],
+            "release_asset_source": {},
+        },
+    }
+    exclusions = features_module._protected_platform_release_scope_exclusions(
+        entries_by_target,
+        release_tag="v1.0.2",
+        release_repository="example/repo",
+        release_source_head="a" * 40,
+        selected_targets=set(),
+    )
+    assert "missing-release-tag" in exclusions[targets[0]]
+    assert any(reason.startswith("release-repository:") for reason in exclusions[targets[1]])
+    assert any(reason.startswith("release-source-head:") for reason in exclusions[targets[2]])
+    assert "release-repository:missing" in exclusions[targets[3]]
+    assert "missing-release-source-head" in exclusions[targets[3]]
+
+    no_selection = features_module._protected_platform_release_scope_exclusions(
+        {targets[0]: grouped_entry(targets[0])},
+        release_tag="",
+        release_repository="",
+        release_source_head="",
+        selected_targets=set(),
+    )
+    assert "no-selected-release-tag" in no_selection[targets[0]]
+    assert "no-selected-release-repository" in no_selection[targets[0]]
+    assert "no-selected-release-source-head" in no_selection[targets[0]]
+
+    monkeypatch.setattr(
+        features_module,
+        "_platform_parity_promotion_config",
+        lambda: {
+            "protected_targets": [
+                {
+                    "id": targets[0],
+                    "promotion_to_100_requires": [],
+                }
+            ]
+        },
+    )
+    requirements = features_module._protected_platform_goal_target_requirements(
+        present_targets=set(),
+        release_tag="",
+    )
+    assert requirements[0]["required_artifacts"] == []
+
+
+def test_feature_evidence_and_defensive_dispatch_branches(monkeypatch) -> None:
+    status_only = features_module._feature_evidence({"status": "implemented"})
+    extension_only = features_module._feature_evidence({"extension_point": "module:function"})
+    mapping_only = features_module._feature_evidence({"inspired_by": ["Product"]})
+    assert status_only["evidence_count"] == 1
+    assert extension_only["evidence_count"] == 1
+    assert mapping_only["evidence_count"] == 1
+
+    assert features_module._best_protected_platform_release_group(
+        {"linux-i386": {"release_tag": "", "release_asset_urls": []}}
+    ) == ("", "", "", set())
+    assert features_module._release_asset_repositories(
+        ["https://gitlab.com/example/repo/releases/download/v1.0.2/file.zip"]
+    ) == set()
+
+    valid = _linux_accepted_evidence("linux-i386")
+    without_bundle = _mutated(valid, ("review_bundle",), None)
+    assert features_module._has_finalized_record_release_asset_url(
+        without_bundle,
+        "linux-i386",
+    )
+    unsupported_bundle = copy.deepcopy(valid)
+    raw_bundle = unsupported_bundle["review_bundle"]
+    assert isinstance(raw_bundle, dict)
+    raw_bundle["bundle_type"] = None
+    assert not features_module._has_review_bundle_binding(unsupported_bundle, "unsupported")
+
+    monkeypatch.setattr(features_module, "_has_exact_accepted_evidence_keys", lambda *_args: True)
+    monkeypatch.setattr(features_module, "_promotion_config_sha256", lambda: "digest")
+    monkeypatch.setattr(features_module, "_has_review_bundle_binding", lambda *_args: True)
+    monkeypatch.setattr(
+        features_module,
+        "_has_finalized_record_release_asset_url",
+        lambda *_args: True,
+    )
+    monkeypatch.setattr(features_module, "_has_artifact_validation_command", lambda *_args: True)
+    monkeypatch.setattr(
+        features_module,
+        "_has_local_evidence_preflight_command",
+        lambda *_args: True,
+    )
+    monkeypatch.setattr(features_module, "_has_staged_upload_command", lambda *_args: True)
+    monkeypatch.setattr(features_module, "_has_release_assets_and_hashes", lambda *_args: True)
+    monkeypatch.setattr(
+        features_module,
+        "_has_release_asset_source_binding",
+        lambda *_args: True,
+    )
+    unsupported = {
+        "target": "unsupported",
+        "status": "accepted",
+        "readiness_percent": 100.0,
+        "release_tag": "v1.0.2",
+        "promotion_config_sha256": "digest",
+    }
+    assert not features_module._is_accepted_evidence_entry(unsupported)
+
+
+def test_final_bound_path_and_repository_rejections(monkeypatch) -> None:
+    xp_target = "windows-xp-native-x86"
+    xp = _xp_accepted_evidence(xp_target)
+    unsafe_xp = _with_command_value(
+        xp,
+        "local_evidence_preflight_command",
+        "--xp-evidence",
+        "../escape.json",
+    )
+    unsafe_xp = _with_command_value(
+        unsafe_xp,
+        "native_evidence_validation_command",
+        "--evidence",
+        "../escape.json",
+    )
+    assert not features_module._has_xp_local_evidence_preflight_command(
+        unsafe_xp,
+        xp_target,
+        str(unsafe_xp["local_evidence_preflight_command"]),
+    )
+
+    unsafe_workflow = _with_command_value(
+        xp,
+        "native_evidence_validation_command",
+        "--evidence-dir",
+        "../escape",
+    )
+    unsafe_workflow = _mutated(
+        unsafe_workflow,
+        ("workflow_inputs", "evidence_dir"),
+        "../escape",
+    )
+    assert not features_module._has_xp_workflow_inputs(unsafe_workflow, xp_target)
+
+    linux_target = "linux-i386"
+    linux = _linux_accepted_evidence(linux_target)
+    other_base = "https://github.com/other/repo/releases/download/v1.0.2"
+    mismatched_repository = _mutated(
+        linux,
+        ("workflow_inputs", "release_asset_base_url"),
+        other_base,
+    )
+    mismatched_repository = _mutated(
+        mismatched_repository,
+        ("release_asset_urls",),
+        [
+            str(url).replace(
+                "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+                other_base,
+            )
+            for url in linux["release_asset_urls"]
+        ],
+    )
+    assert not features_module._is_linux_accepted_evidence_entry(
+        mismatched_repository,
+        linux_target,
+    )
+
+    monkeypatch.setattr(features_module, "XP_ACCEPTED_EVIDENCE_SMOKE_IDS", {"<bad>"})
+    assert not features_module._has_xp_smoke_evidence_files(
+        {"<bad>": "xp-smoke-evidence/<bad>.txt"}
+    )
+    monkeypatch.setattr(features_module, "XP_ACCEPTED_EVIDENCE_SMOKE_IDS", {"../escape"})
+    assert not features_module._has_xp_smoke_evidence_files(
+        {"../escape": "xp-smoke-evidence/../escape.txt"}
+    )

@@ -13,10 +13,10 @@ from pathlib import Path
 from .file_safety import write_json_atomic
 from .models import Profile
 from .profile_validation import prepare_profile
+from .redaction import is_share_sensitive_key
 from .storage import ProfileStore
 
 TEAM_ID_RE = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}")
-SENSITIVE_OPTION_TOKENS = ("password", "passphrase", "secret", "token", "credential", "private_key")
 
 
 class TeamSyncConflictError(ValueError):
@@ -126,8 +126,7 @@ class TeamSyncBackend:
         try:
             yield
         finally:
-            if descriptor is not None:
-                os.close(descriptor)
+            os.close(descriptor)
             try:
                 lock_path.unlink()
             except FileNotFoundError:  # pragma: no cover - defensive shared-volume race handling
@@ -171,7 +170,7 @@ def team_profile_dict(profile: Profile) -> dict[str, object]:
     options = {
         key: value
         for key, value in profile.options.items()
-        if not any(token in key.lower() for token in SENSITIVE_OPTION_TOKENS)
+        if not is_share_sensitive_key(key)
     }
     return {
         "name": profile.name,

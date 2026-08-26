@@ -469,12 +469,13 @@ Core design principles:
 - Store examples only under `configs/*.example.*`.
 - Use `row connect NAME --dry-run` before launching newly imported profiles.
 - Vault encryption requires the optional `security` extra: `pip install -e ".[security]"`.
-- The `security` extra requires maintained `cryptography>=50.0.0`; there is no
+- The `security` extra requires maintained `bcrypt>=5.0.0` for encrypted
+  OpenSSH private-key serialization and `cryptography>=50.0.0`; there is no
   vulnerable legacy cryptography extra. Intel macOS release builders compile
-  that maintained version from source. Windows x86 release artifacts omit the
-  encrypted-vault backend and prove that vault initialization fails closed
-  because this repository has no reviewed cryptography 50 toolchain for that
-  architecture.
+  the maintained cryptography version from source. Windows x86 release
+  artifacts omit bcrypt, cryptography, and truststore and prove that the
+  affected security backends fail closed because this repository has no
+  reviewed build chain for those packages on that architecture.
 - Use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv or shell history.
 - `row vault get` requires `--out`; decrypted secrets are never printed to the terminal.
 - `row keygen --passphrase-env` keeps software-key passphrases out of `ssh-keygen` argv by generating encrypted keys in-process.
@@ -525,7 +526,13 @@ repository governance and exact-SHA release preflight require that aggregate.
 
 Run the same live interaction gate locally with `make gui-interactions`. It
 covers terminal input, context menus, selection/copy/paste, monitoring
-controls and the six product-style layouts.
+controls and the six product-style layouts. The uploaded interaction manifest
+also contains 20-sample p50, p95 and maximum latency evidence for the Qt event
+loop, terminal-tab transitions, a 128-profile tree filter and incremental
+terminal rendering. CI rejects a p95 above 100 ms for an idle event-loop turn,
+250 ms for tab switching or profile filtering, and 400 ms for terminal append;
+separate maximum budgets catch isolated freezes, and terminal append must keep
+the live viewport anchored at the bottom.
 
 The interaction gate declares **1024x768** as the minimum readiness-gated GUI
 window boundary. Every preset must render at that exact size with its visible

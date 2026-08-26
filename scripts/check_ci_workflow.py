@@ -149,18 +149,18 @@ def check_coverage_job(workflow: str) -> list[str]:
     threshold_match = re.search(r"--cov-fail-under(?:=|\s+)(\d+(?:\.\d+)?)", block)
     if threshold_match is None:
         errors.append("ci coverage job missing an explicit branch coverage failure threshold")
-    elif float(threshold_match.group(1)) < 75:
-        errors.append("ci coverage job aggregate coverage failure threshold must be at least 75")
+    elif float(threshold_match.group(1)) < 77.7:
+        errors.append("ci coverage job aggregate coverage failure threshold must be at least 77.7")
     total_match = re.search(r"--min-total(?:=|\s+)(\d+(?:\.\d+)?)", block)
     if total_match is None:
         errors.append("ci coverage job missing validated aggregate coverage threshold")
-    elif float(total_match.group(1)) < 75:
-        errors.append("ci coverage job validated aggregate coverage threshold must be at least 75")
+    elif float(total_match.group(1)) < 77.7:
+        errors.append("ci coverage job validated aggregate coverage threshold must be at least 77.7")
     branch_match = re.search(r"--min-branches(?:=|\s+)(\d+(?:\.\d+)?)", block)
     if branch_match is None:
         errors.append("ci coverage job missing pure branch coverage threshold")
-    elif float(branch_match.group(1)) < 60:
-        errors.append("ci coverage job pure branch coverage threshold must be at least 60")
+    elif float(branch_match.group(1)) < 63.0:
+        errors.append("ci coverage job pure branch coverage threshold must be at least 63.0")
     if "continue-on-error: true" in block:
         errors.append("ci coverage job must remain release-blocking")
     return errors
@@ -322,7 +322,9 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
             "standard GIL-enabled runtime evidence contract"
         ),
         "sys.version_info[:2] == (3, 15)": "resolved Python 3.15 assertion",
-        "import cryptography, truststore": "Python 3.15 security dependency import smoke",
+        "import bcrypt, cryptography, truststore": (
+            "Python 3.15 security dependency import smoke"
+        ),
         "from PyQt6.QtCore import QT_VERSION_STR": "Python 3.15 PyQt6 import smoke",
         "from PyQt6.QtWidgets import QApplication, QLabel": (
             "Python 3.15 QtWidgets application smoke"

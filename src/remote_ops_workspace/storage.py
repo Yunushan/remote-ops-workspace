@@ -98,6 +98,15 @@ class ProfileStore:
         ]
 
     def save(self, profiles: Iterable[Profile], *, surface: str = "profile-editor") -> None:
+        self._save_data(self._load_data(), profiles, surface=surface)
+
+    def _save_data(
+        self,
+        data: dict[str, Any],
+        profiles: Iterable[Profile],
+        *,
+        surface: str,
+    ) -> None:
         extra_protocols = plugin_protocols()
         prepared = [prepare_profile(profile, extra_protocols=extra_protocols) for profile in profiles]
         for profile in prepared:
@@ -107,7 +116,6 @@ class ProfileStore:
                 action="profile-editor",
                 policy_path=self.policy_path,
             )
-        data = self._load_data()
         data["version"] = 1
         data["profiles"] = [profile.to_dict() for profile in prepared]
         write_json_atomic(self.path, data, private=True)
@@ -158,18 +166,54 @@ class ProfileStore:
         write_json_atomic(path, data, private=True)
 
     def import_from(self, path: Path, replace: bool = False) -> int:
-        raw_data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            raw_data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"profile import is not valid JSON: {path}") from exc
         if not isinstance(raw_data, dict):
             raise ValueError(f"profile import root must be a JSON object: {path}")
         data: dict[str, Any] = raw_data
-        profiles = _profile_rows(data.get("profiles", []), source=f"profile import {path}")
+        rows = _profile_rows(data.get("profiles", []), source=f"profile import {path}")
+        extra_protocols = plugin_protocols()
+        imported: list[Profile] = []
+        for index, item in enumerate(rows):
+            try:
+                imported.append(
+                    prepare_profile(Profile.from_dict(item), extra_protocols=extra_protocols)
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"profile import {path} profile at index {index} is invalid: {exc}"
+                ) from exc
+
+        imported_names = [profile.name for profile in imported]
+        if len(set(imported_names)) != len(imported_names):
+            raise ValueError("profile import contains duplicate normalized profile names")
+
+        current = self._load_data()
+        existing = [
+            prepare_profile(Profile.from_dict(item), extra_protocols=extra_protocols)
+            for item in current["profiles"]
+        ]
+        existing_names = {profile.name for profile in existing}
+        collisions = [name for name in imported_names if name in existing_names]
+        if collisions and not replace:
+            raise ValueError(f"profile already exists: {collisions[0]}")
+
+        for profile in imported:
+            assert_profile_write_allowed(
+                profile,
+                surface="cli",
+                action="replace" if profile.name in existing_names else "add",
+                policy_path=self.policy_path,
+            )
+
         if replace and "group_defaults" in data:
             assert_profile_collection_change_allowed(
                 surface="cli",
                 action="profile-defaults",
                 policy_path=self.policy_path,
             )
-            current = self._load_data()
             group_defaults = normalize_group_defaults_map(data["group_defaults"])
             for defaults in group_defaults.values():
                 assert_settings_write_allowed(
@@ -179,12 +223,12 @@ class ProfileStore:
                     policy_path=self.policy_path,
                 )
             current["group_defaults"] = group_defaults
-            write_json_atomic(self.path, current, private=True)
-        count = 0
-        for item in profiles:
-            self.add(Profile.from_dict(item), replace=replace)
-            count += 1
-        return count
+
+        merged = {profile.name: profile for profile in existing}
+        merged.update({profile.name: profile for profile in imported})
+        final_profiles = sorted(merged.values(), key=lambda profile: (profile.group, profile.name))
+        self._save_data(current, final_profiles, surface="cli")
+        return len(imported)
 
     def group_defaults(self) -> dict[str, dict[str, object]]:
         return normalize_group_defaults_map(self._load_data().get("group_defaults", {}))

@@ -1507,6 +1507,8 @@ def test_connected_workspace_remaining_runtime_and_fallback_edges(
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QTreeWidgetItem
 
+    from remote_ops_workspace import terminal
+
     _app, window, panel, dock, _profile = connected_workspace
 
     monkeypatch.setattr(dock, "main_window", lambda: None)
@@ -1517,6 +1519,7 @@ def test_connected_workspace_remaining_runtime_and_fallback_edges(
         "shared_ssh_control_path",
         lambda: "C:/controlled/row-monitor.sock",
     )
+    monkeypatch.setattr(terminal, "_is_native_windows", lambda: True)
     runtime_command = dock.monitoring_runtime_command()
     assert "ControlPath=none" in runtime_command
 

@@ -825,6 +825,7 @@ def test_gui_low_level_platform_dialog_and_cursor_edges(
                 SetCurrentProcessExplicitAppUserModelID=reject_taskbar_id,
             )
         ),
+        raising=False,
     )
     gui.set_windows_taskbar_app_id()
 

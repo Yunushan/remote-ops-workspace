@@ -64,7 +64,7 @@ def test_windows_x86_constraints_exclude_unavailable_security_backend() -> None:
     assert profile["name"] == "windows-x86-vault-fail-closed"
     assert profile["targets"] == ["windows-x86"]
     assert profile["package_overrides"] == {}
-    assert excluded == {"cryptography", "truststore"}
+    assert excluded == {"bcrypt", "cryptography", "truststore"}
     assert profile["security_backend"] == {
         "feature": "encrypted-vault",
         "state": "unavailable-fail-closed",

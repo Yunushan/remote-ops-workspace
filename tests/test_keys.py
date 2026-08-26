@@ -3,8 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 
 from remote_ops_workspace import keys
 from remote_ops_workspace.keys import KeygenPlan
@@ -112,6 +113,29 @@ def test_native_encrypted_key_generation_writes_loadable_pair(
     assert public_bytes.endswith(b" operator@example\n")
 
 
+def test_native_encrypted_key_generation_reports_missing_bcrypt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakePrivateKey:
+        def private_bytes(self, **_kwargs: object) -> bytes:
+            raise UnsupportedAlgorithm("Need bcrypt module")
+
+    class FakeEd25519PrivateKey:
+        @staticmethod
+        def generate() -> FakePrivateKey:
+            return FakePrivateKey()
+
+    monkeypatch.setattr(ed25519, "Ed25519PrivateKey", FakeEd25519PrivateKey)
+    output = tmp_path / "id_ed25519"
+    plan = keys.build_keygen_plan(output, passphrase="secret")
+
+    with pytest.raises(ValueError, match="requires bcrypt"):
+        keys.run_keygen(plan)
+    assert not output.exists()
+    assert not output.with_name(f"{output.name}.pub").exists()
+
+
 @pytest.mark.parametrize("occupied", ["private", "public"])
 def test_native_key_generation_refuses_to_overwrite_either_key_file(
     tmp_path: Path,
@@ -149,4 +173,3 @@ def test_ecdsa_curve_defaults_maps_supported_sizes_and_rejects_unknown() -> None
     assert isinstance(keys._ecdsa_curve(521), ec.SECP521R1)
     with pytest.raises(ValueError, match="ecdsa bits must be one of"):
         keys._ecdsa_curve(255)
-

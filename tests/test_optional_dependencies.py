@@ -25,7 +25,7 @@ def test_optional_dependency_declarations_match_expected_extras() -> None:
         '"pyinstaller>=6.21"',
     )
     assert checker.OPTIONAL_MODULES["desktop"] == ("PyQt6",)
-    assert checker.OPTIONAL_MODULES["security"] == ("cryptography", "truststore")
+    assert checker.OPTIONAL_MODULES["security"] == ("bcrypt", "cryptography", "truststore")
     assert checker.OPTIONAL_MODULES["package"] == ("build", "PyInstaller")
     assert "legacy-security" not in checker.EXPECTED_EXTRA_SNIPPETS
 

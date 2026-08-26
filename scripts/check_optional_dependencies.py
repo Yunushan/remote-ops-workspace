@@ -15,7 +15,7 @@ sys.path.insert(0, str(SRC))
 
 EXPECTED_EXTRA_SNIPPETS = {
     "desktop": ('"PyQt6>=6.11.0"',),
-    "security": ('"cryptography>=50.0.0"', '"truststore>=0.10"'),
+    "security": ('"bcrypt>=5.0.0"', '"cryptography>=50.0.0"', '"truststore>=0.10"'),
     "package": ('"build>=1.2"', '"pyinstaller>=6.21"'),
     "dev": ('"build>=1.2"', '"pytest>=8"', '"ruff>=0.5"', '"mypy>=1.10"'),
 }
@@ -27,7 +27,7 @@ FORBIDDEN_DECLARATIONS = {
 
 OPTIONAL_MODULES = {
     "desktop": ("PyQt6",),
-    "security": ("cryptography", "truststore"),
+    "security": ("bcrypt", "cryptography", "truststore"),
     "package": ("build", "PyInstaller"),
     "dev": ("pytest", "ruff", "mypy"),
 }
@@ -155,6 +155,7 @@ def desktop_gui_qt_scale_factor(platform: str | None = None) -> str | None:
 
 
 def check_security_vault(tmp_path: Path) -> tuple[list[str], list[str]]:
+    from remote_ops_workspace.keys import build_keygen_plan, run_keygen
     from remote_ops_workspace.vault import LocalVault, VaultBackendUnavailable
 
     vault = LocalVault(tmp_path / "vault.json")
@@ -171,7 +172,14 @@ def check_security_vault(tmp_path: Path) -> tuple[list[str], list[str]]:
     if vault.get("prod/router-password", passphrase) != "top-secret":
         return ["cryptography-backed vault smoke did not round-trip secret"], []
     vault.delete("prod/router-password")
-    return [], ["security/cryptography vault smoke passed"]
+    key_path = tmp_path / "id_ed25519"
+    try:
+        run_keygen(build_keygen_plan(key_path, passphrase="test key passphrase"))
+    except (OSError, ValueError) as exc:
+        return [f"bcrypt-backed encrypted OpenSSH key smoke failed: {exc}"], []
+    if not key_path.is_file() or not key_path.with_name(f"{key_path.name}.pub").is_file():
+        return ["bcrypt-backed encrypted OpenSSH key smoke did not create both key files"], []
+    return [], ["security/cryptography vault and bcrypt-backed OpenSSH key smoke passed"]
 
 
 def module_available(module: str) -> bool:

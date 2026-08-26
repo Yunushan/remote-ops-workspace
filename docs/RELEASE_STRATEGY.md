@@ -26,12 +26,13 @@ Release integrity rules:
 - The PEP 517 `build-system` pins `setuptools` and `wheel` to that same
   release toolchain, so downstream sdist builds do not silently select newer
   packaging backends.
-- Modern release targets use maintained `cryptography==50.0.0`. Intel macOS
-  builds that version from source because upstream no longer publishes its
+- Modern release targets use maintained `bcrypt==5.0.0` and
+  `cryptography==50.0.0`. Intel macOS builds cryptography from source because
+  upstream no longer publishes its
   architecture wheel. Windows x86 uses the explicit
-  `requirements-release-compat.txt` profile with cryptography and truststore
-  excluded. Its packaged vault status must report the backend unavailable and
-  vault initialization must fail closed. A Windows x86 build is not Windows XP
+  `requirements-release-compat.txt` profile with bcrypt, cryptography, and
+  truststore excluded. Its packaged security status must report the affected
+  backends unavailable and fail closed. A Windows x86 build is not Windows XP
   readiness evidence; XP support still requires separate accepted native-host
   records.
 - Windows ARM64 builds `cryptography==50.0.0` from source with pinned

@@ -183,9 +183,13 @@ def check_workflow(
         )
     if compatibility.get("package_overrides") != {}:
         errors.append("windows-x86-vault-fail-closed profile must not override packages")
-    if set(compatibility.get("excluded_packages", [])) != {"cryptography", "truststore"}:
+    if set(compatibility.get("excluded_packages", [])) != {
+        "bcrypt",
+        "cryptography",
+        "truststore",
+    }:
         errors.append(
-            "windows-x86-vault-fail-closed profile must exclude cryptography and truststore"
+            "windows-x86-vault-fail-closed profile must exclude bcrypt, cryptography, and truststore"
         )
     expected_backend = {
         "feature": "encrypted-vault",
@@ -205,12 +209,17 @@ def check_workflow(
         ),
         'if ("${{ matrix.arch }}" -eq "x86")': "explicit Windows x86 compatibility branch",
         'if [[ "${{ matrix.arch }}" == "x64" ]]': "explicit Intel macOS source-build branch",
-        "python -m pip uninstall -y cryptography truststore": "Windows x86 backend exclusion",
+        "python -m pip uninstall -y bcrypt cryptography truststore": (
+            "Windows x86 backend exclusion"
+        ),
+        "find_spec('bcrypt') is None": "Windows x86 bcrypt absence assertion",
         "find_spec('cryptography') is None": "Windows x86 backend absence assertion",
         '--no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"': (
             "maintained Intel macOS cryptography source build"
         ),
         'expected_cryptography="50.0.0"': "macOS maintained version assertion",
+        "import bcrypt, cryptography": "bcrypt/cryptography runtime import smoke",
+        "assert bcrypt.__version__ == '5.0.0'": "pinned bcrypt runtime version assertion",
         "backend.openssl_version_text()": "cryptography/OpenSSL runtime import smoke",
     }.items():
         if snippet not in workflow:

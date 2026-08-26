@@ -145,7 +145,7 @@ Permissions are best-effort on platforms that do not expose POSIX mode bits cons
 
 ## SSH key generation
 
-`row keygen` avoids placing non-empty key passphrases on `ssh-keygen` command lines. When `--passphrase-env` is used with software keys (`ed25519`, `ecdsa`, `rsa`), Remote Ops Workspace generates the encrypted OpenSSH key pair in-process through the optional `cryptography` backend and redacts the dry-run display. Hardware/FIDO key types (`ed25519-sk`, `ecdsa-sk`) must prompt interactively through `ssh-keygen`; `--passphrase-env` is rejected for those types to avoid leaking passphrases through process arguments.
+`row keygen` avoids placing non-empty key passphrases on `ssh-keygen` command lines. When `--passphrase-env` is used with software keys (`ed25519`, `ecdsa`, `rsa`), Remote Ops Workspace generates the encrypted OpenSSH key pair in-process through the optional `cryptography` backend and its declared `bcrypt` OpenSSH encryption dependency, then redacts the dry-run display. Hardware/FIDO key types (`ed25519-sk`, `ecdsa-sk`) must prompt interactively through `ssh-keygen`; `--passphrase-env` is rejected for those types to avoid leaking passphrases through process arguments.
 
 Operational rules:
 

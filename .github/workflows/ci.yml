@@ -254,7 +254,7 @@ jobs:
       - name: Verify Python 3.15 offscreen QtWidgets application startup
         run: >-
           python -c "import sys; assert sys.version_info[:2] == (3, 15), sys.version;
-          import cryptography, truststore; from PyQt6.QtCore import QT_VERSION_STR;
+          import bcrypt, cryptography, truststore; from PyQt6.QtCore import QT_VERSION_STR;
           from PyQt6.QtWidgets import QApplication, QLabel; app = QApplication([]);
           label = QLabel('Python 3.15 QtWidgets smoke'); label.resize(320, 80);
           label.show(); app.processEvents(); assert label.isVisible();

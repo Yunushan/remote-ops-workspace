@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -67,3 +68,151 @@ def test_profile_import_rejects_malformed_profile_rows(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="profile at index 0 must be a JSON object"):
         ProfileStore(tmp_path / "profiles.json").import_from(path)
+
+
+def test_profile_import_is_atomic_when_late_profile_validation_fails(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.set_group_defaults("prod", {"username": "before"}, replace=True)
+    store.add(Profile(name="existing", protocol="ssh", host="192.0.2.10"))
+    before = store.path.read_bytes()
+    source = tmp_path / "import.json"
+    source.write_text(
+        json.dumps(
+            {
+                "profiles": [
+                    {"name": "would-have-been-added", "protocol": "ssh", "host": "192.0.2.11"},
+                    {"name": "invalid-late-row", "protocol": "ssh"},
+                ],
+                "group_defaults": {"prod": {"username": "must-not-persist"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="profile at index 1 is invalid"):
+        store.import_from(source, replace=True)
+
+    assert store.path.read_bytes() == before
+    assert [profile.name for profile in store.load(resolve=False)] == ["existing"]
+    assert store.group_defaults()["prod"]["username"] == "before"
+
+
+def test_profile_import_collision_does_not_partially_add_earlier_rows(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="existing", protocol="ssh", host="192.0.2.10"))
+    before = store.path.read_bytes()
+    source = tmp_path / "import.json"
+    source.write_text(
+        json.dumps(
+            {
+                "profiles": [
+                    {"name": "new", "protocol": "ssh", "host": "192.0.2.11"},
+                    {"name": "existing", "protocol": "ssh", "host": "192.0.2.12"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="profile already exists: existing"):
+        store.import_from(source)
+
+    assert store.path.read_bytes() == before
+    assert [profile.name for profile in store.load(resolve=False)] == ["existing"]
+
+
+def test_profile_import_rejects_duplicate_normalized_names_atomically(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="existing", protocol="ssh", host="192.0.2.10"))
+    before = store.path.read_bytes()
+    source = tmp_path / "import.json"
+    source.write_text(
+        json.dumps(
+            {
+                "profiles": [
+                    {"name": "edge", "protocol": "ssh", "host": "192.0.2.11"},
+                    {"name": " edge ", "protocol": "ssh", "host": "192.0.2.12"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate normalized profile names"):
+        store.import_from(source, replace=True)
+
+    assert store.path.read_bytes() == before
+
+
+def test_profile_import_commits_profiles_and_defaults_together(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="existing", protocol="ssh", host="192.0.2.10"))
+    store.add(Profile(name="untouched", protocol="ssh", host="192.0.2.20"))
+    source = tmp_path / "import.json"
+    source.write_text(
+        json.dumps(
+            {
+                "profiles": [
+                    {
+                        "name": "existing",
+                        "protocol": "ssh",
+                        "host": "192.0.2.11",
+                        "group": "prod",
+                    },
+                    {
+                        "name": "new",
+                        "protocol": "ssh",
+                        "host": "192.0.2.12",
+                        "group": "prod",
+                    },
+                ],
+                "group_defaults": {"prod": {"username": "operator"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert store.import_from(source, replace=True) == 2
+    assert {profile.name for profile in store.load(resolve=False)} == {
+        "existing",
+        "new",
+        "untouched",
+    }
+    assert store.get("existing").host == "192.0.2.11"
+    assert store.get("existing").username == "operator"
+    assert store.get("new").username == "operator"
+    assert store.get("untouched").host == "192.0.2.20"
+
+
+def test_profile_import_reports_invalid_json_without_touching_store(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="existing", protocol="ssh", host="192.0.2.10"))
+    before = store.path.read_bytes()
+    source = tmp_path / "invalid.json"
+    source.write_text("{", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="profile import is not valid JSON"):
+        store.import_from(source)
+
+    assert store.path.read_bytes() == before
+
+
+def test_profile_store_export_remove_and_missing_paths(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.init(with_examples=False)
+    store.init(with_examples=False)
+    store.add(Profile(name="edge", protocol="ssh", host="192.0.2.10"))
+
+    with pytest.raises(ValueError, match="already exists"):
+        store.add(Profile(name="edge", protocol="ssh", host="192.0.2.11"))
+    with pytest.raises(KeyError):
+        store.get("missing")
+    with pytest.raises(KeyError):
+        store.remove("missing")
+
+    exported = tmp_path / "export.json"
+    store.export_to(exported)
+    assert json.loads(exported.read_text(encoding="utf-8"))["profiles"][0]["name"] == "edge"
+
+    store.remove("edge")
+    assert store.load() == []

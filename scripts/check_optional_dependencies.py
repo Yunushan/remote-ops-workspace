@@ -158,16 +158,17 @@ def check_security_vault(tmp_path: Path) -> tuple[list[str], list[str]]:
     from remote_ops_workspace.vault import LocalVault, VaultBackendUnavailable
 
     vault = LocalVault(tmp_path / "vault.json")
+    passphrase = "test vault passphrase"
     if not module_available("cryptography"):
         try:
-            vault.init("passphrase")
+            vault.init(passphrase)
         except VaultBackendUnavailable:
             return [], ["security/cryptography unavailable; vault fail-closed path verified"]
         return ["vault init must raise VaultBackendUnavailable when cryptography is unavailable"], []
 
-    vault.init("passphrase")
-    vault.set("prod/router-password", "top-secret", "passphrase")
-    if vault.get("prod/router-password", "passphrase") != "top-secret":
+    vault.init(passphrase)
+    vault.set("prod/router-password", "top-secret", passphrase)
+    if vault.get("prod/router-password", passphrase) != "top-secret":
         return ["cryptography-backed vault smoke did not round-trip secret"], []
     vault.delete("prod/router-password")
     return [], ["security/cryptography vault smoke passed"]

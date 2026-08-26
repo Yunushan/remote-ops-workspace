@@ -283,14 +283,16 @@ def parse_transfer_item_spec(spec: str) -> SftpQueueItem:
         else:
             values.append(part)
 
-    if action == "get" and values:
+    if recursive and action not in {"get", "put"}:
+        raise ValueError(f"recursive transfer is not supported for {action}")
+    if action == "get" and 1 <= len(values) <= 2:
         return SftpQueueItem(
             action="get",
             remote_path=values[0],
             local_path=values[1] if len(values) > 1 else None,
             recursive=recursive,
         )
-    if action == "put" and values:
+    if action == "put" and 1 <= len(values) <= 2:
         return SftpQueueItem(
             action="put",
             local_path=values[0],
@@ -362,22 +364,48 @@ def run_sftp_queue(
     output: list[str] = []
     errors: list[str] = []
     failed_returncode: int | None = None
+    failed = False
     for index, (item, command) in enumerate(zip(plan.items, plan.batch_commands, strict=True), start=1):
         running = SftpQueueProgress(index=index, total=len(plan.items), item=item, state="running")
         if on_progress:
             on_progress(running)
-        process = subprocess.run(
-            plan.command,
-            input=f"{command}\n",
-            text=True,
-            capture_output=True,
-            check=False,
-        )
+        try:
+            process = subprocess.run(
+                plan.command,
+                input=f"{command}\n",
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except OSError as exc:
+            failed = True
+            errors.append(f"unable to start sftp: {exc}\n")
+            event = SftpQueueProgress(
+                index=index,
+                total=len(plan.items),
+                item=item,
+                state="failed",
+            )
+            progress.append(event)
+            if on_progress:
+                on_progress(event)
+            for skipped_index, skipped_item in enumerate(plan.items[index:], start=index + 1):
+                skipped = SftpQueueProgress(
+                    index=skipped_index,
+                    total=len(plan.items),
+                    item=skipped_item,
+                    state="skipped",
+                )
+                progress.append(skipped)
+                if on_progress:
+                    on_progress(skipped)
+            break
         if process.stdout:
             output.append(process.stdout)
         if process.stderr:
             errors.append(process.stderr)
         if process.returncode != 0:
+            failed = True
             failed_returncode = process.returncode
             event = SftpQueueProgress(
                 index=index,
@@ -415,11 +443,11 @@ def run_sftp_queue(
         command=plan.command,
         items=plan.items,
         dry_run=False,
-        ok=failed_returncode is None,
+        ok=not failed,
         destructive=plan.destructive,
         force=plan.force,
         safety_warnings=plan.safety_warnings,
-        returncode=failed_returncode or 0,
+        returncode=0 if not failed else failed_returncode,
         stdout="".join(output),
         stderr="".join(errors),
         progress=progress,

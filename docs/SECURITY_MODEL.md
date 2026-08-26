@@ -113,7 +113,11 @@ The local vault uses `cryptography` with Scrypt-derived Fernet keys. It is optio
 
 Operational rules:
 
-- use a strong passphrase;
+- new vaults require a passphrase of at least 12 characters;
+- vault format version 2 stores an encrypted verifier so every `set` operation
+  authenticates the passphrase before changing entries; writes to legacy version
+  1 vaults with entries authenticate an existing token before migration, while an
+  empty legacy vault establishes its verifier on the first write;
 - do not store vault passphrases in shell history;
 - prefer `ROW_VAULT_PASSWORD` only for short-lived automation contexts;
 - use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv;

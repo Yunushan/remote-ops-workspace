@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import remote_ops_workspace.file_transfer as transfer_module
 from remote_ops_workspace.cli import main
 from remote_ops_workspace.file_transfer import (
@@ -78,6 +80,43 @@ def test_sftp_queue_reports_actual_item_progress_and_stops_after_failure(monkeyp
     assert result.returncode == 1
     assert [event.state for event in result.progress] == ["completed", "failed"]
     assert callback_states == ["running", "completed", "running", "failed"]
+
+
+def test_sftp_queue_reports_process_start_failure_and_skips_remaining(monkeypatch) -> None:
+    profile = Profile(name="files", protocol="ssh", host="192.0.2.10")
+    plan = build_sftp_queue_plan(
+        profile,
+        [parse_transfer_item_spec("mkdir /tmp/one"), parse_transfer_item_spec("mkdir /tmp/two")],
+    )
+
+    def fail_to_start(*_args, **_kwargs):
+        raise FileNotFoundError("sftp executable is missing")
+
+    monkeypatch.setattr(transfer_module.subprocess, "run", fail_to_start)
+    callback_states: list[str] = []
+    result = run_sftp_queue(plan, on_progress=lambda event: callback_states.append(event.state))
+
+    assert result.ok is False
+    assert result.returncode is None
+    assert "unable to start sftp" in result.stderr
+    assert [event.state for event in result.progress] == ["failed", "skipped"]
+    assert callback_states == ["running", "failed", "skipped"]
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "get",
+        "get remote local unexpected",
+        "put local remote unexpected",
+        "mkdir --recursive /tmp/releases",
+        "rename -r /tmp/old /tmp/new",
+        "get --delete remote local",
+    ],
+)
+def test_transfer_item_parser_rejects_ambiguous_or_unsupported_shapes(spec: str) -> None:
+    with pytest.raises(ValueError):
+        parse_transfer_item_spec(spec)
 
 
 def test_sftp_queue_refuses_destructive_execution_without_force() -> None:

@@ -348,6 +348,17 @@ def test_browser_profile_api_authenticates_every_api_endpoint(tmp_path: Path) ->
         assert headers["cache-control"] == "no-store"
         assert json.loads(body) == {"api_version": 1, "profile_count": 0, "status": "ok"}
 
+        status, headers, body = _http_request(
+            address,
+            "/api/v1/profiles",
+            method="POST",
+            body=b"{}",
+            headers={"Content-Type": "application/json"},
+        )
+        assert status == 401
+        assert headers["connection"] == "close"
+        assert body == b""
+
 
 def test_browser_profile_api_returns_disabled_and_unauthorized_http_contracts(tmp_path: Path) -> None:
     with _live_server(tmp_path) as address:
@@ -395,6 +406,35 @@ def test_rejected_post_closes_without_waiting_for_declared_body(tmp_path: Path) 
                 response += chunk
 
     assert response.startswith(b"HTTP/1.0 404")
+
+
+def test_discard_request_body_tolerates_nonblocking_read_errors() -> None:
+    events: list[object] = []
+
+    class Connection:
+        def gettimeout(self) -> float:
+            return 15.0
+
+        def setblocking(self, enabled: bool) -> None:
+            events.append(enabled)
+
+        def settimeout(self, timeout: float) -> None:
+            events.append(timeout)
+
+    class Body:
+        def read1(self, size: int) -> bytes:
+            assert size == web_server.MAX_REQUEST_BODY_BYTES
+            raise BlockingIOError
+
+    handler = object.__new__(QuietHandler)
+    handler.connection = Connection()
+    handler.rfile = Body()
+    handler.close_connection = False
+
+    handler._discard_request_body()
+
+    assert handler.close_connection is True
+    assert events == [False, 15.0]
 
 
 def test_browser_profile_api_validates_http_writes_and_replace_flow(tmp_path: Path) -> None:

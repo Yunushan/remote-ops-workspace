@@ -1021,6 +1021,7 @@ def test_vault_sync_gui_and_module_guard_handlers(monkeypatch, capsys, tmp_path:
 
 
 def test_frozen_windows_launcher_paths(monkeypatch) -> None:
+    monkeypatch.setattr(cli, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(cli.sys, "frozen", False, raising=False)
     assert cli._run_frozen_windows_gui_launcher() is None
     monkeypatch.setattr(cli.sys, "frozen", True, raising=False)

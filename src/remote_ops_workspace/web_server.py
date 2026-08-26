@@ -143,11 +143,10 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - http.server API
         if urlparse(self.path).path != "/api/v1/profiles":
+            self._discard_request_body()
             self.send_error(404, "Not found")
-            self._discard_request_body()
             return
-        if not self._api_authorized():
-            self._discard_request_body()
+        if not self._api_authorized(discard_rejected_body=True):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -190,22 +189,33 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
         self._send_json(200, load_enterprise_policy().to_public_dict())
 
     def _discard_request_body(self) -> None:
-        # A rejected client controls Content-Length and may withhold the body.
-        # Closing preserves the response while keeping the worker bounded.
         self.close_connection = True
+        # Rejected clients control Content-Length, so drain only bytes already available.
+        original_timeout = self.connection.gettimeout()
+        self.connection.setblocking(False)
+        try:
+            self.rfile.read1(MAX_REQUEST_BODY_BYTES)
+        except (BlockingIOError, OSError):
+            pass
+        finally:
+            self.connection.settimeout(original_timeout)
 
     def _require_api(self) -> WebProfileApi:
         if self.api is None:
             raise ValueError("browser API is disabled; restart with --api-token")
         return self.api
 
-    def _api_authorized(self) -> bool:
+    def _api_authorized(self, *, discard_rejected_body: bool = False) -> bool:
         try:
             api = self._require_api()
         except ValueError as exc:
+            if discard_rejected_body:
+                self._discard_request_body()
             self._send_json(404, {"error": str(exc)})
             return False
         if not api.authorized(self.headers.get("Authorization")):
+            if discard_rejected_body:
+                self._discard_request_body()
             self.send_response(401)
             self.send_header("WWW-Authenticate", "Bearer")
             self._send_json_headers(0)
@@ -232,6 +242,7 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(length))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.end_headers()
 
 

@@ -14,6 +14,7 @@ def test_launch_plan_printable_and_launch_execution(monkeypatch: pytest.MonkeyPa
     opened: list[list[str]] = []
     monkeypatch.setattr(launcher, "assert_profile_launch_allowed", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(launcher.subprocess, "Popen", lambda command: opened.append(command))
+    monkeypatch.delenv("SHELL", raising=False)
     monkeypatch.setenv("COMSPEC", "cmd.exe")
 
     dry_plan = launcher.launch(profile, dry_run=True)

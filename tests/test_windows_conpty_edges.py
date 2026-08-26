@@ -45,10 +45,20 @@ def test_ctypes_support_detection_and_error_objects(monkeypatch: pytest.MonkeyPa
     assert conpty._conpty_exports_available() is False
 
     monkeypatch.setattr(conpty, "_running_on_windows", lambda: True)
-    monkeypatch.setattr(conpty.sys, "getwindowsversion", lambda: SimpleNamespace(build=26100))
+    monkeypatch.setattr(
+        conpty.sys,
+        "getwindowsversion",
+        lambda: SimpleNamespace(build=26100),
+        raising=False,
+    )
     assert conpty._windows_build_number() == 26100
 
-    monkeypatch.setattr(conpty.ctypes, "WinDLL", lambda *_args, **_kwargs: _raise(OSError("missing DLL")))
+    monkeypatch.setattr(
+        conpty.ctypes,
+        "WinDLL",
+        lambda *_args, **_kwargs: _raise(OSError("missing DLL")),
+        raising=False,
+    )
     assert conpty._conpty_exports_available() is False
 
     exports = {
@@ -199,7 +209,12 @@ def test_windows_directory_api_success_failure_and_invalid_length(
     assert conpty._windows_directory_from_api("GetWindowsDirectoryW") is None
 
     monkeypatch.setattr(conpty, "_running_on_windows", lambda: True)
-    monkeypatch.setattr(conpty.ctypes, "WinDLL", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(
+        conpty.ctypes,
+        "WinDLL",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+        raising=False,
+    )
     assert conpty._windows_directory_from_api("missing") is None
 
     class DirectoryCall:

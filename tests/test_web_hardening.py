@@ -380,6 +380,23 @@ def test_browser_profile_api_returns_disabled_and_unauthorized_http_contracts(tm
         assert status == 404
 
 
+def test_rejected_post_closes_without_waiting_for_declared_body(tmp_path: Path) -> None:
+    with _live_server(tmp_path) as address:
+        with socket.create_connection(address, timeout=5) as client:
+            client.settimeout(1)
+            client.sendall(
+                b"POST /api/v1/not-found HTTP/1.1\r\n"
+                b"Host: 127.0.0.1\r\n"
+                b"Content-Length: 65536\r\n"
+                b"Connection: keep-alive\r\n\r\n"
+            )
+            response = b""
+            while chunk := client.recv(4096):
+                response += chunk
+
+    assert response.startswith(b"HTTP/1.0 404")
+
+
 def test_browser_profile_api_validates_http_writes_and_replace_flow(tmp_path: Path) -> None:
     store = ProfileStore(tmp_path / "profiles.json")
     token = "t" * 24

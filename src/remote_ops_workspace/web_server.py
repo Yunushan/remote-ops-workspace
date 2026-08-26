@@ -190,12 +190,9 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
         self._send_json(200, load_enterprise_policy().to_public_dict())
 
     def _discard_request_body(self) -> None:
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            return
-        if 0 < length <= MAX_REQUEST_BODY_BYTES:
-            self.rfile.read(length)
+        # A rejected client controls Content-Length and may withhold the body.
+        # Closing preserves the response while keeping the worker bounded.
+        self.close_connection = True
 
     def _require_api(self) -> WebProfileApi:
         if self.api is None:

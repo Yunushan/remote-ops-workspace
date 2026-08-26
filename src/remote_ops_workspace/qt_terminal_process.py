@@ -20,6 +20,7 @@ from .windows_conpty import (
 )
 
 _OUTPUT_EOF_DRAIN_TIMEOUT_SECONDS = 2.0
+_FORCED_TERMINATION_TIMEOUT_SECONDS = 2.0
 _SESSION_CLOSE_TIMEOUT_SECONDS = 0.5
 _HIDDEN_OUTPUT_HIGH_WATER_BYTES = 4 * 1024 * 1024
 _HIDDEN_OUTPUT_LOW_WATER_BYTES = 1 * 1024 * 1024
@@ -73,6 +74,7 @@ class QtConPtyProcess(QObject):
         self._output_shutdown_started = False
         self._output_shutdown_deadline: float | None = None
         self._forced_termination = False
+        self._forced_termination_deadline: float | None = None
         self._finished_emitted = True
         # ConPTY creation and ClosePseudoConsole can block on older Windows
         # builds. Keep both operations out of the Qt event loop so tab changes
@@ -148,6 +150,7 @@ class QtConPtyProcess(QObject):
         self._output_shutdown_started = False
         self._output_shutdown_deadline = None
         self._forced_termination = False
+        self._forced_termination_deadline = None
         self._finished_emitted = False
         self._state = QProcess.ProcessState.Starting
         with self._lifecycle_lock:
@@ -309,7 +312,16 @@ class QtConPtyProcess(QObject):
             )
             return
         if self._pending_returncode is None:
+            deadline = self._forced_termination_deadline
+            if deadline is not None and time.monotonic() >= deadline:
+                self._fail_session(
+                    session,
+                    "timed out waiting for forced ConPTY termination",
+                    QProcess.ProcessError.Crashed,
+                    terminate=True,
+                )
             return
+        self._forced_termination_deadline = None
 
         # The child handle can signal before the ConPTY reader has copied the
         # final pipe chunks into its queue.  Begin a non-blocking pseudoconsole
@@ -340,6 +352,7 @@ class QtConPtyProcess(QObject):
         self._poll_timer.stop()
         self._state = QProcess.ProcessState.NotRunning
         self._output_shutdown_deadline = None
+        self._forced_termination_deadline = None
         exit_status = (
             QProcess.ExitStatus.CrashExit
             if self._forced_termination
@@ -366,6 +379,7 @@ class QtConPtyProcess(QObject):
         self._state = QProcess.ProcessState.NotRunning
         self._error_string = detail or "ConPTY transport failed"
         self._output_shutdown_deadline = None
+        self._forced_termination_deadline = None
         self._dispose_session(terminate=terminate)
         # Dispose and publish NotRunning before signals so a deferred restart
         # cannot inherit handles or state from the failed session.
@@ -519,6 +533,10 @@ class QtConPtyProcess(QObject):
             if returncode is None:
                 self._forced_termination = True
                 session.kill()
+                self._forced_termination_deadline = (
+                    time.monotonic() + _FORCED_TERMINATION_TIMEOUT_SECONDS
+                )
+                self._poll_timer.start()
             else:
                 self._pending_returncode = returncode
         except (OSError, RuntimeError) as exc:
@@ -607,6 +625,7 @@ class QtConPtyProcess(QObject):
         self._pending_returncode = None
         self._output_shutdown_started = False
         self._output_shutdown_deadline = None
+        self._forced_termination_deadline = None
         self._state = QProcess.ProcessState.NotRunning
         self._dispose_session(terminate=True)
 

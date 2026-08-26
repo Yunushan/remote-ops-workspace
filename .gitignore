@@ -39,6 +39,7 @@ artifacts/gui-render-preview-optin-*/
 artifacts/ssh-loopback-*/
 artifacts/tab-switch-paint-*/
 artifacts/pytest-tmp-*/
+artifacts/coverage-readiness/pytest-*/
 
 # Remote Ops Workspace private data
 .row/

@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pytest
 
+import remote_ops_workspace.plugin_dev as plugin_dev_module
 import remote_ops_workspace.plugins as plugins_module
 from remote_ops_workspace.cli import main
 from remote_ops_workspace.launcher import LaunchPlan, build_launch_plan
@@ -23,6 +24,7 @@ from remote_ops_workspace.plugin_dev import (
 from remote_ops_workspace.plugins import (
     LoadedPlugin,
     load_plugin_registry,
+    normalize_plugin_executables,
     normalize_plugin_protocols,
 )
 from remote_ops_workspace.profile_validation import prepare_profile
@@ -143,6 +145,19 @@ def test_plugin_registry_rejects_builtin_protocol_collisions() -> None:
     assert registry.loaded == []
     assert len(registry.failures) == 1
     assert "built-in protocol" in registry.failures[0].error
+
+
+def test_plugin_registry_survives_broken_environment_metadata() -> None:
+    def broken_discovery() -> FakeEntryPoints:
+        raise OSError("unreadable third-party entry_points.txt")
+
+    registry = load_plugin_registry(entry_points_provider=broken_discovery)
+
+    assert registry.loaded == []
+    assert len(registry.failures) == 1
+    assert registry.failures[0].name == "entry-point-discovery"
+    assert registry.failures[0].entry_point == "remote_ops_workspace.plugins"
+    assert "unreadable third-party" in registry.failures[0].error
 
 
 def test_plugin_protocol_metadata_must_be_string_or_iterable() -> None:
@@ -357,3 +372,86 @@ def test_plugin_scaffold_rejects_invalid_names_protocol_and_nonempty_output(
             protocol="demo",
             client="demo-client",
         )
+
+
+def test_plugin_scaffold_rechecks_each_output_before_overwrite(tmp_path, monkeypatch) -> None:
+    out_dir = tmp_path / "race"
+    out_dir.mkdir()
+    existing = out_dir / "pyproject.toml"
+
+    def racing_files(**_kwargs):
+        existing.write_text("preserve", encoding="utf-8")
+        return {Path("pyproject.toml"): "replacement"}
+
+    monkeypatch.setattr(plugin_dev_module, "plugin_scaffold_files", racing_files)
+
+    with pytest.raises(ValueError, match="refusing to overwrite"):
+        scaffold_plugin(
+            out_dir=out_dir,
+            project_name="valid-project",
+            module_name="valid_module",
+            protocol="demo",
+            client="demo-client",
+        )
+
+    assert existing.read_text(encoding="utf-8") == "preserve"
+
+
+def test_plugin_registry_miss_and_duplicate_clients_cover_fallback_paths() -> None:
+    first = LoadedPlugin(
+        name="first",
+        protocols=("first", "shared"),
+        executables=("client",),
+        object=DemoPlugin(),
+        entry_point="tests:first",
+    )
+    second = LoadedPlugin(
+        name="second",
+        protocols=("second", "shared"),
+        executables=("client", "second-client"),
+        object=DemoPlugin(),
+        entry_point="tests:second",
+    )
+    registry = plugins_module.PluginRegistry([first, second], [])
+
+    assert registry.plugin_for_protocol(" SECOND ") is second
+    assert registry.plugin_for_protocol("missing") is None
+    assert registry.protocol_clients()["shared"] == ["client", "second-client"]
+
+
+def test_plugin_registry_rejects_empty_names_and_wrapper_helpers(monkeypatch) -> None:
+    class EmptyNamePlugin(DemoPlugin):
+        name = "  "
+        protocols = ("empty-name",)
+
+    invalid = load_plugin_registry(
+        entry_points_provider=lambda: FakeEntryPoints(
+            FakeEntryPoint("EmptyNamePlugin", EmptyNamePlugin)
+        )
+    )
+    registry = load_plugin_registry(entry_points_provider=fake_entry_points)
+    monkeypatch.setattr(plugins_module, "load_plugin_registry", lambda: registry)
+
+    assert "name must not be empty" in invalid.failures[0].error
+    assert plugins_module.load_plugins() == registry.loaded
+    assert plugins_module.plugin_clients() == registry.protocol_clients()
+
+
+def test_plugin_metadata_normalization_covers_strings_none_duplicates_and_rejections() -> None:
+    assert normalize_plugin_protocols(" Demo ") == ("demo",)
+    assert normalize_plugin_protocols(["", "demo", "DEMO", "other"]) == (
+        "demo",
+        "other",
+    )
+    assert normalize_plugin_executables(None) == ()
+    assert normalize_plugin_executables(" demo-client ") == ("demo-client",)
+    assert normalize_plugin_executables(["", "demo-client", "demo-client"]) == (
+        "demo-client",
+    )
+
+    with pytest.raises(ValueError, match="whitespace"):
+        normalize_plugin_protocols(["bad protocol"])
+    with pytest.raises(ValueError, match="must not start"):
+        normalize_plugin_protocols(["-bad"])
+    with pytest.raises(TypeError, match="executables"):
+        normalize_plugin_executables(7)

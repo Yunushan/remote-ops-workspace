@@ -106,10 +106,14 @@ def detect_import_format(path: Path) -> str:
     text = _read_text(path)
     stripped = text.lstrip()
     if stripped.startswith("{") or stripped.startswith("["):
-        data = json.loads(text)
-        if isinstance(data, dict) and isinstance(data.get("profiles"), list):
-            return "row"
-        return "termius"
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(data, dict) and isinstance(data.get("profiles"), list):
+                return "row"
+            return "termius"
     if stripped.startswith("<"):
         return "mremoteng"
     if "[remmina]" in text.lower():
@@ -628,6 +632,8 @@ def _dedupe_strings(items: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for item in items:
+        if not str(item).strip():
+            continue
         text = safe.clean_text(item, "tag").strip()
         if text and text not in seen:
             seen.add(text)

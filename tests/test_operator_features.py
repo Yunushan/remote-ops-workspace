@@ -10,7 +10,7 @@ import remote_ops_workspace.launcher as launcher_module
 import remote_ops_workspace.snippets as snippets_module
 import remote_ops_workspace.terminal as terminal_module
 from remote_ops_workspace.audit import _redact
-from remote_ops_workspace.broadcast import build_broadcast_plans, run_broadcast
+from remote_ops_workspace.broadcast import BroadcastPlan, build_broadcast_plans, run_broadcast
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.file_transfer import (
     build_sftp_get_plan,
@@ -23,9 +23,11 @@ from remote_ops_workspace.launcher import LauncherError, LaunchPlan, build_launc
 from remote_ops_workspace.layouts import (
     Layout,
     LayoutPane,
+    LayoutRunResult,
     LayoutStore,
     build_layout_terminal_plans,
     layout_splitter_size_lengths,
+    parse_layout_pane,
     run_layout_terminal_plans,
     validate_layout,
 )
@@ -66,7 +68,10 @@ def test_snippet_rejects_empty_command() -> None:
 
 def test_snippet_store_replaces_removes_and_reports_missing_names(tmp_path: Path) -> None:
     store = SnippetStore(tmp_path / "snippets.json")
+    store.add(Snippet(name="first", command="true"))
     store.add(Snippet(name="uptime", command="uptime"))
+
+    assert store.get("uptime").command == "uptime"
 
     with pytest.raises(ValueError, match="already exists"):
         store.add(Snippet(name="uptime", command="uptime --pretty"))
@@ -105,6 +110,34 @@ def test_layout_store_roundtrip(tmp_path: Path) -> None:
     assert store.get("triage").panes[0].profile == "edge"
 
 
+def test_layout_store_replaces_removes_and_reports_missing_names(tmp_path: Path) -> None:
+    store = LayoutStore(tmp_path / "layouts.json")
+    first = Layout(name="first", panes=[LayoutPane(command="true")])
+    triage = Layout(name="triage", panes=[LayoutPane(command="uptime")])
+    store.add(first)
+    store.add(triage)
+
+    assert store.get("triage").panes[0].command == "uptime"
+    with pytest.raises(ValueError, match="already exists"):
+        store.add(triage)
+
+    replacement = Layout(name="triage", panes=[LayoutPane(command="hostname")])
+    store.add(replacement, replace=True)
+    assert store.get("triage").panes[0].command == "hostname"
+
+    store.remove("triage")
+    with pytest.raises(KeyError, match="triage"):
+        store.get("triage")
+    with pytest.raises(KeyError, match="triage"):
+        store.remove("triage")
+
+
+def test_layout_pane_parser_defaults_to_profile_reference() -> None:
+    assert parse_layout_pane("edge") == LayoutPane(profile="edge")
+    assert parse_layout_pane("profile:core") == LayoutPane(profile="core")
+    assert parse_layout_pane("command:uptime") == LayoutPane(command="uptime")
+
+
 def test_layout_store_roundtrips_nested_splitter_sizes(tmp_path: Path) -> None:
     store = LayoutStore(tmp_path / "layouts.json")
     layout = Layout(
@@ -132,6 +165,30 @@ def test_layout_validation_rejects_invalid_splitter_size_shape() -> None:
         assert "splitter_sizes" in str(exc)
     else:
         raise AssertionError("layout splitter sizes must match the saved splitter structure")
+
+
+def test_layout_validation_rejects_orientation_splitter_count_and_nonpositive_sizes() -> None:
+    panes = [LayoutPane(command="one"), LayoutPane(command="two")]
+    with pytest.raises(ValueError, match="orientation must be one of"):
+        validate_layout(Layout(name="bad", orientation="diagonal", panes=panes))
+    with pytest.raises(ValueError, match="splitter entries"):
+        validate_layout(
+            Layout(
+                name="bad-count",
+                orientation="horizontal",
+                panes=panes,
+                splitter_sizes=[[100, 100], [50]],
+            )
+        )
+    with pytest.raises(ValueError, match="positive integers"):
+        validate_layout(
+            Layout(
+                name="bad-size",
+                orientation="horizontal",
+                panes=panes,
+                splitter_sizes=[[100, 0]],
+            )
+        )
 
 
 def test_layout_validation_rejects_empty_layout() -> None:
@@ -176,6 +233,45 @@ def test_layout_run_dry_run_returns_per_pane_results() -> None:
     assert results[0].dry_run is True
     assert results[0].pid is None
     assert results[0].command == ["python", "-V"]
+    assert results[0].to_dict() == {
+        "title": "Version",
+        "command": ["python", "-V"],
+        "pid": None,
+        "dry_run": True,
+    }
+
+
+def test_layout_run_launches_each_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Process:
+        pid = 42
+
+    monkeypatch.setattr("remote_ops_workspace.layouts.subprocess.Popen", lambda _command: Process())
+    results = run_layout_terminal_plans(
+        [terminal_plan_for_command("python -V", title="Version")]
+    )
+
+    assert results == [LayoutRunResult("Version", ["python", "-V"], pid=42)]
+
+
+@pytest.mark.parametrize(
+    ("splitter_sizes", "message"),
+    [
+        (None, None),
+        ("bad", "must be a list"),
+        ([1], "entries must be lists"),
+    ],
+)
+def test_layout_deserialization_validates_splitter_size_shape(splitter_sizes, message) -> None:
+    payload = {
+        "name": "layout",
+        "panes": [{"command": "uptime"}],
+        "splitter_sizes": splitter_sizes,
+    }
+    if message is None:
+        assert Layout.from_dict(payload).splitter_sizes == []
+    else:
+        with pytest.raises(ValueError, match=message):
+            Layout.from_dict(payload)
 
 
 def test_terminal_plan_for_command_uses_argv_list() -> None:
@@ -1280,6 +1376,51 @@ def test_broadcast_rejects_multiline_command() -> None:
         assert "control characters" in str(exc) or "single line" in str(exc)
     else:
         raise AssertionError("multiline broadcast commands should be rejected")
+
+
+def test_broadcast_rejects_non_ssh_profiles() -> None:
+    with pytest.raises(ValueError, match="supports ssh profiles only"):
+        build_broadcast_plans(
+            [Profile(name="web", protocol="https", url="https://example.invalid")],
+            "hostname",
+        )
+
+
+def test_broadcast_executes_commands_and_reports_process_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    plan = BroadcastPlan("edge", ["ssh", "edge", "hostname"], ["test"])
+
+    monkeypatch.setattr(
+        "remote_ops_workspace.broadcast.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 7, "stdout", "stderr"),
+    )
+
+    result = run_broadcast([plan], timeout=3)[0]
+
+    assert plan.printable() == "ssh edge hostname"
+    assert result.returncode == 7
+    assert result.stdout == "stdout"
+    assert result.stderr == "stderr"
+    assert not result.ok
+
+
+def test_broadcast_timeout_decodes_partial_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    plan = BroadcastPlan("edge", ["ssh", "edge", "hostname"], [])
+
+    def timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(
+            plan.command,
+            2,
+            output=b"partial-\xff",
+            stderr=None,
+        )
+
+    monkeypatch.setattr("remote_ops_workspace.broadcast.subprocess.run", timeout)
+
+    result = run_broadcast([plan], timeout=2)[0]
+
+    assert result.returncode == 124
+    assert result.stdout == "partial-\ufffd"
+    assert result.stderr == "timed out after 2 seconds"
 
 
 def test_x11_plan_is_argv_list() -> None:

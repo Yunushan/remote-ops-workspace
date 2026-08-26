@@ -4,6 +4,8 @@ from remote_ops_workspace.gui_editors import (
     layout_from_editor_data,
     layout_to_editor_data,
     parse_key_value_text,
+    parse_layout_panes_text,
+    parse_tunnels_text,
     profile_editor_protocols,
     profile_from_editor_data,
     profile_to_editor_data,
@@ -165,3 +167,40 @@ def test_layout_to_editor_data_defaults() -> None:
     assert profile_data["options"] == ""
     assert layout_to_editor_data()["orientation"] == "grid"
     assert layout_to_editor_data(Layout(name="solo", panes=[LayoutPane(command="whoami")]))["panes"] == "command:whoami"
+
+
+def test_editor_text_parsers_ignore_comments_and_validate_edge_cases() -> None:
+    assert parse_key_value_text("\n# comment\nkey=value") == {"key": "value"}
+    assert parse_tunnels_text("\n# comment\ndynamic:1080") == [
+        Tunnel(mode="dynamic", local_port=1080)
+    ]
+    assert parse_layout_panes_text("\n# comment\ncommand:uptime") == [
+        LayoutPane(command="uptime")
+    ]
+
+    try:
+        parse_key_value_text("bad key=value")
+    except ValueError as exc:
+        assert "must not contain whitespace" in str(exc)
+    else:
+        raise AssertionError("whitespace in option keys should be rejected")
+
+    try:
+        parse_tunnels_text("unsupported:1:2")
+    except ValueError as exc:
+        assert "invalid tunnel line" in str(exc)
+    else:
+        raise AssertionError("unsupported tunnel shapes should be rejected")
+
+
+def test_editor_formatters_cover_nondefault_bind_hosts_and_empty_panes() -> None:
+    tunnel = Tunnel(
+        mode="local",
+        local_host="0.0.0.0",
+        local_port=8080,
+        remote_host="127.0.0.1",
+        remote_port=80,
+    )
+
+    assert format_tunnels_text([tunnel]) == "local:8080:127.0.0.1:80:0.0.0.0"
+    assert format_layout_panes_text([LayoutPane()]) == ""

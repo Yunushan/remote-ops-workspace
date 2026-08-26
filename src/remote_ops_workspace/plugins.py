@@ -92,8 +92,19 @@ EntryPointsProvider = Callable[[], Any]
 def load_plugin_registry(*, entry_points_provider: EntryPointsProvider | None = None) -> PluginRegistry:
     loaded: list[LoadedPlugin] = []
     failures: list[PluginLoadFailure] = []
-    eps = (entry_points_provider or entry_points)()
-    for ep in eps.select(group="remote_ops_workspace.plugins"):
+    try:
+        eps = (entry_points_provider or entry_points)()
+        selected = eps.select(group="remote_ops_workspace.plugins")
+    except Exception as exc:
+        failures.append(
+            PluginLoadFailure(
+                name="entry-point-discovery",
+                entry_point="remote_ops_workspace.plugins",
+                error=str(exc),
+            )
+        )
+        return PluginRegistry(loaded=loaded, failures=failures)
+    for ep in selected:
         try:
             plugin = ep.load()
             instance = plugin() if isinstance(plugin, type) else plugin

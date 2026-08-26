@@ -1366,9 +1366,7 @@ def _protected_platform_goal_parity(evidence_registry: dict[str, Any] | None) ->
     release_consistent = len(release_tags) <= 1
     release_repository_consistent = len(release_repositories) <= 1
     release_source_head_consistent = len(release_source_heads) <= 1
-    if release_backed_complete:
-        status = "complete"
-    elif record_complete:
+    if record_complete:
         status = "release-asset-provenance-required"
     elif accepted_count == target_count and not release_source_provenance_complete:
         status = "missing-release-source-provenance"

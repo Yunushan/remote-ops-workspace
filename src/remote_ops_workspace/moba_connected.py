@@ -1659,8 +1659,6 @@ def normalise_remote_path(path: str | None) -> str:
     raw = safe.path_arg(path or "/", "remote path")
     if raw.startswith("-"):
         raise ValueError("remote path must not start with '-'")
-    if "\n" in raw or "\r" in raw:
-        raise ValueError("remote path must be a single line")
     normalized = PurePosixPath(raw)
     if not normalized.is_absolute():
         normalized = PurePosixPath("/") / normalized

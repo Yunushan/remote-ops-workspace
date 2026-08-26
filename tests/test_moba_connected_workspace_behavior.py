@@ -173,6 +173,19 @@ def test_terminal_key_payload_covers_common_interactive_terminal_keys(
         == b"\x00"
     )
     assert (
+        payload(KeyEvent(Qt.Key.Key_BracketLeft, Qt.KeyboardModifier.ControlModifier, "["))
+        == b"\x1b"
+    )
+    assert payload(KeyEvent(0x5B, Qt.KeyboardModifier.ControlModifier)) == b"\x1b"
+    assert (
+        payload(KeyEvent(Qt.Key.Key_Question, Qt.KeyboardModifier.ControlModifier, "?"))
+        is None
+    )
+    assert (
+        payload(KeyEvent(Qt.Key.Key_A, Qt.KeyboardModifier.MetaModifier, "a"))
+        is None
+    )
+    assert (
         payload(KeyEvent(Qt.Key.Key_Up, Qt.KeyboardModifier.ShiftModifier))
         == b"\x1b[1;2A"
     )

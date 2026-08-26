@@ -514,8 +514,7 @@ def build_mobagent_smartcard_plan(
     provider_key = normalise_smartcard_provider(provider)
     socket = safe.path_arg(agent_socket, "agent socket") if agent_socket else ""
     command = ["mobagent", "smartcard", action_key, certificate_key]
-    if provider_key:
-        command.extend(["--provider", provider_key])
+    command.extend(["--provider", provider_key])
     if socket:
         command.extend(["--agent-socket", socket])
     return MobaSmartCardMobAgentPlan(

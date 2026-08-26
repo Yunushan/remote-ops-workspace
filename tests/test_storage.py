@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import remote_ops_workspace.storage as storage_module
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.storage import ProfileStore
 
@@ -201,6 +202,8 @@ def test_profile_store_export_remove_and_missing_paths(tmp_path: Path) -> None:
     store = ProfileStore(tmp_path / "profiles.json")
     store.init(with_examples=False)
     store.init(with_examples=False)
+    store.init(with_examples=True)
+    store.init(with_examples=True, purge_examples=False)
     store.add(Profile(name="edge", protocol="ssh", host="192.0.2.10"))
 
     with pytest.raises(ValueError, match="already exists"):
@@ -216,3 +219,43 @@ def test_profile_store_export_remove_and_missing_paths(tmp_path: Path) -> None:
 
     store.remove("edge")
     assert store.load() == []
+
+
+def test_profile_import_rejects_nonobject_root(tmp_path: Path) -> None:
+    source = tmp_path / "import.json"
+    source.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="import root must be a JSON object"):
+        ProfileStore(tmp_path / "profiles.json").import_from(source)
+
+
+def test_profile_rows_reject_nonstring_keys_and_group_defaults_tolerate_nonmaps() -> None:
+    with pytest.raises(ValueError, match="contains a non-string key"):
+        storage_module._profile_rows([{1: "value"}], source="test")
+
+    assert storage_module._apply_group_defaults(
+        {"name": "edge", "options": "profile-options"},
+        {"options": {"proxy_jump": "bastion"}},
+    ) == {"name": "edge", "options": "profile-options"}
+
+
+def test_profile_import_adds_new_rows_without_replacing_defaults(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    source = tmp_path / "import.json"
+    source.write_text(
+        json.dumps(
+            {
+                "profiles": [
+                    {
+                        "name": "edge",
+                        "protocol": "ssh",
+                        "host": "192.0.2.10",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert store.import_from(source) == 1
+    assert store.get("edge").host == "192.0.2.10"

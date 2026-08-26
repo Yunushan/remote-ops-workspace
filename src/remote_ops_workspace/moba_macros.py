@@ -1187,7 +1187,4 @@ def _macro_body(value: str) -> str:
 
 
 def _typed_text(value: str) -> str:
-    text = safe.clean_text(value, "macro typed text", allow_empty=True)
-    if "\n" in text or "\r" in text:
-        raise ValueError("macro typed event text must be one line")
-    return text
+    return safe.clean_text(value, "macro typed text", allow_empty=True)

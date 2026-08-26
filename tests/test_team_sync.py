@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from remote_ops_workspace import team_sync
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.storage import ProfileStore
 from remote_ops_workspace.team_sync import (
@@ -88,15 +89,20 @@ def test_team_sync_rejects_unsafe_team_identifiers(tmp_path: Path) -> None:
         raise AssertionError("unsafe team identifiers must be rejected")
 
 
-def test_team_sync_refuses_concurrent_writer_lock(tmp_path: Path) -> None:
-    backend = TeamSyncBackend(tmp_path, lock_timeout_seconds=0.01)
+def test_team_sync_refuses_concurrent_writer_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    backend = TeamSyncBackend(tmp_path, lock_timeout_seconds=0.1)
     (tmp_path / "ops.team-sync.lock").write_text("held", encoding="utf-8")
+    monotonic_values = iter((10.0, 10.01, 10.2))
+    sleeps: list[float] = []
+    monkeypatch.setattr(team_sync.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(team_sync.time, "sleep", sleeps.append)
     try:
         backend.write("ops", [Profile(name="edge", protocol="ssh", host="edge.example.invalid")], expected_version=0)
     except TeamSyncBusyError as exc:
         assert "busy" in str(exc)
     else:
         raise AssertionError("a held team lock must prevent concurrent writes")
+    assert sleeps == [0.05]
 
 
 @pytest.mark.parametrize(

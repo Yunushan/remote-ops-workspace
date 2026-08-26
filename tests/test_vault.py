@@ -278,6 +278,21 @@ def test_vault_rejects_malformed_schema(tmp_path: Path, payload: object, message
         LocalVault(path).status()
 
 
+def test_vault_schema_rejects_nontext_item_names_and_accepts_legacy_verifier() -> None:
+    payload: dict[str, object] = {
+        "version": 1,
+        "kdf": "scrypt",
+        "salt": base64.b64encode(b"0123456789abcdef").decode("ascii"),
+        "items": {1: "token"},
+    }
+    with pytest.raises(VaultError, match="item names must be text"):
+        vault_module._validate_vault_payload(payload, Path("vault.json"))
+
+    payload["items"] = {}
+    payload["verifier"] = "legacy-token"
+    assert vault_module._validate_vault_payload(payload, Path("vault.json")) == payload
+
+
 def test_vault_reports_invalid_json_and_missing_or_duplicate_operations(tmp_path: Path) -> None:
     pytest.importorskip("cryptography")
     path = tmp_path / "vault.json"

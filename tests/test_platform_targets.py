@@ -2,7 +2,11 @@ import json
 from pathlib import Path
 
 from remote_ops_workspace.cli import main
-from remote_ops_workspace.platform_targets import load_platform_targets
+from remote_ops_workspace.platform_targets import (
+    load_platform_targets,
+    release_architectures,
+    windows_legacy_targets,
+)
 
 REQUIRED_ARCHITECTURES = {
     "windows-x86": 32,
@@ -33,6 +37,14 @@ PROTECTED_GOAL_TARGETS = [
     "windows-xp-native-x86",
     "windows-xp-native-x64",
 ]
+
+
+def test_platform_target_accessors_default_missing_collections(tmp_path: Path) -> None:
+    path = tmp_path / "platform-targets.json"
+    path.write_text("{}", encoding="utf-8")
+
+    assert release_architectures(path) == []
+    assert windows_legacy_targets(path) == []
 
 
 def test_platform_targets_cover_requested_architectures() -> None:

@@ -1,3 +1,8 @@
+from dataclasses import replace
+
+import pytest
+
+import remote_ops_workspace.gui_designs as gui_designs
 from remote_ops_workspace.gui_designs import (
     DEFAULT_GUI_DESIGN_ID,
     GUI_DESIGN_PRESETS,
@@ -5,6 +10,7 @@ from remote_ops_workspace.gui_designs import (
     PRODUCT_REFERENCE_TAB_PRESET_IDS,
     get_gui_design_preset,
     gui_design_command_surface_actions,
+    gui_design_home_search_entry_placeholder,
     gui_design_home_tab_label,
     gui_design_interaction_state,
     gui_design_moba_bottom_edge_controls,
@@ -13,6 +19,7 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_home_welcome_chrome,
     gui_design_moba_home_welcome_geometry,
     gui_design_moba_monitoring_control_geometry,
+    gui_design_moba_monitoring_control_geometry_for,
     gui_design_moba_monitoring_controls,
     gui_design_moba_monitoring_metrics,
     gui_design_moba_monitoring_telemetry_route,
@@ -20,6 +27,7 @@ from remote_ops_workspace.gui_designs import (
     gui_design_moba_quick_connect_suggestion_chrome,
     gui_design_moba_rail_chrome,
     gui_design_moba_rail_item_geometry,
+    gui_design_moba_rail_item_geometry_for,
     gui_design_moba_rail_items,
     gui_design_moba_remote_monitoring_control_route,
     gui_design_moba_remote_monitoring_dock_chrome,
@@ -112,8 +120,10 @@ from remote_ops_workspace.gui_designs import (
     gui_design_termius_snippet_route,
     gui_design_termius_sync_route,
     gui_design_toolbar_actions,
+    gui_design_tree_root_copy,
     gui_design_tree_root_icon,
     gui_design_tree_row_icon,
+    gui_design_tree_row_icon_key,
     gui_design_tree_row_icons,
     gui_design_tree_rows,
     gui_design_workflow_cards,
@@ -3025,3 +3035,118 @@ def test_get_gui_design_preset_rejects_unknown_id() -> None:
         assert "unknown GUI design preset" in str(exc)
     else:
         raise AssertionError("unknown GUI design preset should be rejected")
+
+
+@pytest.mark.parametrize(
+    "route_factory",
+    [
+        gui_design_preset_keyboard_shortcut_route,
+        gui_design_preset_command_surface_route,
+        gui_design_preset_home_search_route,
+        gui_design_preset_focus_interaction_route,
+        gui_design_preset_reference_tab_route,
+        gui_design_preset_reference_tab_chrome_route,
+        gui_design_preset_reference_status_bar_route,
+        gui_design_preset_reference_session_action_route,
+        gui_design_preset_reference_surface_route,
+        gui_design_preset_reference_control_route,
+        gui_design_preset_reference_input_route,
+        gui_design_preset_reference_transcript_route,
+    ],
+)
+def test_gui_design_product_routes_reject_unknown_presets(route_factory: object) -> None:
+    with pytest.raises(ValueError, match="preset has no"):
+        route_factory("unknown")  # type: ignore[operator]
+
+
+def test_gui_design_home_search_placeholder_rejects_unknown_preset() -> None:
+    with pytest.raises(ValueError, match="product home/search entry placeholder"):
+        gui_design_home_search_entry_placeholder("unknown", "unknown-search")
+
+
+@pytest.mark.parametrize(
+    "lookup",
+    [
+        gui_design_moba_ribbon_action_geometry_for,
+        gui_design_moba_top_menu_geometry_for,
+        gui_design_moba_rail_item_geometry_for,
+        gui_design_moba_sftp_toolbar_action_geometry_for,
+        gui_design_moba_monitoring_control_geometry_for,
+        gui_design_moba_ssh_banner_row_geometry_for,
+        gui_design_moba_terminal_transcript_row_geometry_for,
+    ],
+)
+def test_gui_design_geometry_lookups_reject_unknown_keys(lookup: object) -> None:
+    with pytest.raises(KeyError, match="unknown"):
+        lookup("unknown")  # type: ignore[operator]
+
+
+def test_gui_design_tree_icon_key_classifies_shell_and_snippet_rows() -> None:
+    assert gui_design_tree_row_icon_key("native", "Temporary local console", "", False) == "shell"
+    assert gui_design_tree_row_icon_key("native", "Deploy snippet", "", False) == "snippet"
+
+
+def test_gui_design_command_surface_route_marks_disabled_action(monkeypatch: pytest.MonkeyPatch) -> None:
+    preset_id = "securecrt"
+    action_key = gui_design_command_surface_actions(preset_id)[0][0]
+    original = gui_design_interaction_state(preset_id)
+    disabled = replace(
+        original,
+        active_toolbar_key="not-active",
+        checked_toolbar_key="not-checked",
+        disabled_toolbar_key=action_key,
+    )
+    monkeypatch.setattr(gui_designs, "gui_design_interaction_state", lambda _preset_id: disabled)
+
+    route = gui_design_preset_command_surface_route(preset_id)
+
+    assert (action_key, "disabled") in route.expected_action_states
+
+
+def test_gui_design_public_metadata_serializers_include_identity_and_source() -> None:
+    objects = (
+        gui_design_moba_ribbon_action_geometry()[0],
+        gui_design_moba_top_menu_geometry()[0],
+        gui_design_moba_right_utility_action_route(),
+        gui_design_moba_session_edge_action_route(),
+        gui_design_moba_sftp_toolbar_action_route(),
+        gui_design_product_identity_route("securecrt"),
+        gui_design_preset_reference_tab_route("securecrt"),
+        gui_design_preset_reference_tab_chrome_route("securecrt"),
+        gui_design_preset_reference_status_bar_route("securecrt"),
+        gui_design_preset_reference_session_action_route("securecrt"),
+        gui_design_preset_reference_surface_route("securecrt"),
+        gui_design_preset_reference_control_route("securecrt"),
+        gui_design_preset_reference_input_route("securecrt"),
+        gui_design_preset_reference_transcript_route("securecrt"),
+        gui_design_preset_selection_route("securecrt"),
+        gui_design_preset_catalog_route(),
+        gui_design_preset_visual_signature("securecrt"),
+        gui_design_preset_isolation_route("securecrt"),
+        gui_design_preset_keyboard_shortcut_route("securecrt"),
+        gui_design_preset_command_surface_route("securecrt"),
+        gui_design_preset_focus_interaction_route("securecrt"),
+        gui_design_preset_home_search_route("securecrt"),
+        gui_design_preset_transition_route("securecrt"),
+    )
+
+    for item in objects:
+        payload = item.to_dict()
+        assert payload["key"]
+        if "render_source" in payload:
+            assert payload["render_source"]
+
+
+def test_gui_design_successful_geometry_lookups_and_default_tree_copy() -> None:
+    rail_geometry = gui_design_moba_rail_item_geometry()[0]
+    monitoring_geometry = gui_design_moba_monitoring_control_geometry()[0]
+
+    assert gui_design_moba_rail_item_geometry_for(rail_geometry.role) == rail_geometry
+    assert gui_design_moba_monitoring_control_geometry_for(monitoring_geometry.key) == monitoring_geometry
+    assert gui_design_tree_root_copy("unknown") == gui_design_tree_root_copy(DEFAULT_GUI_DESIGN_ID)
+
+
+def test_gui_design_tree_icon_key_classifies_remaining_profile_types() -> None:
+    assert gui_design_tree_row_icon_key("native", "Temporary VNC target", "", False) == "vnc"
+    assert gui_design_tree_row_icon_key("termius", "Temporary target", "", False) == "host"
+    assert gui_design_tree_row_icon_key("native", "Temporary SSH2 target", "", False) == "ssh2"

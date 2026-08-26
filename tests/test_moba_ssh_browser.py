@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from remote_ops_workspace.cli import build_parser
 from remote_ops_workspace.moba_ssh_browser import (
+    MobaSshBrowserPreferences,
     build_moba_ssh_browser_open_plan,
     load_moba_ssh_browser_preferences,
     review_moba_ssh_browser_overwrite,
@@ -56,6 +59,7 @@ def test_moba_ssh_browser_open_plan_uses_same_sftp_parameters(tmp_path: Path) ->
     assert plan.command[-1] == "admin@192.0.2.10"
     assert plan.column_widths["name"] == 220
     assert any("same SSH/SFTP parameters" in note for note in plan.notes)
+    assert plan.to_dict()["profile"] == "edge"
 
 
 def test_moba_ssh_browser_overwrite_review_blocks_existing_destination() -> None:
@@ -69,6 +73,7 @@ def test_moba_ssh_browser_overwrite_review_blocks_existing_destination() -> None
     assert review.allowed is False
     assert review.confirmation_required is True
     assert "confirm" in review.prompt
+    assert review.to_dict()["allowed"] is False
 
 
 def test_moba_ssh_browser_overwrite_review_allows_force() -> None:
@@ -107,3 +112,63 @@ def test_moba_ssh_browser_cli_commands_are_registered() -> None:
     assert columns.func.__name__ == "cmd_ssh_browser_columns"
     assert open_plan.func.__name__ == "cmd_ssh_browser_open_plan"
     assert overwrite.func.__name__ == "cmd_ssh_browser_overwrite"
+
+
+def test_moba_ssh_browser_rejects_malformed_persisted_state(tmp_path: Path) -> None:
+    state = tmp_path / "ssh-browser.json"
+    state.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="state must be a JSON object"):
+        load_moba_ssh_browser_preferences(state)
+
+    with pytest.raises(ValueError, match="column_widths must be an object"):
+        MobaSshBrowserPreferences.from_dict({"column_widths": [100]})
+
+
+@pytest.mark.parametrize(
+    ("location", "browser_visible", "note"),
+    [
+        ("below-terminal", True, "below-terminal"),
+        ("hidden", False, "starts hidden"),
+    ],
+)
+def test_moba_ssh_browser_open_plan_covers_alternate_locations(
+    location: str,
+    browser_visible: bool,
+    note: str,
+) -> None:
+    preferences = MobaSshBrowserPreferences.default()
+    preferences.location = location
+    plan = build_moba_ssh_browser_open_plan(
+        Profile(name="edge", protocol="ssh", host="192.0.2.10"),
+        preferences=preferences,
+    )
+
+    assert plan.browser_visible is browser_visible
+    assert any(note in item for item in plan.notes)
+
+
+def test_moba_ssh_browser_validates_actions_locations_and_columns() -> None:
+    with pytest.raises(ValueError, match="must be upload or download"):
+        review_moba_ssh_browser_overwrite(
+            "move",
+            "source",
+            "destination",
+            destination_exists=False,
+        )
+    with pytest.raises(ValueError, match="location must be one of"):
+        update_moba_ssh_browser_location("floating")
+    with pytest.raises(ValueError, match="column key must be one of"):
+        update_moba_ssh_browser_columns({"unknown": 100})
+
+
+def test_moba_ssh_browser_allows_nonoverwriting_transfer_without_force() -> None:
+    review = review_moba_ssh_browser_overwrite(
+        "upload",
+        "source",
+        "destination",
+        destination_exists=False,
+    )
+
+    assert review.allowed
+    assert not review.confirmation_required
+    assert review.notes == ["MobaXterm 26.4-style SSH-browser overwrite confirmation review."]

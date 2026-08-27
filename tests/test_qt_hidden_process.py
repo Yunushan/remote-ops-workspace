@@ -1057,7 +1057,9 @@ def test_hidden_wait_for_finished_startup_timeout_and_completion() -> None:
 
     worker = threading.Thread(target=complete_after_waits, daemon=True)
     worker.start()
-    assert process.waitForFinished(200) is True
+    # Hosted macOS runners can briefly starve worker threads under the full
+    # suite; this assertion verifies bounded completion, not a 200 ms SLO.
+    assert process.waitForFinished(1000) is True
     worker.join(timeout=1.0)
     process.close()
 

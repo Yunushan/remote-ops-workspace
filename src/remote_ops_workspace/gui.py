@@ -4442,7 +4442,7 @@ def create_main_window(
             button.clicked.connect(handler)
             return button
 
-        def text_editor_route_widgets(self) -> tuple[object, ...]:
+        def text_editor_route_widgets(self) -> tuple[QWidget, ...]:
             return tuple(
                 widget
                 for widget in (

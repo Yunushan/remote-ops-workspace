@@ -35,11 +35,17 @@ htmlcov/
 .tmp/
 .pytest-tmp-local*/
 .pytest-tmp-*/
+.pytest-native-temp-*/
 artifacts/gui-render-preview-optin-*/
 artifacts/ssh-loopback-*/
 artifacts/tab-switch-paint-*/
 artifacts/pytest-tmp-*/
 artifacts/coverage-readiness/pytest-*/
+artifacts/coverage-readiness/*.json
+artifacts/coverage-readiness/dist-*/
+artifacts/coverage-readiness/ci-*/
+artifacts/readiness-dist*/
+artifacts/readiness-dist-install*.json
 
 # Remote Ops Workspace private data
 .row/

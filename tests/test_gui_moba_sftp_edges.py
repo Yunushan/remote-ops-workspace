@@ -1158,11 +1158,41 @@ def test_connected_compatibility_chrome_icons_actions_and_terminal_save(
 
 def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     connected_workspace,
+    monkeypatch,
+    tmp_path,
 ) -> None:
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtWidgets import QTreeWidgetItem
+    from pathlib import Path
 
-    _app, _window, _panel, dock, _profile = connected_workspace
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QMessageBox, QTreeWidgetItem
+
+    from remote_ops_workspace import gui
+    from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
+
+    _app, _window, _panel, dock, profile = connected_workspace
+    cache_path = tmp_path / "service.conf.edit"
+    plan = build_moba_text_editor_tab_plan(
+        profile,
+        "/etc/service.conf",
+        local_path=cache_path,
+    )
+    monkeypatch.setattr(
+        gui,
+        "build_moba_text_editor_tab_plan",
+        lambda *_args, **_kwargs: plan,
+    )
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(
+        dock,
+        "ensure_background_authentication_for_request",
+        lambda: True,
+    )
+    started: list[tuple[str, object]] = []
+    monkeypatch.setattr(
+        dock,
+        "start_text_editor_sftp_operation",
+        lambda operation, transfer_plan: started.append((operation, transfer_plan)) or True,
+    )
     kind_role = int(Qt.ItemDataRole.UserRole) + 42
     source_path_role = int(Qt.ItemDataRole.UserRole) + 47
     invalid = QTreeWidgetItem(["folder"])
@@ -1196,17 +1226,53 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     assert editor.property("mobaTextEditorRemotePath") == "/etc/service.conf"
     assert editor.property("mobaTextEditorContentLoaded") is False
     assert dock.text_editor_save_button.isEnabled() is False
+    assert started == [("open", plan.download_plan)]
+    assert editor.isReadOnly() is True
 
-    editor.setReadOnly(False)
-    editor.setPlainText("line one\nline two")
+    cache_path.write_text("line one\nline two\n", encoding="utf-8")
+    dock.finish_text_editor_open()
+    assert editor.property("mobaTextEditorContentLoaded") is True
+    assert editor.isReadOnly() is False
+    assert editor.toPlainText() == "line one\nline two\n"
+
+    editor.setPlainText("line one\nline two\nline three\n")
     dock.handle_moba_text_editor_changed()
     assert editor.property("mobaTextEditorDirty") is True
     dock.handle_moba_text_editor_save()
+    assert started[1][0] == "save-check"
+    assert editor.property("mobaTextEditorDirty") is True
+
+    Path(dock.text_editor_probe_path).write_bytes(
+        cache_path.read_bytes()
+    )
+    dock.finish_text_editor_save_check()
+    assert started[2][0] == "upload"
+    assert cache_path.read_text(encoding="utf-8") == "line one\nline two\nline three\n"
+    dock.finish_text_editor_upload()
     assert editor.property("mobaTextEditorCapturedSave") is True
-    assert editor.property("mobaTextEditorCapturedLineCount") == 2
+    assert editor.property("mobaTextEditorCapturedLineCount") == 3
     assert editor.property("mobaTextEditorDirty") is False
+
+    editor.setPlainText("line one\nline two\nline three\nline four\n")
+    dock.handle_moba_text_editor_changed()
+    dock.handle_moba_text_editor_save()
+    assert started[3][0] == "save-check"
+    Path(dock.text_editor_probe_path).write_bytes(b"remote changed\n")
+    monkeypatch.setattr(
+        QMessageBox,
+        "exec",
+        lambda _self: int(QMessageBox.StandardButton.No),
+    )
+    dock.finish_text_editor_save_check()
+    assert len(started) == 4
+    assert editor.property("mobaTextEditorStatus") == "conflict"
+    assert editor.property("mobaTextEditorDirty") is True
+
+    monkeypatch.setattr(QMessageBox, "exec", lambda _self: 0)
     dock.handle_moba_text_editor_diff()
     assert editor.property("mobaTextEditorCapturedDiff") is True
+    assert editor.property("mobaTextEditorDiffEqual") is False
+    assert "+line four\n" in editor.property("mobaTextEditorDiffText")
 
     dock.hide_moba_text_editor()
     assert editor.isVisible() is False
@@ -1218,6 +1284,87 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     dock.text_editor = editor
     assert dock.text_editor_preview_for_remote_path("/etc/service.conf") == ""
     assert editor.textInteractionFlags() & Qt.TextInteractionFlag.TextEditable
+
+
+def test_connected_text_editor_refuses_binary_content_and_cleans_probe(
+    connected_workspace,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from pathlib import Path
+
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QTreeWidgetItem
+
+    _app, _window, _panel, dock, profile = connected_workspace
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(
+        dock,
+        "ensure_background_authentication_for_request",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        dock,
+        "start_text_editor_sftp_operation",
+        lambda *_args: True,
+    )
+    item = QTreeWidgetItem(["payload.bin"])
+    item.setData(0, int(Qt.ItemDataRole.UserRole) + 42, "file")
+    item.setData(0, int(Qt.ItemDataRole.UserRole) + 47, "/tmp")
+    dock.handle_moba_text_editor_open_from_item(item, 0)
+
+    cache_path = tmp_path / "payload.bin.edit"
+    cache_path.write_bytes(b"binary\x00payload")
+    dock.text_editor_local_path = str(cache_path)
+    with pytest.raises(ValueError, match="binary"):
+        dock.finish_text_editor_open()
+    assert dock.text_editor.property("mobaTextEditorContentLoaded") is False
+    assert dock.text_editor.isReadOnly() is True
+
+    probe_path = tmp_path / "payload.bin.remote-check"
+    probe_path.write_bytes(b"stale")
+    dock.text_editor_probe_path = str(probe_path)
+    dock.cancel_text_editor_sftp_operation()
+    assert dock.text_editor_probe_path == ""
+    assert not Path(probe_path).exists()
+
+
+def test_connected_text_editor_transfer_uses_async_sftp_batch(
+    connected_workspace,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from remote_ops_workspace.file_transfer import build_sftp_get_plan
+
+    from PyQt6.QtCore import QProcess
+
+    _app, _window, _panel, dock, profile = connected_workspace
+    plan = build_sftp_get_plan(
+        profile,
+        "/etc/service.conf",
+        local_path=tmp_path / "service.conf.edit",
+        allow_overwrite=True,
+    )
+    process = _FakeProcess()
+    dock.text_editor_process = process
+    dock.text_editor_remote_path = "/etc/service.conf"
+    dock.text_editor_local_path = str(tmp_path / "service.conf.edit")
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "")
+
+    assert dock.start_text_editor_sftp_operation("open", plan) is True
+    assert process.start_calls == 1
+    assert process.program == plan.command[0]
+    assert process.arguments
+    assert dock.text_editor_active_generation != 0
+
+    dock.write_text_editor_sftp_batch()
+    assert process.written == plan.batch_input().encode("utf-8")
+    assert process.close_write_calls == 1
+
+    dock.cancel_text_editor_sftp_operation()
+    assert dock.text_editor_active_generation == 0
+    assert process.kill_calls == 1
+    assert dock.text_editor_process.state() == QProcess.ProcessState.NotRunning
 
 
 def test_sftp_navigation_context_dispatch_and_timeout_edges(
@@ -1535,6 +1682,12 @@ def test_connected_workspace_remaining_runtime_and_fallback_edges(
     item.setData(0, kind_role, "file")
     item.setData(0, source_path_role, "/etc")
     diff_button = dock.text_editor_diff_button
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: _profile)
+    monkeypatch.setattr(
+        dock,
+        "ensure_background_authentication_for_request",
+        lambda: False,
+    )
     dock.text_editor_diff_button = None
     try:
         dock.handle_moba_text_editor_open_from_item(item, 0)

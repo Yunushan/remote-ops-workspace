@@ -35,6 +35,7 @@ htmlcov/
 .tmp/
 .pytest-tmp-local*/
 .pytest-tmp-*/
+.pytest-native-temp/
 .pytest-native-temp-*/
 artifacts/gui-render-preview-optin-*/
 artifacts/ssh-loopback-*/

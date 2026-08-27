@@ -270,3 +270,18 @@ def test_serial_and_algorithm_token_validation() -> None:
         launcher._serial_stop_bits("3")
     with pytest.raises(LauncherError, match="serial flow"):
         launcher._serial_flow("invalid")
+
+
+def test_launcher_discovers_available_client_and_uses_it_for_raw_profiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        launcher.shutil,
+        "which",
+        lambda candidate: "C:/Tools/nc.exe" if candidate == "ncat" else None,
+    )
+    assert launcher._first_available(["missing", "ncat"]) == "ncat"
+    plan = launcher.build_launch_plan(
+        Profile(name="raw", protocol="raw", host="example.test", port=9)
+    )
+    assert plan.command == ["ncat", "example.test", "9"]

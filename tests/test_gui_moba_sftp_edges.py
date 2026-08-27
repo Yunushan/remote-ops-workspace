@@ -221,7 +221,7 @@ def test_background_authentication_and_prompt_submission_edges(
 
     from remote_ops_workspace import vault
 
-    app, _window, _panel, dock, profile = connected_workspace
+    app, window, _panel, dock, profile = connected_workspace
     dock.profile_for_sftp_action = lambda: None
     assert dock.authenticate_background_tools() is False
 
@@ -2031,3 +2031,426 @@ def test_connected_terminal_context_and_statusless_save_branch_outcomes(
         icon_key="future-metric",
     )
     assert panel.telemetry_icon_pixmap(unknown_cell).isNull() is False
+
+
+def test_connected_terminal_traversal_and_text_editor_guard_edges(
+    connected_workspace,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from PyQt6.QtCore import QEvent, Qt
+    from PyQt6.QtGui import QKeyEvent
+    from PyQt6.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem
+
+    from remote_ops_workspace import gui
+    from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
+
+    app, window, panel, dock, profile = connected_workspace
+    pane = panel.terminal_pane
+
+    monkeypatch.setattr(window, "terminal_panes_in", lambda _current: [pane])
+    monkeypatch.setattr(QApplication, "focusWidget", lambda: pane.output)
+    assert window.active_terminal_pane() is pane
+    monkeypatch.setattr(QApplication, "focusWidget", lambda: None)
+    window._last_terminal_pane = pane
+    assert window.active_terminal_pane() is pane
+
+    next_tabs: list[str] = []
+    previous_tabs: list[str] = []
+    monkeypatch.setattr(window, "activate_next_tab", lambda: next_tabs.append("next"))
+    monkeypatch.setattr(window, "activate_previous_tab", lambda: previous_tabs.append("previous"))
+
+    next_event = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_Tab,
+        Qt.KeyboardModifier.ControlModifier,
+        "\t",
+    )
+    assert pane.eventFilter(pane.output, next_event) is True
+    previous_event = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_Tab,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+        "\t",
+    )
+    assert pane.eventFilter(pane.output, previous_event) is True
+    assert next_tabs == ["next"]
+    assert previous_tabs == ["previous"]
+
+    unhandled_event = QKeyEvent(
+        QEvent.Type.KeyPress,
+        Qt.Key.Key_A,
+        Qt.KeyboardModifier.MetaModifier,
+        "a",
+    )
+    assert pane.eventFilter(pane.output, unhandled_event) is False
+
+    monkeypatch.setattr(pane, "is_running", lambda: True)
+    sent: list[bytes] = []
+    monkeypatch.setattr(pane, "send_raw_input", sent.append)
+    pane.terminal_emulator.feed("\x1b[?2004h")
+    pane.paste_text_to_terminal("first\nsecond", gesture="test")
+    assert sent == [b"\x1b[200~first\nsecond\x1b[201~"]
+    assert pane.output.property("terminalLastPasteWasBracketed") is True
+
+    editor = dock.text_editor
+    dock.text_editor = None
+    dock.set_text_editor_runtime_state(status="missing-editor")
+    dock.text_editor = editor
+    save_button = dock.text_editor_save_button
+    diff_button = dock.text_editor_diff_button
+    dock.text_editor_save_button = None
+    dock.text_editor_diff_button = None
+    dock.set_text_editor_runtime_state(status="idle")
+    dock.text_editor_save_button = save_button
+    dock.text_editor_diff_button = diff_button
+
+    kind_role = int(Qt.ItemDataRole.UserRole) + 42
+    source_path_role = int(Qt.ItemDataRole.UserRole) + 47
+    item = QTreeWidgetItem(["guarded.conf"])
+    item.setData(0, kind_role, "file")
+    item.setData(0, source_path_role, "/etc")
+
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: None)
+    dock.handle_moba_text_editor_open_from_item(item, 0)
+    assert "connected profile" in window.statusBar().currentMessage()
+
+    plan = build_moba_text_editor_tab_plan(
+        profile,
+        "/etc/guarded.conf",
+        local_path=tmp_path / "guarded.conf.edit",
+    )
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+
+    def reject_plan(*_args, **_kwargs):
+        raise ValueError("invalid editor plan")
+
+    monkeypatch.setattr(gui, "build_moba_text_editor_tab_plan", reject_plan)
+    dock.handle_moba_text_editor_open_from_item(item, 0)
+    assert "invalid editor plan" in window.statusBar().currentMessage()
+
+    monkeypatch.setattr(gui, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
+    started: list[str] = []
+    monkeypatch.setattr(
+        dock,
+        "start_text_editor_sftp_operation",
+        lambda operation, _transfer_plan: started.append(operation) or True,
+    )
+    dock.text_editor_remote_path = "/etc/old.conf"
+    editor.setProperty("mobaTextEditorContentLoaded", True)
+    editor.setProperty("mobaTextEditorDirty", True)
+    toolbar = dock.text_editor_toolbar
+    dock.text_editor_toolbar = None
+    monkeypatch.setattr(
+        QMessageBox,
+        "exec",
+        lambda _self: QMessageBox.StandardButton.Yes,
+    )
+    dock.handle_moba_text_editor_open_from_item(item, 0)
+    dock.text_editor_toolbar = toolbar
+    assert started == ["open"]
+
+    dock.text_editor = None
+    dock.handle_moba_text_editor_save()
+    dock.text_editor = editor
+    editor.setProperty("mobaTextEditorContentLoaded", False)
+    dock.handle_moba_text_editor_save()
+    editor.setProperty("mobaTextEditorContentLoaded", True)
+    editor.setProperty("mobaTextEditorDirty", False)
+    dock.handle_moba_text_editor_save()
+    editor.setProperty("mobaTextEditorDirty", True)
+    dock.text_editor_active_generation = 1
+    dock.handle_moba_text_editor_save()
+    dock.text_editor_active_generation = 0
+
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: None)
+    dock.handle_moba_text_editor_save()
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
+    monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: False)
+    dock.handle_moba_text_editor_save()
+    monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
+    monkeypatch.setattr(gui, "build_sftp_get_plan", reject_plan)
+    dock.handle_moba_text_editor_save()
+    editor.setProperty("mobaTextEditorContentLoaded", False)
+    dock.handle_moba_text_editor_diff()
+    assert "not loaded" in window.statusBar().currentMessage()
+
+    dock.text_editor = editor
+    app.processEvents()
+
+
+def test_connected_text_editor_transfer_failure_and_dispatch_edges(
+    connected_workspace,
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from PyQt6.QtCore import QProcess
+    from PyQt6.QtWidgets import QMessageBox
+
+    from remote_ops_workspace import gui
+    from remote_ops_workspace.file_transfer import build_sftp_get_plan
+    from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
+
+    app, window, _panel, dock, profile = connected_workspace
+    original_process = dock.text_editor_process
+    real_finish_text_editor_save_check = type(dock).finish_text_editor_save_check
+    cache_path = tmp_path / "service.conf.edit"
+    plan = build_sftp_get_plan(
+        profile,
+        "/etc/service.conf",
+        local_path=cache_path,
+        allow_overwrite=True,
+    )
+    tab_plan = build_moba_text_editor_tab_plan(
+        profile,
+        "/etc/service.conf",
+        local_path=cache_path,
+    )
+
+    dock.runtime_shutting_down = True
+    assert dock.start_text_editor_sftp_operation("open", plan) is False
+    dock.runtime_shutting_down = False
+
+    dock.text_editor_active_generation = 0
+    dock.text_editor_generation = 1
+    dock.write_text_editor_sftp_batch()
+
+    process = _FakeProcess(running=True)
+    dock.text_editor_process = process
+    dock.text_editor_remote_path = "/etc/service.conf"
+    dock.text_editor_local_path = str(cache_path)
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "")
+    assert dock.start_text_editor_sftp_operation("open", plan) is True
+    assert process.kill_calls == 1
+    assert dock.text_editor_pending_sftp is not None
+    dock.text_editor_pending_sftp = None
+
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "control.sock")
+    assert dock.start_text_editor_sftp_operation("open", plan) is True
+    assert process.start_calls == 1
+
+    class FailingProcess(_FakeProcess):
+        def start(self) -> None:
+            raise RuntimeError("start failed")
+
+    failing = FailingProcess()
+    dock.text_editor_process = failing
+    probe = tmp_path / "service.conf.remote-check"
+    probe.write_text("probe", encoding="utf-8")
+    dock.text_editor_probe_path = str(probe)
+    assert dock.start_text_editor_sftp_operation("save-check", plan) is False
+    assert not probe.exists()
+    assert dock.start_text_editor_sftp_operation("open", plan) is False
+
+    probe_directory = tmp_path / "probe-directory"
+    probe_directory.mkdir()
+    dock.text_editor_probe_path = str(probe_directory)
+    dock.clear_text_editor_probe_file()
+    assert probe_directory.exists()
+
+    process = _FakeProcess()
+    dock.text_editor_process = process
+    dock.text_editor_generation = 12
+    dock.text_editor_active_generation = 12
+    dock.text_editor_sftp_plan = plan
+    dock._background_password = bytearray(b"session-password")
+    dock.text_editor_auth_probe_timer.stop()
+    dock.write_text_editor_sftp_batch()
+    assert dock.text_editor_auth_probe_timer.isActive() is True
+    dock.write_text_editor_sftp_batch()
+    dock._clear_background_password()
+    dock.text_editor_sftp_plan = None
+    dock.text_editor_active_generation = 12
+    dock.write_text_editor_sftp_batch()
+    dock.text_editor_sftp_plan = plan
+    process.write_result = -1
+    dock.write_text_editor_sftp_batch()
+    process.output = b"editor output"
+    dock.text_editor_output_buffer.clear()
+    dock.read_text_editor_sftp_output()
+    assert bytes(dock.text_editor_output_buffer) == b"editor output"
+
+    auth_process = _FakeProcess()
+    dock.text_editor_process = auth_process
+    dock._background_password = bytearray(b"session-password")
+    dock._background_auth_password_sent["text-editor"] = False
+    forced_batches: list[bool] = []
+    monkeypatch.setattr(
+        dock,
+        "write_text_editor_sftp_batch",
+        lambda *, force=False: forced_batches.append(force),
+    )
+    dock._submit_background_password_if_prompt("text-editor", b"Password: ")
+    app.processEvents()
+    assert forced_batches == [True]
+    dock.text_editor_process = None
+    dock._background_auth_password_sent["text-editor"] = False
+    dock._submit_background_password_if_prompt("text-editor", b"Password: ")
+    dock._clear_background_password()
+    dock.text_editor_process = process
+
+    dock.text_editor_generation = 20
+    dock.text_editor_active_generation = 20
+    dock.text_editor_operation = "save-check"
+    error_probe = tmp_path / "error.remote-check"
+    error_probe.write_text("error", encoding="utf-8")
+    dock.text_editor_probe_path = str(error_probe)
+    dock.handle_text_editor_sftp_error(SimpleNamespace(name="ReadError"))
+    assert not error_probe.exists()
+    dock.text_editor_generation = 21
+    dock.text_editor_active_generation = 20
+    dock.text_editor_operation = "open"
+    dock.handle_text_editor_sftp_error(SimpleNamespace(name="StaleError"))
+
+    process.process_state = QProcess.ProcessState.NotRunning
+    dock.cancel_text_editor_sftp_timeout()
+    process.process_state = QProcess.ProcessState.Running
+    dock.text_editor_generation = 30
+    dock.text_editor_active_generation = 29
+    dock.text_editor_operation = "open"
+    dock.cancel_text_editor_sftp_timeout()
+    process.process_state = QProcess.ProcessState.Running
+    dock.text_editor_generation = 31
+    dock.text_editor_active_generation = 31
+    dock.text_editor_operation = "save-check"
+    timeout_probe = tmp_path / "timeout.remote-check"
+    timeout_probe.write_text("timeout", encoding="utf-8")
+    dock.text_editor_probe_path = str(timeout_probe)
+    dock.cancel_text_editor_sftp_timeout()
+    assert not timeout_probe.exists()
+
+    dock.text_editor_process = process
+    process.output = b"stale output"
+    dock.text_editor_output_buffer.clear()
+    dock.text_editor_generation = 40
+    dock.text_editor_active_generation = 39
+    dock.text_editor_operation = "open"
+    dock.handle_text_editor_sftp_finished(0, QProcess.ExitStatus.NormalExit)
+
+    retry_calls: list[str] = []
+    monkeypatch.setattr(dock, "schedule_background_auth_retry", lambda: retry_calls.append("retry"))
+    process.output = b"remote failure\n"
+    failure_probe = tmp_path / "failure.remote-check"
+    failure_probe.write_text("failure", encoding="utf-8")
+    dock.text_editor_probe_path = str(failure_probe)
+    dock.text_editor_generation = 41
+    dock.text_editor_active_generation = 41
+    dock.text_editor_operation = "save-check"
+    dock.handle_text_editor_sftp_finished(1, QProcess.ExitStatus.CrashExit)
+    assert not failure_probe.exists()
+
+    process.output = b"open failure\n"
+    dock.text_editor_generation = 42
+    dock.text_editor_active_generation = 42
+    dock.text_editor_operation = "open"
+    dock.handle_text_editor_sftp_finished(1, QProcess.ExitStatus.CrashExit)
+    assert retry_calls == ["retry", "retry"]
+
+    dispatched: list[str] = []
+    monkeypatch.setattr(dock, "finish_text_editor_open", lambda: dispatched.append("open"))
+    monkeypatch.setattr(dock, "finish_text_editor_save_check", lambda: dispatched.append("save-check"))
+    monkeypatch.setattr(dock, "finish_text_editor_upload", lambda: dispatched.append("upload"))
+    for index, operation in enumerate(("open", "save-check", "upload", "unknown"), start=50):
+        process.output = b""
+        dock.text_editor_generation = index
+        dock.text_editor_active_generation = index
+        dock.text_editor_operation = operation
+        dock.handle_text_editor_sftp_finished(0, QProcess.ExitStatus.NormalExit)
+    assert dispatched == ["open", "save-check", "upload"]
+
+    def invalid_result() -> None:
+        raise ValueError("invalid result")
+
+    monkeypatch.setattr(dock, "finish_text_editor_open", invalid_result)
+    dock.text_editor_generation = 60
+    dock.text_editor_active_generation = 60
+    dock.text_editor_operation = "open"
+    dock.handle_text_editor_sftp_finished(0, QProcess.ExitStatus.NormalExit)
+    assert dock.text_editor.property("mobaTextEditorStatus") == "error"
+
+    dock.text_editor_pending_sftp = None
+    dock.runtime_shutting_down = False
+    dock.schedule_pending_text_editor_sftp()
+    dock.text_editor_pending_sftp = ("open", plan, "/etc/a", str(cache_path))
+    dock.runtime_shutting_down = True
+    dock.schedule_pending_text_editor_sftp()
+    dock.runtime_shutting_down = False
+
+    pending_calls: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        dock,
+        "start_text_editor_sftp_operation",
+        lambda operation, _plan: pending_calls.append(
+            (operation, dock.text_editor_remote_path, dock.text_editor_local_path)
+        ) or True,
+    )
+    dock.text_editor_pending_sftp = ("open", plan, "/etc/deferred", str(cache_path))
+    dock.schedule_pending_text_editor_sftp()
+    dock.runtime_shutting_down = True
+    app.processEvents()
+    dock.runtime_shutting_down = False
+    dock.text_editor_pending_sftp = ("upload", plan, "/etc/deferred", str(cache_path))
+    dock.schedule_pending_text_editor_sftp()
+    app.processEvents()
+    assert pending_calls == [("upload", "/etc/deferred", str(cache_path))]
+
+    editor = dock.text_editor
+    editor.setPlainText("edited\n")
+    editor.setProperty("mobaTextEditorContentLoaded", True)
+    editor.setProperty("mobaTextEditorDirty", True)
+    dock.text_editor_local_path = str(cache_path)
+    cache_path.write_text("cached\n", encoding="utf-8")
+    dock.text_editor_cache_sha256 = dock.text_editor_file_sha256(cache_path)
+    dock.text_editor_original_remote_sha256 = "old-digest"
+    conflict_probe = tmp_path / "conflict.remote-check"
+    conflict_probe.write_text("remote\n", encoding="utf-8")
+    dock.text_editor_probe_path = str(conflict_probe)
+    dock.text_editor_tab_plan = tab_plan
+    monkeypatch.setattr(
+        QMessageBox,
+        "exec",
+        lambda _self: QMessageBox.StandardButton.Yes,
+    )
+    monkeypatch.setattr(
+        gui,
+        "write_text_document",
+        lambda *_args, **_kwargs: SimpleNamespace(new_sha256="new-cache-digest"),
+    )
+    upload_calls: list[str] = []
+    monkeypatch.setattr(
+        dock,
+        "start_text_editor_sftp_operation",
+        lambda operation, _plan: upload_calls.append(operation) or True,
+    )
+    real_finish_text_editor_save_check(dock)
+    assert upload_calls == ["upload"]
+
+    clean_probe = tmp_path / "clean.remote-check"
+    clean_probe.write_bytes(cache_path.read_bytes())
+    dock.text_editor_probe_path = str(clean_probe)
+    digest = dock.text_editor_file_sha256(cache_path)
+    dock.text_editor_original_remote_sha256 = digest
+    dock.text_editor_cache_sha256 = digest
+
+    def reject_cache(*_args, **_kwargs):
+        raise OSError("cache unavailable")
+
+    monkeypatch.setattr(gui, "write_text_document", reject_cache)
+    real_finish_text_editor_save_check(dock)
+    assert dock.text_editor.property("mobaTextEditorStatus") == "error"
+
+    no_plan_probe = tmp_path / "no-plan.remote-check"
+    no_plan_probe.write_bytes(cache_path.read_bytes())
+    dock.text_editor_probe_path = str(no_plan_probe)
+    dock.text_editor_original_remote_sha256 = digest
+    monkeypatch.setattr(
+        gui,
+        "write_text_document",
+        lambda *_args, **_kwargs: SimpleNamespace(new_sha256="updated-cache-digest"),
+    )
+    dock.text_editor_tab_plan = None
+    real_finish_text_editor_save_check(dock)
+    assert "editor plan is missing" in window.statusBar().currentMessage()
+
+    dock.text_editor_process = original_process

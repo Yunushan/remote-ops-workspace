@@ -1164,7 +1164,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     from pathlib import Path
 
     from PyQt6.QtCore import Qt
-    from PyQt6.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem
+    from PyQt6.QtWidgets import QMessageBox, QTreeWidgetItem
 
     from remote_ops_workspace import gui
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan

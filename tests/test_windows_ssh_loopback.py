@@ -100,9 +100,12 @@ def _visible_top_level_windows_for_process_tree(
         entry = _PROCESSENTRY32W()
         entry.dwSize = ctypes.sizeof(entry)
         parent_by_pid: dict[int, int] = {}
+        image_by_pid: dict[int, str] = {}
         first = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
         while first:
-            parent_by_pid[int(entry.th32ProcessID)] = int(entry.th32ParentProcessID)
+            process_id = int(entry.th32ProcessID)
+            parent_by_pid[process_id] = int(entry.th32ParentProcessID)
+            image_by_pid[process_id] = str(entry.szExeFile)
             first = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
     finally:
         kernel32.CloseHandle(snapshot)
@@ -148,10 +151,26 @@ def _visible_top_level_windows_for_process_tree(
         rect = wintypes.RECT()
         if not get_rect(hwnd, ctypes.byref(rect)):
             return True
+        if rect.right <= rect.left or rect.bottom <= rect.top:
+            # ConPTY exposes a zero-sized bookkeeping window on some hosted
+            # Windows builds; it is not a visible terminal surface.
+            return True
         title_buffer = ctypes.create_unicode_buffer(get_title_length(hwnd) + 1)
         get_title(hwnd, title_buffer, len(title_buffer))
         class_buffer = ctypes.create_unicode_buffer(256)
         get_class(hwnd, class_buffer, len(class_buffer))
+        compact_window_text = "".join(
+            character.casefold()
+            for character in f"{title_buffer.value} {image_by_pid.get(int(owner_pid.value), '')}"
+            if character.isalnum()
+        )
+        if (
+            class_buffer.value.casefold() == "cascadia_hosting_window_class"
+            and "hostedcomputeagent" in compact_window_text
+        ):
+            # GitHub-hosted Windows runners expose their own outer Cascadia
+            # host through the test process tree; it is not owned by ROW.
+            return True
         records.append(
             {
                 "hwnd": int(getattr(hwnd, "value", hwnd) or 0),

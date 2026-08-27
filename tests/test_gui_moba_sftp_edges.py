@@ -1235,6 +1235,22 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     assert editor.isReadOnly() is False
     assert editor.toPlainText() == "line one\nline two\n"
 
+    editor.setPlainText("line one\nline two\nunsaved replacement\n")
+    dock.handle_moba_text_editor_changed()
+    another_item = QTreeWidgetItem(["other.conf"])
+    another_item.setData(0, kind_role, "file")
+    another_item.setData(0, source_path_role, "/etc")
+    monkeypatch.setattr(
+        QMessageBox,
+        "exec",
+        lambda _self: int(QMessageBox.StandardButton.No),
+    )
+    started_before_cancelled_open = len(started)
+    dock.handle_moba_text_editor_open_from_item(another_item, 0)
+    assert len(started) == started_before_cancelled_open
+    assert dock.text_editor_remote_path == "/etc/service.conf"
+    assert editor.toPlainText() == "line one\nline two\nunsaved replacement\n"
+
     editor.setPlainText("line one\nline two\nline three\n")
     dock.handle_moba_text_editor_changed()
     assert editor.property("mobaTextEditorDirty") is True
@@ -1247,6 +1263,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     )
     dock.finish_text_editor_save_check()
     assert started[2][0] == "upload"
+    assert editor.isReadOnly() is True
     assert cache_path.read_text(encoding="utf-8") == "line one\nline two\nline three\n"
     dock.finish_text_editor_upload()
     assert editor.property("mobaTextEditorCapturedSave") is True
@@ -1284,6 +1301,39 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     dock.text_editor = editor
     assert dock.text_editor_preview_for_remote_path("/etc/service.conf") == ""
     assert editor.textInteractionFlags() & Qt.TextInteractionFlag.TextEditable
+
+
+def test_connected_text_editor_refreshes_syntax_for_each_plan(
+    connected_workspace,
+    tmp_path,
+) -> None:
+    from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
+
+    _app, _window, _panel, dock, profile = connected_workspace
+    ini_plan = build_moba_text_editor_tab_plan(
+        profile,
+        "/etc/service.conf",
+        local_path=tmp_path / "service.conf.edit",
+    )
+    dock.update_text_editor_state_from_plan(
+        ini_plan,
+        source_row_name="service.conf",
+        source_row_index=0,
+    )
+    assert dock.text_editor_highlighter.syntax == ini_plan.syntax
+
+    json_plan = build_moba_text_editor_tab_plan(
+        profile,
+        "/etc/settings.json",
+        local_path=tmp_path / "settings.json.edit",
+    )
+    dock.update_text_editor_state_from_plan(
+        json_plan,
+        source_row_name="settings.json",
+        source_row_index=1,
+    )
+    assert dock.text_editor_highlighter.syntax == "json"
+    assert any("true|false|null" in pattern for pattern, _color in dock.text_editor_highlighter.patterns)
 
 
 def test_connected_text_editor_refuses_binary_content_and_cleans_probe(

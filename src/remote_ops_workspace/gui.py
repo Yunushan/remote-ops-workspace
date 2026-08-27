@@ -3299,8 +3299,12 @@ def create_main_window(
     class MobaTextEditorHighlighter(QSyntaxHighlighter):
         def __init__(self, document, syntax: str) -> None:
             super().__init__(document)
+            self.set_syntax(syntax)
+
+        def set_syntax(self, syntax: str) -> None:
             self.syntax = syntax
             self.patterns = self.patterns_for_syntax(syntax)
+            self.rehighlight()
 
         @staticmethod
         def patterns_for_syntax(syntax: str) -> list[tuple[str, str]]:
@@ -4489,6 +4493,7 @@ def create_main_window(
                     render_source="connected-sftp-browser-text-editor",
                 ),
             )
+            self.text_editor_highlighter.set_syntax(plan.syntax)
 
         def set_text_editor_runtime_state(
             self,
@@ -4520,7 +4525,8 @@ def create_main_window(
                     widget.setProperty("mobaTextEditorRemoteSha256", remote_sha256)
                 if operation is not None:
                     widget.setProperty("mobaTextEditorOperation", operation)
-            editor.setReadOnly(not effective_loaded)
+            operation_is_locked = operation == "upload"
+            editor.setReadOnly(not effective_loaded or operation_is_locked)
             save_button = getattr(self, "text_editor_save_button", None)
             if save_button is not None:
                 save_button.setEnabled(effective_loaded and effective_dirty)
@@ -4537,6 +4543,28 @@ def create_main_window(
             editor = getattr(self, "text_editor", None)
             if editor is None:
                 return
+            if (
+                bool(editor.property("mobaTextEditorContentLoaded"))
+                and bool(editor.property("mobaTextEditorDirty"))
+            ):
+                current_path = self.text_editor_remote_path or "the current document"
+                choice = _literal_message_box(
+                    self,
+                    QMessageBox.Icon.Warning,
+                    "Unsaved editor changes",
+                    (
+                        f"Discard unsaved changes to {current_path} and open "
+                        f"{remote_path}?"
+                    ),
+                    buttons=(
+                        QMessageBox.StandardButton.Yes
+                        | QMessageBox.StandardButton.No
+                    ),
+                    default_button=QMessageBox.StandardButton.No,
+                )
+                if choice != QMessageBox.StandardButton.Yes:
+                    self.show_sftp_status("Opening the file was cancelled; unsaved changes were kept")
+                    return
             profile = self.profile_for_sftp_action()
             if profile is None:
                 self.show_sftp_status(

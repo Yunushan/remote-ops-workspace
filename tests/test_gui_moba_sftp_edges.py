@@ -1164,7 +1164,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     from pathlib import Path
 
     from PyQt6.QtCore import Qt
-    from PyQt6.QtWidgets import QMessageBox, QTreeWidgetItem
+    from PyQt6.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem
 
     from remote_ops_workspace import gui
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
@@ -2040,13 +2040,20 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
 ) -> None:
     from PyQt6.QtCore import QEvent, Qt
     from PyQt6.QtGui import QKeyEvent
-    from PyQt6.QtWidgets import QMessageBox, QTreeWidgetItem
+    from PyQt6.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem
 
     from remote_ops_workspace import gui
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
     app, window, panel, dock, profile = connected_workspace
     pane = panel.terminal_pane
+
+    monkeypatch.setattr(window, "terminal_panes_in", lambda _current: [pane])
+    monkeypatch.setattr(QApplication, "focusWidget", lambda: pane.output)
+    assert window.active_terminal_pane() is pane
+    monkeypatch.setattr(QApplication, "focusWidget", lambda: None)
+    window._last_terminal_pane = pane
+    assert window.active_terminal_pane() is pane
 
     next_tabs: list[str] = []
     previous_tabs: list[str] = []
@@ -2204,6 +2211,10 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     dock.runtime_shutting_down = True
     assert dock.start_text_editor_sftp_operation("open", plan) is False
     dock.runtime_shutting_down = False
+
+    dock.text_editor_active_generation = 0
+    dock.text_editor_generation = 1
+    dock.write_text_editor_sftp_batch()
 
     process = _FakeProcess(running=True)
     dock.text_editor_process = process

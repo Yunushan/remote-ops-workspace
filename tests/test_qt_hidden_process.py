@@ -633,6 +633,41 @@ def test_hidden_writer_handles_absent_stale_and_control_items() -> None:
     process.close()
 
 
+def test_hidden_writer_waits_briefly_when_child_is_alive_and_queue_is_empty() -> None:
+    process = QtHiddenProcess()
+    process._generation = 4
+    process._disposed = False
+    process._write_close_requested = False
+
+    class EmptyOnceQueue:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get(self, timeout: float):
+            self.calls += 1
+            if self.calls == 1:
+                raise qt_terminal_process.queue.Empty
+            raise AssertionError("writer should stop after the idle iteration")
+
+        def get_nowait(self):
+            raise qt_terminal_process.queue.Empty
+
+    write_queue = EmptyOnceQueue()
+    stream = _FakeStream()
+    child = _FakeProcess(stdin=stream, poll_result=None)
+
+    def idle_get(timeout: float):
+        write_queue.calls += 1
+        if write_queue.calls == 1:
+            process._disposed = True
+            raise qt_terminal_process.queue.Empty
+        raise AssertionError("writer should stop after the idle iteration")
+
+    write_queue.get = idle_get
+    process._write_main(child, 4, write_queue)
+    assert stream.closed.is_set()
+
+
 def test_hidden_writer_reports_active_errors_and_drains_queue() -> None:
     process = QtHiddenProcess()
     process._generation = 1

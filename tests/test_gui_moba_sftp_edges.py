@@ -1334,9 +1334,9 @@ def test_connected_text_editor_transfer_uses_async_sftp_batch(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from remote_ops_workspace.file_transfer import build_sftp_get_plan
-
     from PyQt6.QtCore import QProcess
+
+    from remote_ops_workspace.file_transfer import build_sftp_get_plan
 
     _app, _window, _panel, dock, profile = connected_workspace
     plan = build_sftp_get_plan(

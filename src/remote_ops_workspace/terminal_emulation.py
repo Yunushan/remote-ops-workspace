@@ -130,6 +130,7 @@ class AnsiTerminalTranscript:
         list[AnsiTextStyle],
         int,
     ] | None = None
+    _saved_normal_modes: tuple[bool, bool, bool, bool, bool, bool] | None = None
     _render_rows_cache: tuple[tuple[str, list[AnsiTextStyle]], ...] | None = field(
         default=None,
         init=False,
@@ -171,6 +172,7 @@ class AnsiTerminalTranscript:
         self._auto_wrap = True
         self._pending_responses.clear()
         self._saved_normal_state = None
+        self._saved_normal_modes = None
 
     @property
     def alternate_screen_active(self) -> bool:
@@ -321,15 +323,18 @@ class AnsiTerminalTranscript:
 
         self._escape = None
         self._style = ANSI_DEFAULT_STYLE
+        self._pending_responses.clear()
+        if self._alternate_screen:
+            self._leave_alternate_screen()
+        # A process that ended while it owned the alternate screen cannot
+        # restore the shell's input modes.  Clear the child-owned modes after
+        # the primary screen has been restored so a later shell starts clean.
         self._bracketed_paste = False
         self._application_cursor_keys = False
         self._cursor_visible = True
         self._origin_mode = False
         self._insert_mode = False
         self._auto_wrap = True
-        self._pending_responses.clear()
-        if self._alternate_screen:
-            self._leave_alternate_screen()
         return self.text()
 
     def text(self) -> str:
@@ -1000,6 +1005,14 @@ class AnsiTerminalTranscript:
             self._styles,
             self._column,
         )
+        self._saved_normal_modes = (
+            self._bracketed_paste,
+            self._application_cursor_keys,
+            self._cursor_visible,
+            self._origin_mode,
+            self._insert_mode,
+            self._auto_wrap,
+        )
         self._alternate_screen = True
         self._alternate_lines = [[] for _ in range(self._screen_rows)]
         self._alternate_line_styles = [[] for _ in range(self._screen_rows)]
@@ -1023,6 +1036,26 @@ class AnsiTerminalTranscript:
                 self._styles,
                 self._column,
             ) = saved
+        saved_modes = self._saved_normal_modes
+        self._saved_normal_modes = None
+        if saved_modes is not None:
+            (
+                self._bracketed_paste,
+                self._application_cursor_keys,
+                self._cursor_visible,
+                self._origin_mode,
+                self._insert_mode,
+                self._auto_wrap,
+            ) = saved_modes
+        else:
+            # Be conservative for a screen buffer restored from an older
+            # serialized state that predates mode preservation.
+            self._bracketed_paste = False
+            self._application_cursor_keys = False
+            self._cursor_visible = True
+            self._origin_mode = False
+            self._insert_mode = False
+            self._auto_wrap = True
         self._alternate_lines.clear()
         self._alternate_line_styles.clear()
         self._alternate_row = 0

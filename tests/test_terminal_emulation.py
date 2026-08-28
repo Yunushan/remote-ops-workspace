@@ -88,6 +88,34 @@ def test_ansi_transcript_handles_vim_origin_insert_and_wrap_modes() -> None:
     terminal.feed("\x1b[4l\x1b[?1049l")
 
 
+def test_ansi_transcript_restores_primary_modes_when_alternate_screen_closes() -> None:
+    terminal = AnsiTerminalTranscript()
+
+    # Readline commonly owns bracketed paste before Vim starts.  The editor
+    # then changes several terminal modes and may leave without restoring all
+    # of them, especially when it is interrupted during a redraw.
+    terminal.feed("\x1b[?2004h")
+    terminal.feed(
+        "\x1b[?1049h\x1b[?1h\x1b[?25l\x1b[?6h\x1b[4h\x1b[?7l"
+    )
+    assert terminal.bracketed_paste_active is True
+    assert terminal.application_cursor_keys_active is True
+    assert terminal.cursor_visible is False
+    assert terminal.origin_mode_active is True
+    assert terminal.insert_mode_active is True
+    assert terminal.auto_wrap_active is False
+
+    terminal.feed("\x1b[?1049l")
+
+    assert terminal.alternate_screen_active is False
+    assert terminal.bracketed_paste_active is True
+    assert terminal.application_cursor_keys_active is False
+    assert terminal.cursor_visible is True
+    assert terminal.origin_mode_active is False
+    assert terminal.insert_mode_active is False
+    assert terminal.auto_wrap_active is True
+
+
 def test_ansi_transcript_answers_full_screen_queries_and_tracks_bracketed_paste() -> None:
     terminal = AnsiTerminalTranscript()
     terminal.set_screen_size(80, 24)

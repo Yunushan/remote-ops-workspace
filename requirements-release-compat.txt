@@ -11,5 +11,5 @@ maturin==1.14.1
 cffi==2.1.1
 pycparser==3.0
 PyQt6==6.11.0
-PyQt6-Qt6==6.11.1
+PyQt6-Qt6==6.11.2
 PyQt6-sip==13.12.0

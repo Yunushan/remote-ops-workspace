@@ -20,8 +20,23 @@ REMOTE_MONITORING_SCRIPT = (
     "load=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo 0); "
     "users=$(who 2>/dev/null | wc -l); "
     "processes=$(ps -e 2>/dev/null | wc -l); "
-    "printf 'cpu=%s mem_mb=%s disk_mb=%s load=%s users=%s processes=%s\\n' "
-    "\"$cpu\" \"$mem\" \"$disk\" \"$load\" \"$users\" \"$processes\""
+    "net_before=$(awk 'NR>2 && $1 !~ /^lo:/ {rx+=$2; tx+=$10; seen=1} "
+    "END{if (seen) printf \"%.0f/%.0f\", tx, rx}' /proc/net/dev 2>/dev/null); "
+    "net_up_mbps=; net_down_mbps=; "
+    "if [ -n \"$net_before\" ]; then "
+    "sleep 0.2; "
+    "net_after=$(awk 'NR>2 && $1 !~ /^lo:/ {rx+=$2; tx+=$10; seen=1} "
+    "END{if (seen) printf \"%.0f/%.0f\", tx, rx}' /proc/net/dev 2>/dev/null); "
+    "net_rates=$(awk -F/ -v before=\"$net_before\" -v after=\"$net_after\" "
+    "'BEGIN {split(before,b,\"/\"); split(after,a,\"/\"); "
+    "up=a[1]-b[1]; down=a[2]-b[2]; if (up<0) up=0; if (down<0) down=0; "
+    "printf \"%.2f/%.2f\", up*8/200000, down*8/200000}'); "
+    "net_up_mbps=${net_rates%/*}; net_down_mbps=${net_rates#*/}; "
+    "fi; "
+    "printf 'cpu=%s mem_mb=%s disk_mb=%s load=%s users=%s processes=%s "
+    "net_up_mbps=%s net_down_mbps=%s\\n' "
+    "\"$cpu\" \"$mem\" \"$disk\" \"$load\" \"$users\" \"$processes\" "
+    "\"$net_up_mbps\" \"$net_down_mbps\""
 )
 
 MOBA_TELEMETRY_ICON_SIZE = 12
@@ -1249,7 +1264,7 @@ def build_remote_monitoring_plan(profile: Profile) -> RemoteMonitoringPlan:
         command=[*plan.command, "sh", "-lc", REMOTE_MONITORING_SCRIPT],
         notes=[
             "Agentless remote monitoring uses the existing SSH transport.",
-            "The command reads standard Linux /proc and df data when available.",
+            "The command reads standard Linux /proc and df data when available, including a bounded /proc/net/dev throughput sample.",
             *plan.notes,
         ],
     )

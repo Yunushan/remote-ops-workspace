@@ -20,17 +20,18 @@ python -m pytest -q \
   --cov-report=term-missing \
   --cov-report=xml:artifacts/coverage/coverage.xml \
   --cov-report=json:artifacts/coverage/coverage.json \
-  --cov-fail-under=77.7
+  --cov-fail-under=100
 python scripts/check_coverage_report.py \
   --report artifacts/coverage/coverage.json \
-  --min-total 77.7 \
-  --min-branches 63.0
+  --min-total 100 \
+  --min-branches 100
 ```
 
-The release-blocking baseline requires at least 77.7% aggregate line-and-branch
-coverage and at least 63.0% pure branch-decision coverage. These are floors, not
-targets or readiness claims. They may be raised as coverage improves, but
-repository policy rejects reducing either threshold or making the job advisory.
+The release-blocking coverage gate requires 100% aggregate line-and-branch
+coverage and 100% pure branch-decision coverage. Any uncovered line or branch
+fails the gate; this is a test-coverage requirement, not a claim that every
+external platform or production signing prerequisite is complete. Repository
+policy rejects reducing either threshold or making the job advisory.
 CI retains XML and JSON reports for both successful and failed test runs so a
 threshold result is auditable. The gate runs the full suite with the native Qt
 Windows platform because instrumented PyQt6 application startup reproducibly
@@ -46,7 +47,7 @@ The full verifier runs:
 - `python scripts/check_python_support.py` for the bounded CPython 3.10-3.15 metadata, installer, plugin-scaffold, documentation and release-blocking CI contract, including explicit release-candidate versus final-GA evidence and free-threaded exclusions;
 - `python scripts/check_production_deployment.py` for the production deployment boundary: localhost-only Web/PWA Compose exposure, container hardening, health monitoring, the source-bound destructive application-volume recovery gate and retained JSON validator, site-specific encrypted backup-and-restore limits, explicit unsigned-preview handling, and the non-enterprise team-sync limit;
 - `python scripts/check_roadmap_truth.py` for roadmap truth checks, keeping shipped release phases, native smoke tests and implemented CLI workflows out of future-planned sections;
-- `python scripts/check_ci_workflow.py` for CI workflow policy, including read-only checkout, lint-enabled verification, enforced 77.7% aggregate and 63.0% pure-branch coverage floors with retained XML/JSON evidence and a dedicated live PyQt6 render smoke job;
+- `python scripts/check_ci_workflow.py` for CI workflow policy, including read-only checkout, lint-enabled verification, enforced 100% aggregate and 100% pure-branch coverage with retained XML/JSON evidence and a dedicated live PyQt6 render smoke job;
 - `python scripts/check_non_gui_types.py` for the bounded production typing gate: every source module except the explicitly isolated `gui.py` debt must remain mypy-clean, while the GUI error count may decrease but cannot exceed its recorded baseline;
 - `python scripts/check_release_truth.py` for repository identity, release workflow matrix, actual GitHub Actions `needs` dependency wiring, protected-platform checklist/hard-gate wiring, accepted-platform evidence import-before-build wiring, read-only accepted-platform evidence import permissions and documented artifact truth;
 - `python scripts/check_release_toolchain.py` for pinned release constraints, workflow install commands and release toolchain metadata;

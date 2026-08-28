@@ -200,11 +200,12 @@ release; they record and bind those externally obtained facts.
    editor-tab open plans, direct save conflict reviews, a release-evidence
    bundle writer and a verifier requiring SHA-bound real connected-session
    proof. The PyQt Moba SFTP dock keeps its editor surface hidden until an
-   explicit file-open action. In the live connected workspace that surface is
-   currently a read-only placeholder; it does not download, conflict-check,
-   save or upload the selected remote file. Full parity still needs an
-   operational remote-edit path and accepted passing evidence bundles from
-   supported release targets proving real remote edits.
+   explicit file-open action. In the live connected workspace, opening a file
+   runs an asynchronous SFTP download, loads the returned text into an
+   editable editor, tracks the downloaded SHA-256 baseline, checks the remote
+   file again before saving, prompts on conflicts and uploads only after the
+   review succeeds. Full parity still needs accepted passing evidence bundles
+   from supported release targets proving those real remote edits.
 5. Macro recorder parity: ROW now has a CLI-backed typed macro store, SSH
    replay workflow, GUI capture control contracts, live connected-pane replay
    plans preserving per-event delay metadata, conflict/cancel review, a

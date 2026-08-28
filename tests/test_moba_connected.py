@@ -446,6 +446,14 @@ def test_remote_monitoring_plan_uses_existing_ssh_transport_even_for_sftp_profil
     assert any("existing SSH transport" in note for note in plan.notes)
 
 
+def test_remote_monitoring_script_samples_network_throughput_without_fabricating_data() -> None:
+    assert "/proc/net/dev" in REMOTE_MONITORING_SCRIPT
+    assert "net_up_mbps" in REMOTE_MONITORING_SCRIPT
+    assert "net_down_mbps" in REMOTE_MONITORING_SCRIPT
+    assert "sleep 0.2" in REMOTE_MONITORING_SCRIPT
+    assert "net_up_mbps=; net_down_mbps=;" in REMOTE_MONITORING_SCRIPT
+
+
 def test_follow_terminal_folder_plan_normalises_remote_paths() -> None:
     plan = build_follow_terminal_folder_plan(ssh_profile(), "var/www")
 

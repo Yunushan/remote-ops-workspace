@@ -54,7 +54,7 @@
     },
     {
       "name": "maturin",
-      "version": "1.14.1",
+      "version": "1.15.0",
       "purpose": "Pinned PEP 517 backend for the Windows ARM64 cryptography source build."
     },
     {
@@ -74,7 +74,7 @@
     },
     {
       "name": "PyQt6-Qt6",
-      "version": "6.11.1",
+      "version": "6.11.2",
       "purpose": "Pinned Qt runtime wheel used by PyQt6 native GUI bundles."
     },
     {

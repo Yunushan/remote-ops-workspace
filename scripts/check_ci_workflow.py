@@ -314,6 +314,9 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
         "python scripts/check_optional_dependencies.py --require-extra desktop --require-extra security --require-extra package --require-extra dev": (
             "Python 3.15 desktop, security, package and development extra smoke"
         ),
+        "python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0": (
+            "PyQt6 6.12 forward-compatibility runtime probe"
+        ),
         "python -m PyInstaller --version": "Python 3.15 PyInstaller startup smoke",
         "python scripts/write_python_runtime_evidence.py --expected-version 3.15": (
             "exact Python 3.15 runtime evidence producer"

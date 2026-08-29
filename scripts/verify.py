@@ -54,6 +54,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "PyQt6 compatibility contract",
+            [python, "scripts/check_pyqt6_compatibility.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "production deployment readiness",
             [python, "scripts/check_production_deployment.py"],
             env=_source_env(),
@@ -66,6 +71,11 @@ def build_steps(
         VerifyStep(
             "CI workflow policy",
             [python, "scripts/check_ci_workflow.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
+            "PyQt6 pre-release forward-compatibility workflow",
+            [python, "scripts/check_pyqt6_forward_workflow.py"],
             env=_source_env(),
         ),
         VerifyStep(

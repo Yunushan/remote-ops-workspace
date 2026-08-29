@@ -43,7 +43,7 @@ def test_python_support_checker_requires_python315_capable_pyinstaller_floor() -
 def test_python_support_checker_requires_python315_capable_pyqt_floor() -> None:
     checker = load_checker()
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8").replace(
-        'desktop = ["PyQt6>=6.11.0"]',
+        'desktop = ["PyQt6>=6.11.0,<7.0.0"]',
         'desktop = ["PyQt6>=6.6"]',
         1,
     )
@@ -51,7 +51,7 @@ def test_python_support_checker_requires_python315_capable_pyqt_floor() -> None:
     errors = checker.check_python_support({"pyproject.toml": pyproject})
 
     assert (
-        "pyproject.toml desktop extra must require PyQt6>=6.11.0 for Python 3.15"
+        "pyproject.toml desktop extra must require PyQt6>=6.11.0,<7.0.0 for Python 3.15"
         in errors
     )
 

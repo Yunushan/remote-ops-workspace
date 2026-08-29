@@ -1,0 +1,123 @@
+name: PyQt6 forward compatibility
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: pyqt6-forward-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  pyqt6-forward-compatibility:
+    name: PyQt6 6.12 forward compatibility on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            qt_platform: "offscreen"
+          - os: windows-2025-vs2026
+            qt_platform: "windows"
+          - os: macos-15-intel
+            qt_platform: "offscreen"
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_CACHE_DIR: "1"
+      QT_QPA_PLATFORM: ${{ matrix.qt_platform }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.15"
+          allow-prereleases: true
+      - name: Install Linux Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fontconfig \
+            fonts-dejavu-core \
+            libegl1 \
+            libgl1 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1 \
+            libxcb-render-util0 \
+            libxcb-xinerama0 \
+            libxext6 \
+            libxrender1
+          fc-cache -f
+      - name: Install Riverbank PyQt6 prerelease channel
+        run: >-
+          python -m pip install -e ".[desktop,security,package,dev]" --pre
+          --extra-index-url https://www.riverbankcomputing.com/pypi/simple/
+      - name: Select exact PyQt6 6.12 line when published
+        id: pyqt6-target
+        shell: pwsh
+        run: |
+          $versions = python -m pip index versions PyQt6 `
+            --index-url https://pypi.org/simple/ `
+            --extra-index-url https://www.riverbankcomputing.com/pypi/simple/ `
+            --pre 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not query the PyQt6 package indexes."
+          }
+          if ($versions -match '(?m)\b6\.12(?:\.\d+)?(?:\.[a-z]+\d+)?\b') {
+            python -m pip install --upgrade --upgrade-strategy eager --pre `
+              "PyQt6>=6.12.0,<6.13.0" `
+              "PyQt6-Qt6>=6.12.0,<6.13.0" `
+              --only-binary PyQt6,PyQt6-Qt6,PyQt6-sip `
+              --index-url https://pypi.org/simple/ `
+              --extra-index-url https://www.riverbankcomputing.com/pypi/simple/
+            if ($LASTEXITCODE -ne 0) {
+              throw "PyQt6 6.12 was advertised but its matching runtime could not be installed."
+            }
+            $targetAvailable = "true"
+          } else {
+            Write-Host "PyQt6 6.12 is not published; retaining the latest available prerelease probe."
+            $targetAvailable = "false"
+          }
+          "target_available=$targetAvailable" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "PYQT6_TARGET_AVAILABLE=$targetAvailable" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify PyQt6 6.12 forward-compatibility contract
+        shell: pwsh
+        run: |
+          if ($env:PYQT6_TARGET_AVAILABLE -eq "true") {
+            python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0 --require-target
+          } else {
+            python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0
+          }
+      - name: Render all GUI presets with the forward-compatibility runtime
+        timeout-minutes: 10
+        run: >-
+          python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 300
+          --out-dir artifacts/pyqt6-forward-render
+      - name: Validate forward-compatibility GUI render evidence
+        timeout-minutes: 2
+        run: python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/pyqt6-forward-render
+      - name: Exercise all GUI controls with the forward-compatibility runtime
+        timeout-minutes: 10
+        run: >-
+          python scripts/check_gui_interactions.py --require-pyqt6
+          --out-dir artifacts/pyqt6-forward-interactions
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: pyqt6-forward-compatibility-${{ matrix.os }}
+          path: artifacts/pyqt6-forward-*
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 30

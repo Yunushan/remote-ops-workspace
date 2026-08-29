@@ -17,6 +17,7 @@ def main() -> int:
     toolchain = load_toolchain(errors)
     if toolchain:
         errors.extend(check_python_constraints(toolchain))
+        errors.extend(check_pyqt6_support(toolchain))
         errors.extend(check_python_build_backend(toolchain))
         errors.extend(check_workflow(toolchain))
         errors.extend(check_release_helper(toolchain))
@@ -119,6 +120,88 @@ def check_python_constraints(toolchain: dict[str, object]) -> list[str]:
                 f"{profile_file} pins must match compatibility profile {name} "
                 f"(expected {profile_expected}, got {profile_actual})"
             )
+    return errors
+
+
+def check_pyqt6_support(toolchain: dict[str, object]) -> list[str]:
+    errors: list[str] = []
+    raw_policy = toolchain.get("pyqt6_support")
+    if not isinstance(raw_policy, dict):
+        return ["configs/release_toolchain.json pyqt6_support must be an object"]
+
+    minimum = str(raw_policy.get("minimum_version", ""))
+    target = str(raw_policy.get("forward_compatibility_target", ""))
+    maximum = str(raw_policy.get("maximum_version_exclusive", ""))
+    probe = str(raw_policy.get("runtime_probe", ""))
+    versions: dict[str, str] = {
+        normalize_package_name(str(row.get("name", ""))): str(row.get("version", ""))
+        for row in required_list(toolchain, "python_packages", errors)
+        if isinstance(row, dict)
+    }
+    if not minimum or not target or not maximum or not probe:
+        errors.append(
+            "configs/release_toolchain.json pyqt6_support must declare minimum, target, "
+            "maximum, and runtime_probe"
+        )
+        return errors
+
+    try:
+        minimum_key = version_key(minimum)
+        target_key = version_key(target)
+        maximum_key = version_key(maximum)
+    except ValueError as exc:
+        errors.append(f"configs/release_toolchain.json pyqt6_support has invalid version: {exc}")
+        return errors
+
+    expected_runtime_packages = ("pyqt6", "pyqt6-qt6", "pyqt6-sip")
+    missing_runtime_packages = [
+        package for package in expected_runtime_packages if package not in versions
+    ]
+    if missing_runtime_packages:
+        errors.append(
+            "release toolchain must pin the complete PyQt6 runtime: "
+            + ", ".join(missing_runtime_packages)
+        )
+    if versions.get("pyqt6") != minimum:
+        errors.append(
+            "release toolchain PyQt6 pin must equal pyqt6_support.minimum_version: "
+            f"expected {minimum}, got {versions.get('pyqt6', '<missing>')}"
+        )
+    for package in ("pyqt6", "pyqt6-qt6"):
+        version = versions.get(package)
+        if version is None:
+            continue
+        try:
+            package_key = version_key(version)
+        except ValueError as exc:
+            errors.append(f"release toolchain {package} pin has invalid version: {exc}")
+            continue
+        if not minimum_key <= package_key < maximum_key:
+            errors.append(
+                f"release toolchain {package} pin must stay within the supported PyQt6 6.x range: "
+                f"{minimum} <= {package} < {maximum}"
+            )
+    if not minimum_key < target_key < maximum_key:
+        errors.append(
+            "pyqt6_support versions must satisfy minimum < forward-compatibility target "
+            "< maximum"
+        )
+    if maximum != "7.0.0":
+        errors.append("pyqt6_support.maximum_version_exclusive must remain 7.0.0")
+    if probe != "scripts/check_pyqt6_compatibility.py":
+        errors.append(
+            "pyqt6_support.runtime_probe must be scripts/check_pyqt6_compatibility.py"
+        )
+    if not (ROOT / probe).is_file():
+        errors.append(f"pyqt6_support runtime probe is missing: {probe}")
+
+    pyproject = PYPROJECT_PATH.read_text(encoding="utf-8")
+    expected_requirement = f'desktop = ["PyQt6>={minimum},<{maximum}"]'
+    if expected_requirement not in pyproject:
+        errors.append(
+            "pyproject.toml desktop extra must allow the supported PyQt6 6.x range: "
+            f"{expected_requirement}"
+        )
     return errors
 
 
@@ -394,6 +477,13 @@ def required_list(parent: dict[str, object], key: str, errors: list[str]) -> lis
 
 def normalize_package_name(name: str) -> str:
     return name.lower().replace("_", "-")
+
+
+def version_key(value: str) -> tuple[int, int, int]:
+    parts = value.split(".")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        raise ValueError(value)
+    return int(parts[0]), int(parts[1]), int(parts[2])
 
 
 def repo_path(path: Path) -> str:

@@ -41,6 +41,35 @@ def test_release_constraints_match_manifest() -> None:
     assert actual == expected
 
 
+def test_release_toolchain_records_pyqt6_forward_compatibility_policy() -> None:
+    checker = _load_release_toolchain_checker()
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+
+    assert checker.check_pyqt6_support(manifest) == []
+
+
+def test_release_toolchain_rejects_pyqt6_policy_without_future_target() -> None:
+    checker = _load_release_toolchain_checker()
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    manifest["pyqt6_support"]["forward_compatibility_target"] = "6.10.0"
+
+    errors = checker.check_pyqt6_support(manifest)
+
+    assert "pyqt6_support versions must satisfy minimum < forward-compatibility target < maximum" in errors
+
+
+def test_release_toolchain_checker_requires_complete_pyqt6_runtime() -> None:
+    checker = _load_release_toolchain_checker()
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    manifest["python_packages"] = [
+        row for row in manifest["python_packages"] if row["name"] != "PyQt6-Qt6"
+    ]
+
+    errors = checker.check_pyqt6_support(manifest)
+
+    assert "release toolchain must pin the complete PyQt6 runtime: pyqt6-qt6" in errors
+
+
 def test_windows_x86_constraints_exclude_unavailable_security_backend() -> None:
     manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
     profile = manifest["python"]["compatibility_profiles"][0]

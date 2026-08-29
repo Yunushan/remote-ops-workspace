@@ -45,6 +45,8 @@ The full verifier runs:
 - `python -m compileall src tests scripts`;
 - `python scripts/check_docs.py` for local Markdown links, required release docs and English/Turkish README snippet consistency;
 - `python scripts/check_python_support.py` for the bounded CPython 3.10-3.15 metadata, installer, plugin-scaffold, documentation and release-blocking CI contract, including explicit release-candidate versus final-GA evidence and free-threaded exclusions;
+- `python scripts/check_pyqt6_compatibility.py` for the installed PyQt6 binding, bundled Qt runtime, QtWidgets startup and forward-compatibility target contract;
+- `python scripts/check_pyqt6_forward_workflow.py` for the scheduled/manual Riverbank prerelease workflow that exercises the PyQt6 target probe, all-preset GUI rendering, GUI interactions, and retained evidence uploads;
 - `python scripts/check_production_deployment.py` for the production deployment boundary: localhost-only Web/PWA Compose exposure, container hardening, health monitoring, the source-bound destructive application-volume recovery gate and retained JSON validator, site-specific encrypted backup-and-restore limits, explicit unsigned-preview handling, and the non-enterprise team-sync limit;
 - `python scripts/check_roadmap_truth.py` for roadmap truth checks, keeping shipped release phases, native smoke tests and implemented CLI workflows out of future-planned sections;
 - `python scripts/check_ci_workflow.py` for CI workflow policy, including read-only checkout, lint-enabled verification, enforced 100% aggregate and 100% pure-branch coverage with retained XML/JSON evidence and a dedicated live PyQt6 render smoke job;
@@ -126,6 +128,7 @@ Quick mode skips `pytest` and runs stdlib-backed compile checks, docs consistenc
 For local GUI parity proof on a machine with the desktop extra installed, run:
 
 ```bash
+python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0
 python scripts/verify.py --require-real-gui
 python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-real
 python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-real

@@ -27,7 +27,7 @@ Release integrity rules:
   release toolchain, so downstream sdist builds do not silently select newer
   packaging backends.
 - Modern release targets use maintained `bcrypt==5.0.0` and
-  `cryptography==50.0.0`. Intel macOS builds cryptography from source because
+  `cryptography==50.0.1`. Intel macOS builds cryptography from source because
   upstream no longer publishes its
   architecture wheel. Windows x86 uses the explicit
   `requirements-release-compat.txt` profile with bcrypt, cryptography, and
@@ -35,7 +35,7 @@ Release integrity rules:
   backends unavailable and fail closed. A Windows x86 build is not Windows XP
   readiness evidence; XP support still requires separate accepted native-host
   records.
-- Windows ARM64 builds `cryptography==50.0.0` from source with pinned
+- Windows ARM64 builds `cryptography==50.0.1` from source with pinned
   `maturin`/CFFI build dependencies and the recorded vcpkg commit, statically
   linked OpenSSL 3.6.3 triplet, and no vendored OpenSSL fallback. The workflow
   asserts the imported cryptography and OpenSSL versions, and Windows release

@@ -138,7 +138,7 @@ Dependabot tracks `pip`, GitHub Actions, and Docker updates weekly through
 normal protected-branch policy; automated update tooling does not replace
 release validation or platform signing.
 
-All vault-capable release profiles require maintained `cryptography==50.0.0`,
+All vault-capable release profiles require maintained `cryptography==50.0.1`,
 and encrypted OpenSSH key generation additionally requires `bcrypt==5.0.0`.
 Intel macOS builds cryptography from source. The Windows x86 compatibility
 profile uses the same pinned `build`, `wheel`, and PyInstaller versions but

@@ -35,9 +35,9 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         errors.append(
             "pyproject.toml package extra must require pyinstaller>=6.21 for Python 3.15"
         )
-    if 'desktop = ["PyQt6>=6.11.0"]' not in pyproject:
+    if 'desktop = ["PyQt6>=6.11.0,<7.0.0"]' not in pyproject:
         errors.append(
-            "pyproject.toml desktop extra must require PyQt6>=6.11.0 for Python 3.15"
+            "pyproject.toml desktop extra must require PyQt6>=6.11.0,<7.0.0 for Python 3.15"
         )
     for version in range(10, 16):
         classifier = f'"Programming Language :: Python :: 3.{version}"'
@@ -62,6 +62,9 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         "python -m pip check": "Python 3.15 dependency consistency gate",
         "python scripts/check_optional_dependencies.py --require-extra desktop --require-extra security --require-extra package --require-extra dev": (
             "Python 3.15 complete optional-extra smoke"
+        ),
+        "python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0": (
+            "PyQt6 6.12 forward-compatibility runtime probe"
         ),
         "python -m PyInstaller --version": "Python 3.15 PyInstaller smoke",
         "python scripts/check_python_frozen_executable.py --expected-python 3.15": (

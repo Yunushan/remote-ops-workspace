@@ -27,8 +27,9 @@ scheduled for 2026-10-01. The repository therefore distinguishes two claims:
   compatibility. The package extra requires PyInstaller 6.21 or newer because
   6.21 is the first upstream release with Python 3.15 support; older PyInstaller
   releases cannot satisfy this runtime contract. The desktop extra requires
-  PyQt6 6.11.0 or newer, matching the GUI stack used by the release toolchain;
-  older PyQt6 releases are not part of the Python 3.15 support claim.
+  PyQt6 6.11.0 or newer and stays below PyQt6 7.0.0, matching the GUI stack
+  used by the release toolchain; older PyQt6 releases are not part of the
+  Python 3.15 support claim.
   Both native Windows rows additionally install the
   pinned loopback SSH server dependency and rerun the real OpenSSH/ConPTY,
   ProxyJump, terminal-input and GUI terminal-pane proofs with skip-to-pass
@@ -71,6 +72,57 @@ uploaded as four fail-closed artifact groups with 90-day retention on every
 host. Each Windows row uploads a fifth group containing the native SSH/ConPTY
 JSON and JUnit evidence. An absent required artifact, an SSH proof that skips,
 or an ambiguous distribution set fails the job.
+
+## PyQt6 6.12 forward compatibility
+
+The desktop dependency contract is `PyQt6>=6.11.0,<7.0.0`. This accepts the
+PyQt6 6.12 line without permitting an untested PyQt6 7.x API break. The
+release toolchain keeps exact 6.11.x pins so native bundles remain reproducible
+until a published 6.12 wheel has been exercised on every supported host.
+
+The Python 3.15 optional-dependency matrix runs
+`python scripts/check_pyqt6_compatibility.py --require-pyqt6
+--target-version 6.12.0`. The probe imports the binding and bundled Qt runtime,
+checks their distribution/runtime major and minor versions, rejects mixed binding
+and Qt target generations, starts a real `QApplication` and paints a widget. With
+the current published packages it reports that 6.12 validation is deferred; once
+the upstream 6.12 wheel is available, the same blocking job automatically
+exercises that exact 6.12 line. It also refuses to treat a newer 6.13 line as
+evidence for 6.12. A strict local certification run is:
+
+```bash
+python scripts/check_pyqt6_compatibility.py \
+  --require-pyqt6 --target-version 6.12.0 --require-target
+```
+
+The repository also has a scheduled and manually dispatchable cross-platform
+workflow for Linux, Windows, and macOS that installs Riverbank's prerelease
+channel. It first checks whether a 6.12 version is available; when it is, each
+runner upgrades within `6.12.x` and enables strict target validation. Before
+publication it runs the latest available prerelease in deferred mode. In both
+cases it renders every GUI preset and exercises the GUI controls. It remains
+separate from the normal pull-request gate because upstream prerelease
+availability changes over time, while still producing retained evidence when
+the probe runs.
+
+For Riverbank pre-release validation before a public 6.12 wheel exists, use its
+official package index in an isolated environment, then run the same compatibility,
+render and interaction gates:
+
+```bash
+python -m pip install --index-url https://pypi.org/simple \
+  --extra-index-url https://www.riverbankcomputing.com/pypi/simple/ \
+  --pre PyQt6
+python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0
+python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 300
+python scripts/check_gui_interactions.py --require-pyqt6
+```
+
+As of 2026-08-29, [PyQt6 on PyPI](https://pypi.org/project/PyQt6/) publishes
+6.11.0 as its latest binding release and [PyQt6-Qt6 on PyPI](https://pypi.org/project/PyQt6-Qt6/)
+publishes the 6.11.x Qt runtime line. [Qt 6.12 final is scheduled for
+2026-09-22](https://wiki.qt.io/Qt_6.12_Release), so a 6.12 certification claim
+cannot honestly be made from the currently published wheels.
 
 ## Explicit exclusions
 

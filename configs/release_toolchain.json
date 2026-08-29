@@ -26,6 +26,12 @@
       }
     ]
   },
+  "pyqt6_support": {
+    "minimum_version": "6.11.0",
+    "forward_compatibility_target": "6.12.0",
+    "maximum_version_exclusive": "7.0.0",
+    "runtime_probe": "scripts/check_pyqt6_compatibility.py"
+  },
   "python_packages": [
     {
       "name": "pip",

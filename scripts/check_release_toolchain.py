@@ -217,7 +217,7 @@ def check_workflow(
         '--no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"': (
             "maintained Intel macOS cryptography source build"
         ),
-        'expected_cryptography="50.0.0"': "macOS maintained version assertion",
+        'expected_cryptography="50.0.1"': "macOS maintained version assertion",
         "import bcrypt, cryptography": "bcrypt/cryptography runtime import smoke",
         "assert bcrypt.__version__ == '5.0.0'": "pinned bcrypt runtime version assertion",
         "backend.openssl_version_text()": "cryptography/OpenSSL runtime import smoke",

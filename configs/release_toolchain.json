@@ -89,7 +89,7 @@
     },
     {
       "name": "cryptography",
-      "version": "50.0.0",
+      "version": "50.0.1",
       "purpose": "Pinned modern vault encryption dependency with the current security fixes. Windows x64 uses the upstream wheel; Windows ARM64 builds this version from source against the pinned ARM64 OpenSSL toolchain."
     },
     {

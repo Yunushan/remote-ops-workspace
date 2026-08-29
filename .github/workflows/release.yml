@@ -371,10 +371,10 @@ jobs:
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
             python -m pip install --constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser
             python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"
-            expected_cryptography="50.0.0"
+            expected_cryptography="50.0.1"
           else
             python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
-            expected_cryptography="50.0.0"
+            expected_cryptography="50.0.1"
           fi
           EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Prepare macOS release signing keychain

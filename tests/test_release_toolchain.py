@@ -128,6 +128,27 @@ def test_release_toolchain_checker_requires_pinned_arm64_build_isolation_policy(
     assert any("deterministic Windows ARM64 cryptography source build" in error for error in errors)
 
 
+def test_release_toolchain_checker_requires_current_cryptography_version_in_workflow() -> None:
+    checker = _load_release_toolchain_checker()
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    expected = next(
+        row["version"] for row in manifest["python_packages"] if row["name"] == "cryptography"
+    )
+    stale = workflow.replace(
+        f'$ExpectedCryptography = "{expected}"',
+        '$ExpectedCryptography = "50.0.0"',
+    ).replace(
+        f"assert cryptography.__version__ == '{expected}'",
+        "assert cryptography.__version__ == '50.0.0'",
+    )
+
+    errors = checker.check_workflow(manifest, stale)
+
+    assert any("Windows maintained cryptography version assertion" in error for error in errors)
+    assert any("Linux maintained cryptography version assertion" in error for error in errors)
+
+
 def test_release_toolchain_checker_requires_packaged_msi_vault_smoke() -> None:
     checker = _load_release_toolchain_checker()
     script = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8").replace(

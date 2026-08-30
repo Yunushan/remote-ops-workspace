@@ -287,11 +287,11 @@ jobs:
             $env:OPENSSL_NO_VENDOR = "1"
             python -m pip install --constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser
             python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"
-            $ExpectedCryptography = "50.0.0"
+            $ExpectedCryptography = "50.0.1"
             $ExpectedOpenSsl = "OpenSSL 3.6.3"
           } else {
             python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
-            $ExpectedCryptography = "50.0.0"
+            $ExpectedCryptography = "50.0.1"
           }
           if ($ExpectedCryptography) {
             python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; actual_openssl = backend.openssl_version_text(); assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '$ExpectedCryptography'; assert not '$ExpectedOpenSsl' or actual_openssl.startswith('$ExpectedOpenSsl'), actual_openssl; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={actual_openssl}')"
@@ -454,7 +454,7 @@ jobs:
       - name: Install Python packaging dependencies
         run: |
           python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
-          python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.0'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+          python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.1'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Build Linux DEB, RPM and AppImage packages
         run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
       - name: Run Linux native installer smoke tests

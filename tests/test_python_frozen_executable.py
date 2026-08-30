@@ -18,7 +18,7 @@ def _completed(returncode: int, stdout: str = "", stderr: str = ""):
 
 def test_frozen_smokes_accept_real_version_and_platform_json() -> None:
     errors = validate_frozen_smokes(
-        version_smoke=_completed(0, "remote-ops-workspace 1.0.20\n"),
+        version_smoke=_completed(0, "remote-ops-workspace 1.0.21\n"),
         platforms_smoke=_completed(0, json.dumps({"targets": ["windows-x64"]})),
     )
 

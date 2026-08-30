@@ -283,6 +283,27 @@ def check_workflow(
         errors.append("windows-x86-vault-fail-closed profile has invalid backend policy")
     if "legacy-security" in workflow:
         errors.append("release workflow must not install the vulnerable legacy-security extra")
+    package_versions = {
+        normalize_package_name(str(row.get("name", ""))): str(row.get("version", ""))
+        for row in required_list(toolchain, "python_packages", errors)
+        if isinstance(row, dict)
+    }
+    cryptography_version = package_versions.get("cryptography")
+    if not cryptography_version:
+        errors.append("release toolchain must pin cryptography for native release checks")
+    if cryptography_version:
+        expected_windows_pin = f'$ExpectedCryptography = "{cryptography_version}"'
+        if workflow.count(expected_windows_pin) != 2:
+            errors.append(
+                "release workflow must set the current cryptography version in both "
+                "Windows x64 and ARM64 branches"
+            )
+        expected_macos_pin = f'expected_cryptography="{cryptography_version}"'
+        if workflow.count(expected_macos_pin) != 2:
+            errors.append(
+                "release workflow must set the current cryptography version in both "
+                "macOS x64 and ARM64 branches"
+            )
     for snippet, label in {
         f"--only-binary=cryptography --constraint {constraints_file}": (
             "binary-only modern cryptography installs"
@@ -300,7 +321,13 @@ def check_workflow(
         '--no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"': (
             "maintained Intel macOS cryptography source build"
         ),
-        'expected_cryptography="50.0.1"': "macOS maintained version assertion",
+        f'$ExpectedCryptography = "{cryptography_version}"': (
+            "Windows maintained cryptography version assertion"
+        ),
+        f'expected_cryptography="{cryptography_version}"': "macOS maintained version assertion",
+        f"assert cryptography.__version__ == '{cryptography_version}'": (
+            "Linux maintained cryptography version assertion"
+        ),
         "import bcrypt, cryptography": "bcrypt/cryptography runtime import smoke",
         "assert bcrypt.__version__ == '5.0.0'": "pinned bcrypt runtime version assertion",
         "backend.openssl_version_text()": "cryptography/OpenSSL runtime import smoke",

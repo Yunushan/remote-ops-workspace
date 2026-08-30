@@ -162,6 +162,18 @@ def test_release_toolchain_checker_requires_packaged_msi_vault_smoke() -> None:
     assert any("installed MSI vault smoke" in error for error in errors)
 
 
+def test_release_toolchain_checker_requires_expected_x86_vault_failure_capture() -> None:
+    checker = _load_release_toolchain_checker()
+    script = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8").replace(
+        '$ErrorActionPreference = "Continue"',
+        '$ErrorActionPreference = "Stop"',
+    )
+
+    errors = checker.check_windows_native_smoke(script)
+
+    assert any("expected-failure native command handling" in error for error in errors)
+
+
 def test_release_toolchain_is_recorded_in_manifest(tmp_path: Path) -> None:
     make_release = _load_make_release()
     old_root = make_release.ROOT

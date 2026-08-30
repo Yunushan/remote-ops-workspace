@@ -138,6 +138,7 @@ def test_release_toolchain_checker_requires_current_cryptography_version_in_work
     stale = workflow.replace(
         f'$ExpectedCryptography = "{expected}"',
         '$ExpectedCryptography = "50.0.0"',
+        1,
     ).replace(
         f"assert cryptography.__version__ == '{expected}'",
         "assert cryptography.__version__ == '50.0.0'",
@@ -145,7 +146,7 @@ def test_release_toolchain_checker_requires_current_cryptography_version_in_work
 
     errors = checker.check_workflow(manifest, stale)
 
-    assert any("Windows maintained cryptography version assertion" in error for error in errors)
+    assert any("both Windows x64 and ARM64 branches" in error for error in errors)
     assert any("Linux maintained cryptography version assertion" in error for error in errors)
 
 

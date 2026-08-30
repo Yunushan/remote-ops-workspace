@@ -291,6 +291,19 @@ def check_workflow(
     cryptography_version = package_versions.get("cryptography")
     if not cryptography_version:
         errors.append("release toolchain must pin cryptography for native release checks")
+    if cryptography_version:
+        expected_windows_pin = f'$ExpectedCryptography = "{cryptography_version}"'
+        if workflow.count(expected_windows_pin) != 2:
+            errors.append(
+                "release workflow must set the current cryptography version in both "
+                "Windows x64 and ARM64 branches"
+            )
+        expected_macos_pin = f'expected_cryptography="{cryptography_version}"'
+        if workflow.count(expected_macos_pin) != 2:
+            errors.append(
+                "release workflow must set the current cryptography version in both "
+                "macOS x64 and ARM64 branches"
+            )
     for snippet, label in {
         f"--only-binary=cryptography --constraint {constraints_file}": (
             "binary-only modern cryptography installs"

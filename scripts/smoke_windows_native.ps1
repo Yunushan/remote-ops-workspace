@@ -104,8 +104,16 @@ function Test-RowVault([string]$Path, [string]$Label, [bool]$ExpectedBackend) {
       throw "$Label vault backend availability did not match expected state $ExpectedBackend"
     }
     if (-not $ExpectedBackend) {
-      $InitOutput = & $Path vault init 2>&1
-      $InitExitCode = $LASTEXITCODE
+      $PreviousErrorActionPreference = $ErrorActionPreference
+      try {
+        # The x86 bundle must fail closed; capture its expected native stderr instead of
+        # letting the script-wide Stop policy abort before the exit code is checked.
+        $ErrorActionPreference = "Continue"
+        $InitOutput = & $Path vault init 2>&1
+        $InitExitCode = $LASTEXITCODE
+      } finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+      }
       if ($InitExitCode -eq 0) {
         throw "$Label vault init unexpectedly succeeded without a maintained backend"
       }

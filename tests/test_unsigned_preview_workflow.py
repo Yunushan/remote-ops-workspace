@@ -20,7 +20,7 @@ def test_unsigned_preview_workflow_rejects_production_tag_namespace() -> None:
     errors = check_unsigned_preview_workflow(
         WORKFLOW.replace(
             "tag_name: ${{ env.PREVIEW_TAG }}",
-            "tag_name: v1.0.20",
+            "tag_name: v1.0.21",
             1,
         )
     )

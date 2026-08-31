@@ -8073,6 +8073,7 @@ PRESET_ISOLATION_VISIBLE_OBJECTS: dict[str, tuple[str, ...]] = {
     ),
     "mobaxterm": (
         "mainToolbar",
+        "layoutToolbar",
         "sessionTabs",
         "mobaQuickConnectChrome",
         "quickConnect",

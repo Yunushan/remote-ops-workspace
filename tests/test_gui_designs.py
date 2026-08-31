@@ -2899,7 +2899,8 @@ def test_gui_design_preset_isolation_routes_are_shared_metadata() -> None:
         assert route.render_source == "gui-design-preset-visibility"
 
     assert "mobaQuickConnectChrome" in gui_design_preset_isolation_route("mobaxterm").visible_objects
-    assert "layoutToolbar" in gui_design_preset_isolation_route("mobaxterm").hidden_objects
+    assert "layoutToolbar" in gui_design_preset_isolation_route("mobaxterm").visible_objects
+    assert "layoutToolbar" not in gui_design_preset_isolation_route("mobaxterm").hidden_objects
     assert "mobaRail" in gui_design_preset_isolation_route("securecrt").hidden_objects
     assert "secureCrtSessionManagerChrome" in gui_design_preset_isolation_route("securecrt").visible_objects
     assert "termiusHostsChrome" in gui_design_preset_isolation_route("termius").visible_objects

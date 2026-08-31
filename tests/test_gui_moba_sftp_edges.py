@@ -641,6 +641,51 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
     menu.deleteLater()
 
 
+def test_manual_monitoring_refresh_recovers_paused_footer_without_toggle(
+    connected_workspace,
+    monkeypatch,
+) -> None:
+    from PyQt6.QtCore import QProcess
+
+    _app, _window, _panel, dock, _profile = connected_workspace
+    control = dock.monitoring_control_widgets["remote-monitoring"]
+    _set_checked(control, False)
+    process = _FakeProcess()
+    dock.monitoring_process = process
+    dock.monitoring_runtime_command = lambda: [
+        "ssh",
+        "monitor.example.invalid",
+        "printf",
+    ]
+
+    monkeypatch.setattr(
+        dock,
+        "ensure_background_authentication_for_request",
+        lambda **_kwargs: False,
+    )
+    dock.request_remote_monitoring_refresh(allow_prompt=True)
+    assert dock.monitoring_status_label.property("state") == "auth-required"
+    assert control.isChecked() is False
+
+    monkeypatch.setattr(
+        dock,
+        "ensure_background_authentication_for_request",
+        lambda **_kwargs: True,
+    )
+    dock.request_remote_monitoring_refresh(allow_prompt=True)
+    assert process.start_calls == 1
+    assert dock._monitoring_manual_request is True
+    assert dock.remote_monitoring_request_is_current() is True
+    assert dock.monitoring_refresh_button.isEnabled() is True
+
+    process.output = (
+        b"cpu=8 mem_mb=512/1024 disk_mb=1024/4096 users=1 processes=22\n"
+    )
+    dock.handle_remote_monitoring_finished(0, QProcess.ExitStatus.NormalExit)
+    assert dock._monitoring_manual_request is False
+    assert dock.monitoring_status_label.property("state") == "live"
+
+
 def test_monitoring_optional_chrome_runtime_and_command_edges(
     connected_workspace,
     monkeypatch,

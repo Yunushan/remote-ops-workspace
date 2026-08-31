@@ -340,6 +340,42 @@ def test_tab_context_securecrt_product_host_and_toolbar_edges(
     window.configure_responsive_layout_toolbar()
 
 
+def test_style_selector_stays_in_shared_toolbar_for_every_preset(gui_window) -> None:
+    app, window = gui_window
+
+    for preset_id in ("native", "mobaxterm", "remmina", "mremoteng"):
+        window.set_design_preset(preset_id)
+        app.processEvents()
+        assert window.layout_toolbar.isVisible() is True
+        assert window.design_select.isVisibleTo(window) is True
+        assert window.design_select.parentWidget() is window.layout_toolbar
+        assert window.layout_toolbar.property("styleSelectorPersistent") is True
+        assert window.design_select.property("styleSelectorLocation") == "layout-toolbar"
+        assert window.property("designTransitionActive") is False
+
+    window.set_design_preset("mobaxterm")
+    app.processEvents()
+    assert all(not button.isVisibleTo(window) for button in window.layout_toolbar_buttons)
+    assert window.view_label.isVisibleTo(window) is True
+
+
+def test_design_transition_depth_and_empty_workspace_are_safe(gui_window) -> None:
+    _app, window = gui_window
+
+    window.finish_design_transition()
+    window.begin_design_transition()
+    window.begin_design_transition()
+    assert window._design_transition_depth == 2
+    window.finish_design_transition()
+    assert window._design_transition_depth == 1
+
+    window.tabs.clear()
+    window.finish_design_transition()
+    assert window._design_transition_depth == 0
+    assert window.tabs.currentWidget() is None
+    assert window.property("designTransitionActive") is False
+
+
 def test_launch_files_find_and_recover_session_edges(gui_window, monkeypatch) -> None:
     from PyQt6.QtWidgets import QMessageBox, QTextEdit
 

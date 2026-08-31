@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -1595,12 +1596,31 @@ def parse_sftp_ls_output(text: str) -> list[RemoteFileEntry]:
 
 
 def parse_remote_monitoring_output(text: str) -> RemoteMonitoringSnapshot | None:
-    values: dict[str, str] = {}
-    for token in text.replace("\n", " ").split():
-        key, separator, value = token.partition("=")
-        if separator:
-            values[key] = value
-    if not values:
+    # Background SSH output can contain a login banner, an authentication
+    # prompt, or a PTY line wrap before the one machine-readable record.  Only
+    # accept a record that starts with the monitor's CPU marker and carries at
+    # least one additional metric; this prevents stale prompt text from being
+    # published as a live bottom-bar snapshot.
+    clean_text = re.sub(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))", "", text)
+    lines = clean_text.splitlines()
+    cpu_line_indexes = [
+        index
+        for index, line in enumerate(lines)
+        if re.search(r"(?<![A-Za-z0-9_])cpu\s*=", line)
+    ]
+    if not cpu_line_indexes:
+        return None
+    candidate = "\n".join(lines[cpu_line_indexes[-1] :])
+    values = {
+        match.group("key"): match.group("value")
+        for match in re.finditer(
+            r"(?<![A-Za-z0-9_])(?P<key>cpu|mem_mb|disk_mb|load|users|connections|processes|net_up_mbps|net_down_mbps)\s*=\s*(?P<value>[^\s\r\n]*)",
+            candidate,
+        )
+    }
+    if "cpu" not in values or not any(
+        key in values for key in ("mem_mb", "disk_mb", "users", "connections", "processes")
+    ):
         return None
     mem_used, mem_total = _optional_pair_gb(values.get("mem_mb"))
     disk_used, disk_total = _optional_pair_gb(values.get("disk_mb"))

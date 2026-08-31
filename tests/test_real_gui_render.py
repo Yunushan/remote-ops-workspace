@@ -626,8 +626,9 @@ def test_real_gui_render_uses_preset_specific_widget_contracts() -> None:
     assert "toolbarSearch" not in native_widgets
     assert native_present_widgets["designSelect"] == "view preset selector"
     assert native_present_widgets["toolbarSearch"] == "toolbar search"
-    assert "designSelect" not in moba_widgets
+    assert moba_widgets["designSelect"] == "shared view preset selector"
     assert "toolbarSearch" not in moba_widgets
+    assert moba_widgets["layoutToolbar"] == "shared style selector toolbar"
     assert "profileTree" not in moba_widgets
     assert "productWorkflowEvidence" not in moba_widgets
     assert checker.required_widgets_for_preset("termius")["termiusHostIdentityStrip"] == (

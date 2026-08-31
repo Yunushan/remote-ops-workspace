@@ -555,6 +555,38 @@ def test_terminal_scroll_follows_normal_output_but_not_vim_edges(gui_window) -> 
     assert scroll_bar.value() == scroll_bar.maximum()
 
 
+def test_terminal_output_flush_latency_and_atomic_frame_edges(gui_window) -> None:
+    _app, window = gui_window
+    pane = _new_pane(window)
+
+    pane.schedule_process_output_flush()
+    assert pane.output.property("terminalOutputFlushDelayMs") == 0
+    assert pane.output.property("terminalOutputFlushMode") == "next-event-turn"
+    pane._process_output_timer.start(1000)
+    pane.schedule_process_output_flush()
+    assert pane._process_output_flush_scheduled is True
+    pane._process_output_timer.stop()
+    pane._process_output_flush_scheduled = False
+
+    pane.terminal_emulator._alternate_screen = True
+    pane.schedule_process_output_flush()
+    assert pane.output.property("terminalOutputFlushDelayMs") == 16
+    assert pane.output.property("terminalOutputFlushMode") == "alternate-screen-coalesced"
+    pane._process_output_timer.stop()
+    pane._process_output_flush_scheduled = False
+    pane.schedule_process_output_flush(backlog=True)
+    assert pane.output.property("terminalOutputFlushDelayMs") == 0
+    pane._process_output_timer.stop()
+    pane._process_output_flush_scheduled = False
+
+    pane.render_terminal_transcript("one frame")
+    assert pane.output.toPlainText() == "one frame"
+    assert pane.output.updatesEnabled() is True
+    assert pane.output.property("terminalAlternateScreenRedraw") is False
+    pane.render_terminal_transcript("one frame")
+    assert pane.output.toPlainText() == "one frame"
+
+
 def test_terminal_render_preserves_manual_scrollback_and_ignores_stale_ansi_ranges(
     gui_window,
     monkeypatch,

@@ -131,6 +131,7 @@ class AnsiTerminalTranscript:
         int,
     ] | None = None
     _saved_normal_modes: tuple[bool, bool, bool, bool, bool, bool] | None = None
+    _render_revision: int = field(default=0, init=False, repr=False)
     _render_rows_cache: tuple[tuple[str, list[AnsiTextStyle]], ...] | None = field(
         default=None,
         init=False,
@@ -245,6 +246,7 @@ class AnsiTerminalTranscript:
         behavior unchanged.
         """
 
+        self._invalidate_render_cache()
         self._screen_columns = max(20, int(columns))
         self._screen_rows = max(5, int(rows))
         if self._alternate_screen:
@@ -321,6 +323,7 @@ class AnsiTerminalTranscript:
         host application adds its exit diagnostics.
         """
 
+        self._invalidate_render_cache()
         self._escape = None
         self._style = ANSI_DEFAULT_STYLE
         self._pending_responses.clear()
@@ -452,6 +455,7 @@ class AnsiTerminalTranscript:
         return tuple(fragments)
 
     def _invalidate_render_cache(self) -> None:
+        self._render_revision += 1
         self._render_rows_cache = None
         self._render_row_offsets_cache = None
         self._text_cache = None

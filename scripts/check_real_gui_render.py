@@ -534,6 +534,8 @@ EXPECTED_MOBA_RAIL_CHROME = gui_design_moba_rail_chrome()
 EXPECTED_MOBA_RAIL_ITEM_GEOMETRY = tuple(gui_design_moba_rail_item_geometry())
 EXPECTED_MOBA_RAIL_ITEM_GEOMETRY_BY_ROLE = {geometry.role: geometry for geometry in EXPECTED_MOBA_RAIL_ITEM_GEOMETRY}
 MOBA_REQUIRED_WIDGETS = {
+    "layoutToolbar": "shared style selector toolbar",
+    "designSelect": "shared view preset selector",
     "mobaQuickConnectChrome": "Moba quick connect chrome",
     "quickConnect": "Moba quick connect field",
     "mobaRail": "Moba side rail",
@@ -3582,8 +3584,15 @@ def check_preset_live_contract(window: Any, preset_id: str) -> list[str]:
                 errors.append(f"mobaxterm live GUI telemetry label {expected_cell.key!r} y offset drifted")
             if int(live_label.property("mobaTelemetryLabelFontSize") or 0) != expected_geometry.label_font_size:
                 errors.append(f"mobaxterm live GUI telemetry label {expected_cell.key!r} font size drifted")
-            if live_label.text() != expected_cell.display_text:
-                errors.append(f"mobaxterm live GUI telemetry label {expected_cell.key!r} text drifted")
+            if str(live_label.property("mobaTelemetryDisplayText") or "") != expected_cell.display_text:
+                errors.append(
+                    f"mobaxterm live GUI telemetry label {expected_cell.key!r} full text drifted"
+                )
+            rendered_text = str(live_label.property("mobaTelemetryRenderedText") or "")
+            if not rendered_text or live_label.text() != rendered_text:
+                errors.append(
+                    f"mobaxterm live GUI telemetry label {expected_cell.key!r} rendered text drifted"
+                )
         tab_chrome: dict[str, Any] = {}
         actual_tab_geometry_keys = list(tabs.property("mobaTabChromeGeometryKeys") or [])
         if actual_tab_geometry_keys and actual_tab_geometry_keys != [item.key for item in EXPECTED_MOBA_TAB_CHROME_GEOMETRY]:

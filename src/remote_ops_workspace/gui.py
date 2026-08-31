@@ -1053,6 +1053,7 @@ def create_main_window(
             self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
             self._restart_after_stop = False
             self._rendered_terminal_text = ""
+            self._rendered_terminal_revision = -1
             self._pending_terminal_transcript: str | None = None
             self._pty_initial_clear_pending = False
             self._pty_startup_probe = ""
@@ -1074,7 +1075,7 @@ def create_main_window(
             self.setProperty("terminalAutostart", bool(autostart))
             self.setProperty(
                 "terminalOutputCoalescing",
-                "16ms-coalesce-256KiB-adaptive-turn-4MiB-backpressure",
+                "normal-next-turn-alt-16ms-coalesce-256KiB-adaptive-turn-4MiB-backpressure",
             )
             self.startup_preamble = ""
             self.show_launch_command = True
@@ -1386,10 +1387,10 @@ def create_main_window(
             frozen = bool(frozen)
             self.setProperty("terminalTabPaintFrozen", frozen)
             self.output.setProperty("terminalTabPaintFrozen", frozen)
-            alternate_redraw_active = bool(
-                self.output.property("terminalAlternateScreenRedraw")
-            )
-            self.output.setUpdatesEnabled(not frozen and not alternate_redraw_active)
+            # Frame rendering owns its own short-lived repaint guard. Do not
+            # let a stale alternate-screen diagnostic flag keep the terminal
+            # permanently invisible after a tab switch or failed redraw.
+            self.output.setUpdatesEnabled(not frozen)
             if not frozen:
                 pending_transcript = self._pending_terminal_transcript
                 self._pending_terminal_transcript = None
@@ -2548,9 +2549,22 @@ def create_main_window(
                 self.pull_process_output_channel("stderr")
 
         def schedule_process_output_flush(self, *, backlog: bool = False) -> None:
-            delay_ms = 0 if backlog else 16
+            # A normal shell command should be visible as soon as Qt returns
+            # to its event loop. Full-screen apps still get one short frame
+            # window to coalesce redraw fragments without delaying input.
+            alternate_screen_active = bool(
+                self.terminal_emulator.alternate_screen_active
+            )
+            delay_ms = 16 if alternate_screen_active and not backlog else 0
+            self.output.setProperty("terminalOutputFlushDelayMs", delay_ms)
+            self.output.setProperty(
+                "terminalOutputFlushMode",
+                "alternate-screen-coalesced"
+                if alternate_screen_active and not backlog
+                else "next-event-turn",
+            )
             if self._process_output_flush_scheduled:
-                if backlog and self._process_output_timer.remainingTime() > 0:
+                if delay_ms == 0 and self._process_output_timer.remainingTime() > 0:
                     self._process_output_timer.start(0)
                 return
             self._process_output_flush_scheduled = True
@@ -2967,12 +2981,25 @@ def create_main_window(
                 "terminalAlternateScreenActive",
                 alternate_screen_active,
             )
-            if alternate_screen_active and self.output.updatesEnabled():
-                # Vim/ncurses redraw the whole screen frequently. Suppress
-                # intermediate paint events so the user never sees a blank or
-                # half-rendered frame while the retained transcript is rebuilt.
-                self.output.setProperty("terminalAlternateScreenRedraw", True)
-                self.output.setUpdatesEnabled(False)
+            terminal_revision = int(
+                getattr(self.terminal_emulator, "_render_revision", 0)
+            )
+            if (
+                transcript == previous
+                and terminal_revision == self._rendered_terminal_revision
+            ):
+                # Cursor/selection state can change without changing a frame's
+                # text. Avoid rebuilding the document in that case; this is a
+                # common path for htop's cursor and status queries.
+                self.update_remote_cursor_overlay(transcript)
+                self.refresh_terminal_input_security(transcript)
+                return
+            updates_were_enabled = self.output.updatesEnabled()
+            # QTextEdit paints synchronously while its document is edited. A
+            # single guard for every frame prevents blank intermediate pages,
+            # including normal shell output arriving beside an alternate screen.
+            self.output.setProperty("terminalAlternateScreenRedraw", True)
+            self.output.setUpdatesEnabled(False)
             if previous and transcript.startswith(previous):
                 replace_from = previous.rfind("\n") + 1
                 cursor = self.output.textCursor()
@@ -3053,10 +3080,7 @@ def create_main_window(
                     ),
                 )
             self._rendered_terminal_text = transcript
-            if alternate_screen_active:
-                self.output.setUpdatesEnabled(True)
-                self.output_viewport.update()
-                self.output.setProperty("terminalAlternateScreenRedraw", False)
+            self._rendered_terminal_revision = terminal_revision
             if alternate_screen_active:
                 # The retained screen is a viewport, not scrollback.  Always
                 # anchor it at row zero even if the previous shell page had a
@@ -3082,6 +3106,10 @@ def create_main_window(
                     "terminalAlternateScreenScrollbarsHidden",
                     False,
                 )
+            self.output.setProperty("terminalAlternateScreenRedraw", False)
+            self.output.setUpdatesEnabled(updates_were_enabled)
+            self.output_viewport.update()
+            self.output.update()
             self.update_remote_cursor_overlay(transcript)
             self.refresh_terminal_input_security(transcript)
 
@@ -3631,6 +3659,7 @@ def create_main_window(
             )
             self.monitoring_generation = 0
             self.monitoring_active_generation = 0
+            self._monitoring_manual_request = False
             self.monitoring_refresh_timer = QTimer(self)
             self.monitoring_refresh_timer.setInterval(
                 gui_design_moba_remote_monitoring_dock_chrome().refresh_seconds * 1000
@@ -5344,7 +5373,11 @@ def create_main_window(
                 _widget_style(self).standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
             )
             refresh_button.setGeometry(148, 27, 108, 23)
-            refresh_button.clicked.connect(self.request_remote_monitoring_refresh)
+            refresh_button.clicked.connect(
+                lambda _checked=False: self.request_remote_monitoring_refresh(
+                    allow_prompt=True,
+                )
+            )
             self.monitoring_refresh_button = refresh_button
             last_refresh = _literal_label("not refreshed", controls)
             last_refresh.setObjectName("mobaMonitoringLastRefresh")
@@ -5632,7 +5665,7 @@ def create_main_window(
                 and self.monitoring_active_generation
                 == self.monitoring_generation
                 and control is not None
-                and control.isChecked()
+                and (control.isChecked() or self._monitoring_manual_request)
             )
 
         def shutdown_runtime(self) -> None:
@@ -5641,6 +5674,7 @@ def create_main_window(
             self.runtime_shutting_down = True
             self.monitoring_generation += 1
             self.monitoring_active_generation = 0
+            self._monitoring_manual_request = False
             self.sftp_refresh_generation += 1
             self.sftp_refresh_active_generation = 0
             self.sftp_refresh_pending = None
@@ -5712,7 +5746,10 @@ def create_main_window(
                     )
             refresh_button = getattr(self, "monitoring_refresh_button", None)
             if refresh_button is not None:
-                refresh_button.setEnabled(active)
+                # Manual refresh is also the recovery path for password-only
+                # SSH on Windows, so it must remain usable while the periodic
+                # toggle is paused.
+                refresh_button.setEnabled(True)
             if active:
                 if start_periodic and not self.monitoring_refresh_timer.isActive():
                     self.monitoring_refresh_timer.start()
@@ -5725,6 +5762,7 @@ def create_main_window(
                 return
             self.monitoring_generation += 1
             self.monitoring_active_generation = 0
+            self._monitoring_manual_request = False
             self.monitoring_refresh_timer.stop()
             if self.monitoring_process.state() != QProcess.ProcessState.NotRunning:
                 self.monitoring_process.kill()
@@ -5747,19 +5785,37 @@ def create_main_window(
                     )
             return command
 
-        def request_remote_monitoring_refresh(self, *_args) -> None:
+        def request_remote_monitoring_refresh(
+            self,
+            *_args,
+            allow_prompt: bool = False,
+        ) -> None:
             if self.runtime_shutting_down or not self.monitoring_surface_is_current():
                 return
             control = self.monitoring_control_widgets.get("remote-monitoring")
-            if control is None or not control.isChecked():
+            manual_request = bool(allow_prompt)
+            if control is None or (not control.isChecked() and not manual_request):
                 return
-            if not self.ensure_background_authentication_for_request():
+            if manual_request:
+                auth_ready = self.ensure_background_authentication_for_request(
+                    allow_prompt=True,
+                )
+            else:
+                auth_ready = self.ensure_background_authentication_for_request()
+            if not auth_ready:
+                if manual_request:
+                    self.set_remote_monitoring_status(
+                        "Monitoring authentication required",
+                        state="auth-required",
+                    )
+                    return
                 self.setProperty("mobaBackgroundSshApplyingAuthGate", True)
                 try:
                     control.setChecked(False)
                 finally:
                     self.setProperty("mobaBackgroundSshApplyingAuthGate", False)
                 return
+            self._monitoring_manual_request = manual_request and not control.isChecked()
             count = int(
                 self.property("mobaRemoteMonitoringRefreshRequestCount") or 0
             ) + 1
@@ -5807,6 +5863,7 @@ def create_main_window(
         def handle_remote_monitoring_error(self, error) -> None:
             request_is_current = self.remote_monitoring_request_is_current()
             self.monitoring_active_generation = 0
+            self._monitoring_manual_request = False
             if not request_is_current:
                 return
             self.set_remote_monitoring_status(
@@ -5824,6 +5881,7 @@ def create_main_window(
             self.read_remote_monitoring_output()
             output = self.monitoring_output_buffer.decode(errors="replace")
             self.monitoring_active_generation = 0
+            self._monitoring_manual_request = False
             if not request_is_current:
                 return
             snapshot = parse_remote_monitoring_output(output) if exit_code == 0 else None
@@ -5907,6 +5965,9 @@ def create_main_window(
                 if frame is None:
                     continue
                 frame.setProperty("mobaTelemetryDisplayText", cell.display_text)
+                frame.setToolTip(
+                    _safe_tooltip_html(f"{cell.label}: {cell.display_text}")
+                )
                 label = next(
                     (
                         candidate
@@ -5919,12 +5980,24 @@ def create_main_window(
                     None,
                 )
                 if label is not None:
-                    label.setText(cell.display_text)
+                    rendered_text = MobaConnectedSessionPanel.telemetry_label_text(
+                        label,
+                        cell,
+                        int(frame.property("mobaTelemetryCellWidth") or frame.width())
+                        - 30,
+                    )
+                    label.setText(rendered_text)
                     label.setProperty(
                         "mobaTelemetryDisplayText",
                         cell.display_text,
                     )
-                    label.setToolTip(_safe_tooltip_html(cell.label))
+                    label.setProperty(
+                        "mobaTelemetryRenderedText",
+                        rendered_text,
+                    )
+                    label.setToolTip(
+                        _safe_tooltip_html(f"{cell.label}: {cell.display_text}")
+                    )
                     label.updateGeometry()
                 frame.updateGeometry()
             telemetry_bar.updateGeometry()
@@ -5947,13 +6020,13 @@ def create_main_window(
             refresh_action = _required_gui_value(
                 menu.addAction(
                     "Refresh now",
-                    self.request_remote_monitoring_refresh,
+                    lambda _checked=False: self.request_remote_monitoring_refresh(
+                        allow_prompt=True,
+                    ),
                 ),
                 "monitoring-refresh action",
             )
-            refresh_action.setEnabled(
-                bool(control is not None and control.isChecked())
-            )
+            refresh_action.setEnabled(control is not None)
             auth_action = _required_gui_value(
                 menu.addAction(
                     "Authenticate background tools",
@@ -7891,7 +7964,9 @@ def create_main_window(
                 cell_frame.setProperty("mobaTelemetrySeparatorBottom", geometry.separator_bottom)
                 cell_frame.setProperty("mobaMonitoringTelemetryRouted", cell.key in route.target_metric_cell_keys)
                 cell_frame.setProperty("mobaTelemetryLivePreferredWidth", geometry.width)
-                cell_frame.setToolTip(_safe_tooltip_html(cell.label))
+                cell_frame.setToolTip(
+                    _safe_tooltip_html(f"{cell.label}: {cell.display_text}")
+                )
                 # Telemetry cells are a fixed-width status strip, not a
                 # stretchable form row.  Ignored size policies let Qt squeeze
                 # them to a few pixels when the terminal is resized, which is
@@ -7927,7 +8002,7 @@ def create_main_window(
                 icon.setToolTip(_safe_tooltip_html(cell.label))
                 self.install_moba_terminal_context_menu(icon)
                 cell_layout.addWidget(icon)
-                label = _literal_label(cell.display_text)
+                label = _literal_label("")
                 label.setObjectName("mobaTelemetryItem")
                 label.setProperty("mobaTelemetryKey", cell.key)
                 label.setProperty("mobaTelemetryDisplayText", cell.display_text)
@@ -7936,7 +8011,18 @@ def create_main_window(
                 label.setProperty("mobaTelemetryLabelX", geometry.label_x)
                 label.setProperty("mobaTelemetryLabelY", geometry.label_y)
                 label.setProperty("mobaTelemetryLabelFontSize", geometry.label_font_size)
-                label.setToolTip(_safe_tooltip_html(cell.label))
+                label.setProperty(
+                    "mobaTelemetryRenderedText",
+                    self.telemetry_label_text(
+                        label,
+                        cell,
+                        geometry.width - geometry.label_x - 8,
+                    ),
+                )
+                label.setText(str(label.property("mobaTelemetryRenderedText")))
+                label.setToolTip(
+                    _safe_tooltip_html(f"{cell.label}: {cell.display_text}")
+                )
                 label.setMinimumWidth(
                     max(1, geometry.width - geometry.label_x - 8)
                 )
@@ -8021,6 +8107,23 @@ def create_main_window(
                     painter.drawLine(3, 10, logical_size - 6, 10)
 
             return self.generated_icon_pixmap(size, draw, antialias=False)
+
+        @staticmethod
+        def telemetry_label_text(
+            label: QLabel,
+            cell,
+            available_width: int,
+        ) -> str:
+            """Fit live values into the fixed footer without losing their full tooltip."""
+
+            display_text = str(cell.display_text)
+            if display_text in {"Unavailable", "Connections: unavailable"}:
+                display_text = "N/A"
+            return label.fontMetrics().elidedText(
+                display_text,
+                Qt.TextElideMode.ElideRight,
+                max(1, available_width),
+            )
 
     class ProfileDialog(_ScreenBoundedDialog):
         def __init__(self, profile=None, parent=None) -> None:
@@ -9207,6 +9310,10 @@ def create_main_window(
             self._closing_tab_widgets: list[QWidget] = []
             self._status_message_override: str | None = None
             self._status_message_override_deadline = 0.0
+            self._design_transition_depth = 0
+            self._design_transition_generation = 0
+            self._design_transition_restore_window_updates = True
+            self._design_transition_restore_tabs_updates = True
 
             self.build_menu_bar()
             self.main_toolbar = QToolBar("Main")
@@ -9261,6 +9368,9 @@ def create_main_window(
             self.design_select.setObjectName("designSelect")
             self.design_select.setMinimumWidth(150)
             self.design_select.setMaximumWidth(180)
+            for persistent_widget in (self.layout_toolbar, self.design_select):
+                persistent_widget.setProperty("styleSelectorPersistent", True)
+                persistent_widget.setProperty("styleSelectorLocation", "layout-toolbar")
             for preset in GUI_DESIGN_PRESETS:
                 self.design_select.addItem(preset.label, preset.id)
             self.apply_preset_catalog_route_properties(
@@ -9298,15 +9408,15 @@ def create_main_window(
             self.add_toolbar_widget(self.main_toolbar, self.moba_toolbar_spacer)
             moba_edge_route = gui_design_moba_ribbon_edge_action_route()
             edge_action_keys = [moba_edge_route.xserver_action_key, moba_edge_route.exit_action_key]
-            for widget in (self.main_toolbar, self.moba_toolbar_spacer):
-                widget.setProperty("mobaRibbonEdgeRouteKey", moba_edge_route.key)
-                widget.setProperty("mobaRibbonEdgeRouteRole", moba_edge_route.route_role)
-                widget.setProperty(
+            for edge_widget in (self.main_toolbar, self.moba_toolbar_spacer):
+                edge_widget.setProperty("mobaRibbonEdgeRouteKey", moba_edge_route.key)
+                edge_widget.setProperty("mobaRibbonEdgeRouteRole", moba_edge_route.route_role)
+                edge_widget.setProperty(
                     "mobaRibbonEdgeRouteToolbarObject", moba_edge_route.toolbar_object
                 )
-                widget.setProperty("mobaRibbonEdgeRouteSpacerObject", moba_edge_route.spacer_object)
-                widget.setProperty(moba_edge_route.action_keys_property, edge_action_keys)
-                widget.setProperty("mobaRibbonEdgeRouteRenderSource", moba_edge_route.render_source)
+                edge_widget.setProperty("mobaRibbonEdgeRouteSpacerObject", moba_edge_route.spacer_object)
+                edge_widget.setProperty(moba_edge_route.action_keys_property, edge_action_keys)
+                edge_widget.setProperty("mobaRibbonEdgeRouteRenderSource", moba_edge_route.render_source)
             moba_edge_actions = {
                 action.key: action for action in gui_design_moba_ribbon_edge_actions()
             }
@@ -9399,13 +9509,13 @@ def create_main_window(
             self.mremoteng_protocol_label = QLabel("RDP")
             self.mremoteng_protocol_label.setObjectName("mRemoteNgProtocolLabel")
             self.mremoteng_protocol_label.setToolTip("mRemoteNG active protocol")
-            for widget in (
+            for connection_widget in (
                 self.securecrt_host_input,
                 self.securecrt_keyword_input,
                 self.mremoteng_connect_input,
                 self.mremoteng_protocol_label,
             ):
-                self.add_toolbar_widget(self.main_toolbar, widget)
+                self.add_toolbar_widget(self.main_toolbar, connection_widget)
             self.view_label = QLabel("View")
             self.view_label.setObjectName("toolbarLabel")
             self.layout_label = QLabel("Layout")
@@ -12267,7 +12377,66 @@ def create_main_window(
             for layout in self.layout_store.load():
                 self.layout_select.addItem(layout.name)
 
+        def begin_design_transition(self) -> None:
+            """Freeze the full chrome while a visual preset is being applied."""
+
+            if self._design_transition_depth == 0:
+                self._design_transition_generation += 1
+                self._design_transition_restore_window_updates = self.updatesEnabled()
+                self._design_transition_restore_tabs_updates = self.tabs.updatesEnabled()
+                self.setProperty("designTransitionActive", True)
+                self.setProperty(
+                    "designTransitionGeneration",
+                    self._design_transition_generation,
+                )
+                self.setUpdatesEnabled(False)
+                self.tabs.setUpdatesEnabled(False)
+                self.set_terminal_tab_paint_frozen(True)
+            self._design_transition_depth += 1
+
+        def finish_design_transition(self) -> None:
+            """Restore chrome only after the selected page has stable geometry."""
+
+            if self._design_transition_depth <= 0:
+                return
+            self._design_transition_depth -= 1
+            if self._design_transition_depth:
+                return
+            current = self.tabs.currentWidget()
+            if current is not None:
+                current.setMinimumSize(0, 0)
+                current.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Expanding,
+                )
+                current.updateGeometry()
+                current_layout = current.layout()
+                if current_layout is not None:
+                    current_layout.activate()
+            tabs_are_transitioning = bool(
+                self.tabs.property("terminalTabTransitionActive")
+                or self.tabs.property("terminalTabPrepaintGuardActive")
+            )
+            if not tabs_are_transitioning:
+                self.set_terminal_tab_paint_frozen(False)
+            self.setProperty("designTransitionActive", False)
+            self.tabs.setUpdatesEnabled(
+                self._design_transition_restore_tabs_updates
+                and not tabs_are_transitioning
+            )
+            self.setUpdatesEnabled(self._design_transition_restore_window_updates)
+            if current is not None:
+                current.update()
+                self.tabs.update()
+
         def apply_selected_design(self, *_args) -> None:
+            self.begin_design_transition()
+            try:
+                self._apply_selected_design(*_args)
+            finally:
+                self.finish_design_transition()
+
+        def _apply_selected_design(self, *_args) -> None:
             preset_id = self.design_select.currentData() or "native"
             try:
                 preset = get_gui_design_preset(str(preset_id))
@@ -12444,7 +12613,11 @@ def create_main_window(
                 self.filter_remmina_profile_rows(self.remmina_profile_filter.text())
             self.moba_rail.setVisible(is_moba)
             self.update_quick_connect_suggestions()
-            self.layout_toolbar.setVisible(not is_moba)
+            # The style selector is a shared utility surface, including in
+            # MobaXterm mode. Product-specific layout actions are filtered in
+            # configure_toolbar_for_design, but the selector never moves or
+            # disappears when the visual preset changes.
+            self.layout_toolbar.setVisible(True)
             reference_document = preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
             self.log.setVisible(not is_moba)
             self.log.setProperty("productCompactActivityLog", reference_document)
@@ -12525,7 +12698,7 @@ def create_main_window(
             # switching presets must always restore the normal shell.
             self.main_toolbar.setVisible(True)
             self.left_panel.setVisible(True)
-            self.layout_toolbar.setVisible(not is_moba)
+            self.layout_toolbar.setVisible(True)
             tab_bar = _required_gui_value(self.tabs.tabBar(), "workspace tab bar")
             tab_bar.setVisible(True)
             self.log.setVisible(not is_moba)
@@ -13648,7 +13821,7 @@ def create_main_window(
                 button.setMaximumSize(QSize(16777215, 16777215))
                 self.set_toolbar_widget_visible(
                     button,
-                    not is_moba or button in self.layout_toolbar_buttons,
+                    not is_moba,
                 )
             for button in self.layout_toolbar_buttons:
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
@@ -13659,13 +13832,10 @@ def create_main_window(
             self.find_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             self.find_button.setMinimumSize(QSize(58, 0))
             self.find_button.setMaximumSize(QSize(78, 44))
-            for widget in [
-                self.view_label,
-                self.design_select,
-                self.search_input,
-                self.find_button,
-            ]:
-                self.set_toolbar_widget_visible(widget, not is_moba)
+            for view_widget in (self.view_label, self.design_select):
+                self.set_toolbar_widget_visible(view_widget, True)
+            for search_widget in (self.search_input, self.find_button):
+                self.set_toolbar_widget_visible(search_widget, not is_moba)
 
             moba_widgets = [
                 *self.moba_ribbon_buttons,
@@ -13673,18 +13843,18 @@ def create_main_window(
                 self.moba_x_server_button,
                 self.moba_exit_button,
             ]
-            for widget in moba_widgets:
-                self.set_toolbar_widget_visible(widget, is_moba)
-            for widget in (
+            for moba_widget in moba_widgets:
+                self.set_toolbar_widget_visible(moba_widget, is_moba)
+            for securecrt_widget in (
                 self.securecrt_host_input,
                 self.securecrt_keyword_input,
             ):
-                self.set_toolbar_widget_visible(widget, preset.id == "securecrt")
-            for widget in (
+                self.set_toolbar_widget_visible(securecrt_widget, preset.id == "securecrt")
+            for mremoteng_widget in (
                 self.mremoteng_connect_input,
                 self.mremoteng_protocol_label,
             ):
-                self.set_toolbar_widget_visible(widget, preset.id == "mremoteng")
+                self.set_toolbar_widget_visible(mremoteng_widget, preset.id == "mremoteng")
             self.securecrt_host_shortcut.setEnabled(is_securecrt)
             self.securecrt_keyword_shortcut.setEnabled(is_securecrt)
             if is_moba:
@@ -13743,6 +13913,22 @@ def create_main_window(
                     button.setMinimumSize(QSize(76, 46))
                     button.setMaximumSize(QSize(124, 58))
             self.configure_responsive_layout_toolbar()
+            if is_moba:
+                # MobaXterm's large ribbon owns the product actions; retain a
+                # small, stable utility row for the shared style selector.
+                self.layout_toolbar.setMinimumHeight(30)
+                self.layout_toolbar.setMaximumHeight(32)
+                self.layout_toolbar.setIconSize(QSize(14, 14))
+                for moba_layout_widget in (self.layout_label, self.layout_select):
+                    self.set_toolbar_widget_visible(moba_layout_widget, False)
+                for button in self.layout_toolbar_buttons:
+                    self.set_toolbar_widget_visible(button, False)
+                self.set_toolbar_widget_visible(self.view_label, True)
+                self.set_toolbar_widget_visible(self.design_select, True)
+                self.set_toolbar_widget_visible(self.search_input, False)
+                self.set_toolbar_widget_visible(self.find_button, False)
+                self.design_select.setMinimumSize(QSize(112, 24))
+                self.design_select.setMaximumSize(QSize(150, 26))
             if is_product_reference:
                 # SecureCRT, Termius, Remmina and mRemoteNG use a single
                 # compact utility strip beneath their product toolbar.  Keep
@@ -13753,8 +13939,8 @@ def create_main_window(
                 self.layout_toolbar.setMinimumHeight(30)
                 self.layout_toolbar.setMaximumHeight(32)
                 self.layout_toolbar.setIconSize(QSize(min(icon_size, 14), min(icon_size, 14)))
-                for widget in (self.layout_label, self.layout_select, self.view_label):
-                    self.set_toolbar_widget_visible(widget, False)
+                for reference_layout_widget in (self.layout_label, self.layout_select, self.view_label):
+                    self.set_toolbar_widget_visible(reference_layout_widget, False)
                 for button in self.layout_toolbar_buttons:
                     self.set_toolbar_widget_visible(button, False)
                 self.set_toolbar_widget_visible(self.design_select, True)
@@ -15367,8 +15553,10 @@ def create_main_window(
             # transition guard even when it already has its final tab index.
             # Defer the child launch until that guard releases so ConPTY (or
             # the hidden pipe fallback) never paints a transient tiny surface.
-            if bool(self.tabs.property("terminalTabTransitionActive")) or bool(
-                self.tabs.property("terminalTabPrepaintGuardActive")
+            if (
+                bool(self.property("designTransitionActive"))
+                or bool(self.tabs.property("terminalTabTransitionActive"))
+                or bool(self.tabs.property("terminalTabPrepaintGuardActive"))
             ):
                 QTimer.singleShot(
                     0,
@@ -15411,7 +15599,6 @@ def create_main_window(
                 [
                     "leftPanel",
                     "mainToolbar",
-                    "layoutToolbar",
                     "sessionTabBar",
                 ]
                 if hidden
@@ -15420,7 +15607,7 @@ def create_main_window(
             if hidden:
                 self.left_panel.setVisible(False)
                 self.main_toolbar.setVisible(False)
-                self.layout_toolbar.setVisible(False)
+                self.layout_toolbar.setVisible(True)
                 tab_bar = self.tabs.tabBar()
                 if tab_bar is not None:
                     tab_bar.setVisible(False)
@@ -15435,7 +15622,7 @@ def create_main_window(
 
             self.left_panel.setVisible(True)
             self.main_toolbar.setVisible(True)
-            self.layout_toolbar.setVisible(preset_id != "mobaxterm")
+            self.layout_toolbar.setVisible(True)
             tab_bar = self.tabs.tabBar()
             if tab_bar is not None:
                 tab_bar.setVisible(True)

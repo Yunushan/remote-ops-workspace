@@ -512,6 +512,26 @@ def test_remote_monitoring_parser_uses_users_as_connection_count() -> None:
     assert snapshot.net_down_mbps is None
 
 
+def test_remote_monitoring_parser_rejects_banners_and_partial_records() -> None:
+    assert parse_remote_monitoring_output("Welcome host=example\npassword:") is None
+    assert parse_remote_monitoring_output("cpu=7 load=0.1") is None
+
+
+def test_remote_monitoring_parser_handles_ansi_banners_and_wrapped_metrics() -> None:
+    snapshot = parse_remote_monitoring_output(
+        "\x1b[32mLast login\x1b[0m\n"
+        "cpu=12 mem_mb=1024/2048 disk_mb=2048/4096 users=2\n"
+        "processes=44 net_up_mbps=0.25 net_down_mbps=0.50\n"
+    )
+
+    assert snapshot is not None
+    assert snapshot.cpu_percent == 12
+    assert snapshot.connection_count == 2
+    assert snapshot.process_count == 44
+    assert snapshot.net_up_mbps == 0.25
+    assert snapshot.net_down_mbps == 0.5
+
+
 def test_live_connected_session_default_does_not_fabricate_runtime_evidence() -> None:
     state = build_moba_connected_session_state(ssh_profile(), remote_path="/var/log")
     payload = state.to_dict()

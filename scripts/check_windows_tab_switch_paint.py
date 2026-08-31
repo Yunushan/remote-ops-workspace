@@ -12,9 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WHOLE_FRAME_DISTANCE_LIMIT = 0.025
 # A blinking block cursor can legitimately change most pixels in one sampled
-# 32x32 tile.  Keep the threshold below the 0.20+ distance produced by a real
-# localized blank/miniature corruption while allowing that cursor repaint.
-LOCALIZED_TILE_DISTANCE_LIMIT = 0.10
+# 32x32 tile, and native focus changes can add anti-aliased cursor edges. Keep
+# the threshold below the 0.20+ distance produced by a real localized
+# blank/miniature corruption while allowing those legitimate repaint states.
+LOCALIZED_TILE_DISTANCE_LIMIT = 0.18
 REQUIRED_INTERACTION_STAGES = {
     "mouse-tab-switch": frozenset({"before", "pressed", "released", "settled"}),
     "ctrl-tab-switch": frozenset(

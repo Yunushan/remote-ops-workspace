@@ -15399,8 +15399,12 @@ def create_main_window(
                 "terminalTabPrepaintGuardRecoveredWithoutTransition",
                 self.tabs.currentIndex() != previous_index,
             )
-            self.set_terminal_tab_paint_frozen(False)
             self.tabs.setUpdatesEnabled(True)
+            # The terminal output can be nested under this tab widget. Enable
+            # the ancestor before flushing a deferred transcript; otherwise
+            # QTextEdit observes effective updates as disabled and preserves
+            # that state after the tab is shown, leaving a black page behind.
+            self.set_terminal_tab_paint_frozen(False)
             self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
             self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
 
@@ -15524,13 +15528,23 @@ def create_main_window(
                     and current.height() > 0
                 ),
             )
-            self.set_terminal_tab_paint_frozen(False)
             self.tabs.setUpdatesEnabled(True)
+            # The terminal output can be nested under this tab widget. Enable
+            # the ancestor before flushing a deferred transcript; otherwise
+            # QTextEdit observes effective updates as disabled and preserves
+            # that state after the tab is shown, leaving a black page behind.
+            self.set_terminal_tab_paint_frozen(False)
             if current is not None:
                 current.update()
             self.tabs.setProperty("terminalTabTransitionActive", False)
             self.tabs.setProperty("terminalTabPrepaintGuardActive", False)
             self.tabs.setProperty("terminalTabPrepaintTargetIndex", -1)
+            if current is not None:
+                # Native Windows can expose the newly selected page before a
+                # queued update reaches QTextEdit's viewport. Present the
+                # already-rendered frame synchronously at this boundary so a
+                # programmatic tab switch never leaves a black page visible.
+                current.repaint()
 
         def start_deferred_terminal_pane_if_current(
             self,

@@ -532,6 +532,34 @@ def test_remote_monitoring_parser_handles_ansi_banners_and_wrapped_metrics() -> 
     assert snapshot.net_down_mbps == 0.5
 
 
+def test_remote_monitoring_parser_and_cells_keep_extended_live_metrics() -> None:
+    snapshot = parse_remote_monitoring_output(
+        "cpu=39 mem_mb=12933/15700 disk_mb=512/4096 load=0.42 "
+        "users=2 connections=3 processes=91 net_up_mbps=8.32 "
+        "net_down_mbps=4.32 uptime_seconds=72000 sessions=2 "
+        "mounts=/:14%|/boot:23%"
+    )
+
+    assert snapshot is not None
+    assert snapshot.memory_label == "12.63 GB / 15.33 GB"
+    assert snapshot.uptime_label == "20 hours"
+    assert snapshot.filesystem_label == "/: 14% /boot: 23%"
+    state = build_moba_connected_session_state(
+        ssh_profile(),
+        monitoring_output=(
+            "cpu=39 mem_mb=12933/15700 disk_mb=512/4096 users=2 "
+            "connections=3 processes=91 uptime_seconds=72000 sessions=2 "
+            "mounts=/:14%|/boot:23%"
+        ),
+        preview_sample_data=False,
+    )
+    assert [cell.key for cell in moba_telemetry_cells(state)][-3:] == [
+        "uptime",
+        "sessions",
+        "filesystems",
+    ]
+
+
 def test_live_connected_session_default_does_not_fabricate_runtime_evidence() -> None:
     state = build_moba_connected_session_state(ssh_profile(), remote_path="/var/log")
     payload = state.to_dict()

@@ -14,30 +14,45 @@ from .moba_text import MobaTextEditorTabPlan, build_moba_text_editor_tab_plan
 from .models import Profile
 
 REMOTE_MONITORING_SCRIPT = (
-    "cpu=$(awk 'NR==1{print int(($2+$4)*100/($2+$4+$5+1))}' /proc/stat 2>/dev/null || echo 0); "
-    "mem=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{print int((t-a)/1024)\"/\"int(t/1024)}' "
-    "/proc/meminfo 2>/dev/null || echo 0/0); "
-    "disk=$(df -Pk / 2>/dev/null | awk 'NR==2{print int($3/1024)\"/\"int($2/1024)}'); "
-    "load=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo 0); "
-    "users=$(who 2>/dev/null | wc -l); "
-    "processes=$(ps -e 2>/dev/null | wc -l); "
+    "LC_ALL=C; export LC_ALL; "
+    "cpu_before=$(awk 'NR==1{print ($2+$3+$4+$5+$6+$7+$8+$9)\"/\"($5+$6)}' /proc/stat 2>/dev/null); "
     "net_before=$(awk 'NR>2 && $1 !~ /^lo:/ {rx+=$2; tx+=$10; seen=1} "
     "END{if (seen) printf \"%.0f/%.0f\", tx, rx}' /proc/net/dev 2>/dev/null); "
-    "net_up_mbps=; net_down_mbps=; "
-    "if [ -n \"$net_before\" ]; then "
     "sleep 0.2; "
+    "cpu_after=$(awk 'NR==1{print ($2+$3+$4+$5+$6+$7+$8+$9)\"/\"($5+$6)}' /proc/stat 2>/dev/null); "
     "net_after=$(awk 'NR>2 && $1 !~ /^lo:/ {rx+=$2; tx+=$10; seen=1} "
     "END{if (seen) printf \"%.0f/%.0f\", tx, rx}' /proc/net/dev 2>/dev/null); "
+    "cpu=$(awk -F/ -v before=\"$cpu_before\" -v after=\"$cpu_after\" 'BEGIN{split(before,b,\"/\"); split(after,a,\"/\"); total=a[1]-b[1]; idle=a[2]-b[2]; if(total>0) printf \"%d\", ((total-idle)*100)/total; else print 0}'); "
+    "[ -n \"$cpu\" ] || cpu=0; "
+    "mem=$(awk '/MemTotal:/{t=$2}/MemAvailable:/{a=$2}/MemFree:/{f=$2}/Buffers:/{b=$2}/Cached:/{c=$2}END{if(a==0) a=f+b+c; if(t>0) print int((t-a)/1024)\"/\"int(t/1024); else print \"0/0\"}' "
+    "/proc/meminfo 2>/dev/null); "
+    "[ -n \"$mem\" ] || mem=0/0; "
+    "disk=$(df -Pk / 2>/dev/null | awk 'NR>1 && $NF ~ /^\\//{print int($(NF-3)/1024)\"/\"int($(NF-4)/1024); exit}'); "
+    "[ -n \"$disk\" ] || disk=0/0; "
+    "load=$(awk 'NR==1{print $1}' /proc/loadavg 2>/dev/null); "
+    "[ -n \"$load\" ] || load=0; "
+    "users=$(who 2>/dev/null | awk 'NF{count++}END{print count+0}'); "
+    "connections=$(ss -Htan 2>/dev/null | awk 'NF{count++}END{print count+0}'); "
+    "processes=$(ps -e 2>/dev/null | awk 'NR>1{count++}END{print count+0}'); "
+    "uptime_seconds=$(awk 'NR==1{print int($1)}' /proc/uptime 2>/dev/null); "
+    "[ -n \"$uptime_seconds\" ] || uptime_seconds=0; "
+    "sessions=$users; "
+    "mounts=$(df -Pk 2>/dev/null | awk 'NR>1 && $NF ~ /^\\//{value=$(NF-1); gsub(/%/,\"\",value); printf \"%s:%s%%|\",$NF,value}' | sed 's/|$//'); "
+    "[ -n \"$mounts\" ] || mounts=-; "
+    "net_up_mbps=; net_down_mbps=; "
+    "if [ -n \"$net_before\" ]; then "
     "net_rates=$(awk -F/ -v before=\"$net_before\" -v after=\"$net_after\" "
     "'BEGIN {split(before,b,\"/\"); split(after,a,\"/\"); "
     "up=a[1]-b[1]; down=a[2]-b[2]; if (up<0) up=0; if (down<0) down=0; "
     "printf \"%.2f/%.2f\", up*8/200000, down*8/200000}'); "
     "net_up_mbps=${net_rates%/*}; net_down_mbps=${net_rates#*/}; "
     "fi; "
-    "printf 'cpu=%s mem_mb=%s disk_mb=%s load=%s users=%s processes=%s "
-    "net_up_mbps=%s net_down_mbps=%s\\n' "
-    "\"$cpu\" \"$mem\" \"$disk\" \"$load\" \"$users\" \"$processes\" "
-    "\"$net_up_mbps\" \"$net_down_mbps\""
+    "[ -n \"$net_up_mbps\" ] || net_up_mbps=0.00; "
+    "[ -n \"$net_down_mbps\" ] || net_down_mbps=0.00; "
+    "printf 'cpu=%s mem_mb=%s disk_mb=%s load=%s users=%s connections=%s processes=%s "
+    "net_up_mbps=%s net_down_mbps=%s uptime_seconds=%s sessions=%s mounts=%s\\n' "
+    "\"$cpu\" \"$mem\" \"$disk\" \"$load\" \"$users\" \"$connections\" \"$processes\" "
+    "\"$net_up_mbps\" \"$net_down_mbps\" \"$uptime_seconds\" \"$sessions\" \"$mounts\""
 )
 
 MOBA_TELEMETRY_ICON_SIZE = 12
@@ -51,7 +66,7 @@ MOBA_TELEMETRY_ICON_ACCENTS = {
     "connection": "#35d7c7",
     "process": "#f4c430",
 }
-MOBA_TELEMETRY_CELL_WIDTHS = {
+MOBA_TELEMETRY_BASE_CELL_WIDTHS = {
     "target": 165,
     "cpu": 60,
     "memory": 125,
@@ -60,6 +75,15 @@ MOBA_TELEMETRY_CELL_WIDTHS = {
     "net-down": 88,
     "connections": 145,
     "processes": 77,
+}
+MOBA_TELEMETRY_OPTIONAL_CELL_WIDTHS = {
+    "uptime": 82,
+    "sessions": 112,
+    "filesystems": 164,
+}
+MOBA_TELEMETRY_CELL_WIDTHS = {
+    **MOBA_TELEMETRY_BASE_CELL_WIDTHS,
+    **MOBA_TELEMETRY_OPTIONAL_CELL_WIDTHS,
 }
 MOBA_TELEMETRY_BAR_HEIGHT = 24
 MOBA_TELEMETRY_START_X = 10
@@ -252,24 +276,53 @@ class RemoteMonitoringSnapshot:
     process_count: int | None
     load_average: str | None = "0.00"
     observed: bool = True
+    uptime_seconds: int | None = None
+    session_count: int | None = None
+    filesystem_usage: tuple[tuple[str, int], ...] = ()
 
     @property
     def memory_label(self) -> str:
         if self.memory_used_gb is None or self.memory_total_gb is None:
             return "Unavailable"
-        return f"{self.memory_used_gb:.1f} GB / {self.memory_total_gb:.1f} GB"
+        return (
+            f"{_format_monitoring_gb(self.memory_used_gb)} GB / "
+            f"{_format_monitoring_gb(self.memory_total_gb)} GB"
+        )
 
     @property
     def disk_label(self) -> str:
         if self.disk_used_gb is None or self.disk_total_gb is None:
             return "Unavailable"
-        return f"{self.disk_used_gb:.1f} GB / {self.disk_total_gb:.1f} GB"
+        return (
+            f"{_format_monitoring_gb(self.disk_used_gb)} GB / "
+            f"{_format_monitoring_gb(self.disk_total_gb)} GB"
+        )
 
     @property
     def network_label(self) -> str:
         if self.net_up_mbps is None or self.net_down_mbps is None:
             return "Unavailable"
         return f"{self.net_up_mbps:.2f} Mb/s up, {self.net_down_mbps:.2f} Mb/s down"
+
+    @property
+    def uptime_label(self) -> str:
+        if self.uptime_seconds is None:
+            return "Unavailable"
+        seconds = max(0, int(self.uptime_seconds))
+        days, remainder = divmod(seconds, 86_400)
+        hours, remainder = divmod(remainder, 3_600)
+        minutes = remainder // 60
+        if days:
+            return f"{days}d {hours}h"
+        if hours:
+            return f"{hours} hour" if hours == 1 else f"{hours} hours"
+        return f"{minutes} min"
+
+    @property
+    def filesystem_label(self) -> str:
+        if not self.filesystem_usage:
+            return "Unavailable"
+        return " ".join(f"{mount}: {usage}%" for mount, usage in self.filesystem_usage)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -284,6 +337,12 @@ class RemoteMonitoringSnapshot:
             "process_count": self.process_count,
             "load_average": self.load_average,
             "observed": self.observed,
+            "uptime_seconds": self.uptime_seconds,
+            "session_count": self.session_count,
+            "filesystem_usage": [
+                {"mount": mount, "usage_percent": usage}
+                for mount, usage in self.filesystem_usage
+            ],
         }
 
 
@@ -1159,7 +1218,7 @@ def moba_telemetry_segments(state: MobaConnectedSessionState) -> tuple[MobaTelem
     )
     connections = str(monitoring.connection_count) if monitoring.connection_count is not None else "Unavailable"
     processes = str(monitoring.process_count) if monitoring.process_count is not None else "Unavailable"
-    return (
+    segments = [
         MobaTelemetrySegment("target", "host", target_label, state.target),
         MobaTelemetrySegment("cpu", "cpu", "CPU usage", cpu),
         MobaTelemetrySegment("memory", "memory", "Memory usage", monitoring.memory_label),
@@ -1168,7 +1227,35 @@ def moba_telemetry_segments(state: MobaConnectedSessionState) -> tuple[MobaTelem
         MobaTelemetrySegment("net-down", "download", "Network download", net_down),
         MobaTelemetrySegment("connections", "connection", "Open connections", connections),
         MobaTelemetrySegment("processes", "process", "Remote processes", processes),
-    )
+    ]
+    if monitoring.uptime_seconds is not None:
+        segments.append(
+            MobaTelemetrySegment(
+                "uptime",
+                "process",
+                "Uptime",
+                monitoring.uptime_label,
+            )
+        )
+    if monitoring.session_count is not None:
+        segments.append(
+            MobaTelemetrySegment(
+                "sessions",
+                "connection",
+                "Sessions",
+                str(monitoring.session_count),
+            )
+        )
+    if monitoring.filesystem_usage:
+        segments.append(
+            MobaTelemetrySegment(
+                "filesystems",
+                "disk",
+                "Filesystems",
+                monitoring.filesystem_label,
+            )
+        )
+    return tuple(segments)
 
 
 def moba_telemetry_cells(state: MobaConnectedSessionState) -> tuple[MobaTelemetryCell, ...]:
@@ -1184,6 +1271,13 @@ def moba_telemetry_cells(state: MobaConnectedSessionState) -> tuple[MobaTelemetr
         "processes": f"{max(1, connections + 1)}/{processes}"
         if connections is not None and processes is not None
         else "Unavailable",
+        "uptime": state.monitoring.uptime_label,
+        "sessions": (
+            f"Sessions: {state.monitoring.session_count}"
+            if state.monitoring.session_count is not None
+            else "Sessions: unavailable"
+        ),
+        "filesystems": state.monitoring.filesystem_label,
     }
     return tuple(
         MobaTelemetryCell(
@@ -1200,10 +1294,18 @@ def moba_telemetry_cells(state: MobaConnectedSessionState) -> tuple[MobaTelemetr
     )
 
 
-def moba_telemetry_cell_geometry() -> tuple[MobaTelemetryCellGeometry, ...]:
+def moba_telemetry_cell_geometry(
+    keys: tuple[str, ...] | None = None,
+) -> tuple[MobaTelemetryCellGeometry, ...]:
     x = MOBA_TELEMETRY_START_X
     geometry: list[MobaTelemetryCellGeometry] = []
-    for key, width in MOBA_TELEMETRY_CELL_WIDTHS.items():
+    geometry_keys = (
+        keys
+        if keys is not None
+        else tuple(MOBA_TELEMETRY_BASE_CELL_WIDTHS)
+    )
+    for key in geometry_keys:
+        width = MOBA_TELEMETRY_CELL_WIDTHS[key]
         geometry.append(
             MobaTelemetryCellGeometry(
                 key=key,
@@ -1226,7 +1328,7 @@ def moba_telemetry_cell_geometry() -> tuple[MobaTelemetryCellGeometry, ...]:
 
 
 def moba_telemetry_cell_geometry_for(key: str) -> MobaTelemetryCellGeometry:
-    for geometry in moba_telemetry_cell_geometry():
+    for geometry in moba_telemetry_cell_geometry(tuple(MOBA_TELEMETRY_CELL_WIDTHS)):
         if geometry.key == key:
             return geometry
     raise KeyError(key)
@@ -1265,7 +1367,8 @@ def build_remote_monitoring_plan(profile: Profile) -> RemoteMonitoringPlan:
         command=[*plan.command, "sh", "-lc", REMOTE_MONITORING_SCRIPT],
         notes=[
             "Agentless remote monitoring uses the existing SSH transport.",
-            "The command reads standard Linux /proc and df data when available, including a bounded /proc/net/dev throughput sample.",
+            "The command reads portable best-effort procfs, df, process, session, uptime, and filesystem data when available.",
+            "Network throughput is sampled once for 200 ms and emitted as one machine-readable record.",
             *plan.notes,
         ],
     )
@@ -1614,7 +1717,7 @@ def parse_remote_monitoring_output(text: str) -> RemoteMonitoringSnapshot | None
     values = {
         match.group("key"): match.group("value")
         for match in re.finditer(
-            r"(?<![A-Za-z0-9_])(?P<key>cpu|mem_mb|disk_mb|load|users|connections|processes|net_up_mbps|net_down_mbps)\s*=\s*(?P<value>[^\s\r\n]*)",
+            r"(?<![A-Za-z0-9_])(?P<key>cpu|mem_mb|disk_mb|load|users|connections|processes|net_up_mbps|net_down_mbps|uptime_seconds|sessions|mounts)\s*=\s*(?P<value>[^\s\r\n]*)",
             candidate,
         )
     }
@@ -1635,6 +1738,9 @@ def parse_remote_monitoring_output(text: str) -> RemoteMonitoringSnapshot | None
         connection_count=_optional_clamp_int(values.get("connections", values.get("users")), 0, 9999),
         process_count=_optional_clamp_int(values.get("processes"), 0, 99999),
         load_average=values.get("load"),
+        uptime_seconds=_optional_clamp_int(values.get("uptime_seconds"), 0, 31_536_000),
+        session_count=_optional_clamp_int(values.get("sessions"), 0, 9999),
+        filesystem_usage=_parse_filesystem_usage(values.get("mounts")),
     )
 
 
@@ -1711,7 +1817,30 @@ def _optional_pair_gb(value: str | None) -> tuple[float | None, float | None]:
     if value is None or "/" not in value:
         return None, None
     used_mb, total_mb = parse_pair_mb(value)
-    return round(used_mb / 1024, 1), round(total_mb / 1024, 1)
+    return round(used_mb / 1024, 2), round(total_mb / 1024, 2)
+
+
+def _format_monitoring_gb(value: float) -> str:
+    # Keep small values readable while retaining useful precision on live
+    # machines with larger memory and disk totals.
+    if abs(value) < 1 or abs(value - round(value, 1)) < 1e-9:
+        return f"{value:.1f}"
+    return f"{value:.2f}"
+
+
+def _parse_filesystem_usage(value: str | None) -> tuple[tuple[str, int], ...]:
+    if not value or value == "-":
+        return ()
+    entries: list[tuple[str, int]] = []
+    for item in value.split("|"):
+        mount, separator, usage = item.rpartition(":")
+        if not separator or not mount.startswith("/"):
+            continue
+        parsed_usage = _optional_clamp_int(usage.rstrip("%"), 0, 100)
+        if parsed_usage is None:
+            continue
+        entries.append((mount, parsed_usage))
+    return tuple(entries[:8])
 
 
 def _optional_clamp_int(value: str | None, lower: int, upper: int) -> int | None:

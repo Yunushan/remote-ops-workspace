@@ -1058,6 +1058,9 @@ def create_main_window(
             self._pty_initial_clear_pending = False
             self._pty_startup_probe = ""
             self._terminal_scroll_generation = 0
+            self._terminal_follow_output = True
+            self._terminal_scroll_programmatic = 0
+            self._terminal_force_follow_output = False
             self._process_output_buffer = _ByteChunkQueue()
             self._process_output_flush_scheduled = False
             self._process_output_flush_count = 0
@@ -1145,6 +1148,13 @@ def create_main_window(
                 "terminal output viewport",
             )
             self.output_viewport.installEventFilter(self)
+            terminal_scroll_bar = _required_gui_value(
+                self.output.verticalScrollBar(),
+                "terminal vertical scroll bar",
+            )
+            terminal_scroll_bar.valueChanged.connect(
+                self._on_terminal_scroll_value_changed
+            )
             self.terminal_emulator = AnsiTerminalTranscript()
             self.output.setProperty("terminalEmulatorBackend", TERMINAL_EMULATOR_BACKEND)
             self.output.setProperty(
@@ -1173,6 +1183,7 @@ def create_main_window(
             self.output.setProperty("terminalDirectKeyInput", True)
             self.output.setProperty("terminalQtCaretHidden", True)
             self.output.setProperty("terminalTabPaintFrozen", False)
+            self.output.setProperty("terminalFollowOutput", True)
             self.output.setProperty("terminalAlternateScreenActive", False)
             self.output.setProperty("terminalAlternateScreenRedraw", False)
             self.output.setProperty("terminalBracketedPasteActive", False)
@@ -1475,6 +1486,39 @@ def create_main_window(
 
         def is_running(self) -> bool:
             return self.process.state() != QProcess.ProcessState.NotRunning
+
+        def _on_terminal_scroll_value_changed(self, value: int) -> None:
+            """Remember whether the user has intentionally left the live tail."""
+
+            if self._terminal_scroll_programmatic or bool(
+                self.output.property("terminalAlternateScreenRedraw")
+            ):
+                return
+            scroll_bar = _required_gui_value(
+                self.output.verticalScrollBar(),
+                "terminal vertical scroll bar",
+            )
+            following = int(value) >= max(0, scroll_bar.maximum() - 2)
+            self._terminal_follow_output = following
+            if not following:
+                self._terminal_force_follow_output = False
+            self.output.setProperty("terminalFollowOutput", following)
+
+        def _set_terminal_scroll_value(self, value: int) -> None:
+            """Move the scroll bar without treating the move as user input."""
+
+            scroll_bar = _required_gui_value(
+                self.output.verticalScrollBar(),
+                "terminal vertical scroll bar",
+            )
+            self._terminal_scroll_programmatic += 1
+            try:
+                scroll_bar.setValue(int(value))
+            finally:
+                self._terminal_scroll_programmatic = max(
+                    0,
+                    self._terminal_scroll_programmatic - 1,
+                )
 
         def eventFilter(self, watched, event) -> bool:  # noqa: N802
             terminal_targets = (self.output, self.output_viewport)
@@ -1848,6 +1892,23 @@ def create_main_window(
             # cursor-addressed programs (notably htop) jump to the bottom on
             # every keypress and steals a deliberate scrollback position.
             self.output.setProperty("terminalInputPreservedScrollPosition", True)
+            submitted_line = b"\r" in payload or b"\n" in payload
+            follow_live_tail = (
+                submitted_line
+                and not self.terminal_emulator.alternate_screen_active
+                and int(accepted) > 0
+            )
+            if follow_live_tail:
+                # A submitted shell line starts a new prompt/output cycle.
+                # Mark this before the asynchronous response arrives so a
+                # delayed document/layout event cannot restore old scrollback.
+                self._terminal_follow_output = True
+                self._terminal_force_follow_output = True
+                self.output.setProperty("terminalFollowOutput", True)
+                self.output.setProperty("terminalInputRequestedLiveTail", True)
+                self.scroll_terminal_to_end()
+            else:
+                self.output.setProperty("terminalInputRequestedLiveTail", False)
             if int(accepted) < len(payload):
                 self.set_status("input error", "error")
                 self.append_text(
@@ -2047,6 +2108,9 @@ def create_main_window(
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
+            self._terminal_follow_output = True
+            self._terminal_force_follow_output = False
+            self.output.setProperty("terminalFollowOutput", True)
             self.reset_process_output_pipeline()
             self._restart_when_output_drained = False
             self.disarm_initial_pty_clear_recovery()
@@ -2183,6 +2247,9 @@ def create_main_window(
             self.output.setProperty("terminalClipboardWriteRetried", retried)
 
         def clear_output(self) -> None:
+            self._terminal_follow_output = True
+            self._terminal_force_follow_output = False
+            self.output.setProperty("terminalFollowOutput", True)
             self.output.clear()
             self._rendered_terminal_text = ""
             self.terminal_emulator.reset()
@@ -2917,6 +2984,9 @@ def create_main_window(
         def set_terminal_transcript(self, text: str) -> None:
             """Seed a rendered transcript and keep ANSI stream state in sync."""
 
+            self._terminal_follow_output = True
+            self._terminal_force_follow_output = False
+            self.output.setProperty("terminalFollowOutput", True)
             self.terminal_emulator.reset()
             self.output.clear()
             self._rendered_terminal_text = ""
@@ -2949,6 +3019,7 @@ def create_main_window(
             )
             scroll_value = scroll_bar.value()
             alternate_screen_active = self.terminal_emulator.alternate_screen_active
+            full_redraw_hint = self.terminal_emulator.consume_full_redraw_hint()
             # An alternate-screen application owns a fixed terminal grid, not
             # the transcript's scrollback.  Keeping QTextEdit's scrollbar
             # visible while replacing that grid lets Qt change the viewport
@@ -2977,6 +3048,7 @@ def create_main_window(
                 not alternate_screen_active
                 and scroll_value >= scroll_bar.maximum() - 2
             )
+            follow_output = self._terminal_follow_output or was_scrolled_to_end
             self.output.setProperty(
                 "terminalAlternateScreenActive",
                 alternate_screen_active,
@@ -3000,7 +3072,14 @@ def create_main_window(
             # including normal shell output arriving beside an alternate screen.
             self.output.setProperty("terminalAlternateScreenRedraw", True)
             self.output.setUpdatesEnabled(False)
-            if previous and transcript.startswith(previous):
+            append_only = bool(
+                previous
+                and transcript.startswith(previous)
+                and not full_redraw_hint
+                and not alternate_screen_active
+            )
+            replace_from = 0
+            if append_only:
                 replace_from = previous.rfind("\n") + 1
                 cursor = self.output.textCursor()
                 cursor.setPosition(replace_from)
@@ -3017,7 +3096,7 @@ def create_main_window(
             cursor = self.output.textCursor()
             cursor.movePosition(QTextCursor.MoveOperation.End)
             ansi_fragments = self.terminal_emulator.styled_fragments(
-                start=replace_from if previous and transcript.startswith(previous) else 0,
+                start=replace_from if append_only else 0,
                 screen=alternate_screen_active,
             )
             syntax_spans = (
@@ -3025,7 +3104,7 @@ def create_main_window(
                 if alternate_screen_active
                 else highlight_terminal_text(fragment_source, self.syntax_rules)
             )
-            source_offset = replace_from if previous and transcript.startswith(previous) else 0
+            source_offset = replace_from if append_only else 0
             boundaries = {0, len(fragment_source)}
             ansi_ranges = []
             for fragment in ansi_fragments:
@@ -3085,8 +3164,13 @@ def create_main_window(
                 # The retained screen is a viewport, not scrollback.  Always
                 # anchor it at row zero even if the previous shell page had a
                 # large scrollbar value.
-                scroll_bar.setValue(0)
+                self._set_terminal_scroll_value(0)
+                self._terminal_follow_output = False
+                self._terminal_force_follow_output = False
                 self.output.setProperty("terminalFollowOutput", False)
+            elif self._terminal_force_follow_output:
+                self._terminal_force_follow_output = False
+                self.scroll_terminal_to_end()
             elif selection_text_unchanged:
                 restored = QTextCursor(self.output.document())
                 restored.setPosition(selection_anchor)
@@ -3095,12 +3179,16 @@ def create_main_window(
                     QTextCursor.MoveMode.KeepAnchor,
                 )
                 self.output.setTextCursor(restored)
-                scroll_bar.setValue(scroll_value)
+                self._set_terminal_scroll_value(scroll_value)
+                self._terminal_follow_output = follow_output
+                self.output.setProperty("terminalFollowOutput", follow_output)
                 self.output.setProperty("terminalSelectionPreservedOnOutput", True)
-            elif was_scrolled_to_end:
+            elif follow_output:
                 self.scroll_terminal_to_end()
             else:
-                scroll_bar.setValue(scroll_value)
+                self._set_terminal_scroll_value(scroll_value)
+                self._terminal_follow_output = False
+                self.output.setProperty("terminalFollowOutput", False)
             if not alternate_screen_active:
                 self.output.setProperty(
                     "terminalAlternateScreenScrollbarsHidden",
@@ -3147,7 +3235,9 @@ def create_main_window(
                     self.output.verticalScrollBar(),
                     "terminal vertical scroll bar",
                 )
-                scroll_bar.setValue(0)
+                self._set_terminal_scroll_value(0)
+                self._terminal_follow_output = False
+                self._terminal_force_follow_output = False
                 self.output.setProperty("terminalFollowOutput", False)
                 return
 
@@ -3159,19 +3249,31 @@ def create_main_window(
             )
             self.output.moveCursor(QTextCursor.MoveOperation.End)
             self.output.ensureCursorVisible()
-            scroll_bar.setValue(scroll_bar.maximum())
+            self._set_terminal_scroll_value(scroll_bar.maximum())
+            self._terminal_follow_output = True
             self.output.setProperty("terminalFollowOutput", True)
 
             def settle() -> None:
                 if generation != self._terminal_scroll_generation:
                     return
+                if self.terminal_emulator.alternate_screen_active:
+                    return
+                if not self._terminal_follow_output:
+                    return
                 bar = _required_gui_value(
                     self.output.verticalScrollBar(),
                     "terminal vertical scroll bar",
                 )
-                bar.setValue(bar.maximum())
-                self.output.ensureCursorVisible()
-                bar.setValue(bar.maximum())
+                self._set_terminal_scroll_value(bar.maximum())
+                self._terminal_scroll_programmatic += 1
+                try:
+                    self.output.ensureCursorVisible()
+                finally:
+                    self._terminal_scroll_programmatic = max(
+                        0,
+                        self._terminal_scroll_programmatic - 1,
+                    )
+                self._set_terminal_scroll_value(bar.maximum())
 
             QTimer.singleShot(0, settle)
 
@@ -3667,7 +3769,15 @@ def create_main_window(
             self.monitoring_refresh_timer.timeout.connect(
                 self.request_remote_monitoring_refresh
             )
+            # Monitoring is periodic and must never open a visible interactive
+            # prompt. Reusing the active SSH control path or configured key/
+            # agent remains non-interactive; a session-only password may use
+            # the hidden PTY transport after an explicit manual auth action.
             self.monitoring_process = _background_process(self, interactive_auth=True)
+            self.monitoring_process.setProperty(
+                "mobaMonitoringNonInteractive",
+                True,
+            )
             self.monitoring_process.setProcessChannelMode(
                 QProcess.ProcessChannelMode.MergedChannels
             )
@@ -5940,17 +6050,58 @@ def create_main_window(
                 and current_panel.state.target == live_state.target
             ):
                 current_panel.state = live_state
+                current_panel.moba_connected_state = live_state
+                cells = tuple(moba_telemetry_cells(live_state))
+                existing_keys = tuple(current_panel.telemetry_cell_frames)
+                live_keys = tuple(
+                    getattr(cell, "key", "")
+                    for cell in cells
+                )
                 telemetry_bar = current_panel.findChild(
                     QFrame,
                     "mobaTelemetryBar",
                 )
+                if live_keys != existing_keys:
+                    can_rebuild = bool(cells) and all(
+                        all(
+                            hasattr(cell, attribute)
+                            for attribute in (
+                                "icon_key",
+                                "icon_accent",
+                                "icon_size",
+                                "label",
+                                "value",
+                                "display_text",
+                                "width",
+                            )
+                        )
+                        for cell in cells
+                    )
+                    if can_rebuild:
+                        hidden_keys = {
+                            key
+                            for key, frame in current_panel.telemetry_cell_frames.items()
+                            if frame.property("mobaTelemetryUserVisible") is False
+                        }
+                        try:
+                            telemetry_bar = current_panel.rebuild_telemetry_bar(
+                                hidden_keys=hidden_keys,
+                            )
+                        except (AttributeError, KeyError, TypeError):
+                            # A stale/headless test double must not prevent the
+                            # current live snapshot from updating existing cells.
+                            telemetry_bar = current_panel.findChild(
+                                QFrame,
+                                "mobaTelemetryBar",
+                            )
             else:
+                cells = ()
                 telemetry_bar = None
             if telemetry_bar is None:
                 return True
             telemetry_bar.setProperty("mobaTelemetryDataSource", "live-ssh")
             telemetry_bar.setProperty("mobaTelemetryLive", True)
-            for cell in moba_telemetry_cells(live_state):
+            for cell in cells:
                 frame = next(
                     (
                         candidate
@@ -7127,6 +7278,7 @@ def create_main_window(
             root.setSpacing(0)
             root.addWidget(self.build_terminal_area(), 1)
             root.addWidget(self.build_telemetry_bar())
+            self._connected_session_layout: QVBoxLayout = root
 
         def apply_connected_session_route_properties(self, widget) -> None:
             route = moba_connected_session_route(self.state)
@@ -7917,6 +8069,38 @@ def create_main_window(
             footer.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             return banner
 
+        def rebuild_telemetry_bar(self, *, hidden_keys: set[str] | None = None) -> QFrame:
+            """Recreate the fixed status strip when live metrics add cells."""
+
+            layout = self._connected_session_layout
+            old_bar = getattr(self, "telemetry_bar", None)
+            insert_at = layout.indexOf(old_bar) if old_bar is not None else -1
+            if insert_at < 0:
+                insert_at = layout.count()
+            if old_bar is not None:
+                layout.removeWidget(old_bar)
+                old_bar.setParent(None)
+                old_bar.deleteLater()
+            bar = self.build_telemetry_bar()
+            layout.insertWidget(insert_at, bar)
+            for key in hidden_keys or set():
+                frame = self.telemetry_cell_frames.get(key)
+                if frame is None:
+                    continue
+                frame.setVisible(False)
+                frame.setProperty("mobaTelemetryUserVisible", False)
+            bar.setProperty(
+                "mobaTelemetryVisibleCellKeys",
+                [
+                    key
+                    for key, frame in self.telemetry_cell_frames.items()
+                    if frame.property("mobaTelemetryUserVisible") is not False
+                ],
+            )
+            layout.invalidate()
+            layout.activate()
+            return bar
+
         def build_telemetry_bar(self) -> QFrame:
             bar = QFrame()
             bar.setObjectName("mobaTelemetryBar")
@@ -7925,7 +8109,10 @@ def create_main_window(
             self.apply_connected_session_route_properties(bar)
             self.apply_connected_identity_route_properties(bar)
             route = gui_design_moba_monitoring_telemetry_route()
-            geometry_items = moba_telemetry_cell_geometry()
+            cells = moba_telemetry_cells(self.state)
+            geometry_items = moba_telemetry_cell_geometry(
+                tuple(cell.key for cell in cells)
+            )
             bar.setProperty("mobaTelemetryGeometryKeys", [geometry.key for geometry in geometry_items])
             bar.setProperty("mobaTelemetryStartX", geometry_items[0].static_x)
             bar.setProperty("mobaTelemetryBarHeight", 24)
@@ -7944,7 +8131,7 @@ def create_main_window(
             layout = QHBoxLayout(bar)
             layout.setContentsMargins(geometry_items[0].static_x, 0, 7, 0)
             layout.setSpacing(0)
-            for cell in moba_telemetry_cells(self.state):
+            for cell in cells:
                 geometry = moba_telemetry_cell_geometry_for(cell.key)
                 cell_frame = QFrame()
                 cell_frame.setObjectName("mobaTelemetryCell")

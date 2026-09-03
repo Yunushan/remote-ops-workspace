@@ -17,6 +17,20 @@ def test_ansi_transcript_rewrites_carriage_return_progress_and_backspaces() -> N
     assert terminal.feed("\b\bOK") == "download 4OK"
 
 
+def test_ansi_transcript_marks_cursor_rewrites_for_a_full_gui_redraw() -> None:
+    terminal = AnsiTerminalTranscript()
+
+    terminal.feed("prompt")
+    assert terminal.consume_full_redraw_hint() is False
+
+    terminal.feed("\rprogress")
+    assert terminal.consume_full_redraw_hint() is True
+    assert terminal.consume_full_redraw_hint() is False
+
+    terminal.feed("\x1b[2Jscreen")
+    assert terminal.consume_full_redraw_hint() is True
+
+
 def test_ansi_transcript_consumes_sgr_and_erases_the_current_line() -> None:
     terminal = AnsiTerminalTranscript()
 

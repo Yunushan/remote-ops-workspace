@@ -1,6 +1,0 @@
-[tool.example]
-version = "9.9.9"
-
-[project]
-name = "fixture"
-version = "1.0.4"

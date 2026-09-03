@@ -1,5 +1,0 @@
-command=bash -lc htop --version
-runtime=ROW Unix Runtime 1.0.0
-release_target=local-bundle
-status=passed
-note=Bundle assembly probe; replace with real connected-terminal proof for production parity.

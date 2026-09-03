@@ -1,8 +1,0 @@
-{
-  "bundle_type": "extended-linux-native-evidence",
-  "candidate_record": {
-    "file": "one-byte.txt",
-    "size_bytes": 1,
-    "sha256": true
-  }
-}

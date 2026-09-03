@@ -1,1 +1,0 @@
-{"schema": "wrong", "release_target": "target", "certificate": {"id": "cert-1", "provider": "microsoft-capi", "fingerprint_sha256": "bad", "openssh_public_key": "ssh-rsa AAAA"}, "management_interface": {}, "ssh_session_selection": {}, "mobagent": {}, "ssh_browser": {}}

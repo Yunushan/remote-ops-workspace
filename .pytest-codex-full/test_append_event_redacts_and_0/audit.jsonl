@@ -1,1 +1,0 @@
-{"event_type": "launch", "payload": {"api_token": "***REDACTED***", "command": ["ssh", "--password", "***REDACTED***", "host"]}, "ts": "2026-09-03T06:07:44.253637+00:00"}

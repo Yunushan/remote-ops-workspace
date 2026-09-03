@@ -1,6 +1,0 @@
-{
-  "schema_version": 1,
-  "bundle_type": "windows-xp-native-host-evidence",
-  "target": "windows-xp-native-x86",
-  "release_tag": "v1.0.2"
-}

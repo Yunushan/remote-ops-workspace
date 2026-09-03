@@ -1,5 +1,0 @@
-xp smoke target: windows-xp-native-x86
-xp smoke release: v1.0.2
-xp smoke id: legacy_crypto_profile_scoped
-legacy compatibility profile: isolated-opt-in
-weak crypto global default: false

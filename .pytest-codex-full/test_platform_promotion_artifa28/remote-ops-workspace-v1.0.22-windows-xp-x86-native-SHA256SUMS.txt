@@ -1,2 +1,0 @@
-06ae9b18143f567a9626d51ca6b1fcc964c6ea270b3fa4c7034d33985e029530  remote-ops-workspace-v1.0.22-windows-xp-x86-native.zip
-5c6f23311558c0546d7f71c0805eed432caa9d4496a91efbb899e5556108059d  remote-ops-workspace-v1.0.22-windows-xp-x86-native-manifest.json

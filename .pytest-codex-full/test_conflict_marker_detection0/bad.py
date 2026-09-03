@@ -1,3 +1,0 @@
-<<<<<<< HEAD
-print('left')
->>>>>>> branch

@@ -27,6 +27,7 @@ artifacts/pytest-tmp-offscreen/
 artifacts/real-gui-render-final/
 *.egg-info/
 .pytest_cache/
+.pytest-codex-*/
 .mypy_cache/
 .ruff_cache/
 .coverage

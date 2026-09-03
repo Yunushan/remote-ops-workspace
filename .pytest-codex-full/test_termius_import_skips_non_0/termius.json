@@ -1,1 +1,0 @@
-{"metadata": "ignored", "credentials": {"name": "hidden", "address": "secret.example"}, "hosts": [{"label": "missing address", "address": "", "protocol": "ssh"}, {"label": "Mosh", "address": "mosh.example", "protocol": "mosh", "group": "operations", "tags": "mobile", "password": "not-imported"}, {"label": "Odd tags", "address": "odd.example", "labels": {"not": "a-list"}}]}

@@ -1,7 +1,0 @@
-{
-  "release_source": {
-    "workflow_run_url": 12345,
-    "head_sha": true,
-    "run_attempt": "2"
-  }
-}

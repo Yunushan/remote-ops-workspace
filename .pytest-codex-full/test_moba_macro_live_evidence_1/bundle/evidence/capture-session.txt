@@ -1,1 +1,0 @@
-record stop cancel controls visible

@@ -1,1 +1,0 @@
-{"profiles": [{"name": "existing", "protocol": "ssh", "host": "192.0.2.11", "group": "prod"}, {"name": "new", "protocol": "ssh", "host": "192.0.2.12", "group": "prod"}], "group_defaults": {"prod": {"username": "operator"}}}

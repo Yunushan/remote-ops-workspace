@@ -1,2 +1,0 @@
-8c8b9b7d6fc1d56d3e9199e7f110e531bb8c0d6aaa50539b85d1d4455640fab1  xp-native-evidence-bundle-windows-xp-native-x86-v1.0.22.json
-80b1bf4ae919399ffb08d11281ca1ad569fc1079cdce00b1568ae38172d0e0e3  xp-native-evidence-bundle-windows-xp-native-x86-v1.0.22.zip

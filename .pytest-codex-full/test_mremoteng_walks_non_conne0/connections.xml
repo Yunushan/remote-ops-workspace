@@ -1,5 +1,0 @@
-<root xmlns:x="urn:test">
-  <x:Node Name="Parent" Type="Connection" Protocol="SSH2">
-    <x:Node Name="Child" Type="Connection" Protocol="SSH2" Hostname="child.example" />
-  </x:Node>
-</root>

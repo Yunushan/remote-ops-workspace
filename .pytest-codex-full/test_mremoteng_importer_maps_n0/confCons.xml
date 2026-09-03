@@ -1,6 +1,0 @@
-<Connections>
-  <Node Name="Prod" Type="Container">
-    <Node Name="Edge" Type="Connection" Protocol="SSH2" Hostname="192.0.2.10" Port="2222" Username="admin" Password="secret" />
-    <Node Name="Win" Type="Connection" Protocol="RDP" Hostname="192.0.2.20" Port="3389" Username="administrator" Domain="LAB" />
-  </Node>
-</Connections>

@@ -1,1 +1,0 @@
-mobagent loaded cert

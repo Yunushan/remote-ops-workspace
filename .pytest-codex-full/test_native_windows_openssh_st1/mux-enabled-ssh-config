@@ -1,4 +1,0 @@
-Host *
-    ControlMaster auto
-    ControlPath C:/remote-ops-workspace-test-control.sock
-    ControlPersist 10m

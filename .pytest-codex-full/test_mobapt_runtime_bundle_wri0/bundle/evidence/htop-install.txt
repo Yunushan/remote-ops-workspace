@@ -1,6 +1,0 @@
-package=htop
-version=3.3
-runtime=ROW Unix Runtime 1.0.0
-release_target=windows-x64
-status=passed
-note=Bundle assembly proof; replace with real terminal install proof for production parity.

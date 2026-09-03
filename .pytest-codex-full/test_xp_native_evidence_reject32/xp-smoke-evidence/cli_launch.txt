@@ -1,4 +1,0 @@
-xp smoke target: windows-xp-native-x64
-xp smoke release: v1.0.2
-xp smoke id: loopback_profile_dry_run
-cli_launch passed on Windows XP evidence host

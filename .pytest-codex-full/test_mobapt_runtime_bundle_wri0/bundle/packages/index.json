@@ -1,0 +1,18 @@
+{
+  "packages": [
+    {
+      "archive": "packages/htop-3.3.rowpkg",
+      "name": "htop",
+      "sha256": "6aab659d1507c303b35d504918e3d9f6eba832700fc7c28aaae71c7096a425bf",
+      "source": "synthetic",
+      "synthetic": true,
+      "version": "3.3"
+    }
+  ],
+  "runtime": {
+    "name": "ROW Unix Runtime",
+    "release_target": "windows-x64",
+    "version": "1.0.0"
+  },
+  "schema": "row.mobapt.package-index.v1"
+}

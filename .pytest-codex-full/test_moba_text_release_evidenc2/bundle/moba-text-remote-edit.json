@@ -1,0 +1,93 @@
+{
+  "connected_session": {
+    "editor_tab_visible": true,
+    "evidence_file": "evidence/connected-session.txt",
+    "evidence_sha256": "f78ad6b9e53f472a780573125db226bd7f4805b48602bf2d3e0f51b844422555",
+    "real_connected_session": true,
+    "sftp_browser_open": true
+  },
+  "editor_tab": {
+    "conflict_policy": "sha256-match-or-force",
+    "download": {
+      "batch_commands": [
+        "get /etc/app.conf app.conf.edit"
+      ],
+      "command": [
+        "sftp",
+        "-b",
+        "-",
+        "-P",
+        "22",
+        "ops@example.invalid"
+      ],
+      "destructive": false,
+      "force": true,
+      "notes": [
+        "Batch is sent to sftp over stdin; no shell command string is used."
+      ],
+      "profile": "edge",
+      "safety_warnings": []
+    },
+    "encoding": "utf-8",
+    "local_path": "app.conf.edit",
+    "notes": [
+      "MobaTextEditor-style connected editor tab opened from the SSH/SFTP browser.",
+      "Direct open downloads the remote file into a local edit cache using the same SFTP profile parameters.",
+      "Save must run a conflict review against the original remote SHA-256 before upload."
+    ],
+    "opened_from_sftp_browser": true,
+    "profile": "edge",
+    "remote_path": "/etc/app.conf",
+    "remote_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "save": {
+      "batch_commands": [
+        "put app.conf.edit /etc/app.conf"
+      ],
+      "command": [
+        "sftp",
+        "-b",
+        "-",
+        "-P",
+        "22",
+        "ops@example.invalid"
+      ],
+      "destructive": true,
+      "force": true,
+      "notes": [
+        "Batch is sent to sftp over stdin; no shell command string is used.",
+        "Destructive SFTP actions are blocked during execution unless --force is set.",
+        "safety: put can overwrite remote files because sftp has no no-clobber mode",
+        "Destructive SFTP safety override acknowledged."
+      ],
+      "profile": "edge",
+      "safety_warnings": [
+        "put can overwrite remote files because sftp has no no-clobber mode"
+      ]
+    },
+    "schema": "row.moba-text.editor-tab.v1",
+    "syntax": "ini"
+  },
+  "open_action": {
+    "command": "get /etc/app.conf app.conf.edit",
+    "evidence_file": "evidence/open-action.txt",
+    "evidence_sha256": "d6331020441888dbbca0417e7a8b03fb723b9a8bcec5231e3765fce029a7220d",
+    "status": "passed"
+  },
+  "profile": "edge",
+  "release_target": "windows-x64",
+  "remote_path": "/etc/app.conf",
+  "save_action": {
+    "command": "put app.conf.edit /etc/app.conf",
+    "evidence_file": "evidence/save-action.txt",
+    "evidence_sha256": "26567aaebfe76db02640581cc72c06e41e1ce6acdbc2f30f5a93e6e591dd1bce",
+    "status": "passed"
+  },
+  "save_review": {
+    "command": "row text save-review edge /etc/app.conf",
+    "conflict_checked": true,
+    "evidence_file": "evidence/save-review.txt",
+    "evidence_sha256": "6138bef20149adf517c350cff343a05152db14b61fb4a7cf2d8ee391da9c38b6",
+    "status": "passed"
+  },
+  "schema": "row.moba-text.remote-edit-evidence.v1"
+}

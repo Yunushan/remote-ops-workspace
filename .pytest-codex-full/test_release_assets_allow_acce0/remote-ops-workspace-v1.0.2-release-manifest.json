@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-android-termux.tar.gz",
+      "size_bytes": 665,
+      "sha256": "ccbccbf5340908f603b3dce96b73f55297f964215e57af5bf3565cc94c9eb713"
+    },
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-bsd.tar.gz",
+      "size_bytes": 640,
+      "sha256": "c679b75edc5de71e89bda4dabf11ffe82a3ab41d5eda61e5ac63524cb7ea498d"
+    },
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-linux.tar.gz",
+      "size_bytes": 642,
+      "sha256": "f64487b22164bcf355fb65eb7f3f2cf18d3a8f277f61853b2062bd8cc89f6900"
+    },
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-macos.tar.gz",
+      "size_bytes": 643,
+      "sha256": "bbb841d93fbeef98ba8a091537f1ea4ecdbd63bc979b389358581b4bcb941b90"
+    },
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-sbom.cdx.json",
+      "size_bytes": 876,
+      "sha256": "f64e12079d1bc470ff933b329a93742949c9e0391d386c5cc062f87c3bae1112"
+    },
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-solaris.tar.gz",
+      "size_bytes": 643,
+      "sha256": "4276ea6657f1eb493af7c366b3732d3423f728e7437347ccf15bdef5d2e9e702"
+    },
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-source.zip",
+      "size_bytes": 3418,
+      "sha256": "a8d37ddff8ccedb0fc0f759a90e446699cd5de3e32a18325ef30d1673e1c39a5"
+    },
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-web-pwa.zip",
+      "size_bytes": 1516,
+      "sha256": "5c036e4ddde07f178352ad014fd76dfc1799b9d6f149b87f550a68ec9edb4d35"
+    },
+    {
+      "file": "dist/remote-ops-workspace-v1.0.2-windows.zip",
+      "size_bytes": 3448,
+      "sha256": "f0388c7981287be6d32a76caec588811097dcdf169a5a2d6f44bd8f5363fc345"
+    },
+    {
+      "file": "dist/remote_ops_workspace-1.0.2-py3-none-any.whl",
+      "size_bytes": 44,
+      "sha256": "946c8606b00fcd50a8f079dbc169916f7ffe487861fced2fd845cfad7895bc93"
+    },
+    {
+      "file": "dist/remote_ops_workspace-1.0.2.tar.gz",
+      "size_bytes": 597,
+      "sha256": "509b4eebdba5f481d7104fc684f63bd431ea7fd92bace290bd41fbaa25411afe"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"profiles": [{"name": "new", "protocol": "ssh", "host": "192.0.2.11"}, {"name": "existing", "protocol": "ssh", "host": "192.0.2.12"}]}

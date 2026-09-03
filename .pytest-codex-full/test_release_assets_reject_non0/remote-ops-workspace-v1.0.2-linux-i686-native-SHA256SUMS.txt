@@ -1,0 +1,5 @@
+911c386c50f01a82e89caa47855d5eaa8f7baaed751729bff673595ca5da8fc9  remote-ops-workspace-v1.0.2-linux-i386.deb
+66589bcf921756ab561a5c55df167f6dc43e631178a459be4c0caad6528a49ac  remote-ops-workspace-v1.0.2-linux-i686-native-manifest.json
+47b4f3403848a4eb23ca56cc9f4caacde6aed4d341f394ab19f7c3db299da192  remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz
+71aa7a3f242230cb6157e83f0ede61c5d90672322dd3eb7ec659d440298ba9cc  remote-ops-workspace-v1.0.2-linux-i686.AppImage
+0c7682149c8a03d55d7919e4547c2782d43862e830a3114da1848a49e82aa5fe  remote-ops-workspace-v1.0.2-linux-i686.rpm

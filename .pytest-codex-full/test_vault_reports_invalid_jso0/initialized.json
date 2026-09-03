@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "kdf": "scrypt",
+  "salt": "j2OzMtz7coD+nEdty+5MHg==",
+  "verifier": "gAAAAABqmRAndbUH6KmJRUw-Ulru9Pl1E5MgsOGBNYnFhY7OqOMk1w8xIvIfaENzcf3aJb6pK7NR4T-FlBxzIj2Y6M8N-Lyp8VFuGIuBl51jbo7tknjcSXV9kMxube7fzWIkIu_F6oVc",
+  "items": {}
+}

@@ -1,0 +1,111 @@
+{
+  "artifacts": [
+    {
+      "file": "remote-ops-workspace-v1.0.22-linux-i386.deb",
+      "sha256": "e5e17399fe386135c5d95c004147e72a6cbaa985f28e7637221daf6c954b788e",
+      "size_bytes": 31
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.22-linux-i686.rpm",
+      "sha256": "6f4f5d01c81d43d3e88caea037de4e6f45eabbcdc7f0c981dbe3670647a0c105",
+      "size_bytes": 27
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.22-linux-i686.AppImage",
+      "sha256": "9fbf3aaae53bab6b26ae53703b964a8331cc94f019a3f8b8067fffbf3d1eb42a",
+      "size_bytes": 32
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.22-linux-i686-native.tar.gz",
+      "sha256": "b4cea4f2c06a974f01d1ce8936e4d2b66f1642d9a2075994729d377d5fe5e04d",
+      "size_bytes": 177
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.22-linux-i686-native-manifest.json",
+      "sha256": "2be6f26be81ae48f95253152495949e8237cb7a54b29f60a866f423bc521f6a3",
+      "size_bytes": 937
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.22-linux-i686-native-SHA256SUMS.txt",
+      "sha256": "1e746361f9d2d9deeab07c7cd7c0a7fee656b918f9b35c13b3fdf5eaa9568aaa",
+      "size_bytes": 587
+    }
+  ],
+  "builder_evidence": {
+    "file": "builder-identity-linux-i386.json",
+    "sha256": "34d53a44a1b4148a5bf0f8b40bb85954190d2953ae93916e23d6b5e19804b02a",
+    "size_bytes": 2181
+  },
+  "bundle_type": "extended-linux-native-evidence",
+  "candidate_record": {
+    "file": "platform-verified-evidence-linux-i386.json",
+    "sha256": "4337fff749bf997a3ce53cff8f85fd5b6da911516d9b2652cb94ff175b7c2aad",
+    "size_bytes": 9042
+  },
+  "promotion_config_sha256": "1c9b2f4c4499fe07a65faea10f49592d29df6ff72b86f97ceb7fec64271a37de",
+  "release_asset_source": {
+    "artifact_name": "extended-linux-evidence-linux-i386-v1.0.22",
+    "contains_files": [
+      "remote-ops-workspace-v1.0.22-linux-i386.deb",
+      "remote-ops-workspace-v1.0.22-linux-i686.rpm",
+      "remote-ops-workspace-v1.0.22-linux-i686.AppImage",
+      "remote-ops-workspace-v1.0.22-linux-i686-native.tar.gz",
+      "remote-ops-workspace-v1.0.22-linux-i686-native-manifest.json",
+      "remote-ops-workspace-v1.0.22-linux-i686-native-SHA256SUMS.txt"
+    ],
+    "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "run_attempt": 1,
+    "type": "github-actions-artifact",
+    "workflow": ".github/workflows/extended-platform-evidence.yml",
+    "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+  },
+  "release_asset_urls": [
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.22/remote-ops-workspace-v1.0.22-linux-i386.deb",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.22/remote-ops-workspace-v1.0.22-linux-i686.rpm",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.22/remote-ops-workspace-v1.0.22-linux-i686.AppImage",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.22/remote-ops-workspace-v1.0.22-linux-i686-native.tar.gz",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.22/remote-ops-workspace-v1.0.22-linux-i686-native-manifest.json",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.22/remote-ops-workspace-v1.0.22-linux-i686-native-SHA256SUMS.txt"
+  ],
+  "release_tag": "v1.0.22",
+  "runner_labels": [
+    "i386",
+    "linux",
+    "self-hosted"
+  ],
+  "schema_version": 1,
+  "security_patch_evidence": {
+    "cve_patch_reviewed": true,
+    "cve_review_reference": "vendor-cve-advisory-review-2026-06",
+    "legacy_compatibility_profile": "isolated-opt-in",
+    "openssl_cli_version": "OpenSSL 3.0.13",
+    "python_ssl_openssl": "OpenSSL 3.0.13",
+    "security_update_channel": "vendor-security-updates-2026-06",
+    "tls_minimum_modern_profiles": "TLS 1.2",
+    "tls_preferred_modern_profiles": "TLS 1.3"
+  },
+  "smoke_evidence": [
+    {
+      "file": "native-smoke-linux-i386.log",
+      "id": "native_smoke",
+      "sha256": "cfc9400705ffa07d7d4a8e9577e65337386afb2eb44b6e838ed1752dd85b2d9a",
+      "size_bytes": 2912
+    }
+  ],
+  "target": "linux-i386",
+  "validated_commands": [
+    "TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh",
+    "bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 --workflow-run-attempt 1 --source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --builder-evidence linux-i386/v1.0.22/builder-identity-linux-i386.json",
+    "python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir linux-i386/v1.0.22/artifacts --tag v1.0.22 --strict",
+    "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v1.0.22 --target linux-i386 --assets-dir linux-i386/v1.0.22/artifacts --repository example/remote-ops-workspace --linux-builder-evidence linux-i386/v1.0.22/builder-identity-linux-i386.json --linux-smoke-evidence linux-i386/v1.0.22/native-smoke-linux-i386.log --linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 --linux-source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --linux-source-run-attempt 1",
+    "python scripts/stage_extended_linux_evidence_upload.py --target linux-i386 --release-tag v1.0.22 --source-dir linux-i386/v1.0.22/artifacts --out-dir platform-evidence-upload/linux-i386/v1.0.22 --force",
+    "python scripts/check_platform_verified_evidence.py"
+  ],
+  "workflow": ".github/workflows/extended-platform-evidence.yml",
+  "workflow_inputs": {
+    "release_asset_base_url": "https://github.com/example/remote-ops-workspace/releases/download/v1.0.22",
+    "release_tag": "v1.0.22",
+    "target": "linux-i386"
+  },
+  "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345"
+}

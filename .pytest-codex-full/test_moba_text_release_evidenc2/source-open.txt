@@ -1,0 +1,1 @@
+sftp get /etc/app.conf app.conf.edit

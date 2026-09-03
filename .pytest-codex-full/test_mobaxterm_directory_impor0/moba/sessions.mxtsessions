@@ -1,0 +1,8 @@
+[General]
+ignored=value
+[Bookmarks]
+SubRep=operations
+SSH command=ssh -p 2200 -i /keys/id operator@edge.example
+Web command=https https://portal.example:444/path
+password=secret-value
+not-a-session=hello

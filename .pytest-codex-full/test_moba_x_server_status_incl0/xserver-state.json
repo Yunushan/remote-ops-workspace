@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/usr/bin/Xvfb",
+    ":12",
+    "-screen",
+    "0",
+    "1920x1080x24",
+    "-nolisten",
+    "tcp"
+  ],
+  "display": ":12",
+  "dry_run": false,
+  "pid": 5252,
+  "running": true,
+  "runtime_key": "xvfb",
+  "started_at": "2026-09-03T06:12:48+00:00",
+  "state": "started",
+  "state_path": "C:\\Users\\Yunus\\Downloads\\remote-ops-workspace\\.pytest-codex-full\\test_moba_x_server_status_incl0\\xserver-state.json",
+  "stopped_at": ""
+}

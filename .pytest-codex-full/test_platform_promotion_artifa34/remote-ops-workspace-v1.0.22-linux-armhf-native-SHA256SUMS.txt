@@ -1,0 +1,5 @@
+2f00311249fff6570a22c06a808f08a121cb2e5e92c97845d511818f9f9d5a81  remote-ops-workspace-v1.0.22-linux-armhf.deb
+79fa785a88d326e96a7de7ba5a60acbd10621f33a8c86756cdab61641831f65f  remote-ops-workspace-v1.0.22-linux-armv7hl.rpm
+0f5f7df50cf73f0518b7eb2629048dd0fae58da41794c2a825904c0798f03f05  remote-ops-workspace-v1.0.22-linux-armhf.AppImage
+8c9f85609705f627854582b20508e73b409efaf5ba57bd32da71f27fb614885e  remote-ops-workspace-v1.0.22-linux-armhf-native.tar.gz
+bb6723654afd6c605d8ce6595bcf8f98477c380fa1fcf26e01fcfebd892bafc4  remote-ops-workspace-v1.0.22-linux-armhf-native-manifest.json

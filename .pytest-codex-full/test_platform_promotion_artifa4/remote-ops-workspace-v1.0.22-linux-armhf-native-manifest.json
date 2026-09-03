@@ -1,0 +1,30 @@
+[
+  {
+    "file": "remote-ops-workspace-v1.0.22-linux-armhf.deb",
+    "architecture": "armhf",
+    "format": "deb",
+    "size_bytes": 53,
+    "sha256": "2f00311249fff6570a22c06a808f08a121cb2e5e92c97845d511818f9f9d5a81"
+  },
+  {
+    "file": "remote-ops-workspace-v1.0.22-linux-armv7hl.rpm",
+    "architecture": "armv7hl",
+    "format": "rpm",
+    "size_bytes": 51,
+    "sha256": "79fa785a88d326e96a7de7ba5a60acbd10621f33a8c86756cdab61641831f65f"
+  },
+  {
+    "file": "remote-ops-workspace-v1.0.22-linux-armhf.AppImage",
+    "architecture": "armhf",
+    "format": "AppImage",
+    "size_bytes": 54,
+    "sha256": "0f5f7df50cf73f0518b7eb2629048dd0fae58da41794c2a825904c0798f03f05"
+  },
+  {
+    "file": "remote-ops-workspace-v1.0.22-linux-armhf-native.tar.gz",
+    "architecture": "armhf",
+    "format": "tar.gz",
+    "size_bytes": 151,
+    "sha256": "5f73d640679a5851e3d050b5de7e3d412be2a0ecbf67c7653554f12dc6e40810"
+  }
+]

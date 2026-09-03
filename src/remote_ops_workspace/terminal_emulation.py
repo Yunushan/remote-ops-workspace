@@ -143,6 +143,7 @@ class AnsiTerminalTranscript:
         repr=False,
     )
     _text_cache: str | None = field(default=None, init=False, repr=False)
+    _full_redraw_hint: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.max_scrollback_lines < 1:
@@ -174,6 +175,7 @@ class AnsiTerminalTranscript:
         self._pending_responses.clear()
         self._saved_normal_state = None
         self._saved_normal_modes = None
+        self._full_redraw_hint = True
 
     @property
     def alternate_screen_active(self) -> bool:
@@ -236,6 +238,20 @@ class AnsiTerminalTranscript:
         self._pending_responses.clear()
         return responses
 
+    def consume_full_redraw_hint(self) -> bool:
+        """Return whether the last feed changed existing screen content.
+
+        The GUI can safely use an append-only document update for ordinary
+        output, but carriage returns and cursor-addressed redraws must rebuild
+        the affected frame.  Keeping this bit in the parser avoids guessing
+        from string prefixes, which is incorrect for progress bars, Vim, and
+        readline edits.
+        """
+
+        hint = self._full_redraw_hint
+        self._full_redraw_hint = False
+        return hint
+
     def set_screen_size(self, columns: int, rows: int) -> None:
         """Set the virtual terminal size used by alternate-screen programs.
 
@@ -250,6 +266,7 @@ class AnsiTerminalTranscript:
         self._screen_columns = max(20, int(columns))
         self._screen_rows = max(5, int(rows))
         if self._alternate_screen:
+            self._full_redraw_hint = True
             self._resize_alternate_screen()
 
     def feed(self, text: str) -> str:
@@ -261,6 +278,7 @@ class AnsiTerminalTranscript:
         """
 
         self._invalidate_render_cache()
+        self._full_redraw_hint = False
         for char in text:
             if self._escape is not None:
                 self._feed_escape(char)
@@ -268,10 +286,12 @@ class AnsiTerminalTranscript:
             if char == "\x1b":
                 self._escape = ""
             elif char == "\r":
+                self._full_redraw_hint = True
                 self._set_cursor_column(0)
             elif char == "\n":
                 self._newline()
             elif char == "\b":
+                self._full_redraw_hint = True
                 self._set_cursor_column(max(0, self._cursor_column() - 1))
             elif char == "\t":
                 for _ in range(8 - (self._cursor_column() % 8)):
@@ -292,6 +312,7 @@ class AnsiTerminalTranscript:
         """
 
         self._invalidate_render_cache()
+        self._full_redraw_hint = False
         pending_escape = self._escape
         pending_style = self._style
         self._escape = None
@@ -299,10 +320,12 @@ class AnsiTerminalTranscript:
         try:
             for char in text:
                 if char == "\r":
+                    self._full_redraw_hint = True
                     self._set_cursor_column(0)
                 elif char == "\n":
                     self._newline()
                 elif char == "\b":
+                    self._full_redraw_hint = True
                     self._set_cursor_column(max(0, self._cursor_column() - 1))
                 elif char == "\t":
                     for _ in range(8 - (self._cursor_column() % 8)):
@@ -324,6 +347,7 @@ class AnsiTerminalTranscript:
         """
 
         self._invalidate_render_cache()
+        self._full_redraw_hint = True
         self._escape = None
         self._style = ANSI_DEFAULT_STYLE
         self._pending_responses.clear()
@@ -586,6 +610,16 @@ class AnsiTerminalTranscript:
             for value in raw_params.split(";")
             if value != ""
         ]
+        # CSI controls that address existing cells or change the active
+        # screen need a complete frame rebuild.  SGR only changes the style
+        # used by subsequent text, so treating every colour escape as a full
+        # repaint makes fast terminal programs unnecessarily sluggish.
+        if command not in {"m", "n", "c"}:
+            self._full_redraw_hint = True
+        if private and command in {"h", "l"} and any(
+            mode in {47, 1047, 1049} for mode in values
+        ):
+            self._full_redraw_hint = True
         first = values[0] if values else 0
         if private and command in {"h", "l"}:
             enabled = command == "h"

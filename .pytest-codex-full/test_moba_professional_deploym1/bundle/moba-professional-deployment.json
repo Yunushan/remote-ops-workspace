@@ -1,0 +1,58 @@
+{
+  "brand_name": "Corp Ops",
+  "bundle_manifest": {
+    "command": "row customizer build --brand-name Corp Ops",
+    "evidence_file": "evidence/bundle-manifest.txt",
+    "evidence_sha256": "abb5e10981f389e0dfcdebe8f93c0426423a0e1f401c72871bbf2c28b056fba5",
+    "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sha256s_present": true,
+    "status": "passed"
+  },
+  "installer_branding": {
+    "command": "windows installer metadata smoke",
+    "evidence_file": "evidence/installer-branding.txt",
+    "evidence_sha256": "faaccdc2ac1e66263f6f0ad6421318437c4adad70933c7f5e5df84402690b9f5",
+    "logo_applied": true,
+    "product_name_matches_brand": true,
+    "status": "passed",
+    "windows_exe_rebranded": true,
+    "windows_msi_rebranded": true
+  },
+  "policy_locks": {
+    "command": "enterprise policy lock smoke",
+    "evidence_file": "evidence/policy-locks.txt",
+    "evidence_sha256": "a7e907f723c849ba8bd983ad8dbb1d2f5fdf9f211a7328e6ff3d73b35f3f94b8",
+    "locked_settings": [
+      {
+        "key": "theme",
+        "value": "dark"
+      }
+    ],
+    "status": "passed",
+    "surfaces": {
+      "cli": true,
+      "gui": true,
+      "launcher": true,
+      "profile-editor": true,
+      "quick-connect": true,
+      "web": true
+    }
+  },
+  "release_target": "windows-x64",
+  "schema": "row.moba-professional.deployment-evidence.v1",
+  "update_channel": {
+    "channel": "stable",
+    "command": "row customizer update-verify --manifest stable-update.json --public-key ed25519:A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+    "evidence_file": "evidence/update-channel.txt",
+    "evidence_sha256": "08c1fc2e8737e7d12c7677273d6337892b5c57056de2b7aaa75dba090f572e30",
+    "https_update_url": true,
+    "manifest_file": "evidence/update-manifest.json",
+    "manifest_sha256": "6536bf6454d0c3387f70e199fb2cdbc25d92a9c8caebfa78253bee0ecae8b702",
+    "organization": "Example Corp",
+    "organization_channel": true,
+    "public_key": "ed25519:A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+    "signature_verified": true,
+    "status": "passed"
+  },
+  "version": "1.0.2"
+}

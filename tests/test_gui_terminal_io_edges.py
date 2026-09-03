@@ -555,6 +555,35 @@ def test_terminal_scroll_follows_normal_output_but_not_vim_edges(gui_window) -> 
     assert scroll_bar.value() == scroll_bar.maximum()
 
 
+def test_terminal_submitted_line_restores_live_tail_but_alt_screen_keeps_its_view(
+    gui_window,
+) -> None:
+    from PyQt6.QtCore import QProcess
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.set_terminal_transcript("line\n" * 300)
+    scroll_bar = pane.output.verticalScrollBar()
+    scroll_bar.setValue(0)
+    assert pane.output.property("terminalFollowOutput") is False
+
+    process = _Process(QProcess.ProcessState.Running, accepted=1)
+    pane.process = process
+    pane.send_raw_input(b"ls\n")
+    assert process.writes == [b"ls\n"]
+    assert pane.output.property("terminalFollowOutput") is True
+    assert pane.output.property("terminalInputRequestedLiveTail") is True
+    assert scroll_bar.value() == scroll_bar.maximum()
+
+    pane.terminal_emulator._alternate_screen = True
+    pane._terminal_follow_output = False
+    pane.output.setProperty("terminalFollowOutput", False)
+    scroll_bar.setValue(0)
+    pane.send_raw_input(b"\x1b[A")
+    assert pane.output.property("terminalFollowOutput") is False
+    assert pane.output.property("terminalInputRequestedLiveTail") is False
+
+
 def test_terminal_output_flush_latency_and_atomic_frame_edges(gui_window) -> None:
     _app, window = gui_window
     pane = _new_pane(window)

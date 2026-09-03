@@ -1,0 +1,51 @@
+{
+  "brand_name": "Corp Ops",
+  "files": [
+    {
+      "path": "branding/branding.json",
+      "sha256": "469fde020cca5e1943abc55294f19401c1a500b20451c7e81ce3a073c6e7a2c8",
+      "size_bytes": 167
+    },
+    {
+      "path": "config/policy.json",
+      "sha256": "67859008c07122aca55e28c99453fb425bb9ab1118ff81a6e7ed5754c63551cd",
+      "size_bytes": 155
+    },
+    {
+      "path": "config/profiles.json",
+      "sha256": "20efec564cfb21f2d9d5c3f66adc49cfcc3300245666d2795910835aeb0fb48a",
+      "size_bytes": 61
+    },
+    {
+      "path": "config/settings.json",
+      "sha256": "0e0277fca259c8edc23f5059b66eebf6e8ea1468603e0a80c1c347d2761dc3e0",
+      "size_bytes": 245
+    },
+    {
+      "path": "install/README.txt",
+      "sha256": "0efd46643dfd0be8b8b4279ffdb02f777199f9957be391c034977fe10f92ce0f",
+      "size_bytes": 553
+    },
+    {
+      "path": "install/apply-enterprise-bundle.ps1",
+      "sha256": "775e9ae8858b253ae1822fe7e57ed2d38820d57d6d5a18e8f3b51c22c9b5e32a",
+      "size_bytes": 707
+    },
+    {
+      "path": "install/apply-enterprise-bundle.sh",
+      "sha256": "f6abf7594f991c94c22b5dcdcfd83797718d6984e67200458eab6aea20fa3f7b",
+      "size_bytes": 476
+    },
+    {
+      "path": "welcome.txt",
+      "sha256": "76823c9d08a36c2b48d5473e657b0a13dfb4378b8287ffc6ed4156045b0a197e",
+      "size_bytes": 120
+    }
+  ],
+  "generated_by": "remote-ops-workspace moba professional customizer",
+  "locked_setting_count": 0,
+  "organization": "",
+  "profile_count": 0,
+  "project_version": "1.0.22",
+  "schema_version": 1
+}

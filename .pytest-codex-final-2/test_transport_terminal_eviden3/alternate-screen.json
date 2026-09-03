@@ -1,0 +1,23 @@
+{
+  "alternate_screen_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "application": "vim",
+  "captured_at_utc": "2026-08-23T12:34:56Z",
+  "cursor_addressing_stable": true,
+  "entered": true,
+  "exited": true,
+  "full_screen_application_rendered": true,
+  "primary_before_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "primary_restored_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "primary_screen_restored": false,
+  "release_tag": "v1.0.22",
+  "release_target": "windows-x64",
+  "repository": "example/remote-ops-workspace",
+  "resize_stable": true,
+  "run_attempt": 2,
+  "schema": "row.moba-transport-terminal.alternate-screen-proof.v1",
+  "session_id": "session-123",
+  "shell_input_resumed": false,
+  "source_head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+  "transport_id": "transport-456",
+  "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/1234"
+}

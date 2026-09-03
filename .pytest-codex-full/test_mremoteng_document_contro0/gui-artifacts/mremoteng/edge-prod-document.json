@@ -1,0 +1,9 @@
+{
+  "profile": {
+    "name": "edge-prod",
+    "protocol": "SSH",
+    "target": "edge-prod [SSH]"
+  },
+  "schema": "row.gui.mremoteng-document.v1",
+  "state": "saved"
+}

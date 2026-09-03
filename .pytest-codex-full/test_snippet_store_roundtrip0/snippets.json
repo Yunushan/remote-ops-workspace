@@ -1,0 +1,13 @@
+{
+  "snippets": [
+    {
+      "command": "uptime",
+      "description": "",
+      "name": "uptime",
+      "tags": [
+        "ops"
+      ]
+    }
+  ],
+  "version": 1
+}

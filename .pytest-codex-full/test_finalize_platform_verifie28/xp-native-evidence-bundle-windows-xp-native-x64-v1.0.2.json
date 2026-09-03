@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "bundle_type": "windows-xp-native-host-evidence",
+  "target": "windows-xp-native-x64",
+  "release_tag": "v1.0.2",
+  "promotion_config_sha256": "1c9b2f4c4499fe07a65faea10f49592d29df6ff72b86f97ceb7fec64271a37de",
+  "release_asset_urls": [
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-windows-xp-x64-native.zip",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-windows-xp-x64-native-manifest.json",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-windows-xp-x64-native-SHA256SUMS.txt"
+  ],
+  "validated_commands": [
+    "python scripts/check_xp_native_evidence.py --evidence evidence/windows-xp-native-x64/v1.0.2/xp-evidence.json --assets-dir native-dist/windows-xp/windows-xp-native-x64/v1.0.2 --evidence-dir evidence/windows-xp-native-x64/v1.0.2",
+    "python scripts/check_platform_promotion_artifacts.py --target windows-xp-native-x64 --assets-dir native-dist/windows-xp/windows-xp-native-x64/v1.0.2 --tag v1.0.2 --strict",
+    "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v1.0.2 --target windows-xp-native-x64 --assets-dir native-dist/windows-xp/windows-xp-native-x64/v1.0.2 --repository example/remote-ops-workspace --xp-evidence evidence/windows-xp-native-x64/v1.0.2/xp-evidence.json --xp-evidence-dir evidence/windows-xp-native-x64/v1.0.2 --xp-source-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 --xp-source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --xp-source-run-attempt 1",
+    "python scripts/stage_xp_native_evidence_upload.py --target windows-xp-native-x64 --release-tag v1.0.2 --assets-dir native-dist/windows-xp/windows-xp-native-x64/v1.0.2 --evidence-output-dir xp-evidence-output/windows-xp-native-x64/v1.0.2 --out-dir platform-evidence-upload/windows-xp-native-x64/v1.0.2 --force",
+    "python scripts/check_platform_verified_evidence.py"
+  ],
+  "workflow": ".github/workflows/xp-native-evidence.yml",
+  "workflow_inputs": {
+    "target": "windows-xp-native-x64",
+    "release_tag": "v1.0.2",
+    "release_asset_base_url": "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2",
+    "assets_dir": "native-dist/windows-xp/windows-xp-native-x64/v1.0.2",
+    "evidence_file": "evidence/windows-xp-native-x64/v1.0.2/xp-evidence.json",
+    "evidence_dir": "evidence/windows-xp-native-x64/v1.0.2"
+  },
+  "release_asset_source": {
+    "type": "github-actions-artifact",
+    "workflow": ".github/workflows/xp-native-evidence.yml",
+    "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    "artifact_name": "xp-native-evidence-windows-xp-native-x64-v1.0.2",
+    "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "run_attempt": 1,
+    "contains_files": [
+      "remote-ops-workspace-v1.0.2-windows-xp-x64-native-SHA256SUMS.txt",
+      "remote-ops-workspace-v1.0.2-windows-xp-x64-native-manifest.json",
+      "remote-ops-workspace-v1.0.2-windows-xp-x64-native.zip"
+    ]
+  },
+  "xp_evidence_sources": {
+    "evidence": {
+      "file": "xp-evidence.json",
+      "path": "evidence/windows-xp-native-x64/v1.0.2/xp-evidence.json",
+      "size_bytes": 7908,
+      "sha256": "b718eeb0595b59bd918c46569e6350e5ce9d23f744fc6c08b7253a4e868ff73e"
+    },
+    "smoke_evidence": {
+      "artifact_manifest_validation": {
+        "file": "xp-smoke-evidence/artifact_manifest_validation.txt",
+        "size_bytes": 939,
+        "sha256": "bdd5e5d5aaa68bbe41fbe0e4b4039e728c972eff7c10dc0f6a7774afd3c870aa"
+      },
+      "cli_launch": {
+        "file": "xp-smoke-evidence/cli_launch.txt",
+        "size_bytes": 917,
+        "sha256": "8d6e15be9f2dc974047a4ec69820f67d92589ef19685b68f74d5714f9ba7e3db"
+      },
+      "gui_or_legacy_host_ui_launch": {
+        "file": "xp-smoke-evidence/gui_or_legacy_host_ui_launch.txt",
+        "size_bytes": 939,
+        "sha256": "637d2bf877f27284600a84bf193f19eae6bff9cfb2e257184b36baf78617c047"
+      },
+      "legacy_crypto_profile_scoped": {
+        "file": "xp-smoke-evidence/legacy_crypto_profile_scoped.txt",
+        "size_bytes": 1172,
+        "sha256": "cbfe69c4112b38d9a0c901cbfb45a9a80addb5158aefba598cbd0a4db94a3e91"
+      },
+      "loopback_profile_dry_run": {
+        "file": "xp-smoke-evidence/loopback_profile_dry_run.txt",
+        "size_bytes": 931,
+        "sha256": "8f96ffb68a75afba5474c914bbcd54805aa12218a61da2a63f94242857a2c57a"
+      },
+      "modern_defaults_unchanged": {
+        "file": "xp-smoke-evidence/modern_defaults_unchanged.txt",
+        "size_bytes": 1177,
+        "sha256": "880f1010238399429cc3624da9931a5854e5833b053d39d94a940047e3b6b8a9"
+      }
+    }
+  },
+  "xp_evidence_contract_sha256": "3a015541760f1e924eeb59bdc0be6f99f62be73ee4c3eda3f709455392a37034",
+  "host_identity": {
+    "schema_version": 1,
+    "target": "windows-xp-native-x64",
+    "release_tag": "v1.0.2",
+    "host_label": "xp-x64-lab-01",
+    "evidence_run_id": "xp-x64-1-0-2-20260620t120000z",
+    "observed_at_utc": "2026-06-20T12:00:00Z",
+    "operator_private_data_redacted": true,
+    "os": {
+      "name": "Windows XP",
+      "architecture": "x64",
+      "service_pack": "SP2",
+      "edition": "Professional x64 Edition"
+    },
+    "toolchain": {
+      "separate_legacy_toolchain": true,
+      "current_python_pyqt6_stack": false,
+      "description": "Separate legacy XP-capable native host toolchain"
+    }
+  },
+  "toolchain": {
+    "separate_legacy_toolchain": true,
+    "current_python_pyqt6_stack": false
+  },
+  "security": {
+    "legacy_crypto_profile_scoped": true,
+    "modern_defaults_unchanged": true,
+    "weak_crypto_global_default": false,
+    "patch_evidence": {
+      "tls_minimum_modern_profiles": "TLS 1.2",
+      "tls_preferred_modern_profiles": "TLS 1.3",
+      "legacy_compatibility_profile": "isolated-opt-in",
+      "cve_patch_reviewed": true,
+      "security_update_channel": "vendor-security-updates-2026-06",
+      "cve_review_reference": "vendor-cve-advisory-review-2026-06"
+    }
+  },
+  "candidate_record": {
+    "file": "platform-verified-evidence-windows-xp-native-x64.json",
+    "size_bytes": 14035,
+    "sha256": "16e12340d91c39b7e84ffe8c0be0a4ab9da976f8d62f523665f6b269501d0f42"
+  },
+  "evidence": {
+    "file": "xp-evidence.json",
+    "size_bytes": 7908,
+    "sha256": "b718eeb0595b59bd918c46569e6350e5ce9d23f744fc6c08b7253a4e868ff73e"
+  },
+  "smoke_evidence": [
+    {
+      "file": "xp-smoke-evidence/artifact_manifest_validation.txt",
+      "size_bytes": 939,
+      "sha256": "bdd5e5d5aaa68bbe41fbe0e4b4039e728c972eff7c10dc0f6a7774afd3c870aa",
+      "id": "artifact_manifest_validation"
+    },
+    {
+      "file": "xp-smoke-evidence/cli_launch.txt",
+      "size_bytes": 917,
+      "sha256": "8d6e15be9f2dc974047a4ec69820f67d92589ef19685b68f74d5714f9ba7e3db",
+      "id": "cli_launch"
+    },
+    {
+      "file": "xp-smoke-evidence/gui_or_legacy_host_ui_launch.txt",
+      "size_bytes": 939,
+      "sha256": "637d2bf877f27284600a84bf193f19eae6bff9cfb2e257184b36baf78617c047",
+      "id": "gui_or_legacy_host_ui_launch"
+    },
+    {
+      "file": "xp-smoke-evidence/legacy_crypto_profile_scoped.txt",
+      "size_bytes": 1172,
+      "sha256": "cbfe69c4112b38d9a0c901cbfb45a9a80addb5158aefba598cbd0a4db94a3e91",
+      "id": "legacy_crypto_profile_scoped"
+    },
+    {
+      "file": "xp-smoke-evidence/loopback_profile_dry_run.txt",
+      "size_bytes": 931,
+      "sha256": "8f96ffb68a75afba5474c914bbcd54805aa12218a61da2a63f94242857a2c57a",
+      "id": "loopback_profile_dry_run"
+    },
+    {
+      "file": "xp-smoke-evidence/modern_defaults_unchanged.txt",
+      "size_bytes": 1177,
+      "sha256": "880f1010238399429cc3624da9931a5854e5833b053d39d94a940047e3b6b8a9",
+      "id": "modern_defaults_unchanged"
+    }
+  ],
+  "artifacts": [
+    {
+      "file": "remote-ops-workspace-v1.0.2-windows-xp-x64-native-SHA256SUMS.txt",
+      "size_bytes": 89,
+      "sha256": "aadae8f0c299cfd3ee749a2223df9253436430344ca8d215ff758763a1546ccb"
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.2-windows-xp-x64-native-manifest.json",
+      "size_bytes": 88,
+      "sha256": "528539a7ca4c5390d0c7972fe83e4cb807c5423d994a9869c4de86e57ddb53ee"
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.2-windows-xp-x64-native.zip",
+      "size_bytes": 78,
+      "sha256": "83bbd4f5192bf5b2daac7c006469d9beb03e54176364f30a5b5661681c0929ca"
+    }
+  ],
+  "candidate_summary": {
+    "readiness_percent": 100.0,
+    "checks": [
+      "xp_native_evidence_validation",
+      "artifact_validation",
+      "vm_or_host_smoke",
+      "legacy_crypto_profile_scoped",
+      "modern_defaults_unchanged",
+      "release_asset_attachment"
+    ]
+  }
+}

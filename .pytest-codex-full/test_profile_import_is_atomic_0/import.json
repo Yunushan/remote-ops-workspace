@@ -1,0 +1,1 @@
+{"profiles": [{"name": "would-have-been-added", "protocol": "ssh", "host": "192.0.2.11"}, {"name": "invalid-late-row", "protocol": "ssh"}], "group_defaults": {"prod": {"username": "must-not-persist"}}}

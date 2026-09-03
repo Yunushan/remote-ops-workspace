@@ -1,0 +1,21 @@
+xp smoke target: windows-xp-native-x86
+xp smoke release: v1.0.2
+xp smoke id: cli_launch
+xp smoke os name: Windows XP
+xp smoke os architecture: x86
+xp smoke os service pack: SP3 TODO replace with real winver evidence
+xp smoke host probe command: ver
+xp smoke host probe output: Microsoft Windows XP [Version 5.1.2600] TODO replace with real ver output
+xp smoke processor architecture env: x86 TODO replace with real %PROCESSOR_ARCHITECTURE% evidence
+xp smoke processor architecture w6432 env: TODO replace with real %PROCESSOR_ARCHITEW6432% evidence or leave empty when not set
+xp smoke wmic os caption: Microsoft Windows XP Professional TODO replace with real WMIC Caption evidence
+xp smoke wmic os csdversion: Service Pack 3 TODO replace with real WMIC CSDVersion evidence
+xp smoke host label: TODO-use-sanitized-lab-label-not-real-hostname
+xp smoke evidence run id: TODO-use-sanitized-run-id
+xp smoke observed at utc: TODO-use-YYYY-MM-DDTHH:MM:SSZ
+xp smoke source workflow run: TODO-use-github-actions-run-url
+xp smoke source head sha: TODO-use-github-actions-head-sha
+xp smoke source run attempt: TODO-use-github-actions-run-attempt
+Template evidence for windows-xp-native-x86 v1.0.2 smoke id cli_launch.
+Replace this file with real Windows XP host output before validation.
+Do not include confidential access material or other sensitive values.

@@ -1,0 +1,9 @@
+{
+  "profile": {
+    "name": "mRemote edge/profile",
+    "protocol": "rdp",
+    "target": "rdp.example.invalid"
+  },
+  "schema": "row.gui.mremoteng-document.v1",
+  "state": "saved"
+}

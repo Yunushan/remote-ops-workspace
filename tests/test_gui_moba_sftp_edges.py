@@ -212,6 +212,45 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
     label.mouseReleaseEvent(event)
 
 
+def test_live_monitoring_rebuilds_the_bottom_bar_for_extended_metrics(
+    connected_workspace,
+) -> None:
+    from remote_ops_workspace.moba_connected import RemoteMonitoringSnapshot
+
+    app, window, panel, dock, _profile = connected_workspace
+    live_snapshot = RemoteMonitoringSnapshot(
+        cpu_percent=39,
+        memory_used_gb=12.63,
+        memory_total_gb=15.33,
+        disk_used_gb=0.5,
+        disk_total_gb=4.0,
+        net_up_mbps=8.32,
+        net_down_mbps=4.32,
+        connection_count=3,
+        process_count=91,
+        load_average="0.42",
+        uptime_seconds=72_000,
+        session_count=2,
+        filesystem_usage=(("/", 14), ("/boot", 23)),
+    )
+
+    window.tabs.setCurrentWidget(panel)
+    assert dock.apply_live_remote_monitoring_snapshot(live_snapshot) is True
+    app.processEvents()
+    assert panel.moba_connected_state is panel.state
+    assert tuple(panel.telemetry_cell_frames)[-3:] == (
+        "uptime",
+        "sessions",
+        "filesystems",
+    )
+    assert panel.telemetry_bar.property("mobaTelemetryLive") is True
+    assert panel.telemetry_bar.property("mobaTelemetryGeometryKeys")[-3:] == [
+        "uptime",
+        "sessions",
+        "filesystems",
+    ]
+
+
 def test_background_authentication_and_prompt_submission_edges(
     connected_workspace,
     monkeypatch,

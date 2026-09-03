@@ -1,0 +1,23 @@
+{
+  "group_defaults": {},
+  "profiles": [
+    {
+      "command": null,
+      "credential_ref": null,
+      "description": "",
+      "group": "default",
+      "host": "remote.example.invalid",
+      "identity_file": null,
+      "name": "remote",
+      "options": {},
+      "path": null,
+      "port": null,
+      "protocol": "ssh",
+      "tags": [],
+      "tunnels": [],
+      "url": null,
+      "username": null
+    }
+  ],
+  "version": 1
+}

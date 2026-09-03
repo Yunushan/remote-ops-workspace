@@ -1,0 +1,25 @@
+xp smoke target: windows-xp-native-x64
+xp smoke release: v9.9.9
+xp smoke id: artifact_manifest_validation
+xp smoke os name: Windows XP
+xp smoke os architecture: x64
+xp smoke os service pack: SP2
+xp smoke os edition: Professional x64 Edition
+xp smoke host probe command: ver
+xp smoke host probe output: Microsoft Windows [Version 5.2.3790]
+xp smoke processor architecture env: AMD64
+xp smoke processor architecture w6432 env: 
+xp smoke wmic os caption: Microsoft Windows XP Professional x64 Edition
+xp smoke wmic os csdversion: Service Pack 2
+xp smoke host label: xp-x64-lab-01
+xp smoke evidence run id: xp-x64-9-9-9-20260620t120000z
+xp smoke observed at utc: 2026-06-20T12:00:00Z
+xp smoke source workflow run: https://github.com/example/remote-ops-workspace/actions/runs/54321
+xp smoke source head sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+xp smoke source run attempt: 1
+xp smoke artifact file: remote-ops-workspace-v9.9.9-windows-xp-x64-native.zip
+xp smoke artifact file: remote-ops-workspace-v9.9.9-windows-xp-x64-native-manifest.json
+xp smoke artifact file: remote-ops-workspace-v9.9.9-windows-xp-x64-native-SHA256SUMS.txt
+xp smoke artifact manifest validated: true
+xp smoke artifact sha256s validated: true
+artifact_manifest_validation passed on Windows XP evidence host

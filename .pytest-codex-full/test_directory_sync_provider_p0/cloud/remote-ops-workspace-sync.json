@@ -1,0 +1,23 @@
+{
+  "exported_at": "2026-09-03T06:13:55.854052+00:00",
+  "profiles": [
+    {
+      "command": null,
+      "credential_ref": null,
+      "description": "",
+      "group": "default",
+      "host": "192.0.2.10",
+      "identity_file": null,
+      "name": "edge",
+      "options": {},
+      "path": null,
+      "port": null,
+      "protocol": "ssh",
+      "tags": [],
+      "tunnels": [],
+      "url": null,
+      "username": null
+    }
+  ],
+  "version": 1
+}

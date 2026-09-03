@@ -1,0 +1,30 @@
+[
+  {
+    "file": "remote-ops-workspace-v1.0.22-linux-i386.deb",
+    "architecture": "i386",
+    "format": "deb",
+    "size_bytes": 31,
+    "sha256": "e5e17399fe386135c5d95c004147e72a6cbaa985f28e7637221daf6c954b788e"
+  },
+  {
+    "file": "remote-ops-workspace-v1.0.22-linux-i686.rpm",
+    "architecture": "i686",
+    "format": "rpm",
+    "size_bytes": 27,
+    "sha256": "6f4f5d01c81d43d3e88caea037de4e6f45eabbcdc7f0c981dbe3670647a0c105"
+  },
+  {
+    "file": "remote-ops-workspace-v1.0.22-linux-i686.AppImage",
+    "architecture": "i686",
+    "format": "AppImage",
+    "size_bytes": 32,
+    "sha256": "9fbf3aaae53bab6b26ae53703b964a8331cc94f019a3f8b8067fffbf3d1eb42a"
+  },
+  {
+    "file": "remote-ops-workspace-v1.0.22-linux-i686-native.tar.gz",
+    "architecture": "i686",
+    "format": "tar.gz",
+    "size_bytes": 177,
+    "sha256": "b4cea4f2c06a974f01d1ce8936e4d2b66f1642d9a2075994729d377d5fe5e04d"
+  }
+]

@@ -1,0 +1,3 @@
+<<<<<<< HEAD
+print('left')
+>>>>>>> branch

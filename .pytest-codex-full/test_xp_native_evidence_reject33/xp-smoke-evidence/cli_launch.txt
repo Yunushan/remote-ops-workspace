@@ -1,0 +1,4 @@
+xp smoke target: windows-xp-native-x86
+xp smoke release: v9.9.9
+xp smoke id: cli_launch
+cli_launch passed on Windows XP evidence host

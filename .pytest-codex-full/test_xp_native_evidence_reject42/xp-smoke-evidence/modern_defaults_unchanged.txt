@@ -1,0 +1,6 @@
+xp smoke target: windows-xp-native-x64
+xp smoke release: v1.0.2
+xp smoke id: modern_defaults_unchanged
+modern TLS minimum: TLS 1.2
+modern defaults unchanged: true
+weak crypto global default: false

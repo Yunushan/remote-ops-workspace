@@ -1,0 +1,7 @@
+{
+  "release_source": {
+    "workflow_run_url": "https://example.invalid/not-actions",
+    "head_sha": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "run_attempt": "first"
+  }
+}

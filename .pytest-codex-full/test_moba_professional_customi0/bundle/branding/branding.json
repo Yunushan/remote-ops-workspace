@@ -1,0 +1,8 @@
+{
+  "brand_name": "Corp Ops",
+  "logo": "branding/logo.svg",
+  "organization": "Example Corp",
+  "schema_version": 1,
+  "source": "row customizer build",
+  "welcome_message_file": "welcome.txt"
+}

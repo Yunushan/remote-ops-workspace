@@ -1,0 +1,25 @@
+{
+  "group_defaults": {},
+  "profiles": [
+    {
+      "command": null,
+      "credential_ref": "vault:local",
+      "description": "",
+      "group": "default",
+      "host": "edge.example.invalid",
+      "identity_file": null,
+      "name": "edge",
+      "options": {
+        "keepalive_interval": "30"
+      },
+      "path": null,
+      "port": null,
+      "protocol": "ssh",
+      "tags": [],
+      "tunnels": [],
+      "url": null,
+      "username": null
+    }
+  ],
+  "version": 1
+}

@@ -1,0 +1,18 @@
+{
+  "layouts": [
+    {
+      "description": "",
+      "name": "triage",
+      "orientation": "horizontal",
+      "panes": [
+        {
+          "command": null,
+          "profile": "edge",
+          "title": ""
+        }
+      ],
+      "splitter_sizes": []
+    }
+  ],
+  "version": 1
+}

@@ -1,0 +1,23 @@
+{
+  "command": [
+    "C:\\Users\\Yunus\\Downloads\\remote-ops-workspace\\.venv\\Scripts\\python.exe",
+    "-m",
+    "http.server",
+    "8092",
+    "--bind",
+    "127.0.0.1",
+    "--directory",
+    "C:\\Users\\Yunus\\Downloads\\remote-ops-workspace\\.pytest-codex-full\\test_moba_server_lifecycle_wri0"
+  ],
+  "dry_run": false,
+  "host": "127.0.0.1",
+  "pid": 6262,
+  "port": 8092,
+  "running": false,
+  "runtime_key": "python-http",
+  "service": "http",
+  "started_at": "2026-09-03T06:12:46.648342+00:00",
+  "state": "stopped",
+  "state_path": "C:\\Users\\Yunus\\Downloads\\remote-ops-workspace\\.pytest-codex-full\\test_moba_server_lifecycle_wri0\\http-server-state.json",
+  "stopped_at": "2026-09-03T06:12:46.650352+00:00"
+}

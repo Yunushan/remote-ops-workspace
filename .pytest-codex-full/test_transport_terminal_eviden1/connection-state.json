@@ -1,0 +1,24 @@
+{
+  "captured_at_utc": "2026-08-23T12:34:56Z",
+  "disconnect_reason_recorded": true,
+  "reconnect_transition_recorded": true,
+  "release_tag": "v1.0.22",
+  "release_target": "windows-x64",
+  "repository": "example/remote-ops-workspace",
+  "run_attempt": 2,
+  "schema": "row.moba-transport-terminal.connection-state-proof.v1",
+  "session_id": "session-123",
+  "source_head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "state_visible_to_terminal_sftp_monitoring": true,
+  "terminal_exit_status": 0,
+  "terminal_exit_status_recorded": true,
+  "transition_sequence": [
+    "connecting",
+    "authenticating",
+    "connected",
+    "closing",
+    "closed"
+  ],
+  "transport_id": "transport-456",
+  "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/1234"
+}

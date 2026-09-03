@@ -1,0 +1,18 @@
+{
+  "command": [
+    "python",
+    "-m",
+    "http.server"
+  ],
+  "dry_run": false,
+  "host": "127.0.0.1",
+  "pid": null,
+  "port": 8080,
+  "running": false,
+  "runtime_key": "python-http",
+  "service": "http",
+  "started_at": "",
+  "state": "stopped",
+  "state_path": "C:\\Users\\Yunus\\Downloads\\remote-ops-workspace\\.pytest-codex-full\\test_server_lifecycle_missing_0\\http-server-state.json",
+  "stopped_at": "2026-09-03T06:12:46.992186+00:00"
+}

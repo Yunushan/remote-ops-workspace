@@ -1,0 +1,7 @@
+xp smoke target: windows-xp-native-x86
+xp smoke release: v1.0.2
+xp smoke id: cli_launch
+xp smoke host label: xp-x86-lab-02
+xp smoke evidence run id: xp-x86-1-0-2-other
+xp smoke observed at utc: 2026-06-20T12:30:00Z
+cli_launch passed on Windows XP evidence host

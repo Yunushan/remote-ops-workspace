@@ -1,0 +1,12 @@
+995c8d8fd58d926c9f6268f15ce2967f71092b08ab9e18cc15077c76799b3348  remote-ops-workspace-v1.0.2-android-termux.tar.gz
+9a1ef2e24678d7b7ac69cfbd737a3d8aa2d0f67787c9db2b3f540abd4bb478c8  remote-ops-workspace-v1.0.2-bsd.tar.gz
+a34d77c551445c6f4cff4c591f6bc696114e9d15bdec5e7547856e0764c4382f  remote-ops-workspace-v1.0.2-linux.tar.gz
+6ab45ff3e3400b549808f3bec3e4c5d7688166d606498697e55ce5740e2d66b8  remote-ops-workspace-v1.0.2-macos.tar.gz
+e7be47ffc3a5f26c0f400c5d92becf5763c982d5bf1b0490ca8157580077bf9b  remote-ops-workspace-v1.0.2-release-manifest.json
+f64e12079d1bc470ff933b329a93742949c9e0391d386c5cc062f87c3bae1112  remote-ops-workspace-v1.0.2-sbom.cdx.json
+1f6e497afbcd7ca9d4633c4e8c8fcd87623c49ef711435a6417c7a5ce3f38456  remote-ops-workspace-v1.0.2-solaris.tar.gz
+3a9d5c897eec3736e4d09028253dd233088e48f0a511a299202601f39129bfc1  remote-ops-workspace-v1.0.2-source.zip
+ed6fd1971260ce8c718c539b366b2779a27a7071d10d07fc46aa9ba7b21f9233  remote-ops-workspace-v1.0.2-web-pwa.zip
+1932c149ed5c366c81dd9cc32b72beec1af5438682e53867e4229d663217388b  remote-ops-workspace-v1.0.2-windows.zip
+946c8606b00fcd50a8f079dbc169916f7ffe487861fced2fd845cfad7895bc93  remote_ops_workspace-1.0.2-py3-none-any.whl
+7d72918db465ee8733accff865c7fc8d83a9430048a4d3a47224f97f2dd5c89a  remote_ops_workspace-1.0.2.tar.gz

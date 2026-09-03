@@ -1,0 +1,11 @@
+{
+  "snippets": [
+    {
+      "command": "true",
+      "description": "",
+      "name": "first",
+      "tags": []
+    }
+  ],
+  "version": 1
+}

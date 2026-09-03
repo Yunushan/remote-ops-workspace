@@ -1,0 +1,41 @@
+{
+  "packages": [
+    {
+      "archive": "packages/htop-3.3.rowpkg",
+      "name": "htop",
+      "sha256": "6aab659d1507c303b35d504918e3d9f6eba832700fc7c28aaae71c7096a425bf",
+      "source": "synthetic",
+      "synthetic": true,
+      "version": "3.3"
+    }
+  ],
+  "runtime": {
+    "binaries": [
+      {
+        "name": "bash",
+        "path": "bin/bash",
+        "sha256": "1af83361834c909e07ae7efe1e6b7aaa2ab94d980112704c087bffe56bef251b",
+        "shim": true,
+        "source": "shim"
+      },
+      {
+        "name": "grep",
+        "path": "bin/grep",
+        "sha256": "69f787a8c64c13405c44384d035db76915bd1dfe8b0fe6d0b713089cc6cab76a",
+        "shim": true,
+        "source": "shim"
+      }
+    ],
+    "name": "ROW Unix Runtime",
+    "source_policy": {
+      "allow_shims": true,
+      "copy_host_tools": false,
+      "shimmed_tools": [
+        "bash",
+        "grep"
+      ]
+    },
+    "version": "1.0.0"
+  },
+  "schema": "row.mobapt.runtime.v1"
+}

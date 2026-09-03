@@ -1,0 +1,7 @@
+{
+  "release_source": {
+    "workflow_run_url": " https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "run_attempt": 1
+  }
+}

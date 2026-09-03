@@ -1,0 +1,3 @@
+<Connections>
+  <Node Name="Legacy" Type="Connection" Protocol="SSH1" Hostname="192.0.2.15" Port="22" Username="admin" />
+</Connections>

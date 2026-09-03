@@ -1,0 +1,1 @@
+scripts/xp_smoke_runner.cmd --target --release-tag --smoke-id --evidence-file --proof-file --host-label --evidence-run-id --observed-at-utc --source-workflow-run-url --source-head-sha --source-run-attempt --os-name --os-architecture --os-service-pack --os-edition ver PROCESSOR_ARCHITECTURE wmic os get Caption

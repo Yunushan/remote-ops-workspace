@@ -1,0 +1,46 @@
+{
+  "certificate": {
+    "fingerprint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "id": "cert-1",
+    "openssh_public_key": "ssh-rsa AAAA operator-card",
+    "provider": "microsoft-capi"
+  },
+  "management_interface": {
+    "add_remove_controls": true,
+    "command": "row smartcard inventory-plan --provider microsoft-capi",
+    "evidence_file": "evidence/management-interface.txt",
+    "evidence_sha256": "bd254add7984165331b8988b0a80198aedeeb9930d64b1e5f56c7ec915a4d9ca",
+    "gui_visible": true,
+    "openssh_public_key_visible": true,
+    "status": "passed"
+  },
+  "mobagent": {
+    "agent_loaded_certificate": true,
+    "command": "mobagent smartcard add cert-1 --provider microsoft-capi",
+    "evidence_file": "evidence/mobagent.txt",
+    "evidence_sha256": "e8db58e78a4a2ac8601108588af4ff952e2ae4238d01a05f849f5e0d00404bcd",
+    "global_add_setting": true,
+    "status": "passed"
+  },
+  "release_target": "windows-x64",
+  "schema": "row.moba-smartcard.release-evidence.v1",
+  "ssh_browser": {
+    "command": "row smartcard ssh-browser-plan edge --certificate-id cert-1",
+    "evidence_file": "evidence/ssh-browser.txt",
+    "evidence_sha256": "b7a51547a129d311674ea62b8ac63e399f7e5e01c973e6583084a1968b5e23f2",
+    "multiplex_mode": true,
+    "real_connected_session": true,
+    "same_parameters_sftp": true,
+    "sftp_browser_open": true,
+    "status": "passed"
+  },
+  "ssh_session_selection": {
+    "certificate_selected": true,
+    "command": "row smartcard select-review edge --certificate-id cert-1",
+    "evidence_file": "evidence/ssh-session-selection.txt",
+    "evidence_sha256": "8f48dc6b47b2943367e9ed5a1c4e85ea238a01b08e5b7d6cb4959970a46bff31",
+    "expert_setting_visible": true,
+    "profile_saved": true,
+    "status": "passed"
+  }
+}

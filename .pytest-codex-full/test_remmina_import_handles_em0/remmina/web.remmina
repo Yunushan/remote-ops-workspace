@@ -1,0 +1,4 @@
+name=Portal
+protocol=WWW
+url=https://portal.example/path
+username=operator

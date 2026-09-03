@@ -1,0 +1,2235 @@
+{
+  "actual_capture_count": 1,
+  "capture_mode": "live-pyqt6-windows",
+  "captured_preset_ids": [
+    "securecrt"
+  ],
+  "captures": [
+    {
+      "contract_evidence": {
+        "layout_measurements": [
+          {
+            "bounds": {
+              "height": 100,
+              "width": 200,
+              "x": 10,
+              "y": 10
+            },
+            "id": "session-manager-width",
+            "passed": true,
+            "widget": "leftPanel"
+          },
+          {
+            "bounds": {
+              "height": 100,
+              "width": 200,
+              "x": 10,
+              "y": 10
+            },
+            "id": "session-manager-chrome",
+            "passed": true,
+            "widget": "secureCrtSessionManagerChrome"
+          },
+          {
+            "bounds": {
+              "height": 100,
+              "width": 200,
+              "x": 10,
+              "y": 10
+            },
+            "id": "terminal-tabs-workspace",
+            "passed": true,
+            "widget": "sessionTabs"
+          },
+          {
+            "bounds": {
+              "height": 100,
+              "width": 200,
+              "x": 10,
+              "y": 10
+            },
+            "id": "command-log-bottom",
+            "passed": true,
+            "widget": "activityLog"
+          },
+          {
+            "bounds": {
+              "height": 100,
+              "width": 200,
+              "x": 10,
+              "y": 10
+            },
+            "id": "workflow-evidence",
+            "passed": true,
+            "widget": "productWorkflowEvidence"
+          },
+          {
+            "bounds": {
+              "height": 100,
+              "width": 200,
+              "x": 10,
+              "y": 10
+            },
+            "id": "session-status-strip",
+            "passed": true,
+            "widget": "secureCrtSessionStatusStrip"
+          },
+          {
+            "bounds": {
+              "height": 100,
+              "width": 200,
+              "x": 10,
+              "y": 10
+            },
+            "id": "toolbar-search",
+            "passed": true,
+            "widget": "toolbarSearch"
+          }
+        ],
+        "topology_measurements": [
+          {
+            "from": "layoutToolbar",
+            "gap": 10,
+            "id": "toolbar-above-tabs",
+            "passed": true,
+            "relation": "above",
+            "to": "sessionTabs"
+          },
+          {
+            "from": "leftPanel",
+            "gap": 10,
+            "id": "sidebar-left-of-tabs",
+            "passed": true,
+            "relation": "left_of",
+            "to": "sessionTabs"
+          },
+          {
+            "from": "productWorkspaceSurface",
+            "gap": 10,
+            "id": "workspace-surface-above-workflow",
+            "passed": true,
+            "relation": "above",
+            "to": "productWorkflowEvidence"
+          },
+          {
+            "from": "welcomeScroll",
+            "gap": 10,
+            "id": "welcome-scroll-above-log",
+            "passed": true,
+            "relation": "above",
+            "to": "activityLog"
+          },
+          {
+            "from": "productWorkspacePrimaryPane",
+            "gap": 10,
+            "id": "workspace-primary-left-of-secondary",
+            "passed": true,
+            "relation": "left_of",
+            "to": "productWorkspaceSecondaryPane"
+          }
+        ]
+      },
+      "metrics": {
+        "distinct_colors": 42,
+        "height": 820,
+        "luminance_range": 80,
+        "non_background_ratio": 0.25,
+        "sampled_pixels": 128,
+        "width": 1420
+      },
+      "path": "securecrt-live.png",
+      "preset_id": "securecrt",
+      "preset_label": "SecureCRT-style"
+    }
+  ],
+  "common_required_widgets": {
+    "mainToolbar": "main toolbar",
+    "productWorkflowEvidence": "product workflow evidence strip",
+    "productWorkspaceSurface": "product workspace evidence surface",
+    "profileTree": "profile tree",
+    "sessionTabs": "session tabs"
+  },
+  "complete_preset_capture": true,
+  "expected_capture_count": 1,
+  "expected_live_reference_tab_labels": {
+    "mobaxterm": "edge-prod.example.invalid (operator)",
+    "mremoteng": "edge-prod [SSH]",
+    "remmina": "RDP - win-admin",
+    "securecrt": "edge-prod (SSH2)",
+    "termius": "edge-prod"
+  },
+  "expected_live_tree_labels": {
+    "mobaxterm": [
+      "edge-prod",
+      "files",
+      "prod",
+      "sftp-ops",
+      "win-admin"
+    ],
+    "mremoteng": [
+      "Container: files",
+      "Container: prod",
+      "edge-prod [SSH]",
+      "sftp-ops [SFTP]",
+      "win-admin [RDP]"
+    ],
+    "remmina": [
+      "Group: RDP",
+      "Group: SSH/SFTP",
+      "Group: VNC",
+      "RDP - win-admin",
+      "SFTP - sftp-ops",
+      "VNC - linux-console"
+    ],
+    "securecrt": [
+      "Folder: Sessions",
+      "edge-prod (SSH2)",
+      "files-prod (SFTP)",
+      "jump-host (SSH2)"
+    ],
+    "termius": [
+      "Vault / Personal",
+      "Vault / Teams",
+      "edge-prod  ssh host",
+      "jump-host  ssh host",
+      "prod-cluster  ssh host"
+    ]
+  },
+  "extra_capture_preset_ids": [],
+  "failed_contract_evidence_preset_ids": [],
+  "incomplete_contract_evidence_preset_ids": [],
+  "live_layout_contracts": {
+    "mobaxterm": [
+      {
+        "id": "quick-connect-top-strip",
+        "label": "Moba quick connect top strip",
+        "max_x": 90,
+        "max_y": 150,
+        "min_height": 20,
+        "min_width": 240,
+        "object_name": "mobaQuickConnectChrome"
+      },
+      {
+        "id": "rail-left-edge",
+        "label": "Moba narrow vertical rail",
+        "max_width": 32,
+        "max_x": 4,
+        "min_height": 280,
+        "min_width": 28,
+        "object_name": "mobaRail"
+      },
+      {
+        "id": "connected-left-dock",
+        "label": "Moba connected SFTP/monitoring dock",
+        "max_width": 398,
+        "max_x": 40,
+        "min_height": 540,
+        "min_width": 342,
+        "min_x": 24,
+        "object_name": "mobaConnectedLeftDock"
+      },
+      {
+        "id": "sftp-file-table",
+        "label": "Moba connected SFTP file table",
+        "max_x": 520,
+        "min_height": 150,
+        "min_width": 180,
+        "object_name": "mobaSftpFileTable"
+      },
+      {
+        "id": "native-terminal-workspace",
+        "label": "Moba native terminal workspace",
+        "min_height": 300,
+        "min_width": 420,
+        "min_x": 300,
+        "object_name": "terminalOutput"
+      },
+      {
+        "id": "bottom-telemetry",
+        "label": "Moba bottom telemetry strip",
+        "max_height": 90,
+        "min_width": 420,
+        "min_x": 300,
+        "object_name": "mobaTelemetryBar"
+      },
+      {
+        "id": "bottom-edge-controls",
+        "label": "Moba bottom-edge navigation controls",
+        "max_height": 40,
+        "max_width": 100,
+        "min_width": 45,
+        "min_x": 900,
+        "object_name": "mobaBottomEdgeControls"
+      }
+    ],
+    "mremoteng": [
+      {
+        "id": "connections-tree-width",
+        "label": "mRemoteNG Connections sidebar",
+        "max_width": 450,
+        "max_x": 90,
+        "min_width": 300,
+        "object_name": "leftPanel"
+      },
+      {
+        "id": "document-tabs-workspace",
+        "label": "mRemoteNG document tabs",
+        "min_height": 360,
+        "min_width": 620,
+        "min_x": 300,
+        "object_name": "sessionTabs"
+      },
+      {
+        "id": "connection-log-bottom",
+        "label": "mRemoteNG connection log",
+        "min_height": 70,
+        "min_width": 620,
+        "object_name": "activityLog"
+      },
+      {
+        "id": "workflow-evidence",
+        "label": "mRemoteNG workflow evidence cards",
+        "min_height": 35,
+        "min_width": 400,
+        "object_name": "productWorkflowEvidence"
+      },
+      {
+        "id": "property-grid",
+        "label": "mRemoteNG property inheritance grid",
+        "min_height": 90,
+        "min_width": 520,
+        "min_x": 300,
+        "object_name": "mRemoteNgPropertyGrid"
+      },
+      {
+        "id": "document-tree-filter",
+        "label": "mRemoteNG document tree filter",
+        "max_y": 360,
+        "min_width": 150,
+        "min_x": 300,
+        "object_name": "mRemoteNgDocumentFilter"
+      }
+    ],
+    "remmina": [
+      {
+        "id": "connection-profile-width",
+        "label": "Remmina Connection Profiles sidebar",
+        "max_width": 410,
+        "max_x": 90,
+        "min_width": 260,
+        "object_name": "leftPanel"
+      },
+      {
+        "id": "profile-list-chrome",
+        "label": "Remmina profile list chrome",
+        "max_x": 120,
+        "max_y": 320,
+        "min_height": 90,
+        "min_width": 180,
+        "object_name": "remminaProfileListChrome"
+      },
+      {
+        "id": "viewer-tabs-workspace",
+        "label": "Remmina viewer tabs",
+        "min_height": 360,
+        "min_width": 620,
+        "min_x": 260,
+        "object_name": "sessionTabs"
+      },
+      {
+        "id": "connection-activity-bottom",
+        "label": "Remmina connection activity log",
+        "min_height": 70,
+        "min_width": 620,
+        "object_name": "activityLog"
+      },
+      {
+        "id": "workflow-evidence",
+        "label": "Remmina workflow evidence cards",
+        "min_height": 35,
+        "min_width": 400,
+        "object_name": "productWorkflowEvidence"
+      },
+      {
+        "id": "toolbar-search",
+        "label": "Remmina toolbar search",
+        "max_y": 130,
+        "min_width": 100,
+        "object_name": "toolbarSearch"
+      }
+    ],
+    "securecrt": [
+      {
+        "id": "session-manager-width",
+        "label": "Session Manager sidebar",
+        "max_width": 360,
+        "max_x": 90,
+        "min_width": 220,
+        "object_name": "leftPanel"
+      },
+      {
+        "id": "session-manager-chrome",
+        "label": "SecureCRT Session Manager filter/action chrome",
+        "max_x": 120,
+        "max_y": 210,
+        "min_height": 48,
+        "min_width": 180,
+        "object_name": "secureCrtSessionManagerChrome"
+      },
+      {
+        "id": "terminal-tabs-workspace",
+        "label": "SecureCRT terminal tabs",
+        "min_height": 360,
+        "min_width": 620,
+        "min_x": 220,
+        "object_name": "sessionTabs"
+      },
+      {
+        "id": "command-log-bottom",
+        "label": "SecureCRT session log",
+        "min_height": 70,
+        "min_width": 620,
+        "object_name": "activityLog"
+      },
+      {
+        "id": "workflow-evidence",
+        "label": "SecureCRT workflow evidence cards",
+        "min_height": 35,
+        "min_width": 400,
+        "object_name": "productWorkflowEvidence"
+      },
+      {
+        "id": "session-status-strip",
+        "label": "SecureCRT session status strip",
+        "min_height": 24,
+        "min_width": 520,
+        "min_x": 220,
+        "object_name": "secureCrtSessionStatusStrip"
+      },
+      {
+        "id": "toolbar-search",
+        "label": "SecureCRT toolbar search",
+        "max_y": 130,
+        "min_width": 100,
+        "object_name": "toolbarSearch"
+      }
+    ],
+    "termius": [
+      {
+        "id": "hosts-sidebar-width",
+        "label": "Termius Hosts sidebar",
+        "max_width": 380,
+        "max_x": 90,
+        "min_width": 230,
+        "object_name": "leftPanel"
+      },
+      {
+        "id": "hosts-sidebar-chrome",
+        "label": "Termius Hosts search/action chrome",
+        "max_x": 120,
+        "max_y": 210,
+        "min_height": 48,
+        "min_width": 180,
+        "object_name": "termiusHostsChrome"
+      },
+      {
+        "id": "west-tab-workspace",
+        "label": "Termius west-tab workspace",
+        "min_height": 360,
+        "min_width": 620,
+        "min_x": 230,
+        "object_name": "sessionTabs"
+      },
+      {
+        "id": "sync-activity-bottom",
+        "label": "Termius sync activity log",
+        "min_height": 70,
+        "min_width": 620,
+        "object_name": "activityLog"
+      },
+      {
+        "id": "workflow-evidence",
+        "label": "Termius workflow evidence cards",
+        "min_height": 35,
+        "min_width": 400,
+        "object_name": "productWorkflowEvidence"
+      },
+      {
+        "id": "host-identity-strip",
+        "label": "Termius host identity strip",
+        "min_height": 24,
+        "min_width": 520,
+        "min_x": 230,
+        "object_name": "termiusHostIdentityStrip"
+      },
+      {
+        "id": "toolbar-search",
+        "label": "Termius host/search control",
+        "max_y": 130,
+        "min_width": 100,
+        "object_name": "toolbarSearch"
+      }
+    ]
+  },
+  "live_topology_contracts": {
+    "mobaxterm": [
+      {
+        "from": "mobaQuickConnectChrome",
+        "id": "quick-connect-above-dock",
+        "max_gap": 90,
+        "relation": "above",
+        "to": "mobaConnectedLeftDock"
+      },
+      {
+        "from": "mobaRail",
+        "id": "rail-left-of-dock",
+        "max_gap": 80,
+        "relation": "left_of",
+        "to": "mobaConnectedLeftDock"
+      },
+      {
+        "from": "mobaConnectedLeftDock",
+        "id": "dock-left-of-native-terminal",
+        "max_gap": 160,
+        "relation": "left_of",
+        "to": "terminalOutput"
+      },
+      {
+        "from": "mobaSftpFileTable",
+        "id": "sftp-table-inside-dock",
+        "relation": "inside",
+        "to": "mobaConnectedLeftDock"
+      },
+      {
+        "from": "terminalOutput",
+        "id": "native-terminal-above-telemetry",
+        "max_gap": 40,
+        "relation": "above",
+        "to": "mobaTelemetryBar"
+      }
+    ],
+    "mremoteng": [
+      {
+        "from": "layoutToolbar",
+        "id": "toolbar-above-document-tabs",
+        "max_gap": 120,
+        "relation": "above",
+        "to": "sessionTabs"
+      },
+      {
+        "from": "leftPanel",
+        "id": "connections-left-of-document-tabs",
+        "max_gap": 80,
+        "relation": "left_of",
+        "to": "sessionTabs"
+      },
+      {
+        "from": "productWorkspaceSurface",
+        "id": "workspace-surface-above-workflow",
+        "max_gap": 110,
+        "relation": "above",
+        "to": "productWorkflowEvidence"
+      },
+      {
+        "from": "mRemoteNgDocumentControls",
+        "id": "document-controls-above-property-grid",
+        "max_gap": 40,
+        "relation": "above",
+        "to": "mRemoteNgPropertyGrid"
+      },
+      {
+        "from": "welcomeScroll",
+        "id": "welcome-scroll-above-log",
+        "max_gap": 196,
+        "relation": "above",
+        "to": "activityLog"
+      },
+      {
+        "from": "productWorkspacePrimaryPane",
+        "id": "workspace-primary-left-of-secondary",
+        "max_gap": 40,
+        "relation": "left_of",
+        "to": "productWorkspaceSecondaryPane"
+      }
+    ],
+    "remmina": [
+      {
+        "from": "layoutToolbar",
+        "id": "toolbar-above-viewer-tabs",
+        "max_gap": 120,
+        "relation": "above",
+        "to": "sessionTabs"
+      },
+      {
+        "from": "leftPanel",
+        "id": "profiles-left-of-viewer-tabs",
+        "max_gap": 80,
+        "relation": "left_of",
+        "to": "sessionTabs"
+      },
+      {
+        "from": "productWorkspaceSurface",
+        "id": "workspace-surface-above-workflow",
+        "max_gap": 50,
+        "relation": "above",
+        "to": "productWorkflowEvidence"
+      },
+      {
+        "from": "welcomeScroll",
+        "id": "welcome-scroll-above-activity",
+        "max_gap": 196,
+        "relation": "above",
+        "to": "activityLog"
+      },
+      {
+        "from": "productWorkspacePrimaryPane",
+        "id": "workspace-primary-left-of-secondary",
+        "max_gap": 40,
+        "relation": "left_of",
+        "to": "productWorkspaceSecondaryPane"
+      }
+    ],
+    "securecrt": [
+      {
+        "from": "layoutToolbar",
+        "id": "toolbar-above-tabs",
+        "max_gap": 120,
+        "relation": "above",
+        "to": "sessionTabs"
+      },
+      {
+        "from": "leftPanel",
+        "id": "sidebar-left-of-tabs",
+        "max_gap": 80,
+        "relation": "left_of",
+        "to": "sessionTabs"
+      },
+      {
+        "from": "productWorkspaceSurface",
+        "id": "workspace-surface-above-workflow",
+        "max_gap": 50,
+        "relation": "above",
+        "to": "productWorkflowEvidence"
+      },
+      {
+        "from": "welcomeScroll",
+        "id": "welcome-scroll-above-log",
+        "max_gap": 196,
+        "relation": "above",
+        "to": "activityLog"
+      },
+      {
+        "from": "productWorkspacePrimaryPane",
+        "id": "workspace-primary-left-of-secondary",
+        "max_gap": 40,
+        "relation": "left_of",
+        "to": "productWorkspaceSecondaryPane"
+      }
+    ],
+    "termius": [
+      {
+        "from": "layoutToolbar",
+        "id": "toolbar-above-tabs",
+        "max_gap": 120,
+        "relation": "above",
+        "to": "sessionTabs"
+      },
+      {
+        "from": "leftPanel",
+        "id": "hosts-sidebar-left-of-west-tabs",
+        "max_gap": 80,
+        "relation": "left_of",
+        "to": "sessionTabs"
+      },
+      {
+        "from": "productWorkspaceSurface",
+        "id": "workspace-surface-above-workflow",
+        "max_gap": 50,
+        "relation": "above",
+        "to": "productWorkflowEvidence"
+      },
+      {
+        "from": "welcomeScroll",
+        "id": "welcome-scroll-above-log",
+        "max_gap": 196,
+        "relation": "above",
+        "to": "activityLog"
+      },
+      {
+        "from": "productWorkspacePrimaryPane",
+        "id": "workspace-primary-left-of-secondary",
+        "max_gap": 40,
+        "relation": "left_of",
+        "to": "productWorkspaceSecondaryPane"
+      }
+    ]
+  },
+  "measured_contract_evidence_complete": true,
+  "measured_contract_evidence_required_preset_ids": [
+    "securecrt"
+  ],
+  "minimum_capture_size": {
+    "height": 680,
+    "width": 1100
+  },
+  "missing_capture_preset_ids": [],
+  "missing_contract_evidence_preset_ids": [],
+  "preset_live_contracts": {
+    "securecrt": {
+      "contract_checks": [
+        "required-widget-visibility",
+        "preset-catalog-route",
+        "preset-isolation-route",
+        "preset-selection-route",
+        "preset-transition-route",
+        "preset-visual-signature",
+        "session-tabs",
+        "home-tab-label",
+        "profile-tree-content",
+        "status-segments",
+        "interaction-state",
+        "workflow-cards",
+        "reference-tab-activation-route",
+        "reference-tab-chrome-evidence-route",
+        "reference-status-bar-evidence-route",
+        "reference-session-actions-route",
+        "reference-surface-evidence-route",
+        "reference-control-evidence-route",
+        "reference-input-evidence-route",
+        "reference-transcript-evidence-route",
+        "preset-keyboard-shortcut-route",
+        "preset-command-surface-route",
+        "preset-focus-interaction-route",
+        "preset-home-search-route",
+        "layout-geometry",
+        "live-topology",
+        "preset-selector-visible",
+        "toolbar-search-visible",
+        "sidebar-copy",
+        "toolbar-actions",
+        "workspace-surface",
+        "reference-state",
+        "product-identity-route",
+        "securecrt-top-chrome",
+        "securecrt-session-manager-chrome",
+        "securecrt-session-manager-geometry",
+        "securecrt-session-manager-route",
+        "securecrt-session-manager-filter-route",
+        "securecrt-sftp-tab-route",
+        "securecrt-sftp-browser-route",
+        "securecrt-sftp-browser-live-action-route",
+        "securecrt-tree-icons",
+        "securecrt-session-status-strip",
+        "securecrt-session-status-geometry",
+        "securecrt-command-window",
+        "securecrt-command-window-geometry",
+        "securecrt-command-window-send-route",
+        "securecrt-command-window-live-send-route"
+      ],
+      "expected_home_tab_label": "Start Page",
+      "expected_moba_bottom_edge_controls": [],
+      "expected_moba_connected_dock_frame": {},
+      "expected_moba_connected_quick_connect_idle": {},
+      "expected_moba_connected_session_action_route": {},
+      "expected_moba_connected_session_identity_route": {},
+      "expected_moba_connected_session_route": {},
+      "expected_moba_follow_terminal_folder_control_route": {},
+      "expected_moba_home_welcome_chrome": {},
+      "expected_moba_home_welcome_geometry": {},
+      "expected_moba_monitoring_control_geometry": [],
+      "expected_moba_monitoring_controls": [],
+      "expected_moba_monitoring_metric_keys": [],
+      "expected_moba_monitoring_telemetry_route": {},
+      "expected_moba_quick_connect_chrome": {},
+      "expected_moba_quick_connect_suggestion_chrome": {},
+      "expected_moba_rail_chrome": {},
+      "expected_moba_rail_item_geometry": [],
+      "expected_moba_rail_items": [],
+      "expected_moba_rail_labels": {},
+      "expected_moba_remote_monitoring_control_route": {},
+      "expected_moba_remote_monitoring_dock_chrome": {},
+      "expected_moba_ribbon_action_geometry": [],
+      "expected_moba_ribbon_edge_action_route": {},
+      "expected_moba_right_utility_action_route": {},
+      "expected_moba_right_utility_actions": [],
+      "expected_moba_right_utility_keys": [],
+      "expected_moba_right_utility_rail_chrome": {},
+      "expected_moba_session_edge_action_route": {},
+      "expected_moba_session_edge_actions": [],
+      "expected_moba_session_tree_chrome": {},
+      "expected_moba_sftp_action_keys": [],
+      "expected_moba_sftp_browser_chrome": {},
+      "expected_moba_sftp_browser_geometry": {},
+      "expected_moba_sftp_dock_layout": {},
+      "expected_moba_sftp_file_row_icons": [],
+      "expected_moba_sftp_follow_folder_route": {},
+      "expected_moba_sftp_routed_file_rows": {},
+      "expected_moba_sftp_separator_after_keys": [],
+      "expected_moba_sftp_terminal_folder_route": {},
+      "expected_moba_sftp_toolbar_action_geometry": [],
+      "expected_moba_sftp_toolbar_action_route": {},
+      "expected_moba_sftp_toolbar_groups": [],
+      "expected_moba_ssh_banner_capability_card": {},
+      "expected_moba_ssh_banner_chrome": {},
+      "expected_moba_ssh_banner_row_geometry": [],
+      "expected_moba_static_tab_chrome_keys": [],
+      "expected_moba_status_chrome": {},
+      "expected_moba_status_keys": [],
+      "expected_moba_tab_chrome_geometry": [],
+      "expected_moba_tab_chrome_keys": [],
+      "expected_moba_telemetry_cell_geometry": [],
+      "expected_moba_telemetry_cells": [],
+      "expected_moba_terminal_transcript": [],
+      "expected_moba_terminal_transcript_row_geometry": [],
+      "expected_moba_titlebar_chrome": {},
+      "expected_moba_top_menu": [],
+      "expected_moba_top_menu_geometry": [],
+      "expected_moba_top_stack_geometry": {},
+      "expected_mremoteng_connection_document_route": {},
+      "expected_mremoteng_document_controls": {},
+      "expected_mremoteng_document_filter_route": {},
+      "expected_mremoteng_inheritance_route": {},
+      "expected_mremoteng_property_grid": {},
+      "expected_mremoteng_top_chrome": {},
+      "expected_preset_catalog_route": {
+        "default_preset_id": "native",
+        "default_preset_label": "Native",
+        "default_property": "presetCatalogRouteDefaultPresetId",
+        "key": "gui-preset-selector-catalog-route",
+        "option_count": 6,
+        "option_ids": [
+          "native",
+          "mobaxterm",
+          "securecrt",
+          "termius",
+          "remmina",
+          "mremoteng"
+        ],
+        "option_labels": [
+          "Native",
+          "MobaXterm-style",
+          "SecureCRT-style",
+          "Termius-style",
+          "Remmina-style",
+          "mRemoteNG-style"
+        ],
+        "option_labels_property": "presetCatalogRouteOptionLabels",
+        "product_ids_property": "presetCatalogRouteProductPresetIds",
+        "product_option_count": 5,
+        "product_preset_ids": [
+          "mobaxterm",
+          "securecrt",
+          "termius",
+          "remmina",
+          "mremoteng"
+        ],
+        "product_preset_labels": [
+          "MobaXterm-style",
+          "SecureCRT-style",
+          "Termius-style",
+          "Remmina-style",
+          "mRemoteNG-style"
+        ],
+        "render_source": "gui-design-preset-catalog",
+        "route_role": "preset-catalog-to-design-selector-options",
+        "selector_object": "designSelect",
+        "selector_property": "presetCatalogRouteOptionIds"
+      },
+      "expected_preset_command_surface_route": {
+        "captured_count_property": "presetCommandSurfaceCapturedCount",
+        "captured_keys_property": "presetCommandSurfaceCapturedKeys",
+        "captured_labels_property": "presetCommandSurfaceCapturedLabels",
+        "captured_property": "presetCommandSurfaceCaptured",
+        "captured_states_property": "presetCommandSurfaceCapturedStates",
+        "captured_tooltips_property": "presetCommandSurfaceCapturedTooltips",
+        "command_object": "productToolbarButton",
+        "expected_action_count": 12,
+        "expected_action_keys": [
+          "refresh",
+          "new",
+          "import",
+          "edit",
+          "remove",
+          "connect",
+          "files",
+          "queue",
+          "dry-run",
+          "doctor",
+          "split-h",
+          "split-v"
+        ],
+        "expected_action_labels": [
+          "Refresh",
+          "New Session",
+          "Import",
+          "Properties",
+          "Delete",
+          "Connect",
+          "SFTP",
+          "Transfer",
+          "Command",
+          "Tools",
+          "Tile H",
+          "Tile V"
+        ],
+        "expected_action_states": {
+          "connect": "active",
+          "doctor": "normal",
+          "dry-run": "normal",
+          "edit": "normal",
+          "files": "checked",
+          "import": "normal",
+          "new": "normal",
+          "queue": "normal",
+          "refresh": "normal",
+          "remove": "normal",
+          "split-h": "normal",
+          "split-v": "normal"
+        },
+        "expected_action_tooltips": [
+          "Refresh Session Manager",
+          "Create a terminal session",
+          "Import session definitions",
+          "Edit session properties",
+          "Delete selected session",
+          "Open selected terminal session",
+          "Open SFTP tab",
+          "Preview transfer queue",
+          "Show launch command",
+          "Run tool diagnostics",
+          "Tile terminal panes horizontally",
+          "Tile terminal panes vertically"
+        ],
+        "key": "securecrt-command-surface-route",
+        "key_property": "presetCommandSurfaceActionKey",
+        "label_property": "presetCommandSurfaceActionLabel",
+        "preset_id": "securecrt",
+        "render_source": "gui-design-command-surface-route",
+        "route_role": "product-preset-command-surface-route",
+        "state_property": "interactionState",
+        "toolbar_object": "mainToolbar",
+        "tooltip_property": "presetCommandSurfaceActionTooltip"
+      },
+      "expected_preset_focus_interaction_route": {
+        "active_tab_status": "SSH2 connected",
+        "active_toolbar_key": "connect",
+        "captured_focus_property": "presetFocusInteractionCapturedFocus",
+        "captured_focus_state_property": "presetFocusInteractionCapturedState",
+        "captured_property": "presetFocusInteractionCaptured",
+        "captured_selected_tree_property": "presetFocusInteractionCapturedSelectedTreeLabel",
+        "captured_status_message_property": "presetFocusInteractionStatusMessage",
+        "captured_toolbar_states_property": "presetFocusInteractionToolbarStates",
+        "checked_toolbar_key": "files",
+        "disabled_toolbar_key": "",
+        "focus_object": "secureCrtSessionFilter",
+        "focused_control": "session-filter",
+        "focused_state_property": "interactionState",
+        "key": "securecrt-focus-interaction-route",
+        "preset_id": "securecrt",
+        "profile_tree_object": "profileTree",
+        "render_source": "gui-design-focus-interaction-route",
+        "route_role": "product-preset-focus-interaction-route",
+        "selected_tree_label": "edge-prod (SSH2)",
+        "status_bar_object": "statusBar",
+        "status_note": "Session Manager focus, SFTP checked, delete follows selection"
+      },
+      "expected_preset_home_search_route": {
+        "captured_actions_property": "presetHomeSearchCapturedActions",
+        "captured_entry_placeholder_property": "presetHomeSearchCapturedEntryPlaceholder",
+        "captured_entry_text_property": "presetHomeSearchCapturedEntryText",
+        "captured_placeholder_property": "presetHomeSearchCapturedPlaceholder",
+        "captured_property": "presetHomeSearchCaptured",
+        "captured_recent_count_property": "presetHomeSearchCapturedRecentCount",
+        "captured_recent_labels_property": "presetHomeSearchCapturedRecentLabels",
+        "captured_text_property": "presetHomeSearchCapturedText",
+        "container_object": "welcomePanel",
+        "entry_placeholder_property": "presetHomeSearchEntryPlaceholder",
+        "entry_placeholder_text": "Filter sessions",
+        "entry_search_control": "session-filter",
+        "entry_search_object": "secureCrtSessionFilter",
+        "expected_home_actions": [
+          "Connect",
+          "New Session"
+        ],
+        "expected_recent_count": 9,
+        "expected_recent_labels": [
+          "edge-prod (SSH2)",
+          "jump-host (SSH2)",
+          "...",
+          "files-prod (SFTP)",
+          "PowerShell",
+          "...",
+          "Start Page",
+          "Net tools",
+          "..."
+        ],
+        "home_search_object": "homeSearch",
+        "home_tab_label": "Start Page",
+        "key": "securecrt-home-search-route",
+        "placeholder_property": "presetHomeSearchPlaceholder",
+        "placeholder_text": "Search Session Manager...",
+        "preset_id": "securecrt",
+        "recent_label_object": "recentSessionsLabel",
+        "render_source": "gui-design-home-search-route",
+        "route_role": "product-preset-home-search-entry-route"
+      },
+      "expected_preset_isolation_route": {
+        "hidden_objects": [
+          "mobaQuickConnectChrome",
+          "quickConnect",
+          "mobaRail",
+          "mobaConnectedLeftDock",
+          "mobaSftpBrowser",
+          "mobaRemoteMonitoring",
+          "mobaSshBanner",
+          "mobaTelemetryBar",
+          "mobaBottomEdgeControls",
+          "termiusHostsChrome",
+          "termiusHeaderChips",
+          "termiusHostIdentityStrip",
+          "remminaProfileListChrome",
+          "remminaViewerControls",
+          "mRemoteNgMenuBar",
+          "mRemoteNgDocumentControls",
+          "mRemoteNgPropertyGrid"
+        ],
+        "hidden_property": "presetIsolationHiddenObjects",
+        "key": "securecrt-preset-isolation-route",
+        "preset_id": "securecrt",
+        "render_source": "gui-design-preset-visibility",
+        "route_role": "active-preset-visible-hidden-widget-isolation",
+        "visible_objects": [
+          "mainToolbar",
+          "layoutToolbar",
+          "leftPanelHeader",
+          "profileTree",
+          "sessionTabs",
+          "activityLog",
+          "productWorkflowEvidence",
+          "productWorkspaceSurface",
+          "productReferenceState",
+          "secureCrtMenuBar",
+          "secureCrtSessionManagerChrome",
+          "secureCrtSessionStatusStrip",
+          "secureCrtCommandWindow"
+        ],
+        "visible_property": "presetIsolationVisibleObjects"
+      },
+      "expected_preset_keyboard_shortcut_route": {
+        "captured_action_labels_property": "presetKeyboardShortcutCapturedActionLabels",
+        "captured_count_property": "presetKeyboardShortcutCapturedCount",
+        "captured_keys_property": "presetKeyboardShortcutCapturedKeys",
+        "captured_property": "presetKeyboardShortcutsCaptured",
+        "captured_sequences_property": "presetKeyboardShortcutCapturedSequences",
+        "expected_action_labels": [
+          "Refresh profiles",
+          "New profile",
+          "Edit selected profile",
+          "Connect selected profile",
+          "New local terminal",
+          "Close current tab",
+          "Recover previous sessions",
+          "Split horizontal",
+          "Split vertical",
+          "Open selected layout",
+          "Find log text"
+        ],
+        "expected_sequences": [
+          "Ctrl+R",
+          "Ctrl+N",
+          "Ctrl+E",
+          "Ctrl+Return",
+          "Ctrl+T",
+          "Ctrl+W",
+          "Ctrl+Shift+T",
+          "Ctrl+Shift+H",
+          "Ctrl+Shift+V",
+          "Ctrl+L",
+          "Ctrl+F"
+        ],
+        "expected_shortcut_count": 11,
+        "expected_shortcut_keys": [
+          "refresh-profiles",
+          "new-profile",
+          "edit-profile",
+          "connect-selected",
+          "new-local-terminal",
+          "close-current-tab",
+          "recover-previous-sessions",
+          "split-horizontal",
+          "split-vertical",
+          "open-selected-layout",
+          "find-log-text"
+        ],
+        "key": "securecrt-keyboard-shortcut-route",
+        "preset_id": "securecrt",
+        "render_source": "gui-design-keyboard-shortcuts",
+        "route_role": "product-preset-keyboard-shortcuts",
+        "shortcut_action_property": "presetKeyboardShortcutActionLabel",
+        "shortcut_key_property": "presetKeyboardShortcutKey",
+        "shortcut_object": "presetKeyboardShortcut",
+        "shortcut_sequence_property": "presetKeyboardShortcutSequence"
+      },
+      "expected_preset_reference_control_route": {
+        "action_key_property": "terminalActionKey",
+        "action_keys": [
+          "start",
+          "restart",
+          "stop",
+          "copy",
+          "clear",
+          "macro-rec",
+          "macro-stop",
+          "macro-cancel",
+          "macro-replay"
+        ],
+        "action_label_property": "terminalActionLabel",
+        "action_labels": [
+          "Start",
+          "Restart",
+          "Stop",
+          "Copy",
+          "Clear",
+          "Macro Rec",
+          "Macro Stop",
+          "Macro Cancel",
+          "Macro Replay"
+        ],
+        "action_tooltip_property": "terminalActionTooltip",
+        "action_tooltips": [
+          "Start process",
+          "Restart process",
+          "Stop process",
+          "Copy selected terminal output, or the launch command when nothing is selected",
+          "Clear terminal output",
+          "Record terminal macro",
+          "Stop terminal macro",
+          "Cancel macro",
+          "Replay terminal macro"
+        ],
+        "active_tab_label": "edge-prod (SSH2)",
+        "allowed_status_states": [
+          "ready",
+          "starting",
+          "running",
+          "stopping",
+          "error",
+          "blocked"
+        ],
+        "captured_actions_property": "presetReferenceControlCapturedActionKeys",
+        "captured_property": "presetReferenceControlsCaptured",
+        "captured_status_property": "presetReferenceControlStatusState",
+        "captured_status_text_property": "presetReferenceControlStatusText",
+        "key": "securecrt-reference-control-evidence-route",
+        "preset_id": "securecrt",
+        "reference_profile": "edge-prod",
+        "render_source": "gui-design-reference-controls",
+        "route_role": "active-reference-tab-terminal-controls",
+        "status_state_property": "state",
+        "terminal_action_object": "terminalAction",
+        "terminal_pane_object": "terminalPane",
+        "terminal_status_object": "paneStatus"
+      },
+      "expected_preset_reference_input_route": {
+        "active_tab_label": "edge-prod (SSH2)",
+        "allowed_enabled_states": [
+          true,
+          false
+        ],
+        "captured_enabled_property": "presetReferenceInputEnabled",
+        "captured_placeholder_property": "presetReferenceInputPlaceholder",
+        "captured_property": "presetReferenceInputCaptured",
+        "captured_tab_property": "presetReferenceInputCapturedTab",
+        "captured_text_property": "presetReferenceInputText",
+        "expected_initial_text": "",
+        "key": "securecrt-reference-input-evidence-route",
+        "placeholder_text": "stdin, shell command or interactive input",
+        "preset_id": "securecrt",
+        "reference_profile": "edge-prod",
+        "render_source": "gui-design-reference-input",
+        "route_role": "active-reference-tab-terminal-input",
+        "terminal_input_object": "terminalInput",
+        "terminal_pane_object": "terminalPane"
+      },
+      "expected_preset_reference_session_action_route": {
+        "action_enabled_property": "sessionTabContextActionEnabled",
+        "action_key_property": "sessionTabContextActionKey",
+        "action_label_property": "sessionTabContextActionLabel",
+        "action_object": "sessionTabContextAction",
+        "active_tab_label": "edge-prod (SSH2)",
+        "always_enabled_action_keys": [
+          "new-local-terminal",
+          "split-horizontal",
+          "split-vertical",
+          "duplicate-tab",
+          "close-tab",
+          "recover-previous-sessions"
+        ],
+        "captured_action_count_property": "presetReferenceSessionActionCount",
+        "captured_action_keys_property": "presetReferenceSessionActionKeys",
+        "captured_action_labels_property": "presetReferenceSessionActionLabels",
+        "captured_disabled_keys_property": "presetReferenceSessionActionDisabledKeys",
+        "captured_enabled_keys_property": "presetReferenceSessionActionEnabledKeys",
+        "captured_property": "presetReferenceSessionActionsCaptured",
+        "captured_tab_property": "presetReferenceSessionActionsCapturedTab",
+        "conditional_enabled_action_keys": [
+          "close-other-tabs"
+        ],
+        "expected_action_count": 7,
+        "expected_action_keys": [
+          "new-local-terminal",
+          "split-horizontal",
+          "split-vertical",
+          "duplicate-tab",
+          "close-tab",
+          "close-other-tabs",
+          "recover-previous-sessions"
+        ],
+        "expected_action_labels": [
+          "New local terminal",
+          "Split horizontal",
+          "Split vertical",
+          "Duplicate tab",
+          "Close tab",
+          "Close other tabs",
+          "Recover previous sessions"
+        ],
+        "key": "securecrt-reference-session-actions-route",
+        "preset_id": "securecrt",
+        "reference_profile": "edge-prod",
+        "reference_tab_role": "terminal",
+        "render_source": "gui-design-reference-session-actions",
+        "route_role": "active-reference-session-actions",
+        "tab_bar_object": "sessionTabBar",
+        "tabs_object": "sessionTabs"
+      },
+      "expected_preset_reference_status_bar_route": {
+        "active_tab_label": "edge-prod (SSH2)",
+        "captured_message_property": "presetReferenceStatusMessage",
+        "captured_notice_property": "presetReferenceStatusNotice",
+        "captured_property": "presetReferenceStatusCaptured",
+        "captured_segment_count_property": "presetReferenceStatusSegmentCount",
+        "captured_segment_tooltips_property": "presetReferenceStatusSegmentTooltips",
+        "captured_segments_property": "presetReferenceStatusSegments",
+        "captured_tab_property": "presetReferenceStatusCapturedTab",
+        "expected_segment_count": 3,
+        "expected_status_message": "Running process panes: 1",
+        "expected_status_segments": [
+          "SSH2",
+          "Session Manager",
+          "2 active tabs"
+        ],
+        "key": "securecrt-reference-status-bar-evidence-route",
+        "preset_id": "securecrt",
+        "reference_profile": "edge-prod",
+        "render_source": "gui-design-reference-status-bar",
+        "route_role": "active-reference-status-bar-evidence",
+        "status_bar_object": "statusBar",
+        "status_notice_object": "productStatusNotice",
+        "status_segment_object": "productStatusSegment"
+      },
+      "expected_preset_reference_surface_route": {
+        "active_tab_label": "edge-prod (SSH2)",
+        "actual_command_property": "presetReferenceSurfaceActualCommand",
+        "actual_output_property": "presetReferenceSurfaceActualOutput",
+        "actual_source_property": "presetReferenceSurfaceActualSource",
+        "actual_title_property": "presetReferenceSurfaceActualTitle",
+        "captured_property": "presetReferenceSurfaceCaptured",
+        "captured_tab_property": "presetReferenceSurfaceCapturedTab",
+        "command_executables": [
+          "ssh"
+        ],
+        "command_target_fragment": "edge-prod.example.invalid",
+        "expected_source": "profile:edge-prod",
+        "expected_title": "edge-prod",
+        "key": "securecrt-reference-surface-evidence-route",
+        "preset_id": "securecrt",
+        "reference_profile": "edge-prod",
+        "render_source": "gui-design-reference-surface",
+        "route_role": "active-reference-tab-surface-evidence",
+        "terminal_command_object": "terminalCommand",
+        "terminal_output_object": "terminalOutput",
+        "terminal_pane_object": "terminalPane",
+        "terminal_source_object": "terminalSource",
+        "terminal_title_object": "terminalTitle"
+      },
+      "expected_preset_reference_tab_chrome_route": {
+        "active_tab_label": "edge-prod (SSH2)",
+        "captured_closeable_property": "presetReferenceTabChromeCloseable",
+        "captured_index_property": "presetReferenceTabChromeIndex",
+        "captured_label_property": "presetReferenceTabChromeLabel",
+        "captured_position_property": "presetReferenceTabChromePosition",
+        "captured_property": "presetReferenceTabChromeCaptured",
+        "captured_role_property": "presetReferenceTabChromeRole",
+        "captured_selected_property": "presetReferenceTabChromeSelected",
+        "captured_tooltip_property": "presetReferenceTabChromeTooltip",
+        "expected_closeable": true,
+        "expected_selected_during_capture": true,
+        "expected_tab_position": "north",
+        "expected_tooltip": "edge-prod (SSH2): SSH2 connected",
+        "home_tab_label": "Start Page",
+        "key": "securecrt-reference-tab-chrome-evidence-route",
+        "new_session_tab_role": "new-session",
+        "preset_id": "securecrt",
+        "reference_profile": "edge-prod",
+        "reference_tab_role": "terminal",
+        "render_source": "gui-design-reference-tab-chrome",
+        "route_role": "active-reference-tab-chrome-evidence",
+        "tab_bar_object": "sessionTabBar",
+        "tabs_object": "sessionTabs"
+      },
+      "expected_preset_reference_tab_route": {
+        "activated_label_property": "presetReferenceTabActivatedLabel",
+        "active_tab_label": "edge-prod (SSH2)",
+        "active_tab_property": "presetReferenceTabActiveLabel",
+        "home_tab_label": "Start Page",
+        "home_tab_property": "presetReferenceTabHomeLabel",
+        "home_tab_role": "home",
+        "key": "securecrt-reference-tab-activation-route",
+        "preset_id": "securecrt",
+        "reference_profile": "edge-prod",
+        "reference_profile_property": "presetReferenceTabProfile",
+        "reference_tab_role": "terminal",
+        "render_source": "gui-design-reference-tab-route",
+        "returned_home_label_property": "presetReferenceTabReturnedHomeLabel",
+        "route_role": "reference-profile-tab-can-be-active-surface",
+        "tabs_object": "sessionTabs"
+      },
+      "expected_preset_reference_transcript_route": {
+        "active_tab_label": "edge-prod (SSH2)",
+        "captured_command_echo_property": "presetReferenceTranscriptCommandEcho",
+        "captured_line_count_property": "presetReferenceTranscriptLineCount",
+        "captured_property": "presetReferenceTranscriptCaptured",
+        "captured_tab_property": "presetReferenceTranscriptCapturedTab",
+        "captured_text_property": "presetReferenceTranscriptText",
+        "command_echo_prefix": "$ ",
+        "key": "securecrt-reference-transcript-evidence-route",
+        "minimum_line_count": 1,
+        "preset_id": "securecrt",
+        "reference_profile": "edge-prod",
+        "render_source": "gui-design-reference-transcript",
+        "required_fragments": [
+          "edge-prod.example.invalid"
+        ],
+        "route_role": "active-reference-tab-terminal-transcript",
+        "terminal_output_object": "terminalOutput",
+        "terminal_pane_object": "terminalPane"
+      },
+      "expected_preset_selection_route": {
+        "document_mode": false,
+        "home_tab_label": "Start Page",
+        "home_tab_property": "presetSelectionRouteHomeTabLabel",
+        "key": "securecrt-preset-selection-route",
+        "layout_toolbar_object": "layoutToolbar",
+        "left_panel_header_object": "leftPanelHeader",
+        "log_height": 118,
+        "main_toolbar_object": "mainToolbar",
+        "preset_id": "securecrt",
+        "preset_index": 2,
+        "preset_label": "SecureCRT-style",
+        "preset_label_property": "presetSelectionRoutePresetLabel",
+        "profile_tree_object": "profileTree",
+        "profile_width": 270,
+        "reference_state_object": "productReferenceState",
+        "render_source": "gui-design-preset-metadata",
+        "route_role": "selector-to-toolbar-sidebar-tabs-status-workspace",
+        "selector_object": "designSelect",
+        "selector_property": "presetSelectionRoutePresetId",
+        "sidebar_subtitle": "Folders, sessions and terminal tabs",
+        "sidebar_title": "Session Manager",
+        "sidebar_title_property": "presetSelectionRouteSidebarTitle",
+        "status_bar_object": "statusBar",
+        "status_segment_object": "productStatusSegment",
+        "status_segments": [
+          "SSH2",
+          "Session Manager",
+          "2 active tabs"
+        ],
+        "status_segments_property": "presetSelectionRouteStatusSegments",
+        "tab_position": "north",
+        "tabs_object": "sessionTabs",
+        "toolbar_icon_size": 15,
+        "workspace_surface_object": "productWorkspaceSurface"
+      },
+      "expected_preset_transition_route": {
+        "from_preset_ids": [
+          "native",
+          "mobaxterm",
+          "termius",
+          "remmina",
+          "mremoteng"
+        ],
+        "from_property": "presetTransitionFromPresetIds",
+        "key": "securecrt-preset-transition-route",
+        "render_source": "gui-design-preset-transition",
+        "reset_objects": [
+          "mobaQuickConnectChrome",
+          "quickConnect",
+          "mobaRail",
+          "mobaConnectedLeftDock",
+          "mobaSftpBrowser",
+          "mobaRemoteMonitoring",
+          "mobaSshBanner",
+          "mobaTelemetryBar",
+          "mobaBottomEdgeControls",
+          "termiusHostsChrome",
+          "termiusHeaderChips",
+          "termiusHostIdentityStrip",
+          "remminaProfileListChrome",
+          "remminaViewerControls",
+          "mRemoteNgMenuBar",
+          "mRemoteNgDocumentControls",
+          "mRemoteNgPropertyGrid"
+        ],
+        "reset_property": "presetTransitionResetObjects",
+        "route_property": "presetTransitionRouteKey",
+        "route_role": "selector-style-switch-resets-inactive-product-chrome",
+        "selector_object": "designSelect",
+        "to_preset_id": "securecrt",
+        "to_preset_index": 2,
+        "to_property": "presetTransitionToPresetId"
+      },
+      "expected_preset_visual_signature": {
+        "activity_log_object": "activityLog",
+        "density": "terminal",
+        "density_property": "presetVisualSignatureDensity",
+        "document_mode": false,
+        "key": "securecrt-visual-signature",
+        "layout_toolbar_object": "layoutToolbar",
+        "left_panel_object": "leftPanel",
+        "list_spacing": 1,
+        "log_height": 118,
+        "main_toolbar_object": "mainToolbar",
+        "palette": {
+          "control": "#ffffff",
+          "control_text": "#202020",
+          "pane": "#ffffff",
+          "pane_border": "#bcbcbc",
+          "primary": "#3c78b4",
+          "sidebar": "#f4f4f4",
+          "sidebar_selected": "#d9e9f8",
+          "status": "#3c78b4",
+          "tab": "#ededed",
+          "tab_selected": "#ffffff",
+          "terminal": "#003b45",
+          "terminal_accent": "#fff45a",
+          "terminal_text": "#d9f1ee",
+          "toolbar": "#ffffff",
+          "toolbar_border": "#c9c9c9",
+          "window": "#f8f8f8"
+        },
+        "palette_property": "presetVisualSignaturePalette",
+        "preset_id": "securecrt",
+        "preset_label": "SecureCRT-style",
+        "profile_tree_object": "profileTree",
+        "profile_width": 270,
+        "render_source": "gui-design-preset-style",
+        "route_role": "preset-palette-density-to-live-static-style",
+        "status_bar_object": "statusBar",
+        "tab_position": "north",
+        "tabs_object": "sessionTabs",
+        "toolbar_icon_size": 15,
+        "window_object": "remoteOpsMain"
+      },
+      "expected_product_identity_route": {
+        "active_tab_label": "edge-prod (SSH2)",
+        "active_tab_property": "productIdentityActiveTab",
+        "key": "securecrt-product-identity-route",
+        "preset_id": "securecrt",
+        "profile_property": "productIdentityProfile",
+        "protocol_label": "SSH2 + SFTP",
+        "protocol_property": "productIdentityProtocol",
+        "reference_item_object": "productReferenceStateItem",
+        "reference_state_object": "productReferenceState",
+        "render_source": "gui-design-reference-state",
+        "route_role": "tree-tab-reference-status-workspace-identity",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod (SSH2)",
+        "sidebar_label": "Session Manager",
+        "sidebar_property": "productIdentitySidebar",
+        "status_segment_object": "productStatusSegment",
+        "status_segments": [
+          "SSH2",
+          "Session Manager",
+          "2 active tabs"
+        ],
+        "status_segments_property": "productIdentityStatusSegments",
+        "tabs_object": "sessionTabs",
+        "target_label": "edge-prod.example.invalid:22",
+        "target_property": "productIdentityTarget",
+        "tree_object": "profileTree",
+        "workspace_state": "connected",
+        "workspace_state_property": "productIdentityWorkspaceState",
+        "workspace_surface_object": "productWorkspaceSurface"
+      },
+      "expected_product_tree_icons": [
+        {
+          "icon_key": "database",
+          "label": "Session Database",
+          "row_kind": "root",
+          "static_size": 16
+        },
+        {
+          "icon_key": "folder",
+          "label": "Folder: Sessions",
+          "row_kind": "group",
+          "static_size": 14
+        },
+        {
+          "icon_key": "ssh2",
+          "label": "edge-prod (SSH2)",
+          "row_kind": "profile",
+          "static_size": 14
+        },
+        {
+          "icon_key": "sftp",
+          "label": "files-prod (SFTP)",
+          "row_kind": "profile",
+          "static_size": 14
+        },
+        {
+          "icon_key": "folder",
+          "label": "Folder: Pinned",
+          "row_kind": "group",
+          "static_size": 14
+        },
+        {
+          "icon_key": "pin",
+          "label": "jump-host (SSH2)",
+          "row_kind": "profile",
+          "static_size": 14
+        }
+      ],
+      "expected_reference_state_texts": [
+        "active-tab: edge-prod (SSH2)",
+        "profile: edge-prod",
+        "protocol: SSH2 + SFTP",
+        "sidebar: Session Manager",
+        "state: connected",
+        "target: edge-prod.example.invalid:22"
+      ],
+      "expected_reference_status_segments": [
+        "SSH2",
+        "Session Manager",
+        "2 active tabs"
+      ],
+      "expected_reference_tab_label": "edge-prod (SSH2)",
+      "expected_remmina_clipboard_route": {},
+      "expected_remmina_profile_filter_route": {},
+      "expected_remmina_profile_list_chrome": {},
+      "expected_remmina_profile_viewer_route": {},
+      "expected_remmina_screenshot_route": {},
+      "expected_remmina_sftp_transfer_route": {},
+      "expected_remmina_viewer_controls": [],
+      "expected_securecrt_command_window": {
+        "command": "$ row doctor --json",
+        "key": "send-to-all-sessions",
+        "live_send_min_width": 48,
+        "live_target_min_width": 112,
+        "send_label": "Send",
+        "static_control_y": 31,
+        "static_header_height": 25,
+        "static_input_text_x": 10,
+        "static_input_text_y": 7,
+        "static_input_x": 132,
+        "static_send_right_margin": 10,
+        "static_send_width": 58,
+        "static_target_width": 112,
+        "status": "ready",
+        "target_scope": "All Sessions",
+        "title": "Command Window"
+      },
+      "expected_securecrt_command_window_send_route": {
+        "captured_command_property": "secureCrtCommandRouteCapturedCommand",
+        "captured_property": "secureCrtCommandRouteCaptured",
+        "captured_status_property": "secureCrtCommandRouteCapturedStatus",
+        "captured_target_scope_property": "secureCrtCommandRouteCapturedTargetScope",
+        "command_input_object": "secureCrtCommandInput",
+        "command_property": "secureCrtCommandRouteCommand",
+        "handler": "handle_securecrt_command_window_send",
+        "handler_property": "secureCrtCommandRouteHandler",
+        "key": "securecrt-command-window-send-route",
+        "live_command_property": "secureCrtCommandRouteLiveCommand",
+        "live_status_property": "secureCrtCommandRouteLiveStatus",
+        "live_submitted_property": "secureCrtCommandRouteLiveSubmitted",
+        "live_target_scope_property": "secureCrtCommandRouteLiveTargetScope",
+        "render_source": "state-model",
+        "route_role": "command-input-to-active-sessions",
+        "secondary_signal": "returnPressed",
+        "secondary_signal_property": "secureCrtCommandRouteSecondarySignal",
+        "send_control_object": "secureCrtCommandSend",
+        "send_label_property": "secureCrtCommandRouteSendLabel",
+        "signal": "clicked",
+        "signal_property": "secureCrtCommandRouteSignal",
+        "source_window_object": "secureCrtCommandWindow",
+        "status_object": "secureCrtCommandStatus",
+        "status_property": "secureCrtCommandRouteStatus",
+        "target_scope_object": "secureCrtCommandTarget",
+        "target_scope_property": "secureCrtCommandRouteTargetScope"
+      },
+      "expected_securecrt_session_manager_chrome": {
+        "actions": [
+          {
+            "icon_key": "connect",
+            "key": "connect",
+            "label": "Connect",
+            "live_button_size": 24,
+            "live_icon_size": 14,
+            "render_source": "generated-pixmap",
+            "static_button_size": 20,
+            "static_icon_size": 10,
+            "static_icon_x": 7,
+            "static_icon_y": 3,
+            "static_x": 34,
+            "static_y": 5
+          },
+          {
+            "icon_key": "folder",
+            "key": "new-folder",
+            "label": "New Folder",
+            "live_button_size": 24,
+            "live_icon_size": 14,
+            "render_source": "generated-pixmap",
+            "static_button_size": 20,
+            "static_icon_size": 10,
+            "static_icon_x": 5,
+            "static_icon_y": 5,
+            "static_x": 60,
+            "static_y": 5
+          },
+          {
+            "icon_key": "properties",
+            "key": "properties",
+            "label": "Properties",
+            "live_button_size": 24,
+            "live_icon_size": 14,
+            "render_source": "generated-pixmap",
+            "static_button_size": 20,
+            "static_icon_size": 9,
+            "static_icon_x": 6,
+            "static_icon_y": 4,
+            "static_x": 86,
+            "static_y": 5
+          }
+        ],
+        "filter_placeholder": "Filter sessions",
+        "live_filter_height": 24,
+        "live_max_height": 94,
+        "live_spacing": 5,
+        "live_title_spacing": 5,
+        "static_filter_height": 24,
+        "static_filter_placeholder_x": 17,
+        "static_filter_placeholder_y": 7,
+        "static_filter_x_margin": 8,
+        "static_filter_y": 35,
+        "static_title_x": 8,
+        "static_title_y": 8,
+        "title": "Session Manager"
+      },
+      "expected_securecrt_session_manager_filter_route": {
+        "change_signal": "textChanged",
+        "expected_placeholder": "Filter sessions",
+        "expected_query": "edge",
+        "filter_object": "secureCrtSessionFilter",
+        "filter_placeholder_property": "secureCrtSessionFilterRoutePlaceholder",
+        "filter_query_property": "secureCrtSessionFilterRouteQuery",
+        "filter_route_property": "secureCrtSessionFilterRouteKey",
+        "handler_name": "filter_profile_tree",
+        "key": "securecrt-session-manager-filter-route",
+        "matched_result_label": "edge-prod (SSH2)",
+        "matched_result_property": "secureCrtSessionFilterRouteMatchedLabel",
+        "render_source": "session-manager-filter-state",
+        "route_role": "session-manager-filter-to-visible-session-row",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod (SSH2)",
+        "selected_tree_object": "profileTree",
+        "session_manager_object": "secureCrtSessionManagerChrome"
+      },
+      "expected_securecrt_session_manager_route": {
+        "action_active_property": "secureCrtSessionRouteActive",
+        "active_tab_label": "edge-prod (SSH2)",
+        "key": "securecrt-session-manager-route",
+        "protocol_value": "SSH2",
+        "render_source": "session-manager-state",
+        "route_role": "session-manager-selection-to-active-tab",
+        "selected_profile_name": "edge-prod",
+        "selected_tree_label": "edge-prod (SSH2)",
+        "selected_tree_object": "profileTree",
+        "selected_tree_property": "secureCrtSessionRouteSelected",
+        "session_manager_action_key": "connect",
+        "session_manager_action_object": "secureCrtSessionManagerAction",
+        "session_manager_object": "secureCrtSessionManagerChrome",
+        "session_value": "edge-prod",
+        "status_field_key": "target",
+        "status_field_object": "secureCrtSessionStatusCell",
+        "status_strip_object": "secureCrtSessionStatusStrip",
+        "status_value_property": "secureCrtSessionRouteStatusValue",
+        "tab_label_property": "secureCrtSessionRouteActiveTab",
+        "target_value": "edge-prod.example.invalid:22"
+      },
+      "expected_securecrt_session_status_strip": {
+        "fields": [
+          {
+            "key": "session",
+            "label": "Session",
+            "live_cell_height": 22,
+            "live_min_width": 132,
+            "role": "normal",
+            "static_height": 20,
+            "static_label_x": 6,
+            "static_label_y": 9,
+            "static_value_x": 48,
+            "static_value_y": 9,
+            "static_width": 132,
+            "static_y": 5,
+            "value": "edge-prod (SSH2)"
+          },
+          {
+            "key": "target",
+            "label": "Target",
+            "live_cell_height": 22,
+            "live_min_width": 170,
+            "role": "normal",
+            "static_height": 20,
+            "static_label_x": 6,
+            "static_label_y": 9,
+            "static_value_x": 48,
+            "static_value_y": 9,
+            "static_width": 174,
+            "static_y": 5,
+            "value": "edge-prod.example.invalid:22"
+          },
+          {
+            "key": "protocol",
+            "label": "Protocol",
+            "live_cell_height": 22,
+            "live_min_width": 102,
+            "role": "normal",
+            "static_height": 20,
+            "static_label_x": 6,
+            "static_label_y": 9,
+            "static_value_x": 48,
+            "static_value_y": 9,
+            "static_width": 102,
+            "static_y": 5,
+            "value": "SSH2 + SFTP"
+          },
+          {
+            "key": "cipher",
+            "label": "Cipher",
+            "live_cell_height": 22,
+            "live_min_width": 122,
+            "role": "normal",
+            "static_height": 20,
+            "static_label_x": 6,
+            "static_label_y": 9,
+            "static_value_x": 48,
+            "static_value_y": 9,
+            "static_width": 122,
+            "static_y": 5,
+            "value": "chacha20-poly1305"
+          },
+          {
+            "key": "sftp",
+            "label": "SFTP",
+            "live_cell_height": 22,
+            "live_min_width": 102,
+            "role": "normal",
+            "static_height": 20,
+            "static_label_x": 6,
+            "static_label_y": 9,
+            "static_value_x": 48,
+            "static_value_y": 9,
+            "static_width": 102,
+            "static_y": 5,
+            "value": "files-prod tab"
+          },
+          {
+            "key": "log",
+            "label": "Log",
+            "live_cell_height": 22,
+            "live_min_width": 90,
+            "role": "normal",
+            "static_height": 20,
+            "static_label_x": 6,
+            "static_label_y": 9,
+            "static_value_x": 48,
+            "static_value_y": 9,
+            "static_width": 90,
+            "static_y": 5,
+            "value": "session.log"
+          },
+          {
+            "key": "state",
+            "label": "State",
+            "live_cell_height": 22,
+            "live_min_width": 84,
+            "role": "status",
+            "static_height": 20,
+            "static_label_x": 6,
+            "static_label_y": 9,
+            "static_value_x": 48,
+            "static_value_y": 9,
+            "static_width": 82,
+            "static_y": 5,
+            "value": "connected"
+          }
+        ],
+        "live_spacing": 6,
+        "static_cell_gap": 6,
+        "static_cell_start_x": 96,
+        "static_title_x": 9,
+        "static_title_y": 10,
+        "title": "Session status",
+        "title_width": 86
+      },
+      "expected_securecrt_sftp_browser_route": {
+        "action_key": "refresh",
+        "action_label": "Refresh",
+        "action_object": "secureCrtSftpAction",
+        "action_status": "refreshed",
+        "active_row_name": "deploy.log",
+        "browser_object": "secureCrtSftpBrowser",
+        "captured_action_property": "secureCrtSftpBrowserRouteCapturedAction",
+        "captured_property": "secureCrtSftpBrowserRouteCaptured",
+        "captured_status_property": "secureCrtSftpBrowserRouteCapturedStatus",
+        "file_rows": [
+          {
+            "key": "parent",
+            "kind": "folder",
+            "modified": "parent",
+            "name": "..",
+            "selected": false,
+            "size": ""
+          },
+          {
+            "key": "releases",
+            "kind": "folder",
+            "modified": "2026-06-06",
+            "name": "releases",
+            "selected": false,
+            "size": "-"
+          },
+          {
+            "key": "deploy-log",
+            "kind": "file",
+            "modified": "2026-06-06",
+            "name": "deploy.log",
+            "selected": true,
+            "size": "14 KB"
+          }
+        ],
+        "handler": "handle_securecrt_sftp_browser_action",
+        "handler_property": "secureCrtSftpBrowserRouteHandler",
+        "key": "securecrt-sftp-browser-route",
+        "live_action_property": "secureCrtSftpBrowserRouteLiveAction",
+        "live_status_property": "secureCrtSftpBrowserRouteLiveStatus",
+        "live_triggered_property": "secureCrtSftpBrowserRouteLiveTriggered",
+        "path_object": "secureCrtSftpPath",
+        "path_property": "secureCrtSftpBrowserPath",
+        "queue_object": "secureCrtSftpQueue",
+        "queue_state_property": "secureCrtSftpBrowserQueueState",
+        "remote_path": "/srv/files",
+        "render_source": "sftp-browser-state",
+        "route_role": "sftp-tab-to-transfer-browser",
+        "row_kind_property": "secureCrtSftpBrowserRowKind",
+        "row_name_property": "secureCrtSftpBrowserRowName",
+        "row_object": "secureCrtSftpRow",
+        "row_selected_property": "secureCrtSftpBrowserRowSelected",
+        "selected_profile_name": "files-prod",
+        "selected_tree_label": "files-prod (SFTP)",
+        "sftp_tab_label": "files-prod",
+        "sftp_tab_route_key": "securecrt-sftp-tab-route",
+        "signal": "clicked",
+        "signal_property": "secureCrtSftpBrowserRouteSignal",
+        "table_object": "secureCrtSftpTable",
+        "toolbar_actions": [
+          "upload",
+          "download",
+          "refresh"
+        ],
+        "toolbar_actions_property": "secureCrtSftpBrowserToolbarActions",
+        "toolbar_object": "secureCrtSftpToolbar",
+        "transfer_queue_label": "1 queued",
+        "transfer_status": "ready"
+      },
+      "expected_securecrt_sftp_tab_route": {
+        "active_tab_label": "edge-prod (SSH2)",
+        "key": "securecrt-sftp-tab-route",
+        "render_source": "sftp-tab-status-state",
+        "route_role": "workflow-card-to-sftp-tab-status",
+        "selected_profile_name": "files-prod",
+        "selected_tree_label": "files-prod (SFTP)",
+        "selected_tree_object": "profileTree",
+        "session_manager_object": "secureCrtSessionManagerChrome",
+        "sftp_tab_label": "files-prod",
+        "status_field_key": "sftp",
+        "status_field_object": "secureCrtSessionStatusCell",
+        "status_property": "secureCrtSftpTabRouteStatus",
+        "status_strip_object": "secureCrtSessionStatusStrip",
+        "status_value": "files-prod tab",
+        "tab_label_property": "secureCrtSftpTabRouteTabLabel",
+        "transfer_state": "files-prod attached",
+        "transfer_state_property": "secureCrtSftpTabRouteTransferState",
+        "workflow_card_key": "sftp-tab",
+        "workflow_card_object": "productWorkflowCard",
+        "workflow_key_property": "secureCrtSftpTabRouteWorkflowKey",
+        "workflow_primary": "files-prod attached",
+        "workflow_primary_object": "productWorkflowPrimary",
+        "workflow_secondary": "terminal plus transfer workflow",
+        "workflow_secondary_object": "productWorkflowSecondary",
+        "workflow_title": "SFTP tab",
+        "workflow_title_object": "productWorkflowTitle"
+      },
+      "expected_securecrt_top_chrome": {
+        "menu_height": 22,
+        "menu_items": [
+          {
+            "key": "file",
+            "label": "File",
+            "primary_action": "Connect..."
+          },
+          {
+            "key": "edit",
+            "label": "Edit",
+            "primary_action": "Find..."
+          },
+          {
+            "key": "view",
+            "label": "View",
+            "primary_action": "Session Manager"
+          },
+          {
+            "key": "options",
+            "label": "Options",
+            "primary_action": "Session Options"
+          },
+          {
+            "key": "transfer",
+            "label": "Transfer",
+            "primary_action": "Open SFTP"
+          },
+          {
+            "key": "script",
+            "label": "Script",
+            "primary_action": "Run Script"
+          },
+          {
+            "key": "tools",
+            "label": "Tools",
+            "primary_action": "Key Manager"
+          },
+          {
+            "key": "window",
+            "label": "Window",
+            "primary_action": "Tile Sessions"
+          },
+          {
+            "key": "help",
+            "label": "Help",
+            "primary_action": "Help Topics"
+          }
+        ],
+        "toolbar_actions": [
+          {
+            "icon_key": "session-manager",
+            "key": "refresh",
+            "label": "Refresh",
+            "static_width": 58,
+            "static_x": 14
+          },
+          {
+            "icon_key": "new-session",
+            "key": "new",
+            "label": "New Session",
+            "static_width": 88,
+            "static_x": 82
+          },
+          {
+            "icon_key": "import-session",
+            "key": "import",
+            "label": "Import",
+            "static_width": 68,
+            "static_x": 180
+          },
+          {
+            "icon_key": "properties",
+            "key": "edit",
+            "label": "Properties",
+            "static_width": 82,
+            "static_x": 258
+          },
+          {
+            "icon_key": "delete",
+            "key": "remove",
+            "label": "Delete",
+            "static_width": 62,
+            "static_x": 350
+          },
+          {
+            "icon_key": "connect",
+            "key": "connect",
+            "label": "Connect",
+            "static_width": 70,
+            "static_x": 422
+          },
+          {
+            "icon_key": "sftp",
+            "key": "files",
+            "label": "SFTP",
+            "static_width": 54,
+            "static_x": 502
+          },
+          {
+            "icon_key": "transfer",
+            "key": "queue",
+            "label": "Transfer",
+            "static_width": 70,
+            "static_x": 566
+          },
+          {
+            "icon_key": "command",
+            "key": "dry-run",
+            "label": "Command",
+            "static_width": 74,
+            "static_x": 646
+          },
+          {
+            "icon_key": "tools",
+            "key": "doctor",
+            "label": "Tools",
+            "static_width": 54,
+            "static_x": 730
+          },
+          {
+            "icon_key": "tile-h",
+            "key": "split-h",
+            "label": "Tile H",
+            "static_width": 58,
+            "static_x": 794
+          },
+          {
+            "icon_key": "tile-v",
+            "key": "split-v",
+            "label": "Tile V",
+            "static_width": 58,
+            "static_x": 862
+          }
+        ],
+        "toolbar_height": 54,
+        "window_title": "edge-prod (SSH2) - Remote Ops Workspace"
+      },
+      "expected_securecrt_tree_icons": [
+        {
+          "icon_key": "database",
+          "label": "Session Database",
+          "row_kind": "root",
+          "static_size": 16
+        },
+        {
+          "icon_key": "folder",
+          "label": "Folder: Sessions",
+          "row_kind": "group",
+          "static_size": 14
+        },
+        {
+          "icon_key": "ssh2",
+          "label": "edge-prod (SSH2)",
+          "row_kind": "profile",
+          "static_size": 14
+        },
+        {
+          "icon_key": "sftp",
+          "label": "files-prod (SFTP)",
+          "row_kind": "profile",
+          "static_size": 14
+        },
+        {
+          "icon_key": "folder",
+          "label": "Folder: Pinned",
+          "row_kind": "group",
+          "static_size": 14
+        },
+        {
+          "icon_key": "pin",
+          "label": "jump-host (SSH2)",
+          "row_kind": "profile",
+          "static_size": 14
+        }
+      ],
+      "expected_status_segments": [
+        "SSH2",
+        "Session Manager",
+        "2 active tabs"
+      ],
+      "expected_termius_files_browser_route": {},
+      "expected_termius_header_chips": [],
+      "expected_termius_host_identity_strip": {},
+      "expected_termius_host_selection_route": {},
+      "expected_termius_hosts_chrome": {},
+      "expected_termius_port_forward_route": {},
+      "expected_termius_snippet_route": {},
+      "expected_termius_sync_route": {},
+      "expected_tree_labels": [
+        "Folder: Sessions",
+        "edge-prod (SSH2)",
+        "files-prod (SFTP)",
+        "jump-host (SSH2)"
+      ],
+      "expected_workflow_card_titles": [
+        "Command Window",
+        "Session Manager",
+        "SFTP tab"
+      ],
+      "expected_workspace_surface_texts": [
+        "$ ssh -p 22 operator@edge-prod.example",
+        "Cipher   : chacha20-poly1305",
+        "Command window: enabled",
+        "Log file : session.log",
+        "Protocol : SSH2",
+        "SFTP     : tab attached",
+        "SFTP tab - files-prod",
+        "SFTP tab: files-prod",
+        "Session Manager terminal workspace",
+        "Session Manager: folder Sessions/edge-prod",
+        "Tab: edge-prod (SSH2)",
+        "connected",
+        "edge-prod (SSH2)",
+        "ready"
+      ],
+      "layout_contract_count": 7,
+      "layout_contract_ids": [
+        "session-manager-width",
+        "session-manager-chrome",
+        "terminal-tabs-workspace",
+        "command-log-bottom",
+        "workflow-evidence",
+        "session-status-strip",
+        "toolbar-search"
+      ],
+      "layout_contract_widgets": [
+        "leftPanel",
+        "secureCrtSessionManagerChrome",
+        "sessionTabs",
+        "activityLog",
+        "productWorkflowEvidence",
+        "secureCrtSessionStatusStrip",
+        "toolbarSearch"
+      ],
+      "present_widgets": {
+        "designSelect": "view preset selector",
+        "toolbarSearch": "toolbar search"
+      },
+      "reference_profile": "edge-prod",
+      "required_widgets": {
+        "activityLog": "activity log",
+        "layoutToolbar": "layout toolbar",
+        "mainToolbar": "main toolbar",
+        "productWorkflowEvidence": "product workflow evidence strip",
+        "productWorkspaceSurface": "product workspace evidence surface",
+        "profileTree": "profile tree",
+        "secureCrtCommandInput": "SecureCRT live command-window input",
+        "secureCrtCommandSend": "SecureCRT live command-window Send control",
+        "secureCrtMenuBar": "SecureCRT top menu bar",
+        "secureCrtSessionManagerChrome": "SecureCRT Session Manager filter/action chrome",
+        "secureCrtSessionStatusStrip": "SecureCRT session status strip",
+        "sessionTabs": "session tabs"
+      },
+      "topology_contract_count": 5,
+      "topology_contract_ids": [
+        "toolbar-above-tabs",
+        "sidebar-left-of-tabs",
+        "workspace-surface-above-workflow",
+        "welcome-scroll-above-log",
+        "workspace-primary-left-of-secondary"
+      ],
+      "topology_contract_widgets": [
+        [
+          "layoutToolbar",
+          "sessionTabs"
+        ],
+        [
+          "leftPanel",
+          "sessionTabs"
+        ],
+        [
+          "productWorkspaceSurface",
+          "productWorkflowEvidence"
+        ],
+        [
+          "welcomeScroll",
+          "activityLog"
+        ],
+        [
+          "productWorkspacePrimaryPane",
+          "productWorkspaceSecondaryPane"
+        ]
+      ]
+    }
+  },
+  "preset_present_widgets": {
+    "default": {
+      "designSelect": "view preset selector",
+      "toolbarSearch": "toolbar search"
+    },
+    "mobaxterm": {}
+  },
+  "preset_reference_profiles": {
+    "mobaxterm": "edge-prod",
+    "mremoteng": "edge-prod",
+    "remmina": "win-admin",
+    "securecrt": "edge-prod",
+    "termius": "edge-prod"
+  },
+  "preset_required_widgets": {
+    "default": {
+      "activityLog": "activity log",
+      "layoutToolbar": "layout toolbar"
+    },
+    "mobaxterm": {
+      "designSelect": "shared view preset selector",
+      "layoutToolbar": "shared style selector toolbar",
+      "mobaBottomEdgeControls": "Moba bottom-edge navigation controls",
+      "mobaConnectedLeftDock": "Moba connected SFTP/monitoring dock",
+      "mobaFollowTerminalFolder": "Moba follow terminal folder control",
+      "mobaQuickConnectChrome": "Moba quick connect chrome",
+      "mobaRail": "Moba side rail",
+      "mobaRemoteMonitoring": "Moba remote monitoring panel",
+      "mobaRibbonButton": "Moba ribbon action",
+      "mobaSftpBrowser": "Moba SFTP browser",
+      "mobaSftpFileTable": "Moba SFTP file table",
+      "mobaTelemetryBar": "Moba bottom telemetry bar",
+      "mobaXServerAction": "Moba X server action",
+      "quickConnect": "Moba quick connect field",
+      "terminalOutput": "Moba native terminal output",
+      "terminalPane": "Moba native terminal pane"
+    }
+  },
+  "product_style_presets": [
+    "mobaxterm",
+    "mremoteng",
+    "remmina",
+    "securecrt",
+    "termius"
+  ],
+  "renderer": "scripts/check_real_gui_render.py",
+  "requested_window_size": {
+    "height": 820,
+    "width": 1420
+  },
+  "required_widgets": {
+    "activityLog": "activity log",
+    "designSelect": "view preset selector",
+    "layoutToolbar": "layout toolbar",
+    "mainToolbar": "main toolbar",
+    "productWorkflowEvidence": "product workflow evidence strip",
+    "productWorkspaceSurface": "product workspace evidence surface",
+    "profileTree": "profile tree",
+    "sessionTabs": "session tabs",
+    "toolbarSearch": "toolbar search"
+  },
+  "schema_version": 1,
+  "selected_preset_ids": [
+    "securecrt"
+  ]
+}

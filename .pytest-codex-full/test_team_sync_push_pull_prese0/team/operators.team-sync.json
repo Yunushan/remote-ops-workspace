@@ -1,0 +1,25 @@
+{
+  "profiles": [
+    {
+      "command": null,
+      "description": "",
+      "group": "default",
+      "host": "edge.example.invalid",
+      "name": "edge",
+      "options": {
+        "keepalive_interval": "30"
+      },
+      "path": null,
+      "port": null,
+      "protocol": "ssh",
+      "tags": [],
+      "tunnels": [],
+      "url": null,
+      "username": null
+    }
+  ],
+  "schema_version": 1,
+  "team": "operators",
+  "updated_at": "2026-09-03T06:13:55+00:00",
+  "version": 1
+}

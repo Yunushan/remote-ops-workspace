@@ -1,0 +1,4 @@
+[remmina]
+name=desk
+protocol=RDP
+server=192.0.2.20

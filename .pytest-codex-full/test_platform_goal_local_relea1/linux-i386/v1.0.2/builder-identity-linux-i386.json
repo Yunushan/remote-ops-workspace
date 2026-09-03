@@ -1,0 +1,5 @@
+{
+  "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345/",
+  "source_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "workflow_run_attempt": 1
+}

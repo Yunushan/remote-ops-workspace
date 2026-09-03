@@ -1,0 +1,37 @@
+{
+  "install_tests": [
+    {
+      "command": "htop --version",
+      "evidence_file": "evidence/htop-install.txt",
+      "evidence_sha256": "162a0e4879bf42341aca4c07f34e974f055cb2dbd809b3afa9b2b9f8b2f97cd4",
+      "package": "htop",
+      "status": "passed"
+    }
+  ],
+  "package_cache": {
+    "index": "packages/index.json",
+    "index_sha256": "a35cc8ad99155c18900ebb39c654bbec9c373139e22fe8347633186e72be3923",
+    "packages": [
+      {
+        "archive": "packages/htop-3.3.zip",
+        "name": "htop",
+        "sha256": "75944b77e098f2263509f02eed01067a41e54d8dd5efb51d6e0e77278068af5f",
+        "source": "supplied",
+        "synthetic": false,
+        "version": "3.3"
+      }
+    ]
+  },
+  "release_target": "local-bundle",
+  "runtime": {
+    "manifest": "mobapt-runtime.json",
+    "manifest_sha256": "76d93601ce35f0e92bef7b4f298c868c205e62a0b2269b14b2cfd449eb55cc9f"
+  },
+  "schema": "row.mobapt.offline-cache-evidence.v1",
+  "terminal_probe": {
+    "command": "bash -lc htop --version",
+    "evidence_file": "evidence/terminal-probe.txt",
+    "evidence_sha256": "354cd98dbef1e2620b31cebc746b6936a93be0489014e390f3adff7896db0ed0",
+    "status": "passed"
+  }
+}

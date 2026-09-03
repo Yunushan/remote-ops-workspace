@@ -1,0 +1,9 @@
+{
+  "branding": {
+    "brand_name": "Corp Ops",
+    "logo": "branding/logo.svg",
+    "organization": "Example Corp"
+  },
+  "theme": "dark",
+  "version": 1
+}

@@ -1,0 +1,20 @@
+xp smoke target: windows-xp-native-x64
+xp smoke release: v1.0.2
+xp smoke id: cli_launch
+xp smoke os name: Windows XP
+xp smoke os architecture: x64
+xp smoke os service pack: SP2
+xp smoke os edition: Professional x64 Edition
+xp smoke host probe command: ver
+xp smoke host probe output: Microsoft Windows [Version 5.2.3790]
+xp smoke processor architecture env: AMD64
+xp smoke processor architecture w6432 env: 
+xp smoke wmic os caption: Microsoft Windows XP Professional x64 Edition
+xp smoke wmic os csdversion: Service Pack 2
+xp smoke host label: xp-x64-lab-01
+xp smoke evidence run id: xp-x64-1-0-2-20260620t120000z
+xp smoke observed at utc: 2026-06-20T12:00:00Z
+xp smoke source workflow run: https://github.com/example/remote-ops-workspace/actions/runs/12345
+xp smoke source head sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+xp smoke source run attempt: 1
+cli_launch smoke evidence

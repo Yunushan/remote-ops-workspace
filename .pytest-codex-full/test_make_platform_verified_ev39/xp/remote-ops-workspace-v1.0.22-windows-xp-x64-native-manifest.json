@@ -1,0 +1,16 @@
+[
+  {
+    "file": "remote-ops-workspace-v1.0.22-windows-xp-x64-native.zip",
+    "architecture": "x64",
+    "format": "zip",
+    "size_bytes": 269,
+    "sha256": "928005c3c14a7bcde3eb3d94f3dec90646d91f706167d71a4b8f41fcb89ce3f9"
+  },
+  {
+    "file": "remote-ops-workspace-v9.9.9-windows-xp-x64-native.zip",
+    "architecture": "x64",
+    "format": "zip",
+    "size_bytes": 266,
+    "sha256": "f4a997b501b16fbf8c65d92c7dffa767c932bf83c5bf5ac97e186fe38a2b3fc5"
+  }
+]

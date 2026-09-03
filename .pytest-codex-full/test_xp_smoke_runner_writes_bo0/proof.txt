@@ -1,0 +1,6 @@
+modern TLS minimum: TLS 1.2
+modern TLS preferred: TLS 1.3
+modern defaults unchanged: true
+weak crypto global default: false
+security update channel: vendor-security-updates-2026-06
+CVE review reference: vendor-cve-advisory-review-2026-06

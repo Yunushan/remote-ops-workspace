@@ -1,0 +1,19 @@
+{
+  "release_target": "local-bundle",
+  "schema": "row.moba-servers.runtime-bundle.v1",
+  "services": [
+    {
+      "runtime": {
+        "bundled": true,
+        "executable": "linux/ssh/bin/sshd",
+        "key": "sshd",
+        "label": "OpenSSH server daemon",
+        "placeholder": false,
+        "sha256": "8b51ac5ca03b0a599e3951a7825c5e6028b62a6c82c9565b3d6a3660d2c7fd00",
+        "source": "packaged"
+      },
+      "service": "ssh"
+    }
+  ],
+  "system": "linux"
+}

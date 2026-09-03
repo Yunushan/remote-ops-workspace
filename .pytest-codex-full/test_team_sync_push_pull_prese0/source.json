@@ -1,0 +1,26 @@
+{
+  "group_defaults": {},
+  "profiles": [
+    {
+      "command": null,
+      "credential_ref": "vault:edge",
+      "description": "",
+      "group": "default",
+      "host": "edge.example.invalid",
+      "identity_file": "/private/id_ed25519",
+      "name": "edge",
+      "options": {
+        "api_token": "never-share",
+        "keepalive_interval": "30"
+      },
+      "path": null,
+      "port": null,
+      "protocol": "ssh",
+      "tags": [],
+      "tunnels": [],
+      "url": null,
+      "username": null
+    }
+  ],
+  "version": 1
+}

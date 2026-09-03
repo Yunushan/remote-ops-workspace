@@ -1,0 +1,2 @@
+ded83734a592d29b6ea34226d02601abbb17d3e41ce03aa614c8f67d383751ab  extended-linux-evidence-bundle-linux-i386-v1.0.2.json
+adf2de8977d82efe546d12b3fa240bda09124515dc0e1f4db92daac46fe78c1b  extended-linux-evidence-bundle-linux-i386-v1.0.2.zip

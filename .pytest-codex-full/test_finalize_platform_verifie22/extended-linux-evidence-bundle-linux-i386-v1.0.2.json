@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "bundle_type": "extended-linux-native-evidence",
+  "target": "linux-i386",
+  "release_tag": "v1.0.2",
+  "promotion_config_sha256": "1c9b2f4c4499fe07a65faea10f49592d29df6ff72b86f97ceb7fec64271a37de",
+  "release_asset_urls": [
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-linux-i386.deb",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-linux-i686.rpm",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-linux-i686.AppImage",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-linux-i686-native-manifest.json",
+    "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2/remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt"
+  ],
+  "release_asset_source": {
+    "type": "github-actions-artifact",
+    "workflow": ".github/workflows/extended-platform-evidence.yml",
+    "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+    "artifact_name": "extended-linux-evidence-linux-i386-v1.0.2",
+    "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "run_attempt": 1,
+    "contains_files": [
+      "remote-ops-workspace-v1.0.2-linux-i386.deb",
+      "remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt",
+      "remote-ops-workspace-v1.0.2-linux-i686-native-manifest.json",
+      "remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz",
+      "remote-ops-workspace-v1.0.2-linux-i686.AppImage",
+      "remote-ops-workspace-v1.0.2-linux-i686.rpm"
+    ]
+  },
+  "validated_commands": [
+    "TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh",
+    "bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 --workflow-run-attempt 1 --source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --builder-evidence evidence/linux-i386/v1.0.2/builder-identity-linux-i386.json",
+    "python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir staged/linux-i386/v1.0.2/artifacts --tag v1.0.2 --strict",
+    "python scripts/check_platform_goal_local_evidence.py --root . --release-tag v1.0.2 --target linux-i386 --assets-dir staged/linux-i386/v1.0.2/artifacts --repository example/remote-ops-workspace --linux-builder-evidence evidence/linux-i386/v1.0.2/builder-identity-linux-i386.json --linux-smoke-evidence evidence/linux-i386/v1.0.2/native-smoke-linux-i386.log --linux-workflow-run-url https://github.com/example/remote-ops-workspace/actions/runs/12345 --linux-source-head-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --linux-source-run-attempt 1",
+    "python scripts/stage_extended_linux_evidence_upload.py --target linux-i386 --release-tag v1.0.2 --source-dir staged/linux-i386/v1.0.2/artifacts --out-dir platform-evidence-upload/linux-i386/v1.0.2 --force",
+    "python scripts/check_platform_verified_evidence.py"
+  ],
+  "workflow": ".github/workflows/extended-platform-evidence.yml",
+  "workflow_inputs": {
+    "target": "linux-i386",
+    "release_tag": "v1.0.2",
+    "release_asset_base_url": "https://github.com/example/remote-ops-workspace/releases/download/v1.0.2"
+  },
+  "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/12345",
+  "runner_labels": [
+    "self-hosted",
+    "linux",
+    "i386"
+  ],
+  "security_patch_evidence": {
+    "python_ssl_openssl": "OpenSSL 3.0.13",
+    "openssl_cli_version": "OpenSSL 3.0.13",
+    "tls_minimum_modern_profiles": "TLS 1.2",
+    "tls_preferred_modern_profiles": "TLS 1.3",
+    "legacy_compatibility_profile": "isolated-opt-in",
+    "cve_patch_reviewed": true,
+    "security_update_channel": "vendor-security-updates-2026-06",
+    "cve_review_reference": "vendor-cve-advisory-review-2026-06"
+  },
+  "builder_evidence": {
+    "file": "builder-identity-linux-i386.json",
+    "size_bytes": 2178,
+    "sha256": "1cd34ac173c2c77ebfb5aca6cea68bcec0c08b845afa0febf371fc4270fe1c3f"
+  },
+  "smoke_evidence": [
+    {
+      "file": "native-smoke-linux-i386.log",
+      "size_bytes": 2915,
+      "sha256": "36753658b67eba4ea483960f6d06f9fde7eae00156ba9ee173f63c8d29c33628",
+      "id": "native_smoke"
+    }
+  ],
+  "candidate_record": {
+    "file": "platform-verified-evidence-linux-i386.json",
+    "size_bytes": 9046,
+    "sha256": "66fea2f18dcfc2edb3ce554709295ab0411e4a5710bee72400a3460c9298c5df"
+  },
+  "artifacts": [
+    {
+      "file": "remote-ops-workspace-v1.0.2-linux-i386.deb",
+      "size_bytes": 67,
+      "sha256": "592a1d662a9da5562fb8df8c6e9bb541b12f2d9307b4a0e9ded9a11f8ba029b7"
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.2-linux-i686-native-SHA256SUMS.txt",
+      "size_bytes": 85,
+      "sha256": "0bdf4bff77d9d016e437aa74f2f25db74e52d1cc64a0292ed67f4852dbd17639"
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.2-linux-i686-native-manifest.json",
+      "size_bytes": 84,
+      "sha256": "68057bbf54e2e1701ab053082ed72db64313636a19bacfc5b8145d226bbe8f51"
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.2-linux-i686-native.tar.gz",
+      "size_bytes": 77,
+      "sha256": "f5da882d32a3cbbbf934908b74eb9c11ea441adcd2b73772ce6a25d6965dc330"
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.2-linux-i686.AppImage",
+      "size_bytes": 72,
+      "sha256": "7ac048bc6bb1d71acec6678f3164c06551cfdc54e7bd96a32d60c077348cf9f6"
+    },
+    {
+      "file": "remote-ops-workspace-v1.0.2-linux-i686.rpm",
+      "size_bytes": 67,
+      "sha256": "6f93637055bf600abd809c51b8394dbf7963cb022ce8c677d90f0804633abbb2"
+    }
+  ]
+}

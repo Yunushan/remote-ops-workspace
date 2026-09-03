@@ -1,0 +1,9 @@
+[
+  {
+    "file": "remote-ops-workspace-v1.0.2-linux-i386.deb",
+    "architecture": "i386",
+    "format": "deb",
+    "size_bytes": true,
+    "sha256": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881"
+  }
+]

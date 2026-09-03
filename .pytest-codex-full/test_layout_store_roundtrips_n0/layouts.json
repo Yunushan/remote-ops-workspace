@@ -1,0 +1,40 @@
+{
+  "layouts": [
+    {
+      "description": "",
+      "name": "grid",
+      "orientation": "grid",
+      "panes": [
+        {
+          "command": "whoami",
+          "profile": null,
+          "title": ""
+        },
+        {
+          "command": "hostname",
+          "profile": null,
+          "title": ""
+        },
+        {
+          "command": "uptime",
+          "profile": null,
+          "title": ""
+        }
+      ],
+      "splitter_sizes": [
+        [
+          400,
+          300
+        ],
+        [
+          240,
+          160
+        ],
+        [
+          400
+        ]
+      ]
+    }
+  ],
+  "version": 1
+}

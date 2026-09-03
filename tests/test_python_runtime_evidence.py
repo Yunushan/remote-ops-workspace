@@ -61,8 +61,8 @@ def test_runtime_evidence_writer_emits_sorted_machine_readable_json(tmp_path: Pa
 
 def test_distribution_install_checker_requires_exact_wheel_and_sdist(tmp_path: Path) -> None:
     checker = _load_script("check_python_distribution_install.py")
-    wheel = tmp_path / "remote_ops_workspace-1.0.22-py3-none-any.whl"
-    sdist = tmp_path / "remote_ops_workspace-1.0.22.tar.gz"
+    wheel = tmp_path / "remote_ops_workspace-1.0.23-py3-none-any.whl"
+    sdist = tmp_path / "remote_ops_workspace-1.0.23.tar.gz"
     wheel.write_bytes(b"wheel")
     sdist.write_bytes(b"sdist")
 

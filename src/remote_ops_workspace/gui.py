@@ -7278,7 +7278,7 @@ def create_main_window(
             root.setSpacing(0)
             root.addWidget(self.build_terminal_area(), 1)
             root.addWidget(self.build_telemetry_bar())
-            self._connected_session_layout = root
+            self._connected_session_layout: QVBoxLayout = root
 
         def apply_connected_session_route_properties(self, widget) -> None:
             route = moba_connected_session_route(self.state)
@@ -8072,10 +8072,7 @@ def create_main_window(
         def rebuild_telemetry_bar(self, *, hidden_keys: set[str] | None = None) -> QFrame:
             """Recreate the fixed status strip when live metrics add cells."""
 
-            layout = _required_gui_value(
-                self.layout(),
-                "connected session layout",
-            )
+            layout = self._connected_session_layout
             old_bar = getattr(self, "telemetry_bar", None)
             insert_at = layout.indexOf(old_bar) if old_bar is not None else -1
             if insert_at < 0:

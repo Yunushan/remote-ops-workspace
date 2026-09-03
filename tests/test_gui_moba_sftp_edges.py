@@ -251,6 +251,52 @@ def test_live_monitoring_rebuilds_the_bottom_bar_for_extended_metrics(
     ]
 
 
+def test_telemetry_rebuild_handles_missing_bar_hidden_cells_and_stale_panels(
+    connected_workspace,
+    monkeypatch,
+) -> None:
+    from remote_ops_workspace.moba_connected import RemoteMonitoringSnapshot
+
+    app, window, panel, dock, _profile = connected_workspace
+    old_bar = panel.telemetry_bar
+    layout = panel.layout()
+    assert layout is not None
+    layout.removeWidget(old_bar)
+    old_bar.setParent(None)
+    old_bar.deleteLater()
+    panel.telemetry_bar = None
+
+    rebuilt = panel.rebuild_telemetry_bar(hidden_keys={"cpu", "missing"})
+    app.processEvents()
+    assert rebuilt is panel.telemetry_bar
+    assert panel.telemetry_cell_frames["cpu"].isVisible() is False
+    assert "cpu" not in rebuilt.property("mobaTelemetryVisibleCellKeys")
+
+    extended_snapshot = RemoteMonitoringSnapshot(
+        cpu_percent=39,
+        memory_used_gb=12.63,
+        memory_total_gb=15.33,
+        disk_used_gb=0.5,
+        disk_total_gb=4.0,
+        net_up_mbps=8.32,
+        net_down_mbps=4.32,
+        connection_count=3,
+        process_count=91,
+        load_average="0.42",
+        uptime_seconds=72_000,
+        session_count=2,
+        filesystem_usage=(("/", 14),),
+    )
+    window.tabs.setCurrentWidget(panel)
+    monkeypatch.setattr(
+        panel,
+        "rebuild_telemetry_bar",
+        lambda **_kwargs: (_ for _ in ()).throw(AttributeError("stale panel")),
+    )
+    assert dock.apply_live_remote_monitoring_snapshot(extended_snapshot) is True
+    assert panel.telemetry_bar.property("mobaTelemetryLive") is True
+
+
 def test_background_authentication_and_prompt_submission_edges(
     connected_workspace,
     monkeypatch,

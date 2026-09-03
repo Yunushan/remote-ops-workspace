@@ -125,6 +125,20 @@ def test_listing_and_monitoring_parsers_ignore_noise_and_invalid_values() -> Non
     assert snapshot.net_down_mbps == 0.5
     assert snapshot.process_count is None
 
+    day_snapshot = connected.parse_remote_monitoring_output(
+        "cpu=1 mem_mb=1/2 disk_mb=1/2 uptime_seconds=86400 "
+        "mounts=relative:10%|/broken:not-a-number|/ok:101%"
+    )
+    assert day_snapshot is not None
+    assert day_snapshot.uptime_label == "1d 0h"
+    assert day_snapshot.filesystem_usage == (("/ok", 100),)
+
+    minute_snapshot = connected.parse_remote_monitoring_output(
+        "cpu=1 mem_mb=1/2 disk_mb=1/2 uptime_seconds=60 mounts=-"
+    )
+    assert minute_snapshot is not None
+    assert minute_snapshot.uptime_label == "1 min"
+
 
 def test_path_and_numeric_parsers_fail_closed() -> None:
     with pytest.raises(ValueError, match="must not start"):

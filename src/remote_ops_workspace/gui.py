@@ -1532,6 +1532,15 @@ def create_main_window(
 
         def eventFilter(self, watched, event) -> bool:  # noqa: N802
             terminal_targets = (self.output, self.output_viewport)
+            if watched in terminal_targets and event.type() == QEvent.Type.FocusIn:
+                # QApplication.focusChanged can lag behind native focus
+                # delivery. Track the terminal surface at the source so a
+                # subsequent workspace search always uses the pane that just
+                # received focus.
+                workspace = self.window()
+                remember = getattr(workspace, "remember_terminal_focus", None)
+                if callable(remember):
+                    remember(None, watched)
             if watched in terminal_targets and event.type() == QEvent.Type.MouseButtonPress:
                 self.output.setFocus(Qt.FocusReason.MouseFocusReason)
                 self.output.setProperty("terminalLastInputSurface", "viewport")

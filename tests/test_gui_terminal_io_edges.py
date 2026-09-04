@@ -678,7 +678,7 @@ def test_terminal_event_filter_handles_empty_ime_paste_and_missing_tab_route(
     monkeypatch,
 ) -> None:
     from PyQt6.QtCore import QEvent, QPointF, QProcess, Qt
-    from PyQt6.QtGui import QInputMethodEvent, QKeyEvent, QMouseEvent
+    from PyQt6.QtGui import QFocusEvent, QInputMethodEvent, QKeyEvent, QMouseEvent
 
     _app, window = gui_window
     pane = _new_pane(window)
@@ -687,6 +687,23 @@ def test_terminal_event_filter_handles_empty_ime_paste_and_missing_tab_route(
 
     clipboard = SimpleNamespace(text=lambda *_args: "paste-edge")
     pane._terminal_clipboard_provider = lambda: clipboard
+    remembered_focus = []
+    monkeypatch.setattr(
+        pane,
+        "window",
+        lambda: SimpleNamespace(
+            remember_terminal_focus=lambda previous, current: remembered_focus.append(
+                (previous, current)
+            )
+        ),
+    )
+    focus_in = QFocusEvent(
+        QEvent.Type.FocusIn,
+        Qt.FocusReason.OtherFocusReason,
+    )
+    assert pane.eventFilter(pane.output, focus_in) is False
+    assert remembered_focus == [(None, pane.output)]
+
     paste = QKeyEvent(
         QEvent.Type.KeyPress,
         Qt.Key.Key_V,

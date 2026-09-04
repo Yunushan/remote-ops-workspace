@@ -3928,7 +3928,13 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         record(
             "search-enter-finds-active-terminal",
             pane.output.textCursor().selectedText() == "needle-in-terminal",
-            pane.output.textCursor().selectedText(),
+            {
+                "selection": pane.output.textCursor().selectedText(),
+                "active_is_pane": window.active_terminal_pane() is pane,
+                "focus_is_pane": QApplication.focusWidget() is pane.output,
+                "status": window.statusBar().currentMessage(),
+                "transcript": pane.output.toPlainText(),
+            },
         )
         cursor = pane.output.textCursor()
         cursor.setPosition(0)

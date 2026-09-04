@@ -1014,6 +1014,7 @@ def create_main_window(
             *,
             profile: Profile | None = None,
             autostart: bool = True,
+            authentication_change_handler: Callable[[TerminalPane, bool], None] | None = None,
         ) -> None:
             super().__init__()
             self.setObjectName("terminalPane")
@@ -1287,6 +1288,7 @@ def create_main_window(
             self.input.setObjectName("terminalInput")
             self.input.setPlaceholderText("stdin, shell command or interactive input")
             self._secret_prompt_active = False
+            self._authentication_change_handler = authentication_change_handler
             self.input.setProperty("terminalSecretInputActive", False)
             self.macro_capture_state: MobaMacroTerminalCaptureState | None = None
             self.macro_last_recording: MobaMacroRecording | None = None
@@ -1433,6 +1435,14 @@ def create_main_window(
             button.setAccessibleName(label)
             return button
 
+        def set_terminal_authentication_change_handler(
+            self,
+            handler: Callable[[TerminalPane, bool], None] | None,
+        ) -> None:
+            """Attach a host callback for interactive auth-prompt transitions."""
+
+            self._authentication_change_handler = handler
+
         def resizeEvent(self, event) -> None:  # noqa: N802
             super().resizeEvent(event)
             self.layout_terminal_actions(event.size().width())
@@ -1522,6 +1532,15 @@ def create_main_window(
 
         def eventFilter(self, watched, event) -> bool:  # noqa: N802
             terminal_targets = (self.output, self.output_viewport)
+            if watched in terminal_targets and event.type() == QEvent.Type.FocusIn:
+                # QApplication.focusChanged can lag behind native focus
+                # delivery. Track the terminal surface at the source so a
+                # subsequent workspace search always uses the pane that just
+                # received focus.
+                workspace = self.window()
+                remember = getattr(workspace, "remember_terminal_focus", None)
+                if callable(remember):
+                    remember(None, watched)
             if watched in terminal_targets and event.type() == QEvent.Type.MouseButtonPress:
                 self.output.setFocus(Qt.FocusReason.MouseFocusReason)
                 self.output.setProperty("terminalLastInputSurface", "viewport")
@@ -3344,6 +3363,14 @@ def create_main_window(
             self.input.setProperty("terminalSecretInputActive", active)
             self.output.setProperty("terminalSecretInputActive", active)
             self.update_process_actions()
+            handler = self._authentication_change_handler
+            if callable(handler):
+                try:
+                    handler(self, active)
+                except RuntimeError:
+                    # A tab can be replaced while a deferred output frame is
+                    # notifying the owning window about authentication.
+                    pass
             if active:
                 # SSH can emit its password prompt after another control has
                 # taken focus. Native PTY input is delivered through the
@@ -21684,6 +21711,15 @@ def create_main_window(
                 pane = TerminalPane(plan, profile=profile)
             else:
                 pane = TerminalPane(plan, profile=profile, autostart=False)
+            set_authentication_handler = getattr(
+                pane,
+                "set_terminal_authentication_change_handler",
+                None,
+            )
+            if callable(set_authentication_handler):
+                set_authentication_handler(
+                    self.refresh_moba_background_after_terminal_auth
+                )
             self.apply_terminal_mouse_paste_policy_for_design(
                 pane,
                 self.current_design_id(),
@@ -21739,6 +21775,37 @@ def create_main_window(
             if callable(schedule_activation):
                 try:
                     schedule_activation(1_500)
+                except RuntimeError:
+                    return
+
+        def refresh_moba_background_after_terminal_auth(
+            self,
+            pane: TerminalPane,
+            prompt_active: bool,
+        ) -> None:
+            """Recheck background SSH after the terminal password prompt closes."""
+
+            if prompt_active:
+                return
+            try:
+                dock = self.moba_connected_dock
+                profile = getattr(pane, "profile", None)
+                if dock is None or profile is None:
+                    return
+                if profile.name != dock.state.profile_name:
+                    return
+                schedule_activation = getattr(
+                    dock,
+                    "schedule_background_state_activation",
+                    None,
+                )
+            except RuntimeError:
+                return
+            if callable(schedule_activation):
+                try:
+                    # OpenSSH may need one event-loop turn to create a shared
+                    # control connection after accepting the password.
+                    schedule_activation(250)
                 except RuntimeError:
                     return
 

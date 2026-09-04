@@ -43,6 +43,33 @@ def test_real_gui_render_main_wires_timeout_without_opening_gui(monkeypatch) -> 
     }
 
 
+def test_real_gui_render_waits_for_child_transport_readiness() -> None:
+    checker = _load_checker()
+    command = "ssh -p 22 operator@edge-prod.example.invalid"
+    expected_fragment = "edge-prod.example.invalid"
+    ready_text = "TERMIUS REFERENCE TRANSPORT READY"
+
+    startup_transcript = f"$ {command}\n[note] waiting for transport\n"
+    assert (
+        checker.live_reference_runtime_ready(
+            startup_transcript,
+            command,
+            expected_fragment,
+            ready_text,
+        )
+        is False
+    )
+    assert (
+        checker.live_reference_runtime_ready(
+            f"{startup_transcript}{ready_text}\n",
+            command,
+            expected_fragment,
+            ready_text,
+        )
+        is True
+    )
+
+
 def test_real_gui_render_require_pyqt6_fails_when_missing() -> None:
     checker = _load_checker()
 

@@ -3920,15 +3920,25 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             pane.width() < 620 and compact,
             {"pane_width": pane.width(), "compact": compact},
         )
-        pane.set_terminal_transcript("alpha\nneedle-in-terminal\nomega\n")
+        # Let the live shell publish its startup prompt before replacing the
+        # transcript with deterministic search evidence.  Python 3.15 on
+        # Windows can deliver the first ConPTY frame during this focus turn;
+        # seeding before that frame makes the prompt overwrite the fixture.
         pane.output.setFocus()
         app.processEvents()
+        pane.set_terminal_transcript("alpha\nneedle-in-terminal\nomega\n")
         window.search_input.setText("needle-in-terminal")
         window.search_input.returnPressed.emit()
         record(
             "search-enter-finds-active-terminal",
             pane.output.textCursor().selectedText() == "needle-in-terminal",
-            pane.output.textCursor().selectedText(),
+            {
+                "selection": pane.output.textCursor().selectedText(),
+                "active_is_pane": window.active_terminal_pane() is pane,
+                "focus_is_pane": QApplication.focusWidget() is pane.output,
+                "status": window.statusBar().currentMessage(),
+                "transcript": pane.output.toPlainText(),
+            },
         )
         cursor = pane.output.textCursor()
         cursor.setPosition(0)

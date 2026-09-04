@@ -99,11 +99,13 @@ class AnsiTerminalTranscript:
     """A bounded line transcript with the cursor controls common in CLI output."""
 
     max_scrollback_lines: int = 10_000
-    _lines: list[str] = field(default_factory=list)
+    _lines: list[list[str]] = field(default_factory=list)
     _line_styles: list[list[AnsiTextStyle]] = field(default_factory=list)
     _line: list[str] = field(default_factory=list)
     _styles: list[AnsiTextStyle] = field(default_factory=list)
     _column: int = 0
+    _normal_cursor_row: int = 0
+    _normal_saved_cursor: tuple[int, int] | None = None
     _escape: str | None = None
     _style: AnsiTextStyle = ANSI_DEFAULT_STYLE
     _screen_columns: int = 80
@@ -124,11 +126,13 @@ class AnsiTerminalTranscript:
     _auto_wrap: bool = True
     _pending_responses: list[bytes] = field(default_factory=list)
     _saved_normal_state: tuple[
-        list[str],
+        list[list[str]],
         list[list[AnsiTextStyle]],
         list[str],
         list[AnsiTextStyle],
         int,
+        int,
+        tuple[int, int] | None,
     ] | None = None
     _saved_normal_modes: tuple[bool, bool, bool, bool, bool, bool] | None = None
     _render_revision: int = field(default=0, init=False, repr=False)
@@ -156,6 +160,8 @@ class AnsiTerminalTranscript:
         self._line.clear()
         self._styles.clear()
         self._column = 0
+        self._normal_cursor_row = 0
+        self._normal_saved_cursor = None
         self._escape = None
         self._style = ANSI_DEFAULT_STYLE
         self._alternate_screen = False
@@ -489,7 +495,7 @@ class AnsiTerminalTranscript:
             self._render_rows_cache = tuple(
                 [
                     *(
-                        (line, styles)
+                        ("".join(line), styles)
                         for line, styles in zip(
                             self._lines,
                             self._line_styles,
@@ -518,7 +524,10 @@ class AnsiTerminalTranscript:
         if self._alternate_screen:
             return self._alternate_render_rows()
         return [
-            *((line, styles) for line, styles in zip(self._lines, self._line_styles, strict=True)),
+            *(
+                ("".join(line), styles)
+                for line, styles in zip(self._lines, self._line_styles, strict=True)
+            ),
             ("".join(self._line), self._styles),
         ]
 
@@ -664,33 +673,78 @@ class AnsiTerminalTranscript:
         elif self._alternate_screen:
             self._apply_alternate_csi(values, command)
         elif command == "K":
+            line, styles = self._normal_cursor_line()
             if first in {0, 1}:  # end/beginning erase both preserve the cursor side.
                 if first == 0:
-                    del self._line[self._column :]
-                    del self._styles[self._column :]
+                    del line[self._column :]
+                    del styles[self._column :]
                 else:
-                    for index in range(min(self._column + 1, len(self._line))):
-                        self._line[index] = " "
-                        self._styles[index] = self._style
+                    for index in range(min(self._column + 1, len(line))):
+                        line[index] = " "
+                        styles[index] = self._style
             elif first == 2:
+                line.clear()
+                styles.clear()
+                self._column = 0
+        elif command == "J":
+            row = self._normal_cursor_row
+            if first == 0:
+                line, styles = self._normal_cursor_line()
+                del line[self._column :]
+                del styles[self._column :]
+                for index in range(row + 1, len(self._lines)):
+                    self._lines[index].clear()
+                    self._line_styles[index].clear()
+            elif first == 1:
+                for index in range(min(row, len(self._lines))):
+                    self._lines[index].clear()
+                    self._line_styles[index].clear()
+                line, styles = self._normal_cursor_line()
+                for index in range(min(self._column + 1, len(line))):
+                    line[index] = " "
+                    styles[index] = self._style
+            elif first in {2, 3}:
+                self._lines.clear()
+                self._line_styles.clear()
                 self._line.clear()
                 self._styles.clear()
+                self._normal_cursor_row = 0
                 self._column = 0
-        elif command == "J" and first in {2, 3}:
-            self._lines.clear()
-            self._line_styles.clear()
-            self._line.clear()
-            self._styles.clear()
-            self._column = 0
         elif command in {"G", "C"}:
             self._column = max(0, (first or 1) - 1) if command == "G" else self._column + (first or 1)
         elif command == "D":
             self._column = max(0, self._column - (first or 1))
-        elif command in {"H", "f"}:
-            # A stream transcript cannot revisit retained screen rows.  Home is
-            # still useful for single-line status redraws and remains truthful.
-            if not values or values in ([0], [1], [1, 1]):
+        elif command in {"A", "B", "E", "F"}:
+            amount = first or 1
+            if command in {"A", "F"}:
+                self._normal_cursor_row = max(0, self._normal_cursor_row - amount)
+            else:
+                self._normal_cursor_row = min(
+                    len(self._lines),
+                    self._normal_cursor_row + amount,
+                )
+            if command in {"E", "F"}:
                 self._column = 0
+        elif command == "d":
+            self._normal_cursor_row = max(
+                0,
+                min(len(self._lines), (first or 1) - 1),
+            )
+        elif command in {"H", "f"}:
+            # Bare home is emitted by ``clear`` and remains useful for the
+            # stream transcript.  Keep parameterized primary-screen H/f
+            # conservative; only the bounded alternate screen has a stable
+            # viewport coordinate system for arbitrary addresses.
+            if not values or values in ([0], [1], [0, 0], [1, 1]):
+                self._normal_cursor_row = 0
+                self._column = 0
+        elif command == "s":
+            self._normal_saved_cursor = (
+                self._normal_cursor_row,
+                self._column,
+            )
+        elif command == "u" and self._normal_saved_cursor is not None:
+            self._normal_cursor_row, self._column = self._normal_saved_cursor
 
     def _apply_alternate_csi(self, values: list[int], command: str) -> None:
         """Apply cursor and erase controls to the bounded alternate screen."""
@@ -910,13 +964,27 @@ class AnsiTerminalTranscript:
         return self._alternate_column if self._alternate_screen else self._column
 
     def _cursor_row(self) -> int:
-        return self._alternate_row if self._alternate_screen else len(self._lines)
+        return self._alternate_row if self._alternate_screen else self._normal_cursor_row
 
     def _set_cursor_column(self, value: int) -> None:
         if self._alternate_screen:
             self._alternate_column = max(0, min(self._screen_columns - 1, int(value)))
         else:
             self._column = max(0, int(value))
+
+    def _normal_cursor_line(self) -> tuple[list[str], list[AnsiTextStyle]]:
+        """Return the mutable normal-screen row currently under the cursor."""
+
+        self._normal_cursor_row = max(
+            0,
+            min(len(self._lines), self._normal_cursor_row),
+        )
+        if self._normal_cursor_row == len(self._lines):
+            return self._line, self._styles
+        return (
+            self._lines[self._normal_cursor_row],
+            self._line_styles[self._normal_cursor_row],
+        )
 
     def _ensure_alternate_screen(self) -> None:
         if not self._alternate_lines:
@@ -1042,6 +1110,8 @@ class AnsiTerminalTranscript:
             self._line,
             self._styles,
             self._column,
+            self._normal_cursor_row,
+            self._normal_saved_cursor,
         )
         self._saved_normal_modes = (
             self._bracketed_paste,
@@ -1073,6 +1143,8 @@ class AnsiTerminalTranscript:
                 self._line,
                 self._styles,
                 self._column,
+                self._normal_cursor_row,
+                self._normal_saved_cursor,
             ) = saved
         saved_modes = self._saved_normal_modes
         self._saved_normal_modes = None
@@ -1116,7 +1188,18 @@ class AnsiTerminalTranscript:
                 self._alternate_lines.insert(bottom, [])
                 self._alternate_line_styles.insert(bottom, [])
             return
-        self._lines.append("".join(self._line))
+        self._normal_cursor_row = max(
+            0,
+            min(len(self._lines), self._normal_cursor_row),
+        )
+        if self._normal_cursor_row < len(self._lines):
+            self._normal_cursor_row = min(
+                len(self._lines),
+                self._normal_cursor_row + 1,
+            )
+            self._column = 0
+            return
+        self._lines.append(list(self._line))
         self._line_styles.append(list(self._styles))
         overflow = len(self._lines) - self.max_scrollback_lines
         if overflow > 0:
@@ -1125,6 +1208,7 @@ class AnsiTerminalTranscript:
         self._line.clear()
         self._styles.clear()
         self._column = 0
+        self._normal_cursor_row = len(self._lines)
 
     def _write(self, char: str) -> None:
         if self._alternate_screen:
@@ -1163,14 +1247,15 @@ class AnsiTerminalTranscript:
                     self._alternate_column + 1,
                 )
             return
-        if self._column > len(self._line):
-            padding = self._column - len(self._line)
-            self._line.extend(" " for _ in range(padding))
-            self._styles.extend(ANSI_DEFAULT_STYLE for _ in range(padding))
-        if self._column == len(self._line):
-            self._line.append(char)
-            self._styles.append(self._style)
+        line, styles = self._normal_cursor_line()
+        if self._column > len(line):
+            padding = self._column - len(line)
+            line.extend(" " for _ in range(padding))
+            styles.extend(ANSI_DEFAULT_STYLE for _ in range(padding))
+        if self._column == len(line):
+            line.append(char)
+            styles.append(self._style)
         else:
-            self._line[self._column] = char
-            self._styles[self._column] = self._style
+            line[self._column] = char
+            styles[self._column] = self._style
         self._column += 1

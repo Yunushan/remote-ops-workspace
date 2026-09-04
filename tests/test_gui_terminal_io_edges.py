@@ -55,6 +55,22 @@ def _new_pane(window):
     )
 
 
+def test_terminal_auth_prompt_transitions_are_notified_once(gui_window) -> None:
+    _app, window = gui_window
+    pane = _new_pane(window)
+    transitions: list[bool] = []
+    pane.set_terminal_authentication_change_handler(
+        lambda _pane, prompt_active: transitions.append(prompt_active)
+    )
+
+    pane.refresh_terminal_input_security("password: ")
+    pane.refresh_terminal_input_security("password: ")
+    pane.refresh_terminal_input_security("root@host:~$ ")
+    pane.refresh_terminal_input_security("root@host:~$ ")
+
+    assert transitions == [True, False]
+
+
 class _Process:
     def __init__(self, state, *, accepted: int | None = 0) -> None:
         self.process_state = state
@@ -495,6 +511,9 @@ def test_background_refresh_callback_and_main_edges(gui_window, monkeypatch, cap
     )
     window.refresh_moba_background_after_terminal_start(pane)
     assert scheduled == [1_500]
+    window.refresh_moba_background_after_terminal_auth(pane, True)
+    window.refresh_moba_background_after_terminal_auth(pane, False)
+    assert scheduled == [1_500, 250]
     window.moba_connected_dock = SimpleNamespace(
         state=SimpleNamespace(profile_name="profile-a"),
         schedule_background_state_activation=lambda _delay: (_ for _ in ()).throw(

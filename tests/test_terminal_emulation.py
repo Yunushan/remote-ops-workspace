@@ -17,6 +17,30 @@ def test_ansi_transcript_rewrites_carriage_return_progress_and_backspaces() -> N
     assert terminal.feed("\b\bOK") == "download 4OK"
 
 
+def test_ansi_transcript_replaces_normal_readline_history_rows() -> None:
+    terminal = AnsiTerminalTranscript()
+
+    terminal.feed("root# first\r\nroot# ")
+    terminal.feed("\x1b[A\r\x1b[2Kroot# first")
+
+    assert terminal.text() == "root# first\nroot# "
+    assert "root# firstroot#" not in terminal.text()
+
+    terminal.feed("\x1b[B\r\x1b[2Kroot# second")
+    assert terminal.text() == "root# first\nroot# second"
+
+
+def test_ansi_transcript_clear_home_starts_the_next_prompt_at_row_zero() -> None:
+    terminal = AnsiTerminalTranscript()
+
+    terminal.feed("old output\r\nroot# stale")
+    terminal.feed("\x1b[H\x1b[2Jroot# fresh")
+
+    assert terminal.text() == "root# fresh"
+    assert terminal.cursor_row == 0
+    assert terminal.cursor_column == len("root# fresh")
+
+
 def test_ansi_transcript_marks_cursor_rewrites_for_a_full_gui_redraw() -> None:
     terminal = AnsiTerminalTranscript()
 
@@ -56,6 +80,24 @@ def test_ansi_transcript_bounds_alternate_screen_redraws_and_restores_shell() ->
     assert terminal.screen_text().startswith("two\n")
     assert terminal.screen_text().count("\n") == 5
     assert terminal.feed("\x1b[?1049l") == "shell prompt\n"
+
+
+def test_ansi_transcript_editor_exit_discards_full_screen_content() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(40, 8)
+    terminal.feed("root# ")
+
+    terminal.feed(
+        "\x1b[?1049h\x1b[2J\x1b[1;1H"
+        "GNU nano 7.2\x1b[8;1H^X Exit"
+    )
+    assert terminal.alternate_screen_active is True
+    assert "GNU nano" in terminal.screen_text()
+
+    restored = terminal.feed("\x1b[?1049l\x1b[?25h\r\x1b[2Kroot# ")
+    assert terminal.alternate_screen_active is False
+    assert "GNU nano" not in restored
+    assert restored == "root# "
 
 
 def test_ansi_transcript_handles_vim_scroll_regions_and_cursor_save_restore() -> None:

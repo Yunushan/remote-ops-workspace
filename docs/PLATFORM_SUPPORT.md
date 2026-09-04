@@ -566,9 +566,14 @@ Target workflows:
 
 - Web/PWA from Safari or another trusted browser.
 - Static Web/PWA asset from `remote-ops-workspace-v1.0.24-web-pwa.zip`.
-- iOS/iPadOS 15 through 26.x Web/PWA compatibility contract.
+- iOS/iPadOS 15 through 27.x Web/PWA compatibility contract.
 - Live simulator smoke on the current GitHub macOS/Xcode runtime through the
   `ios-simulator-web` job.
+
+The macOS 27 SDK and iOS 27 simulator validation runs in the
+`apple-27-validation` job on the GitHub-hosted `xcode-27` preview image. That
+image is a macOS 26 host with Xcode 27, so this is SDK/runtime validation rather
+than a macOS 27 host claim.
 
 iOS/iPadOS support is Web/PWA only; no native `.ipa` artifact is published.
 The Python CLI and PyQt6 desktop GUI are not supported as local iOS apps. Use

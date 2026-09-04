@@ -609,6 +609,31 @@ def test_ci_workflow_requires_ios_server_readiness_before_simulator_smoke() -> N
     assert any("iOS simulator host loopback URL" in error for error in smoke_url_errors)
 
 
+def test_ci_workflow_requires_macos_27_sdk_and_ios_27_validation() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    missing_job = source.replace(
+        "  apple-27-validation:",
+        "  apple_27_validation_disabled:",
+    )
+    without_xcode_runner = source.replace("    runs-on: xcode-27\n", "    runs-on: macos-26\n", 1)
+    without_ios_version = source.replace("--ios-version 27", "--ios-version 26", 1)
+    without_macos_sdk = source.replace("xcrun --sdk macosx --show-sdk-version", "xcrun --sdk macosx", 1)
+    without_sdk_assertion = source.replace('case "$macos_sdk" in\n            27.*)', 'case "$macos_sdk" in\n            26.*)', 1)
+    missing_aggregate = source.replace(
+        "  apple-27-readiness:",
+        "  apple_27_readiness_disabled:",
+    )
+
+    assert any("missing apple-27-validation job" in error for error in checker.check_ci_workflow(missing_job))
+    assert any("Xcode 27 preview runner" in error for error in checker.check_ci_workflow(without_xcode_runner))
+    assert any("exact iOS 27 simulator runtime requirement" in error for error in checker.check_ci_workflow(without_ios_version))
+    assert any("macOS 27 SDK version validation" in error for error in checker.check_ci_workflow(without_macos_sdk))
+    assert any("macOS 27 SDK assertion" in error for error in checker.check_ci_workflow(without_sdk_assertion))
+    assert any("missing stable Apple 27 readiness aggregate" in error for error in checker.check_ci_workflow(missing_aggregate))
+
+
 def test_ci_workflow_requires_all_preset_live_render_capture() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
@@ -878,18 +903,18 @@ def test_ci_workflow_requires_fail_closed_python315_readiness_aggregate() -> Non
     checker = _load_checker()
     source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     without_normal_need = source.replace(
-        "    needs: [test, python315-optional-dependencies]\n",
+        "    needs: [test, python315-optional-dependencies, apple-27-readiness]\n",
         "    needs: [python315-optional-dependencies]\n",
         1,
     )
     without_always = source.replace(
         "  python315-readiness:\n"
         "    name: Python 3.15 readiness\n"
-        "    needs: [test, python315-optional-dependencies]\n"
+        "    needs: [test, python315-optional-dependencies, apple-27-readiness]\n"
         "    if: ${{ always() }}\n",
         "  python315-readiness:\n"
         "    name: Python 3.15 readiness\n"
-        "    needs: [test, python315-optional-dependencies]\n",
+        "    needs: [test, python315-optional-dependencies, apple-27-readiness]\n",
         1,
     )
     advisory = source.replace(
@@ -920,6 +945,10 @@ def test_ci_workflow_rejects_comment_only_python315_readiness_assertions() -> No
         (
             '          test "$OPTIONAL_MATRIX_RESULT" = "success"',
             "optional success assertion",
+        ),
+        (
+            '          test "$APPLE_27_RESULT" = "success"',
+            "Apple 27 success assertion",
         ),
     ):
         workflow = source.replace(command, f"          # {command.strip()}", 1)

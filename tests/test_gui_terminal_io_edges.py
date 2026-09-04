@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from remote_ops_workspace import terminal
 from remote_ops_workspace.terminal import TerminalPanePlan
 
 
@@ -836,6 +837,8 @@ def test_terminal_fallback_io_clipboard_and_empty_pipeline_edges(
         ),
         autostart=False,
     )
+    # The pane is a Windows cmd contract even when this test runs on Linux/macOS.
+    monkeypatch.setattr(terminal, "_is_native_windows", lambda: True)
     cmd_process = _Process(QProcess.ProcessState.Running, accepted=4)
     cmd_pane.process = cmd_process
     cmd_pane.input.setText("clear")

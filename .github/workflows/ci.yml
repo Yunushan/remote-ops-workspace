@@ -342,19 +342,21 @@ jobs:
 
   python315-readiness:
     name: Python 3.15 readiness
-    needs: [test, python315-optional-dependencies]
+    needs: [test, python315-optional-dependencies, apple-27-readiness]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       NORMAL_MATRIX_RESULT: ${{ needs.test.result }}
       OPTIONAL_MATRIX_RESULT: ${{ needs.python315-optional-dependencies.result }}
+      APPLE_27_RESULT: ${{ needs.apple-27-readiness.result }}
     steps:
       - name: Require Python 3.15 matrices to succeed
         shell: bash
         run: |
           test "$NORMAL_MATRIX_RESULT" = "success"
           test "$OPTIONAL_MATRIX_RESULT" = "success"
+          test "$APPLE_27_RESULT" = "success"
 
   mobile-web:
     name: Mobile Web/PWA contract
@@ -672,6 +674,108 @@ jobs:
           name: ios-web-pwa-simulator
           path: artifacts/mobile
           if-no-files-found: error
+
+  apple-27-validation:
+    name: macOS 27 SDK and iOS 27 Web/PWA validation
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install mobile verification dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Static mobile contract checks
+        run: python -m pytest tests/test_web_hardening.py tests/test_mobile_support.py
+      - name: Verify Xcode 27 and macOS/iOS 27 SDKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -version | grep -Eq '^Xcode 27(\.|$)'
+          macos_sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          ios_sdk="$(xcrun --sdk iphoneos --show-sdk-version)"
+          ios_simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          printf 'macOS SDK: %s\n' "$macos_sdk"
+          printf 'iOS SDK: %s\n' "$ios_sdk"
+          printf 'iOS simulator SDK: %s\n' "$ios_simulator_sdk"
+          case "$macos_sdk" in
+            27.*) ;;
+            *) echo "::error::macOS SDK must be a 27.x SDK, got $macos_sdk"; exit 1 ;;
+          esac
+          case "$ios_sdk" in
+            27.*) ;;
+            *) echo "::error::iOS device SDK must be a 27.x SDK, got $ios_sdk"; exit 1 ;;
+          esac
+          case "$ios_simulator_sdk" in
+            27.*) ;;
+            *) echo "::error::iOS simulator SDK must be a 27.x SDK, got $ios_simulator_sdk"; exit 1 ;;
+          esac
+          mkdir -p artifacts/apple-27
+          xcrun simctl list runtimes --json > artifacts/apple-27/runtimes.json
+      - name: Start Web/PWA server
+        shell: bash
+        run: |
+          set -euo pipefail
+          WEB_PWA_PORT="$(python - <<'PY'
+          import socket
+
+          with socket.socket() as sock:
+              sock.bind(("127.0.0.1", 0))
+              print(sock.getsockname()[1])
+          PY
+          )"
+          WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"
+          echo "WEB_PWA_URL=$WEB_PWA_URL" >> "$GITHUB_ENV"
+          python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1 > web-server.log 2>&1 &
+          echo $! > web-server.pid
+          python - <<'PY'
+          import os
+          import time
+          import urllib.request
+
+          deadline = time.monotonic() + 90
+          last_error = ""
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen(os.environ["WEB_PWA_URL"], timeout=3) as response:
+                      if response.status < 500:
+                          raise SystemExit(0)
+                      last_error = f"HTTP {response.status}"
+              except Exception as exc:
+                  last_error = str(exc)
+              time.sleep(1)
+          raise SystemExit(
+              "Web/PWA server did not become reachable before Apple 27 simulator smoke: "
+              f"{last_error}"
+          )
+          PY
+      - name: iOS 27 Web/PWA simulator smoke
+        run: python scripts/check_mobile_emulator_smoke.py --platform ios --ios-version 27 --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --out-dir artifacts/apple-27
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() }}
+        with:
+          name: apple-27-validation
+          path: artifacts/apple-27
+          if-no-files-found: error
+          retention-days: 30
+
+  apple-27-readiness:
+    name: Apple 27 readiness
+    needs: [apple-27-validation]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      APPLE_27_RESULT: ${{ needs.apple-27-validation.result }}
+    steps:
+      - name: Require Apple 27 validation to succeed
+        shell: bash
+        run: |
+          test "$APPLE_27_RESULT" = "success"
 
   gui-render:
     name: Real PyQt6 GUI render

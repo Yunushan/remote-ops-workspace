@@ -699,7 +699,11 @@ install, update and signing path.
 
 The CI contract for iOS/iPadOS Web/PWA runs `ios-simulator-web` on the current
 GitHub macOS/Xcode runner. The supported compatibility contract is iOS/iPadOS 15
-through 26.x; the live simulator smoke uses the available current iOS runtime.
+through 27.x; the live simulator smoke uses the available current iOS runtime.
+The `apple-27-validation` job runs on the `xcode-27` preview image, verifies the
+macOS 27, iOS 27, and iOS simulator 27 SDKs, and runs an exact iOS 27 simulator
+smoke. That image is a macOS 26 host with Xcode 27, so it proves Apple 27 SDK
+and runtime support without claiming a hosted `macos-27` runner.
 
 The Web/PWA release remains a static `.zip` bundle because that is the right
 artifact for static hosts, internal portals, and mobile browsers.

@@ -177,7 +177,8 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
     readiness_patterns = {
         "stable Python 3.15 readiness name": r"^    name: Python 3\.15 readiness\s*$",
         "both Python 3.15 upstream jobs": (
-            r"^    needs:\s*\[\s*test\s*,\s*python315-optional-dependencies\s*\]\s*$"
+            r"^    needs:\s*\[\s*test\s*,\s*python315-optional-dependencies\s*,"
+            r"\s*apple-27-readiness\s*\]\s*$"
         ),
         "fail-closed always evaluation": r"^    if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$",
         "normal matrix success assertion": (
@@ -185,6 +186,13 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         ),
         "optional matrix success assertion": (
             r'^          test "\$OPTIONAL_MATRIX_RESULT" = "success"\s*$'
+        ),
+        "Apple 27 readiness result": (
+            r"^      APPLE_27_RESULT:\s*\$\{\{\s*"
+            r"needs\.apple-27-readiness\.result\s*\}\}\s*$"
+        ),
+        "Apple 27 success assertion": (
+            r'^          test "\$APPLE_27_RESULT" = "success"\s*$'
         ),
     }
     if not readiness_block:

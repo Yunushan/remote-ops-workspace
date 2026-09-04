@@ -828,6 +828,23 @@ def test_terminal_fallback_io_clipboard_and_empty_pipeline_edges(
     pane.send_input()
     assert "process is not running" in pane.output.toPlainText()
 
+    cmd_pane = window.new_terminal_pane(
+        TerminalPanePlan(
+            title="windows-shell-input",
+            command=[r"C:\Windows\System32\cmd.exe"],
+            source="shell",
+        ),
+        autostart=False,
+    )
+    cmd_process = _Process(QProcess.ProcessState.Running, accepted=4)
+    cmd_pane.process = cmd_process
+    cmd_pane.input.setText("clear")
+    cmd_pane.send_input()
+    assert cmd_process.writes[-1] == b"cls\n"
+    assert cmd_pane.input.property("terminalLastSubmittedText") == "clear"
+    assert cmd_pane.input.property("terminalLastCommandSent") == "cls"
+    assert cmd_pane.input.property("terminalLastCommandTranslated") is True
+
     notices: list[str] = []
     monkeypatch.setattr(pane, "append_text", notices.append)
     pane._secret_prompt_active = True

@@ -216,6 +216,7 @@ from .terminal import (
     TerminalPanePlan,
     default_shell_plan,
     harden_terminal_pane_plan_for_native_windows,
+    normalise_local_shell_input,
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     split_shell_plans,
@@ -2327,15 +2328,20 @@ def create_main_window(
             return "".join(parts)
 
         def send_input(self) -> None:
-            line = self.input.text()
+            raw_line = self.input.text()
             self.input.clear()
             if not self.is_running():
                 self.append_text("[stdin ignored: process is not running]\n")
                 return
             secret_input = self._secret_prompt_active
             self.input.setProperty("terminalLastSubmissionWasSecret", secret_input)
+            line = raw_line
             if not secret_input:
-                self.capture_macro_input(line)
+                self.capture_macro_input(raw_line)
+                line = normalise_local_shell_input(raw_line, self.plan)
+            self.input.setProperty("terminalLastSubmittedText", raw_line)
+            self.input.setProperty("terminalLastCommandSent", line)
+            self.input.setProperty("terminalLastCommandTranslated", line != raw_line)
             # A terminal Enter key is carriage return.  Preserve LF for the
             # ordinary pipe backend so conventional line readers still receive
             # a complete line when no local PTY is available.
@@ -4118,10 +4124,15 @@ def create_main_window(
             main_window = self.main_window()
             if main_window is None or not hasattr(main_window, "tabs"):
                 return ""
-            current = main_window.tabs.currentWidget()
-            if current is None:
-                return ""
-            for pane in main_window.terminal_panes_in(current):
+            pane_provider = getattr(main_window, "all_terminal_panes", None)
+            if callable(pane_provider):
+                panes = pane_provider()
+            else:
+                current = main_window.tabs.currentWidget()
+                if current is None:
+                    return ""
+                panes = main_window.terminal_panes_in(current)
+            for pane in panes:
                 pane_profile = getattr(pane, "profile", None)
                 if (
                     pane_profile is None
@@ -4399,7 +4410,11 @@ def create_main_window(
         def schedule_background_auth_retry(self) -> None:
             """Retry background clients after the interactive SSH prompt completes."""
 
-            if self.runtime_shutting_down or not self.shared_ssh_control_path():
+            if self.runtime_shutting_down:
+                return
+            profile = self.profile_for_sftp_action()
+            available, _detail = self.background_ssh_auth_capability(profile)
+            if not available:
                 return
             self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", True)
             self.background_auth_retry_attempt = min(
@@ -4410,6 +4425,7 @@ def create_main_window(
                 15_000,
                 1_000 * (2 ** (self.background_auth_retry_attempt - 1)),
             )
+            self.setProperty("mobaBackgroundSshRetryDelayMs", delay_ms)
             if not self.background_auth_retry_timer.isActive():
                 self.background_auth_retry_timer.start(delay_ms)
 
@@ -6008,6 +6024,7 @@ def create_main_window(
                 state="error",
             )
             self.setProperty("mobaRemoteMonitoringLastError", error.name)
+            self.schedule_background_auth_retry()
 
         def handle_remote_monitoring_finished(
             self,
@@ -6064,68 +6081,48 @@ def create_main_window(
                 state="live",
             )
 
-        def apply_live_remote_monitoring_snapshot(self, snapshot) -> bool:
-            if not self.monitoring_surface_is_current():
-                return False
-            live_state = replace(self.state, monitoring=snapshot)
-            self.state = live_state
-            main_window = self.main_window()
-            current_panel = main_window.tabs.currentWidget() if main_window is not None else None
-            if (
-                isinstance(current_panel, MobaConnectedSessionPanel)
-                and current_panel.state.profile_name == live_state.profile_name
-                and current_panel.state.target == live_state.target
-            ):
-                current_panel.state = live_state
-                current_panel.moba_connected_state = live_state
-                cells = tuple(moba_telemetry_cells(live_state))
-                existing_keys = tuple(current_panel.telemetry_cell_frames)
-                live_keys = tuple(
-                    getattr(cell, "key", "")
+        def _update_live_telemetry_panel(self, panel, live_state) -> None:
+            panel.state = live_state
+            panel.moba_connected_state = live_state
+            cells = tuple(moba_telemetry_cells(live_state))
+            existing_keys = tuple(panel.telemetry_cell_frames)
+            live_keys = tuple(getattr(cell, "key", "") for cell in cells)
+            telemetry_bar = panel.findChild(QFrame, "mobaTelemetryBar")
+            if live_keys != existing_keys:
+                can_rebuild = bool(cells) and all(
+                    all(
+                        hasattr(cell, attribute)
+                        for attribute in (
+                            "icon_key",
+                            "icon_accent",
+                            "icon_size",
+                            "label",
+                            "value",
+                            "display_text",
+                            "width",
+                        )
+                    )
                     for cell in cells
                 )
-                telemetry_bar = current_panel.findChild(
-                    QFrame,
-                    "mobaTelemetryBar",
-                )
-                if live_keys != existing_keys:
-                    can_rebuild = bool(cells) and all(
-                        all(
-                            hasattr(cell, attribute)
-                            for attribute in (
-                                "icon_key",
-                                "icon_accent",
-                                "icon_size",
-                                "label",
-                                "value",
-                                "display_text",
-                                "width",
-                            )
+                if can_rebuild:
+                    hidden_keys = {
+                        key
+                        for key, frame in panel.telemetry_cell_frames.items()
+                        if frame.property("mobaTelemetryUserVisible") is False
+                    }
+                    try:
+                        telemetry_bar = panel.rebuild_telemetry_bar(
+                            hidden_keys=hidden_keys,
                         )
-                        for cell in cells
-                    )
-                    if can_rebuild:
-                        hidden_keys = {
-                            key
-                            for key, frame in current_panel.telemetry_cell_frames.items()
-                            if frame.property("mobaTelemetryUserVisible") is False
-                        }
-                        try:
-                            telemetry_bar = current_panel.rebuild_telemetry_bar(
-                                hidden_keys=hidden_keys,
-                            )
-                        except (AttributeError, KeyError, TypeError):
-                            # A stale/headless test double must not prevent the
-                            # current live snapshot from updating existing cells.
-                            telemetry_bar = current_panel.findChild(
-                                QFrame,
-                                "mobaTelemetryBar",
-                            )
-            else:
-                cells = ()
-                telemetry_bar = None
+                    except (AttributeError, KeyError, TypeError):
+                        # A stale/headless test double must not prevent the
+                        # current live snapshot from updating existing cells.
+                        telemetry_bar = panel.findChild(
+                            QFrame,
+                            "mobaTelemetryBar",
+                        )
             if telemetry_bar is None:
-                return True
+                return
             telemetry_bar.setProperty("mobaTelemetryDataSource", "live-ssh")
             telemetry_bar.setProperty("mobaTelemetryLive", True)
             for cell in cells:
@@ -6179,6 +6176,25 @@ def create_main_window(
                     label.updateGeometry()
                 frame.updateGeometry()
             telemetry_bar.updateGeometry()
+
+        def apply_live_remote_monitoring_snapshot(self, snapshot) -> bool:
+            if not self.monitoring_surface_is_current():
+                return False
+            live_state = replace(self.state, monitoring=snapshot)
+            self.state = live_state
+            main_window = self.main_window()
+            matching_panels = []
+            if main_window is not None:
+                for index in range(main_window.tabs.count()):
+                    candidate = main_window.tabs.widget(index)
+                    if (
+                        isinstance(candidate, MobaConnectedSessionPanel)
+                        and candidate.state.profile_name == live_state.profile_name
+                        and candidate.state.target == live_state.target
+                    ):
+                        matching_panels.append(candidate)
+            for panel in matching_panels:
+                self._update_live_telemetry_panel(panel, live_state)
             return True
 
         def build_remote_monitoring_context_menu(self) -> QMenu:
@@ -9496,6 +9512,7 @@ def create_main_window(
 
     class MainWindow(QMainWindow):
         CLOSE_STOP_POLICY = ProcessStopPolicy(terminate_timeout_ms=300, kill_timeout_ms=0)
+        CLOSE_FORCE_CLOSE_DELAY_MS = 750
 
         def statusBar(self) -> QStatusBar:  # noqa: N802
             return _required_gui_value(
@@ -21877,6 +21894,12 @@ def create_main_window(
                     )
                 self.stop_terminal_panes(running)
                 self.finish_closing_tab(widget)
+                QTimer.singleShot(
+                    self.CLOSE_FORCE_CLOSE_DELAY_MS,
+                    lambda closing_widget=widget: self.force_finish_closing_tab(
+                        closing_widget
+                    ),
+                )
             else:
                 widget.deleteLater()
             self.log.append(f"TAB CLOSED: {title}")
@@ -21930,6 +21953,20 @@ def create_main_window(
                 return
             self._closing_tab_widgets.remove(widget)
             widget.deleteLater()
+
+        def force_finish_closing_tab(self, widget: QWidget) -> None:
+            """Finish a closed tab when a transport ignores terminate/kill."""
+
+            if widget not in self._closing_tab_widgets:
+                return
+            for pane in self.terminal_panes_in(widget):
+                if not pane.is_running():
+                    continue
+                pane.process.kill()
+                close_process = getattr(pane.process, "close", None)
+                if callable(close_process):
+                    close_process()
+            self.finish_closing_tab(widget)
 
         def confirm_stop_processes(self, title: str, count: int) -> bool:
             answer = _literal_message_box(

@@ -53,6 +53,20 @@ def default_shell_command(
     return [shell]
 
 
+def normalise_local_shell_input(line: str, plan: TerminalPanePlan) -> str:
+    """Translate the common POSIX clear command for a native Windows cmd shell."""
+
+    executable = ntpath.basename(next(iter(plan.command), "")).lower()
+    if (
+        _is_native_windows()
+        and plan.source == "shell"
+        and executable in {"cmd", "cmd.exe"}
+        and line.strip().casefold() == "clear"
+    ):
+        return "cls"
+    return line
+
+
 def default_shell_plan(index: int | None = None) -> TerminalPanePlan:
     suffix = f" {index}" if index is not None else ""
     return TerminalPanePlan(title=f"Shell{suffix}", command=default_shell_command(), source="shell")

@@ -69,6 +69,25 @@ def test_ansi_transcript_bounds_scrollback_and_supports_screen_clear() -> None:
     assert TERMINAL_EMULATOR_BACKEND == "ansi-transcript-v1"
 
 
+def test_ansi_transcript_supports_primary_cursor_erase_and_save_restore_controls() -> None:
+    erase_to_end = AnsiTerminalTranscript()
+    erase_to_end.feed("one\ntwo\nthree\nfour")
+    assert erase_to_end.feed("\x1b[2A\x1b[1C\x1b[0J") == "one\ntwo\n\nfour"
+    erase_to_end.feed("\x1b[5J")
+
+    erase_to_start = AnsiTerminalTranscript()
+    erase_to_start.feed("one\ntwo\nthree")
+    assert erase_to_start.feed("\x1b[1A\x1b[1D\x1b[1J") == "\n   \nthree"
+
+    cursor = AnsiTerminalTranscript()
+    cursor.feed("one\ntwo")
+    cursor.feed("\x1b[1E")
+    assert (cursor.cursor_row, cursor.cursor_column) == (1, 0)
+    cursor.feed("\x1b[2d")
+    cursor.feed("\x1b[s\x1b[2C\x1b[1B\x1b[u")
+    assert (cursor.cursor_row, cursor.cursor_column) == (1, 0)
+
+
 def test_ansi_transcript_bounds_alternate_screen_redraws_and_restores_shell() -> None:
     terminal = AnsiTerminalTranscript()
     terminal.set_screen_size(40, 6)

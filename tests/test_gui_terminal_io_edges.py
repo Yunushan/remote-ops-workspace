@@ -57,6 +57,10 @@ def _new_pane(window):
 
 def test_terminal_auth_prompt_transitions_are_notified_once(gui_window) -> None:
     _app, window = gui_window
+    pane_without_handler = _new_pane(window)
+    pane_without_handler.set_terminal_authentication_change_handler(None)
+    pane_without_handler.refresh_terminal_input_security("password: ")
+
     pane = _new_pane(window)
     transitions: list[bool] = []
     pane.set_terminal_authentication_change_handler(
@@ -69,6 +73,11 @@ def test_terminal_auth_prompt_transitions_are_notified_once(gui_window) -> None:
     pane.refresh_terminal_input_security("root@host:~$ ")
 
     assert transitions == [True, False]
+
+    pane.set_terminal_authentication_change_handler(
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("deleted"))
+    )
+    pane.refresh_terminal_input_security("password: ")
 
 
 class _Process:
@@ -515,12 +524,23 @@ def test_background_refresh_callback_and_main_edges(gui_window, monkeypatch, cap
     window.refresh_moba_background_after_terminal_auth(pane, False)
     assert scheduled == [1_500, 250]
     window.moba_connected_dock = SimpleNamespace(
+        state=SimpleNamespace(profile_name="profile-b"),
+        schedule_background_state_activation=scheduled.append,
+    )
+    window.refresh_moba_background_after_terminal_auth(pane, False)
+    window.moba_connected_dock = SimpleNamespace(
+        state=SimpleNamespace(profile_name="profile-a"),
+        schedule_background_state_activation=None,
+    )
+    window.refresh_moba_background_after_terminal_auth(pane, False)
+    window.moba_connected_dock = SimpleNamespace(
         state=SimpleNamespace(profile_name="profile-a"),
         schedule_background_state_activation=lambda _delay: (_ for _ in ()).throw(
             RuntimeError("deleted")
         ),
     )
     window.refresh_moba_background_after_terminal_start(pane)
+    window.refresh_moba_background_after_terminal_auth(pane, False)
 
     class _DisposedDock:
         @property
@@ -529,6 +549,7 @@ def test_background_refresh_callback_and_main_edges(gui_window, monkeypatch, cap
 
     window.moba_connected_dock = _DisposedDock()
     window.refresh_moba_background_after_terminal_start(pane)
+    window.refresh_moba_background_after_terminal_auth(pane, False)
     window.moba_connected_dock = original_dock
 
     class _App:

@@ -217,7 +217,7 @@ def test_live_monitoring_rebuilds_the_bottom_bar_for_extended_metrics(
 ) -> None:
     from remote_ops_workspace.moba_connected import RemoteMonitoringSnapshot
 
-    app, window, panel, dock, _profile = connected_workspace
+    app, window, panel, dock, profile = connected_workspace
     live_snapshot = RemoteMonitoringSnapshot(
         cpu_percent=39,
         memory_used_gb=12.63,
@@ -249,6 +249,17 @@ def test_live_monitoring_rebuilds_the_bottom_bar_for_extended_metrics(
         "sessions",
         "filesystems",
     ]
+
+    second_panel = window.open_moba_connected_session_tab(
+        profile,
+        TerminalPanePlan(title="dock-edge-second", command=[], source="test"),
+    )
+    second_dock = window.moba_connected_dock
+    assert second_dock is not None
+    assert second_dock.apply_live_remote_monitoring_snapshot(live_snapshot) is True
+    app.processEvents()
+    assert panel.telemetry_bar.property("mobaTelemetryDataSource") == "live-ssh"
+    assert second_panel.telemetry_bar.property("mobaTelemetryDataSource") == "live-ssh"
 
 
 def test_telemetry_rebuild_handles_missing_bar_hidden_cells_and_stale_panels(
@@ -295,6 +306,20 @@ def test_telemetry_rebuild_handles_missing_bar_hidden_cells_and_stale_panels(
     )
     assert dock.apply_live_remote_monitoring_snapshot(extended_snapshot) is True
     assert panel.telemetry_bar.property("mobaTelemetryLive") is True
+
+
+def test_live_monitoring_skips_panel_without_a_telemetry_bar(connected_workspace) -> None:
+    app, _window, _panel, dock, _profile = connected_workspace
+    stale_panel = SimpleNamespace(
+        telemetry_cell_frames={},
+        findChild=lambda *_args: None,
+    )
+
+    dock._update_live_telemetry_panel(stale_panel, dock.state)
+    app.processEvents()
+
+    assert stale_panel.state is dock.state
+    assert stale_panel.moba_connected_state is dock.state
 
 
 def test_background_authentication_and_prompt_submission_edges(
@@ -443,7 +468,31 @@ def test_background_auth_capability_gate_and_retry_edges(
     assert unavailable is False
     assert "Authenticate background tools" in detail
 
+    monkeypatch.setattr(
+        dock,
+        "background_ssh_auth_capability",
+        lambda _profile: (False, "auth unavailable"),
+    )
     monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: None)
+    assert dock.ensure_background_authentication_for_request() is True
+
+    dock.background_auth_retry_timer.stop()
+    dock.schedule_background_auth_retry()
+    assert dock.background_auth_retry_timer.isActive() is False
+    monkeypatch.setattr(
+        dock,
+        "background_ssh_auth_capability",
+        lambda _profile: (True, "agent ready"),
+    )
+    dock.schedule_background_auth_retry()
+    assert dock.background_auth_retry_timer.isActive() is True
+    assert dock.property("mobaBackgroundSshRetryDelayMs") == 1_000
+    dock.schedule_background_auth_retry()
+    dock.background_auth_retry_timer.stop()
+
+    dock.runtime_shutting_down = True
+    dock.schedule_background_auth_retry()
+    dock.runtime_shutting_down = False
     assert dock.ensure_background_authentication_for_request() is True
     monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
     monkeypatch.setattr(

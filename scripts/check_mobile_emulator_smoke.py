@@ -40,6 +40,10 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_IOS_OPEN_URL_ATTEMPTS,
         help="Retry budget for first-boot iOS simulator URL opening.",
     )
+    parser.add_argument(
+        "--ios-version",
+        help="Require an exact iOS simulator runtime version prefix, for example 27 or 27.0.",
+    )
     parser.add_argument("--out-dir", default="artifacts/mobile")
     args = parser.parse_args(argv)
 
@@ -54,7 +58,12 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=out_dir,
             verify_web_response=not args.skip_web_response,
         )
-    return check_ios(url=args.url, out_dir=out_dir, open_url_attempts=args.ios_open_url_attempts)
+    return check_ios(
+        url=args.url,
+        out_dir=out_dir,
+        open_url_attempts=args.ios_open_url_attempts,
+        required_version=args.ios_version,
+    )
 
 
 def check_android(
@@ -167,10 +176,16 @@ def ensure_android_web_response(
     )
 
 
-def check_ios(*, url: str, out_dir: Path, open_url_attempts: int = DEFAULT_IOS_OPEN_URL_ATTEMPTS) -> int:
+def check_ios(
+    *,
+    url: str,
+    out_dir: Path,
+    open_url_attempts: int = DEFAULT_IOS_OPEN_URL_ATTEMPTS,
+    required_version: str | None = None,
+) -> int:
     require_tool("xcrun")
     wait_for_web_url(url)
-    runtime = latest_ios_runtime()
+    runtime = latest_ios_runtime(required_version=required_version)
     device_type = preferred_iphone_device_type()
     udid = run(["xcrun", "simctl", "create", "row-web-pwa", device_type, runtime["identifier"]]).stdout.strip()
     try:
@@ -236,7 +251,7 @@ def open_ios_url(
     raise SystemExit(f"iOS simulator failed to open {url} after {attempts} attempts: {last_error}")
 
 
-def latest_ios_runtime() -> dict[str, Any]:
+def latest_ios_runtime(*, required_version: str | None = None) -> dict[str, Any]:
     result = run(["xcrun", "simctl", "list", "runtimes", "--json"])
     runtimes = json.loads(result.stdout).get("runtimes", [])
     ios_runtimes = [
@@ -250,6 +265,24 @@ def latest_ios_runtime() -> dict[str, Any]:
     ]
     if not ios_runtimes:
         raise SystemExit("No available iOS simulator runtime found")
+    if required_version is not None:
+        if not required_version.strip():
+            raise SystemExit("Required iOS simulator runtime version must not be empty")
+        requested_key = version_key(required_version)
+        matching_runtimes = [
+            runtime
+            for runtime in ios_runtimes
+            if version_key(str(runtime.get("version", "")))[: len(requested_key)] == requested_key
+        ]
+        if not matching_runtimes:
+            available = ", ".join(
+                sorted(str(runtime.get("version", "unknown")) for runtime in ios_runtimes)
+            )
+            raise SystemExit(
+                f"No available iOS simulator runtime matched required version "
+                f"{required_version!r}; available versions: {available}"
+            )
+        ios_runtimes = matching_runtimes
     return max(ios_runtimes, key=lambda runtime: version_key(str(runtime.get("version", ""))))
 
 

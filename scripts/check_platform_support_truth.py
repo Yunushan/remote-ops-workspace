@@ -215,7 +215,7 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "`linux_smoke_summary` carrying the native smoke release/run",
         "iOS/iPadOS is Web/PWA only; no native `.ipa` or App Store package is published.",
         "Android 12 through Android 16 (API 31-36)",
-        "iOS/iPadOS 15 through 26.x",
+        "iOS/iPadOS 15 through 27.x",
     ),
     "docs/PLATFORM_SUPPORT.md": (
         "Architecture support is declared in `configs/platform_targets.json`",

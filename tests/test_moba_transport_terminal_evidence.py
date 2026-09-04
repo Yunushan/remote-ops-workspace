@@ -17,7 +17,7 @@ from scripts.make_mobaxterm_parity_evidence_record import build_evidence_record
 
 HEAD_SHA = "d" * 40
 REPOSITORY = "example/remote-ops-workspace"
-RELEASE_TAG = "v1.0.23"
+RELEASE_TAG = "v1.0.24"
 RUN_URL = "https://github.com/example/remote-ops-workspace/actions/runs/1234"
 CAPTURED_AT = "2026-08-23T12:34:56Z"
 RELEASE_TARGET = "windows-x64"
@@ -285,13 +285,13 @@ def _generator_args(
 ) -> SimpleNamespace:
     return SimpleNamespace(
         article_id="shared-authenticated-transport-terminal-grid",
-        release_tag="v1.0.23",
+        release_tag="v1.0.24",
         release_target=release_target,
         evidence=evidence,
         assets_dir=evidence.parent,
         release_asset_url=[
             "https://github.com/example/remote-ops-workspace/releases/download/"
-            "v1.0.23/moba-transport-terminal.zip"
+            "v1.0.24/moba-transport-terminal.zip"
         ],
         artifact=[f"{artifact.name}={artifact}"],
     )

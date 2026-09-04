@@ -1518,7 +1518,9 @@ def configure_live_render_transport(window: Any, tab_label: str, ready_text: str
     The profile and terminal command metadata stay untouched for the visual
     contract.  Only the QProcess runtime command is replaced with a local
     stdin-backed transport, which makes process-count evidence independent of
-    DNS, credentials, and unavailable demo endpoints.
+    DNS, credentials, and unavailable demo endpoints.  The transport echoes
+    the configured launch command after its readiness marker so PTY startup
+    normalization cannot erase the command from the captured transcript.
     """
 
     from PyQt6.QtWidgets import QWidget
@@ -1532,9 +1534,14 @@ def configure_live_render_transport(window: Any, tab_label: str, ready_text: str
         pane = tab_widget.findChild(QWidget, "terminalPane")
     if pane is None:
         return False
+    plan = getattr(pane, "plan", None)
+    printable = getattr(plan, "printable", lambda: "")
+    command_text = printable() if callable(printable) else ""
+    command_echo = f"$ {command_text}" if command_text else ""
     harness = (
         "import sys\n"
         f"print({ready_text!r}, flush=True)\n"
+        f"print({command_echo!r}, flush=True)\n"
         "for line in sys.stdin:\n"
         "    print(line, end='', flush=True)\n"
     )
@@ -1564,10 +1571,11 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         window.launch_profile(profile, dry_run=False, prefix="CI REFERENCE")
     except (KeyError, LauncherError, ValueError) as exc:
         return [f"{preset_id} live GUI could not open reference profile {profile_name}: {exc}"]
+    reference_ready_text = f"{preset_id.upper()} REFERENCE TRANSPORT READY"
     if not configure_live_render_transport(
         window,
         window.profile_tab_label(profile),
-        f"{preset_id.upper()} REFERENCE TRANSPORT READY",
+        reference_ready_text,
     ):
         return [f"{preset_id} live GUI could not configure reference transport"]
     if hasattr(window, "select_profile"):
@@ -1627,7 +1635,11 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
         # transition before capturing evidence; otherwise the contract sees
         # the pre-start "No running process panes" state and an empty
         # transcript even though the user-facing tab starts correctly.
-        settle_live_reference_runtime(window, preset_id)
+        settle_live_reference_runtime(
+            window,
+            preset_id,
+            ready_text=reference_ready_text,
+        )
         if tab_chrome_route is not None:
             errors.extend(capture_product_reference_tab_chrome(window, preset_id, reference_index))
         if surface_route is not None:
@@ -1662,13 +1674,38 @@ def prepare_product_reference_tab(window: Any, preset_id: str) -> list[str]:
     return errors
 
 
-def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_seconds: float = 3.0) -> None:
+def live_reference_runtime_ready(
+    transcript: str,
+    command: str,
+    expected_fragment: str,
+    ready_text: str,
+) -> bool:
+    """Require child readiness before capturing the live reference surface."""
+
+    return bool(
+        ready_text
+        and ready_text in transcript
+        and command
+        and command in transcript
+        and (not expected_fragment or expected_fragment in transcript)
+    )
+
+
+def settle_live_reference_runtime(
+    window: Any,
+    preset_id: str,
+    *,
+    ready_text: str | None = None,
+    timeout_seconds: float = 10.0,
+) -> None:
     """Drain the deferred tab-start path before collecting live evidence.
 
     Reference tabs use a real child process, but startup is queued until Qt
     has laid out the selected page. A bounded event-loop wait keeps this gate
     deterministic while allowing both the process-start signal and the
-    coalesced output timer to run on Windows and offscreen Qt.
+    coalesced output timer to run on Windows and offscreen Qt. The startup
+    command is app-owned text, so the child transport's readiness marker is
+    required before evidence is captured.
     """
 
     from PyQt6.QtWidgets import QApplication, QTabWidget, QWidget
@@ -1698,6 +1735,7 @@ def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_second
     surface_route = EXPECTED_PRESET_REFERENCE_SURFACE_ROUTES.get(preset_id)
     if surface_route is not None:
         expected_fragment = surface_route.command_target_fragment
+    expected_ready_text = ready_text or f"{preset_id.upper()} REFERENCE TRANSPORT READY"
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         process_events(app)
@@ -1707,8 +1745,11 @@ def settle_live_reference_runtime(window: Any, preset_id: str, *, timeout_second
         output = getattr(pane, "output", None)
         transcript = output.toPlainText() if output is not None else ""
         command = getattr(getattr(pane, "plan", None), "printable", lambda: "")()
-        if command and command in transcript and (
-            not expected_fragment or expected_fragment in transcript
+        if live_reference_runtime_ready(
+            transcript,
+            command,
+            expected_fragment,
+            expected_ready_text,
         ):
             break
         time.sleep(0.01)

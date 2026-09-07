@@ -737,6 +737,7 @@ jobs:
           PY
           )"
           WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"
+          export WEB_PWA_URL
           echo "WEB_PWA_URL=$WEB_PWA_URL" >> "$GITHUB_ENV"
           python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1 > web-server.log 2>&1 &
           echo $! > web-server.pid

@@ -694,8 +694,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild -version
-          xcodebuild -version | grep -Eq '^Xcode 27(\.|$)'
+          # Capture the full version output before validating it. Piping
+          # xcodebuild directly into grep makes the preview tool abort on the
+          # consumer's early pipe close with an NSFileHandle broken-pipe error.
+          xcode_version="$(xcodebuild -version)"
+          printf '%s\n' "$xcode_version"
+          xcode_version_line="${xcode_version%%$'\n'*}"
+          case "$xcode_version_line" in
+            "Xcode 27."*|"Xcode 27") ;;
+            *) echo "::error::Xcode 27 is required, got $xcode_version_line"; exit 1 ;;
+          esac
           macos_sdk="$(xcrun --sdk macosx --show-sdk-version)"
           ios_sdk="$(xcrun --sdk iphoneos --show-sdk-version)"
           ios_simulator_sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"

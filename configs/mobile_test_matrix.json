@@ -62,11 +62,13 @@
       "iOS/iPadOS 16",
       "iOS/iPadOS 17",
       "iOS/iPadOS 18",
-      "iOS/iPadOS 26"
+      "iOS/iPadOS 26",
+      "iOS/iPadOS 27"
     ],
     "ci_jobs": [
       "mobile-web",
-      "ios-simulator-web"
+      "ios-simulator-web",
+      "apple-27-validation"
     ],
     "native_ipa": false
   }

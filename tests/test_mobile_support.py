@@ -18,6 +18,7 @@ def test_mobile_support_matrix_declares_tested_android_and_ios_versions() -> Non
         "iOS/iPadOS 17",
         "iOS/iPadOS 18",
         "iOS/iPadOS 26",
+        "iOS/iPadOS 27",
     ]
     assert matrix["ios_ipados"]["native_ipa"] is False
     assert matrix["ios_ipados"]["status"] == "verified-ios-web-pwa"
@@ -37,6 +38,16 @@ def test_mobile_support_checker_rejects_dropped_android_api() -> None:
     errors = checker.check_matrix(matrix)
 
     assert any("Android API matrix must be" in error for error in errors)
+
+
+def test_mobile_support_checker_rejects_dropped_ios_27_validation() -> None:
+    checker = _load_checker()
+    matrix = json.loads(Path("configs/mobile_test_matrix.json").read_text(encoding="utf-8"))
+    matrix["ios_ipados"]["supported_versions"] = matrix["ios_ipados"]["supported_versions"][:-1]
+
+    errors = checker.check_matrix(matrix)
+
+    assert any("iOS/iPadOS version matrix must be" in error for error in errors)
 
 
 def _load_checker():

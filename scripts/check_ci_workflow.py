@@ -16,6 +16,7 @@ SUPPORTED_HOSTED_RUNNERS = {
     "macos-15-intel",
     "macos-26",
     "macos-26-intel",
+    "xcode-27",
 }
 
 
@@ -43,6 +44,8 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors.extend(check_web_recovery_job(text))
     errors.extend(check_android_emulator_web_job(text))
     errors.extend(check_ios_simulator_web_job(text))
+    errors.extend(check_apple_27_validation_job(text))
+    errors.extend(check_apple_27_readiness_job(text))
     errors.extend(check_gui_render_job(text))
     errors.extend(check_gui_interactions_windows_job(text))
     errors.extend(check_native_windows_readiness_job(text))
@@ -458,7 +461,8 @@ def check_python315_readiness_job(workflow: str) -> list[str]:
     active_lines = {
         "name": r'^    name: Python 3\.15 readiness\s*$',
         "needs": (
-            r'^    needs:\s*\[\s*test\s*,\s*python315-optional-dependencies\s*\]\s*$'
+            r'^    needs:\s*\[\s*test\s*,\s*python315-optional-dependencies\s*,'
+            r'\s*apple-27-readiness\s*\]\s*$'
         ),
         "always": r'^    if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$',
         "runner": r'^    runs-on:\s*ubuntu-latest\s*$',
@@ -470,11 +474,18 @@ def check_python315_readiness_job(workflow: str) -> list[str]:
             r'^      OPTIONAL_MATRIX_RESULT:\s*\$\{\{\s*'
             r'needs\.python315-optional-dependencies\.result\s*\}\}\s*$'
         ),
+        "Apple 27 result": (
+            r'^      APPLE_27_RESULT:\s*\$\{\{\s*'
+            r'needs\.apple-27-readiness\.result\s*\}\}\s*$'
+        ),
         "normal success assertion": (
             r'^          test "\$NORMAL_MATRIX_RESULT" = "success"\s*$'
         ),
         "optional success assertion": (
             r'^          test "\$OPTIONAL_MATRIX_RESULT" = "success"\s*$'
+        ),
+        "Apple 27 success assertion": (
+            r'^          test "\$APPLE_27_RESULT" = "success"\s*$'
         ),
     }
     for label, pattern in active_lines.items():
@@ -879,6 +890,82 @@ def check_ios_simulator_web_job(workflow: str) -> list[str]:
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"ci ios-simulator-web job missing {label}: {snippet}")
+    return errors
+
+
+def check_apple_27_validation_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "apple-27-validation")
+    if not block:
+        return ["ci workflow missing apple-27-validation job for macOS 27 SDK and iOS 27 smoke"]
+    required_snippets = {
+        "name: macOS 27 SDK and iOS 27 Web/PWA validation": (
+            "clear macOS 27 SDK and iOS 27 validation job label"
+        ),
+        "runs-on: xcode-27": "Xcode 27 preview runner",
+        "timeout-minutes: 30": "bounded Apple 27 validation timeout",
+        'python-version: "3.12"': "stable Apple mobile validation Python version",
+        'python -m pip install -e ".[dev]"': "mobile validation dependency installation",
+        "tests/test_web_hardening.py": "Web/PWA hardening tests",
+        "tests/test_mobile_support.py": "mobile support contract tests",
+        "xcodebuild -version": "Xcode version validation",
+        "xcrun --sdk macosx --show-sdk-version": "macOS 27 SDK version validation",
+        "xcrun --sdk iphoneos --show-sdk-version": "iOS 27 device SDK version validation",
+        "xcrun --sdk iphonesimulator --show-sdk-version": "iOS 27 simulator SDK version validation",
+        'WEB_PWA_URL="http://127.0.0.1:${WEB_PWA_PORT}/index.html"': (
+            "dynamic Apple validation Web/PWA URL"
+        ),
+        'python -m http.server "$WEB_PWA_PORT" --directory apps/web --bind 127.0.0.1': (
+            "loopback-bound Apple validation Web/PWA server"
+        ),
+        "scripts/check_mobile_emulator_smoke.py --platform ios": (
+            "Apple simulator smoke helper"
+        ),
+        "--ios-version 27": "exact iOS 27 simulator runtime requirement",
+        '--url "$WEB_PWA_URL"': "Apple validation host loopback URL",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": (
+            "Apple 27 evidence upload"
+        ),
+        "name: apple-27-validation": "Apple 27 evidence artifact name",
+        "path: artifacts/apple-27": "Apple 27 evidence artifact path",
+        "if-no-files-found: error": "Apple 27 artifact failure on missing evidence",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci apple-27-validation job missing {label}: {snippet}")
+    for sdk_name, label in (
+        ("macos_sdk", "macOS 27 SDK assertion"),
+        ("ios_sdk", "iOS 27 device SDK assertion"),
+        ("ios_simulator_sdk", "iOS 27 simulator SDK assertion"),
+    ):
+        assertion = rf'case "\${sdk_name}" in\s+27\.\*\)'
+        if re.search(assertion, block) is None:
+            errors.append(f"ci apple-27-validation job missing {label}")
+    return errors
+
+
+def check_apple_27_readiness_job(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "apple-27-readiness")
+    if not block:
+        return ["ci workflow missing stable Apple 27 readiness aggregate job"]
+    active_lines = {
+        "name": r"^    name: Apple 27 readiness\s*$",
+        "needs": r"^    needs:\s*\[\s*apple-27-validation\s*\]\s*$",
+        "always": r"^    if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$",
+        "runner": r"^    runs-on:\s*ubuntu-latest\s*$",
+        "timeout": r"^    timeout-minutes:\s*5\s*$",
+        "Apple 27 result": (
+            r"^      APPLE_27_RESULT:\s*\$\{\{\s*"
+            r"needs\.apple-27-validation\.result\s*\}\}\s*$"
+        ),
+        "Apple 27 success assertion": r'^          test "\$APPLE_27_RESULT" = "success"\s*$',
+    }
+    for label, pattern in active_lines.items():
+        if re.search(pattern, block, re.MULTILINE) is None:
+            errors.append(f"ci Apple 27 readiness aggregate missing active {label}")
+    if "continue-on-error: true" in block:
+        errors.append("ci Apple 27 readiness aggregate must fail closed")
     return errors
 
 

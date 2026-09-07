@@ -23,6 +23,7 @@ IOS_VERSIONS = [
     "iOS/iPadOS 17",
     "iOS/iPadOS 18",
     "iOS/iPadOS 26",
+    "iOS/iPadOS 27",
 ]
 
 
@@ -83,8 +84,11 @@ def check_matrix(matrix: dict[str, Any]) -> list[str]:
         errors.append("iOS/iPadOS mobile matrix must score verified-ios-web-pwa at 100.0%")
     if ios.get("native_ipa") is not False:
         errors.append("iOS/iPadOS mobile matrix must keep native_ipa=false")
-    if set(ios.get("ci_jobs", [])) != {"mobile-web", "ios-simulator-web"}:
-        errors.append("iOS/iPadOS mobile matrix must require mobile-web and ios-simulator-web CI jobs")
+    if set(ios.get("ci_jobs", [])) != {"mobile-web", "ios-simulator-web", "apple-27-validation"}:
+        errors.append(
+            "iOS/iPadOS mobile matrix must require mobile-web, ios-simulator-web and "
+            "apple-27-validation CI jobs"
+        )
     return errors
 
 
@@ -124,6 +128,9 @@ def check_workflow(workflow: str) -> list[str]:
         "--android-api ${{ matrix.api-level }}": "Android API smoke assertion",
         "ios-simulator-web:": "iOS simulator Web/PWA job",
         "runs-on: macos-26": "current macOS/Xcode simulator runner",
+        "apple-27-validation:": "macOS 27 SDK and iOS 27 validation job",
+        "runs-on: xcode-27": "Xcode 27 preview runner",
+        "--ios-version 27": "exact iOS 27 simulator smoke",
         "--platform ios": "iOS mobile smoke helper call",
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "mobile screenshot artifact upload",
     }
@@ -139,7 +146,7 @@ def check_docs(docs: dict[str, str]) -> list[str]:
         "README.md": (
             "Platform verified readiness is still separate and currently reports **100.0% overall**",
             "Android 12 through Android 16 (API 31-36)",
-            "iOS/iPadOS 15 through 26.x",
+            "iOS/iPadOS 15 through 27.x",
         ),
         "docs/ANDROID.md": (
             "Android 12 through Android 16 (API 31-36)",
@@ -147,13 +154,13 @@ def check_docs(docs: dict[str, str]) -> list[str]:
             "No APK is published.",
         ),
         "docs/IOS.md": (
-            "iOS/iPadOS 15 through 26.x",
+            "iOS/iPadOS 15 through 27.x",
             "ios-simulator-web",
             "No native `.ipa` artifact is published.",
         ),
         "docs/PLATFORM_SUPPORT.md": (
             "Android 12 through Android 16 (API 31-36)",
-            "iOS/iPadOS 15 through 26.x",
+            "iOS/iPadOS 15 through 27.x",
         ),
         "docs/RELEASE_STRATEGY.md": (
             "android-emulator-web",

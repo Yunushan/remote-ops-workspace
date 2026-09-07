@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -162,6 +163,91 @@ def test_android_boot_screenshot_mode_does_not_fetch_web_response(monkeypatch, t
     ) == 0
     assert not any("toybox nc" in " ".join(call) for call in calls)
     assert (tmp_path / "android-api-32-web-pwa.png").read_bytes() == b"png"
+
+
+def test_latest_ios_runtime_selects_requested_version(monkeypatch) -> None:
+    smoke = _load_smoke()
+    runtimes = {
+        "runtimes": [
+            {
+                "name": "iOS 26.5",
+                "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+                "version": "26.5",
+                "isAvailable": True,
+            },
+            {
+                "name": "iOS 27.0",
+                "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+                "version": "27.0",
+                "isAvailable": True,
+            },
+        ]
+    }
+
+    def fake_run(args: list[str], *, check: bool = True, text: bool = True):
+        assert args == ["xcrun", "simctl", "list", "runtimes", "--json"]
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps(runtimes), stderr="")
+
+    monkeypatch.setattr(smoke, "run", fake_run)
+
+    assert smoke.latest_ios_runtime(required_version="27") == runtimes["runtimes"][1]
+
+
+def test_latest_ios_runtime_reports_missing_requested_version(monkeypatch) -> None:
+    smoke = _load_smoke()
+    runtimes = {
+        "runtimes": [
+            {
+                "name": "iOS 26.5",
+                "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+                "version": "26.5",
+                "isAvailable": True,
+            }
+        ]
+    }
+
+    def fake_run(args: list[str], *, check: bool = True, text: bool = True):
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps(runtimes), stderr="")
+
+    monkeypatch.setattr(smoke, "run", fake_run)
+
+    try:
+        smoke.latest_ios_runtime(required_version="27")
+    except SystemExit as exc:
+        assert "required version '27'" in str(exc)
+        assert "26.5" in str(exc)
+    else:
+        raise AssertionError("missing requested iOS runtime should fail closed")
+
+
+def test_latest_ios_runtime_rejects_empty_requested_version(monkeypatch) -> None:
+    smoke = _load_smoke()
+    monkeypatch.setattr(
+        smoke,
+        "run",
+        lambda args, *, check=True, text=True: subprocess.CompletedProcess(
+            args,
+            0,
+            stdout=json.dumps({
+                "runtimes": [
+                    {
+                        "name": "iOS 27.0",
+                        "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+                        "version": "27.0",
+                        "isAvailable": True,
+                    }
+                ]
+            }),
+            stderr="",
+        ),
+    )
+
+    try:
+        smoke.latest_ios_runtime(required_version="")
+    except SystemExit as exc:
+        assert "must not be empty" in str(exc)
+    else:
+        raise AssertionError("empty requested iOS runtime version should fail closed")
 
 
 def _load_smoke():

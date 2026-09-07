@@ -28,6 +28,36 @@ def test_terminal_plans_reject_empty_split_and_preserve_non_ssh_commands() -> No
     assert plan.printable() == "echo ready"
 
 
+@pytest.mark.parametrize(
+    ("line", "source", "command", "native_windows", "expected"),
+    [
+        ("clear", "shell", [r"C:\Windows\System32\cmd.exe"], True, "cls"),
+        ("CLEAR", "shell", ["cmd.exe"], True, "cls"),
+        ("clear", "shell", ["cmd.exe"], False, "clear"),
+        ("clear", "command", ["cmd.exe"], True, "clear"),
+        ("clear", "shell", ["powershell.exe"], True, "clear"),
+        ("clear", "shell", [], True, "clear"),
+        (" clear ", "shell", ["cmd.exe"], True, "cls"),
+    ],
+)
+def test_local_shell_input_normalises_only_native_cmd_clear(
+    monkeypatch: pytest.MonkeyPatch,
+    line: str,
+    source: str,
+    command: list[str],
+    native_windows: bool,
+    expected: str,
+) -> None:
+    monkeypatch.setattr(terminal, "_is_native_windows", lambda: native_windows)
+    plan = terminal.TerminalPanePlan(
+        title="shell-input",
+        command=command,
+        source=source,
+    )
+
+    assert terminal.normalise_local_shell_input(line, plan) == expected
+
+
 def test_terminal_profile_plan_preserves_explicit_connect_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -2310,6 +2310,70 @@ def test_running_tab_close_is_immediate_and_cancels_pending_restart(gui_window) 
     assert process.process_state == QProcess.ProcessState.NotRunning
 
 
+def test_force_finish_closing_tab_closes_stubborn_transport(gui_window, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from PyQt6.QtCore import QProcess
+    from PyQt6.QtWidgets import QWidget
+
+    _app, window = gui_window
+
+    class _StubbornProcess:
+        def __init__(self, *, closeable: bool) -> None:
+            self.process_state = QProcess.ProcessState.Running
+            self.killed = False
+            self.closed = False
+            if not closeable:
+                self.close = "not-callable"
+
+        def state(self):
+            return self.process_state
+
+        def kill(self) -> None:
+            self.killed = True
+
+        def close_transport(self) -> None:
+            self.closed = True
+            self.process_state = QProcess.ProcessState.NotRunning
+
+    stubborn_process = _StubbornProcess(closeable=True)
+    stubborn_process.close = stubborn_process.close_transport
+    no_close_process = _StubbornProcess(closeable=False)
+    no_close_process.kill = lambda: setattr(
+        no_close_process,
+        "process_state",
+        QProcess.ProcessState.NotRunning,
+    )
+    stubborn_pane = SimpleNamespace(
+        is_running=lambda: stubborn_process.state() == QProcess.ProcessState.Running,
+        process=stubborn_process,
+    )
+    no_close_pane = SimpleNamespace(
+        is_running=lambda: no_close_process.state() == QProcess.ProcessState.Running,
+        process=no_close_process,
+    )
+    stopped_pane = SimpleNamespace(is_running=lambda: False)
+    widget = QWidget()
+    window._closing_tab_widgets = [widget]
+    monkeypatch.setattr(
+        window,
+        "terminal_panes_in",
+        lambda candidate: (
+            [stubborn_pane, no_close_pane, stopped_pane]
+            if candidate is widget
+            else []
+        ),
+    )
+
+    window.force_finish_closing_tab(QWidget())
+    window.force_finish_closing_tab(widget)
+
+    assert stubborn_process.killed is True
+    assert stubborn_process.closed is True
+    assert no_close_process.process_state == QProcess.ProcessState.NotRunning
+    assert widget not in window._closing_tab_widgets
+
+
 def test_main_window_close_closes_custom_terminal_transport(gui_window) -> None:
     from PyQt6.QtCore import QProcess
     from PyQt6.QtGui import QCloseEvent

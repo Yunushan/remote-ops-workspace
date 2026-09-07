@@ -433,7 +433,7 @@ See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`confi
 | Solaris/illumos | CLI, Web/PWA, GUI if Python/Qt stack exists | Focus on OpenSSH, browser, serial/raw sockets |
 | macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewers |
 | Android | Web/PWA, Termux CLI | ARMv7 and ARM64 through Termux/Web; Android 12 through Android 16 (API 31-36) Web/PWA emulator CI; APK remains future work |
-| iOS/iPadOS | Web/PWA | iOS/iPadOS 15 through 26.x Web/PWA contract with current Xcode simulator smoke; native `.ipa` remains future work |
+| iOS/iPadOS | Web/PWA | iOS/iPadOS 15 through 27.x Web/PWA contract with current and exact iOS 27 Xcode simulator smoke; native `.ipa` remains future work |
 | Web | PWA shell | Static PWA shell; API/backend can be layered on |
 
 ---
@@ -637,8 +637,9 @@ native jobs. The native build scripts also map Linux `i386`/`i686` and
 default release. Android remains Termux/Web with no APK published, and
 iOS/iPadOS is Web/PWA only; no native `.ipa` or App Store package is published.
 Mobile CI covers Android 12 through Android 16 (API 31-36) Web/PWA emulator
-HTTP response smoke and iOS/iPadOS 15 through 26.x Web/PWA compatibility, with simulator smoke
-on the current GitHub macOS/Xcode runtime.
+HTTP response smoke and iOS/iPadOS 15 through 27.x Web/PWA compatibility, with
+current-runtime simulator smoke plus exact iOS 27 SDK and simulator validation
+through the `apple-27-validation` job.
 The machine-readable release decision lives in
 [`configs/release_matrix.json`](configs/release_matrix.json), while
 [`configs/platform_targets.json`](configs/platform_targets.json) remains the

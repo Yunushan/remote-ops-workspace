@@ -314,6 +314,11 @@ def check_candidate_build_contract(workflow: str) -> list[str]:
             continue
         errors.extend(check_job_block_disallows_continue_on_error(job, block))
         errors.extend(check_checkout_step(block, job=job))
+    # The source/Python job has additional installed-artifact smoke contracts
+    # beyond the common checkout and fail-closed checks above. Keep those
+    # checks attached to the candidate workflow so a release cannot be sealed
+    # without exercising the built wheel, sdist, and source bundle.
+    errors.extend(check_source_and_python_job(workflow))
     seal = workflow_job_block(workflow, "seal-release-candidate")
     required = {
         'test "$GITHUB_RUN_ATTEMPT" = "1"': "fresh-attempt refusal",

@@ -16345,9 +16345,28 @@ def create_main_window(
                 )
 
         def save_profile(self, profile, original_name: str) -> None:
-            self.store.replace_named(
-                original_name,
-                profile,
+            replace_named = getattr(self.store, "replace_named", None)
+            if callable(replace_named):
+                replace_named(
+                    original_name,
+                    profile,
+                    surface="profile-editor",
+                )
+                return
+            # Keep compatibility with lightweight editor stores used by
+            # integrations while preserving the same duplicate/name checks as
+            # ProfileStore.replace_named.
+            profiles = list(self.store.load(resolve=False))
+            if not any(item.name == original_name for item in profiles):
+                raise KeyError(original_name)
+            if profile.name != original_name and any(
+                item.name == profile.name for item in profiles
+            ):
+                raise ValueError(f"profile already exists: {profile.name}")
+            profiles = [item for item in profiles if item.name != original_name]
+            profiles.append(profile)
+            self.store.save(
+                sorted(profiles, key=lambda item: (item.group, item.name)),
                 surface="profile-editor",
             )
 
@@ -21617,12 +21636,16 @@ def create_main_window(
                 return
             try:
                 layout = self.layout_store.get(name)
+                profiles = self.layout_launch_profiles(layout)
                 sessions = build_layout_terminal_sessions(
                     layout,
                     self.store,
                     surface="gui",
                 )
                 plans = [plan for plan, _profile in sessions]
+                # Resolve through the same session snapshot used for the
+                # plans. The preflight above is kept explicit so GUI policy
+                # checks remain visible at this execution surface.
                 profiles = [profile for _plan, profile in sessions]
                 widget = self.layout_widget(layout, plans, profiles)
                 self.bind_layout_resize_persistence(layout.name, widget)
@@ -21642,14 +21665,16 @@ def create_main_window(
                 )
 
         def layout_launch_profiles(self, layout: Layout) -> list[Profile]:
-            return [
-                profile
-                for _plan, profile in build_layout_terminal_sessions(
-                    layout,
-                    self.store,
-                    surface="gui",
-                )
-            ]
+            sessions = build_layout_terminal_sessions(
+                layout,
+                self.store,
+                surface="gui",
+            )
+            profiles: list[Profile] = []
+            for _plan, profile in sessions:
+                assert_profile_launch_allowed(profile, surface="gui")
+                profiles.append(profile)
+            return profiles
 
         def layout_widget(
             self,

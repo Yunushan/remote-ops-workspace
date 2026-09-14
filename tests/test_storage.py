@@ -35,6 +35,23 @@ def test_profile_store_update_rejects_reentrant_mutation_but_allows_reads(
     assert [profile.name for profile in store.load(resolve=False)] == ["existing"]
 
 
+def test_profile_store_replace_named_handles_rename_collisions_and_missing_names(
+    tmp_path: Path,
+) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="first", protocol="ssh", host="first.example.invalid"))
+    store.add(Profile(name="second", protocol="ssh", host="second.example.invalid"))
+
+    renamed = Profile(name="renamed", protocol="ssh", host="renamed.example.invalid")
+    assert store.replace_named("first", renamed).name == "renamed"
+    assert store.get("renamed").host == "renamed.example.invalid"
+
+    with pytest.raises(KeyError, match="missing"):
+        store.replace_named("missing", renamed)
+    with pytest.raises(ValueError, match="already exists"):
+        store.replace_named("renamed", Profile(name="second", protocol="ssh", host="duplicate"))
+
+
 def test_profile_store_guard_cannot_reentrantly_mutate_same_store(tmp_path: Path) -> None:
     store = ProfileStore(tmp_path / "profiles.json")
     store.add(Profile(name="existing", protocol="ssh", host="existing.invalid"))

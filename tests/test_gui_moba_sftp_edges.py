@@ -467,6 +467,31 @@ def test_background_authentication_and_prompt_submission_edges(
     assert monitoring.state() == QProcess.ProcessState.Running
 
 
+def test_background_password_submission_handles_rejected_write_and_missing_profile(
+    connected_workspace,
+) -> None:
+    _app, _window, _panel, dock, profile = connected_workspace
+    dock.profile_for_sftp_action = lambda: None
+    assert (
+        dock.background_password_prompt_matches_target(
+            "operator@dock-edge.example.invalid's password: "
+        )
+        is False
+    )
+
+    dock.profile_for_sftp_action = lambda: profile
+    dock._background_password = bytearray(b"pw")
+    dock._background_auth_password_sent["monitoring"] = False
+    process = _FakeProcess(running=True, write_result=0)
+    dock.monitoring_process = process
+    dock._submit_background_password_if_prompt(
+        "monitoring",
+        b"operator@dock-edge.example.invalid's password: ",
+    )
+    assert process.written == b"pw\r"
+    assert dock._background_auth_password_sent["monitoring"] is False
+
+
 def test_background_auth_capability_gate_and_retry_edges(
     connected_workspace,
     monkeypatch,

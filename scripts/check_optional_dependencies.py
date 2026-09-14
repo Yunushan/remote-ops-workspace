@@ -171,7 +171,7 @@ def check_security_vault(tmp_path: Path) -> tuple[list[str], list[str]]:
     vault.set("prod/router-password", "top-secret", passphrase)
     if vault.get("prod/router-password", passphrase) != "top-secret":
         return ["cryptography-backed vault smoke did not round-trip secret"], []
-    vault.delete("prod/router-password")
+    vault.delete("prod/router-password", passphrase)
     key_path = tmp_path / "id_ed25519"
     try:
         run_keygen(build_keygen_plan(key_path, passphrase="test key passphrase"))

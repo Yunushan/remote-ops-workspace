@@ -783,11 +783,11 @@ def prepare_managed_edit_cache(local_path: Path | str) -> Path:
     ensure_private_dir_required(cache_root)
     root = cache_root.resolve(strict=True)
     target = Path(local_path).expanduser()
+    if target.is_symlink():
+        raise OSError(f"refusing to overwrite symlinked remote edit cache file: {target}")
     resolved = target.resolve(strict=False)
     if not resolved.is_relative_to(root):
         raise ValueError(f"remote edit cache path escapes managed cache: {target}")
-    if target.is_symlink():
-        raise OSError(f"refusing to overwrite symlinked remote edit cache file: {target}")
     if target.exists() and not target.is_file():
         raise OSError(f"remote edit cache target must be a regular file: {target}")
     return target

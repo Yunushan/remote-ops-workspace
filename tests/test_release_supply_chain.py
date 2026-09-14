@@ -317,12 +317,13 @@ def test_release_archive_metadata_is_deterministic(tmp_path: Path) -> None:
 
 
 def test_release_workflow_uses_minimal_permissions() -> None:
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    assert "permissions:\n  contents: read" in workflow
-    assert "persist-credentials: false" in workflow
-    assert "permissions:\n      contents: write" in workflow
-    assert "fail_on_unmatched_files: true" in workflow
-    assert workflow.count("tag_name: ${{ env.RELEASE_TAG }}") == 1
+    candidate = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
+    assert "permissions:\n  contents: read" in candidate
+    assert "persist-credentials: false" in candidate
+    assert "      contents: write" in promotion
+    assert "Upload every certified asset to the new numeric draft" in promotion
+    assert promotion.count("tag_name: $tag") == 1
 
 
 def test_release_workflow_uses_pinned_toolchain() -> None:

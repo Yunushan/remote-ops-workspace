@@ -280,7 +280,7 @@ def build_layout_terminal_sessions(
         assert_profile_launch_allowed(
             profile,
             surface=surface,
-            policy_path=store.policy_path,
+            policy_path=getattr(store, "policy_path", None),
         )
         plan = (
             terminal_plan_for_profile(profile)

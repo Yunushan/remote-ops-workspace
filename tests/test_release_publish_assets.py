@@ -224,7 +224,7 @@ def test_expected_release_assets_normalize_to_requested_tag() -> None:
 def test_publish_contract_rejects_gated_default_asset_without_evidence() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
     linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.24-linux-i386.deb")
 
@@ -236,7 +236,7 @@ def test_publish_contract_rejects_gated_default_asset_without_evidence() -> None
 def test_publish_contract_uses_explicit_empty_platform_registry(monkeypatch) -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
     linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.24-linux-i386.deb")
     monkeypatch.setattr(checker, "read_evidence_registry", lambda: _accepted_evidence_registry("linux-i386"))
@@ -254,7 +254,7 @@ def test_publish_contract_uses_explicit_empty_platform_registry(monkeypatch) -> 
 def test_publish_contract_allows_gated_default_asset_with_accepted_evidence() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
     linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.2-linux-i386.deb")
 
@@ -271,7 +271,7 @@ def test_publish_contract_allows_gated_default_asset_with_accepted_evidence() ->
 def test_publish_contract_rejects_gated_default_asset_with_wrong_release_evidence() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
     linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.24-linux-i386.deb")
 
@@ -293,7 +293,7 @@ def test_publish_contract_rejects_gated_default_asset_with_wrong_release_evidenc
 def test_publish_contract_rejects_gated_asset_with_unfinalized_platform_candidate() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
     linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.24-linux-i386.deb")
     registry = _accepted_evidence_registry("linux-i386")
@@ -307,7 +307,7 @@ def test_publish_contract_rejects_gated_asset_with_unfinalized_platform_candidat
 def test_publish_contract_rejects_malformed_accepted_evidence_for_gated_asset() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
     linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.24-linux-i386.deb")
 
@@ -333,7 +333,7 @@ def test_publish_contract_rejects_malformed_accepted_evidence_for_gated_asset() 
 def test_publish_contract_rejects_xp_asset_without_complete_xp_pair() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     windows_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "windows-native")
     windows_job["asset_patterns"].append("remote-ops-workspace-v1.0.24-windows-xp-x86-native.zip")
 
@@ -346,553 +346,81 @@ def test_publish_contract_rejects_xp_asset_without_complete_xp_pair() -> None:
     assert any("XP native promotion requires accepted evidence for both targets" in error for error in errors)
 
 
-def test_publish_contract_requires_validation_before_upload() -> None:
+def test_publish_contract_baseline_uses_split_candidate_and_promotion_workflows() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "python release-tooling/scripts/check_release_publish_assets.py --assets-dir release-assets --tag",
-        "python scripts/check_release_matrix.py # disabled publish asset validation",
-    )
+    promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
 
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert any("publish asset validation" in error for error in errors)
+    assert checker.check_publish_contract(matrix, promotion) == []
 
 
-def test_publish_contract_requires_repository_bound_validation() -> None:
+def test_publish_contract_requires_complete_asset_inventory_validation() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        ' --repository "${{ github.repository }}"',
-        "",
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert any("publish evidence repository binding" in error for error in errors)
-
-
-def test_publish_contract_requires_platform_goal_gate_before_upload() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        " --require-platform-goal-targets",
-        "",
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert any("protected platform goal publish gate" in error for error in errors)
-
-
-def test_publish_contract_requires_protected_platform_release_asset_gate() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
-        "",
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert any("protected platform release asset gate" in error for error in errors)
-
-
-def test_publish_contract_requires_protected_asset_gate_before_publish_asset_validation() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    protected_gate = (
-        '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
-    )
-    workflow = workflow.replace(protected_gate, "")
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "protected platform release asset gate must run before protected publish asset validation" in errors
-
-
-def test_publish_contract_requires_protected_asset_gate_before_release_upload() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    protected_gate = (
-        '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n'
-    )
-    workflow = workflow.replace(protected_gate, "") + protected_gate
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "protected platform release asset gate must run before protected GitHub release upload" in errors
-
-
-def test_publish_contract_requires_remote_evidence_audit_after_upload() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    audit_step = (
-        '      - name: Audit published protected platform evidence\n'
-        '        env:\n'
-        '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "$RELEASE_TAG" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
-    )
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        audit_step,
-        "",
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert any("published protected platform evidence audit" in error for error in errors)
-
-
-def test_publish_contract_rejects_remote_evidence_audit_before_upload() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    audit_step = (
-        '      - name: Audit published protected platform evidence\n'
-        '        env:\n'
-        '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/check_platform_release_evidence_remote.py --repository "${{ github.repository }}" --release-tag "$RELEASE_TAG" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head\n'
-    )
-    upload_step = (
-        '      - name: Upload release assets\n'
-        '        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3\n'
-        '        with:\n'
-        '          fail_on_unmatched_files: true\n'
-        '          files: release-assets/**\n'
-    )
-    workflow = workflow.replace(audit_step, "").replace(upload_step, audit_step + upload_step)
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "published protected platform evidence audit must run after GitHub release upload" in errors
-
-
-def test_publish_contract_requires_remote_evidence_audit_token_and_actions_read() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "      actions: read\n",
-        "",
-    ).replace(
-        "          GH_TOKEN: ${{ github.token }}\n",
-        "",
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert any("Actions metadata read permission" in error for error in errors)
-    assert any("GitHub token for published evidence audit" in error for error in errors)
-
-
-def test_publish_contract_rejects_release_preflight_continue_on_error() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '      - name: Require protected platform accepted records\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-records-complete --show-requirements\n',
-        '      - name: Require protected platform accepted records\n'
-        '        continue-on-error: true\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-records-complete --show-requirements\n',
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "accepted-platform-evidence-assets job must not use continue-on-error: true for protected release gates" in errors
-
-
-def test_publish_contract_rejects_publish_continue_on_error() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '      - name: Require protected platform release assets\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
-        '      - name: Require protected platform release assets\n'
-        '        continue-on-error: true\n'
-        '        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --require-complete --assets-dir release-assets --repository "${{ github.repository }}"\n',
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "publish-protected-platform-evidence job must not use continue-on-error: true for protected release gates" in errors
-
-
-def test_publish_contract_keeps_core_release_independent_from_protected_evidence() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "      - linux-native\n    steps:\n",
-        "      - linux-native\n      - accepted-platform-evidence-assets\n    steps:\n",
+    promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8").replace(
+        "          python scripts/check_release_publish_assets.py\n",
+        "          python scripts/check_release_matrix.py\n",
         1,
     )
 
-    errors = checker.check_publish_contract(matrix, workflow)
+    errors = checker.check_publish_contract(matrix, promotion)
 
-    assert "core publish job must not depend on accepted-platform-evidence-assets" in errors
+    assert any("complete production asset inventory" in error for error in errors)
 
 
-def test_publish_contract_requires_clean_checkouts_for_release_jobs() -> None:
+def test_publish_contract_requires_mutation_boundary_tag_governance() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    block = checker.workflow_job_block(workflow, "linux-native")
-    assert block
-    workflow = workflow.replace(block, block.replace("          clean: true\n", "", 1), 1)
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "linux-native job missing clean release checkout: clean: true" in errors
-
-
-def test_publish_contract_requires_workflow_bound_release_validation_tooling() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    publish_block = checker.workflow_job_block(workflow, "publish")
-    assert publish_block
-    workflow = workflow.replace(
-        publish_block,
-        publish_block.replace("          path: release-tooling\n", "", 1),
+    promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8").replace(
+        "          python scripts/check_release_tag_governance.py\n",
+        "          python scripts/check_release_matrix.py\n",
         1,
     )
 
-    errors = checker.check_publish_contract(matrix, workflow)
+    errors = checker.check_publish_contract(matrix, promotion)
 
-    assert "publish job missing workflow-bound release validation tooling path: path: release-tooling" in errors
+    assert any("mutation-bound tag governance proof" in error for error in errors)
 
 
-def test_publish_contract_rejects_clean_checkout_setting_outside_checkout_step() -> None:
+def test_publish_contract_requires_final_asset_attestation() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    block = checker.workflow_job_block(workflow, "linux-native")
-    assert block
-    mutated = block.replace("          clean: true\n", "", 1).replace(
-        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
-        "      - name: Misleading clean setting\n"
-        "        run: echo clean\n"
-        "        env:\n"
-        "          clean: true\n"
-        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
-        1,
-    )
-    workflow = workflow.replace(block, mutated, 1)
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "linux-native job missing clean release checkout: clean: true" in errors
-
-
-def test_publish_contract_rejects_persist_credentials_outside_checkout_step() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    block = checker.workflow_job_block(workflow, "publish")
-    assert block
-    mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
-        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
-        "      - name: Misleading checkout credential setting\n"
-        "        run: echo persist\n"
-        "        env:\n"
-        "          persist-credentials: false\n"
-        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
-        1,
-    )
-    workflow = workflow.replace(block, mutated, 1)
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "publish job missing checkout credential isolation: persist-credentials: false" in errors
-
-
-def test_publish_contract_requires_platform_evidence_import_job() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "accepted-platform-evidence-assets",
-        "removed-platform-evidence-assets",
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "release workflow missing accepted-platform-evidence-assets job" in errors
-
-
-def test_publish_contract_rejects_platform_evidence_import_write_permissions() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "      actions: read\n",
-        "      actions: write\n",
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "accepted-platform-evidence-assets job must not request write permissions" in errors
-
-
-def test_publish_contract_rejects_platform_evidence_import_continue_on_error() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        '      - name: Import accepted protected platform evidence artifacts\n'
-        '        env:\n'
-        '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "$RELEASE_TAG" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
-        '      - name: Import accepted protected platform evidence artifacts\n'
-        '        continue-on-error: true\n'
-        '        env:\n'
-        '          GH_TOKEN: ${{ github.token }}\n'
-        '        run: python scripts/import_platform_evidence_artifacts.py --release-tag "$RELEASE_TAG" --release-head-sha "$(git -C release-source rev-parse HEAD)" --require-goal-targets --out-dir release-assets --verify-source-run --repository "${{ github.repository }}"\n',
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert (
-        "accepted-platform-evidence-assets job must not use continue-on-error: true "
-        "for protected release gates"
-    ) in errors
-
-
-def test_publish_contract_rejects_platform_evidence_import_nonstandard_write_permissions() -> None:
-    checker = _load_checker()
-    matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "      contents: read\n",
-        "      contents: read\n      id-token: write\n",
-    )
-
-    errors = checker.check_publish_contract(matrix, workflow)
-
-    assert "accepted-platform-evidence-assets job must not request write permissions" in errors
-
-
-def test_publish_contract_requires_platform_evidence_import_timeout() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    permissions:",
-        "    runs-on: ubuntu-latest\n    permissions:",
+    promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8").replace(
+        "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+        "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10",
         1,
     )
 
-    errors = checker.check_platform_evidence_import_job(workflow)
+    errors = checker.check_publish_contract(matrix, promotion)
 
-    assert any("bounded platform evidence import timeout" in error for error in errors)
+    assert any("actions/attest@" in error for error in errors)
 
 
-def test_publish_contract_requires_platform_evidence_import_clean_checkout() -> None:
+def test_publish_contract_requires_numeric_draft_creation() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "          clean: true\n"
-        "      - name: Check out immutable release source for evidence binding\n",
-        "      - name: Check out immutable release source for evidence binding\n",
+    matrix = _load_matrix()
+    promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8").replace(
+        '          gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"\n',
+        '          gh api --method GET "repos/$GITHUB_REPOSITORY/releases" > "$response"\n',
         1,
     )
 
-    errors = checker.check_platform_evidence_import_job(workflow)
+    errors = checker.check_publish_contract(matrix, promotion)
 
-    assert "accepted-platform-evidence-assets job missing clean release checkout: clean: true" in errors
+    assert any("create-only numeric draft" in error for error in errors)
 
 
-def test_platform_evidence_import_rejects_clean_setting_outside_checkout_step() -> None:
+def test_candidate_build_contract_remains_publish_free() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    block = checker.workflow_job_block(workflow, "accepted-platform-evidence-assets")
-    assert block
-    mutated = block.replace("          clean: true\n", "", 1).replace(
-        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
-        "      - name: Misleading clean setting\n"
-        "        run: echo clean\n"
-        "        env:\n"
-        "          clean: true\n"
-        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
-        1,
-    )
-    workflow = workflow.replace(block, mutated, 1)
+    candidate = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
 
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert "accepted-platform-evidence-assets job missing clean release checkout: clean: true" in errors
-
-
-def test_platform_evidence_import_rejects_persist_credentials_outside_checkout_step() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    block = checker.workflow_job_block(workflow, "accepted-platform-evidence-assets")
-    assert block
-    mutated = block.replace("          persist-credentials: false\n", "", 1).replace(
-        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
-        "      - name: Misleading credential isolation setting\n"
-        "        run: echo credentials\n"
-        "        env:\n"
-        "          persist-credentials: false\n"
-        "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6\n",
-        1,
-    )
-    workflow = workflow.replace(block, mutated, 1)
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert (
-        "accepted-platform-evidence-assets job missing checkout credential isolation: "
-        "persist-credentials: false"
-    ) in errors
-
-
-def test_publish_contract_requires_platform_evidence_import_hidden_file_exclusion() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "          include-hidden-files: false\n",
-        "",
-    )
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert any("imported asset hidden file exclusion" in error for error in errors)
-
-
-def test_publish_contract_requires_platform_evidence_import_retention_window() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "          retention-days: 90\n",
-        "",
-    )
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert any("imported asset retention window" in error for error in errors)
-
-
-def test_publish_contract_requires_platform_evidence_import_before_upload() -> None:
-    checker = _load_checker()
-    workflow = """
-jobs:
-  accepted-platform-evidence-assets:
-    needs: release-preflight
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: release-platform-evidence-assets
-          path: release-assets/*
-          if-no-files-found: error
-      - name: Import accepted protected platform evidence artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets
-"""
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert "platform evidence import must run before imported artifact upload" in errors
-
-
-def test_publish_contract_requires_platform_evidence_source_run_verification() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        " --verify-source-run",
-        "",
-    )
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert any("source run metadata verification" in error for error in errors)
-
-
-def test_publish_contract_requires_repository_bound_platform_evidence_import() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        ' --repository "${{ github.repository }}"',
-        "",
-    )
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert any("repository-bound accepted evidence import" in error for error in errors)
-
-
-def test_publish_contract_rejects_platform_evidence_import_dry_run() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        " --verify-source-run",
-        " --verify-source-run --dry-run",
-    )
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert "platform evidence import job must download accepted artifacts, not run with --dry-run" in errors
-
-
-def test_publish_contract_requires_platform_review_bundle_validation() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets",
-        "python scripts/check_platform_review_bundle_artifacts.py --help",
-    )
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert any("imported platform review bundle validator" in error for error in errors)
-
-
-def test_publish_contract_requires_platform_final_record_asset_validation() -> None:
-    checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        " --require-final-record-assets",
-        "",
-    )
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert any("imported finalized accepted-record asset validator" in error for error in errors)
-
-
-def test_publish_contract_requires_platform_review_bundle_validation_before_upload() -> None:
-    checker = _load_checker()
-    workflow = """
-jobs:
-  accepted-platform-evidence-assets:
-    needs: release-preflight
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-      - name: Import accepted protected platform evidence artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python scripts/import_platform_evidence_artifacts.py --release-tag "${{ github.ref_name }}" --require-goal-targets --out-dir release-assets
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: release-platform-evidence-assets
-          path: release-assets/*
-          if-no-files-found: error
-      - name: Validate imported protected platform review bundles
-        run: python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag "${{ github.ref_name }}"
-"""
-
-    errors = checker.check_platform_evidence_import_job(workflow)
-
-    assert "platform review bundle validation must run before imported artifact upload" in errors
+    assert checker.check_candidate_build_contract(candidate) == []
 
 
 def test_publish_contract_rejects_malformed_mobaxterm_parity_registry() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -906,7 +434,7 @@ def test_publish_contract_rejects_malformed_mobaxterm_parity_registry() -> None:
 def test_publish_contract_can_require_complete_mobaxterm_parity_registry() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -921,7 +449,7 @@ def test_publish_contract_can_require_complete_mobaxterm_parity_registry() -> No
 def test_publish_contract_can_require_platform_goal_targets() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -936,7 +464,7 @@ def test_publish_contract_can_require_platform_goal_targets() -> None:
 def test_publish_contract_allows_complete_platform_goal_targets() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -957,7 +485,7 @@ def test_publish_contract_allows_complete_platform_goal_targets() -> None:
 def test_publish_contract_rejects_goal_target_evidence_for_wrong_release_tag() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -981,7 +509,7 @@ def test_publish_contract_rejects_goal_target_evidence_for_wrong_release_tag() -
 def test_publish_contract_allows_complete_synthetic_mobaxterm_parity_registry() -> None:
     checker = _load_checker()
     matrix = _load_matrix()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
 
     errors = checker.check_publish_contract(
         matrix,
@@ -1960,13 +1488,12 @@ def test_source_assets_only_rejects_source_bundle_link_member(tmp_path: Path) ->
 
 def test_release_contract_requires_installed_source_wheel_smoke() -> None:
     checker = _load_checker()
-    matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         "          wheel-smoke/bin/python -m remote_ops_workspace features --coverage\n",
         "          true\n",
     )
 
-    errors = checker.check_publish_contract(matrix, workflow)
+    errors = checker.check_source_and_python_job(workflow)
 
     assert any(
         error.startswith("source-and-python job missing installed-wheel bundled configuration smoke")
@@ -1976,13 +1503,12 @@ def test_release_contract_requires_installed_source_wheel_smoke() -> None:
 
 def test_release_contract_requires_installed_web_pwa_wheel_smoke() -> None:
     checker = _load_checker()
-    matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         "          wheel-smoke/bin/python -m remote_ops_workspace serve-web --host 127.0.0.1 --port 18767 >\"$log\" 2>&1 &\n",
         "          true\n",
     )
 
-    errors = checker.check_publish_contract(matrix, workflow)
+    errors = checker.check_source_and_python_job(workflow)
 
     assert any(
         error.startswith("source-and-python job missing installed-wheel Web/PWA server smoke")
@@ -1992,13 +1518,12 @@ def test_release_contract_requires_installed_web_pwa_wheel_smoke() -> None:
 
 def test_release_contract_requires_installed_source_distribution_smoke() -> None:
     checker = _load_checker()
-    matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '            PYTHONPATH="$RUNNER_TEMP/sdist-smoke-package" python -m remote_ops_workspace features --coverage\n',
         "            true\n",
     )
 
-    errors = checker.check_publish_contract(matrix, workflow)
+    errors = checker.check_source_and_python_job(workflow)
 
     assert any(
         error.startswith("source-and-python job missing installed-sdist bundled configuration smoke")
@@ -2008,13 +1533,12 @@ def test_release_contract_requires_installed_source_distribution_smoke() -> None
 
 def test_release_contract_requires_installed_portable_source_bundle_smoke() -> None:
     checker = _load_checker()
-    matrix = _load_matrix()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
         '            PYTHONPATH="$RUNNER_TEMP/source-bundle-smoke-package" python -m remote_ops_workspace features --coverage\n',
         "            true\n",
     )
 
-    errors = checker.check_publish_contract(matrix, workflow)
+    errors = checker.check_source_and_python_job(workflow)
 
     assert any(
         error.startswith("source-and-python job missing installed source-bundle bundled configuration smoke")

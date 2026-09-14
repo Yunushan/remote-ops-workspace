@@ -52,6 +52,22 @@ def test_private_atomic_write_rejects_a_symlinked_destination(tmp_path) -> None:
     assert link.is_symlink()
 
 
+def test_private_atomic_write_rejects_symlinked_directory_ancestor(tmp_path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = tmp_path / "state"
+    try:
+        linked.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlink creation unavailable: {exc}")
+
+    destination = linked / "nested" / "secret.json"
+    with pytest.raises(OSError, match="linked private directory ancestor"):
+        write_json_atomic(destination, {"secret": "must-not-write"}, private=True)
+
+    assert not (outside / "nested" / "secret.json").exists()
+
+
 def test_private_atomic_write_fails_closed_when_permissions_cannot_be_set(
     tmp_path, monkeypatch
 ) -> None:
@@ -109,6 +125,55 @@ def test_append_jsonl_private_writes_one_record_per_line(tmp_path) -> None:
         '{"event": "connected"}',
         '{"event": "closed"}',
     ]
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == PRIVATE_FILE_MODE
+
+
+def test_private_jsonl_append_rejects_symlinked_destination(tmp_path) -> None:
+    target = tmp_path / "outside.jsonl"
+    target.write_text("preserve-me\n", encoding="utf-8")
+    link = tmp_path / "audit.jsonl"
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+
+    with pytest.raises(OSError, match="symlinked private artifact"):
+        append_jsonl_private(link, {"event": "secret"})
+
+    assert target.read_text(encoding="utf-8") == "preserve-me\n"
+
+
+def test_private_jsonl_append_rejects_symlinked_directory_ancestor(tmp_path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = tmp_path / "state"
+    try:
+        linked.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"directory symlink creation unavailable: {exc}")
+
+    with pytest.raises(OSError, match="linked private directory ancestor"):
+        append_jsonl_private(linked / "audit" / "events.jsonl", {"event": "secret"})
+
+    assert not (outside / "audit" / "events.jsonl").exists()
+
+
+def test_private_jsonl_append_fails_closed_when_permissions_cannot_be_set(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "audit" / "events.jsonl"
+
+    def reject_permissions(_path, _mode) -> None:
+        raise OSError("permissions denied")
+
+    monkeypatch.setattr(file_safety, "_chmod_required", reject_permissions)
+
+    with pytest.raises(OSError, match="permissions denied"):
+        append_jsonl_private(path, {"event": "secret"})
+
+    assert not path.exists()
 
 
 def test_private_atomic_write_rejects_reported_symlink_without_platform_support(

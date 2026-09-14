@@ -201,3 +201,7 @@ for a single trusted shared filesystem. It does not provide identity,
 authorization, audit retention, high availability, distributed stale-lock
 recovery, or a credential store. Do not use it as an enterprise source of
 truth; use a managed configuration service for concurrent teams.
+On POSIX, pre-provision the root and its parents, with the root configured as a
+non-world-accessible, user/group-rwx setgid directory owned by the intended
+team group. The application creates no POSIX path components, will not select a
+GID, and rejects records or locks that do not inherit that group.

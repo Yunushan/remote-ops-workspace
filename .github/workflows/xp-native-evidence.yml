@@ -93,6 +93,18 @@ jobs:
     if: ${{ needs.evidence-runner-readiness.outputs.ready == 'true' }}
     runs-on: [self-hosted, xp-evidence]
     timeout-minutes: 60
+    env:
+      ASSETS_DIR: ${{ inputs.assets_dir }}
+      EVIDENCE_DIR: ${{ inputs.evidence_dir }}
+      EVIDENCE_FILE: ${{ inputs.evidence_file }}
+      EVIDENCE_TARGET: ${{ inputs.target }}
+      RELEASE_ASSET_BASE_URL: ${{ inputs.release_asset_base_url }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      REPOSITORY: ${{ github.repository }}
+      SOURCE_HEAD_SHA: ${{ github.sha }}
+      SOURCE_RUN_ATTEMPT: ${{ github.run_attempt }}
+      WORKFLOW_REF_NAME: ${{ github.ref_name }}
+      WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -104,30 +116,30 @@ jobs:
       - name: Record XP evidence collector boundary
         run: python -c "print('XP evidence collector validates staged proof captured on real Windows XP hosts; run scripts/xp_smoke_runner.cmd after this workflow starts so smoke proof binds the printed source run metadata.')"
       - name: Validate XP evidence dispatch inputs
-        run: python scripts/check_xp_native_evidence_dispatch_inputs.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --workflow-ref-name "${{ github.ref_name }}" --source-head-sha "${{ github.sha }}" --source-run-attempt "${{ github.run_attempt }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}"
+        run: python scripts/check_xp_native_evidence_dispatch_inputs.py --target "$env:EVIDENCE_TARGET" --release-tag "$env:RELEASE_TAG" --release-asset-base-url "$env:RELEASE_ASSET_BASE_URL" --workflow-run-url "$env:WORKFLOW_RUN_URL" --workflow-ref-name "$env:WORKFLOW_REF_NAME" --source-head-sha "$env:SOURCE_HEAD_SHA" --source-run-attempt "$env:SOURCE_RUN_ATTEMPT" --assets-dir "$env:ASSETS_DIR" --evidence-file "$env:EVIDENCE_FILE" --evidence-dir "$env:EVIDENCE_DIR"
       - name: Create XP evidence output directory
-        run: python -c "from pathlib import Path; Path('xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}').mkdir(parents=True, exist_ok=True)"
+        run: python -c "from pathlib import Path; import sys; Path(sys.argv[1]).mkdir(parents=True, exist_ok=True)" "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)"
       - name: Print XP evidence capture source metadata
         run: |
-          echo "XP evidence source workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          echo "XP evidence source head SHA: ${{ github.sha }}"
-          echo "XP evidence source run attempt: ${{ github.run_attempt }}"
+          echo "XP evidence source workflow run: $env:WORKFLOW_RUN_URL"
+          echo "XP evidence source head SHA: $env:SOURCE_HEAD_SHA"
+          echo "XP evidence source run attempt: $env:SOURCE_RUN_ATTEMPT"
       - name: Wait for staged XP evidence inputs
-        run: python scripts/wait_for_xp_native_evidence_inputs.py --assets-dir "${{ inputs.assets_dir }}" --evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}" --timeout-seconds 2700 --poll-seconds 10 --stable-polls 2
+        run: python scripts/wait_for_xp_native_evidence_inputs.py --assets-dir "$env:ASSETS_DIR" --evidence-file "$env:EVIDENCE_FILE" --evidence-dir "$env:EVIDENCE_DIR" --timeout-seconds 2700 --poll-seconds 10 --stable-polls 2
       - name: Validate XP native evidence
-        run: python scripts/check_xp_native_evidence.py --evidence "${{ inputs.evidence_file }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-dir "${{ inputs.evidence_dir }}"
+        run: python scripts/check_xp_native_evidence.py --evidence "$env:EVIDENCE_FILE" --assets-dir "$env:ASSETS_DIR" --evidence-dir "$env:EVIDENCE_DIR"
       - name: Validate XP promotion artifacts
-        run: python scripts/check_platform_promotion_artifacts.py --target "${{ inputs.target }}" --assets-dir "${{ inputs.assets_dir }}" --tag "${{ inputs.release_tag }}" --strict
+        run: python scripts/check_platform_promotion_artifacts.py --target "$env:EVIDENCE_TARGET" --assets-dir "$env:ASSETS_DIR" --tag "$env:RELEASE_TAG" --strict
       - name: Preflight XP local platform goal evidence
-        run: python scripts/check_platform_goal_local_evidence.py --root . --release-tag "${{ inputs.release_tag }}" --target "${{ inputs.target }}" --assets-dir "${{ inputs.assets_dir }}" --repository "${{ github.repository }}" --xp-evidence "${{ inputs.evidence_file }}" --xp-evidence-dir "${{ inputs.evidence_dir }}" --xp-source-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --xp-source-head-sha "${{ github.sha }}" --xp-source-run-attempt "${{ github.run_attempt }}"
+        run: python scripts/check_platform_goal_local_evidence.py --root . --release-tag "$env:RELEASE_TAG" --target "$env:EVIDENCE_TARGET" --assets-dir "$env:ASSETS_DIR" --repository "$env:REPOSITORY" --xp-evidence "$env:EVIDENCE_FILE" --xp-evidence-dir "$env:EVIDENCE_DIR" --xp-source-workflow-run-url "$env:WORKFLOW_RUN_URL" --xp-source-head-sha "$env:SOURCE_HEAD_SHA" --xp-source-run-attempt "$env:SOURCE_RUN_ATTEMPT"
       - name: Generate XP accepted-evidence candidate
-        run: python scripts/make_platform_verified_evidence_record.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --assets-dir "${{ inputs.assets_dir }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" --release-source-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --release-source-artifact-name "xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}" --release-source-head-sha "${{ github.sha }}" --release-source-run-attempt "${{ github.run_attempt }}" --local-evidence-root . --staged-upload-out-dir "platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}" --xp-evidence "${{ inputs.evidence_file }}" --xp-evidence-dir "${{ inputs.evidence_dir }}" --xp-evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}" --out "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/platform-verified-evidence-${{ inputs.target }}.json"
+        run: python scripts/make_platform_verified_evidence_record.py --target "$env:EVIDENCE_TARGET" --release-tag "$env:RELEASE_TAG" --assets-dir "$env:ASSETS_DIR" --release-asset-base-url "$env:RELEASE_ASSET_BASE_URL" --release-source-workflow-run-url "$env:WORKFLOW_RUN_URL" --release-source-artifact-name "xp-native-evidence-$($env:EVIDENCE_TARGET)-$($env:RELEASE_TAG)" --release-source-head-sha "$env:SOURCE_HEAD_SHA" --release-source-run-attempt "$env:SOURCE_RUN_ATTEMPT" --local-evidence-root . --staged-upload-out-dir "platform-evidence-upload/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)" --xp-evidence "$env:EVIDENCE_FILE" --xp-evidence-dir "$env:EVIDENCE_DIR" --xp-evidence-output-dir "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)" --out "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/platform-verified-evidence-$($env:EVIDENCE_TARGET).json"
       - name: Package XP review evidence bundle
-        run: python scripts/make_xp_native_evidence_bundle.py --target "${{ inputs.target }}" --evidence "${{ inputs.evidence_file }}" --candidate-record "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/platform-verified-evidence-${{ inputs.target }}.json" --assets-dir "${{ inputs.assets_dir }}" --evidence-dir "${{ inputs.evidence_dir }}" --out-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}"
+        run: python scripts/make_xp_native_evidence_bundle.py --target "$env:EVIDENCE_TARGET" --evidence "$env:EVIDENCE_FILE" --candidate-record "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/platform-verified-evidence-$($env:EVIDENCE_TARGET).json" --assets-dir "$env:ASSETS_DIR" --evidence-dir "$env:EVIDENCE_DIR" --out-dir "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)"
       - name: Finalize XP accepted-evidence candidate
-        run: python scripts/finalize_platform_verified_evidence_record.py --candidate-record "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/platform-verified-evidence-${{ inputs.target }}.json" --bundle-manifest "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}.json" --bundle-archive "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}.zip" --bundle-sha256s "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/xp-native-evidence-bundle-${{ inputs.target }}-${{ inputs.release_tag }}-SHA256SUMS.txt" --out "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}/platform-verified-evidence-${{ inputs.target }}-final.json"
+        run: python scripts/finalize_platform_verified_evidence_record.py --candidate-record "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/platform-verified-evidence-$($env:EVIDENCE_TARGET).json" --bundle-manifest "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/xp-native-evidence-bundle-$($env:EVIDENCE_TARGET)-$($env:RELEASE_TAG).json" --bundle-archive "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/xp-native-evidence-bundle-$($env:EVIDENCE_TARGET)-$($env:RELEASE_TAG).zip" --bundle-sha256s "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/xp-native-evidence-bundle-$($env:EVIDENCE_TARGET)-$($env:RELEASE_TAG)-SHA256SUMS.txt" --out "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/platform-verified-evidence-$($env:EVIDENCE_TARGET)-final.json"
       - name: Stage scoped XP evidence upload
-        run: python scripts/stage_xp_native_evidence_upload.py --target "${{ inputs.target }}" --release-tag "${{ inputs.release_tag }}" --assets-dir "${{ inputs.assets_dir }}" --evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}" --out-dir "platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}" --force
+        run: python scripts/stage_xp_native_evidence_upload.py --target "$env:EVIDENCE_TARGET" --release-tag "$env:RELEASE_TAG" --assets-dir "$env:ASSETS_DIR" --evidence-output-dir "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)" --out-dir "platform-evidence-upload/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)" --force
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}

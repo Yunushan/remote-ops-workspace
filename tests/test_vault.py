@@ -72,6 +72,7 @@ def test_vault_status_reports_metadata_without_secret_values(tmp_path: Path) -> 
     assert status.item_count == 2
     assert status.version == 1
     assert status.kdf == "scrypt"
+    assert status.kdf_params is None
     assert payload["path"] == str(path)
     assert "prod/router-password" not in json.dumps(payload)
 
@@ -91,6 +92,7 @@ def test_vault_roundtrip_authenticates_every_encrypted_write(tmp_path: Path) -> 
     vault.init(PASSPHRASE)
     initialized = json.loads(path.read_text(encoding="utf-8"))
     assert initialized["version"] == VAULT_VERSION
+    assert initialized["kdf_params"] == vault_module.VAULT_SCRYPT_PARAMS
     assert initialized["verifier"]
 
     vault.set("prod/router-password", "top-secret", PASSPHRASE)
@@ -105,7 +107,12 @@ def test_vault_roundtrip_authenticates_every_encrypted_write(tmp_path: Path) -> 
 
     with pytest.raises(VaultError, match="invalid vault passphrase"):
         vault.get("prod/router-password", "incorrect passphrase")
-    vault.delete("prod/router-password")
+    before_delete = path.read_bytes()
+    with pytest.raises(VaultError, match="invalid vault passphrase"):
+        vault.delete("prod/router-password", "incorrect passphrase")
+    assert path.read_bytes() == before_delete
+
+    vault.delete("prod/router-password", PASSPHRASE)
     assert vault.list() == []
 
 
@@ -154,9 +161,50 @@ def test_vault_migrates_authenticated_legacy_payload_on_write(tmp_path: Path) ->
     vault.set("new", "new-secret", PASSPHRASE)
     migrated = json.loads(path.read_text(encoding="utf-8"))
     assert migrated["version"] == VAULT_VERSION
+    assert migrated["kdf_params"] == vault_module.VAULT_SCRYPT_PARAMS
+    assert migrated["salt"] != salt
+    assert migrated["items"]["legacy"] != legacy_token
     assert migrated["verifier"]
     assert vault.get("legacy", PASSPHRASE) == "legacy-secret"
     assert vault.get("new", PASSPHRASE) == "new-secret"
+
+
+def test_vault_migrates_version_two_kdf_and_reencrypts_every_item(tmp_path: Path) -> None:
+    pytest.importorskip("cryptography")
+    path = tmp_path / "vault.json"
+    vault = LocalVault(path)
+    salt = base64.b64encode(b"0123456789abcdef").decode("ascii")
+    legacy_fernet = vault._fernet(PASSPHRASE, salt)
+    old_tokens = {
+        "first": legacy_fernet.encrypt(b"one").decode("ascii"),
+        "second": legacy_fernet.encrypt(b"two").decode("ascii"),
+    }
+    path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "kdf": "scrypt",
+                "salt": salt,
+                "verifier": legacy_fernet.encrypt(
+                    vault_module.VAULT_VERIFIER_PLAINTEXT
+                ).decode("ascii"),
+                "items": old_tokens,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    vault.set("third", "three", PASSPHRASE)
+
+    migrated = json.loads(path.read_text(encoding="utf-8"))
+    assert migrated["version"] == VAULT_VERSION
+    assert migrated["kdf_params"] == vault_module.VAULT_SCRYPT_PARAMS
+    assert migrated["salt"] != salt
+    assert migrated["items"]["first"] != old_tokens["first"]
+    assert migrated["items"]["second"] != old_tokens["second"]
+    assert vault.get("first", PASSPHRASE) == "one"
+    assert vault.get("second", PASSPHRASE) == "two"
+    assert vault.get("third", PASSPHRASE) == "three"
 
 
 def test_empty_legacy_vault_establishes_verifier_on_first_write(tmp_path: Path) -> None:
@@ -173,6 +221,7 @@ def test_empty_legacy_vault_establishes_verifier_on_first_write(tmp_path: Path) 
 
     migrated = json.loads(path.read_text(encoding="utf-8"))
     assert migrated["version"] == VAULT_VERSION
+    assert migrated["kdf_params"] == vault_module.VAULT_SCRYPT_PARAMS
     assert migrated["verifier"]
     assert vault.get("first", PASSPHRASE) == "secret"
 
@@ -182,10 +231,11 @@ def test_vault_rejects_wrong_verifier_plaintext_and_non_utf8_secret(tmp_path: Pa
     path = tmp_path / "vault.json"
     vault = LocalVault(path)
     salt = base64.b64encode(b"0123456789abcdef").decode("ascii")
-    fernet = vault._fernet(PASSPHRASE, salt)
+    fernet = vault._fernet(PASSPHRASE, salt, vault_module.VAULT_SCRYPT_PARAMS)
     payload = {
         "version": VAULT_VERSION,
         "kdf": "scrypt",
+        "kdf_params": dict(vault_module.VAULT_SCRYPT_PARAMS),
         "salt": salt,
         "verifier": fernet.encrypt(b"not-the-vault-verifier").decode("ascii"),
         "items": {},
@@ -206,7 +256,8 @@ def test_vault_rejects_wrong_verifier_plaintext_and_non_utf8_secret(tmp_path: Pa
     [
         ([], "root must be a JSON object"),
         ({"version": True, "kdf": "scrypt", "salt": "", "items": {}}, "version"),
-        ({"version": 3, "kdf": "scrypt", "salt": "", "items": {}}, "version"),
+        ({"version": 1.0, "kdf": "scrypt", "salt": "", "items": {}}, "version"),
+        ({"version": VAULT_VERSION + 1, "kdf": "scrypt", "salt": "", "items": {}}, "version"),
         (
             {"version": 1, "kdf": "pbkdf2", "salt": "", "items": {}},
             "KDF",
@@ -251,7 +302,7 @@ def test_vault_rejects_wrong_verifier_plaintext_and_non_utf8_secret(tmp_path: Pa
         ),
         (
             {
-                "version": VAULT_VERSION,
+                "version": 2,
                 "kdf": "scrypt",
                 "salt": base64.b64encode(b"0123456789abcdef").decode("ascii"),
                 "items": {},
@@ -262,6 +313,17 @@ def test_vault_rejects_wrong_verifier_plaintext_and_non_utf8_secret(tmp_path: Pa
             {
                 "version": VAULT_VERSION,
                 "kdf": "scrypt",
+                "kdf_params": dict(vault_module.VAULT_SCRYPT_PARAMS),
+                "salt": base64.b64encode(b"0123456789abcdef").decode("ascii"),
+                "items": {},
+            },
+            "verifier",
+        ),
+        (
+            {
+                "version": VAULT_VERSION,
+                "kdf": "scrypt",
+                "kdf_params": dict(vault_module.VAULT_SCRYPT_PARAMS),
                 "salt": base64.b64encode(b"0123456789abcdef").decode("ascii"),
                 "verifier": "not-ascii-\u00e9",
                 "items": {},
@@ -293,6 +355,47 @@ def test_vault_schema_rejects_nontext_item_names_and_accepts_legacy_verifier() -
     assert vault_module._validate_vault_payload(payload, Path("vault.json")) == payload
 
 
+@pytest.mark.parametrize(
+    "kdf_params",
+    [
+        None,
+        [],
+        {"n": 2**15, "r": 8},
+        {"n": 2**15, "r": 8, "p": 3, "extra": 1},
+        {"n": 2**14, "r": 8, "p": 3},
+        {"n": 2**15, "r": 8, "p": True},
+    ],
+)
+def test_vault_version_three_rejects_missing_or_weakened_kdf_params(
+    kdf_params: object,
+) -> None:
+    payload = {
+        "version": VAULT_VERSION,
+        "kdf": "scrypt",
+        "kdf_params": kdf_params,
+        "salt": base64.b64encode(b"0123456789abcdef").decode("ascii"),
+        "verifier": "token",
+        "items": {},
+    }
+
+    with pytest.raises(VaultError, match="kdf_params"):
+        vault_module._validate_vault_payload(payload, Path("vault.json"))
+
+
+def test_legacy_vault_rejects_unversioned_kdf_params() -> None:
+    payload = {
+        "version": 2,
+        "kdf": "scrypt",
+        "kdf_params": dict(vault_module.VAULT_SCRYPT_PARAMS),
+        "salt": base64.b64encode(b"0123456789abcdef").decode("ascii"),
+        "verifier": "token",
+        "items": {},
+    }
+
+    with pytest.raises(VaultError, match="legacy vault versions"):
+        vault_module._validate_vault_payload(payload, Path("vault.json"))
+
+
 def test_vault_reports_invalid_json_and_missing_or_duplicate_operations(tmp_path: Path) -> None:
     pytest.importorskip("cryptography")
     path = tmp_path / "vault.json"
@@ -311,7 +414,7 @@ def test_vault_reports_invalid_json_and_missing_or_duplicate_operations(tmp_path
     with pytest.raises(VaultError, match="secret not found"):
         vault.get("missing", PASSPHRASE)
     with pytest.raises(VaultError, match="secret not found"):
-        vault.delete("missing")
+        vault.delete("missing", PASSPHRASE)
 
 
 def test_prompt_passphrase_confirms_or_rejects(monkeypatch) -> None:

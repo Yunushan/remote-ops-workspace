@@ -23,11 +23,20 @@ Please include:
 - Never commit real secrets, profiles, vaults, private keys, customer hostnames, RDP files, VNC files, or support bundles.
 - `configs/*.example.*` files are examples only.
 - Use `ROW_HOME=/path/to/private/workspace` for portable/private operator data.
-- Workspace data directories are created with best-effort owner-only permissions where the platform supports it.
-- Local profile, vault, layout, snippet, backup and secret-output files are written through atomic replacement helpers with best-effort private file permissions.
+  It must be a trusted, single-user local filesystem, not a team share.
+- On POSIX, private workspace directories and sensitive files require owner-only
+  modes (`0700`/`0600`) or the write fails. Windows `chmod` does not prove an
+  owner-only DACL: operators must pre-provision and verify a current-user-only
+  ACL on `ROW_HOME` (administrators and LocalSystem remain trusted).
+- Local profile, vault, layout, snippet, backup and secret-output files use
+  atomic replacement. Windows portable/shared roots are outside the
+  confidentiality guarantee unless their DACL is secured independently.
 - Support bundles include a sanitized profile summary instead of raw `profiles.json`, and intentionally exclude `vault.json` and private keys. Review every bundle before sharing.
 - Support bundle summaries omit sensitive option key names and report only a sensitive option key count for password/token/credential-like option names.
-- Vault encryption uses the optional `cryptography` package; without it, vault commands fail closed.
+- Vault encryption uses the optional `cryptography` package and an explicitly
+  versioned Scrypt KDF parameter set; authenticated writes migrate older vaults
+  to the current stronger parameters. Without the backend, vault commands fail
+  closed.
 - `row connect --dry-run` prints launch arguments so operators can validate commands before connecting.
 - Audit redaction covers secret-like payload keys, assignment-style secret arguments such as `--password=value`, split secret flags such as `--token VALUE`, URL-embedded passwords, bearer tokens and common Windows-style password switches.
 - SSHv1 profiles are disabled unless the profile protocol is `ssh1`/`sshv1`,

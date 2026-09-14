@@ -14,8 +14,9 @@ APP_TITLE = "RemoteOpsWorkspace"
 def data_dir() -> Path:
     """Return writable application data directory.
 
-    Operators can set ROW_HOME for portable mode, shared jump boxes, lab media, or
-    temporary test workspaces.
+    Operators can set ROW_HOME for portable mode, operator-secured local media,
+    or temporary test workspaces. It is not a safe multi-user sharing boundary
+    for profiles, vaults, or other private state.
     """
     override = os.environ.get("ROW_HOME")
     if override:
@@ -33,7 +34,11 @@ def data_dir() -> Path:
 
 
 def ensure_data_dir() -> Path:
-    path = data_dir()
+    # Resolve an explicitly selected portable/home location once before the
+    # private-file layer rejects later ancestor indirection. This preserves
+    # intentional ROW_HOME symlinks without allowing a nested link to redirect
+    # an individual private artifact.
+    path = data_dir().resolve(strict=False)
     ensure_private_dir(path)
     return path
 

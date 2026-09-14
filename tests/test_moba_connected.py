@@ -113,7 +113,11 @@ def test_connected_session_state_consumes_ssh_browser_preferences_and_smartcard_
     assert payload["smartcard_selection"]["certificate_id"] == "cert-1"
 
 
-def test_connected_session_state_exposes_sftp_text_editor_route() -> None:
+def test_connected_session_state_exposes_sftp_text_editor_route(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
     state = build_moba_connected_session_state(
         ssh_profile(),
         remote_path="/etc",
@@ -131,11 +135,15 @@ def test_connected_session_state_exposes_sftp_text_editor_route() -> None:
     assert route.diff_action_object == "mobaTextEditorDiffAction"
     assert route.open_signal == "itemDoubleClicked"
     assert route.remote_path == "/etc/sshd_config"
-    assert route.local_path.endswith("example-ssh-sshd_config.edit")
+    assert route.local_path.endswith("-sshd_config.edit")
+    assert "edit-cache" in route.local_path
+    assert "example-ssh" not in route.local_path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     assert route.syntax == "ssh-config"
     assert route.open_command[0] == "sftp"
-    assert route.open_batch_commands == ("get /etc/sshd_config example-ssh-sshd_config.edit",)
-    assert route.save_batch_commands == ("put example-ssh-sshd_config.edit /etc/sshd_config",)
+    assert route.local_path in route.open_batch_commands[0]
+    assert route.open_batch_commands[0].startswith("get /etc/sshd_config ")
+    assert route.local_path in route.save_batch_commands[0]
+    assert route.save_batch_commands[0].endswith(" /etc/sshd_config")
     assert route.conflict_policy == "sha256-match-or-force"
     assert state.to_dict()["text_editor"]["remote_path"] == "/etc/sshd_config"
 

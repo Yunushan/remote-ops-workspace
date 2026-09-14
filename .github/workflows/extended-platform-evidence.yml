@@ -86,7 +86,13 @@ jobs:
     runs-on: [self-hosted, linux, i386]
     timeout-minutes: 90
     env:
+      RELEASE_ASSET_BASE_URL: ${{ inputs.release_asset_base_url }}
       RELEASE_TAG: ${{ inputs.release_tag }}
+      REPOSITORY: ${{ github.repository }}
+      SOURCE_HEAD_SHA: ${{ github.sha }}
+      SOURCE_RUN_ATTEMPT: ${{ github.run_attempt }}
+      WORKFLOW_REF_NAME: ${{ github.ref_name }}
+      WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -97,23 +103,23 @@ jobs:
           set -euo pipefail
           python3 scripts/check_extended_platform_dispatch_inputs.py \
             --target linux-i386 \
-            --release-tag "${{ inputs.release_tag }}" \
-            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
-            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --workflow-ref-name "${{ github.ref_name }}" \
-            --source-head-sha "${{ github.sha }}" \
-            --source-run-attempt "${{ github.run_attempt }}"
+            --release-tag "$RELEASE_TAG" \
+            --release-asset-base-url "$RELEASE_ASSET_BASE_URL" \
+            --workflow-run-url "$WORKFLOW_RUN_URL" \
+            --workflow-ref-name "$WORKFLOW_REF_NAME" \
+            --source-head-sha "$SOURCE_HEAD_SHA" \
+            --source-run-attempt "$SOURCE_RUN_ATTEMPT"
       - name: Check Linux i386 builder identity
         run: |
           set -euo pipefail
-          mkdir -p native-dist/linux platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts
+          mkdir -p native-dist/linux "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts"
           python3 scripts/check_extended_platform_builder.py \
             --target linux-i386 \
-            --release-tag "${{ inputs.release_tag }}" \
-            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --workflow-run-attempt "${{ github.run_attempt }}" \
-            --source-head-sha "${{ github.sha }}" \
-            --out platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json
+            --release-tag "$RELEASE_TAG" \
+            --workflow-run-url "$WORKFLOW_RUN_URL" \
+            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \
+            --source-head-sha "$SOURCE_HEAD_SHA" \
+            --out "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json"
       - name: Create isolated release environment
         run: |
           set -euo pipefail
@@ -128,89 +134,89 @@ jobs:
       - name: Smoke Linux i386 native artifacts
         run: |
           set -euo pipefail
-          bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}" --builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json 2>&1 | tee platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log
+          bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA" --builder-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json" 2>&1 | tee "platform-evidence-staging/linux-i386/${RELEASE_TAG}/native-smoke-linux-i386.log"
       - name: Stage Linux i386 target artifacts
         run: |
           set -euo pipefail
-          mkdir -p platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-i386.deb platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-i686.rpm platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-i686.AppImage platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-i686-native.tar.gz platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-i686-native-manifest.json platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-i686-native-SHA256SUMS.txt platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/
+          mkdir -p "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i386.deb" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686.rpm" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686.AppImage" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686-native.tar.gz" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686-native-manifest.json" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686-native-SHA256SUMS.txt" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
       - name: Validate Linux i386 promotion artifacts
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
-          python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts --tag "${{ inputs.release_tag }}" --strict
+          python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts" --tag "$RELEASE_TAG" --strict
       - name: Preflight Linux i386 local platform goal evidence
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/check_platform_goal_local_evidence.py \
             --root platform-evidence-staging \
-            --release-tag "${{ inputs.release_tag }}" \
+            --release-tag "$RELEASE_TAG" \
             --target linux-i386 \
-            --assets-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts \
-            --repository "${{ github.repository }}" \
-            --linux-builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json \
-            --linux-smoke-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log \
-            --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --linux-source-head-sha "${{ github.sha }}" \
-            --linux-source-run-attempt "${{ github.run_attempt }}"
+            --assets-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts" \
+            --repository "$REPOSITORY" \
+            --linux-builder-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json" \
+            --linux-smoke-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/native-smoke-linux-i386.log" \
+            --linux-workflow-run-url "$WORKFLOW_RUN_URL" \
+            --linux-source-head-sha "$SOURCE_HEAD_SHA" \
+            --linux-source-run-attempt "$SOURCE_RUN_ATTEMPT"
       - name: Generate Linux i386 accepted-evidence candidate
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/make_platform_verified_evidence_record.py \
             --target linux-i386 \
-            --release-tag "${{ inputs.release_tag }}" \
-            --assets-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts \
-            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
-            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --release-source-artifact-name extended-linux-evidence-linux-i386-${{ inputs.release_tag }} \
-            --release-source-head-sha "${{ github.sha }}" \
-            --release-source-run-attempt "${{ github.run_attempt }}" \
-            --builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json \
-            --linux-smoke-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log \
+            --release-tag "$RELEASE_TAG" \
+            --assets-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts" \
+            --release-asset-base-url "$RELEASE_ASSET_BASE_URL" \
+            --workflow-run-url "$WORKFLOW_RUN_URL" \
+            --release-source-artifact-name "extended-linux-evidence-linux-i386-${RELEASE_TAG}" \
+            --release-source-head-sha "$SOURCE_HEAD_SHA" \
+            --release-source-run-attempt "$SOURCE_RUN_ATTEMPT" \
+            --builder-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json" \
+            --linux-smoke-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/native-smoke-linux-i386.log" \
             --local-evidence-root platform-evidence-staging \
-            --staged-upload-out-dir platform-evidence-upload/linux-i386/${{ inputs.release_tag }} \
+            --staged-upload-out-dir "platform-evidence-upload/linux-i386/${RELEASE_TAG}" \
             --runner-label self-hosted \
             --runner-label linux \
             --runner-label i386 \
-            --out platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/platform-verified-evidence-linux-i386.json
+            --out "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-i386.json"
       - name: Package Linux i386 review evidence bundle
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/make_extended_linux_evidence_bundle.py \
             --target linux-i386 \
-            --release-tag "${{ inputs.release_tag }}" \
-            --assets-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts \
-            --builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json \
-            --smoke-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/native-smoke-linux-i386.log \
-            --candidate-record platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/platform-verified-evidence-linux-i386.json \
-            --out-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts
+            --release-tag "$RELEASE_TAG" \
+            --assets-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts" \
+            --builder-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json" \
+            --smoke-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/native-smoke-linux-i386.log" \
+            --candidate-record "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-i386.json" \
+            --out-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts"
       - name: Finalize Linux i386 accepted-evidence candidate
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/finalize_platform_verified_evidence_record.py \
-            --candidate-record platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/platform-verified-evidence-linux-i386.json \
-            --bundle-manifest platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/extended-linux-evidence-bundle-linux-i386-${{ inputs.release_tag }}.json \
-            --bundle-archive platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/extended-linux-evidence-bundle-linux-i386-${{ inputs.release_tag }}.zip \
-            --bundle-sha256s platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/extended-linux-evidence-bundle-linux-i386-${{ inputs.release_tag }}-SHA256SUMS.txt \
-            --out platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/platform-verified-evidence-linux-i386-final.json
+            --candidate-record "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-i386.json" \
+            --bundle-manifest "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/extended-linux-evidence-bundle-linux-i386-${RELEASE_TAG}.json" \
+            --bundle-archive "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/extended-linux-evidence-bundle-linux-i386-${RELEASE_TAG}.zip" \
+            --bundle-sha256s "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/extended-linux-evidence-bundle-linux-i386-${RELEASE_TAG}-SHA256SUMS.txt" \
+            --out "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-i386-final.json"
       - name: Stage scoped Linux i386 evidence upload
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/stage_extended_linux_evidence_upload.py \
             --target linux-i386 \
-            --release-tag "${{ inputs.release_tag }}" \
-            --source-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts \
-            --out-dir platform-evidence-upload/linux-i386/${{ inputs.release_tag }} \
+            --release-tag "$RELEASE_TAG" \
+            --source-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts" \
+            --out-dir "platform-evidence-upload/linux-i386/${RELEASE_TAG}" \
             --force
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -226,7 +232,13 @@ jobs:
     runs-on: [self-hosted, linux, armhf]
     timeout-minutes: 90
     env:
+      RELEASE_ASSET_BASE_URL: ${{ inputs.release_asset_base_url }}
       RELEASE_TAG: ${{ inputs.release_tag }}
+      REPOSITORY: ${{ github.repository }}
+      SOURCE_HEAD_SHA: ${{ github.sha }}
+      SOURCE_RUN_ATTEMPT: ${{ github.run_attempt }}
+      WORKFLOW_REF_NAME: ${{ github.ref_name }}
+      WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -237,23 +249,23 @@ jobs:
           set -euo pipefail
           python3 scripts/check_extended_platform_dispatch_inputs.py \
             --target linux-armhf \
-            --release-tag "${{ inputs.release_tag }}" \
-            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
-            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --workflow-ref-name "${{ github.ref_name }}" \
-            --source-head-sha "${{ github.sha }}" \
-            --source-run-attempt "${{ github.run_attempt }}"
+            --release-tag "$RELEASE_TAG" \
+            --release-asset-base-url "$RELEASE_ASSET_BASE_URL" \
+            --workflow-run-url "$WORKFLOW_RUN_URL" \
+            --workflow-ref-name "$WORKFLOW_REF_NAME" \
+            --source-head-sha "$SOURCE_HEAD_SHA" \
+            --source-run-attempt "$SOURCE_RUN_ATTEMPT"
       - name: Check Linux armhf builder identity
         run: |
           set -euo pipefail
-          mkdir -p native-dist/linux platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts
+          mkdir -p native-dist/linux "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts"
           python3 scripts/check_extended_platform_builder.py \
             --target linux-armhf \
-            --release-tag "${{ inputs.release_tag }}" \
-            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --workflow-run-attempt "${{ github.run_attempt }}" \
-            --source-head-sha "${{ github.sha }}" \
-            --out platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json
+            --release-tag "$RELEASE_TAG" \
+            --workflow-run-url "$WORKFLOW_RUN_URL" \
+            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \
+            --source-head-sha "$SOURCE_HEAD_SHA" \
+            --out "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/builder-identity-linux-armhf.json"
       - name: Create isolated release environment
         run: |
           set -euo pipefail
@@ -268,89 +280,89 @@ jobs:
       - name: Smoke Linux armhf native artifacts
         run: |
           set -euo pipefail
-          bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" --workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}" --builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json 2>&1 | tee platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log
+          bash scripts/smoke_linux_native.sh --arch armhf --dist native-dist/linux --target linux-armhf --workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA" --builder-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/builder-identity-linux-armhf.json" 2>&1 | tee "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/native-smoke-linux-armhf.log"
       - name: Stage Linux armhf target artifacts
         run: |
           set -euo pipefail
-          mkdir -p platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf.deb platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-armv7hl.rpm platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf.AppImage platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf-native.tar.gz platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf-native-manifest.json platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/
-          cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-armhf-native-SHA256SUMS.txt platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/
+          mkdir -p "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-armhf.deb" "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-armv7hl.rpm" "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-armhf.AppImage" "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-armhf-native.tar.gz" "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-armhf-native-manifest.json" "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/"
+          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-armhf-native-SHA256SUMS.txt" "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/"
       - name: Validate Linux armhf promotion artifacts
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
-          python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts --tag "${{ inputs.release_tag }}" --strict
+          python scripts/check_platform_promotion_artifacts.py --target linux-armhf --assets-dir "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts" --tag "$RELEASE_TAG" --strict
       - name: Preflight Linux armhf local platform goal evidence
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/check_platform_goal_local_evidence.py \
             --root platform-evidence-staging \
-            --release-tag "${{ inputs.release_tag }}" \
+            --release-tag "$RELEASE_TAG" \
             --target linux-armhf \
-            --assets-dir platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts \
-            --repository "${{ github.repository }}" \
-            --linux-builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json \
-            --linux-smoke-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log \
-            --linux-workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --linux-source-head-sha "${{ github.sha }}" \
-            --linux-source-run-attempt "${{ github.run_attempt }}"
+            --assets-dir "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts" \
+            --repository "$REPOSITORY" \
+            --linux-builder-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/builder-identity-linux-armhf.json" \
+            --linux-smoke-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/native-smoke-linux-armhf.log" \
+            --linux-workflow-run-url "$WORKFLOW_RUN_URL" \
+            --linux-source-head-sha "$SOURCE_HEAD_SHA" \
+            --linux-source-run-attempt "$SOURCE_RUN_ATTEMPT"
       - name: Generate Linux armhf accepted-evidence candidate
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/make_platform_verified_evidence_record.py \
             --target linux-armhf \
-            --release-tag "${{ inputs.release_tag }}" \
-            --assets-dir platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts \
-            --release-asset-base-url "${{ inputs.release_asset_base_url }}" \
-            --workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --release-source-artifact-name extended-linux-evidence-linux-armhf-${{ inputs.release_tag }} \
-            --release-source-head-sha "${{ github.sha }}" \
-            --release-source-run-attempt "${{ github.run_attempt }}" \
-            --builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json \
-            --linux-smoke-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log \
+            --release-tag "$RELEASE_TAG" \
+            --assets-dir "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts" \
+            --release-asset-base-url "$RELEASE_ASSET_BASE_URL" \
+            --workflow-run-url "$WORKFLOW_RUN_URL" \
+            --release-source-artifact-name "extended-linux-evidence-linux-armhf-${RELEASE_TAG}" \
+            --release-source-head-sha "$SOURCE_HEAD_SHA" \
+            --release-source-run-attempt "$SOURCE_RUN_ATTEMPT" \
+            --builder-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/builder-identity-linux-armhf.json" \
+            --linux-smoke-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/native-smoke-linux-armhf.log" \
             --local-evidence-root platform-evidence-staging \
-            --staged-upload-out-dir platform-evidence-upload/linux-armhf/${{ inputs.release_tag }} \
+            --staged-upload-out-dir "platform-evidence-upload/linux-armhf/${RELEASE_TAG}" \
             --runner-label self-hosted \
             --runner-label linux \
             --runner-label armhf \
-            --out platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/platform-verified-evidence-linux-armhf.json
+            --out "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-armhf.json"
       - name: Package Linux armhf review evidence bundle
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/make_extended_linux_evidence_bundle.py \
             --target linux-armhf \
-            --release-tag "${{ inputs.release_tag }}" \
-            --assets-dir platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts \
-            --builder-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/builder-identity-linux-armhf.json \
-            --smoke-evidence platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/native-smoke-linux-armhf.log \
-            --candidate-record platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/platform-verified-evidence-linux-armhf.json \
-            --out-dir platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts
+            --release-tag "$RELEASE_TAG" \
+            --assets-dir "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts" \
+            --builder-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/builder-identity-linux-armhf.json" \
+            --smoke-evidence "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/native-smoke-linux-armhf.log" \
+            --candidate-record "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-armhf.json" \
+            --out-dir "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts"
       - name: Finalize Linux armhf accepted-evidence candidate
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/finalize_platform_verified_evidence_record.py \
-            --candidate-record platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/platform-verified-evidence-linux-armhf.json \
-            --bundle-manifest platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/extended-linux-evidence-bundle-linux-armhf-${{ inputs.release_tag }}.json \
-            --bundle-archive platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/extended-linux-evidence-bundle-linux-armhf-${{ inputs.release_tag }}.zip \
-            --bundle-sha256s platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/extended-linux-evidence-bundle-linux-armhf-${{ inputs.release_tag }}-SHA256SUMS.txt \
-            --out platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts/platform-verified-evidence-linux-armhf-final.json
+            --candidate-record "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-armhf.json" \
+            --bundle-manifest "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/extended-linux-evidence-bundle-linux-armhf-${RELEASE_TAG}.json" \
+            --bundle-archive "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/extended-linux-evidence-bundle-linux-armhf-${RELEASE_TAG}.zip" \
+            --bundle-sha256s "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/extended-linux-evidence-bundle-linux-armhf-${RELEASE_TAG}-SHA256SUMS.txt" \
+            --out "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-armhf-final.json"
       - name: Stage scoped Linux armhf evidence upload
         run: |
           set -euo pipefail
           . .venv-native/bin/activate
           python scripts/stage_extended_linux_evidence_upload.py \
             --target linux-armhf \
-            --release-tag "${{ inputs.release_tag }}" \
-            --source-dir platform-evidence-staging/linux-armhf/${{ inputs.release_tag }}/artifacts \
-            --out-dir platform-evidence-upload/linux-armhf/${{ inputs.release_tag }} \
+            --release-tag "$RELEASE_TAG" \
+            --source-dir "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts" \
+            --out-dir "platform-evidence-upload/linux-armhf/${RELEASE_TAG}" \
             --force
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

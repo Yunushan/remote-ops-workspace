@@ -9,6 +9,19 @@ def test_release_toolchain_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_release_toolchain_pins_exact_native_python_patch_in_every_release_job() -> None:
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
+    certification = Path(".github/workflows/release-certification.yml").read_text(encoding="utf-8")
+
+    assert manifest["python"]["version"] == "3.14.7"
+    assert 'python-version: "3.12"' not in workflow
+    assert workflow.count('python-version: "3.14.7"') == 6
+    assert promotion.count('python-version: "3.14.7"') == 1
+    assert certification.count('python-version: "3.14.7"') == 1
+
+
 def test_release_toolchain_checker_requires_pinned_python_build_backend() -> None:
     checker = _load_release_toolchain_checker()
     toolchain = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
@@ -23,6 +36,55 @@ def test_release_toolchain_checker_requires_pinned_python_build_backend() -> Non
         "pyproject.toml build-system.requires must pin setuptools and wheel to "
         "configs/release_toolchain.json"
     ]
+
+
+def test_release_toolchain_checker_rejects_mutable_appimagetool_download() -> None:
+    checker = _load_release_toolchain_checker()
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    script = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8").replace(
+        "releases/download/${APPIMAGETOOL_VERSION}/",
+        "releases/download/continuous/",
+        1,
+    )
+
+    errors = checker.check_linux_appimagetool_script(manifest, script)
+
+    assert any("mutable continuous tag" in error for error in errors)
+
+
+def test_release_toolchain_checker_rejects_appimagetool_digest_drift() -> None:
+    checker = _load_release_toolchain_checker()
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    manifest["native_toolchains"]["linux"][1]["sha256"]["x86_64"] = "0" * 64
+
+    errors = checker.check_linux_appimagetool_script(manifest)
+
+    assert any("SHA-256 pins must match every supported architecture" in error for error in errors)
+
+
+def test_release_toolchain_checker_rejects_mutable_or_unverified_appimage_runtime() -> None:
+    checker = _load_release_toolchain_checker()
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    script = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8")
+    script = script.replace('--runtime-file "$APPIMAGE_RUNTIME"', '"$APPIMAGE_RUNTIME"', 1)
+
+    errors = checker.check_linux_appimagetool_script(manifest, script)
+
+    assert any("explicit reviewed AppImage runtime input" in error for error in errors)
+
+
+def test_release_toolchain_checker_rejects_commented_checksum_verification() -> None:
+    checker = _load_release_toolchain_checker()
+    manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    script = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8").replace(
+        'echo "${EXPECTED_APPIMAGE_RUNTIME_SHA256}  ${APPIMAGE_RUNTIME}" | sha256sum -c -',
+        '# echo "${EXPECTED_APPIMAGE_RUNTIME_SHA256}  ${APPIMAGE_RUNTIME}" | sha256sum -c -',
+        1,
+    )
+
+    errors = checker.check_linux_appimagetool_script(manifest, script)
+
+    assert any("mandatory AppImage runtime checksum verification" in error for error in errors)
 
 
 def test_release_constraints_match_manifest() -> None:

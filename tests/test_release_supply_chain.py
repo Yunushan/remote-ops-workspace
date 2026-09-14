@@ -322,7 +322,7 @@ def test_release_workflow_uses_minimal_permissions() -> None:
     assert "persist-credentials: false" in workflow
     assert "permissions:\n      contents: write" in workflow
     assert "fail_on_unmatched_files: true" in workflow
-    assert workflow.count("tag_name: ${{ env.RELEASE_TAG }}") == 2
+    assert workflow.count("tag_name: ${{ env.RELEASE_TAG }}") == 1
 
 
 def test_release_workflow_uses_pinned_toolchain() -> None:
@@ -358,11 +358,39 @@ def test_native_release_scripts_emit_checksum_sidecars() -> None:
     assert "Write-NativeChecksums" in windows
 
 
-def test_linux_appimagetool_download_supports_sha256_verification() -> None:
+def test_linux_appimagetool_is_versioned_and_requires_reviewed_sha256() -> None:
     linux = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8")
-    assert "https://github.com/AppImage/appimagetool/releases/download/continuous" in linux
-    assert "APPIMAGETOOL_SHA256" in linux
-    assert "sha256sum -c -" in linux
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    toolchain = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
+    appimagetool = next(
+        row for row in toolchain["native_toolchains"]["linux"] if row["name"] == "appimagetool"
+    )
+    expected_sha256 = {
+        "x86_64": "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+        "aarch64": "f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158",
+        "i686": "7ad9ff47c203aae0149b18f6df9e3018b2e2f470ea644a0413e3ded39e9e3bdb",
+        "armhf": "42b61cba5495d8aaf418a5c9a015a49b85ad92efabcbd3c341f1540440e4e23d",
+    }
+
+    assert appimagetool["version"] == "1.9.1"
+    assert appimagetool["sha256"] == expected_sha256
+    assert appimagetool["embedded_runtime"]["version"] == "20251108"
+    assert appimagetool["embedded_runtime"]["sha256"] == {
+        "x86_64": "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+        "aarch64": "00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444",
+        "i686": "e72ea0b140a0a16e680713238a6f30aad278b62c4ca17919c554864124515498",
+        "armhf": "e9060d37577b8a29914ec12d8740add24e19ff29012fb1fa0f60daf62db0688d",
+    }
+    assert "releases/download/${APPIMAGETOOL_VERSION}/" in linux
+    assert "/continuous/" not in linux
+    assert 'if [[ "$APPIMAGETOOL_SHA256" != "$EXPECTED_APPIMAGETOOL_SHA256" ]]' in linux
+    assert 'echo "${EXPECTED_APPIMAGETOOL_SHA256}  ${APPIMAGETOOL}" | sha256sum -c -' in linux
+    assert "command -v appimagetool" not in linux
+    assert 'APPIMAGETOOL_VERSION: "1.9.1"' in workflow
+    assert "APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}" in workflow
+    assert '--runtime-file "$APPIMAGE_RUNTIME"' in linux
+    assert 'APPIMAGE_RUNTIME_VERSION: "20251108"' in workflow
+    assert "APPIMAGE_RUNTIME_SHA256: ${{ matrix.appimage_runtime_sha256 }}" in workflow
 
 
 def test_linux_native_build_allows_branch_evidence_dispatch_with_release_tag_binding() -> None:

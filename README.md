@@ -137,9 +137,9 @@ row vault delete old/router-password --force
 row plugins list
 row plugins validate
 row plugins scaffold --out ./row-demo-plugin --name row-demo-plugin --module row_demo_plugin --protocol demo --client demo-client
-row customizer build --out ./dist/corp-row --brand-name "Corp Ops" --profiles configs/profiles.example.json --lock-setting theme=dark
-row customizer deployment-plan --brand-name "Corp Ops" --lock-setting theme=dark --update-url https://updates.example.com/row/stable.json --update-public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --json
-row customizer evidence-bundle --brand-name "Corp Ops" --organization "Corp Ops" --lock-setting theme=dark --update-url https://updates.example.com/row/stable.json --update-public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --out-dir artifacts/deployment --bundle-manifest-evidence artifacts/bundle-manifest.txt --installer-evidence artifacts/installer-branding.txt --policy-evidence artifacts/policy-locks.txt --update-evidence artifacts/update-channel.txt --update-manifest artifacts/stable-update.json --bundle-manifest-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --sha256s-present --windows-exe-rebranded --windows-msi-rebranded --product-name-matches-brand --logo-applied --all-policy-surfaces-passed --https-update-url --signature-verified --organization-channel --json
+row customizer build --out ./dist/corp-row --brand-name "Corp Ops" --profiles configs/profiles.example.json --lock-setting protocol=ssh
+row customizer deployment-plan --brand-name "Corp Ops" --lock-setting protocol=ssh --update-url https://updates.example.com/row/stable.json --update-public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --json
+row customizer evidence-bundle --brand-name "Corp Ops" --organization "Corp Ops" --lock-setting protocol=ssh --update-url https://updates.example.com/row/stable.json --update-public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --out-dir artifacts/deployment --bundle-manifest-evidence artifacts/bundle-manifest.txt --installer-evidence artifacts/installer-branding.txt --policy-evidence artifacts/policy-locks.txt --update-evidence artifacts/update-channel.txt --update-manifest artifacts/stable-update.json --bundle-manifest-sha256 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --sha256s-present --windows-exe-rebranded --windows-msi-rebranded --product-name-matches-brand --logo-applied --all-policy-surfaces-passed --https-update-url --signature-verified --organization-channel --json
 row customizer update-verify --manifest artifacts/stable-update.json --public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --channel stable --organization "Corp Ops" --assets-dir artifacts --json
 row customizer evidence-verify --evidence artifacts/deployment/moba-professional-deployment.json --assets-dir artifacts/deployment --json
 row mobapt status --json
@@ -410,7 +410,7 @@ The JSON report includes `workflow_parity_contract` and `workflow_parity_evidenc
 | Keygen / SSH keys / agent | SSH keys | SSH keys | PuTTY keys | — | ✅ | OpenSSH keygen CLI |
 | Hardware/FIDO keys | SSH support | SSH support | depends | — | ✅ | OpenSSH security-key keygen adapter |
 | Portable mode | ✅ | packages | config portability | — | mobile/desktop | `ROW_HOME` portable data directory |
-| Professional customization/deployment | Pro Customizer | — | — | — | teams | `row customizer build/deployment-plan/evidence-bundle/update-verify/evidence-verify` enterprise bundle, installer branding plan, `ROW_HOME/policy.json` hard-lock enforcement across profile storage, GUI editor, quick connect, launcher and Web/PWA, signed update-manifest verification, SHA-bound deployment evidence, manifest and SHA256SUMS |
+| Professional customization/deployment | Pro Customizer | — | — | — | teams | `row customizer build/deployment-plan/evidence-bundle/update-verify/evidence-verify` enterprise bundle, installer branding plan, administrator-owned OS machine-policy hard locks across profile storage, GUI editor, quick connect, launcher and Web/PWA (`ROW_HOME/policy.json` is a portable fallback only), signed update-manifest verification, SHA-bound deployment evidence, manifest and SHA256SUMS |
 | Web/mobile access | — | Kasm/container options | — | — | ✅ | Static Web/PWA shell + Android/iOS/PWA docs |
 | Plugin architecture | plugins | plugins | extensions | plugins | integrations | Python entry-point protocol launch plugins + `row plugins list`, `row plugins validate` and `row plugins scaffold` |
 
@@ -465,7 +465,9 @@ Core design principles:
 ## Security
 
 - Do not commit real profiles, passwords, private keys, vault files, or customer hostnames.
-- Use `ROW_HOME` for portable/private operator workspaces.
+- Use `ROW_HOME` only on a trusted single-user local filesystem for private
+  operator data. POSIX private modes fail closed; Windows operators must
+  independently provision and verify the root's current-user-only DACL.
 - Store examples only under `configs/*.example.*`.
 - Use `row connect NAME --dry-run` before launching newly imported profiles.
 - Vault encryption requires the optional `security` extra: `pip install -e ".[security]"`.
@@ -651,12 +653,16 @@ accepted-evidence plus asset-provenance gates for Linux i386/armhf and Windows
 XP native-host readiness.
 Release manifests include `size_bytes` and `sha256` for each artifact, and CI
 build jobs run with read-only checkout credentials until the final publish step.
-The release workflow also starts with a `release-preflight` job that runs
-`python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`,
-`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
-and `python scripts/check_repository_cleanup.py --require-clean`; source, native
-`accepted-platform-evidence-assets` and publish jobs all depend on that gate.
+The release workflow starts with a `release-preflight` job that resolves the
+requested tag once, exports its exact commit SHA, checks that it is on the
+trusted default-branch history, and runs
+`python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, an
+exact-SHA CI evidence check,
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements`
+and `python scripts/check_repository_cleanup.py --require-clean`. Source,
+native and core publish jobs depend on that preflight and check out the frozen
+commit SHA rather than resolving the tag again. The protected-platform command
+in preflight is a readiness report, not a 4/4 accepted-evidence gate.
 Windows XP proof for those accepted records is captured on real XP hosts with
 `scripts/xp_smoke_runner.cmd`; the modern self-hosted `xp-evidence` collector
 packages and validates staged evidence, but is not counted as the XP host.
@@ -665,7 +671,12 @@ runtime, OpenSSL and profile-only legacy crypto proof values alongside the
 captured smoke log hash.
 The complete 100/100 production-readiness checklist and external prerequisite
 matrix is [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
-The `accepted-platform-evidence-assets` job runs
+The optional `accepted-platform-evidence-assets` job runs only for a manual
+dispatch with `include_protected_platform_evidence=true`. It separately runs
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`
+and
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`,
+then runs
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
 to copy only same-tag, same-repository, workflow-file, source-head and
 run-attempt-bound accepted evidence artifacts into the release asset directory
@@ -682,8 +693,9 @@ before upload; final public records must use canonical LF-terminated sorted JSON
 bytes so post-upload release asset digests are stable. The imported platform
 evidence artifact upload fails when empty, excludes hidden files and keeps a
 90-day retention window. That import job keeps only read permissions for
-repository contents and Actions artifacts, and source and native release jobs
-wait for it before building. Linux i386, Linux armhf,
+repository contents and Actions artifacts. The exact-tag publish job waits for
+it and includes the accepted protected evidence in the same draft-first,
+attested production inventory. Linux i386, Linux armhf,
 windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
 evidence records for the same release tag, GitHub release repository,
 target-specific release source workflow file, release source head SHA and
@@ -693,18 +705,17 @@ The static readiness report intentionally leaves
 `release_asset_provenance_complete=false`; the asset-backed protected goal gate
 is the proof that finalized accepted records, review bundles and native release
 bytes match before upload.
-Before upload, the publish job runs
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>`
-and then
+The single exact-tag publish job runs
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
 to verify the downloaded asset set, finalized protected-platform records,
 review bundles, native artifacts, checksum sidecars and release manifest
 against `configs/release_matrix.json`, `configs/platform_verified_evidence.json`
-and the accepted review-bundle hashes; the same check validates
-`configs/mobaxterm_parity_evidence.json`, and
-`--require-mobaxterm-parity-complete` is the hard gate for releases that claim
-complete strict MobaXterm Home/Professional product-depth parity.
-After upload, the publish job runs
+and the accepted review-bundle hashes. Core publish validates
+`configs/mobaxterm_parity_evidence.json` structurally but does not require its
+8/8 backlog to be complete; `--require-mobaxterm-parity-complete` is a separate
+hard gate for any release or readiness report that explicitly claims complete
+strict MobaXterm Home/Professional product-depth parity.
+After publication, the aggregate release audit runs
 `python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
 against the actual GitHub release, requiring published asset digests, sizes and bytes,
 published final accepted-record JSON bytes, release tag Git object/source head SHA,
@@ -720,7 +731,11 @@ and `actions:read` access before auditing the published release.
 Python release tooling is constrained by `requirements-release.txt` and recorded
 in each release manifest through `configs/release_toolchain.json`. Native
 Windows, macOS and Linux jobs also emit per-platform `native-SHA256SUMS.txt`
-sidecars for their native artifacts and manifests.
+sidecars for their native artifacts and manifests. Linux AppImage builds use
+appimagetool 1.9.1 from a versioned release URL and refuse to execute it unless
+its architecture-specific reviewed SHA-256 matches. They also pin the embedded
+type-2 runtime to release `20251108`, verify its architecture-specific SHA-256,
+and pass it explicitly with `--runtime-file`.
 Native installer smoke coverage is declared in
 [`configs/native_installer_smoke.json`](configs/native_installer_smoke.json)
 and checked by `python scripts/check_native_installer_smoke.py`. The release

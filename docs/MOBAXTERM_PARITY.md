@@ -165,9 +165,11 @@ release; they record and bind those externally obtained facts.
   branded Windows EXE/MSI artifacts, hard policy-lock enforcement surfaces and
   signed organization update channels. `row customizer update-verify` validates
   signed HTTPS update manifests and release artifact SHA-256 bindings.
-  `ROW_HOME/policy.json` is now loaded by profile storage, GUI profile editing,
-  quick connect, launcher and Web/PWA policy endpoints so locked profile values
-  fail closed at runtime.
+  The administrator-owned OS machine-policy path is loaded ahead of the
+  portable `ROW_HOME/policy.json` fallback by profile storage, GUI profile
+  editing, quick connect, launcher and Web/PWA policy endpoints so a user-level
+  environment override cannot shadow installed locked values. The schema and
+  types are validated strictly and malformed installed policies fail closed.
 
 ## Remaining parity articles
 

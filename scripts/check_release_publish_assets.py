@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 EVIDENCE_PATH = ROOT / "configs" / "platform_verified_evidence.json"
 MOBAXTERM_EVIDENCE_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
-WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
+BUILD_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
+WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release-promotion.yml"
 SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -97,10 +98,10 @@ PUBLISH_REMOTE_PLATFORM_EVIDENCE_AUDIT_COMMAND = (
 PROTECTED_PUBLISH_JOB = "publish-protected-platform-evidence"
 PROTECTED_PROMOTION_INPUT = "include_protected_platform_evidence"
 PROTECTED_PROMOTION_CONDITION = (
-    "if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_protected_platform_evidence }}"
+    "if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.include_protected_platform_evidence) }}"
 )
 ATTEST_RELEASE_ASSETS_ACTION = "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
-TAGGED_RELEASE_REF = "ref: ${{ env.RELEASE_TAG }}"
+FROZEN_RELEASE_REF = "ref: ${{ needs.release-preflight.outputs.release_sha }}"
 FINAL_ACCEPTED_RECORD_RE = re.compile(
     r"^platform-verified-evidence-(linux-i386|linux-armhf|windows-xp-native-x86|windows-xp-native-x64)-final\.json$"
 )
@@ -133,7 +134,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"release publish assets: {error}", file=sys.stderr)
         return 2
     matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
-    evidence_registry = read_evidence_registry()
+    try:
+        evidence_registry = read_evidence_registry(args.evidence_registry)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"release publish assets: evidence registry: {exc}", file=sys.stderr)
+        return 1
     mobaxterm_registry = read_mobaxterm_evidence_registry()
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     errors = check_publish_contract(
@@ -182,6 +187,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--repository",
         help="Expected GitHub release repository in owner/name form, for example owner/repo.",
+    )
+    parser.add_argument(
+        "--evidence-registry",
+        type=Path,
+        help=(
+            "Exact signed protected-platform registry to validate. Production promotion must "
+            "pass the registry from its pinned evidence commit."
+        ),
     )
     parser.add_argument(
         "--require-platform-goal-targets",
@@ -243,6 +256,9 @@ def check_publish_contract(
     require_mobaxterm_parity_complete: bool = False,
     native_release_channel: str | None = None,
 ) -> list[str]:
+    """Validate the split candidate-build / exact-tag promotion transaction."""
+
+    del native_release_channel
     errors: list[str] = []
     release_tag = tag or matrix_tag(matrix)
     expected = expected_release_assets(matrix, tag=release_tag)
@@ -255,10 +271,7 @@ def check_publish_contract(
     )
     if require_platform_goal_targets:
         errors.extend(
-            validate_platform_goal_evidence_registry(
-                platform_registry,
-                release_tag=tag or matrix_tag(matrix),
-            )
+            validate_platform_goal_evidence_registry(platform_registry, release_tag=release_tag)
         )
     errors.extend(
         check_gated_native_assets_have_evidence(
@@ -270,84 +283,346 @@ def check_publish_contract(
     )
     if len(expected) < 20:
         errors.append(f"release matrix expected asset set is unexpectedly small: {len(expected)}")
-    checksum_assets = [asset for asset in expected if asset.endswith(EXPECTED_CHECKSUM_SUFFIX)]
-    if len(checksum_assets) < 6:
+    if len([asset for asset in expected if asset.endswith(EXPECTED_CHECKSUM_SUFFIX)]) < 6:
         errors.append("release matrix must include source and per-native checksum sidecars")
-    errors.extend(check_release_job_clean_checkouts(workflow))
-    errors.extend(check_source_and_python_job(workflow))
-    errors.extend(check_platform_evidence_import_job(workflow))
-    errors.extend(check_job_disallows_continue_on_error(workflow, "release-preflight"))
-    publish_block = workflow_job_block(workflow, "publish")
-    if not publish_block:
-        return [*errors, "release workflow missing publish job"]
-    errors.extend(check_job_block_disallows_continue_on_error("publish", publish_block))
-    required_snippets = {
-        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c": "artifact download",
-        "merge-multiple: true": "merged downloaded artifact directory",
-        "ref: ${{ github.sha }}": "workflow-bound release validation tooling checkout",
-        "path: release-tooling": "workflow-bound release validation tooling path",
-        "python release-tooling/scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "publish asset validation",
-        '--repository "${{ github.repository }}"': "publish evidence repository binding",
-        "softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e": "GitHub release upload",
-        ATTEST_RELEASE_ASSETS_ACTION: "release artifact provenance attestation",
-        "subject-path: release-assets/**": "release artifact attestation subject path",
-        "attestations: write": "attestation write permission",
-        "artifact-metadata: write": "artifact metadata write permission",
-        "id-token: write": "OIDC token permission for attestation",
-        "python release-tooling/scripts/write_release_notes.py": "boundary-aware release notes generation",
-        "--root .": "immutable release-source release notes inputs",
-        "body_path: release-notes.md": "release notes body upload",
-        "tag_name: ${{ env.RELEASE_TAG }}": "explicit immutable release tag target",
-        "fail_on_unmatched_files: true": "strict GitHub release upload",
-        'gh release edit "$RELEASE_TAG"': "explicit published release notes application",
-        "--notes-file release-notes.md": "published release notes source",
-        "python release-tooling/scripts/check_published_release_notes.py": (
-            "published release notes verification"
-        ),
-    }
-    for snippet, label in required_snippets.items():
-        if snippet not in publish_block:
-            errors.append(f"publish job missing {label}: {snippet}")
-    tooling_index = publish_block.find("Check out workflow-bound release validation tooling")
-    validate_index = publish_block.find("release-tooling/scripts/check_release_publish_assets.py")
-    notes_index = publish_block.find("release-tooling/scripts/write_release_notes.py")
-    attest_index = publish_block.find(ATTEST_RELEASE_ASSETS_ACTION)
-    upload_index = publish_block.find("softprops/action-gh-release")
-    apply_notes_index = publish_block.find('gh release edit "$RELEASE_TAG"')
-    verify_notes_index = publish_block.find(
-        "release-tooling/scripts/check_published_release_notes.py"
+    errors.extend(
+        check_candidate_build_contract(BUILD_WORKFLOW_PATH.read_text(encoding="utf-8"))
     )
-    if (
-        tooling_index < 0
-        or validate_index < 0
-        or notes_index < 0
-        or attest_index < 0
-        or upload_index < 0
-        or apply_notes_index < 0
-        or verify_notes_index < 0
-    ):
-        errors.append(
-            "publish must validate assets, generate release notes, attest, upload, and verify the published release notes"
-        )
-    elif not (
-        tooling_index
-        < validate_index
-        < notes_index
-        < attest_index
-        < upload_index
-        < apply_notes_index
-        < verify_notes_index
-    ):
-        errors.append(
-            "publish asset validation, release notes generation, and attestation must run before GitHub release upload, followed by notes application and verification"
-        )
-    if "--require-platform-goal-targets" in publish_block or PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND in publish_block:
-        errors.append("core publish job must not require protected-platform evidence")
-    if "- accepted-platform-evidence-assets" in publish_block:
-        errors.append("core publish job must not depend on accepted-platform-evidence-assets")
-    errors.extend(check_protected_publish_job(workflow))
+    errors.extend(check_promotion_transaction_contract(workflow))
     return errors
 
+
+def check_candidate_build_contract(workflow: str) -> list[str]:
+    errors: list[str] = []
+    if "workflow_dispatch:" in workflow:
+        errors.append("candidate build workflow must be tag-push-only")
+    if "softprops/action-gh-release" in workflow or re.search(
+        r"(?m)^\s*gh\s+api\s+--method\s+PATCH\b", workflow
+    ):
+        errors.append("candidate build workflow must never create or mutate a GitHub Release")
+    for job in (
+        "release-preflight",
+        "source-and-python",
+        "windows-native",
+        "macos-native",
+        "linux-native",
+        "seal-release-candidate",
+    ):
+        block = workflow_job_block(workflow, job)
+        if not block:
+            errors.append(f"candidate build workflow missing {job} job")
+            continue
+        errors.extend(check_job_block_disallows_continue_on_error(job, block))
+        errors.extend(check_checkout_step(block, job=job))
+    seal = workflow_job_block(workflow, "seal-release-candidate")
+    required = {
+        'test "$GITHUB_RUN_ATTEMPT" = "1"': "fresh-attempt refusal",
+        "release_candidate_inventory.py stage": "candidate inventory sealer",
+        '--build-run-id "$GITHUB_RUN_ID"': "build run identity binding",
+        '--build-run-attempt "$GITHUB_RUN_ATTEMPT"': "build attempt binding",
+        "subject-path: candidate-staging/release-candidate-inventory.json": (
+            "attested candidate manifest chain"
+        ),
+        "name: release-candidate-inventory": "candidate inventory artifact",
+        "candidate_inventory_artifact_id=": "numeric artifact pointer",
+        "candidate_inventory_archive_digest=sha256:": "archive digest pointer",
+    }
+    for snippet, label in required.items():
+        if snippet not in seal:
+            errors.append(f"seal-release-candidate missing {label}: {snippet}")
+    if workflow.count("retention-days: 90") < 5:
+        errors.append("every candidate and inventory upload must have an explicit 90-day retention")
+    steps = workflow_step_blocks(seal)
+    stage_index = mandatory_run_step_index(
+        steps,
+        "release_candidate_inventory.py stage",
+        errors,
+        step_name="Materialize exact staged artifacts and seal candidate inventory",
+    )
+    attest_index = mandatory_uses_step_index(
+        steps,
+        ATTEST_RELEASE_ASSETS_ACTION,
+        errors,
+        step_name="Attest exact candidate inventory",
+    )
+    upload_index = mandatory_uses_step_index(
+        steps,
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        errors,
+        required_text="name: release-candidate-inventory",
+        step_name="Upload immutable candidate inventory",
+    )
+    if min(stage_index, attest_index, upload_index) >= 0 and not (
+        stage_index < attest_index < upload_index
+    ):
+        errors.append("candidate inventory must be sealed, attested, then uploaded in order")
+    return errors
+
+
+def check_promotion_transaction_contract(workflow: str) -> list[str]:
+    errors: list[str] = []
+    block = workflow_job_block(workflow, "promote-production-release")
+    if not block:
+        return ["promotion workflow missing promote-production-release job"]
+    errors.extend(check_job_block_disallows_continue_on_error("promote-production-release", block))
+    required = {
+        "workflow_dispatch:": "manual promotion trigger",
+        "build_run_id:": "pinned build run input",
+        "build_run_attempt:": "pinned build attempt input",
+        "candidate_inventory_artifact_id:": "candidate inventory artifact ID input",
+        "candidate_inventory_archive_digest:": "candidate archive digest input",
+        "evidence_commit_sha:": "immutable evidence commit input",
+        'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"': "exact tag dispatch binding",
+        'test "$GITHUB_RUN_ATTEMPT" = "1"': "promotion rerun refusal",
+        "ref: ${{ inputs.evidence_commit_sha }}": "exact evidence checkout",
+        "release_candidate_inventory.py promote": "exact artifact-ID rehydration",
+        "Verify attestation and download exact candidate artifact IDs": (
+            "in-process build-run-bound candidate attestation validation"
+        ),
+        '--registry "$PLATFORM_EVIDENCE_REGISTRY"': "signed protected registry use",
+        "--candidate-inventory": "signed candidate inventory compliance binding",
+        "ROW_RELEASE_IMMUTABILITY_TOKEN": "administration-read immutable-release proof token",
+        "check_release_remote_preconditions.py immutable": (
+            "pre-mutation immutable-release setting check"
+        ),
+        "check_release_tag_governance.py": "just-in-time signed tag governance revalidation",
+        "check_release_remote_preconditions.py namespace": (
+            "draft-inclusive namespace enumeration"
+        ),
+        "Attest every certified release asset": "complete final inventory attestation",
+        "gh api --method POST": "create-only draft transaction",
+        "Upload every certified asset to the new numeric draft": "numeric-ID asset upload",
+        '--draft-release-id "$DRAFT_RELEASE_ID"': "numeric draft verification",
+        'gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$DRAFT_RELEASE_ID"': (
+            "numeric-ID promotion"
+        ),
+        "Require same numeric release becomes immutable": "same-ID immutable poll",
+        '--published-release-id "$PUBLISHED_RELEASE_ID"': "same numeric final release verification",
+        '--current-transaction-run-id "$GITHUB_RUN_ID"': (
+            "in-progress exact invocation verification"
+        ),
+    }
+    for snippet, label in required.items():
+        if snippet not in workflow:
+            errors.append(f"promotion workflow missing {label}: {snippet}")
+    steps = workflow_step_blocks(block)
+    ordered = [
+        (
+            "check_release_maturity.py",
+            "production maturity gate",
+            "run",
+            "Re-run immutable source release gates",
+        ),
+        (
+            "release_candidate_inventory.py promote",
+            "exact candidate materialization",
+            "run",
+            "Verify attestation and download exact candidate artifact IDs",
+        ),
+        (
+            "check_release_publish_assets.py",
+            "complete production asset inventory",
+            "run",
+            "Validate complete production asset inventory",
+        ),
+        (
+            "check_release_license_compliance.py",
+            "signed exact-byte compliance audit",
+            "run",
+            "Audit signed exact-byte redistribution and resolver evidence",
+        ),
+        (
+            "check_release_tag_governance.py",
+            "mutation-bound tag governance proof",
+            "run",
+            "Revalidate signed tag governance at mutation boundary",
+        ),
+        (
+            "check_release_remote_preconditions.py immutable",
+            "immutable release setting proof",
+            "run",
+            "Require immutable releases enabled before any mutation",
+        ),
+        (
+            "check_release_remote_preconditions.py namespace",
+            "draft-inclusive namespace proof",
+            "run",
+            "Require unused release namespace including drafts",
+        ),
+        (
+            ATTEST_RELEASE_ASSETS_ACTION,
+            "final inventory attestation",
+            "uses",
+            "Attest every certified release asset",
+        ),
+        (
+            'gh api --method POST "repos/',
+            "create-only numeric draft",
+            "run",
+            "Create new draft by numeric API identity",
+        ),
+        (
+            "--draft-release-id",
+            "draft byte/provenance verification",
+            "run",
+            "Verify complete numeric-ID draft transaction",
+        ),
+        (
+            'gh api --method PATCH "repos/',
+            "numeric draft publication",
+            "run",
+            "Publish verified draft by numeric ID once",
+        ),
+        (
+            "--current-transaction-run-id",
+            "final in-run immutable verification",
+            "run",
+            "Verify final immutable release and complete exact-tag provenance",
+        ),
+    ]
+    indexes: list[int] = []
+    command_contracts = {
+        "Verify attestation and download exact candidate artifact IDs": (
+            (
+                '--repository "$GITHUB_REPOSITORY"',
+                '--release-tag "$RELEASE_TAG"',
+                '--release-sha "$RELEASE_SHA"',
+                '--build-run-id "$INPUT_BUILD_RUN_ID"',
+                '--build-run-attempt "$INPUT_BUILD_RUN_ATTEMPT"',
+                '--inventory-artifact-id "$INPUT_INVENTORY_ARTIFACT_ID"',
+                '--inventory-archive-digest "$INPUT_INVENTORY_ARCHIVE_DIGEST"',
+                '--approved-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                "--assets-root release-assets",
+            ),
+            ("--help", "--dry-run"),
+            frozenset(
+                {
+                    "--repository",
+                    "--release-tag",
+                    "--release-sha",
+                    "--build-run-id",
+                    "--build-run-attempt",
+                    "--inventory-artifact-id",
+                    "--inventory-archive-digest",
+                    "--approved-inventory",
+                    "--assets-root",
+                }
+            ),
+        ),
+        "Validate complete production asset inventory": (
+            (
+                "--assets-dir release-assets",
+                '--tag "$RELEASE_TAG"',
+                '--repository "$GITHUB_REPOSITORY"',
+                '--evidence-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"',
+                "--require-platform-goal-targets",
+                "--native-release-channel production-signed",
+            ),
+            ("--source-assets-only", "unsigned-preview"),
+            frozenset(
+                {
+                    "--assets-dir",
+                    "--tag",
+                    "--repository",
+                    "--evidence-registry",
+                    "--require-platform-goal-targets",
+                    "--native-release-channel",
+                }
+            ),
+        ),
+        "Audit signed exact-byte redistribution and resolver evidence": (
+            (
+                "--assets-dir release-assets",
+                "--policy configs/release_compliance_policy.json",
+                "--policy-root .",
+                '--tag "$RELEASE_TAG"',
+                '--repository "$GITHUB_REPOSITORY"',
+                '--sha "$RELEASE_SHA"',
+                '--evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
+                '--signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
+                '--evidence-root "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle"',
+                '--candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                '--protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"',
+                '--tag-governance-attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"',
+                '--tag-governance-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"',
+            ),
+            ("--check-policy-only",),
+            frozenset(
+                {
+                    "--policy",
+                    "--policy-root",
+                    "--assets-dir",
+                    "--tag",
+                    "--repository",
+                    "--sha",
+                    "--evidence",
+                    "--signature",
+                    "--evidence-root",
+                    "--candidate-inventory",
+                    "--protected-platform-registry",
+                    "--tag-governance-attestation",
+                    "--tag-governance-signature",
+                }
+            ),
+        ),
+        "Require immutable releases enabled before any mutation": (
+            (
+                "--repository \"$GITHUB_REPOSITORY\"",
+                "--tag \"$RELEASE_TAG\"",
+            ),
+            (),
+            frozenset({"--repository", "--tag"}),
+        ),
+        "Revalidate signed tag governance at mutation boundary": (
+            (
+                "--policy configs/release_compliance_policy.json",
+                '--attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"',
+                '--signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"',
+                "--repository \"$GITHUB_REPOSITORY\"",
+                "--tag \"$RELEASE_TAG\"",
+                "--sha \"$RELEASE_SHA\"",
+            ),
+            ("--help", "--dry-run", "--check-policy-only"),
+            frozenset(
+                {"--policy", "--attestation", "--signature", "--repository", "--tag", "--sha"}
+            ),
+        ),
+        "Require unused release namespace including drafts": (
+            (
+                "--repository \"$GITHUB_REPOSITORY\"",
+                "--tag \"$RELEASE_TAG\"",
+            ),
+            (),
+            frozenset({"--repository", "--tag"}),
+        ),
+    }
+    for token, label, kind, step_name in ordered:
+        if kind == "uses":
+            indexes.append(
+                mandatory_uses_step_index(steps, token, errors, step_name=step_name)
+            )
+        else:
+            required_tokens, forbidden_tokens, allowed_flags = command_contracts.get(
+                step_name,
+                ((), (), None),
+            )
+            indexes.append(
+                mandatory_run_step_index(
+                    steps,
+                    token,
+                    errors,
+                    label=label,
+                    step_name=step_name,
+                    required_tokens=required_tokens,
+                    forbidden_tokens=forbidden_tokens,
+                    allowed_flags=allowed_flags,
+                )
+            )
+    if all(index >= 0 for index in indexes) and indexes != sorted(indexes):
+        errors.append(
+            "promotion must gate, materialize, audit, attest, create draft, verify, publish, and reverify in order"
+        )
+    return errors
 
 def check_source_and_python_job(workflow: str) -> list[str]:
     block = workflow_job_block(workflow, "source-and-python")
@@ -490,7 +765,6 @@ def check_release_job_clean_checkouts(workflow: str) -> list[str]:
         "linux-native",
         "accepted-platform-evidence-assets",
         "publish",
-        PROTECTED_PUBLISH_JOB,
     ):
         block = workflow_job_block(workflow, job)
         if not block:
@@ -537,7 +811,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "name: Check out immutable release source for evidence binding": (
             "immutable release source checkout"
         ),
-        TAGGED_RELEASE_REF: "immutable release source checkout ref",
+        FROZEN_RELEASE_REF: "frozen release source checkout ref",
         "path: release-source": "immutable release source checkout path",
         "python scripts/import_platform_evidence_artifacts.py --release-tag": "platform evidence artifact importer",
         '--release-head-sha "$(git -C release-source rev-parse HEAD)"': (
@@ -1491,14 +1765,16 @@ def validate_mobaxterm_parity_registry(
     return module.check_mobaxterm_parity_evidence(registry=registry, require_complete=require_complete)
 
 
-def read_evidence_registry() -> dict[str, Any]:
-    if not EVIDENCE_PATH.exists():
+def read_evidence_registry(path: Path | None = None) -> dict[str, Any]:
+    selected = path or EVIDENCE_PATH
+    if not selected.exists() and path is None:
         return {"schema_version": 1, "accepted_evidence": []}
-    try:
-        data = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {"schema_version": 1, "accepted_evidence": []}
-    return data if isinstance(data, dict) else {"schema_version": 1, "accepted_evidence": []}
+    if selected.is_symlink() or not selected.is_file():
+        raise ValueError(f"must be a regular non-symlink file: {selected}")
+    data = json.loads(selected.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"must contain a JSON object: {selected}")
+    return data
 
 
 def read_mobaxterm_evidence_registry() -> dict[str, Any]:
@@ -1848,6 +2124,195 @@ def workflow_step_block(job_block: str, marker: str) -> str:
     pattern = rf"(?ms)^      - {re.escape(marker)}[^\n]*\n(.*?)(?=^      - |\Z)"
     match = re.search(pattern, job_block)
     return match.group(0) if match else ""
+
+
+def workflow_step_blocks(job_block: str) -> list[str]:
+    starts = [match.start() for match in re.finditer(r"(?m)^      - (?:name|uses|run):", job_block)]
+    return [
+        job_block[start : starts[index + 1] if index + 1 < len(starts) else len(job_block)]
+        for index, start in enumerate(starts)
+    ]
+
+
+def step_is_suppressed(step: str) -> bool:
+    if re.search(r"(?im)^\s*if:\s*", step):
+        return True
+    continue_match = re.search(r"(?im)^\s*continue-on-error:\s*([^#\r\n]+)", step)
+    if continue_match and continue_match.group(1).strip().lower() != "false":
+        return True
+    return bool(
+        re.search(r"\|\|", step)
+        or "&" in step
+        or re.search(r"(?im)^\s*set\s+\+e\b", step)
+        or re.search(r"(?im)^\s*trap\b.*\bERR\b", step)
+        or re.search(r"(?m);\s*(?:true|:|exit\s+0)(?:\s|$)", step)
+    )
+
+
+def step_has_dead_code_construct(step: str) -> bool:
+    """Reject constructs that can mention a gate without necessarily executing it."""
+
+    return bool(
+        re.search(
+            r"(?m)^\s*(?:if|then|elif|else|case|for|select|while|until|function)(?:\s|$)",
+            step,
+        )
+        or re.search(r"(?m)^\s*[A-Za-z_][A-Za-z0-9_]*\s*\(\)\s*\{", step)
+        or re.search(r"<<-?\s*['\"]?[A-Za-z_][A-Za-z0-9_]*", step)
+    )
+
+
+def step_name_is(step: str, expected: str) -> bool:
+    return re.search(rf"(?m)^\s*-\s+name:\s*{re.escape(expected)}\s*$", step) is not None
+
+
+def literal_run_is_fail_closed(step: str) -> bool:
+    if re.search(r"(?m)^\s*run:\s*\|[-+]?\s*$", step) is None:
+        return True
+    return re.search(r"(?m)^\s*set\s+-euo\s+pipefail\s*$", step) is not None
+
+
+def command_executes_token(command: str, token: str) -> bool:
+    """Conservatively recognize direct top-level invocations used by release gates."""
+
+    normalized = command.strip()
+    if not normalized or normalized.startswith(("!", "(", "{")):
+        return False
+    if token.startswith("gh "):
+        return normalized.startswith(token)
+    script_match = re.search(r"([A-Za-z0-9_]+\.py)(.*)", token)
+    if script_match:
+        script = re.escape(script_match.group(1))
+        suffix = script_match.group(2).strip()
+        pattern = rf"^(?:python|python3)\s+scripts/{script}(?:\s|$)"
+        if re.search(pattern, normalized) is None:
+            return False
+        return not suffix or re.search(rf"(?:^|\s){re.escape(suffix)}(?:\s|$)", normalized) is not None
+    if token.startswith("--"):
+        return bool(
+            re.match(r"^(?:python|python3)\s+scripts/check_release_provenance\.py(?:\s|$)", normalized)
+            and token in normalized
+        )
+    return token in normalized
+
+
+def step_run_commands(step: str) -> list[str]:
+    lines = step.splitlines()
+    commands: list[str] = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^\s*(?:-\s+)?run:\s*(.*)$", line)
+        if match is None:
+            continue
+        value = match.group(1).strip()
+        raw: list[str]
+        if value in {"|", "|-", "|+", ">", ">-", ">+"}:
+            block = lines[index + 1 :]
+            indents = [len(item) - len(item.lstrip()) for item in block if item.strip()]
+            trim = min(indents, default=0)
+            stripped = [item[trim:] for item in block]
+            raw = [" ".join(item.strip() for item in stripped)] if value.startswith(">") else stripped
+        else:
+            raw = [value]
+        current = ""
+        for item in raw:
+            command = item.strip()
+            if not command or command.startswith("#"):
+                continue
+            current = f"{current} {command}".strip()
+            if current.endswith(("\\", "`")):
+                current = current[:-1].strip()
+                continue
+            if not re.match(r"^(?:echo|printf|Write-(?:Host|Output))\b", current, re.I):
+                commands.append(current)
+            current = ""
+        if current:
+            commands.append(current)
+    return commands
+
+
+def mandatory_run_step_index(
+    steps: list[str],
+    token: str,
+    errors: list[str],
+    *,
+    label: str | None = None,
+    step_name: str | None = None,
+    required_tokens: tuple[str, ...] = (),
+    forbidden_tokens: tuple[str, ...] = (),
+    allowed_flags: frozenset[str] | None = None,
+) -> int:
+    description = label or token
+    for index, step in enumerate(steps):
+        if step_name is not None and not step_name_is(step, step_name):
+            continue
+        commands = step_run_commands(step)
+        matching = [
+            command
+            for command in commands
+            if command_executes_token(command, token)
+        ]
+        if matching:
+            if (
+                step_is_suppressed(step)
+                or step_has_dead_code_construct(step)
+                or not literal_run_is_fail_closed(step)
+            ):
+                errors.append(
+                    f"mandatory {description} step must be unconditional, top-level, and fail closed"
+                )
+                return -1
+            if not any(all(value in command for value in required_tokens) for command in matching):
+                errors.append(
+                    f"mandatory {description} command is missing required exact arguments"
+                )
+                return -1
+            if any(value in step for value in forbidden_tokens):
+                errors.append(f"mandatory {description} step contains a forbidden downgrade")
+                return -1
+            if allowed_flags is not None:
+                if (
+                    len(commands) != 1
+                    or len(matching) != 1
+                    or re.search(r"(?im)^\s*(?:echo|printf|Write-(?:Host|Output))\b", step)
+                    or any(operator in step for operator in (";", "|", "&"))
+                ):
+                    errors.append(
+                        f"mandatory {description} must be one isolated executable command"
+                    )
+                    return -1
+                flag_list = re.findall(
+                    r"(?<!\S)(--[A-Za-z0-9-]+)(?=\s|=|$)",
+                    matching[0],
+                )
+                if set(flag_list) != set(allowed_flags) or len(flag_list) != len(allowed_flags):
+                    errors.append(
+                        f"mandatory {description} command flags are not the exact allowlisted set"
+                    )
+                    return -1
+            return index
+    errors.append(f"mandatory executable {description} step is missing")
+    return -1
+
+
+def mandatory_uses_step_index(
+    steps: list[str],
+    action: str,
+    errors: list[str],
+    *,
+    required_text: str | None = None,
+    step_name: str | None = None,
+) -> int:
+    pattern = re.compile(rf"(?m)^\s*(?:-\s+)?uses:\s*{re.escape(action)}\s*(?:#.*)?$")
+    for index, step in enumerate(steps):
+        if step_name is not None and not step_name_is(step, step_name):
+            continue
+        if pattern.search(step) and (required_text is None or required_text in step):
+            if step_is_suppressed(step) or step_has_dead_code_construct(step):
+                errors.append(f"mandatory action {action} must not be disabled")
+                return -1
+            return index
+    errors.append(f"mandatory pinned action step is missing: {action}")
+    return -1
 
 
 def sha256_file(path: Path) -> str:

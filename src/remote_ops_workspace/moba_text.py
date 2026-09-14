@@ -10,13 +10,15 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import command_safety as safe
-from .file_safety import write_json_atomic, write_text_atomic
+from .file_safety import ensure_private_dir_required, write_json_atomic, write_text_atomic
 from .file_transfer import SftpBatchPlan, build_sftp_get_plan, build_sftp_put_plan
 from .models import Profile
+from .paths import ensure_data_dir
 
 MOBA_TEXT_EDITOR_TAB_SCHEMA = "row.moba-text.editor-tab.v1"
 MOBA_TEXT_RELEASE_EVIDENCE_BUNDLE_SCHEMA = "row.moba-text.remote-edit-evidence-bundle.v1"
 MOBA_TEXT_RELEASE_EVIDENCE_SCHEMA = "row.moba-text.remote-edit-evidence.v1"
+MANAGED_EDIT_CACHE_DIR = "edit-cache"
 
 
 @dataclass(slots=True)
@@ -766,7 +768,29 @@ def _remote_cache_path(profile: Profile, remote_path: str, local_path: Path | st
         return _path(local_path, "local text cache path")
     name = PurePosixPath(remote_path).name or "remote.txt"
     safe_name = "".join(char if char.isalnum() or char in "._-" else "_" for char in name)
-    return Path(f"{profile.name}-{safe_name}.edit")
+    cache_key = hashlib.sha256(
+        f"{profile.name}\0{remote_path}".encode("utf-8", errors="strict")
+    ).hexdigest()[:24]
+    return ensure_data_dir() / MANAGED_EDIT_CACHE_DIR / f"{cache_key}-{safe_name}.edit"
+
+
+def prepare_managed_edit_cache(local_path: Path | str) -> Path:
+    """Prepare and validate an owner-only managed remote-edit cache target."""
+
+    cache_root = ensure_data_dir() / MANAGED_EDIT_CACHE_DIR
+    if cache_root.is_symlink():
+        raise OSError(f"refusing to use symlinked remote edit cache: {cache_root}")
+    ensure_private_dir_required(cache_root)
+    root = cache_root.resolve(strict=True)
+    target = Path(local_path).expanduser()
+    resolved = target.resolve(strict=False)
+    if not resolved.is_relative_to(root):
+        raise ValueError(f"remote edit cache path escapes managed cache: {target}")
+    if target.is_symlink():
+        raise OSError(f"refusing to overwrite symlinked remote edit cache file: {target}")
+    if target.exists() and not target.is_file():
+        raise OSError(f"remote edit cache target must be a regular file: {target}")
+    return target
 
 
 def _syntax_for_remote_path(remote_path: str) -> str:

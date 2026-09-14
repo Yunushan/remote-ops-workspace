@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+import remote_ops_workspace.layouts as layouts_module
 from remote_ops_workspace.layouts import Layout, LayoutPane
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.terminal import TerminalPanePlan
@@ -102,6 +103,22 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
         def save(self, layouts) -> None:
             self.layouts = list(layouts)
             self.save_calls.append([layout.name for layout in self.layouts])
+
+        def replace_named(self, original_name: str, layout: Layout) -> Layout:
+            if not any(item.name == original_name for item in self.layouts):
+                raise KeyError(original_name)
+            if layout.name != original_name and any(
+                item.name == layout.name for item in self.layouts
+            ):
+                raise ValueError(f"layout already exists: {layout.name}")
+            self.save(
+                sorted(
+                    [item for item in self.layouts if item.name != original_name]
+                    + [layout],
+                    key=lambda item: item.name,
+                )
+            )
+            return layout
 
     store = _LayoutStore()
     window.layout_store = store
@@ -257,8 +274,7 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     bindings: list[str] = []
     remembered: list[str] = []
     started: list[tuple[object, int]] = []
-    original_layout_launch_profiles = window.layout_launch_profiles
-    original_build_layout_terminal_plans = gui.build_layout_terminal_plans
+    original_build_layout_terminal_sessions = gui.build_layout_terminal_sessions
     original_layout_widget = window.layout_widget
     original_bind_layout_resize_persistence = window.bind_layout_resize_persistence
     original_remember_terminal_plan = window.remember_terminal_plan
@@ -266,8 +282,11 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     original_update_session_status = window.update_session_status
     original_terminal_panes_in = window.terminal_panes_in
     original_start_terminal_pane = window.start_terminal_pane_when_active
-    monkeypatch.setattr(window, "layout_launch_profiles", lambda _layout: profiles)
-    monkeypatch.setattr(gui, "build_layout_terminal_plans", lambda *_args: plans)
+    monkeypatch.setattr(
+        gui,
+        "build_layout_terminal_sessions",
+        lambda *_args, **_kwargs: list(zip(plans, profiles, strict=True)),
+    )
     monkeypatch.setattr(
         window,
         "layout_widget",
@@ -296,14 +315,9 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     assert remembered == ["left", "right"]
     assert started == [("pane", 7)]
     monkeypatch.setattr(
-        window,
-        "layout_launch_profiles",
-        original_layout_launch_profiles,
-    )
-    monkeypatch.setattr(
         gui,
-        "build_layout_terminal_plans",
-        original_build_layout_terminal_plans,
+        "build_layout_terminal_sessions",
+        original_build_layout_terminal_sessions,
     )
     monkeypatch.setattr(window, "layout_widget", original_layout_widget)
     monkeypatch.setattr(
@@ -343,15 +357,16 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     )
 
     class _ProfileStore:
+        policy_path = None
+
         @staticmethod
-        def get(name: str):
-            assert name == saved_profile.name
-            return saved_profile
+        def load():
+            return [saved_profile]
 
     window.store = _ProfileStore()
     allowed: list[str] = []
     monkeypatch.setattr(
-        gui,
+        layouts_module,
         "assert_profile_launch_allowed",
         lambda profile, **_kwargs: allowed.append(profile.name),
     )
@@ -401,6 +416,17 @@ def test_layout_resize_persistence_edges(gui_window) -> None:
             self.saved.append(
                 [list(value) for value in layouts[0].splitter_sizes]
             )
+
+        def update_splitter_sizes(self, name: str, sizes: list[list[int]]) -> bool:
+            for layout in self.layouts:
+                if layout.name != name:
+                    continue
+                if layout.splitter_sizes == sizes:
+                    return False
+                layout.splitter_sizes = [list(value) for value in sizes]
+                self.saved.append([list(value) for value in layout.splitter_sizes])
+                return True
+            return False
 
     store = _Store()
     window.layout_store = store

@@ -129,9 +129,9 @@ cannot honestly be made from the currently published wheels.
 - Free-threaded `3.15t` is not claimed. PyQt6 and other extension dependencies
   need their own free-threading evidence before that separate runtime can be
   supported.
-- Native release bundles continue to use the pinned Python 3.12 release
-  toolchain for reproducible packaging. They are standalone artifacts and do
-  not claim to embed Python 3.15.
+- Native release bundles use the exact Python 3.14.7 release
+  toolchain recorded in `configs/release_toolchain.json`. They are standalone
+  artifacts and do not claim to embed Python 3.15.
 - Linux i386/armhf and legacy Windows promotion still require their independent
   native-host evidence. Python 3.15 is not part of either protected 32-bit Linux
   target claim until target-native interpreter, dependency and package evidence

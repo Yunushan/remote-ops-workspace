@@ -23,6 +23,16 @@ def test_native_checksum_patterns_are_documented_in_scripts() -> None:
         assert pattern in text
 
 
+def test_native_hardening_rejects_unverified_path_appimagetool() -> None:
+    checker = _load_checker()
+    script = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8")
+    script += "\ncommand -v appimagetool\n"
+
+    errors = checker.check_linux_appimagetool_download(script)
+
+    assert "make_linux_native.sh must not execute an unverified PATH appimagetool" in errors
+
+
 def test_native_pyinstaller_entrypoints_use_launchers() -> None:
     checker = _load_checker()
 
@@ -75,40 +85,37 @@ def test_native_workflow_allows_only_explicit_unsigned_preview_publish() -> None
     assert checker.check_signing_readiness_gate(workflow) == []
 
 
-def test_native_workflow_requires_uniform_preview_signing_channel() -> None:
+def test_native_workflow_requires_fail_closed_windows_signing() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        'if ("${{ needs.release-preflight.outputs.signed_native_publish_ready }}" -ne "true")',
-        'if ("${{ needs.release-preflight.outputs.windows_release_signing_ready }}" -ne "true")',
+        'throw "Production candidate Windows builds require protected release signing"',
+        'Write-Warning "signing skipped"',
         1,
     )
 
     errors = checker.check_signing_readiness_gate(workflow)
 
-    assert (
-        "windows-native must use combined signing readiness so unsigned previews cannot mix channels"
-        in errors
-    )
+    assert "windows-native must fail closed when release signing is unavailable" in errors
 
 
-def test_native_workflow_rejects_publish_without_a_readiness_gate() -> None:
+def test_native_workflow_rejects_candidate_job_without_readiness_gate() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    publish = checker.workflow_job_block(workflow, "publish")
+    publish = checker.workflow_job_block(workflow, "windows-native")
     assert publish
     workflow = workflow.replace(
         publish,
         publish.replace(
-        "    if: ${{ needs.release-preflight.outputs.native_publish_ready == 'true' }}\n",
-        "",
-        1,
+            "    if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}\n",
+            "",
+            1,
         ),
         1,
     )
 
     errors = checker.check_signing_readiness_gate(workflow)
 
-    assert "publish must require signed readiness or an explicit unsigned preview" in errors
+    assert "windows-native must require signed production candidate readiness" in errors
 
 
 def test_native_workflow_rejects_checkout_credentials_outside_checkout_step() -> None:

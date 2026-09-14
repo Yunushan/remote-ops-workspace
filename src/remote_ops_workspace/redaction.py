@@ -68,6 +68,18 @@ ASSIGNMENT_RE = re.compile(r"(?P<key>[A-Za-z0-9_.-]*(?:auth|cookie|credential|pa
 BEARER_RE = re.compile(r"\b(Bearer)\s+([A-Za-z0-9._~+/=-]+)", re.IGNORECASE)
 WINDOWS_SECRET_SWITCH_RE = re.compile(r"^/(?P<key>p|pass|password|passwd|token|secret):(?P<value>.+)$", re.IGNORECASE)
 URL_PASSWORD_RE = re.compile(r"(?P<prefix>[A-Za-z][A-Za-z0-9+.-]*://[^\s/@:]+):(?P<password>[^@\s]+)@")
+SSHPASS_COMMAND_RE = re.compile(
+    r"(?P<command>\bsshpass(?:\.exe)?\b)(?P<arguments>[^;&|\r\n]*)",
+    re.IGNORECASE,
+)
+SSHPASS_SEPARATE_PASSWORD_RE = re.compile(
+    r"(?P<prefix>(?<!\S)-p(?:=|\s+))(?P<password>\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s;&|]+)",
+    re.IGNORECASE,
+)
+SSHPASS_ATTACHED_PASSWORD_RE = re.compile(
+    r"(?P<prefix>(?<!\S)-p)(?P<password>[^\s=;&|]+)",
+    re.IGNORECASE,
+)
 
 
 def is_sensitive_key(key: object) -> bool:
@@ -102,18 +114,27 @@ def redact_text(value: str) -> str:
     text = URL_PASSWORD_RE.sub(r"\g<prefix>:" + REDACTED + "@", text)
     text = BEARER_RE.sub(r"\1 " + REDACTED, text)
     text = ASSIGNMENT_RE.sub(_redact_assignment_match, text)
+    text = SSHPASS_COMMAND_RE.sub(_redact_sshpass_command, text)
     return text
 
 
 def _redact_sequence(value: list[Any]) -> list[Any]:
     redacted: list[Any] = []
     redact_next = False
+    sshpass_argv = bool(value) and isinstance(value[0], str) and _is_sshpass_program(value[0])
     for item in value:
         if redact_next:
             redacted.append(REDACTED)
             redact_next = False
             continue
         if isinstance(item, str):
+            if sshpass_argv and item == "-p":
+                redacted.append(item)
+                redact_next = True
+                continue
+            if sshpass_argv and item.startswith("-p") and len(item) > 2:
+                redacted.append(f"-p{REDACTED}")
+                continue
             if item in SENSITIVE_ARG_NAMES:
                 redacted.append(item)
                 redact_next = True
@@ -137,6 +158,23 @@ def _redact_string_arg(value: str) -> str:
 
 def _redact_assignment_match(match: re.Match[str]) -> str:
     return f"{match.group('key')}{match.group('sep')}{REDACTED}"
+
+
+def _redact_sshpass_command(match: re.Match[str]) -> str:
+    arguments = SSHPASS_SEPARATE_PASSWORD_RE.sub(
+        lambda item: f"{item.group('prefix')}{REDACTED}",
+        match.group("arguments"),
+    )
+    arguments = SSHPASS_ATTACHED_PASSWORD_RE.sub(
+        lambda item: f"{item.group('prefix')}{REDACTED}",
+        arguments,
+    )
+    return f"{match.group('command')}{arguments}"
+
+
+def _is_sshpass_program(value: str) -> bool:
+    basename = value.replace("\\", "/").rsplit("/", 1)[-1].casefold()
+    return basename in {"sshpass", "sshpass.exe"}
 
 
 def _assignment_key_is_sensitive(key: str) -> bool:

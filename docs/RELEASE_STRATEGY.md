@@ -11,14 +11,13 @@ Release integrity rules:
   connections.
 
 - Release tags must match `pyproject.toml` exactly, for example `v1.0.24`.
-- Pushing a `vX.Y.Z` tag automatically builds, smoke-tests and publishes the
-  standard source, Windows, macOS and Linux native assets. The tag must resolve
-  to a commit reachable from the trusted default branch. The default core-release
-  lane does not claim Linux i386/armhf or Windows XP native-host support. To
-  attach those protected assets later, manually dispatch `release.yml` with
-  `release_tag=vX.Y.Z` and `include_protected_platform_evidence=true`; that
-  opt-in lane requires the four evidence workflows, finalized accepted records
-  and exact evidence assets before it can attach anything to the existing release.
+- Pushing a `vX.Y.Z` tag builds and smoke-tests the standard native assets, then
+  imports already accepted Linux i386/armhf and Windows XP evidence into one
+  certified inventory. The tag must resolve to a commit reachable from the
+  trusted default branch. Manual `release.yml` dispatch may stage that evidence
+  for review but cannot publish or mutate the production tag. The tag run waits
+  for the independent exact-byte compliance review, uploads one draft, verifies
+  every byte and attestation, and promotes it once.
 - Source/install bundles and the Python wheel/sdist backend receive deterministic
   archive metadata through `SOURCE_DATE_EPOCH` or a fixed default.
 - Python release build dependencies are constrained by `requirements-release.txt`
@@ -83,6 +82,37 @@ Release integrity rules:
   evidence count, strict MobaXterm evidence count and the verification commands;
   `body_path: release-notes.md` is required so a release cannot be published
   with an empty or misleading description.
+- The final aggregate audit runs
+  `python scripts/check_release_provenance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha>`.
+  It matches every downloaded file to the live GitHub Release size and SHA-256
+  digest, requires the remote GitHub Release `immutable` flag, and cryptographically verifies every asset in the
+  complete certified inventory's SLSA
+  attestation against this repository, `.github/workflows/release.yml` and the
+  exact release SHA and exact `refs/tags/<tag>` source ref, requires a common certificate-bound run attempt across the
+  entire inventory, and checks that exact tag-push run attempt completed successfully.
+  A local checksum set, a green run for another commit, or mere attestation
+  metadata cannot satisfy this gate.
+- Production certification separately runs
+  `python scripts/check_release_license_compliance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha>`. The checked-in policy status is `blocked-pending-independent-review`: direct constraints are not per-platform fully hashed
+  transitive locks, no trusted independent compliance key is enrolled, and no
+  exact-artifact closed-world license/source/relink inventory is approved. The
+  gate hashes the actual evidence-bundle files and native artifacts, classifies
+  every distribution from raw `pip inspect`, requires the tagged native jobs to
+  install their tracked locks with `--require-hashes`, and requires a full
+  compliance audit before release upload. The current policy-only preflight
+  therefore withholds production publication. Manual `release.yml` runs cannot
+  publish; only the isolated `unsigned-preview.yml` workflow creates a unique
+  non-source-tag `UNSIGNED PREVIEW` prerelease.
+  When the policy and hashed locks are approved, the exact-tag build retains its
+  signed/notarized candidates and the `release-compliance-review` environment
+  holds the publish job. The independent reviewer signs those exact bytes and
+  places the evidence under `releases/<tag>/<sha>/` on the data-only
+  `release-compliance-evidence` branch before approving the held job. That
+  branch is only transport: the tag-pinned Ed25519 policy and hashes authenticate
+  every consumed file.
+- `python scripts/check_release_maturity.py --release-tag <tag>` rejects the
+  current Alpha classifier. Maintainers must make an explicit maturity decision
+  before replacing it with `Development Status :: 5 - Production/Stable`.
 - The local governance gate audits live `main` branch protection with
   `python scripts/check_repository_governance.py --repository <owner/repo>`.
   The live rule must require both stable aggregates, `Python 3.15 readiness`
@@ -98,10 +128,9 @@ Release integrity rules:
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, reports
   protected-platform readiness and then runs
   `python scripts/check_repository_cleanup.py --require-clean` before standard
-  assets build. It does not block normal Windows, macOS or default Linux
-  releases on unavailable i386, armhf or XP hosts. The opt-in protected
-  promotion lane performs the stricter source-reference, accepted-record and
-  review-bundle checks before it imports or attaches protected assets.
+  assets build. The production tag path is fail-closed on unavailable i386,
+  armhf or XP evidence; the separate unsigned-preview workflow remains outside
+  this certified inventory.
 - Immediately before dispatching protected-platform evidence, an authorized
   operator must run `python scripts/check_platform_evidence_runner_readiness.py
   --repository <owner>/<repo> --require-goal-targets --require-idle`. It confirms
@@ -131,21 +160,15 @@ Release integrity rules:
   into the publish directory, and it does not stage files for upload.
 - The opt-in `accepted-platform-evidence-assets` job keeps read-only repository
   and Actions artifact permissions; it must not request any write-scoped GitHub
-  permission while importing protected-platform evidence. It runs only when
-  `include_protected_platform_evidence=true`. That lane first runs
+  permission while importing protected-platform evidence. It runs for every
+  tag push, while manual `include_protected_platform_evidence=true` is staging
+  only. That job first runs
   `python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets`,
   which refuses release tags that do not contain the tagged project version and
   all four protected workflow dispatch options.
-- The default publish job runs
-  `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo>`
-  after downloading standard workflow artifacts and before uploading the GitHub
-  release. The opt-in protected promotion job runs
-  `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>`
-  and then
+- The single exact-tag publish job runs
   `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
-  before attaching protected evidence assets.
-  The first command keeps the protected parity gate bound to the publish-ready
-  release asset directory; the second verifies the full release asset contract
+  before creating the draft release. It verifies the full release asset contract
   and binds accepted protected-platform release URLs to the publishing
   repository.
   Static readiness JSON does not download release assets and therefore keeps
@@ -551,14 +574,20 @@ Use `--require-clean` only immediately before creating the tag. It adds a
 tree. During ordinary development, the default cleanup check can run while local
 work is still in progress.
 
+The aggregate `make production-readiness` target is stricter: its current
+`HEAD` must equal the full release SHA, that SHA must be the commit peeled from
+the release tag, and the working tree must be clean before the quality run and
+again before the final success message. This prevents the local 100/100 claim
+from testing modified or different checkout bytes while remote evidence refers
+to the tag.
+
 The tag-triggered core release repeats this protection through actual GitHub
 Actions `needs` entries. The `release-preflight` job is a dependency of
 `source-and-python`, `windows-native`, `macos-native`, `linux-native`,
-`accepted-platform-evidence-assets` and `publish`. The protected evidence jobs
-run only on explicit manual opt-in and wait for the completed core release. A
-stale manifest, broken verifier check or dirty checkout stops standard assets;
-unimportable protected-platform evidence stops only the protected attachment
-lane before it can upload anything.
+`accepted-platform-evidence-assets` and `publish`. The evidence import runs on
+every tag push and the publish job waits for it. A stale manifest, broken
+verifier check, dirty checkout, or unimportable protected-platform evidence
+stops the complete production inventory before any public release exists.
 
 ## Phase 1: Python package artifacts
 
@@ -610,10 +639,9 @@ Implementation:
 - Pins the Windows installer toolchain in CI: Inno Setup `6.3.3` and WiX
   `5.0.2`.
 - The signed production path requires Authenticode credentials. Without them,
-  a tag-triggered release fails before publication. A maintainer may manually
-  dispatch the release workflow with `allow_unsigned_preview=true` to publish
-  clearly labeled **UNSIGNED PREVIEW** installers as a GitHub prerelease; they
-  are not trusted production artifacts.
+  a tag-triggered release is withheld before publication. Manual runs of
+  `release.yml` cannot publish; the isolated `unsigned-preview.yml` workflow is
+  the only clearly labeled **UNSIGNED PREVIEW** prerelease lane.
 - Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets,
   not as first-class modern native runtime targets. Windows XP x86/x64 remote
   endpoints use isolated per-profile legacy opt-ins.
@@ -637,10 +665,9 @@ Implementation:
 - Runs `scripts/smoke_macos_native.sh` to smoke install, verify, upgrade and
   uninstall the `.dmg` and `.pkg` artifacts before upload.
 - CI candidate artifacts use ad-hoc signing only. The signed production path
-  requires Developer ID signing and Apple notarization. Without them, only an
-  explicit `allow_unsigned_preview=true` manual workflow dispatch may publish
-  clearly labeled **UNSIGNED PREVIEW** macOS installers as a prerelease; they
-  are not trusted production artifacts.
+  requires Developer ID signing and Apple notarization. Without them,
+  production publication is withheld; only `unsigned-preview.yml` may create a
+  clearly labeled **UNSIGNED PREVIEW** prerelease.
 
 For branch review without a production merge, use the isolated
 `.github/workflows/unsigned-preview.yml` lane from a `preview` or `preview/*`
@@ -670,9 +697,15 @@ Implementation:
 - Builds an AppImage with `appimagetool`.
 - Runs `scripts/smoke_linux_native.sh` to smoke install, verify, upgrade and
   uninstall the `.deb`, `.rpm` and AppImage artifacts before upload.
-- Downloads appimagetool from the maintained `AppImage/appimagetool` upstream
-  when a local `APPIMAGETOOL` is not supplied, and supports
-  `APPIMAGETOOL_SHA256` verification for pinned binary inputs.
+- Downloads appimagetool 1.9.1 from its versioned
+  `AppImage/appimagetool` release when a local `APPIMAGETOOL` is not supplied.
+  Downloaded and locally supplied binaries must match the reviewed
+  architecture-specific SHA-256 before execution; mutable `continuous` builds
+  and unverified PATH fallbacks are rejected.
+- Downloads the embedded AppImage type-2 runtime only from release `20251108`,
+  verifies the architecture-specific reviewed SHA-256, and passes it explicitly
+  through `--runtime-file`; appimagetool cannot silently fetch a mutable latest
+  runtime.
 - Keeps `.tar.gz` source/install bundles for non-deb/rpm systems.
 - The default GitHub release workflow builds `x86_64` and `aarch64` jobs only.
 - The script also maps i386/i686 and armv7l/armhf names for matching builders,

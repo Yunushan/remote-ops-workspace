@@ -75,12 +75,14 @@ def check_schema(matrix: dict[str, Any]) -> list[str]:
             errors.append("configs/release_matrix.json default_github_release.native_jobs must not be empty")
     promotion = require_mapping(matrix, "protected_platform_promotion", errors)
     if promotion:
-        if promotion.get("workflow_input") != "include_protected_platform_evidence":
-            errors.append("protected_platform_promotion.workflow_input must be include_protected_platform_evidence")
-        if promotion.get("evidence_job") != "accepted-platform-evidence-assets":
-            errors.append("protected_platform_promotion.evidence_job must be accepted-platform-evidence-assets")
-        if promotion.get("publish_job") != "publish-protected-platform-evidence":
-            errors.append("protected_platform_promotion.publish_job must be publish-protected-platform-evidence")
+        if promotion.get("workflow") != ".github/workflows/release-promotion.yml":
+            errors.append("protected_platform_promotion.workflow must name release-promotion.yml")
+        if promotion.get("workflow_input") != "evidence_commit_sha":
+            errors.append("protected_platform_promotion.workflow_input must be evidence_commit_sha")
+        if promotion.get("evidence_job") != "promote-production-release":
+            errors.append("protected_platform_promotion.evidence_job must be promote-production-release")
+        if promotion.get("publish_job") != "promote-production-release":
+            errors.append("protected_platform_promotion.publish_job must be the single promotion job")
         targets = {str(target) for target in require_list(promotion, "targets", errors)}
         expected_targets = {"linux-i386", "linux-armhf", "windows-xp-native-x86", "windows-xp-native-x64"}
         if targets != expected_targets:

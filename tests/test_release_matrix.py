@@ -63,9 +63,10 @@ def test_release_matrix_declares_opt_in_protected_platform_promotion() -> None:
     matrix = load_release_matrix()
     promotion = matrix["protected_platform_promotion"]  # type: ignore[index]
 
-    assert promotion["workflow_input"] == "include_protected_platform_evidence"
-    assert promotion["evidence_job"] == "accepted-platform-evidence-assets"
-    assert promotion["publish_job"] == "publish-protected-platform-evidence"
+    assert promotion["workflow"] == ".github/workflows/release-promotion.yml"
+    assert promotion["workflow_input"] == "evidence_commit_sha"
+    assert promotion["evidence_job"] == "promote-production-release"
+    assert promotion["publish_job"] == "promote-production-release"
     assert set(promotion["targets"]) == {
         "linux-i386",
         "linux-armhf",

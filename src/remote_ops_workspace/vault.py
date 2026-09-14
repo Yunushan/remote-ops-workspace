@@ -4,6 +4,8 @@ import base64
 import binascii
 import importlib.util
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from getpass import getpass
 from pathlib import Path
@@ -11,11 +13,18 @@ from typing import Any
 
 from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
+from .state_lock import DEFAULT_LOCK_TIMEOUT_SECONDS, FileLockTimeoutError, exclusive_file_lock
 
-VAULT_VERSION = 2
+VAULT_VERSION = 3
 VAULT_KDF = "scrypt"
 VAULT_MIN_PASSPHRASE_LENGTH = 12
 VAULT_VERIFIER_PLAINTEXT = b"remote-ops-workspace vault verifier v1"
+VAULT_LEGACY_SCRYPT_PARAMS = {"n": 2**14, "r": 8, "p": 1}
+# OWASP's minimum-equivalent scrypt sets include N=2^15, r=8, p=3. Keeping
+# the parameters in the payload lets a future version raise the cost without
+# silently changing how existing ciphertext is derived.
+VAULT_SCRYPT_PARAMS = {"n": 2**15, "r": 8, "p": 3}
+VAULT_SUPPORTED_VERSIONS = frozenset({1, 2, VAULT_VERSION})
 
 
 class VaultBackendUnavailable(RuntimeError):
@@ -34,6 +43,7 @@ class VaultStatus:
     item_count: int | None = None
     version: int | None = None
     kdf: str | None = None
+    kdf_params: dict[str, int] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -43,6 +53,7 @@ class VaultStatus:
             "item_count": self.item_count,
             "version": self.version,
             "kdf": self.kdf,
+            "kdf_params": dict(self.kdf_params) if self.kdf_params is not None else None,
         }
 
 
@@ -53,27 +64,35 @@ class LocalVault:
     dependency is not installed.
     """
 
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        *,
+        lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
+    ) -> None:
         self.path = path or (ensure_data_dir() / "vault.json")
+        self.lock_timeout_seconds = lock_timeout_seconds
 
     def init(self, passphrase: str) -> None:
         self._require_crypto()
-        if self.path.exists():
-            raise VaultError(f"vault already exists: {self.path}")
         passphrase = validate_new_passphrase(passphrase)
-        data = self._empty(passphrase)
-        write_json_atomic(self.path, data, private=True, sort_keys=False)
+        with self._transaction():
+            if self.path.exists():
+                raise VaultError(f"vault already exists: {self.path}")
+            data = self._empty(passphrase)
+            write_json_atomic(self.path, data, private=True, sort_keys=False)
 
     def set(self, name: str, secret: str, passphrase: str) -> None:
         name = validate_secret_name(name)
         if not isinstance(secret, str) or secret == "":
             raise VaultError("secret value must not be empty")
-        data = self._load()
-        fernet = self._authenticate(passphrase, data)
-        self._upgrade_payload(data, fernet)
-        token = fernet.encrypt(secret.encode("utf-8")).decode("ascii")
-        data["items"][name] = token
-        self._save(data)
+        with self._transaction():
+            data = self._load()
+            fernet = self._authenticate(passphrase, data)
+            fernet = self._upgrade_payload(data, passphrase, fernet)
+            token = fernet.encrypt(secret.encode("utf-8")).decode("ascii")
+            data["items"][name] = token
+            self._save(data)
 
     def get(self, name: str, passphrase: str) -> str:
         name = validate_secret_name(name)
@@ -88,14 +107,17 @@ class LocalVault:
         except UnicodeDecodeError as exc:
             raise VaultError("invalid vault passphrase or corrupted vault data") from exc
 
-    def delete(self, name: str) -> None:
+    def delete(self, name: str, passphrase: str) -> None:
         name = validate_secret_name(name)
-        data = self._load()
-        items = data["items"]
-        if name not in items:
-            raise VaultError(f"secret not found: {name}")
-        del items[name]
-        self._save(data)
+        with self._transaction():
+            data = self._load()
+            fernet = self._authenticate(passphrase, data)
+            self._upgrade_payload(data, passphrase, fernet)
+            items = data["items"]
+            if name not in items:
+                raise VaultError(f"secret not found: {name}")
+            del items[name]
+            self._save(data)
 
     def list(self) -> list[str]:
         data = self._load()
@@ -117,6 +139,7 @@ class LocalVault:
             item_count=len(items),
             version=data["version"],
             kdf=data["kdf"],
+            kdf_params=dict(data["kdf_params"]) if "kdf_params" in data else None,
         )
 
     def _load(self) -> dict[str, Any]:
@@ -138,15 +161,24 @@ class LocalVault:
         _validate_vault_payload(data, self.path)
         write_json_atomic(self.path, data, private=True)
 
+    @contextmanager
+    def _transaction(self) -> Iterator[None]:
+        try:
+            with exclusive_file_lock(self.path, timeout_seconds=self.lock_timeout_seconds):
+                yield
+        except FileLockTimeoutError as exc:
+            raise VaultError(f"vault is busy; retry after the current update: {self.path}") from exc
+
     def _empty(self, passphrase: str) -> dict[str, Any]:
         import os
 
         salt = base64.b64encode(os.urandom(16)).decode("ascii")
-        fernet = self._fernet(passphrase, salt)
+        fernet = self._fernet(passphrase, salt, VAULT_SCRYPT_PARAMS)
         verifier = fernet.encrypt(VAULT_VERIFIER_PLAINTEXT).decode("ascii")
         return {
             "version": VAULT_VERSION,
             "kdf": VAULT_KDF,
+            "kdf_params": dict(VAULT_SCRYPT_PARAMS),
             "salt": salt,
             "verifier": verifier,
             "items": {},
@@ -159,7 +191,11 @@ class LocalVault:
         *,
         candidate_token: str | None = None,
     ):  # type: ignore[no-untyped-def]
-        fernet = self._fernet(passphrase, data["salt"])
+        fernet = self._fernet(
+            passphrase,
+            data["salt"],
+            data.get("kdf_params", VAULT_LEGACY_SCRYPT_PARAMS),
+        )
         verifier = data.get("verifier")
         if verifier is not None:
             plaintext = self._decrypt_token(fernet, verifier)
@@ -174,12 +210,31 @@ class LocalVault:
             self._decrypt_token(fernet, legacy_token)
         return fernet
 
-    @staticmethod
-    def _upgrade_payload(data: dict[str, Any], fernet) -> None:  # type: ignore[no-untyped-def]
+    def _upgrade_payload(
+        self,
+        data: dict[str, Any],
+        passphrase: str,
+        fernet,
+    ):  # type: ignore[no-untyped-def]
         if data["version"] >= VAULT_VERSION:
-            return
+            return fernet
+        plaintext_items = {
+            name: self._decrypt_token(fernet, token)
+            for name, token in data["items"].items()
+        }
+        import os
+
+        salt = base64.b64encode(os.urandom(16)).decode("ascii")
+        upgraded_fernet = self._fernet(passphrase, salt, VAULT_SCRYPT_PARAMS)
         data["version"] = VAULT_VERSION
-        data["verifier"] = fernet.encrypt(VAULT_VERIFIER_PLAINTEXT).decode("ascii")
+        data["salt"] = salt
+        data["kdf_params"] = dict(VAULT_SCRYPT_PARAMS)
+        data["verifier"] = upgraded_fernet.encrypt(VAULT_VERIFIER_PLAINTEXT).decode("ascii")
+        data["items"] = {
+            name: upgraded_fernet.encrypt(value).decode("ascii")
+            for name, value in plaintext_items.items()
+        }
+        return upgraded_fernet
 
     @staticmethod
     def _decrypt_token(fernet, token: str) -> bytes:  # type: ignore[no-untyped-def]
@@ -190,13 +245,25 @@ class LocalVault:
         except (InvalidToken, UnicodeEncodeError, ValueError) as exc:
             raise VaultError("invalid vault passphrase or corrupted vault data") from exc
 
-    def _fernet(self, passphrase: str, salt_b64: str):  # type: ignore[no-untyped-def]
+    def _fernet(
+        self,
+        passphrase: str,
+        salt_b64: str,
+        params: dict[str, int] | None = None,
+    ):  # type: ignore[no-untyped-def]
         self._require_crypto()
         from cryptography.fernet import Fernet
         from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
         salt = base64.b64decode(salt_b64.encode("ascii"))
-        kdf = Scrypt(salt=salt, length=32, n=2**14, r=8, p=1)
+        selected = params or VAULT_LEGACY_SCRYPT_PARAMS
+        kdf = Scrypt(
+            salt=salt,
+            length=32,
+            n=selected["n"],
+            r=selected["r"],
+            p=selected["p"],
+        )
         key = base64.urlsafe_b64encode(kdf.derive(passphrase.encode("utf-8")))
         return Fernet(key)
 
@@ -245,7 +312,7 @@ def _validate_vault_payload(raw: object, path: Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise VaultError(f"vault root must be a JSON object: {path}")
     version = raw.get("version")
-    if isinstance(version, bool) or version not in {1, VAULT_VERSION}:
+    if type(version) is not int or version not in VAULT_SUPPORTED_VERSIONS:
         raise VaultError(f"unsupported vault version: {version!r}")
     if raw.get("kdf") != VAULT_KDF:
         raise VaultError(f"unsupported vault KDF: {raw.get('kdf')!r}")
@@ -260,6 +327,11 @@ def _validate_vault_payload(raw: object, path: Path) -> dict[str, Any]:
     if len(decoded_salt) != 16:
         raise VaultError("vault salt must decode to 16 bytes")
 
+    if version == VAULT_VERSION:
+        _validate_current_kdf_params(raw.get("kdf_params"))
+    elif "kdf_params" in raw:
+        raise VaultError("legacy vault versions must not contain kdf_params")
+
     items = raw.get("items")
     if not isinstance(items, dict):
         raise VaultError("vault items must be a JSON object")
@@ -270,11 +342,24 @@ def _validate_vault_payload(raw: object, path: Path) -> dict[str, Any]:
         _validate_token_text(token, f"vault item {name}")
 
     verifier = raw.get("verifier")
-    if version == VAULT_VERSION:
+    if version >= 2:
         _validate_token_text(verifier, "vault verifier")
     elif verifier is not None:
         _validate_token_text(verifier, "vault verifier")
     return raw
+
+
+def _validate_current_kdf_params(value: object) -> None:
+    if not isinstance(value, dict):
+        raise VaultError("vault kdf_params must be an object")
+    if set(value) != set(VAULT_SCRYPT_PARAMS):
+        raise VaultError("vault kdf_params must contain exactly n, r and p")
+    for key, expected in VAULT_SCRYPT_PARAMS.items():
+        actual = value.get(key)
+        if type(actual) is not int or actual != expected:
+            raise VaultError(
+                f"vault kdf_params.{key} must be the supported value {expected}"
+            )
 
 
 def _validate_token_text(value: object, label: str) -> None:

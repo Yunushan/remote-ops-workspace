@@ -409,7 +409,10 @@ def test_background_authentication_and_prompt_submission_edges(
     dock._submit_background_password_if_prompt("monitoring", b"password: ")
     assert dock._background_auth_password_sent["monitoring"] is False
     monitoring.write_result = None
-    dock._submit_background_password_if_prompt("monitoring", b"password: ")
+    dock._submit_background_password_if_prompt(
+        "monitoring",
+        b"operator@dock-edge.example.invalid's password: ",
+    )
     assert dock._background_auth_password_sent["monitoring"] is True
 
     forced_batches: list[bool] = []
@@ -417,8 +420,50 @@ def test_background_authentication_and_prompt_submission_edges(
     dock._background_auth_password_sent["sftp"] = False
     dock._submit_background_password_if_prompt("sftp", b"Passphrase for key: ")
     app.processEvents()
+    assert dock._background_auth_password_sent["sftp"] is False
+    assert forced_batches == []
+    dock._submit_background_password_if_prompt(
+        "sftp",
+        b"operator@dock-edge.example.invalid's password: ",
+    )
+    app.processEvents()
     assert dock._background_auth_password_sent["sftp"] is True
     assert forced_batches == [True]
+
+    dock.profile_for_sftp_action = lambda: replace(vault_profile, host="a")
+    assert dock.background_password_prompt_matches_target("password: ") is False
+    assert (
+        dock.background_password_prompt_matches_target("operator@a's password: ")
+        is True
+    )
+    assert (
+        dock.background_password_prompt_matches_target(
+            "operator@a.example.invalid's password: "
+        )
+        is False
+    )
+    dock.profile_for_sftp_action = lambda: replace(
+        vault_profile,
+        host="direct.example.invalid",
+        username=None,
+    )
+    assert (
+        dock.background_password_prompt_matches_target(
+            "local-user@direct.example.invalid's password: "
+        )
+        is True
+    )
+
+    dock.profile_for_sftp_action = lambda: replace(
+        vault_profile,
+        options={"proxy_jump": "bastion.example.invalid"},
+    )
+    dock._background_auth_password_sent["sftp"] = False
+    dock._submit_background_password_if_prompt(
+        "sftp",
+        b"operator@dock-edge.example.invalid's password: ",
+    )
+    assert dock._background_auth_password_sent["sftp"] is False
     assert monitoring.state() == QProcess.ProcessState.Running
 
 
@@ -933,6 +978,8 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
     overrides = dock.background_ssh_overrides()
     assert overrides["BatchMode"] == "no"
     assert overrides["NumberOfPasswordPrompts"] == "1"
+    assert overrides["ProxyJump"] == "none"
+    assert overrides["ProxyCommand"] == "none"
     dock._clear_background_password()
 
     initialization: list[object] = []
@@ -1349,7 +1396,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
     _app, _window, _panel, dock, profile = connected_workspace
-    cache_path = tmp_path / "service.conf.edit"
+    cache_path = tmp_path / "row-home" / "edit-cache" / "service.conf.edit"
     plan = build_moba_text_editor_tab_plan(
         profile,
         "/etc/service.conf",
@@ -2297,7 +2344,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     plan = build_moba_text_editor_tab_plan(
         profile,
         "/etc/guarded.conf",
-        local_path=tmp_path / "guarded.conf.edit",
+        local_path=tmp_path / "row-home" / "edit-cache" / "guarded.conf.edit",
     )
     monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
 
@@ -2452,6 +2499,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
 
     auth_process = _FakeProcess()
     dock.text_editor_process = auth_process
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
     dock._background_password = bytearray(b"session-password")
     dock._background_auth_password_sent["text-editor"] = False
     forced_batches: list[bool] = []
@@ -2460,12 +2508,18 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
         "write_text_editor_sftp_batch",
         lambda *, force=False: forced_batches.append(force),
     )
-    dock._submit_background_password_if_prompt("text-editor", b"Password: ")
+    dock._submit_background_password_if_prompt(
+        "text-editor",
+        b"operator@dock-edge.example.invalid's password: ",
+    )
     app.processEvents()
     assert forced_batches == [True]
     dock.text_editor_process = None
     dock._background_auth_password_sent["text-editor"] = False
-    dock._submit_background_password_if_prompt("text-editor", b"Password: ")
+    dock._submit_background_password_if_prompt(
+        "text-editor",
+        b"operator@dock-edge.example.invalid's password: ",
+    )
     dock._clear_background_password()
     dock.text_editor_process = process
 

@@ -33,13 +33,17 @@ def load_json(root: Path, relative: str) -> dict[str, object]:
     return value
 
 
-def accepted_target_ids(registry: dict[str, object]) -> set[str]:
+def accepted_target_ids(registry: dict[str, object], *, tag: str) -> set[str]:
     accepted = registry.get("accepted_evidence", [])
     if not isinstance(accepted, list):
         return set()
     result: set[str] = set()
     for item in accepted:
-        if isinstance(item, dict) and isinstance(item.get("target"), str):
+        if (
+            isinstance(item, dict)
+            and item.get("release_tag") == tag
+            and isinstance(item.get("target"), str)
+        ):
             result.add(item["target"])
     return result
 
@@ -64,7 +68,13 @@ def moba_counts(root: Path, registry: dict[str, object]) -> tuple[int, int]:
 
 
 def write_notes(
-    *, tag: str, channel: str, repository: str, output: Path, root: Path | None = None
+    *,
+    tag: str,
+    channel: str,
+    repository: str,
+    output: Path,
+    root: Path | None = None,
+    protected_platform_registry: Path | None = None,
 ) -> None:
     if not TAG_RE.fullmatch(tag):
         raise ValueError(f"release tag must be vX.Y.Z, got {tag!r}")
@@ -75,9 +85,17 @@ def write_notes(
 
     source_root = (root or ROOT).resolve()
     matrix = load_json(source_root, "configs/release_matrix.json")
-    platform_registry = load_json(source_root, "configs/platform_verified_evidence.json")
+    if protected_platform_registry is None:
+        platform_registry = load_json(source_root, "configs/platform_verified_evidence.json")
+    else:
+        if protected_platform_registry.is_symlink() or not protected_platform_registry.is_file():
+            raise ValueError("protected platform registry must be a regular non-symlink file")
+        value = json.loads(protected_platform_registry.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError("protected platform registry must contain a JSON object")
+        platform_registry = value
     moba_registry = load_json(source_root, "configs/mobaxterm_parity_evidence.json")
-    accepted_platform = accepted_target_ids(platform_registry)
+    accepted_platform = accepted_target_ids(platform_registry, tag=tag)
     missing_platform = [target for target in GOAL_TARGETS if target not in accepted_platform]
     moba_accepted_count, moba_required_count = moba_counts(source_root, moba_registry)
 
@@ -123,7 +141,13 @@ def write_notes(
         "",
         "## Support boundaries",
         "",
-        "- The default release does not claim verified native-host readiness for Linux i386, Linux armhf, or Windows XP x86/x64.",
+        (
+            "- The signed promotion registry proves accepted native-host evidence for all "
+            "required Linux i386, Linux armhf, and Windows XP x86/x64 targets."
+            if not missing_platform
+            else "- The release does not claim verified native-host readiness for protected "
+            "targets absent from the selected signed promotion registry."
+        ),
         f"- Protected platform evidence accepted for this source is {len(accepted_platform)}/{len(GOAL_TARGETS)} targets; missing: {', '.join(missing_platform) or 'none'}.",
         "- Legacy XP compatibility remains isolated and opt-in; modern platform security defaults are not weakened.",
         f"- Strict MobaXterm parity evidence accepted for this source is {moba_accepted_count}/{moba_required_count} tracked articles.",
@@ -134,7 +158,7 @@ def write_notes(
         f"- Verify the source and release matrix with `python scripts/verify.py --quick --no-cli-smoke --release-tag {tag}`.",
         "- For protected-platform promotion, run the evidence source-ref, accepted-record, release-asset, and remote byte-provenance gates documented in `docs/PLATFORM_SUPPORT.md`; do not substitute candidate builds for accepted host evidence.",
         "",
-        "This release note is generated from the checked-in release and evidence registries. It intentionally reports missing evidence instead of inferring support from a successful candidate build.",
+        "This release note is generated from the immutable source matrix and the explicitly selected promotion evidence registry. It intentionally reports missing evidence instead of inferring support from a successful candidate build.",
         "",
     ]
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -152,6 +176,11 @@ def main() -> int:
         type=Path,
         help="immutable release-source checkout containing configs/ and scripts/",
     )
+    parser.add_argument(
+        "--protected-platform-registry",
+        type=Path,
+        help="exact protected-platform registry from the pinned signed evidence commit",
+    )
     args = parser.parse_args()
     write_notes(
         tag=args.tag,
@@ -159,6 +188,7 @@ def main() -> int:
         repository=args.repository,
         output=args.out,
         root=args.root,
+        protected_platform_registry=args.protected_platform_registry,
     )
     print(f"wrote release notes: {args.out}")
     return 0

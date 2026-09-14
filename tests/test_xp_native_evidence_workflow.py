@@ -197,9 +197,93 @@ def test_xp_native_evidence_workflow_rejects_cancelling_evidence_runs() -> None:
     assert any("non-cancelling evidence concurrency" in error for error in errors)
 
 
-def test_xp_native_evidence_workflow_requires_scoped_artifact_name() -> None:
+@pytest.mark.parametrize(
+    "input_name",
+    ("release_tag", "release_asset_base_url", "assets_dir", "evidence_file", "evidence_dir"),
+)
+def test_xp_native_evidence_rejects_free_form_inputs_in_scalar_run_scripts(input_name: str) -> None:
+    checker = _load_checker()
+    expression = "${{ inputs." + input_name + " }}"
+    workflow = f'jobs:\n  evidence:\n    steps:\n      - run: echo "{expression}"\n'
+
+    errors = checker.check_run_dispatch_input_interpolation(
+        workflow,
+        workflow_label="XP native evidence",
+        free_form_inputs=checker.FREE_FORM_DISPATCH_INPUTS,
+    )
+
+    assert errors == [
+        "XP native evidence run script must not directly interpolate free-form "
+        f"workflow_dispatch input {input_name!r} on line 4; bind it through env"
+    ]
+
+
+def test_xp_native_evidence_rejects_free_form_inputs_in_block_run_scripts() -> None:
+    checker = _load_checker()
+    workflow = (
+        "jobs:\n"
+        "  evidence:\n"
+        "    steps:\n"
+        "      - run: |\n"
+        '          echo "${{ inputs.release_tag }}"\n'
+    )
+
+    errors = checker.check_run_dispatch_input_interpolation(
+        workflow,
+        workflow_label="XP native evidence",
+        free_form_inputs=checker.FREE_FORM_DISPATCH_INPUTS,
+    )
+
+    assert errors == [
+        "XP native evidence run script must not directly interpolate free-form "
+        "workflow_dispatch input 'release_tag' on line 5; bind it through env"
+    ]
+
+
+def test_xp_native_evidence_allows_env_bindings_and_choice_inputs() -> None:
+    checker = _load_checker()
+    workflow = (
+        "env:\n"
+        "  RELEASE_TAG: ${{ inputs.release_tag }}\n"
+        "jobs:\n"
+        "  evidence:\n"
+        "    steps:\n"
+        '      - run: echo "$env:RELEASE_TAG"\n'
+        '      - run: echo "${{ inputs.target }}"\n'
+    )
+
+    assert checker.check_run_dispatch_input_interpolation(
+        workflow,
+        workflow_label="XP native evidence",
+        free_form_inputs=checker.FREE_FORM_DISPATCH_INPUTS,
+    ) == []
+
+
+def test_xp_native_evidence_wires_run_input_guard_into_full_checker() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
+        '--assets-dir "$env:ASSETS_DIR"',
+        '--assets-dir "${{ inputs.assets_dir }}"',
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any(
+        "run script must not directly interpolate free-form workflow_dispatch input 'assets_dir'"
+        in error
+        for error in errors
+    )
+
+
+def test_xp_native_evidence_workflow_requires_scoped_artifact_name() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "xp-native-evidence-$($env:EVIDENCE_TARGET)-$($env:RELEASE_TAG)",
+        "xp-native-evidence",
+        1,
+    ).replace(
         'xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}',
         "xp-native-evidence",
     )
@@ -241,14 +325,14 @@ def test_xp_native_evidence_workflow_requires_ordered_evidence_steps() -> None:
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
     wait_step = (
         '      - name: Wait for staged XP evidence inputs\n'
-        '        run: python scripts/wait_for_xp_native_evidence_inputs.py --assets-dir "${{ inputs.assets_dir }}" '
-        '--evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}" '
+        '        run: python scripts/wait_for_xp_native_evidence_inputs.py --assets-dir "$env:ASSETS_DIR" '
+        '--evidence-file "$env:EVIDENCE_FILE" --evidence-dir "$env:EVIDENCE_DIR" '
         "--timeout-seconds 2700 --poll-seconds 10 --stable-polls 2\n"
     )
     validate_step = (
         '      - name: Validate XP native evidence\n'
-        '        run: python scripts/check_xp_native_evidence.py --evidence "${{ inputs.evidence_file }}" '
-        '--assets-dir "${{ inputs.assets_dir }}" --evidence-dir "${{ inputs.evidence_dir }}"\n'
+        '        run: python scripts/check_xp_native_evidence.py --evidence "$env:EVIDENCE_FILE" '
+        '--assets-dir "$env:ASSETS_DIR" --evidence-dir "$env:EVIDENCE_DIR"\n'
     )
     workflow = workflow.replace(wait_step, "", 1).replace(validate_step, validate_step + wait_step, 1)
 
@@ -265,18 +349,18 @@ def test_xp_native_evidence_workflow_validates_dispatch_before_output_directory_
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
     create_step = (
         '      - name: Create XP evidence output directory\n'
-        '        run: python -c "from pathlib import Path; '
-        "Path('xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}').mkdir(parents=True, "
-        'exist_ok=True)"\n'
+        '        run: python -c "from pathlib import Path; import sys; '
+        'Path(sys.argv[1]).mkdir(parents=True, exist_ok=True)" '
+        '"xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)"\n'
     )
     validate_step = (
         '      - name: Validate XP evidence dispatch inputs\n'
-        '        run: python scripts/check_xp_native_evidence_dispatch_inputs.py --target "${{ inputs.target }}" '
-        '--release-tag "${{ inputs.release_tag }}" --release-asset-base-url "${{ inputs.release_asset_base_url }}" '
-        '--workflow-run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" '
-        '--workflow-ref-name "${{ github.ref_name }}" --source-head-sha "${{ github.sha }}" '
-        '--source-run-attempt "${{ github.run_attempt }}" --assets-dir "${{ inputs.assets_dir }}" '
-        '--evidence-file "${{ inputs.evidence_file }}" --evidence-dir "${{ inputs.evidence_dir }}"\n'
+        '        run: python scripts/check_xp_native_evidence_dispatch_inputs.py --target "$env:EVIDENCE_TARGET" '
+        '--release-tag "$env:RELEASE_TAG" --release-asset-base-url "$env:RELEASE_ASSET_BASE_URL" '
+        '--workflow-run-url "$env:WORKFLOW_RUN_URL" --workflow-ref-name "$env:WORKFLOW_REF_NAME" '
+        '--source-head-sha "$env:SOURCE_HEAD_SHA" --source-run-attempt "$env:SOURCE_RUN_ATTEMPT" '
+        '--assets-dir "$env:ASSETS_DIR" --evidence-file "$env:EVIDENCE_FILE" '
+        '--evidence-dir "$env:EVIDENCE_DIR"\n'
     )
     workflow = workflow.replace(create_step, "", 1).replace(validate_step, create_step + validate_step, 1)
 
@@ -378,7 +462,7 @@ def test_xp_native_evidence_workflow_discovers_new_script_references() -> None:
 def test_xp_native_evidence_workflow_requires_printed_source_metadata() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        "XP evidence source workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+        "XP evidence source workflow run: $env:WORKFLOW_RUN_URL",
         "XP evidence source workflow run: missing",
     )
 
@@ -402,7 +486,7 @@ def test_xp_native_evidence_workflow_requires_finalizer() -> None:
 def test_xp_native_evidence_workflow_requires_release_source_run_attempt() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        '--release-source-run-attempt "${{ github.run_attempt }}" ',
+        '--release-source-run-attempt "$env:SOURCE_RUN_ATTEMPT" ',
         "",
         1,
     )
@@ -428,7 +512,7 @@ def test_xp_native_evidence_workflow_requires_candidate_local_evidence_root() ->
 def test_xp_native_evidence_workflow_requires_candidate_staged_upload_out_dir() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --staged-upload-out-dir "platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}"',
+        ' --staged-upload-out-dir "platform-evidence-upload/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)"',
         "",
         1,
     )
@@ -441,7 +525,7 @@ def test_xp_native_evidence_workflow_requires_candidate_staged_upload_out_dir() 
 def test_xp_native_evidence_workflow_requires_candidate_xp_evidence_output_dir() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --xp-evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}"',
+        ' --xp-evidence-output-dir "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)"',
         "",
         1,
     )
@@ -454,7 +538,7 @@ def test_xp_native_evidence_workflow_requires_candidate_xp_evidence_output_dir()
 def test_xp_native_evidence_workflow_requires_local_source_run_attempt() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --xp-source-run-attempt "${{ github.run_attempt }}"',
+        ' --xp-source-run-attempt "$env:SOURCE_RUN_ATTEMPT"',
         "",
         1,
     )
@@ -479,7 +563,7 @@ def test_xp_native_evidence_workflow_requires_dispatch_input_preflight() -> None
 def test_xp_native_evidence_workflow_requires_dispatch_source_head_sha() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --source-head-sha "${{ github.sha }}"',
+        ' --source-head-sha "$env:SOURCE_HEAD_SHA"',
         "",
         1,
     )
@@ -492,7 +576,7 @@ def test_xp_native_evidence_workflow_requires_dispatch_source_head_sha() -> None
 def test_xp_native_evidence_workflow_requires_dispatch_release_tag_ref_binding() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --workflow-ref-name "${{ github.ref_name }}"',
+        ' --workflow-ref-name "$env:WORKFLOW_REF_NAME"',
         "",
         1,
     )
@@ -505,7 +589,7 @@ def test_xp_native_evidence_workflow_requires_dispatch_release_tag_ref_binding()
 def test_xp_native_evidence_workflow_requires_dispatch_source_run_attempt() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --source-run-attempt "${{ github.run_attempt }}"',
+        ' --source-run-attempt "$env:SOURCE_RUN_ATTEMPT"',
         "",
         1,
     )
@@ -532,7 +616,7 @@ def test_xp_native_evidence_workflow_requires_local_goal_preflight_repository() 
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
     block = checker.workflow_job_block(workflow, "xp-native-evidence")
     assert block
-    mutated = block.replace(' --repository "${{ github.repository }}"', "", 1)
+    mutated = block.replace(' --repository "$env:REPOSITORY"', "", 1)
     workflow = workflow.replace(block, mutated, 1)
 
     errors = checker.check_xp_native_evidence_workflow(workflow)
@@ -579,8 +663,8 @@ def test_xp_native_evidence_workflow_rejects_out_of_order_github_expression_deli
 def test_xp_native_evidence_workflow_rejects_malformed_scoped_upload_release_tag() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        '--evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}"',
-        '--evidence-output-dir "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }"',
+        '--evidence-output-dir "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)"',
+        '--evidence-output-dir "xp-evidence-output/$($env:EVIDENCE_TARGET)/$env:RELEASE_TAG"',
     )
 
     errors = checker.check_xp_native_evidence_workflow(workflow)
@@ -591,7 +675,7 @@ def test_xp_native_evidence_workflow_rejects_malformed_scoped_upload_release_tag
 def test_xp_native_evidence_workflow_requires_target_release_scoped_output_dir() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8").replace(
-        "xp-evidence-output/${{ inputs.target }}/${{ inputs.release_tag }}",
+        "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)",
         "xp-evidence-output",
     )
 

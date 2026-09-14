@@ -212,10 +212,54 @@ def test_invalid_evidence_document_exercises_action_contracts(tmp_path: Path) ->
     assert len(result.errors) > 15
 
 
-def test_cache_path_and_syntax_detection_cover_special_names() -> None:
-    assert moba_text._remote_cache_path(_profile(), "/", None) == Path("edge-remote.txt.edit")
+def test_cache_path_and_syntax_detection_cover_special_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
+    cache_path = moba_text._remote_cache_path(_profile(), "/", None)
+    assert cache_path.parent == tmp_path / "edit-cache"
+    assert cache_path.name.endswith("-remote.txt.edit")
+    assert "edge" not in cache_path.name
     assert moba_text._syntax_for_remote_path("/etc/sshd_config") == "ssh-config"
     assert moba_text._syntax_for_remote_path("/etc/site.nginx.conf") == "nginx"
+
+
+def test_managed_cache_never_uses_profile_name_as_a_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
+    profile = Profile(name="../../outside", protocol="ssh", host="edge.example")
+
+    cache_path = moba_text._remote_cache_path(profile, "/etc/secret.conf", None)
+
+    assert cache_path.parent == tmp_path / "edit-cache"
+    assert cache_path.name.endswith("-secret.conf.edit")
+    assert ".." not in cache_path.name
+    assert moba_text.prepare_managed_edit_cache(cache_path) == cache_path
+    assert cache_path.parent.is_dir()
+
+
+def test_managed_cache_rejects_escape_and_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ROW_HOME", str(tmp_path))
+    with pytest.raises(ValueError, match="escapes managed cache"):
+        moba_text.prepare_managed_edit_cache(tmp_path / "outside.edit")
+
+    cache_path = moba_text._remote_cache_path(_profile(), "/etc/app.conf", None)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "outside.edit"
+    target.write_text("preserve", encoding="utf-8")
+    try:
+        cache_path.symlink_to(target)
+    except OSError as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    with pytest.raises(OSError, match="symlinked remote edit cache file"):
+        moba_text.prepare_managed_edit_cache(cache_path)
+    assert target.read_text(encoding="utf-8") == "preserve"
 
 
 def test_digest_mapping_and_text_helpers_fail_closed() -> None:

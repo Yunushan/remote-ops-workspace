@@ -68,7 +68,12 @@ without one, for the current dock session. The helpers then use a hidden ConPTY
 to answer one OpenSSH password prompt without creating a console window. The
 password is never placed in argv, the transcript, logs or profile data, and is
 wiped when the dock shuts down. Key/agent authentication continues to work
-without prompting.
+without prompting. Password injection accepts only the exact structured
+`[user@]host's password:` identity for the selected direct target. Those hidden
+password-authenticated children explicitly set `ProxyJump=none` and
+`ProxyCommand=none`, so ambient OpenSSH configuration cannot redirect the
+credential to a jump host or helper; profiles that require a proxy must use a
+key, agent or an already authenticated shared connection instead.
 The terminal backends also publish `terminalConsoleSuppressed` and
 `terminalChildWindowPolicy` (`conpty-hidden` or `create-no-window` on native
 Windows), so tab-switch smoke tests can fail closed if a visible helper process

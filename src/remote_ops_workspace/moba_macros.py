@@ -5,7 +5,8 @@ import json
 import re
 import shutil
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from .file_safety import write_json_atomic
 from .launcher import build_launch_plan
 from .models import Profile
 from .paths import ensure_data_dir
+from .state_lock import DEFAULT_LOCK_TIMEOUT_SECONDS, FileLockTimeoutError, exclusive_file_lock
 
 MOBA_MACRO_GUI_CAPTURE_SCHEMA = "row.moba-macro.gui-capture-plan.v1"
 MOBA_MACRO_LIVE_EVIDENCE_BUNDLE_SCHEMA = "row.moba-macro.live-replay-evidence-bundle.v1"
@@ -396,27 +398,35 @@ class MobaMacroTerminalReplayInjection:
 
 
 class MobaMacroStore:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        *,
+        lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
+    ) -> None:
         self.path = path or (ensure_data_dir() / "moba-macros.json")
+        self.lock_timeout_seconds = lock_timeout_seconds
 
     def load(self) -> list[MobaMacroRecording]:
         if not self.path.exists():
             return []
         data = json.loads(self.path.read_text(encoding="utf-8"))
-        return [MobaMacroRecording.from_dict(item) for item in data.get("macros", [])]
+        rows = _macro_rows(data, self.path)
+        return [MobaMacroRecording.from_dict(item) for item in rows]
 
     def save(self, recordings: Iterable[MobaMacroRecording]) -> None:
-        data = {"version": 1, "macros": [recording.to_dict() for recording in recordings]}
-        write_json_atomic(self.path, data, private=True)
+        with self._transaction():
+            self._save_unlocked(recordings)
 
     def add(self, recording: MobaMacroRecording, replace: bool = False) -> None:
-        recordings = self.load()
-        names = {item.name for item in recordings}
-        if recording.name in names and not replace:
-            raise ValueError(f"macro already exists: {recording.name}")
-        recordings = [item for item in recordings if item.name != recording.name]
-        recordings.append(recording)
-        self.save(sorted(recordings, key=lambda item: item.name))
+        with self._transaction():
+            recordings = self.load()
+            names = {item.name for item in recordings}
+            if recording.name in names and not replace:
+                raise ValueError(f"macro already exists: {recording.name}")
+            recordings = [item for item in recordings if item.name != recording.name]
+            recordings.append(recording)
+            self._save_unlocked(sorted(recordings, key=lambda item: item.name))
 
     def get(self, name: str) -> MobaMacroRecording:
         for recording in self.load():
@@ -425,11 +435,36 @@ class MobaMacroStore:
         raise KeyError(name)
 
     def remove(self, name: str) -> None:
-        recordings = self.load()
-        remaining = [item for item in recordings if item.name != name]
-        if len(remaining) == len(recordings):
-            raise KeyError(name)
-        self.save(remaining)
+        with self._transaction():
+            recordings = self.load()
+            remaining = [item for item in recordings if item.name != name]
+            if len(remaining) == len(recordings):
+                raise KeyError(name)
+            self._save_unlocked(remaining)
+
+    def _save_unlocked(self, recordings: Iterable[MobaMacroRecording]) -> None:
+        data = {"version": 1, "macros": [recording.to_dict() for recording in recordings]}
+        write_json_atomic(self.path, data, private=True)
+
+    @contextmanager
+    def _transaction(self) -> Iterator[None]:
+        try:
+            with exclusive_file_lock(self.path, timeout_seconds=self.lock_timeout_seconds):
+                yield
+        except FileLockTimeoutError as exc:
+            raise ValueError(f"macro store is busy; retry after the current update: {self.path}") from exc
+
+
+def _macro_rows(data: object, path: Path) -> list[dict[str, Any]]:
+    if not isinstance(data, dict):
+        raise ValueError(f"macro store root must be a JSON object: {path}")
+    version = data.get("version", 1)
+    if type(version) is not int or version != 1:
+        raise ValueError(f"unsupported macro store version: {version!r}")
+    rows = data.get("macros", [])
+    if not isinstance(rows, list) or any(not isinstance(item, dict) for item in rows):
+        raise ValueError("macro store records must be JSON objects")
+    return rows
 
 
 def record_typed_macro(

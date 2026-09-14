@@ -8,6 +8,7 @@ import subprocess
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import command_safety as safe
 from .enterprise_policy import assert_profile_launch_allowed
@@ -114,7 +115,11 @@ WEAK_SSH_ALGORITHMS_BY_OPTION = {
 }
 
 
-def build_launch_plan(profile: Profile) -> LaunchPlan:
+def build_launch_plan(profile: Profile, *, policy_path: Path | None = None) -> LaunchPlan:
+    # Every higher-level execution adapter (layouts, broadcast, file transfer,
+    # macros, and GUI terminals) builds through this boundary. Enforce policy
+    # here so none can bypass the launcher gate by avoiding ``launch()``.
+    assert_profile_launch_allowed(profile, surface="launcher", policy_path=policy_path)
     plugin_registry = load_plugin_registry()
     profile = prepare_profile(profile, extra_protocols=plugin_registry.protocols)
     protocol = profile.protocol.lower().strip()
@@ -177,7 +182,6 @@ def build_launch_plan(profile: Profile) -> LaunchPlan:
 
 
 def launch(profile: Profile, dry_run: bool = False) -> LaunchPlan:
-    assert_profile_launch_allowed(profile, surface="launcher")
     plan = build_launch_plan(profile)
     safe.argv_list(plan.command, "launch command")
     if dry_run:

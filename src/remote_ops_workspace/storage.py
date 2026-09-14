@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+import os
+import threading
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +24,17 @@ from .profile_validation import (
     normalize_group_name,
     prepare_profile,
 )
+from .state_lock import DEFAULT_LOCK_TIMEOUT_SECONDS, FileLockTimeoutError, exclusive_file_lock
+
+ProfileUpdater = Callable[
+    [list[Profile], dict[str, dict[str, object]]],
+    Iterable[Profile],
+]
+ProfileWriteGuard = Callable[
+    [Profile, Profile | None, dict[str, dict[str, object]]],
+    None,
+]
+_mutation_state = threading.local()
 
 
 class ProfileStore:
@@ -30,9 +44,16 @@ class ProfileStore:
     Linux, Unix, BSD, Solaris, macOS, Android/Termux and containerized web backends.
     """
 
-    def __init__(self, path: Path | None = None, *, policy_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        path: Path | None = None,
+        *,
+        policy_path: Path | None = None,
+        lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
+    ) -> None:
         self.path = path or (ensure_data_dir() / "profiles.json")
         self.policy_path = policy_path or enterprise_policy_path(self.path.parent)
+        self.lock_timeout_seconds = lock_timeout_seconds
 
     def init(
         self,
@@ -43,13 +64,17 @@ class ProfileStore:
     ) -> None:
         if purge_examples is None:
             purge_examples = not with_examples
-        if self.path.exists():
-            if purge_examples:
-                self.purge_seeded_examples(surface=surface)
-            return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        profiles = example_profiles() if with_examples else []
-        self.save(profiles, surface=surface)
+        with self._transaction():
+            if not self.path.exists():
+                profiles = example_profiles() if with_examples else []
+                self._save_data(
+                    {"version": 1, "profiles": [], "group_defaults": {}},
+                    profiles,
+                    surface=surface,
+                )
+                return
+        if purge_examples:
+            self.purge_seeded_examples(surface=surface)
 
     def purge_seeded_examples(self, *, surface: str = "cli") -> list[str]:
         """Remove only unchanged profiles created by :func:`example_profiles`.
@@ -59,29 +84,33 @@ class ProfileStore:
         user-edited rows, including rows with an example-like name, intact.
         """
 
-        assert_profile_collection_change_allowed(
-            surface=surface,
-            action="purge-seeded-examples",
-            policy_path=self.policy_path,
-        )
-        profiles = self.load(resolve=False)
-        seeded = {_profile_fingerprint(profile) for profile in example_profiles()}
-        removable = [profile for profile in profiles if _profile_fingerprint(profile) in seeded]
-        if not removable:
-            return []
-        names = [profile.name for profile in removable]
-        assert_settings_write_allowed(
-            {"profile_purge_seeded_examples": names},
-            surface=surface,
-            action="purge-seeded-examples",
-            policy_path=self.policy_path,
-        )
-        remaining = [profile for profile in profiles if profile not in removable]
-        self.save(remaining, surface=surface)
-        return names
+        with self._transaction():
+            assert_profile_collection_change_allowed(
+                surface=surface,
+                action="purge-seeded-examples",
+                policy_path=self.policy_path,
+            )
+            data = self._load_data()
+            profiles = self._profiles_from_data(data, resolve=False)
+            seeded = {_profile_fingerprint(profile) for profile in example_profiles()}
+            removable = [profile for profile in profiles if _profile_fingerprint(profile) in seeded]
+            if not removable:
+                return []
+            names = [profile.name for profile in removable]
+            assert_settings_write_allowed(
+                {"profile_purge_seeded_examples": names},
+                surface=surface,
+                action="purge-seeded-examples",
+                policy_path=self.policy_path,
+            )
+            remaining = [profile for profile in profiles if profile not in removable]
+            self._save_data(data, remaining, surface=surface)
+            return names
 
     def load(self, resolve: bool = True) -> list[Profile]:
-        data = self._load_data()
+        return self._profiles_from_data(self._load_data(), resolve=resolve)
+
+    def _profiles_from_data(self, data: dict[str, Any], *, resolve: bool) -> list[Profile]:
         extra_protocols = plugin_protocols()
         if not resolve:
             return [
@@ -98,7 +127,69 @@ class ProfileStore:
         ]
 
     def save(self, profiles: Iterable[Profile], *, surface: str = "profile-editor") -> None:
-        self._save_data(self._load_data(), profiles, surface=surface)
+        with self._transaction():
+            assert_profile_collection_change_allowed(
+                surface=surface,
+                action="replace-all",
+                policy_path=self.policy_path,
+            )
+            self._save_data(self._load_data(), profiles, surface=surface)
+
+    def update_profiles(
+        self,
+        updater: ProfileUpdater,
+        *,
+        surface: str = "profile-editor",
+        action: str = "update",
+    ) -> list[Profile]:
+        """Atomically read, validate, and replace the profile collection.
+
+        The updater runs while the store lock is held and receives unresolved
+        profiles plus an isolated normalized snapshot of group defaults. This is
+        the transaction boundary for compound GUI and team-sync changes.
+        """
+
+        with self._transaction():
+            assert_profile_collection_change_allowed(
+                surface=surface,
+                action=action,
+                policy_path=self.policy_path,
+            )
+            data = self._load_data()
+            current = self._profiles_from_data(data, resolve=False)
+            defaults = normalize_group_defaults_map(data.get("group_defaults", {}))
+            replacement = list(updater(current, defaults))
+            return self._save_data(data, replacement, surface=surface)
+
+    def replace_named(
+        self,
+        original_name: str,
+        profile: Profile,
+        *,
+        surface: str = "profile-editor",
+    ) -> Profile:
+        profile = prepare_profile(profile, extra_protocols=plugin_protocols())
+
+        def replace(
+            profiles: list[Profile],
+            _group_defaults: dict[str, dict[str, object]],
+        ) -> Iterable[Profile]:
+            if not any(item.name == original_name for item in profiles):
+                raise KeyError(original_name)
+            if profile.name != original_name and any(
+                item.name == profile.name for item in profiles
+            ):
+                raise ValueError(f"profile already exists: {profile.name}")
+            remaining = [item for item in profiles if item.name != original_name]
+            remaining.append(profile)
+            return sorted(remaining, key=lambda item: (item.group, item.name))
+
+        stored = self.update_profiles(
+            replace,
+            surface=surface,
+            action="replace",
+        )
+        return next(item for item in stored if item.name == profile.name)
 
     def _save_data(
         self,
@@ -106,7 +197,7 @@ class ProfileStore:
         profiles: Iterable[Profile],
         *,
         surface: str,
-    ) -> None:
+    ) -> list[Profile]:
         extra_protocols = plugin_protocols()
         prepared = [prepare_profile(profile, extra_protocols=extra_protocols) for profile in profiles]
         for profile in prepared:
@@ -119,40 +210,64 @@ class ProfileStore:
         data["version"] = 1
         data["profiles"] = [profile.to_dict() for profile in prepared]
         write_json_atomic(self.path, data, private=True)
+        return prepared
 
-    def add(self, profile: Profile, replace: bool = False, *, surface: str = "cli") -> None:
+    def add(
+        self,
+        profile: Profile,
+        replace: bool = False,
+        *,
+        surface: str = "cli",
+        guard: ProfileWriteGuard | None = None,
+    ) -> Profile:
         profile = prepare_profile(profile, extra_protocols=plugin_protocols())
-        profiles = self.load(resolve=False)
-        names = {p.name for p in profiles}
-        if profile.name in names and not replace:
-            raise ValueError(f"profile already exists: {profile.name}")
-        assert_profile_write_allowed(
-            profile,
-            surface=surface,
-            action="replace" if profile.name in names else "add",
-            policy_path=self.policy_path,
-        )
-        profiles = [p for p in profiles if p.name != profile.name]
-        profiles.append(profile)
-        self.save(sorted(profiles, key=lambda p: (p.group, p.name)), surface=surface)
+        with self._transaction():
+            data = self._load_data()
+            profiles = self._profiles_from_data(data, resolve=False)
+            names = {p.name for p in profiles}
+            if profile.name in names and not replace:
+                raise ValueError(f"profile already exists: {profile.name}")
+            existing = next((item for item in profiles if item.name == profile.name), None)
+            if guard is not None:
+                guard(
+                    profile,
+                    existing,
+                    normalize_group_defaults_map(data.get("group_defaults", {})),
+                )
+            assert_profile_write_allowed(
+                profile,
+                surface=surface,
+                action="replace" if profile.name in names else "add",
+                policy_path=self.policy_path,
+            )
+            profiles = [p for p in profiles if p.name != profile.name]
+            profiles.append(profile)
+            self._save_data(
+                data,
+                sorted(profiles, key=lambda p: (p.group, p.name)),
+                surface=surface,
+            )
+            return profile
 
     def remove(self, name: str, *, surface: str = "cli") -> None:
-        assert_profile_collection_change_allowed(
-            surface=surface,
-            action="remove",
-            policy_path=self.policy_path,
-        )
-        assert_settings_write_allowed(
-            {"profile_remove": name},
-            surface=surface,
-            action="remove",
-            policy_path=self.policy_path,
-        )
-        profiles = self.load(resolve=False)
-        remaining = [p for p in profiles if p.name != name]
-        if len(remaining) == len(profiles):
-            raise KeyError(name)
-        self.save(remaining, surface=surface)
+        with self._transaction():
+            assert_profile_collection_change_allowed(
+                surface=surface,
+                action="remove",
+                policy_path=self.policy_path,
+            )
+            assert_settings_write_allowed(
+                {"profile_remove": name},
+                surface=surface,
+                action="remove",
+                policy_path=self.policy_path,
+            )
+            data = self._load_data()
+            profiles = self._profiles_from_data(data, resolve=False)
+            remaining = [p for p in profiles if p.name != name]
+            if len(remaining) == len(profiles):
+                raise KeyError(name)
+            self._save_data(data, remaining, surface=surface)
 
     def get(self, name: str) -> Profile:
         for profile in self.load():
@@ -161,8 +276,11 @@ class ProfileStore:
         raise KeyError(name)
 
     def export_to(self, path: Path) -> None:
-        data = self._load_data()
-        data["profiles"] = [p.to_dict() for p in self.load(resolve=False)]
+        with self._transaction():
+            data = self._load_data()
+            data["profiles"] = [
+                profile.to_dict() for profile in self._profiles_from_data(data, resolve=False)
+            ]
         write_json_atomic(path, data, private=True)
 
     def import_from(self, path: Path, replace: bool = False) -> int:
@@ -190,45 +308,45 @@ class ProfileStore:
         if len(set(imported_names)) != len(imported_names):
             raise ValueError("profile import contains duplicate normalized profile names")
 
-        current = self._load_data()
-        existing = [
-            prepare_profile(Profile.from_dict(item), extra_protocols=extra_protocols)
-            for item in current["profiles"]
-        ]
-        existing_names = {profile.name for profile in existing}
-        collisions = [name for name in imported_names if name in existing_names]
-        if collisions and not replace:
-            raise ValueError(f"profile already exists: {collisions[0]}")
+        with self._transaction():
+            current = self._load_data()
+            existing = self._profiles_from_data(current, resolve=False)
+            existing_names = {profile.name for profile in existing}
+            collisions = [name for name in imported_names if name in existing_names]
+            if collisions and not replace:
+                raise ValueError(f"profile already exists: {collisions[0]}")
 
-        for profile in imported:
-            assert_profile_write_allowed(
-                profile,
-                surface="cli",
-                action="replace" if profile.name in existing_names else "add",
-                policy_path=self.policy_path,
-            )
+            for profile in imported:
+                assert_profile_write_allowed(
+                    profile,
+                    surface="cli",
+                    action="replace" if profile.name in existing_names else "add",
+                    policy_path=self.policy_path,
+                )
 
-        if replace and "group_defaults" in data:
-            assert_profile_collection_change_allowed(
-                surface="cli",
-                action="profile-defaults",
-                policy_path=self.policy_path,
-            )
-            group_defaults = normalize_group_defaults_map(data["group_defaults"])
-            for defaults in group_defaults.values():
-                assert_settings_write_allowed(
-                    defaults,
+            if replace and "group_defaults" in data:
+                assert_profile_collection_change_allowed(
                     surface="cli",
                     action="profile-defaults",
                     policy_path=self.policy_path,
                 )
-            current["group_defaults"] = group_defaults
+                group_defaults = normalize_group_defaults_map(data["group_defaults"])
+                for defaults in group_defaults.values():
+                    assert_settings_write_allowed(
+                        defaults,
+                        surface="cli",
+                        action="profile-defaults",
+                        policy_path=self.policy_path,
+                    )
+                current["group_defaults"] = group_defaults
 
-        merged = {profile.name: profile for profile in existing}
-        merged.update({profile.name: profile for profile in imported})
-        final_profiles = sorted(merged.values(), key=lambda profile: (profile.group, profile.name))
-        self._save_data(current, final_profiles, surface="cli")
-        return len(imported)
+            merged = {profile.name: profile for profile in existing}
+            merged.update({profile.name: profile for profile in imported})
+            final_profiles = sorted(
+                merged.values(), key=lambda profile: (profile.group, profile.name)
+            )
+            self._save_data(current, final_profiles, surface="cli")
+            return len(imported)
 
     def group_defaults(self) -> dict[str, dict[str, object]]:
         return normalize_group_defaults_map(self._load_data().get("group_defaults", {}))
@@ -241,26 +359,52 @@ class ProfileStore:
         *,
         surface: str = "cli",
     ) -> None:
-        data = self._load_data()
         group = normalize_group_name(group)
         defaults = normalize_group_defaults(defaults)
-        assert_profile_collection_change_allowed(
-            surface=surface,
-            action="profile-defaults",
-            policy_path=self.policy_path,
-        )
-        assert_settings_write_allowed(
-            defaults,
-            surface=surface,
-            action="profile-defaults",
-            policy_path=self.policy_path,
-        )
-        group_defaults = normalize_group_defaults_map(data.get("group_defaults", {}))
-        data["group_defaults"] = group_defaults
-        existing = {} if replace else dict(group_defaults.get(group, {}))
-        existing.update({key: value for key, value in defaults.items() if value not in (None, "", [], {})})
-        group_defaults[group] = existing
-        write_json_atomic(self.path, data, private=True)
+        with self._transaction():
+            assert_profile_collection_change_allowed(
+                surface=surface,
+                action="profile-defaults",
+                policy_path=self.policy_path,
+            )
+            assert_settings_write_allowed(
+                defaults,
+                surface=surface,
+                action="profile-defaults",
+                policy_path=self.policy_path,
+            )
+            data = self._load_data()
+            group_defaults = normalize_group_defaults_map(data.get("group_defaults", {}))
+            data["group_defaults"] = group_defaults
+            existing = {} if replace else dict(group_defaults.get(group, {}))
+            existing.update(
+                {key: value for key, value in defaults.items() if value not in (None, "", [], {})}
+            )
+            group_defaults[group] = existing
+            write_json_atomic(self.path, data, private=True)
+
+    @contextmanager
+    def _transaction(self) -> Iterator[None]:
+        key = os.path.normcase(os.path.abspath(self.path))
+        process_id = os.getpid()
+        if getattr(_mutation_state, "process_id", None) != process_id:
+            _mutation_state.process_id = process_id
+            _mutation_state.paths = set()
+        active_paths: set[str] = _mutation_state.paths
+        if key in active_paths:
+            raise ValueError(
+                "reentrant profile store mutation is not allowed; callbacks may "
+                f"read but must not mutate the same store: {self.path}"
+            )
+        try:
+            with exclusive_file_lock(self.path, timeout_seconds=self.lock_timeout_seconds):
+                active_paths.add(key)
+                try:
+                    yield
+                finally:
+                    active_paths.remove(key)
+        except FileLockTimeoutError as exc:
+            raise ValueError(f"profile store is busy; retry after the current update: {self.path}") from exc
 
     def _load_data(self) -> dict[str, Any]:
         if not self.path.exists():
@@ -269,7 +413,10 @@ class ProfileStore:
         if not isinstance(raw_data, dict):
             raise ValueError(f"profile store root must be a JSON object: {self.path}")
         data: dict[str, Any] = raw_data
-        data.setdefault("version", 1)
+        version = data.get("version", 1)
+        if type(version) is not int or version != 1:
+            raise ValueError(f"unsupported profile store version: {version!r}")
+        data["version"] = version
         data["profiles"] = _profile_rows(data.get("profiles", []), source=f"profile store {self.path}")
         data["group_defaults"] = normalize_group_defaults_map(data.get("group_defaults", {}))
         return data

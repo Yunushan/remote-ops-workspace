@@ -14,6 +14,13 @@ from . import command_safety as safe
 from .enterprise_policy import load_enterprise_policy
 from .models import Profile
 from .paths import runtime_web_dir
+from .profile_sharing import (
+    assert_untrusted_profile_defaults_safe,
+    is_shareable_option,
+    public_profile_dict,
+    sanitize_shared_url,
+    shared_profile_from_dict,
+)
 from .redaction import is_share_sensitive_key
 from .storage import ProfileStore
 
@@ -39,6 +46,9 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
 }
 MAX_REQUEST_BODY_BYTES = 64 * 1024
+WEB_PROFILE_FIELDS = frozenset(
+    {"name", "protocol", "host", "port", "username", "group", "tags", "description", "url", "tunnels", "options"}
+)
 
 class WebProfileApi:
     """Small same-origin API for the Web/PWA profile catalogue.
@@ -69,12 +79,31 @@ class WebProfileApi:
     def add_profile(self, payload: object) -> dict[str, object]:
         if not isinstance(payload, dict):
             raise ValueError("profile payload must be a JSON object")
+        wrapped_profile = "profile" in payload
         profile_data = payload.get("profile", payload)
         if not isinstance(profile_data, dict):
             raise ValueError("profile must be a JSON object")
+        if wrapped_profile:
+            unsupported_envelope = sorted(
+                str(key) for key in payload if str(key) not in {"profile", "replace"}
+            )
+            if unsupported_envelope:
+                raise ValueError(
+                    "web API profile envelope contains unsupported fields: "
+                    + ", ".join(unsupported_envelope)
+                )
+        replace = payload.get("replace", False)
+        if not isinstance(replace, bool):
+            raise ValueError("replace must be boolean")
         blocked = sorted(str(key) for key in profile_data if _is_sensitive_option_key(str(key)))
         if blocked:
             raise ValueError(f"web API refuses secret-bearing fields: {', '.join(blocked)}")
+        allowed_fields = WEB_PROFILE_FIELDS if wrapped_profile else WEB_PROFILE_FIELDS | {"replace"}
+        unsupported = sorted(str(key) for key in profile_data if str(key) not in allowed_fields)
+        if unsupported:
+            raise ValueError(
+                "web API refuses local, executable or unsupported fields: " + ", ".join(unsupported)
+            )
         raw_options = profile_data.get("options", {})
         if not isinstance(raw_options, dict):
             raise ValueError("profile options must be a JSON object")
@@ -87,34 +116,67 @@ class WebProfileApi:
             raise ValueError(
                 "web API refuses secret-bearing options: " + ", ".join(sensitive_options)
             )
-        profile = Profile.from_dict(profile_data)
-        replace = payload.get("replace", False)
-        if not isinstance(replace, bool):
-            raise ValueError("replace must be boolean")
-        self.store.add(profile, replace=replace, surface="web")
-        return self._public_profile(self.store.get(profile.name))
+        unsupported_options = sorted(
+            str(key)
+            for key, value in raw_options.items()
+            if not is_shareable_option(key, value)
+        )
+        if unsupported_options:
+            raise ValueError(
+                "web API refuses executable, local or unrecognized options: "
+                + ", ".join(unsupported_options)
+            )
+        raw_url = profile_data.get("url")
+        if raw_url is not None and sanitize_shared_url(str(raw_url)) != str(raw_url):
+            raise ValueError(
+                "web API accepts only HTTP(S) URL origins without credentials, paths, "
+                "query strings or fragments"
+            )
+        if profile_data.get("tunnels"):
+            raise ValueError("web API refuses port forwards")
+        wire_profile = {
+            "name": profile_data.get("name"),
+            "protocol": profile_data.get("protocol"),
+            "host": profile_data.get("host"),
+            "port": profile_data.get("port"),
+            "username": profile_data.get("username"),
+            "group": profile_data.get("group", "default"),
+            "tags": profile_data.get("tags", []),
+            "description": profile_data.get("description", ""),
+            "url": raw_url,
+            "tunnels": profile_data.get("tunnels", []),
+            "options": raw_options,
+        }
+        try:
+            profile = shared_profile_from_dict(wire_profile)
+        except ValueError as exc:
+            raise ValueError(f"web API refuses invalid public profile: {exc}") from exc
+        def guard(
+            candidate: Profile,
+            existing: Profile | None,
+            group_defaults: dict[str, dict[str, object]],
+        ) -> None:
+            same_binding = assert_untrusted_profile_defaults_safe(
+                candidate,
+                existing,
+                group_defaults,
+                boundary="web API",
+            )
+            if same_binding and existing is not None:
+                candidate.credential_ref = existing.credential_ref
+                candidate.identity_file = existing.identity_file
+
+        stored = self.store.add(
+            profile,
+            replace=replace,
+            surface="web",
+            guard=guard,
+        )
+        return self._public_profile(stored)
 
     @staticmethod
     def _public_profile(profile: Profile) -> dict[str, object]:
-        return {
-            "name": profile.name,
-            "protocol": profile.protocol,
-            "host": profile.host,
-            "port": profile.port,
-            "username": profile.username,
-            "group": profile.group,
-            "tags": profile.tags,
-            "description": profile.description,
-            "path": profile.path,
-            "url": profile.url,
-            "command": profile.command,
-            "tunnels": [tunnel.to_dict() for tunnel in profile.tunnels],
-            "options": {
-                key: value
-                for key, value in profile.options.items()
-                if not _is_sensitive_option_key(key)
-            },
-        }
+        return public_profile_dict(profile)
 
 
 def _is_sensitive_option_key(key: str) -> bool:

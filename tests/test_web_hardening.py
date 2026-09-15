@@ -859,15 +859,19 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
     scenario: str,
     expected_saved: int,
     expected_blocked: str,
+    tmp_path: Path,
 ) -> None:
     node = shutil.which("node")
     assert node is not None
     harness = r"""
 const vm = require('node:vm');
-// Read the app source from a path argument. Python 3.15 ARM64 on Windows can
-// leave subprocess.run's stdin writer thread blocked even after Node exits.
-const source = require('node:fs').readFileSync(process.argv[1], 'utf8');
+const fs = require('node:fs');
+// Use file arguments for both source and result. Python 3.15 on Windows can
+// leave subprocess pipe threads blocked around a VM thenable even after Node
+// has produced the result.
+const source = fs.readFileSync(process.argv[1], 'utf8');
 const scenario = process.argv[2];
+const outputPath = process.argv[3];
 const records = new Map();
 const listeners = {};
 const form = {
@@ -941,20 +945,19 @@ setImmediate(() => {
     saved: saved.length,
     blocked: form.dataset.enterprisePolicyBlocked || '',
   });
-  process.stdout.write(output, () => process.exit(0));
-  // Keep a bounded escape hatch for Windows pipe implementations that do not
-  // deliver the stdout callback while a VM thenable remains pending.
-  setTimeout(() => process.exit(0), 250);
+  fs.writeFileSync(outputPath, output);
+  process.exit(0);
 });
     """
-    completed = subprocess.run(
-        [node, "-e", harness, str(Path("apps/web/app.js")), scenario],
+    output_path = tmp_path / f"web-policy-{scenario}.json"
+    subprocess.run(
+        [node, "-e", harness, str(Path("apps/web/app.js")), scenario, str(output_path)],
         check=True,
-        capture_output=True,
-        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         timeout=10,
     )
-    result = json.loads(completed.stdout)
+    result = json.loads(output_path.read_text(encoding="utf-8"))
     assert result["saved"] == expected_saved
     assert expected_blocked in result["blocked"]
 

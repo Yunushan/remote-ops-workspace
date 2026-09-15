@@ -51,7 +51,11 @@ def main(argv: list[str] | None = None) -> int:
     errors.extend(dependency_errors)
     messages.extend(dependency_messages)
 
-    with tempfile.TemporaryDirectory(prefix="row-optional-") as raw_tmp:
+    # macOS exposes the system temporary tree through the ``/var`` symlink.
+    # The private-file safety layer intentionally rejects linked ancestors, so
+    # give the smoke workspace the canonical temp root before creating it.
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    with tempfile.TemporaryDirectory(prefix="row-optional-", dir=temp_root) as raw_tmp:
         tmp_path = Path(raw_tmp)
         desktop_errors, desktop_messages = check_desktop_gui(tmp_path)
         security_errors, security_messages = check_security_vault(tmp_path)

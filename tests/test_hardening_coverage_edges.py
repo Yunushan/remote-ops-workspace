@@ -780,29 +780,34 @@ def test_team_sync_reader_and_timestamp_defensive_edges(
         team_sync._read_team_sync_bytes(path, root=root)
 
     monkeypatch.setattr(team_sync.os, "fdopen", original_fdopen)
-    original_stat = team_sync.Path.stat
-    calls = 0
 
-    def changed_record_stat(record: Path, *args, **kwargs):
-        nonlocal calls
-        status = original_stat(record, *args, **kwargs)
-        if record == path:
-            calls += 1
-            if calls == 1:
+    # Use a concrete path subclass so only this record's post-open identity
+    # changes.  Patching pathlib.Path.stat globally is process-wide and can
+    # make platform-specific pytest internals observe the synthetic inode.
+    altered_status = _status(
+        stat.S_IFREG,
+        dev=stable_status.st_dev,
+        ino=stable_status.st_ino + 1,
+        gid=getattr(stable_status, "st_gid", 0),
+        size=getattr(stable_status, "st_size", 0),
+    )
+    path_type = type(path)
+
+    class ChangedRecordPath(path_type):
+        _stat_calls = 0
+
+        def lstat(self):
+            return path_type.lstat(self)
+
+        def stat(self, *args, **kwargs):
+            self._stat_calls += 1
+            if self._stat_calls == 1:
                 return stable_status
-            return _status(
-                stat.S_IFREG,
-                dev=stable_status.st_dev,
-                ino=stable_status.st_ino + 1,
-                gid=getattr(stable_status, "st_gid", 0),
-                size=getattr(stable_status, "st_size", 0),
-            )
-        return status
+            return altered_status
 
-    calls = 0
-    monkeypatch.setattr(team_sync.Path, "stat", changed_record_stat)
+    changed_path = ChangedRecordPath(path)
     with pytest.raises(ValueError, match="changed while reading"):
-        team_sync._read_team_sync_bytes(path, root=root)
+        team_sync._read_team_sync_bytes(changed_path, root=root)
 
     with pytest.raises(ValueError, match="UTC ISO-8601"):
         team_sync._validate_updated_at(None)

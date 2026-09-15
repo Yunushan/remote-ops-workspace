@@ -40,23 +40,39 @@ def _status(
     )
 
 
+def _module_copy(module: object, **overrides: object) -> SimpleNamespace:
+    """Copy a stdlib module before changing platform markers in a test.
+
+    Mutating ``os.name`` on the real module changes pathlib's process-wide
+    platform selection and can corrupt pytest's own teardown on POSIX hosts.
+    A shallow module copy keeps platform-branch tests isolated while retaining
+    the real stdlib functions and constants.
+    """
+
+    values = dict(vars(module))
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
 def test_enterprise_policy_platform_and_fail_closed_edges(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_windows_common_app_data = policy._windows_common_app_data
-    monkeypatch.setattr(policy.os, "name", "nt")
+    policy_os = policy.os
+    policy_sys = policy.sys
+    monkeypatch.setattr(policy, "os", _module_copy(policy_os, name="nt"))
     monkeypatch.setattr(policy, "_windows_common_app_data", lambda: tmp_path / "common")
     assert policy.machine_enterprise_policy_path() == (
         tmp_path / "common" / "RemoteOpsWorkspace" / "policy.json"
     )
 
-    monkeypatch.setattr(policy.os, "name", "posix")
-    monkeypatch.setattr(policy.sys, "platform", "darwin")
+    monkeypatch.setattr(policy, "os", _module_copy(policy_os, name="posix", getuid=lambda: 0))
+    monkeypatch.setattr(policy, "sys", _module_copy(policy_sys, platform="darwin"))
     assert policy.machine_enterprise_policy_path() == Path(
         "/Library/Application Support/RemoteOpsWorkspace/policy.json"
     )
-    monkeypatch.setattr(policy.sys, "platform", "linux")
+    policy.sys.platform = "linux"
     assert policy.machine_enterprise_policy_path() == Path(
         "/etc/remote-ops-workspace/policy.json"
     )
@@ -96,7 +112,6 @@ def test_enterprise_policy_platform_and_fail_closed_edges(
         def __str__(self) -> str:
             return "machine-policy"
 
-    monkeypatch.setattr(policy.os, "getuid", lambda: 0, raising=False)
     assert policy._require_machine_policy_permissions(
         PolicyPath(_status(stat.S_IFREG | 0o640, uid=0))  # type: ignore[arg-type]
     ) is True
@@ -110,10 +125,10 @@ def test_enterprise_policy_platform_and_fail_closed_edges(
         )
 
     monkeypatch.setattr(policy, "_windows_common_app_data", original_windows_common_app_data)
-    monkeypatch.setattr(policy.os, "name", "posix")
+    policy.os.name = "posix"
     with pytest.raises(RuntimeError, match="only available on Windows"):
         policy._windows_common_app_data()
-    monkeypatch.setattr(policy.os, "name", "nt")
+    policy.os.name = "nt"
     fake_shell = SimpleNamespace(
         shell32=SimpleNamespace(
             SHGetFolderPathW=lambda *_args: 1,
@@ -145,6 +160,9 @@ def test_file_safety_validation_and_append_edges(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    file_safety_os = _module_copy(file_safety.os, name="posix")
+    monkeypatch.setattr(file_safety, "os", file_safety_os)
+
     class NonDirectory:
         def mkdir(self, *, parents: bool, exist_ok: bool) -> None:
             del parents, exist_ok
@@ -158,8 +176,6 @@ def test_file_safety_validation_and_append_edges(
     monkeypatch.setattr(file_safety, "_require_no_linked_path_components", lambda _path: None)
     with pytest.raises(OSError, match="must be a directory"):
         file_safety.ensure_private_dir_required(NonDirectory())  # type: ignore[arg-type]
-
-    monkeypatch.setattr(file_safety.os, "name", "posix")
 
     class MissingShared:
         def lstat(self) -> None:
@@ -186,7 +202,7 @@ def test_file_safety_validation_and_append_edges(
         Path("shared"), _status(stat.S_IFDIR | file_safety.SHARED_DIR_MODE)
     )
 
-    monkeypatch.setattr(file_safety.os, "name", "nt")
+    file_safety.os.name = "nt"
     path = tmp_path / "audit" / "events.jsonl"
     monkeypatch.setattr(file_safety, "ensure_private_dir_required", lambda _path: None)
     monkeypatch.setattr(file_safety, "_path_is_link_or_reparse", lambda _path: True)
@@ -211,6 +227,9 @@ def test_file_safety_shared_atomic_and_metadata_edges(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    file_safety_os = _module_copy(file_safety.os, name="posix")
+    monkeypatch.setattr(file_safety, "os", file_safety_os)
+
     original_guard = file_safety._require_replaceable_shared_target
     original_metadata = file_safety.require_shared_file_metadata
     shared = tmp_path / "shared"
@@ -221,7 +240,6 @@ def test_file_safety_shared_atomic_and_metadata_edges(
     monkeypatch.setattr(file_safety, "_chmod_required", lambda *_args: None)
     monkeypatch.setattr(file_safety, "require_shared_file_metadata", lambda *_args: None)
     monkeypatch.setattr(file_safety, "require_shared_dir_metadata", lambda *_args: None)
-    monkeypatch.setattr(file_safety.os, "name", "posix")
     file_safety.write_json_shared_atomic(target, {"ok": True})
     assert target.exists()
 
@@ -257,7 +275,7 @@ def test_file_safety_shared_atomic_and_metadata_edges(
             raise OSError("target changed")
 
     monkeypatch.setattr(file_safety, "_require_replaceable_shared_target", fail_on_second_guard)
-    monkeypatch.setattr(file_safety.os, "name", "nt")
+    file_safety.os.name = "nt"
     with pytest.raises(OSError, match="target changed"):
         file_safety.write_json_shared_atomic(shared / "cleanup.json", {"cleanup": True})
     assert not list(shared.glob(".cleanup.json.*.tmp"))
@@ -326,7 +344,7 @@ def test_file_safety_shared_atomic_and_metadata_edges(
     )  # type: ignore[arg-type]
 
     monkeypatch.setattr(file_safety, "require_shared_file_metadata", original_metadata)
-    monkeypatch.setattr(file_safety.os, "name", "posix")
+    file_safety.os.name = "posix"
     good_parent = _status(stat.S_IFDIR | file_safety.SHARED_DIR_MODE, gid=7)
     with pytest.raises(OSError, match="permissions must be"):
         file_safety.require_shared_file_metadata(
@@ -580,6 +598,9 @@ def test_state_lock_open_and_fork_defensive_edges(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    state_lock_os = _module_copy(state_lock.os)
+    monkeypatch.setattr(state_lock, "os", state_lock_os)
+
     class Parent:
         def __init__(self, statuses: list[SimpleNamespace]) -> None:
             self.statuses = iter(statuses)
@@ -643,7 +664,7 @@ def test_state_lock_open_and_fork_defensive_edges(
             shared=True,
         )  # type: ignore[arg-type]
 
-    monkeypatch.setattr(state_lock.os, "name", "posix")
+    state_lock.os.name = "posix"
     monkeypatch.setattr(state_lock.os, "fstat", lambda _fd: _status(stat.S_IFREG, dev=1, ino=2, gid=2))
     with pytest.raises(OSError, match="group must match"):
         state_lock._open_lock_file(
@@ -736,6 +757,10 @@ def test_team_sync_reader_and_timestamp_defensive_edges(
     with pytest.raises(ValueError, match="changed or is not a regular"):
         team_sync._read_team_sync_bytes(path, root=root)
 
+    # Reuse one real named-file status for the descriptor and the first named
+    # check.  Windows can report platform-specific values for a real
+    # ``os.fstat`` call, which would otherwise trip the earlier identity guard
+    # before the final post-read replacement check is exercised.
     stable_status = team_sync.Path.stat(path, follow_symlinks=False)
     monkeypatch.setattr(team_sync.os, "fstat", lambda _fd: stable_status)
 
@@ -763,14 +788,15 @@ def test_team_sync_reader_and_timestamp_defensive_edges(
         status = original_stat(record, *args, **kwargs)
         if record == path:
             calls += 1
-            if calls >= 2:
-                return _status(
-                    status.st_mode,
-                    dev=status.st_dev,
-                    ino=status.st_ino + 1,
-                    gid=getattr(status, "st_gid", 0),
-                    size=getattr(status, "st_size", 0),
-                )
+            if calls == 1:
+                return stable_status
+            return _status(
+                stat.S_IFREG,
+                dev=stable_status.st_dev,
+                ino=stable_status.st_ino + 1,
+                gid=getattr(stable_status, "st_gid", 0),
+                size=getattr(stable_status, "st_size", 0),
+            )
         return status
 
     calls = 0

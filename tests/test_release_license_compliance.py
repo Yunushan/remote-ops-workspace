@@ -5,11 +5,13 @@ import hashlib
 import importlib.util
 import json
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+UTC = timezone.utc
 
 
 def _load_checker():

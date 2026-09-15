@@ -18,7 +18,7 @@ import hashlib
 import json
 import re
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
@@ -733,7 +733,7 @@ def check_review_window(evidence: dict[str, Any], *, now: datetime | None) -> li
         expires = parse_timestamp(evidence.get("expires_at"), "expires_at")
     except ValueError as exc:
         return [str(exc)]
-    current = now or datetime.now(UTC)
+    current = now or datetime.now(timezone.utc)
     if reviewed > current:
         errors.append("compliance evidence reviewed_at must not be in the future")
     if expires <= reviewed:
@@ -794,7 +794,7 @@ def check_tag_governance_attestation(
         expires = parse_timestamp(attestation.get("expires_at"), "governance expires_at")
     except ValueError as exc:
         return [*errors, str(exc)]
-    current = now or datetime.now(UTC)
+    current = now or datetime.now(timezone.utc)
     governance = policy.get("tag_governance_attestation")
     max_validity = governance.get("max_validity_seconds") if isinstance(governance, dict) else None
     if observed > current:
@@ -817,7 +817,7 @@ def parse_timestamp(value: Any, label: str) -> datetime:
         raise ValueError(
             f"compliance evidence {label} must be an RFC3339 UTC timestamp"
         ) from exc
-    if parsed.tzinfo != UTC:
+    if parsed.tzinfo != timezone.utc:
         raise ValueError(f"compliance evidence {label} must use UTC")
     return parsed
 

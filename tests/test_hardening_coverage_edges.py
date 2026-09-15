@@ -797,7 +797,10 @@ def test_team_sync_reader_and_timestamp_defensive_edges(
         _stat_calls = 0
 
         def lstat(self):
-            return path_type.lstat(self)
+            # Call the OS primitive directly: some Python versions implement
+            # Path.lstat() through self.stat(), which would consume the first
+            # synthetic identity before the reader's named-file check.
+            return team_sync.os.lstat(self)
 
         def stat(self, *args, **kwargs):
             self._stat_calls += 1

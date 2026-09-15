@@ -864,8 +864,10 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
     assert node is not None
     harness = r"""
 const vm = require('node:vm');
-const source = require('node:fs').readFileSync(0, 'utf8');
-const scenario = process.argv[1];
+// Read the app source from a path argument. Python 3.15 ARM64 on Windows can
+// leave subprocess.run's stdin writer thread blocked even after Node exits.
+const source = require('node:fs').readFileSync(process.argv[1], 'utf8');
+const scenario = process.argv[2];
 const records = new Map();
 const listeners = {};
 const form = {
@@ -944,10 +946,9 @@ setImmediate(() => {
   // deliver the stdout callback while a VM thenable remains pending.
   setTimeout(() => process.exit(0), 250);
 });
-"""
+    """
     completed = subprocess.run(
-        [node, "-e", harness, scenario],
-        input=Path("apps/web/app.js").read_text(encoding="utf-8"),
+        [node, "-e", harness, str(Path("apps/web/app.js")), scenario],
         check=True,
         capture_output=True,
         text=True,

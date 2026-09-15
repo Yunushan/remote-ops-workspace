@@ -896,7 +896,13 @@ const validPolicy = {
 };
 let fetchResult;
 if (scenario === 'pending') {
-  fetchResult = new Promise(() => {});
+  // Keep the policy request unresolved while the submit handler runs, but
+  // settle it eventually so Node exits consistently on Windows as well as
+  // POSIX.  An indefinitely pending cross-context Promise can keep the
+  // Windows Node process alive even after the harness has emitted its result.
+  fetchResult = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('policy request timed out')), 100);
+  });
 } else if (scenario === 'reject') {
   fetchResult = Promise.reject(new Error('offline'));
 } else {

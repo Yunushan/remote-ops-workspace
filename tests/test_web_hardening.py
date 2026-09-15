@@ -896,7 +896,10 @@ const validPolicy = {
 };
 let fetchResult;
 if (scenario === 'pending') {
-  fetchResult = new Promise(() => {});
+  // Use an inert thenable rather than a cross-realm Promise.  On Windows,
+  // Node can keep a VM-created unresolved Promise alive while the parent
+  // process is waiting for captured stdout, causing this smoke child to hang.
+  fetchResult = {then: () => {}};
 } else if (scenario === 'reject') {
   fetchResult = Promise.reject(new Error('offline'));
 } else {
@@ -932,12 +935,14 @@ setImmediate(() => {
   const saved = JSON.parse(
     records.get('remote-ops-workspace-demo-profiles') || '[]',
   );
-  // Close the child stream explicitly: Windows Node can otherwise keep an
-  // indefinitely pending cross-context Promise alive after emitting output.
-  process.stdout.end(JSON.stringify({
+  const output = JSON.stringify({
     saved: saved.length,
     blocked: form.dataset.enterprisePolicyBlocked || '',
-  }), () => process.exit(0));
+  });
+  process.stdout.write(output, () => process.exit(0));
+  // Keep a bounded escape hatch for Windows pipe implementations that do not
+  // deliver the stdout callback while a VM thenable remains pending.
+  setTimeout(() => process.exit(0), 250);
 });
 """
     completed = subprocess.run(

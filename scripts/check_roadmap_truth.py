@@ -168,7 +168,10 @@ IMPLEMENTED_ITEMS = (
             Evidence("src/remote_ops_workspace/team_sync.py", "class TeamSyncBackend"),
             Evidence("src/remote_ops_workspace/team_sync.py", "class TeamSyncConflictError"),
             Evidence("src/remote_ops_workspace/cli.py", 'team_sync = sub.add_parser("team-sync"'),
-            Evidence("tests/test_team_sync.py", "test_team_sync_refuses_concurrent_writer_lock"),
+            Evidence(
+                "tests/test_team_sync.py",
+                "test_team_sync_refuses_a_concurrent_advisory_writer_lock",
+            ),
             Evidence("docs/TEAM_SYNC.md", "optimistic version control"),
         ),
     ),

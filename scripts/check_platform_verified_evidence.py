@@ -517,6 +517,7 @@ def main(argv: list[str] | None = None) -> int:
     required_targets = required_targets_from_args(args)
     try:
         errors = check_platform_verified_evidence(
+            registry=read_json(args.registry) if args.registry else None,
             required_targets=required_targets,
             required_release_tag=args.release_tag,
             require_review_bundles=True,
@@ -541,6 +542,11 @@ def main(argv: list[str] | None = None) -> int:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Validate accepted platform evidence records."
+    )
+    parser.add_argument(
+        "--registry",
+        type=Path,
+        help="accepted platform evidence registry JSON (defaults to the tracked registry)",
     )
     parser.add_argument(
         "--require-target",

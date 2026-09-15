@@ -242,7 +242,7 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         "exact release-source CI evidence command": (
             r"^          python scripts/check_python315_ci_evidence\.py\s*$"
         ),
-        "release source SHA binding": r'^          --sha "\$\(git rev-parse HEAD\)"\s*$',
+        "release source SHA binding": r'^          --sha "\$RELEASE_SHA"\s*$',
         "bounded release-source CI evidence wait": r"^          --wait-seconds 5400\s*$",
         "bounded release-source CI evidence polling": (
             r"^          --poll-interval-seconds 15\s*$"
@@ -272,7 +272,7 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         "PyInstaller 6.21 or newer": "Python 3.15-capable PyInstaller lower bound",
         "runtime.json": "exact runtime evidence artifact",
         "Free-threaded `3.15t` is not claimed": "free-threading exclusion",
-        "pinned Python 3.12 release\n  toolchain": "release-toolchain distinction",
+        "exact Python 3.14.7 release\n  toolchain": "release-toolchain distinction",
         "it is not a substitute for that six-host result": "hosted evidence boundary",
         "`Python 3.15 readiness`": "stable branch-protection context",
         "`Native Windows readiness`": "stable native Windows branch-protection context",
@@ -317,8 +317,8 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
             )
 
     toolchain = read(RELEASE_TOOLCHAIN, overrides)
-    if '"version": "3.12"' not in toolchain:
-        errors.append("release toolchain must keep its separately pinned Python 3.12 builder")
+    if '"version": "3.14.7"' not in toolchain:
+        errors.append("release toolchain must keep its exact Python 3.14.7 builder")
 
     return errors
 

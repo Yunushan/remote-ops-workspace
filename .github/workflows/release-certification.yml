@@ -1,0 +1,95 @@
+name: release-certification
+
+on:
+  workflow_run:
+    workflows:
+      - release-promotion
+    types:
+      - completed
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONHASHSEED: "0"
+
+jobs:
+  certify-completed-promotion:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Bind completed promotion run identity
+        shell: bash
+        env:
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          PROMOTION_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          PROMOTION_EVENT: ${{ github.event.workflow_run.event }}
+          PROMOTION_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PROMOTION_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          PROMOTION_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          PROMOTION_PATH: ${{ github.event.workflow_run.path }}
+          PROMOTION_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          PROMOTION_STATUS: ${{ github.event.workflow_run.status }}
+        run: |
+          set -euo pipefail
+          test "$PROMOTION_EVENT" = "workflow_dispatch"
+          case "$PROMOTION_PATH" in
+            ".github/workflows/release-promotion.yml"|".github/workflows/release-promotion.yml@$PROMOTION_HEAD_BRANCH"|".github/workflows/release-promotion.yml@refs/tags/$PROMOTION_HEAD_BRANCH") ;;
+            *) echo "unexpected promotion workflow path" >&2; exit 1 ;;
+          esac
+          test "$PROMOTION_STATUS" = "completed"
+          test "$PROMOTION_CONCLUSION" = "success"
+          test "$PROMOTION_HEAD_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          [[ "$PROMOTION_HEAD_BRANCH" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$PROMOTION_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PROMOTION_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          echo "RELEASE_TAG=$PROMOTION_HEAD_BRANCH" >> "$GITHUB_ENV"
+          echo "RELEASE_SHA=$PROMOTION_HEAD_SHA" >> "$GITHUB_ENV"
+      - name: Check out exact promoted source SHA
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Re-resolve certified tag and download complete published inventory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-release-certification"
+          test "$(git rev-parse 'refs/tags/row-release-certification^{commit}')" = "$RELEASE_SHA"
+          mkdir release-assets
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets
+      - name: Verify completed promotion, immutable numeric release and every attested byte
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.id')"
+          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
+          python scripts/check_release_provenance.py \
+            --assets-dir release-assets \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" \
+            --sha "$RELEASE_SHA" \
+            --published-release-id "$release_id"
+      - name: Verify published production release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_published_release_notes.py
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --channel production-signed

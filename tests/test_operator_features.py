@@ -26,6 +26,7 @@ from remote_ops_workspace.layouts import (
     LayoutRunResult,
     LayoutStore,
     build_layout_terminal_plans,
+    build_layout_terminal_sessions,
     layout_splitter_size_lengths,
     parse_layout_pane,
     run_layout_terminal_plans,
@@ -90,6 +91,11 @@ def test_run_snippet_supports_dry_run_and_checked_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[list[str], bool]] = []
+    monkeypatch.setattr(
+        snippets_module,
+        "assert_profile_launch_allowed",
+        lambda *_args, **_kwargs: None,
+    )
     monkeypatch.setattr(
         snippets_module.subprocess,
         "run",
@@ -223,6 +229,53 @@ def test_layout_terminal_plans_include_profiles_and_commands(tmp_path: Path) -> 
     assert [plan.title for plan in plans] == ["edge", "Version"]
     assert plans[0].command[0] == "ssh"
     assert plans[1].command == ["python", "-V"]
+
+
+def test_layout_terminal_sessions_keep_one_profile_snapshot_during_update(
+    tmp_path: Path,
+) -> None:
+    from remote_ops_workspace.storage import ProfileStore
+
+    path = tmp_path / "profiles.json"
+    original = Profile(
+        name="edge",
+        protocol="ssh",
+        host="old.example.invalid",
+        username="old-operator",
+    )
+    replacement = Profile(
+        name="edge",
+        protocol="ssh",
+        host="new.example.invalid",
+        username="new-operator",
+    )
+    ProfileStore(path).add(original)
+
+    class RacingProfileStore(ProfileStore):
+        load_calls = 0
+
+        def load(self, resolve: bool = True) -> list[Profile]:
+            snapshot = super().load(resolve=resolve)
+            self.load_calls += 1
+            if self.load_calls == 1:
+                super().save([replacement])
+            return snapshot
+
+        def get(self, name: str) -> Profile:
+            raise AssertionError(f"layout resolution must not re-read profile {name!r}")
+
+    store = RacingProfileStore(path)
+    layout = Layout(name="race", panes=[LayoutPane(profile="edge")])
+
+    sessions = build_layout_terminal_sessions(layout, store)
+
+    assert store.load_calls == 1
+    assert len(sessions) == 1
+    plan, profile = sessions[0]
+    assert profile.host == original.host
+    assert profile.username == original.username
+    assert plan.command[-1] == f"{original.username}@{original.host}"
+    assert ProfileStore(path).get("edge").host == replacement.host
 
 
 def test_layout_run_dry_run_returns_per_pane_results() -> None:

@@ -114,24 +114,28 @@ The local vault uses `cryptography` with Scrypt-derived Fernet keys. It is optio
 Operational rules:
 
 - new vaults require a passphrase of at least 12 characters;
-- vault format version 2 stores an encrypted verifier so every `set` operation
-  authenticates the passphrase before changing entries; writes to legacy version
-  1 vaults with entries authenticate an existing token before migration, while an
-  empty legacy vault establishes its verifier on the first write;
+- vault format version 3 records and strictly validates its Scrypt parameters,
+  using `N=2^15`, `r=8`, `p=3` (one of OWASP's minimum-equivalent Scrypt
+  parameter sets), and stores an encrypted verifier so every `set` operation
+  authenticates the passphrase before changing entries;
+- authenticated writes to legacy version 1 or 2 vaults generate a fresh salt and
+  re-encrypt every entry with the version 3 KDF parameters before committing the
+  atomic update; an empty version 1 vault establishes its verifier on first write;
 - do not store vault passphrases in shell history;
 - prefer `ROW_VAULT_PASSWORD` only for short-lived automation contexts;
 - use `row vault set NAME --secret-env ENV` or `row vault set NAME --stdin` for automation so secret values are not placed in argv;
 - secret names are validated to reject empty, option-like, whitespace/control-character and parent-directory-style names;
-- `row vault get` writes only to an explicit `--out` file with best-effort owner-only permissions where supported; it never prints decrypted secrets to the terminal;
+- `row vault get` writes only to an explicit `--out` file; it never prints decrypted secrets to the terminal. POSIX owner-only mode failure aborts the write, while Windows requires an independently secured destination DACL;
 - `row vault status` reports path, initialization state and item counts without revealing secret names or values;
-- `row vault delete` requires `--force` to reduce accidental deletion;
+- `row vault delete` requires both `--force` and vault-passphrase authentication,
+  preventing an unauthenticated local caller from deleting encrypted entries;
 - do not commit `vault.json`.
 
 ## Local data writes
 
-The default workspace data directory is created with best-effort owner-only permissions where the operating system supports them. Profile storage, vault storage, layouts, snippets, profile backups, native private-key output and explicit vault `--out` secret files use atomic replacement helpers so partially-written files are not left behind after normal write failures.
+The default workspace data directory is created with private permissions where the operating system exposes them. Profile storage, vault storage, layouts, snippets, profile backups, native private-key output and explicit vault `--out` secret files use atomic replacement helpers so partially-written files are not left behind after normal write failures.
 
-Files that may contain operator-sensitive values are written with best-effort private file permissions:
+Files that may contain operator-sensitive values require POSIX private modes:
 
 - `profiles.json`;
 - `vault.json`;
@@ -141,7 +145,14 @@ Files that may contain operator-sensitive values are written with best-effort pr
 - profile backup/export bundles created by the local backup helper;
 - generated private keys and `row vault get --out` files.
 
-Permissions are best-effort on platforms that do not expose POSIX mode bits consistently, so operators should still keep `ROW_HOME` on a trusted local filesystem.
+On POSIX, failure to establish `0700` directories or `0600` sensitive files
+aborts the write. Windows `chmod` is not evidence of an owner-only DACL. A
+Windows operator must provision and verify a current-user-only ACL on the
+default data root or `ROW_HOME`; administrators and LocalSystem are part of the
+trusted computing base. Multi-user, SMB/WebDAV, cloud-synchronised, FAT/exFAT,
+or otherwise ACL-unverifiable `ROW_HOME` locations are outside the private-data
+confidentiality guarantee. Use the separate team-sync root only for its narrowed
+public metadata schema.
 
 ## SSH key generation
 

@@ -1,6 +1,8 @@
 import json
 import os
+import shutil
 import socket
+import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -142,6 +144,7 @@ def test_web_handler_serves_enterprise_policy_endpoint(tmp_path: Path) -> None:
             payload = json.loads(body)
             assert payload["active"] is True
             assert payload["allow_user_profiles"] is False
+            assert payload["has_restricted_locks"] is False
             assert payload["locked_settings"] == [{"key": "protocol", "value": "ssh"}]
         finally:
             server.shutdown()
@@ -298,6 +301,230 @@ def test_browser_profile_api_rejects_sensitive_key_aliases(tmp_path: Path) -> No
         }
     )
     assert created["options"] == {"smartcard_auth": "true"}
+
+
+def test_browser_profile_api_rejects_executable_local_and_opaque_metadata(tmp_path: Path) -> None:
+    api = WebProfileApi(ProfileStore(tmp_path / "profiles.json"), "x" * 24)
+    for protocol in ("local", "local-shell", "shell", "custom", "serial"):
+        with pytest.raises(ValueError, match="local or executable"):
+            api.add_profile({"name": f"unsafe-{protocol}", "protocol": protocol})
+
+    unsafe_fields = {
+        "command": "tool --password secret",
+        "path": "C:/Users/operator/private.rdp",
+        "unknown": "opaque",
+    }
+    for index, (key, value) in enumerate(unsafe_fields.items()):
+        with pytest.raises(ValueError, match="local, executable or unsupported"):
+            api.add_profile(
+                {
+                    "name": f"unsafe-field-{index}",
+                    "protocol": "ssh",
+                    "host": "edge.example.invalid",
+                    key: value,
+                }
+            )
+
+    for option, value in (
+        ("proxy_command", "opaque value"),
+        ("remote_command", "opaque value"),
+        ("unknown_metadata", "opaque value"),
+        ("agent_forward", "true"),
+        ("x11", "trusted"),
+        ("strict_host_key_checking", "no"),
+    ):
+        with pytest.raises(ValueError, match="executable, local or unrecognized options"):
+            api.add_profile(
+                {
+                    "name": f"unsafe-option-{option}",
+                    "protocol": "ssh",
+                    "host": "edge.example.invalid",
+                    "options": {option: value},
+                }
+            )
+
+    with pytest.raises(ValueError, match="URL origins"):
+        api.add_profile(
+            {
+                "name": "unsafe-url",
+                "protocol": "https",
+                "url": "https://operator:secret@example.invalid/path?token=secret",
+            }
+        )
+
+    for unsafe_url in (
+        "file://fileserver/private/share",
+        "javascript://example.invalid/alert(1)",
+        "data://example.invalid/text/plain,payload",
+        "https://example.invalid/reset/capability-token",
+    ):
+        with pytest.raises(ValueError, match="URL origins"):
+            api.add_profile(
+                {
+                    "name": "unsafe-url-scheme",
+                    "protocol": "ica",
+                    "url": unsafe_url,
+                }
+            )
+
+    with pytest.raises(ValueError, match="secret-bearing public fields: description"):
+        api.add_profile(
+            {
+                "name": "secret-metadata",
+                "protocol": "ssh",
+                "host": "edge.example.invalid",
+                "description": "password=must-not-cross-boundary",
+            }
+        )
+
+    with pytest.raises(ValueError, match="refuses port forwards"):
+        api.add_profile(
+            {
+                "name": "forward",
+                "protocol": "ssh",
+                "host": "edge.example.invalid",
+                "tunnels": [
+                    {
+                        "mode": "remote",
+                        "local_host": "127.0.0.1",
+                        "local_port": 22,
+                        "remote_host": "0.0.0.0",
+                        "remote_port": 2222,
+                    }
+                ],
+            }
+        )
+
+    with pytest.raises(ValueError, match="envelope contains unsupported fields"):
+        api.add_profile(
+            {
+                "profile": {
+                    "name": "wrapped",
+                    "protocol": "ssh",
+                    "host": "edge.example.invalid",
+                },
+                "replace": False,
+                "credential_ref": "vault:must-not-ignore",
+            }
+        )
+
+
+def test_browser_profile_api_public_view_strips_legacy_local_and_executable_fields(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(
+        Profile(
+            name="legacy",
+            protocol="ssh",
+            host="edge.example.invalid",
+            path="C:/Users/operator/private.rdp",
+            command="tool --password secret",
+            url="https://operator:secret@example.invalid/path?token=secret#private",
+            options={"compression": "yes", "unknown_metadata": "secret"},
+        )
+    )
+
+    public = WebProfileApi(store, "x" * 24).profiles()[0]
+    assert "path" not in public
+    assert "command" not in public
+    assert public["url"] == "https://example.invalid"
+    assert public["options"] == {"compression": "yes"}
+
+
+def test_browser_profile_api_atomically_rejects_inherited_local_capabilities(
+    tmp_path: Path,
+) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(
+        Profile(
+            name="edge",
+            protocol="ssh",
+            host="edge.example.invalid",
+            group="prod",
+            credential_ref="vault:edge",
+            identity_file="/private/id_ed25519",
+        )
+    )
+    store.set_group_defaults(
+        "prod",
+        {
+            "credential_ref": "vault:prod",
+            "options": {
+                "agent_forward": "true",
+                "proxy_jump": "bastion.example.invalid",
+            },
+        },
+    )
+    api = WebProfileApi(store, "x" * 24)
+    original = store.path.read_bytes()
+
+    with pytest.raises(ValueError, match="credentials or forwarding settings"):
+        api.add_profile(
+            {
+                "name": "new-edge",
+                "protocol": "ssh",
+                "host": "new.example.invalid",
+                "group": "prod",
+            }
+        )
+    with pytest.raises(ValueError, match="credentials or forwarding settings"):
+        api.add_profile(
+            {
+                "profile": {
+                    "name": "edge",
+                    "protocol": "ssh",
+                    "host": "attacker.example.invalid",
+                    "group": "prod",
+                },
+                "replace": True,
+            }
+        )
+
+    assert store.path.read_bytes() == original
+    assert store.get("edge").host == "edge.example.invalid"
+    with pytest.raises(KeyError):
+        store.get("new-edge")
+
+
+def test_browser_profile_api_preserves_local_auth_for_same_binding_replace(
+    tmp_path: Path,
+) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(
+        Profile(
+            name="edge",
+            protocol="ssh",
+            host="edge.example.invalid",
+            group="prod",
+            credential_ref="vault:edge",
+            identity_file="/private/id_ed25519",
+        )
+    )
+    store.set_group_defaults(
+        "prod",
+        {
+            "credential_ref": "vault:prod",
+            "options": {"agent_forward": "true"},
+        },
+    )
+    api = WebProfileApi(store, "x" * 24)
+
+    api.add_profile(
+        {
+            "profile": {
+                "name": "edge",
+                "protocol": "ssh",
+                "host": "edge.example.invalid",
+                "group": "prod",
+                "description": "updated label",
+            },
+            "replace": True,
+        }
+    )
+
+    saved = store.get("edge")
+    assert saved.credential_ref == "vault:edge"
+    assert saved.identity_file == "/private/id_ed25519"
+    assert saved.description == "updated label"
 
 
 def test_browser_profile_api_serves_authenticated_http_catalogue(tmp_path: Path) -> None:
@@ -615,9 +842,124 @@ def test_web_assets_avoid_persistent_profile_storage() -> None:
     assert "sessionStorage" in app_js
     assert "localStorage" not in app_js
     assert "cleanDemoField" in app_js
-    assert "loadEnterprisePolicy" in app_js
-    assert "reviewEnterpriseWebProfile" in app_js
-    assert "enterprise-policy.json" in app_js
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
+@pytest.mark.parametrize(
+    ("scenario", "expected_saved", "expected_blocked"),
+    [
+        ("pending", 0, "enterprise policy is unavailable"),
+        ("reject", 0, "enterprise policy is unavailable"),
+        ("malformed", 0, "enterprise policy is unavailable"),
+        ("restricted", 0, "trusted enterprise policy surface"),
+        ("allow", 1, ""),
+    ],
+)
+def test_web_client_profile_submit_obeys_loaded_policy_behavior(
+    scenario: str,
+    expected_saved: int,
+    expected_blocked: str,
+    tmp_path: Path,
+) -> None:
+    node = shutil.which("node")
+    assert node is not None
+    harness = r"""
+const vm = require('node:vm');
+const fs = require('node:fs');
+// Use file arguments for both source and result. Python 3.15 on Windows can
+// leave subprocess pipe threads blocked around a VM thenable even after Node
+// has produced the result.
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const scenario = process.argv[2];
+const outputPath = process.argv[3];
+const records = new Map();
+const listeners = {};
+const form = {
+  dataset: {},
+  addEventListener: (name, callback) => { listeners[name] = callback; },
+  reset: () => {},
+};
+const inertElement = () => ({
+  appendChild: () => {},
+  replaceChildren: () => {},
+  style: {},
+  dataset: {},
+  textContent: '',
+  innerHTML: '',
+  className: '',
+});
+const elements = {
+  '#profiles': inertElement(),
+  '#profile-form': form,
+  '#terminal-grid': inertElement(),
+  '#feature-tags': inertElement(),
+};
+const validPolicy = {
+  active: true,
+  allow_user_profiles: true,
+  has_restricted_locks: scenario === 'restricted',
+  locked_settings: [],
+};
+let fetchResult;
+if (scenario === 'pending') {
+  // Use an inert thenable rather than a cross-realm Promise.  On Windows,
+  // Node can keep a VM-created unresolved Promise alive while the parent
+  // process is waiting for captured stdout, causing this smoke child to hang.
+  fetchResult = {then: () => {}};
+} else if (scenario === 'reject') {
+  fetchResult = Promise.reject(new Error('offline'));
+} else {
+  const body = scenario === 'malformed' ? {active: false} : validPolicy;
+  fetchResult = Promise.resolve({ok: true, json: async () => body});
+}
+const context = {
+  document: {
+    querySelector: selector => elements[selector],
+    querySelectorAll: () => [],
+    createElement: inertElement,
+    documentElement: {dataset: {}},
+  },
+  navigator: {},
+  sessionStorage: {
+    getItem: key => records.get(key) ?? null,
+    setItem: (key, value) => records.set(key, String(value)),
+    removeItem: key => records.delete(key),
+  },
+  fetch: () => fetchResult,
+  FormData: function () {
+    return {entries: () => [
+      ['name', 'edge'],
+      ['protocol', 'ssh'],
+      ['target', 'edge.example.invalid'],
+    ][Symbol.iterator]()};
+  },
+};
+vm.createContext(context);
+vm.runInContext(source, context, {filename: 'apps/web/app.js'});
+setImmediate(() => {
+  listeners.submit({preventDefault: () => {}});
+  const saved = JSON.parse(
+    records.get('remote-ops-workspace-demo-profiles') || '[]',
+  );
+  const output = JSON.stringify({
+    saved: saved.length,
+    blocked: form.dataset.enterprisePolicyBlocked || '',
+  });
+  fs.writeFileSync(outputPath, output);
+  process.exit(0);
+});
+    """
+    output_path = tmp_path / f"web-policy-{scenario}.json"
+    subprocess.run(
+        [node, "-e", harness, str(Path("apps/web/app.js")), scenario, str(output_path)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+    )
+    result = json.loads(output_path.read_text(encoding="utf-8"))
+    assert result["saved"] == expected_saved
+    assert expected_blocked in result["blocked"]
 
 
 def test_service_worker_cache_is_same_origin_get_only() -> None:

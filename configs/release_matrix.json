@@ -2,9 +2,10 @@
   "schema_version": 1,
   "release_tag_pattern": "v<project.version>",
   "workflow": ".github/workflows/release.yml",
+  "promotion_workflow": ".github/workflows/release-promotion.yml",
   "policy": {
-    "default_github_release": "Only assets under default_github_release are uploaded by the default core release lane.",
-    "protected_platform_promotion": "Verified Linux i386/armhf and Windows XP native-host assets are attached only by the opt-in protected promotion lane after accepted evidence passes.",
+    "default_github_release": "The tag-push workflow builds and seals candidates only; an exact-tag promotion dispatch publishes default assets plus all accepted protected-platform evidence in one certified inventory.",
+    "protected_platform_promotion": "A pinned independent evidence commit binds accepted Linux i386/armhf and Windows XP evidence; the exact-tag promotion imports it before the single draft-first production publish.",
     "script_supported_native": "These targets have maintained build-script mappings, but require matching builders and are not uploaded by the default GitHub release workflow.",
     "source_or_remote_only": "These targets receive source/install/Web/PWA assets or can be managed as remote endpoints; they are not native app artifacts in the default workflow."
   },
@@ -95,9 +96,10 @@
     ]
   },
   "protected_platform_promotion": {
-    "workflow_input": "include_protected_platform_evidence",
-    "evidence_job": "accepted-platform-evidence-assets",
-    "publish_job": "publish-protected-platform-evidence",
+    "workflow": ".github/workflows/release-promotion.yml",
+    "workflow_input": "evidence_commit_sha",
+    "evidence_job": "promote-production-release",
+    "publish_job": "promote-production-release",
     "targets": [
       "linux-i386",
       "linux-armhf",

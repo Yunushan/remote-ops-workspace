@@ -30,6 +30,7 @@ def build_steps(
     lint: bool = False,
     no_cli_smoke: bool = False,
     require_real_gui: bool = False,
+    production_quality: bool = False,
     require_platform_goal_targets: bool = False,
     release_tag: str | None = None,
     release_repository: str | None = None,
@@ -37,6 +38,13 @@ def build_steps(
     release_assets_dir: Path | None = None,
     row_home: Path | None = None,
 ) -> list[VerifyStep]:
+    if production_quality:
+        # A release-quality caller must not be able to inherit any of the
+        # convenience switches that make local verification less expensive.
+        quick = False
+        lint = True
+        no_cli_smoke = False
+        require_real_gui = True
     steps = [
         VerifyStep(
             "compile source, tests, and scripts",
@@ -527,6 +535,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="require PyQt6 and fail unless the live GUI render smoke captures real screenshots",
     )
     parser.add_argument(
+        "--production-quality",
+        action="store_true",
+        help=(
+            "run the fail-closed release quality profile: full pytest, mypy, Ruff, "
+            "CLI smoke, and required real PyQt6 rendering"
+        ),
+    )
+    parser.add_argument(
         "--require-platform-goal-targets",
         action="store_true",
         help=(
@@ -567,7 +583,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    strict_errors = strict_platform_goal_arg_errors(args)
+    strict_errors = production_quality_arg_errors(args) + strict_platform_goal_arg_errors(args)
     if strict_errors:
         for error in strict_errors:
             print(f"verify: {error}", file=sys.stderr)
@@ -580,6 +596,7 @@ def main(argv: list[str] | None = None) -> int:
             lint=args.lint,
             no_cli_smoke=args.no_cli_smoke,
             require_real_gui=args.require_real_gui,
+            production_quality=args.production_quality,
             require_platform_goal_targets=args.require_platform_goal_targets,
             release_tag=args.release_tag,
             release_repository=args.release_repository,
@@ -588,6 +605,17 @@ def main(argv: list[str] | None = None) -> int:
             row_home=row_home,
         )
         return run_steps(steps)
+
+
+def production_quality_arg_errors(args: argparse.Namespace) -> list[str]:
+    if not args.production_quality:
+        return []
+    errors: list[str] = []
+    if args.quick:
+        errors.append("--production-quality cannot be combined with --quick")
+    if args.no_cli_smoke:
+        errors.append("--production-quality cannot be combined with --no-cli-smoke")
+    return errors
 
 
 def strict_platform_goal_arg_errors(args: argparse.Namespace) -> list[str]:

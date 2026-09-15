@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 from . import __version__
 from . import command_safety as safe
+from .enterprise_policy import validate_locked_settings
 from .file_safety import (
     chmod_best_effort,
     ensure_private_dir,
@@ -1080,7 +1081,8 @@ def _policy_with_locked_settings(policy: dict[str, Any], lock_settings: list[str
             raise ValueError(f"duplicate locked setting: {key}")
         locked.append({"key": key, "value": value})
         seen.add(key)
-    merged["locked_settings"] = locked
+    validated = validate_locked_settings(locked)
+    merged["locked_settings"] = [item.to_dict() for item in validated]
     merged["schema_version"] = int(merged.get("schema_version", 1))
     return merged
 
@@ -1371,13 +1373,13 @@ def _install_readme(plan: MobaProfessionalCustomizerPlan) -> str:
         f"{plan.brand_name} Remote Ops Workspace enterprise customization bundle\n\n"
         "Contents:\n"
         "- branding/branding.json and optional branding/logo.*\n"
-        "- config/settings.json for default application settings\n"
-        "- config/policy.json for locked enterprise policy values\n"
+        "- config/settings.json for deployment customization metadata (not runtime policy)\n"
+        "- config/policy.json for administrator-owned machine policy values\n"
         "- config/profiles.json for seeded connection profiles\n"
         "- welcome.txt for the first-run welcome message\n"
         "- SHA256SUMS.txt and manifest.json for release evidence\n\n"
-        "Run apply-enterprise-bundle.ps1 on Windows or apply-enterprise-bundle.sh on POSIX hosts.\n"
-        "Set ROW_HOME first to apply into a portable workspace directory.\n"
+        "Run the platform apply script with administrator/root privileges.\n"
+        "Set ROW_HOME first to choose the user data workspace; the hard-lock policy is always installed in the OS machine-policy directory.\n"
     )
 
 
@@ -1385,12 +1387,16 @@ def _powershell_apply_script() -> str:
     return """$ErrorActionPreference = "Stop"
 $BundleRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Target = if ($env:ROW_HOME) { $env:ROW_HOME } else { Join-Path $env:APPDATA "RemoteOpsWorkspace" }
+$CommonAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)
+$PolicyTarget = Join-Path $CommonAppData "RemoteOpsWorkspace"
 New-Item -ItemType Directory -Force -Path $Target | Out-Null
+New-Item -ItemType Directory -Force -Path $PolicyTarget | Out-Null
 Copy-Item -Force (Join-Path $BundleRoot "config/settings.json") (Join-Path $Target "settings.json")
 Copy-Item -Force (Join-Path $BundleRoot "config/profiles.json") (Join-Path $Target "profiles.json")
-Copy-Item -Force (Join-Path $BundleRoot "config/policy.json") (Join-Path $Target "policy.json")
+Copy-Item -Force (Join-Path $BundleRoot "config/policy.json") (Join-Path $PolicyTarget "policy.json")
 Copy-Item -Force (Join-Path $BundleRoot "welcome.txt") (Join-Path $Target "welcome.txt")
 Write-Host "Applied Remote Ops Workspace enterprise bundle to $Target"
+Write-Host "Installed machine policy at $(Join-Path $PolicyTarget 'policy.json')"
 """
 
 
@@ -1400,9 +1406,16 @@ set -eu
 bundle_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 target="${ROW_HOME:-${HOME}/.config/remote-ops-workspace}"
 mkdir -p "$target"
+if [ "$(id -u)" -ne 0 ]; then
+  printf '%s\n' 'apply-enterprise-bundle.sh must run as root to install machine policy' >&2
+  exit 1
+fi
+policy_target="/etc/remote-ops-workspace"
+install -d -m 0755 "$policy_target"
 cp "$bundle_root/config/settings.json" "$target/settings.json"
 cp "$bundle_root/config/profiles.json" "$target/profiles.json"
-cp "$bundle_root/config/policy.json" "$target/policy.json"
+install -m 0644 "$bundle_root/config/policy.json" "$policy_target/policy.json"
 cp "$bundle_root/welcome.txt" "$target/welcome.txt"
 printf 'Applied Remote Ops Workspace enterprise bundle to %s\n' "$target"
+printf 'Installed machine policy at %s\n' "$policy_target/policy.json"
 """

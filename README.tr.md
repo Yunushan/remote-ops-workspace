@@ -104,8 +104,8 @@ row vault delete old/router-password --force
 row plugins list
 row plugins validate
 row plugins scaffold --out ./row-demo-plugin --name row-demo-plugin --module row_demo_plugin --protocol demo --client demo-client
-row customizer build --out ./dist/corp-row --brand-name "Corp Ops" --profiles configs/profiles.example.json --lock-setting theme=dark
-row customizer deployment-plan --brand-name "Corp Ops" --lock-setting theme=dark --update-url https://updates.example.com/row/stable.json --update-public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --json
+row customizer build --out ./dist/corp-row --brand-name "Corp Ops" --profiles configs/profiles.example.json --lock-setting protocol=ssh
+row customizer deployment-plan --brand-name "Corp Ops" --lock-setting protocol=ssh --update-url https://updates.example.com/row/stable.json --update-public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --json
 row customizer update-verify --manifest artifacts/stable-update.json --public-key ed25519:QSOApv2JQKG8cVcGoYv++5EDw9fXbYNnXShgESontvI= --channel stable --organization "Corp Ops" --assets-dir artifacts --json
 row customizer evidence-verify --evidence artifacts/moba-professional-deployment.json --assets-dir artifacts --json
 row mobapt status --json
@@ -232,7 +232,10 @@ Ayrintilar icin [`docs/PLATFORM_SUPPORT.md`](docs/PLATFORM_SUPPORT.md) dosyasina
 ## Guvenlik
 
 - Gercek profilleri, parolalari, private key'leri, vault dosyalarini veya musteri host adlarini commit etmeyin.
-- Tasınabilir/ozel operator verisi icin `ROW_HOME` kullanin.
+- Tasınabilir/ozel operator verisi icin `ROW_HOME` yalnizca guvenilir, tek
+  kullanicili yerel bir dosya sisteminde kullanilmalidir. POSIX private mode
+  hatalari islemi durdurur; Windows'ta current-user-only DACL operator tarafindan
+  ayrica kurulup dogrulanmalidir.
 - Yeni import edilen profilleri baslatmadan once `row connect NAME --dry-run` ile inceleyin.
 - Vault sifreleme istege bagli `security` extra'sini gerektirir: `pip install -e ".[security]"`.
 - Otomasyon icin `row vault set NAME --secret-env ENV` veya `row vault set NAME --stdin` kullanin; secret degerlerini argv'ye veya shell history'ye koymayin.
@@ -296,17 +299,26 @@ blogunu tasir. Native installer smoke kapsami
 `python scripts/check_native_installer_smoke.py` ile denetlenir; release workflow
 Windows, macOS ve Linux native islerinden sonra install, verify, upgrade and
 uninstall yollarini calistirir. Release workflow once `release-preflight` isinde
-`python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`,
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`,
-`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
-ve `python scripts/check_repository_cleanup.py --require-clean` calistirir;
-source, native, accepted-platform-evidence-assets ve publish isleri bu kapiya
-baglidir. Protected platform goal icin Linux i386, Linux armhf,
+istenen tag'i bir kez exact commit SHA'ya cozer, trusted default-branch history
+icinde oldugunu kontrol eder,
+`python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, exact-SHA
+CI evidence denetimi,
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements`
+ve `python scripts/check_repository_cleanup.py --require-clean` calistirir.
+Source, native ve core publish isleri bu kapiya baglidir ve tag'i yeniden
+cozmek yerine frozen commit SHA'yi checkout eder. Preflight icindeki protected
+platform komutu yalnizca readiness raporudur; 4/4 accepted-evidence kapisi
+degildir. Protected platform goal icin Linux i386, Linux armhf,
 windows-xp-native-x86 ve windows-xp-native-x64 kayitlarinin hepsi ayni release
 tag, ayni GitHub release repository, target'a ozel release source workflow file
 path, ayni release source head SHA ve her kaydin pozitif release source run
 attempt degeri ile finalized accepted evidence
-olarak bulunmalidir. Protected evidence asset isi
+olarak bulunmalidir. Yalnizca `include_protected_platform_evidence=true` ile
+manual dispatch edilen optional `accepted-platform-evidence-assets` isi
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`
+ve
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
+kapilarindan sonra
 `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
 ile sadece accepted kayitlarda ayni tag/repository/workflow file path/source-head/run-attempt
 bagli artifact ve review-bundle dosyalarini, indirilen source artifact native
@@ -320,19 +332,21 @@ accepted kayitla eslestikten sonra release-assets icine alir, sonra
 ile import edilen review-bundle dosyalarini ve finalized public record JSON
 dosyalarini upload oncesi yeniden dogrular. Import edilen platform evidence
 artifact upload'i bosken fail eder, hidden dosyalari haric tutar ve 90 gun
-retention kullanir. Publish isi upload
-oncesinde
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-complete --assets-dir release-assets --repository <owner>/<repo>`
-ve
+retention kullanir. Exact-tag publish isi bu import'u bekler ve accepted
+protected evidence dosyalarini ayni draft-first, attested production
+inventory'sine dahil eder. Tek publish isi
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
 calistirip publish-ready release-assets dizinindeki finalized record, review
 bundle, native artifact, checksum yan dosyasi, release manifesti ve accepted
 platform evidence hashlerini karsilastirir.
+Core publish MobaXterm registry yapisini denetler ancak 8/8 tamamlanmasini
+zorunlu tutmaz; `--require-mobaxterm-parity-complete` yalnizca strict MobaXterm
+product-depth parity iddiasi icin ayri bir hard gate'tir.
 Static readiness raporu `release_asset_provenance_complete=false` birakir;
 bu proof state ancak `--assets-dir` ile calisan asset-backed protected goal
 gate finalized record, review bundle ve native release byte degerlerini
 dogruladiginda true olur.
-Upload sonrasinda publish isi
+Yayin sonrasinda aggregate release audit'i
 `python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
 ile gercek GitHub Release uzerindeki published asset digest/size/byte degerlerini,
 published final accepted-record JSON bytes degerlerini, release tag Git object/source head SHA bagini,

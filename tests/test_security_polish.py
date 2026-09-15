@@ -62,6 +62,23 @@ def test_redaction_covers_sensitive_key_aliases_and_nested_sequences() -> None:
     assert redacted["safe_label"] == "visible"
 
 
+def test_redaction_covers_sshpass_password_forms_without_treating_generic_port_flags_as_secrets() -> None:
+    payload = {
+        "argv-separated": ["sshpass", "-p", "separated-secret", "ssh", "edge"],
+        "argv-attached": ["C:\\tools\\sshpass.exe", "-pattached-secret", "ssh", "edge"],
+        "command-separated": "sshpass -v -p 'quoted-secret' ssh edge",
+        "command-attached": "sshpass.exe -pinline-secret ssh edge",
+        "ordinary-port": ["ssh", "-p", "2222", "edge"],
+    }
+
+    redacted = redact_value(payload)
+    serialized = json.dumps(redacted)
+
+    for secret in ("separated-secret", "attached-secret", "quoted-secret", "inline-secret"):
+        assert secret not in serialized
+    assert redacted["ordinary-port"] == ["ssh", "-p", "2222", "edge"]
+
+
 def test_redaction_handles_direct_urls_assignments_and_non_string_values() -> None:
     values = redact_value(
         [

@@ -1,0 +1,372 @@
+name: release-promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing immutable vX.Y.Z source tag; dispatch this workflow from the same tag"
+        required: true
+        type: string
+      build_run_id:
+        description: "Successful attempt-one release.yml candidate build run ID"
+        required: true
+        type: string
+      build_run_attempt:
+        description: "Candidate build run attempt (must be 1)"
+        required: true
+        type: string
+      candidate_inventory_artifact_id:
+        description: "Numeric release-candidate-inventory artifact ID from the build run"
+        required: true
+        type: string
+      candidate_inventory_archive_digest:
+        description: "Exact sha256:... archive digest reported by upload-artifact"
+        required: true
+        type: string
+      evidence_commit_sha:
+        description: "Full immutable commit SHA containing independent signed exact-byte evidence"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONHASHSEED: "0"
+  RELEASE_TAG: ${{ inputs.release_tag }}
+
+concurrency:
+  group: release-promotion-${{ github.repository }}-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  promote-production-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: release-compliance-review
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Check out exact immutable source tag
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          clean: true
+      - name: Bind dispatch, tag, source SHA and immutable inputs
+        id: release-source
+        shell: bash
+        env:
+          INPUT_BUILD_RUN_ATTEMPT: ${{ inputs.build_run_attempt }}
+          INPUT_BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          INPUT_EVIDENCE_COMMIT_SHA: ${{ inputs.evidence_commit_sha }}
+          INPUT_INVENTORY_ARCHIVE_DIGEST: ${{ inputs.candidate_inventory_archive_digest }}
+          INPUT_INVENTORY_ARTIFACT_ID: ${{ inputs.candidate_inventory_artifact_id }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$GITHUB_REF_TYPE" = "tag"
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$INPUT_BUILD_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          test "$INPUT_BUILD_RUN_ATTEMPT" = "1"
+          [[ "$INPUT_INVENTORY_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$INPUT_INVENTORY_ARCHIVE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$INPUT_EVIDENCE_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          release_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          test "$(git rev-parse HEAD)" = "$release_sha"
+          test "$GITHUB_SHA" = "$release_sha"
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_SHA=$release_sha" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Re-run immutable source release gates
+        run: |
+          set -euo pipefail
+          python scripts/check_release_version.py --release-tag "$RELEASE_TAG"
+          python scripts/check_release_maturity.py --release-tag "$RELEASE_TAG"
+          python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
+          python scripts/check_repository_cleanup.py --require-clean
+      - name: Check out exact independent evidence commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ inputs.evidence_commit_sha }}
+          path: release-compliance-input
+          persist-credentials: false
+          clean: true
+          fetch-depth: 0
+      - name: Check out evidence branch head for ancestry proof only
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: ${{ github.repository }}
+          ref: release-compliance-evidence
+          path: release-compliance-branch-head
+          persist-credentials: false
+          clean: true
+          fetch-depth: 0
+      - name: Verify exact evidence commit checkout
+        shell: bash
+        env:
+          EVIDENCE_COMMIT_SHA: ${{ inputs.evidence_commit_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C release-compliance-input rev-parse HEAD)" = "$EVIDENCE_COMMIT_SHA"
+          test -z "$(git -C release-compliance-input status --porcelain --untracked-files=all)"
+          git -C release-compliance-branch-head merge-base --is-ancestor "$EVIDENCE_COMMIT_SHA" HEAD
+      - name: Verify attestation and download exact candidate artifact IDs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_BUILD_RUN_ATTEMPT: ${{ inputs.build_run_attempt }}
+          INPUT_BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          INPUT_INVENTORY_ARCHIVE_DIGEST: ${{ inputs.candidate_inventory_archive_digest }}
+          INPUT_INVENTORY_ARTIFACT_ID: ${{ inputs.candidate_inventory_artifact_id }}
+        run: >-
+          python scripts/release_candidate_inventory.py promote
+          --repository "$GITHUB_REPOSITORY"
+          --release-tag "$RELEASE_TAG"
+          --release-sha "$RELEASE_SHA"
+          --build-run-id "$INPUT_BUILD_RUN_ID"
+          --build-run-attempt "$INPUT_BUILD_RUN_ATTEMPT"
+          --inventory-artifact-id "$INPUT_INVENTORY_ARTIFACT_ID"
+          --inventory-archive-digest "$INPUT_INVENTORY_ARCHIVE_DIGEST"
+          --approved-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"
+          --assets-root release-assets
+      - name: Import exact protected-platform artifacts from signed registry
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PLATFORM_EVIDENCE_REGISTRY="release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"
+          python scripts/check_platform_evidence_source_ref.py --repository "$GITHUB_REPOSITORY" --release-tag "$RELEASE_TAG" --require-goal-targets
+          python scripts/check_protected_platform_goal.py --registry "$PLATFORM_EVIDENCE_REGISTRY" --release-tag "$RELEASE_TAG" --require-records-complete --show-requirements
+          python scripts/check_platform_verified_evidence.py --registry "$PLATFORM_EVIDENCE_REGISTRY" --require-goal-targets --require-review-bundles --release-tag "$RELEASE_TAG"
+          python scripts/import_platform_evidence_artifacts.py --registry "$PLATFORM_EVIDENCE_REGISTRY" --release-tag "$RELEASE_TAG" --release-head-sha "$RELEASE_SHA" --require-goal-targets --out-dir release-assets --verify-source-run --repository "$GITHUB_REPOSITORY"
+          python scripts/check_platform_review_bundle_artifacts.py --registry "$PLATFORM_EVIDENCE_REGISTRY" --bundle-dir release-assets --require-goal-targets --release-tag "$RELEASE_TAG" --require-final-record-assets
+      - name: Install hash-locked compliance verifier
+        run: python -m pip install --require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt
+      - name: Validate complete production asset inventory
+        run: >-
+          python scripts/check_release_publish_assets.py
+          --assets-dir release-assets
+          --tag "$RELEASE_TAG"
+          --repository "$GITHUB_REPOSITORY"
+          --evidence-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"
+          --require-platform-goal-targets
+          --native-release-channel production-signed
+      - name: Audit signed exact-byte redistribution and resolver evidence
+        run: >-
+          python scripts/check_release_license_compliance.py
+          --policy configs/release_compliance_policy.json
+          --policy-root .
+          --assets-dir release-assets
+          --tag "$RELEASE_TAG"
+          --repository "$GITHUB_REPOSITORY"
+          --sha "$RELEASE_SHA"
+          --evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"
+          --signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
+          --evidence-root "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle"
+          --candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"
+          --protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"
+          --tag-governance-attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"
+          --tag-governance-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"
+      - name: Generate boundary-aware release notes
+        run: >-
+          python scripts/write_release_notes.py
+          --tag "$RELEASE_TAG"
+          --channel production-signed
+          --repository "$GITHUB_REPOSITORY"
+          --protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"
+          --root .
+          --out release-notes.md
+      - name: Require non-empty release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release-notes.md
+          grep -Fq "Support boundaries" release-notes.md
+          grep -Fq "$RELEASE_TAG" release-notes.md
+      - name: Re-resolve immutable tag immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-release-promotion-candidate"
+          test "$(git rev-parse 'refs/tags/row-release-promotion-candidate^{commit}')" = "$RELEASE_SHA"
+      - name: Revalidate signed tag governance at mutation boundary
+        run: >-
+          python scripts/check_release_tag_governance.py
+          --policy configs/release_compliance_policy.json
+          --attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"
+          --signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+      - name: Require immutable releases enabled before any mutation
+        env:
+          ROW_RELEASE_IMMUTABILITY_TOKEN: ${{ secrets.ROW_RELEASE_IMMUTABILITY_TOKEN }}
+        run: >-
+          python scripts/check_release_remote_preconditions.py immutable
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+      - name: Require unused release namespace including drafts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_release_remote_preconditions.py namespace
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+      - name: Attest every certified release asset
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/**
+      - name: Create new draft by numeric API identity
+        id: create-draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          request="$RUNNER_TEMP/create-release.json"
+          response="$RUNNER_TEMP/created-release.json"
+          transaction_marker="<!-- remote-ops-release-transaction:$RELEASE_TAG:$RELEASE_SHA -->"
+          jq -n --arg tag "$RELEASE_TAG" --arg sha "$RELEASE_SHA" --arg marker "$transaction_marker" --rawfile body release-notes.md \
+            '{tag_name: $tag, target_commitish: $sha, name: $tag, body: ($body + "\n" + $marker + "\n"), draft: true, prerelease: false}' > "$request"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"
+          release_id="$(jq -er 'select(.draft == true and .prerelease == false) | .id | select(type == "number" and . > 0)' "$response")"
+          test "$(jq -r '.tag_name' "$response")" = "$RELEASE_TAG"
+          upload_url="$(jq -er '.upload_url | select(type == "string") | sub("\\{.*$"; "")' "$response")"
+          test "$upload_url" = "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets"
+          test "$(jq -r '.body' "$response")" = "$(jq -r '.body' "$request")"
+          echo "release-id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "upload-url=$upload_url" >> "$GITHUB_OUTPUT"
+      - name: Upload every certified asset to the new numeric draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+          UPLOAD_URL: ${{ steps.create-draft.outputs.upload-url }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(release-assets/*)
+          test "${#assets[@]}" -gt 0
+          for asset in "${assets[@]}"; do
+            test -f "$asset"
+            test ! -L "$asset"
+            name="${asset##*/}"
+            encoded_name="$(jq -rn --arg value "$name" '$value | @uri')"
+            response="$RUNNER_TEMP/uploaded-asset.json"
+            status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
+              --request POST \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "Content-Type: application/octet-stream" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              --data-binary "@$asset" \
+              "$UPLOAD_URL?name=$encoded_name")"
+            test "$status" = "201"
+            expected_size="$(wc -c < "$asset" | tr -d ' ')"
+            expected_digest="sha256:$(sha256sum "$asset" | cut -d' ' -f1)"
+            jq -e --arg name "$name" --arg digest "$expected_digest" --argjson size "$expected_size" \
+              '.name == $name and .state == "uploaded" and .size == $size and .digest == $digest and (.id | type == "number" and . > 0)' \
+              "$response" >/dev/null
+          done
+      - name: Verify complete numeric-ID draft transaction
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: >-
+          python scripts/check_release_provenance.py
+          --assets-dir release-assets
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --draft-release-id "$DRAFT_RELEASE_ID"
+          --draft-transaction-run-id "$GITHUB_RUN_ID"
+          --draft-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Re-resolve immutable tag before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-release-final-candidate"
+          test "$(git rev-parse 'refs/tags/row-release-final-candidate^{commit}')" = "$RELEASE_SHA"
+      - name: Publish verified draft by numeric ID once
+        id: publish-draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: >-
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$DRAFT_RELEASE_ID"
+          --raw-field tag_name="$RELEASE_TAG"
+          --raw-field name="$RELEASE_TAG"
+          --field draft=false
+          --field prerelease=false
+          --silent
+      - name: Require same numeric release becomes immutable
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: |
+          immutable=false
+          for _ in $(seq 1 30); do
+            state="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '[.id, .tag_name, .draft, .prerelease, .immutable] | @tsv')"
+            if [[ "$state" == "$RELEASE_ID"$'\t'"$RELEASE_TAG"$'\tfalse\tfalse\ttrue' ]]; then
+              immutable=true
+              break
+            fi
+            sleep 2
+          done
+          test "$immutable" = true
+      - name: Re-resolve immutable tag after publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-release-published"
+          test "$(git rev-parse 'refs/tags/row-release-published^{commit}')" = "$RELEASE_SHA"
+      - name: Verify final immutable release and complete exact-tag provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHED_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: >-
+          python scripts/check_release_provenance.py
+          --assets-dir release-assets
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --published-release-id "$PUBLISHED_RELEASE_ID"
+          --current-transaction-run-id "$GITHUB_RUN_ID"
+          --current-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Verify published release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_published_release_notes.py
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --channel production-signed
+      - name: Delete only this run's still-draft transaction after failure
+        if: ${{ always() && failure() && steps.create-draft.outputs.release-id != '' && steps.publish-draft.outcome != 'success' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: |
+          set -euo pipefail
+          response="$RUNNER_TEMP/failed-draft.json"
+          transaction_marker="<!-- remote-ops-release-transaction:$RELEASE_TAG:$RELEASE_SHA -->"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$response"
+          jq -e --argjson id "$RELEASE_ID" --arg tag "$RELEASE_TAG" --arg marker "$transaction_marker" \
+            '.id == $id and .tag_name == $tag and .draft == true and (.body | type == "string" and contains($marker))' "$response" >/dev/null
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"

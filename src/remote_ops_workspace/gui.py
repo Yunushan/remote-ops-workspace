@@ -162,7 +162,7 @@ from .launcher import LauncherError, build_launch_plan
 from .layouts import (
     Layout,
     LayoutStore,
-    build_layout_terminal_plans,
+    build_layout_terminal_sessions,
     layout_splitter_size_lengths,
     validate_layout,
 )
@@ -206,6 +206,7 @@ from .moba_ssh_browser import load_moba_ssh_browser_preferences
 from .moba_text import (
     MobaTextEditorTabPlan,
     build_moba_text_editor_tab_plan,
+    prepare_managed_edit_cache,
     write_text_document,
 )
 from .models import Profile
@@ -4249,6 +4250,12 @@ def create_main_window(
                 "BatchMode": "no",
                 "ConnectTimeout": "5",
                 "StrictHostKeyChecking": "yes",
+                # Password injection is supported only for a direct target.
+                # Command-line OpenSSH options are processed before ambient
+                # configuration, so these values prevent ~/.ssh/config from
+                # introducing a password-prompting helper or jump process.
+                "ProxyJump": "none",
+                "ProxyCommand": "none",
                 "PasswordAuthentication": "yes",
                 "KbdInteractiveAuthentication": "yes",
                 "PreferredAuthentications": "password,keyboard-interactive",
@@ -4271,10 +4278,12 @@ def create_main_window(
             prompt_buffer.extend(payload)
             del prompt_buffer[:-1024]
             prompt = prompt_buffer.decode(errors="replace")[-768:]
-            if not re.search(
-                r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
-                prompt,
-            ):
+            if not self.background_password_prompt_matches_target(prompt):
+                if re.search(
+                    r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
+                    prompt,
+                ):
+                    prompt_buffer.clear()
                 return
             process = {
                 "monitoring": self.monitoring_process,
@@ -4300,6 +4309,44 @@ def create_main_window(
                     0,
                     lambda: self.write_text_editor_sftp_batch(force=True),
                 )
+
+        def background_password_prompt_matches_target(self, prompt: str) -> bool:
+            """Accept only a direct target's explicit OpenSSH password prompt.
+
+            Generic keyboard-interactive prompts, private-key passphrase prompts,
+            and multi-hop/custom-proxy sessions deliberately require agent/key or
+            shared-control authentication so a bastion/helper cannot receive the
+            target credential.
+            """
+
+            profile = self.profile_for_sftp_action()
+            if profile is None or not profile.host:
+                return False
+            if any(
+                profile.options.get(key)
+                for key in ("proxy_jump", "jump_host", "proxy_command")
+            ):
+                return False
+            tail = prompt.rsplit("\n", 1)[-1].rsplit("\r", 1)[-1].strip()
+            if "passphrase" in tail.lower():
+                return False
+            if not re.search(r"(?i)password[^:\r\n]{0,240}:\s*$", tail):
+                return False
+            target = re.escape(profile.host)
+            if profile.username:
+                identities = (f"{re.escape(profile.username)}@{target}", target)
+                identity_pattern = "|".join(identities)
+            else:
+                # With no explicit User, OpenSSH can display the local/configured
+                # username, but the host token must still be an exact match.
+                identity_pattern = rf"(?:[^@\s']+@)?{target}"
+            return bool(
+                re.fullmatch(
+                    rf"(?:{identity_pattern})'s password:\s*",
+                    tail,
+                    flags=re.IGNORECASE,
+                )
+            )
 
         def authenticate_background_tools(self) -> bool:
             """Unlock one profile credential for this GUI session only."""
@@ -4755,7 +4802,8 @@ def create_main_window(
                 return
             try:
                 plan = build_moba_text_editor_tab_plan(profile, remote_path)
-            except ValueError as exc:
+                prepare_managed_edit_cache(plan.local_path)
+            except (OSError, ValueError) as exc:
                 self.show_sftp_status(f"Text editor unavailable: {exc}")
                 return
             self.cancel_text_editor_sftp_operation()
@@ -16297,12 +16345,30 @@ def create_main_window(
                 )
 
         def save_profile(self, profile, original_name: str) -> None:
-            profiles = self.store.load(resolve=False)
-            if profile.name != original_name and any(item.name == profile.name for item in profiles):
+            replace_named = getattr(self.store, "replace_named", None)
+            if callable(replace_named):
+                replace_named(
+                    original_name,
+                    profile,
+                    surface="profile-editor",
+                )
+                return
+            # Keep compatibility with lightweight editor stores used by
+            # integrations while preserving the same duplicate/name checks as
+            # ProfileStore.replace_named.
+            profiles = list(self.store.load(resolve=False))
+            if not any(item.name == original_name for item in profiles):
+                raise KeyError(original_name)
+            if profile.name != original_name and any(
+                item.name == profile.name for item in profiles
+            ):
                 raise ValueError(f"profile already exists: {profile.name}")
             profiles = [item for item in profiles if item.name != original_name]
             profiles.append(profile)
-            self.store.save(sorted(profiles, key=lambda item: (item.group, item.name)), surface="profile-editor")
+            self.store.save(
+                sorted(profiles, key=lambda item: (item.group, item.name)),
+                surface="profile-editor",
+            )
 
         def select_profile(self, name: str) -> None:
             for item in self.iter_profile_tree_items():
@@ -21517,13 +21583,7 @@ def create_main_window(
                 )
 
         def save_layout(self, layout: Layout, original_name: str) -> None:
-            validate_layout(layout)
-            layouts = self.layout_store.load()
-            if layout.name != original_name and any(item.name == layout.name for item in layouts):
-                raise ValueError(f"layout already exists: {layout.name}")
-            layouts = [item for item in layouts if item.name != original_name]
-            layouts.append(layout)
-            self.layout_store.save(sorted(layouts, key=lambda item: item.name))
+            self.layout_store.replace_named(original_name, layout)
             if layout.name != original_name:
                 self.retarget_open_layout_instances(original_name, layout.name)
 
@@ -21577,7 +21637,16 @@ def create_main_window(
             try:
                 layout = self.layout_store.get(name)
                 profiles = self.layout_launch_profiles(layout)
-                plans = build_layout_terminal_plans(layout, self.store)
+                sessions = build_layout_terminal_sessions(
+                    layout,
+                    self.store,
+                    surface="gui",
+                )
+                plans = [plan for plan, _profile in sessions]
+                # Resolve through the same session snapshot used for the
+                # plans. The preflight above is kept explicit so GUI policy
+                # checks remain visible at this execution surface.
+                profiles = [profile for _plan, profile in sessions]
                 widget = self.layout_widget(layout, plans, profiles)
                 self.bind_layout_resize_persistence(layout.name, widget)
                 for plan, profile in zip(plans, profiles, strict=True):
@@ -21596,17 +21665,13 @@ def create_main_window(
                 )
 
         def layout_launch_profiles(self, layout: Layout) -> list[Profile]:
+            sessions = build_layout_terminal_sessions(
+                layout,
+                self.store,
+                surface="gui",
+            )
             profiles: list[Profile] = []
-            for index, pane in enumerate(layout.panes, start=1):
-                if pane.profile:
-                    profile = self.store.get(pane.profile)
-                else:
-                    profile = Profile(
-                        name=f"layout-{layout.name}-{index}",
-                        protocol="custom",
-                        command=pane.command,
-                        group="layout",
-                    )
+            for _plan, profile in sessions:
                 assert_profile_launch_allowed(profile, surface="gui")
                 profiles.append(profile)
             return profiles
@@ -21704,15 +21769,8 @@ def create_main_window(
             ]
             if not sizes:
                 return
-            layouts = self.layout_store.load()
-            for layout in layouts:
-                if layout.name == name:
-                    if layout.splitter_sizes == sizes:
-                        return
-                    layout.splitter_sizes = sizes
-                    self.layout_store.save(layouts)
-                    self.log.append(f"LAYOUT RESIZE SAVED: {name}")
-                    return
+            if self.layout_store.update_splitter_sizes(name, sizes):
+                self.log.append(f"LAYOUT RESIZE SAVED: {name}")
 
         def new_terminal_pane(
             self,

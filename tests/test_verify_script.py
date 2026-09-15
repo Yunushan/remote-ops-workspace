@@ -150,6 +150,36 @@ def test_verify_can_require_real_gui_render(tmp_path: Path) -> None:
     assert ["--timeout-seconds", "240"] == strict_real_gui.command[2:4]
 
 
+def test_production_quality_cannot_inherit_skip_switches() -> None:
+    verify = _load_verify_module()
+
+    steps = verify.build_steps(
+        "python",
+        quick=True,
+        lint=False,
+        no_cli_smoke=True,
+        require_real_gui=False,
+        production_quality=True,
+        row_home=Path(".verify-test-row-home"),
+    )
+    names = [step.name for step in steps]
+    real_gui = next(step for step in steps if step.name == "real GUI render smoke")
+
+    assert "ruff lint" in names
+    assert "non-GUI production typing" in names
+    assert "pytest" in names
+    assert "CLI smoke: init temp workspace" in names
+    assert "CLI smoke: feature coverage" in names
+    assert "--require-pyqt6" in real_gui.command
+
+
+def test_production_quality_rejects_explicit_skip_arguments() -> None:
+    verify = _load_verify_module()
+
+    assert verify.main(["--production-quality", "--quick"]) == 2
+    assert verify.main(["--production-quality", "--no-cli-smoke"]) == 2
+
+
 def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
     verify = _load_verify_module()
     bundle_dir = tmp_path / "platform-bundles"

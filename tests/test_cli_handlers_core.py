@@ -422,7 +422,7 @@ def test_customizer_handlers_cover_json_text_and_failure(monkeypatch, tmp_path: 
         artifact_names={"windows": "row.exe"},
     )
     policy = _Record(
-        locked_settings=[{"key": "theme", "value": "dark"}],
+        locked_settings=[{"key": "protocol", "value": "ssh"}],
         enforcement_surfaces=["gui", "cli"],
     )
     channel = _Record(channel="stable", update_url="https://updates.example.test", require_signature=True)
@@ -940,8 +940,8 @@ def test_vault_sync_gui_and_module_guard_handlers(monkeypatch, capsys, tmp_path:
         def list(self) -> list[str]:
             return ["one", "two"]
 
-        def delete(self, name: str) -> None:
-            assert name
+        def delete(self, name: str, passphrase: str) -> None:
+            assert name and passphrase
 
         def status(self) -> _Record:
             return vault_status

@@ -1038,7 +1038,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--out",
         type=Path,
         required=True,
-        help="write the secret to a file with best-effort owner-only permissions",
+        help=(
+            "write the secret to a private output file (POSIX mode enforced; "
+            "Windows destination ACL must be operator-secured)"
+        ),
     )
     vget.set_defaults(func=cmd_vault_get)
     vdelete = vsub.add_parser("delete", help="delete a secret")
@@ -2955,7 +2958,8 @@ def cmd_vault_list(args: argparse.Namespace) -> int:
 def cmd_vault_delete(args: argparse.Namespace) -> int:
     if not args.force:
         raise ValueError("refusing to delete secret without --force")
-    LocalVault().delete(args.name)
+    passphrase = _vault_passphrase(confirm=False)
+    LocalVault().delete(args.name, passphrase)
     print(f"secret deleted: {args.name}")
     return 0
 

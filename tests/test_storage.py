@@ -16,6 +16,60 @@ def test_profile_store_roundtrip(tmp_path: Path) -> None:
     assert len(store.load()) == 1
 
 
+def test_profile_store_update_rejects_reentrant_mutation_but_allows_reads(
+    tmp_path: Path,
+) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="existing", protocol="ssh", host="existing.invalid"))
+    original = store.path.read_bytes()
+
+    def reentrant_update(profiles, _defaults):
+        assert [profile.name for profile in store.load(resolve=False)] == ["existing"]
+        store.add(Profile(name="nested", protocol="ssh", host="nested.invalid"))
+        return profiles
+
+    with pytest.raises(ValueError, match="reentrant profile store mutation"):
+        store.update_profiles(reentrant_update)
+
+    assert store.path.read_bytes() == original
+    assert [profile.name for profile in store.load(resolve=False)] == ["existing"]
+
+
+def test_profile_store_replace_named_handles_rename_collisions_and_missing_names(
+    tmp_path: Path,
+) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="first", protocol="ssh", host="first.example.invalid"))
+    store.add(Profile(name="second", protocol="ssh", host="second.example.invalid"))
+
+    renamed = Profile(name="renamed", protocol="ssh", host="renamed.example.invalid")
+    assert store.replace_named("first", renamed).name == "renamed"
+    assert store.get("renamed").host == "renamed.example.invalid"
+
+    with pytest.raises(KeyError, match="missing"):
+        store.replace_named("missing", renamed)
+    with pytest.raises(ValueError, match="already exists"):
+        store.replace_named("renamed", Profile(name="second", protocol="ssh", host="duplicate"))
+
+
+def test_profile_store_guard_cannot_reentrantly_mutate_same_store(tmp_path: Path) -> None:
+    store = ProfileStore(tmp_path / "profiles.json")
+    store.add(Profile(name="existing", protocol="ssh", host="existing.invalid"))
+    original = store.path.read_bytes()
+
+    def reentrant_guard(_candidate, _existing, _defaults) -> None:
+        assert store.get("existing").host == "existing.invalid"
+        store.remove("existing")
+
+    with pytest.raises(ValueError, match="reentrant profile store mutation"):
+        store.add(
+            Profile(name="candidate", protocol="ssh", host="candidate.invalid"),
+            guard=reentrant_guard,
+        )
+
+    assert store.path.read_bytes() == original
+
+
 def test_no_examples_purges_only_unchanged_seeded_profiles(tmp_path: Path) -> None:
     store = ProfileStore(tmp_path / "profiles.json")
     store.init(with_examples=True)
@@ -49,6 +103,10 @@ def test_profile_store_applies_group_defaults(tmp_path: Path) -> None:
     ("payload", "message"),
     [
         ("[]", "profile store root must be a JSON object"),
+        ('{"version": true, "profiles": []}', "unsupported profile store version"),
+        ('{"version": 1.0, "profiles": []}', "unsupported profile store version"),
+        ('{"version": 0, "profiles": []}', "unsupported profile store version"),
+        ('{"version": 2, "profiles": []}', "unsupported profile store version"),
         ('{"profiles": {}}', "profiles must be a JSON array"),
         ('{"profiles": [1]}', "profile at index 0 must be a JSON object"),
     ],

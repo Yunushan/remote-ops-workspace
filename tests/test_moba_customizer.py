@@ -66,7 +66,7 @@ def test_moba_professional_customizer_bundle_contains_enterprise_assets(tmp_path
         logo_path=logo_path,
         settings_path=settings_path,
         profiles_path=profiles_path,
-        lock_settings=["theme=dark", "confirm_before_launch=true"],
+        lock_settings=["protocol=ssh", "options.strict_host_key_checking=yes"],
     )
     bundle = write_moba_professional_customizer_bundle(plan)
 
@@ -75,6 +75,9 @@ def test_moba_professional_customizer_bundle_contains_enterprise_assets(tmp_path
     policy = json.loads((bundle.root / "config" / "policy.json").read_text(encoding="utf-8"))
     profiles = json.loads((bundle.root / "config" / "profiles.json").read_text(encoding="utf-8"))
     sums = (bundle.root / "SHA256SUMS.txt").read_text(encoding="utf-8")
+    windows_apply = (bundle.root / "install" / "apply-enterprise-bundle.ps1").read_text(encoding="utf-8")
+    posix_apply = (bundle.root / "install" / "apply-enterprise-bundle.sh").read_text(encoding="utf-8")
+    bundle_readme = (bundle.root / "install" / "README.txt").read_text(encoding="utf-8")
 
     assert manifest["brand_name"] == "Corp Ops"
     assert manifest["profile_count"] == 1
@@ -82,12 +85,18 @@ def test_moba_professional_customizer_bundle_contains_enterprise_assets(tmp_path
     assert branding["logo"] == "branding/logo.svg"
     assert "Welcome, operator." in (bundle.root / "welcome.txt").read_text(encoding="utf-8")
     assert policy["locked_settings"] == [
-        {"key": "theme", "value": "dark"},
-        {"key": "confirm_before_launch", "value": "true"},
+        {"key": "protocol", "value": "ssh"},
+        {"key": "options.strict_host_key_checking", "value": "yes"},
     ]
     assert profiles["profiles"][0]["name"] == "corp-edge"
     assert "manifest.json" in sums
     assert "config/profiles.json" in bundle.sha256s
+    assert "CommonApplicationData" in windows_apply
+    assert 'RemoteOpsWorkspace"' in windows_apply
+    assert "$env:ROW_HOME" not in windows_apply.split("$PolicyTarget", 1)[1].splitlines()[0]
+    assert 'policy_target="/etc/remote-ops-workspace"' in posix_apply
+    assert 'if [ "$(id -u)" -ne 0 ]' in posix_apply
+    assert "administrator-owned machine policy" in bundle_readme
 
 
 def test_moba_professional_customizer_rejects_existing_output_without_force(tmp_path: Path) -> None:
@@ -111,14 +120,14 @@ def test_moba_professional_deployment_plan_covers_installers_locks_and_updates()
         version="1.0.2",
         update_url="https://updates.example.com/row/stable.json",
         update_public_key=UPDATE_PUBLIC_KEY,
-        lock_settings=["theme=dark"],
+        lock_settings=["protocol=ssh"],
     )
 
     assert plan.schema == "row.moba-professional.deployment-plan.v1"
     assert plan.installer_branding.installer_targets == ["windows-exe", "windows-msi"]
     assert plan.installer_branding.artifact_names["windows-exe"] == "corp-ops-1.0.2-setup.exe"
     assert plan.installer_branding.artifact_names["windows-msi"] == "corp-ops-1.0.2.msi"
-    assert plan.policy_locks.locked_settings == [{"key": "theme", "value": "dark"}]
+    assert plan.policy_locks.locked_settings == [{"key": "protocol", "value": "ssh"}]
     assert "gui" in plan.policy_locks.enforcement_surfaces
     assert "launcher" in plan.policy_locks.enforcement_surfaces
     assert plan.update_channel.require_signature is True
@@ -235,7 +244,7 @@ def test_moba_professional_deployment_evidence_accepts_complete_bundle(tmp_path:
                     "command": "policy lock smoke",
                     "evidence_file": "policy.txt",
                     "evidence_sha256": _sha256(policy),
-                    "locked_settings": [{"key": "theme", "value": "dark"}],
+                    "locked_settings": [{"key": "protocol", "value": "ssh"}],
                     "surfaces": {
                         "cli": True,
                         "gui": True,
@@ -291,7 +300,7 @@ def test_moba_professional_deployment_evidence_bundle_writer_accepts_complete_bu
         version="1.0.2",
         update_url="https://updates.example.com/row/stable.json",
         update_public_key=UPDATE_PUBLIC_KEY,
-        lock_settings=["theme=dark"],
+        lock_settings=["protocol=ssh"],
     )
     plan = build_professional_deployment_evidence_bundle_plan(
         deployment,
@@ -368,7 +377,7 @@ def test_moba_professional_deployment_evidence_rejects_missing_surface(tmp_path:
                     "command": "policy lock smoke",
                     "evidence_file": "policy.txt",
                     "evidence_sha256": _sha256(policy),
-                    "locked_settings": [{"key": "theme", "value": "dark"}],
+                    "locked_settings": [{"key": "protocol", "value": "ssh"}],
                     "surfaces": {
                         "cli": True,
                         "web": True,
@@ -420,7 +429,7 @@ def test_customizer_cli_command_is_registered() -> None:
             "--update-public-key",
             UPDATE_PUBLIC_KEY,
             "--lock-setting",
-            "theme=dark",
+            "protocol=ssh",
             "--json",
         ]
     )
@@ -439,7 +448,7 @@ def test_customizer_cli_command_is_registered() -> None:
             "--update-public-key",
             UPDATE_PUBLIC_KEY,
             "--lock-setting",
-            "theme=dark",
+            "protocol=ssh",
             "--out-dir",
             "artifacts/deployment",
             "--bundle-manifest-evidence",
@@ -496,7 +505,7 @@ def test_customizer_result_serializers_and_incomplete_evidence_plan(tmp_path: Pa
         version="1.0.2",
         update_url="https://updates.example.com/stable.json",
         update_public_key=UPDATE_PUBLIC_KEY,
-        lock_settings=["theme=dark"],
+        lock_settings=["protocol=ssh"],
     )
     evidence_plan = build_professional_deployment_evidence_bundle_plan(
         deployment,
@@ -565,7 +574,7 @@ def test_customizer_plan_builders_reject_invalid_required_values(tmp_path: Path)
         brand_name="Corp Ops",
         update_url="https://updates.example.com/stable.json",
         update_public_key=UPDATE_PUBLIC_KEY,
-        lock_settings=["theme=dark"],
+        lock_settings=["protocol=ssh"],
     )
     evidence_plan = build_professional_deployment_evidence_bundle_plan(
         deployment,
@@ -624,25 +633,27 @@ def test_customizer_bundle_without_logo_and_json_loaders(tmp_path: Path) -> None
 def test_customizer_policy_logo_text_and_surface_validation(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="must be a list"):
         customizer._policy_with_locked_settings({"locked_settings": "bad"}, [])
-    for malformed in (1, {"value": "dark"}, {"key": "theme"}):
+    for malformed in (1, {"value": "ssh"}, {"key": "protocol"}):
         with pytest.raises(ValueError, match="entries must contain key and value"):
             customizer._policy_with_locked_settings({"locked_settings": [malformed]}, [])
     with pytest.raises(ValueError, match="duplicate locked setting"):
         customizer._policy_with_locked_settings(
             {
                 "locked_settings": [
-                    {"key": "theme", "value": "dark"},
-                    {"key": "theme", "value": "light"},
+                    {"key": "protocol", "value": "ssh"},
+                    {"key": "protocol", "value": "telnet"},
                 ]
             },
             [],
         )
     with pytest.raises(ValueError, match="must be key=value"):
-        customizer._policy_with_locked_settings({}, ["theme"])
+        customizer._policy_with_locked_settings({}, ["protocol"])
+    with pytest.raises(ValueError, match="unsupported enterprise policy locked setting key: theme"):
+        customizer._policy_with_locked_settings({}, ["theme=dark"])
     with pytest.raises(ValueError, match="duplicate locked setting"):
         customizer._policy_with_locked_settings(
-            {"locked_settings": [{"key": "theme", "value": "dark"}]},
-            ["theme=light"],
+            {"locked_settings": [{"key": "protocol", "value": "ssh"}]},
+            ["protocol=telnet"],
         )
 
     with pytest.raises(ValueError, match="does not exist"):

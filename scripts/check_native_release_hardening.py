@@ -23,8 +23,7 @@ SIGNING_READINESS_OUTPUTS = {
     "windows_release_signing_ready": "steps.signing-readiness.outputs.windows_ready",
     "macos_release_signing_ready": "steps.signing-readiness.outputs.macos_ready",
     "signed_native_publish_ready": "steps.signing-readiness.outputs.signed_native_ready",
-    "unsigned_native_preview_allowed": "steps.signing-readiness.outputs.unsigned_preview_allowed",
-    "native_publish_ready": "steps.signing-readiness.outputs.native_publish_ready",
+    "candidate_build_ready": "steps.signing-readiness.outputs.candidate_build_ready",
 }
 
 
@@ -289,13 +288,20 @@ def check_macos_dmg_creation_retry() -> list[str]:
     return errors
 
 
-def check_linux_appimagetool_download() -> list[str]:
-    text = NATIVE_SCRIPTS["linux"].read_text(encoding="utf-8")
+def check_linux_appimagetool_download(script_text: str | None = None) -> list[str]:
+    text = script_text if script_text is not None else NATIVE_SCRIPTS["linux"].read_text(encoding="utf-8")
     errors: list[str] = []
-    if "APPIMAGETOOL_URL" not in text:
-        errors.append("make_linux_native.sh must make the appimagetool URL explicit")
-    if "APPIMAGETOOL_SHA256" not in text or "sha256sum -c -" not in text:
-        errors.append("make_linux_native.sh must support checksum verification for downloaded appimagetool")
+    if "APPIMAGETOOL_VERSION" not in text or '!= "1.9.1"' not in text:
+        errors.append("make_linux_native.sh must enforce reviewed appimagetool release 1.9.1")
+    if "releases/download/${APPIMAGETOOL_VERSION}/" not in text or "/continuous/" in text:
+        errors.append("make_linux_native.sh must download appimagetool from an immutable versioned URL")
+    if (
+        'if [[ "$APPIMAGETOOL_SHA256" != "$EXPECTED_APPIMAGETOOL_SHA256" ]]' not in text
+        or 'echo "${EXPECTED_APPIMAGETOOL_SHA256}  ${APPIMAGETOOL}" | sha256sum -c -' not in text
+    ):
+        errors.append("make_linux_native.sh must require reviewed checksum verification before execution")
+    if "command -v appimagetool" in text:
+        errors.append("make_linux_native.sh must not execute an unverified PATH appimagetool")
     if "AppImageKit/releases/download/continuous" in text:
         errors.append("make_linux_native.sh must not use the obsolete AppImageKit appimagetool URL")
     return errors
@@ -326,7 +332,6 @@ def check_native_workflow_boundaries(workflow: str | None = None) -> list[str]:
 
 def check_signing_readiness_gate(workflow: str) -> list[str]:
     preflight = workflow_job_block(workflow, "release-preflight")
-    publish = workflow_job_block(workflow, "publish")
     errors: list[str] = []
     if "environment: release" not in preflight:
         errors.append("release-preflight must read protected signing material from the release environment")
@@ -345,58 +350,38 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
         'echo "windows_ready=$windows_ready"': "Windows signing readiness output",
         'echo "macos_ready=$macos_ready"': "macOS signing readiness output",
         'echo "signed_native_ready=$signed_native_ready"': "combined signing readiness output",
-        'echo "unsigned_preview_allowed=$unsigned_preview_allowed"': "unsigned-preview readiness output",
-        'echo "native_publish_ready=$native_publish_ready"': "native publish readiness output",
-        "building an explicitly unsigned preview release": "explicit unsigned-preview warning",
-        "allow_unsigned_preview=true": "manual unsigned-preview opt-in guidance",
-        "signed Windows/macOS jobs and GitHub Release publishing will be skipped": (
-            "explicit unavailable-signing notice"
+        'echo "candidate_build_ready=$candidate_build_ready"': "candidate readiness output",
+        "release.yml never creates or mutates a GitHub Release": (
+            "build-only release boundary notice"
         ),
+        "unsigned-preview.yml": "separate unsigned-preview guidance",
     }.items():
         if snippet not in preflight:
             errors.append(f"release-preflight missing {label}: {snippet}")
-    for snippet, label in {
-        "allow_unsigned_preview:": "manual unsigned-preview workflow input",
-        "UNSIGNED PREVIEW": "unsigned preview release label",
-        "prerelease: ${{ needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true' }}": (
-            "unsigned preview prerelease marker"
-        ),
-    }.items():
-        if snippet not in workflow:
-            errors.append(f"release workflow missing {label}: {snippet}")
-    for job, output in (
-        ("windows-native", "windows_release_signing_ready"),
-        ("macos-native", "macos_release_signing_ready"),
-    ):
+    if "workflow_dispatch:" in workflow or "allow_unsigned_preview:" in workflow:
+        errors.append("production candidate workflow must not expose an unsigned-preview input")
+    if "softprops/action-gh-release" in workflow or "UNSIGNED PREVIEW" in workflow:
+        errors.append("production candidate workflow must not own preview publication")
+    for job in ("windows-native", "macos-native", "linux-native"):
         block = workflow_job_block(workflow, job)
-        signed_condition = f"needs.release-preflight.outputs.{output} == 'true'"
-        unsigned_condition = (
-            "needs.release-preflight.outputs.unsigned_native_preview_allowed == 'true'"
-        )
-        if signed_condition not in block or unsigned_condition not in block:
-            errors.append(
-                f"{job} must run without signing material only for an explicit unsigned preview"
-            )
-    for job, marker in (
-        (
-            "windows-native",
-            'if ("${{ needs.release-preflight.outputs.signed_native_publish_ready }}" -ne "true")',
-        ),
-        (
-            "macos-native",
-            'if [[ "${{ needs.release-preflight.outputs.signed_native_publish_ready }}" != "true" ]]',
-        ),
-    ):
-        block = workflow_job_block(workflow, job)
-        if marker not in block:
-            errors.append(
-                f"{job} must use combined signing readiness so unsigned previews cannot mix channels"
-            )
-    publish_condition = (
-        "if: ${{ needs.release-preflight.outputs.native_publish_ready == 'true' }}"
+        if "needs.release-preflight.outputs.candidate_build_ready == 'true'" not in block:
+            errors.append(f"{job} must require signed production candidate readiness")
+    windows = workflow_job_block(workflow, "windows-native")
+    if 'throw "Production candidate Windows builds require protected release signing"' not in windows:
+        errors.append("windows-native must fail closed when release signing is unavailable")
+    macos = workflow_job_block(workflow, "macos-native")
+    if "Production candidate macOS builds require protected release signing" not in macos:
+        errors.append("macos-native must fail closed when release signing is unavailable")
+    preview = (ROOT / ".github" / "workflows" / "unsigned-preview.yml").read_text(
+        encoding="utf-8"
     )
-    if publish_condition not in publish:
-        errors.append("publish must require signed readiness or an explicit unsigned preview")
+    for snippet, label in {
+        "workflow_dispatch:": "manual preview trigger",
+        "UNSIGNED PREVIEW": "explicit preview label",
+        "prerelease: true": "mandatory preview prerelease marker",
+    }.items():
+        if snippet not in preview:
+            errors.append(f"unsigned-preview.yml missing {label}: {snippet}")
     return errors
 
 

@@ -51,7 +51,11 @@ def main(argv: list[str] | None = None) -> int:
     errors.extend(dependency_errors)
     messages.extend(dependency_messages)
 
-    with tempfile.TemporaryDirectory(prefix="row-optional-") as raw_tmp:
+    # macOS exposes the system temporary tree through the ``/var`` symlink.
+    # The private-file safety layer intentionally rejects linked ancestors, so
+    # give the smoke workspace the canonical temp root before creating it.
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    with tempfile.TemporaryDirectory(prefix="row-optional-", dir=temp_root) as raw_tmp:
         tmp_path = Path(raw_tmp)
         desktop_errors, desktop_messages = check_desktop_gui(tmp_path)
         security_errors, security_messages = check_security_vault(tmp_path)
@@ -171,7 +175,7 @@ def check_security_vault(tmp_path: Path) -> tuple[list[str], list[str]]:
     vault.set("prod/router-password", "top-secret", passphrase)
     if vault.get("prod/router-password", passphrase) != "top-secret":
         return ["cryptography-backed vault smoke did not round-trip secret"], []
-    vault.delete("prod/router-password")
+    vault.delete("prod/router-password", passphrase)
     key_path = tmp_path / "id_ed25519"
     try:
         run_keygen(build_keygen_plan(key_path, passphrase="test key passphrase"))

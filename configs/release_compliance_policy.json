@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "policy_status": "blocked-pending-independent-review",
+  "closed_world_inventory_approved": false,
+  "trusted_ed25519_keys": [],
+  "tag_governance_attestation": {
+    "state": "blocked-no-trusted-out-of-band-auditor",
+    "max_validity_seconds": 300,
+    "trusted_ed25519_keys": []
+  },
+  "production_targets": [
+    "windows-x86",
+    "windows-x64",
+    "windows-arm64",
+    "macos-x64",
+    "macos-arm64",
+    "linux-x86_64",
+    "linux-aarch64",
+    "linux-i386",
+    "linux-armhf",
+    "windows-xp-native-x86",
+    "windows-xp-native-x64"
+  ],
+  "build_lock_enforcement": {
+    "state": "blocked-no-platform-locks",
+    "fully_hashed": false,
+    "platform_locks": {}
+  },
+  "verifier_bootstrap": {
+    "state": "blocked-no-fully-hashed-lock",
+    "fully_hashed": false,
+    "lock_file": "requirements-locks/release-verifier-linux-x86_64.txt"
+  },
+  "required_profiles": {
+    "minimal-cli": [
+      "CPython",
+      "remote-ops-workspace",
+      "PyInstaller"
+    ],
+    "secure-cli": [
+      "CPython",
+      "remote-ops-workspace",
+      "PyInstaller",
+      "bcrypt",
+      "cryptography",
+      "cffi",
+      "pycparser",
+      "truststore"
+    ],
+    "gui-secure": [
+      "CPython",
+      "remote-ops-workspace",
+      "PyInstaller",
+      "PyQt6",
+      "PyQt6-Qt6",
+      "PyQt6-sip",
+      "bcrypt",
+      "cryptography",
+      "cffi",
+      "pycparser",
+      "truststore"
+    ]
+  },
+  "unresolved_release_blockers": [
+    "No independent redistribution/compliance approver key has been enrolled.",
+    "The per-platform resolver inputs are directly constrained but are not complete fully hashed transitive locks.",
+    "No closed-world extraction inventory currently proves every CPython, PyInstaller, Python package, Qt, OpenSSL, and other native component actually redistributed in every installer.",
+    "No reviewed PyQt/Qt distribution channel and matching commercial-license evidence or open-source corresponding-source/relink evidence is recorded.",
+    "No fully hashed release-verifier bootstrap lock is available for cryptography/Ed25519 verification in the publish job.",
+    "No trusted out-of-band auditor key or short-lived signed proof establishes that the exact release tag blocks updates and deletion with no bypass actors."
+  ]
+}

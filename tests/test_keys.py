@@ -113,6 +113,19 @@ def test_native_encrypted_key_generation_writes_loadable_pair(
     assert public_bytes.endswith(b" operator@example\n")
 
 
+def test_native_encrypted_key_generation_without_comment_writes_plain_public_key(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "id_no_comment"
+    plan = keys.build_keygen_plan(output, passphrase="correct horse battery staple")
+
+    keys.run_keygen(plan)
+
+    public_bytes = output.with_name(f"{output.name}.pub").read_bytes()
+    assert public_bytes.endswith(b"\n")
+    assert public_bytes.rstrip(b"\n").count(b" ") == 1
+
+
 def test_native_encrypted_key_generation_reports_missing_bcrypt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

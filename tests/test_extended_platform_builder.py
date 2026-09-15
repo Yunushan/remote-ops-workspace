@@ -411,6 +411,10 @@ def test_builder_security_patch_evidence_rejects_generic_https_cve_reference(mon
 def test_builder_security_patch_evidence_accepts_update_and_advisory_namespaces(monkeypatch) -> None:
     builder = _load_builder()
     evidence = builder.security_patch_evidence()
+    # This case verifies provenance namespace validation, not host OpenSSL
+    # discovery; keep it deterministic on developer machines without the CLI.
+    evidence["python_ssl_openssl"] = "OpenSSL test-runtime"
+    evidence["openssl_cli_version"] = "OpenSSL test-cli"
     evidence["security_update_channel"] = "ubuntu-security-updates-usn-2026-07"
     evidence["cve_review_reference"] = "vendor-cve-advisory-review-2026-07"
     monkeypatch.setattr(builder, "security_patch_evidence", lambda: evidence)

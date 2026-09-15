@@ -404,8 +404,22 @@ def test_profile_save_order_duplicates_and_import_warning_dialog_edges(
     window.store = store
     with pytest.raises(ValueError, match="profile already exists"):
         window.save_profile(duplicate, original_name=first.name)
+    with pytest.raises(KeyError, match="missing"):
+        window.save_profile(replacement, original_name="missing")
     window.save_profile(replacement, original_name=first.name)
     assert store.saved == [["replacement", "duplicate"]]
+
+    class _ReplaceStore:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, str]] = []
+
+        def replace_named(self, original_name: str, profile: Profile, *, surface: str) -> None:
+            self.calls.append((original_name, profile.name, surface))
+
+    replace_store = _ReplaceStore()
+    window.store = replace_store
+    window.save_profile(replacement, original_name="first")
+    assert replace_store.calls == [("first", "replacement", "profile-editor")]
 
     result = ProfileImportResult(
         "row",

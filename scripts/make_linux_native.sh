@@ -218,22 +218,64 @@ cp "$APPDIR/remote-ops-workspace.svg" "$APPDIR/usr/share/icons/hicolor/scalable/
 
 APPIMAGE="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
 APPIMAGETOOL="${APPIMAGETOOL:-$BUILD_DIR/appimagetool-${APPIMAGE_ARCH}.AppImage}"
-APPIMAGETOOL_URL="${APPIMAGETOOL_URL:-https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${APPIMAGE_ARCH}.AppImage}"
-if ! command -v appimagetool >/dev/null 2>&1 && [[ ! -x "$APPIMAGETOOL" ]]; then
-  curl -fsSL -o "$APPIMAGETOOL" "$APPIMAGETOOL_URL"
-  if [[ -n "${APPIMAGETOOL_SHA256:-}" ]]; then
-    echo "${APPIMAGETOOL_SHA256}  ${APPIMAGETOOL}" | sha256sum -c -
-  else
-    echo "warning: APPIMAGETOOL_SHA256 is not set; downloaded appimagetool was not checksum-verified" >&2
-  fi
-  chmod +x "$APPIMAGETOOL"
+APPIMAGETOOL_VERSION="${APPIMAGETOOL_VERSION:-1.9.1}"
+APPIMAGE_RUNTIME="${APPIMAGE_RUNTIME:-$BUILD_DIR/appimage-runtime-${APPIMAGE_ARCH}}"
+APPIMAGE_RUNTIME_VERSION="${APPIMAGE_RUNTIME_VERSION:-20251108}"
+if [[ "$APPIMAGETOOL_VERSION" != "1.9.1" ]]; then
+  echo "APPIMAGETOOL_VERSION must remain pinned to reviewed release 1.9.1" >&2
+  exit 1
 fi
-
-if command -v appimagetool >/dev/null 2>&1; then
-  ARCH="$APPIMAGE_ARCH" appimagetool "$APPDIR" "$APPIMAGE"
-else
-  ARCH="$APPIMAGE_ARCH" "$APPIMAGETOOL" --appimage-extract-and-run "$APPDIR" "$APPIMAGE"
+if [[ "$APPIMAGE_RUNTIME_VERSION" != "20251108" ]]; then
+  echo "APPIMAGE_RUNTIME_VERSION must remain pinned to reviewed release 20251108" >&2
+  exit 1
 fi
+APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${APPIMAGE_ARCH}.AppImage"
+APPIMAGE_RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download/${APPIMAGE_RUNTIME_VERSION}/runtime-${APPIMAGE_ARCH}"
+case "$APPIMAGE_ARCH" in
+  x86_64)
+    EXPECTED_APPIMAGETOOL_SHA256="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+    EXPECTED_APPIMAGE_RUNTIME_SHA256="2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
+    ;;
+  aarch64)
+    EXPECTED_APPIMAGETOOL_SHA256="f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158"
+    EXPECTED_APPIMAGE_RUNTIME_SHA256="00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444"
+    ;;
+  i686)
+    EXPECTED_APPIMAGETOOL_SHA256="7ad9ff47c203aae0149b18f6df9e3018b2e2f470ea644a0413e3ded39e9e3bdb"
+    EXPECTED_APPIMAGE_RUNTIME_SHA256="e72ea0b140a0a16e680713238a6f30aad278b62c4ca17919c554864124515498"
+    ;;
+  armhf)
+    EXPECTED_APPIMAGETOOL_SHA256="42b61cba5495d8aaf418a5c9a015a49b85ad92efabcbd3c341f1540440e4e23d"
+    EXPECTED_APPIMAGE_RUNTIME_SHA256="e9060d37577b8a29914ec12d8740add24e19ff29012fb1fa0f60daf62db0688d"
+    ;;
+  *)
+    echo "No reviewed appimagetool SHA-256 is pinned for architecture '$APPIMAGE_ARCH'" >&2
+    exit 1
+    ;;
+esac
+APPIMAGETOOL_SHA256="${APPIMAGETOOL_SHA256:-$EXPECTED_APPIMAGETOOL_SHA256}"
+APPIMAGE_RUNTIME_SHA256="${APPIMAGE_RUNTIME_SHA256:-$EXPECTED_APPIMAGE_RUNTIME_SHA256}"
+if [[ "$APPIMAGETOOL_SHA256" != "$EXPECTED_APPIMAGETOOL_SHA256" ]]; then
+  echo "APPIMAGETOOL_SHA256 does not match the reviewed appimagetool ${APPIMAGETOOL_VERSION} ${APPIMAGE_ARCH} digest" >&2
+  exit 1
+fi
+if [[ "$APPIMAGE_RUNTIME_SHA256" != "$EXPECTED_APPIMAGE_RUNTIME_SHA256" ]]; then
+  echo "APPIMAGE_RUNTIME_SHA256 does not match the reviewed type-2 runtime ${APPIMAGE_RUNTIME_VERSION} ${APPIMAGE_ARCH} digest" >&2
+  exit 1
+fi
+if [[ ! -f "$APPIMAGETOOL" ]]; then
+  curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+    --output "$APPIMAGETOOL" "$APPIMAGETOOL_URL"
+fi
+echo "${EXPECTED_APPIMAGETOOL_SHA256}  ${APPIMAGETOOL}" | sha256sum -c -
+if [[ ! -f "$APPIMAGE_RUNTIME" ]]; then
+  curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \
+    --output "$APPIMAGE_RUNTIME" "$APPIMAGE_RUNTIME_URL"
+fi
+echo "${EXPECTED_APPIMAGE_RUNTIME_SHA256}  ${APPIMAGE_RUNTIME}" | sha256sum -c -
+chmod +x "$APPIMAGETOOL"
+ARCH="$APPIMAGE_ARCH" "$APPIMAGETOOL" --appimage-extract-and-run \
+  --runtime-file "$APPIMAGE_RUNTIME" "$APPDIR" "$APPIMAGE"
 
 TARBALL="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${APPIMAGE_ARCH}-native.tar.gz"
 tar -C "$PKGROOT" -czf "$TARBALL" .

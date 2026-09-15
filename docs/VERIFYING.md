@@ -125,6 +125,44 @@ python scripts/verify.py --quick
 
 Quick mode skips `pytest` and runs stdlib-backed compile checks, docs consistency, roadmap truth checks, CI workflow policy checks, release-truth/toolchain/matrix/platform-support/platform-promotion/platform-promotion-runbook/platform-promotion-artifact/extended-platform-evidence/extended-platform-dispatch-input/XP-evidence/platform-verified-evidence/protected-platform-goal/platform-evidence-record/finalized-platform-evidence-record/platform-evidence-importer/MobaXterm-parity-evidence/mobile-support/publish-asset checks, optional dependency smoke checks, native hardening checks, native installer smoke contract checks, production security checks, repository cleanup checks, GUI preview checks, GUI visual metrics, GUI parity criteria checks, real GUI render smoke checks, README media checks, first-run UX checks, feature reality checks, coverage-truth checks and the CLI smoke test. It is useful for sandboxed review environments, but it is not a substitute for the full verifier before a release or pull request.
 
+For the fail-closed local quality portion of the 100/100 release gate, run:
+
+```bash
+python scripts/verify.py --production-quality
+```
+
+This profile always enables Ruff, the non-GUI mypy gate, the full pytest suite,
+CLI smoke, and real PyQt6 rendering. It rejects `--quick` and
+`--no-cli-smoke`; the internal step builder also overrides those skip switches
+so another caller cannot accidentally weaken the production profile.
+
+The aggregate `make production-readiness` target additionally requires an exact
+tag/SHA checkout and a clean working tree both before and after the audit. After
+validating the downloaded asset set locally, it runs
+`scripts/check_release_license_compliance.py`. That gate requires an
+independently signed, unexpired approval bound to the repository, tag, SHA,
+tracked policy hash, exact native manifest bytes, and the artifact hashes those
+manifests contain. It reads the referenced fully hashed platform locks, raw
+`pip inspect` captures, and extracted license files from the evidence bundle;
+all realized distributions must be classified, all bundled component license
+files must appear in every artifact extraction scan, and the tagged build jobs
+must consume their platform locks with `--require-hashes`. GUI evidence must
+also prove the selected commercial or open-source PyQt/Qt channel. A signed
+self-assertion naming an unused or missing lock does not pass.
+
+The same target runs `scripts/check_release_maturity.py`; the present Alpha
+classifier is an explicit production blocker until maintainers deliberately
+approve and declare `Development Status :: 5 - Production/Stable`. It then runs
+`scripts/check_release_provenance.py` to match every local file to the live
+GitHub Release size and SHA-256 digest. GitHub CLI then cryptographically
+verifies every asset in the complete certified release inventory against the exact repository,
+`.github/workflows/release.yml`, release SHA, `refs/tags/<tag>` source ref, SLSA provenance predicate, and a
+GitHub-hosted runner. The certificate-bound run-attempt sets must intersect for
+all assets, the remote release must be immutable, and that exact tag-push run
+attempt must be completed successfully.
+This remote proof requires an authenticated `gh` installation; a local manifest
+or an unrelated green release run is not a substitute.
+
 For local GUI parity proof on a machine with the desktop extra installed, run:
 
 ```bash
@@ -179,7 +217,11 @@ both exact contexts. Release preflight separately runs
 `python scripts/check_python315_ci_evidence.py --repository <owner/repo> --branch main --sha <release-source-sha>`
 with read-only GitHub Actions access and rejects any non-push, wrong-SHA,
 incomplete, skipped or unsuccessful evidence for either aggregate in that same
-run attempt.
+run attempt. The aggregate production gate additionally runs
+`python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-source-sha>`;
+that command verifies both the configured branch-protection contexts and the
+latest exact-SHA check run for every required context, rejecting missing,
+incomplete, pending, skipped, stale-SHA, or unsuccessful results.
 
 Regenerate README media after GUI preview changes:
 

@@ -10,6 +10,20 @@ TOOLCHAIN_PATH = ROOT / "configs" / "release_toolchain.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 PIN_RE = re.compile(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9][A-Za-z0-9_.!+-]*)$")
+APPIMAGETOOL_VERSION = "1.9.1"
+APPIMAGETOOL_SHA256 = {
+    "x86_64": "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+    "aarch64": "f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158",
+    "i686": "7ad9ff47c203aae0149b18f6df9e3018b2e2f470ea644a0413e3ded39e9e3bdb",
+    "armhf": "42b61cba5495d8aaf418a5c9a015a49b85ad92efabcbd3c341f1540440e4e23d",
+}
+APPIMAGE_RUNTIME_VERSION = "20251108"
+APPIMAGE_RUNTIME_SHA256 = {
+    "x86_64": "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+    "aarch64": "00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444",
+    "i686": "e72ea0b140a0a16e680713238a6f30aad278b62c4ca17919c554864124515498",
+    "armhf": "e9060d37577b8a29914ec12d8740add24e19ff29012fb1fa0f60daf62db0688d",
+}
 
 
 def main() -> int:
@@ -21,14 +35,14 @@ def main() -> int:
         errors.extend(check_python_build_backend(toolchain))
         errors.extend(check_workflow(toolchain))
         errors.extend(check_release_helper(toolchain))
-        errors.extend(check_linux_appimagetool_script())
+        errors.extend(check_linux_appimagetool_script(toolchain))
         errors.extend(check_windows_native_smoke())
         errors.extend(check_native_release_tag_guards())
     if errors:
         for error in errors:
             print(f"release toolchain: {error}", file=sys.stderr)
         return 1
-    print("release toolchain reproducibility passed")
+    print("release toolchain pinning policy passed")
     return 0
 
 
@@ -415,14 +429,152 @@ def check_release_helper(toolchain: dict[str, object]) -> list[str]:
     return errors
 
 
-def check_linux_appimagetool_script() -> list[str]:
-    script = (ROOT / "scripts" / "make_linux_native.sh").read_text(encoding="utf-8")
+def check_linux_appimagetool_script(
+    toolchain: dict[str, object],
+    script_text: str | None = None,
+    workflow_text: str | None = None,
+) -> list[str]:
+    script = (
+        script_text
+        if script_text is not None
+        else (ROOT / "scripts" / "make_linux_native.sh").read_text(encoding="utf-8")
+    )
+    workflow = workflow_text if workflow_text is not None else WORKFLOW_PATH.read_text(encoding="utf-8")
+    script = strip_unquoted_comments(script)
+    workflow = strip_unquoted_comments(workflow)
     errors: list[str] = []
-    if "https://github.com/AppImage/appimagetool/releases/download/continuous" not in script:
-        errors.append("make_linux_native.sh must use the maintained AppImage/appimagetool upstream URL")
-    if "APPIMAGETOOL_SHA256" not in script:
-        errors.append("make_linux_native.sh must support APPIMAGETOOL_SHA256 verification")
+    linux_tools = {
+        str(row.get("name")): row
+        for row in required_list(
+            required_mapping(toolchain, "native_toolchains", errors), "linux", errors
+        )
+        if isinstance(row, dict)
+    }
+    appimagetool = linux_tools.get("appimagetool")
+    if not isinstance(appimagetool, dict):
+        return [*errors, "release toolchain must declare the Linux appimagetool input"]
+    expected_url = (
+        "https://github.com/AppImage/appimagetool/releases/download/"
+        f"{APPIMAGETOOL_VERSION}/appimagetool-{{arch}}.AppImage"
+    )
+    if appimagetool.get("provider") != "github-release":
+        errors.append("release toolchain appimagetool provider must be github-release")
+    if appimagetool.get("version") != APPIMAGETOOL_VERSION:
+        errors.append(f"release toolchain appimagetool version must be {APPIMAGETOOL_VERSION}")
+    if appimagetool.get("url_template") != expected_url:
+        errors.append("release toolchain appimagetool URL must use the pinned 1.9.1 release tag")
+    if appimagetool.get("sha256") != APPIMAGETOOL_SHA256:
+        errors.append("release toolchain appimagetool SHA-256 pins must match every supported architecture")
+    runtime = appimagetool.get("embedded_runtime")
+    expected_runtime_url = (
+        "https://github.com/AppImage/type2-runtime/releases/download/"
+        f"{APPIMAGE_RUNTIME_VERSION}/runtime-{{arch}}"
+    )
+    if not isinstance(runtime, dict):
+        errors.append("release toolchain must declare the AppImage embedded type-2 runtime")
+        runtime = {}
+    if runtime.get("provider") != "github-release":
+        errors.append("release toolchain AppImage runtime provider must be github-release")
+    if runtime.get("version") != APPIMAGE_RUNTIME_VERSION:
+        errors.append(f"release toolchain AppImage runtime version must be {APPIMAGE_RUNTIME_VERSION}")
+    if runtime.get("url_template") != expected_runtime_url:
+        errors.append("release toolchain AppImage runtime URL must use the pinned release tag")
+    if runtime.get("sha256") != APPIMAGE_RUNTIME_SHA256:
+        errors.append("release toolchain AppImage runtime SHA-256 pins must match every supported architecture")
+    required_script_snippets = {
+        'APPIMAGETOOL_VERSION="${APPIMAGETOOL_VERSION:-1.9.1}"': "pinned appimagetool version",
+        'if [[ "$APPIMAGETOOL_VERSION" != "1.9.1" ]]': "appimagetool version override guard",
+        "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/": (
+            "versioned AppImage/appimagetool release URL"
+        ),
+        'if [[ "$APPIMAGETOOL_SHA256" != "$EXPECTED_APPIMAGETOOL_SHA256" ]]': (
+            "reviewed checksum override guard"
+        ),
+        'echo "${EXPECTED_APPIMAGETOOL_SHA256}  ${APPIMAGETOOL}" | sha256sum -c -': (
+            "mandatory checksum verification before execution"
+        ),
+        "curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error": (
+            "HTTPS-only fail-closed appimagetool download"
+        ),
+        'APPIMAGE_RUNTIME_VERSION="${APPIMAGE_RUNTIME_VERSION:-20251108}"': (
+            "pinned AppImage runtime version"
+        ),
+        'if [[ "$APPIMAGE_RUNTIME_VERSION" != "20251108" ]]': (
+            "AppImage runtime version override guard"
+        ),
+        "https://github.com/AppImage/type2-runtime/releases/download/${APPIMAGE_RUNTIME_VERSION}/": (
+            "versioned AppImage type-2 runtime URL"
+        ),
+        'if [[ "$APPIMAGE_RUNTIME_SHA256" != "$EXPECTED_APPIMAGE_RUNTIME_SHA256" ]]': (
+            "reviewed AppImage runtime checksum override guard"
+        ),
+        'echo "${EXPECTED_APPIMAGE_RUNTIME_SHA256}  ${APPIMAGE_RUNTIME}" | sha256sum -c -': (
+            "mandatory AppImage runtime checksum verification before execution"
+        ),
+        '--runtime-file "$APPIMAGE_RUNTIME"': "explicit reviewed AppImage runtime input",
+    }
+    for digest in APPIMAGETOOL_SHA256.values():
+        required_script_snippets[digest] = "architecture-specific reviewed appimagetool SHA-256"
+    for digest in APPIMAGE_RUNTIME_SHA256.values():
+        required_script_snippets[digest] = "architecture-specific reviewed AppImage runtime SHA-256"
+    for snippet, label in required_script_snippets.items():
+        if snippet not in script:
+            errors.append(f"make_linux_native.sh missing {label}: {snippet}")
+    if "/continuous/" in script:
+        errors.append("make_linux_native.sh must not download appimagetool from a mutable continuous tag")
+    if "command -v appimagetool" in script:
+        errors.append("make_linux_native.sh must not execute an unverified PATH appimagetool")
+    for snippet, label in {
+        'APPIMAGETOOL_VERSION: "1.9.1"': "pinned appimagetool version environment",
+        "APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}": (
+            "matrix-bound appimagetool checksum environment"
+        ),
+        'APPIMAGE_RUNTIME_VERSION: "20251108"': "pinned AppImage runtime version environment",
+        "APPIMAGE_RUNTIME_SHA256: ${{ matrix.appimage_runtime_sha256 }}": (
+            "matrix-bound AppImage runtime checksum environment"
+        ),
+        f"appimagetool_sha256: {APPIMAGETOOL_SHA256['x86_64']}": "x86_64 appimagetool checksum pin",
+        f"appimagetool_sha256: {APPIMAGETOOL_SHA256['aarch64']}": "aarch64 appimagetool checksum pin",
+        f"appimage_runtime_sha256: {APPIMAGE_RUNTIME_SHA256['x86_64']}": (
+            "x86_64 AppImage runtime checksum pin"
+        ),
+        f"appimage_runtime_sha256: {APPIMAGE_RUNTIME_SHA256['aarch64']}": (
+            "aarch64 AppImage runtime checksum pin"
+        ),
+    }.items():
+        if snippet not in workflow:
+            errors.append(f"release workflow missing {label}: {snippet}")
     return errors
+
+
+def strip_unquoted_comments(text: str) -> str:
+    """Remove shell/YAML comments without treating quoted hashes as comments."""
+    active: list[str] = []
+    for line in text.splitlines():
+        quote: str | None = None
+        escaped = False
+        kept: list[str] = []
+        for char in line:
+            if escaped:
+                kept.append(char)
+                escaped = False
+                continue
+            if char == "\\" and quote != "'":
+                kept.append(char)
+                escaped = True
+                continue
+            if char in {"'", '"'}:
+                if quote is None:
+                    quote = char
+                elif quote == char:
+                    quote = None
+                kept.append(char)
+                continue
+            if char == "#" and quote is None:
+                break
+            kept.append(char)
+        active.append("".join(kept).rstrip())
+    return "\n".join(active)
 
 
 def check_windows_native_smoke(script_text: str | None = None) -> list[str]:

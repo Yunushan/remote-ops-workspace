@@ -209,6 +209,66 @@ def test_extended_platform_evidence_rejects_pipefail_only_smoke_step() -> None:
     assert any("missing strict shell safety: set -euo pipefail" in error for error in errors)
 
 
+def test_extended_platform_evidence_rejects_free_form_inputs_in_run_scripts() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    for input_name in ("release_tag", "release_asset_base_url"):
+        expression = "${{ inputs." + input_name + " }}"
+        workflow = (
+            "jobs:\n"
+            "  evidence:\n"
+            "    steps:\n"
+            "      - run: >-\n"
+            f'          echo "{expression}"\n'
+        )
+
+        errors = checker.check_run_dispatch_input_interpolation(
+            workflow,
+            workflow_label="extended platform evidence",
+            free_form_inputs=checker.FREE_FORM_DISPATCH_INPUTS,
+        )
+
+        assert errors == [
+            "extended platform evidence run script must not directly interpolate free-form "
+            f"workflow_dispatch input {input_name!r} on line 5; bind it through env"
+        ]
+
+
+def test_extended_platform_evidence_allows_env_bindings_and_choice_inputs() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = (
+        "env:\n"
+        "  RELEASE_TAG: ${{ inputs.release_tag }}\n"
+        "jobs:\n"
+        "  evidence:\n"
+        "    steps:\n"
+        '      - run: echo "$RELEASE_TAG"\n'
+        '      - run: echo "${{ inputs.target }}"\n'
+    )
+
+    assert checker.check_run_dispatch_input_interpolation(
+        workflow,
+        workflow_label="extended platform evidence",
+        free_form_inputs=checker.FREE_FORM_DISPATCH_INPUTS,
+    ) == []
+
+
+def test_extended_platform_evidence_wires_run_input_guard_into_full_checker() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
+        '--release-tag "$RELEASE_TAG"',
+        '--release-tag "${{ inputs.release_tag }}"',
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any(
+        "run script must not directly interpolate free-form workflow_dispatch input 'release_tag'"
+        in error
+        for error in errors
+    )
+
+
 def test_extended_platform_evidence_requires_target_release_concurrency() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
@@ -325,7 +385,7 @@ def test_extended_platform_evidence_requires_local_goal_preflight_repository() -
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
     block = checker.workflow_job_block(workflow, "linux-i386-native-evidence")
     assert block
-    mutated = block.replace('            --repository "${{ github.repository }}" \\\n', "", 1)
+    mutated = block.replace('            --repository "$REPOSITORY" \\\n', "", 1)
     workflow = workflow.replace(block, mutated, 1)
 
     errors = checker.check_extended_platform_evidence(workflow)
@@ -347,7 +407,7 @@ def test_extended_platform_evidence_requires_scoped_review_bundle_output() -> No
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
     workflow = workflow.replace(
-        "            --out-dir platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts",
+        '            --out-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts"',
         "            --out-dir bundle",
         1,
     )
@@ -367,7 +427,7 @@ def test_extended_platform_evidence_requires_builder_release_context() -> None:
     workflow = workflow.replace(
         "          python3 scripts/check_extended_platform_builder.py \\\n"
         "            --target linux-i386 \\\n"
-        '            --release-tag "${{ inputs.release_tag }}" \\\n',
+        '            --release-tag "$RELEASE_TAG" \\\n',
         "          python3 scripts/check_extended_platform_builder.py \\\n"
         "            --target linux-i386 \\\n",
         1,
@@ -385,7 +445,7 @@ def test_extended_platform_evidence_requires_builder_release_context() -> None:
 def test_extended_platform_evidence_requires_release_tag_env_for_native_build() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "    env:\n      RELEASE_TAG: ${{ inputs.release_tag }}\n",
+        "      RELEASE_TAG: ${{ inputs.release_tag }}\n",
         "",
         1,
     )
@@ -398,7 +458,7 @@ def test_extended_platform_evidence_requires_release_tag_env_for_native_build() 
 def test_extended_platform_evidence_requires_builder_workflow_run_attempt() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        '            --workflow-run-attempt "${{ github.run_attempt }}" \\\n',
+        '            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \\\n',
         "",
         1,
     )
@@ -411,8 +471,8 @@ def test_extended_platform_evidence_requires_builder_workflow_run_attempt() -> N
 def test_extended_platform_evidence_requires_smoke_workflow_run_attempt() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        ' --workflow-run-attempt "${{ github.run_attempt }}" --source-head-sha "${{ github.sha }}"',
-        ' --source-head-sha "${{ github.sha }}"',
+        ' --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA"',
+        ' --source-head-sha "$SOURCE_HEAD_SHA"',
         1,
     )
 
@@ -425,7 +485,7 @@ def test_extended_platform_evidence_requires_smoke_workflow_run_attempt() -> Non
 def test_extended_platform_evidence_requires_smoke_builder_identity_binding() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        " --builder-evidence platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/builder-identity-linux-i386.json",
+        ' --builder-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json"',
         "",
         1,
     )
@@ -438,7 +498,7 @@ def test_extended_platform_evidence_requires_smoke_builder_identity_binding() ->
 def test_extended_platform_evidence_requires_release_source_artifact_name() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "            --release-source-artifact-name extended-linux-evidence-linux-i386-${{ inputs.release_tag }} \\\n",
+        '            --release-source-artifact-name "extended-linux-evidence-linux-i386-${RELEASE_TAG}" \\\n',
         "",
         1,
     )
@@ -451,7 +511,7 @@ def test_extended_platform_evidence_requires_release_source_artifact_name() -> N
 def test_extended_platform_evidence_requires_release_source_run_attempt() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        '            --release-source-run-attempt "${{ github.run_attempt }}" \\\n',
+        '            --release-source-run-attempt "$SOURCE_RUN_ATTEMPT" \\\n',
         "",
         1,
     )
@@ -464,7 +524,7 @@ def test_extended_platform_evidence_requires_release_source_run_attempt() -> Non
 def test_extended_platform_evidence_requires_local_source_run_attempt() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        '            --linux-source-run-attempt "${{ github.run_attempt }}"\n',
+        '            --linux-source-run-attempt "$SOURCE_RUN_ATTEMPT"\n',
         "\n",
         1,
     )
@@ -490,7 +550,7 @@ def test_extended_platform_evidence_requires_candidate_local_evidence_root_bindi
 def test_extended_platform_evidence_requires_candidate_staged_upload_out_dir() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "            --staged-upload-out-dir platform-evidence-upload/linux-i386/${{ inputs.release_tag }} \\\n",
+        '            --staged-upload-out-dir "platform-evidence-upload/linux-i386/${RELEASE_TAG}" \\\n',
         "",
         1,
     )
@@ -516,7 +576,7 @@ def test_extended_platform_evidence_requires_scoped_upload_staging() -> None:
 def test_extended_platform_evidence_requires_target_scoped_artifact_copy() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "cp native-dist/linux/remote-ops-workspace-${{ inputs.release_tag }}-linux-i386.deb platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts/",
+        'cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i386.deb" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"',
         "",
         1,
     )
@@ -529,7 +589,7 @@ def test_extended_platform_evidence_requires_target_scoped_artifact_copy() -> No
 def test_extended_platform_evidence_rejects_old_native_dist_promotion_staging() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "platform-evidence-staging/linux-i386/${{ inputs.release_tag }}/artifacts",
+        "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts",
         "native-dist/linux/linux-i386",
         1,
     )
@@ -592,7 +652,7 @@ def test_extended_platform_evidence_requires_dispatch_input_preflight() -> None:
 def test_extended_platform_evidence_requires_dispatch_release_tag_ref_binding() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        '            --workflow-ref-name "${{ github.ref_name }}" \\\n',
+        '            --workflow-ref-name "$WORKFLOW_REF_NAME" \\\n',
         "",
         1,
     )
@@ -605,7 +665,7 @@ def test_extended_platform_evidence_requires_dispatch_release_tag_ref_binding() 
 def test_extended_platform_evidence_requires_dispatch_source_head_sha() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        '            --source-head-sha "${{ github.sha }}" \\\n',
+        '            --source-head-sha "$SOURCE_HEAD_SHA" \\\n',
         "",
         1,
     )
@@ -618,7 +678,7 @@ def test_extended_platform_evidence_requires_dispatch_source_head_sha() -> None:
 def test_extended_platform_evidence_requires_dispatch_source_run_attempt() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        '            --source-run-attempt "${{ github.run_attempt }}"\n',
+        '            --source-run-attempt "$SOURCE_RUN_ATTEMPT"\n',
         "\n",
         1,
     )

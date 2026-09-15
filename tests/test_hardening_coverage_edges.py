@@ -216,6 +216,11 @@ def test_file_safety_validation_and_append_edges(
     monkeypatch.setattr(file_safety.os, "fsync", lambda _fd: None)
     monkeypatch.setattr(file_safety.os, "close", lambda _fd: None)
     monkeypatch.setattr(file_safety, "_chmod_required", lambda *_args: None)
+    # Exercise the descriptor-level permission branch even on Windows, where
+    # the real ``os`` module does not expose ``fchmod``.
+    monkeypatch.setattr(file_safety.os, "fchmod", lambda *_args: None, raising=False)
+    with pytest.raises(OSError, match="short private audit append"):
+        file_safety.append_jsonl_private(path, {"event": "descriptor-mode"})
     monkeypatch.delattr(file_safety.os, "O_BINARY", raising=False)
     monkeypatch.delattr(file_safety.os, "fchmod", raising=False)
     monkeypatch.setattr(file_safety.os, "O_NOFOLLOW", 0, raising=False)

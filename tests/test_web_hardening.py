@@ -940,7 +940,10 @@ const validPolicy = {
 };
 let fetchResult;
 if (scenario === 'pending') {
-  fetchResult = new Promise(() => {});
+  // Keep the unresolved input as a VM-local thenable instead of a Promise.
+  // Some hosted Windows Node versions retain a VM Promise around Promise.race
+  // even after the timeout participant has already rejected.
+  fetchResult = {then: () => {}};
 } else if (scenario === 'reject') {
   fetchResult = Promise.reject(new Error('offline'));
 } else {

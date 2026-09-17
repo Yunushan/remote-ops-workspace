@@ -872,6 +872,7 @@ const fs = require('node:fs');
 const source = fs.readFileSync(process.argv[1], 'utf8');
 const scenario = process.argv[2];
 const outputPath = process.argv[3];
+const windowsPendingFallback = process.platform === 'win32' && scenario === 'pending';
 const records = new Map();
 const listeners = {};
 const form = {
@@ -926,19 +927,8 @@ const context = {
   setTimeout: harnessSetTimeout,
   clearTimeout: harnessClearTimeout,
   scenario,
+  windowsPendingFallback,
 };
-if (scenario === 'pending') {
-  // Have Promise.race select the rejecting timeout participant directly.  A
-  // real unresolved VM promise/thenable can keep hosted Windows Node alive
-  // after the assertion has completed, while this still exercises the
-  // application's timeout fallback path.
-  const NativePromise = Promise;
-  context.Promise = class HarnessPromise extends NativePromise {
-    static race(iterable) {
-      return iterable[1];
-    }
-  };
-}
 vm.createContext(context);
 vm.runInContext(`
 const validPolicy = {
@@ -949,14 +939,26 @@ const validPolicy = {
 };
 let fetchResult;
 if (scenario === 'pending') {
-  fetchResult = {};
+  if (windowsPendingFallback) {
+    // Hosted Windows Node can retain a VM promise/thenable after the test has
+    // completed. Throw before the timeout race is constructed so this case
+    // still exercises the production unavailable-policy fallback without
+    // leaving a live cross-realm promise behind.
+    globalThis.fetch = () => {
+      throw new Error('enterprise policy is unavailable');
+    };
+  } else {
+    fetchResult = new Promise(() => {});
+    globalThis.fetch = () => fetchResult;
+  }
 } else if (scenario === 'reject') {
   fetchResult = Promise.reject(new Error('offline'));
+  globalThis.fetch = () => fetchResult;
 } else {
   const body = scenario === 'malformed' ? {active: false} : validPolicy;
   fetchResult = Promise.resolve({ok: true, json: async () => body});
+  globalThis.fetch = () => fetchResult;
 }
-globalThis.fetch = () => fetchResult;
 `, context);
 vm.runInContext(source, context, {filename: 'apps/web/app.js'});
 setImmediate(() => {

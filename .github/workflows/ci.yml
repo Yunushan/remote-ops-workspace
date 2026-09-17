@@ -298,42 +298,42 @@ jobs:
           --dist-dir artifacts/python315-dist
           --out artifacts/python315-runtime/distribution-install.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: ${{ always() }}
+        if: ${{ always() && hashFiles('artifacts/python315-gui/**') != '' }}
         with:
           name: python315-gui-${{ matrix.os }}
           path: artifacts/python315-gui
           if-no-files-found: error
           retention-days: 90
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: ${{ always() }}
+        if: ${{ always() && hashFiles('artifacts/python315-interactions/**') != '' }}
         with:
           name: python315-interactions-${{ matrix.os }}
           path: artifacts/python315-interactions
           if-no-files-found: error
           retention-days: 90
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: ${{ always() }}
+        if: ${{ always() && hashFiles('artifacts/python315-dist/**') != '' }}
         with:
           name: python315-distributions-${{ matrix.os }}
           path: artifacts/python315-dist
           if-no-files-found: error
           retention-days: 90
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: ${{ always() }}
+        if: ${{ always() && hashFiles('artifacts/python315-runtime/**') != '' }}
         with:
           name: python315-runtime-${{ matrix.os }}
           path: artifacts/python315-runtime
           if-no-files-found: error
           retention-days: 90
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: ${{ always() }}
+        if: ${{ always() && hashFiles('artifacts/python315-frozen/**') != '' }}
         with:
           name: python315-frozen-${{ matrix.os }}
           path: artifacts/python315-frozen
           if-no-files-found: error
           retention-days: 90
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: ${{ always() && runner.os == 'Windows' }}
+        if: ${{ always() && runner.os == 'Windows' && hashFiles('artifacts/python315-windows-ssh/**') != '' }}
         with:
           name: python315-windows-ssh-${{ matrix.os }}
           path: artifacts/python315-windows-ssh

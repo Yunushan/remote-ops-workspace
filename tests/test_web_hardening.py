@@ -894,24 +894,6 @@ const elements = {
   '#terminal-grid': inertElement(),
   '#feature-tags': inertElement(),
 };
-const validPolicy = {
-  active: true,
-  allow_user_profiles: true,
-  has_restricted_locks: scenario === 'restricted',
-  locked_settings: [],
-};
-let fetchResult;
-if (scenario === 'pending') {
-  // Use an inert thenable rather than a cross-realm Promise.  On Windows,
-  // Node can keep a VM-created unresolved Promise alive while the parent
-  // process is waiting for captured stdout, causing this smoke child to hang.
-  fetchResult = {then: () => {}};
-} else if (scenario === 'reject') {
-  fetchResult = Promise.reject(new Error('offline'));
-} else {
-  const body = scenario === 'malformed' ? {active: false} : validPolicy;
-  fetchResult = Promise.resolve({ok: true, json: async () => body});
-}
 const context = {
   document: {
     querySelector: selector => elements[selector],
@@ -925,7 +907,6 @@ const context = {
     setItem: (key, value) => records.set(key, String(value)),
     removeItem: key => records.delete(key),
   },
-  fetch: () => fetchResult,
   FormData: function () {
     return {entries: () => [
       ['name', 'edge'],
@@ -933,8 +914,32 @@ const context = {
       ['target', 'edge.example.invalid'],
     ][Symbol.iterator]()};
   },
+  setTimeout,
+  clearTimeout,
+  scenario,
 };
 vm.createContext(context);
+// Keep the fetch promises in the VM realm.  Passing parent-realm promises
+// through vm.runInContext can leave Node's Windows subprocess alive while
+// Promise.race is assimilating them, even after the harness writes its result.
+vm.runInContext(`
+const validPolicy = {
+  active: true,
+  allow_user_profiles: true,
+  has_restricted_locks: scenario === 'restricted',
+  locked_settings: [],
+};
+let fetchResult;
+if (scenario === 'pending') {
+  fetchResult = new Promise(() => {});
+} else if (scenario === 'reject') {
+  fetchResult = Promise.reject(new Error('offline'));
+} else {
+  const body = scenario === 'malformed' ? {active: false} : validPolicy;
+  fetchResult = Promise.resolve({ok: true, json: async () => body});
+}
+globalThis.fetch = () => fetchResult;
+`, context);
 vm.runInContext(source, context, {filename: 'apps/web/app.js'});
 setImmediate(() => {
   listeners.submit({preventDefault: () => {}});

@@ -864,10 +864,10 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
     node = shutil.which("node")
     assert node is not None
     harness = r"""
-const vm = require('node:vm');
 const fs = require('node:fs');
+const vm = require('node:vm');
 // Use file arguments for both source and result. Python 3.15 on Windows can
-// leave subprocess pipe threads blocked around a VM thenable even after Node
+// leave subprocess pipe threads blocked around the Node harness even after it
 // has produced the result.
 const source = fs.readFileSync(process.argv[1], 'utf8');
 const scenario = process.argv[2];
@@ -875,7 +875,7 @@ const outputPath = process.argv[3];
 const windowsPendingFallback = process.platform === 'win32' && scenario === 'pending';
 const records = new Map();
 const listeners = {};
-const form = {
+const harnessForm = {
   dataset: {},
   addEventListener: (name, callback) => { listeners[name] = callback; },
   reset: () => {},
@@ -891,7 +891,7 @@ const inertElement = () => ({
 });
 const elements = {
   '#profiles': inertElement(),
-  '#profile-form': form,
+  '#profile-form': harnessForm,
   '#terminal-grid': inertElement(),
   '#feature-tags': inertElement(),
 };
@@ -904,33 +904,37 @@ const harnessSetTimeout = scenario === 'pending'
     }
   : setTimeout;
 const harnessClearTimeout = scenario === 'pending' ? () => {} : clearTimeout;
-const context = {
-  document: {
-    querySelector: selector => elements[selector],
-    querySelectorAll: () => [],
-    createElement: inertElement,
-    documentElement: {dataset: {}},
-  },
-  navigator: {},
-  sessionStorage: {
-    getItem: key => records.get(key) ?? null,
-    setItem: (key, value) => records.set(key, String(value)),
-    removeItem: key => records.delete(key),
-  },
-  FormData: function () {
-    return {entries: () => [
-      ['name', 'edge'],
-      ['protocol', 'ssh'],
-      ['target', 'edge.example.invalid'],
-    ][Symbol.iterator]()};
-  },
+const harnessDocument = {
+  querySelector: selector => elements[selector],
+  querySelectorAll: () => [],
+  createElement: inertElement,
+  documentElement: {dataset: {}},
+};
+const sessionStorage = {
+  getItem: key => records.get(key) ?? null,
+  setItem: (key, value) => records.set(key, String(value)),
+  removeItem: key => records.delete(key),
+};
+const FormData = function () {
+  return {entries: () => [
+    ['name', 'edge'],
+    ['protocol', 'ssh'],
+    ['target', 'edge.example.invalid'],
+  ][Symbol.iterator]()};
+};
+if (!('navigator' in globalThis)) {
+  Object.defineProperty(globalThis, 'navigator', {value: {}, configurable: true});
+}
+// Run the application in Node's current realm. A separate VM context can
+// retain cross-realm promise state on Python 3.15 Windows runners even after
+// the harness has written its result and requested process exit.
+Object.assign(globalThis, {
+  document: harnessDocument,
+  sessionStorage,
+  FormData,
   setTimeout: harnessSetTimeout,
   clearTimeout: harnessClearTimeout,
-  scenario,
-  windowsPendingFallback,
-};
-vm.createContext(context);
-vm.runInContext(`
+});
 const validPolicy = {
   active: true,
   allow_user_profiles: true,
@@ -959,8 +963,7 @@ if (scenario === 'pending') {
   fetchResult = Promise.resolve({ok: true, json: async () => body});
   globalThis.fetch = () => fetchResult;
 }
-`, context);
-vm.runInContext(source, context, {filename: 'apps/web/app.js'});
+vm.runInThisContext(source, {filename: 'apps/web/app.js'});
 setImmediate(() => {
   listeners.submit({preventDefault: () => {}});
   const saved = JSON.parse(
@@ -968,7 +971,7 @@ setImmediate(() => {
   );
   const output = JSON.stringify({
     saved: saved.length,
-    blocked: form.dataset.enterprisePolicyBlocked || '',
+    blocked: harnessForm.dataset.enterprisePolicyBlocked || '',
   });
   fs.writeFileSync(outputPath, output);
   process.exit(0);

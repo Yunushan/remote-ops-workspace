@@ -964,7 +964,7 @@ if (scenario === 'pending') {
   globalThis.fetch = () => fetchResult;
 }
 vm.runInThisContext(source, {filename: 'apps/web/app.js'});
-setImmediate(() => {
+const finish = () => {
   listeners.submit({preventDefault: () => {}});
   const saved = JSON.parse(
     records.get('remote-ops-workspace-demo-profiles') || '[]',
@@ -975,7 +975,15 @@ setImmediate(() => {
   });
   fs.writeFileSync(outputPath, output);
   process.exit(0);
-});
+};
+// The pending case intentionally submits before policy loading completes, so
+// finish it synchronously. This avoids making Python 3.15 wait on a Windows
+// event-loop turn after the result is already available.
+if (scenario === 'pending') {
+  finish();
+} else {
+  setImmediate(finish);
+}
     """
     output_path = tmp_path / f"web-policy-{scenario}.json"
     subprocess.run(

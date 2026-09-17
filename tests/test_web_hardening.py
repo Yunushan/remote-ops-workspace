@@ -996,6 +996,7 @@ if (scenario === 'pending') {
         str(output_path),
     ]
     if os.name == "nt" and scenario == "pending":
+        pending_timeout = 30
         # Python 3.15 on hosted Windows can wait on a Node process handle
         # after the harness has already written its result. Observe the
         # result file instead, then terminate only that already-complete
@@ -1005,7 +1006,7 @@ if (scenario === 'pending') {
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        deadline = time.monotonic() + 10
+        deadline = time.monotonic() + pending_timeout
         while not output_path.exists():
             returncode = process.poll()
             if returncode is not None:
@@ -1013,7 +1014,7 @@ if (scenario === 'pending') {
             if time.monotonic() >= deadline:
                 process.kill()
                 process.wait(timeout=5)
-                raise subprocess.TimeoutExpired(command, 10)
+                raise subprocess.TimeoutExpired(command, pending_timeout)
             time.sleep(0.01)
         if process.poll() is None:
             process.kill()

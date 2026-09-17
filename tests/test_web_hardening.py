@@ -941,7 +941,7 @@ if (scenario === 'pending') {
 globalThis.fetch = () => fetchResult;
 `, context);
 vm.runInContext(source, context, {filename: 'apps/web/app.js'});
-setImmediate(() => {
+const submitAndExit = () => {
   listeners.submit({preventDefault: () => {}});
   const saved = JSON.parse(
     records.get('remote-ops-workspace-demo-profiles') || '[]',
@@ -952,7 +952,15 @@ setImmediate(() => {
   });
   fs.writeFileSync(outputPath, output);
   process.exit(0);
-});
+};
+// The pending case intentionally leaves the policy request unresolved.  Read
+// the form synchronously before yielding to the VM promise jobs so this smoke
+// child cannot be kept alive by a cross-realm pending promise on Windows.
+if (scenario === 'pending') {
+  submitAndExit();
+} else {
+  setImmediate(submitAndExit);
+}
     """
     output_path = tmp_path / f"web-policy-{scenario}.json"
     subprocess.run(

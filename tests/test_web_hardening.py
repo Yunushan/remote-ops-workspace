@@ -927,10 +927,19 @@ const context = {
   clearTimeout: harnessClearTimeout,
   scenario,
 };
+if (scenario === 'pending') {
+  // Have Promise.race select the rejecting timeout participant directly.  A
+  // real unresolved VM promise/thenable can keep hosted Windows Node alive
+  // after the assertion has completed, while this still exercises the
+  // application's timeout fallback path.
+  const NativePromise = Promise;
+  context.Promise = class HarnessPromise extends NativePromise {
+    static race(iterable) {
+      return iterable[1];
+    }
+  };
+}
 vm.createContext(context);
-// Keep the fetch promises in the VM realm.  Passing parent-realm promises
-// through vm.runInContext can leave Node's Windows subprocess alive while
-// Promise.race is assimilating them, even after the harness writes its result.
 vm.runInContext(`
 const validPolicy = {
   active: true,
@@ -940,10 +949,7 @@ const validPolicy = {
 };
 let fetchResult;
 if (scenario === 'pending') {
-  // Keep the unresolved input as a VM-local thenable instead of a Promise.
-  // Some hosted Windows Node versions retain a VM Promise around Promise.race
-  // even after the timeout participant has already rejected.
-  fetchResult = {then: () => {}};
+  fetchResult = {};
 } else if (scenario === 'reject') {
   fetchResult = Promise.reject(new Error('offline'));
 } else {

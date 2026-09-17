@@ -3,6 +3,7 @@ import os
 import shutil
 import socket
 import subprocess
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -986,13 +987,47 @@ if (scenario === 'pending') {
 }
     """
     output_path = tmp_path / f"web-policy-{scenario}.json"
-    subprocess.run(
-        [node, "-e", harness, str(Path("apps/web/app.js")), scenario, str(output_path)],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=10,
-    )
+    command = [
+        node,
+        "-e",
+        harness,
+        str(Path("apps/web/app.js")),
+        scenario,
+        str(output_path),
+    ]
+    if os.name == "nt" and scenario == "pending":
+        # Python 3.15 on hosted Windows can wait on a Node process handle
+        # after the harness has already written its result. Observe the
+        # result file instead, then terminate only that already-complete
+        # helper so the test remains bounded without masking real failures.
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        deadline = time.monotonic() + 10
+        while not output_path.exists():
+            returncode = process.poll()
+            if returncode is not None:
+                raise subprocess.CalledProcessError(returncode, command)
+            if time.monotonic() >= deadline:
+                process.kill()
+                process.wait(timeout=5)
+                raise subprocess.TimeoutExpired(command, 10)
+            time.sleep(0.01)
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        elif process.returncode:
+            raise subprocess.CalledProcessError(process.returncode, command)
+    else:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
     result = json.loads(output_path.read_text(encoding="utf-8"))
     assert result["saved"] == expected_saved
     assert expected_blocked in result["blocked"]

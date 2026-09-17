@@ -894,6 +894,15 @@ const elements = {
   '#terminal-grid': inertElement(),
   '#feature-tags': inertElement(),
 };
+const harnessSetTimeout = scenario === 'pending'
+  ? callback => {
+      // Resolve the timeout branch immediately so the test exercises the
+      // production fallback without leaving a cross-realm timer alive.
+      callback();
+      return {};
+    }
+  : setTimeout;
+const harnessClearTimeout = scenario === 'pending' ? () => {} : clearTimeout;
 const context = {
   document: {
     querySelector: selector => elements[selector],
@@ -914,8 +923,8 @@ const context = {
       ['target', 'edge.example.invalid'],
     ][Symbol.iterator]()};
   },
-  setTimeout,
-  clearTimeout,
+  setTimeout: harnessSetTimeout,
+  clearTimeout: harnessClearTimeout,
   scenario,
 };
 vm.createContext(context);
@@ -941,7 +950,7 @@ if (scenario === 'pending') {
 globalThis.fetch = () => fetchResult;
 `, context);
 vm.runInContext(source, context, {filename: 'apps/web/app.js'});
-const submitAndExit = () => {
+setImmediate(() => {
   listeners.submit({preventDefault: () => {}});
   const saved = JSON.parse(
     records.get('remote-ops-workspace-demo-profiles') || '[]',
@@ -952,15 +961,7 @@ const submitAndExit = () => {
   });
   fs.writeFileSync(outputPath, output);
   process.exit(0);
-};
-// The pending case intentionally leaves the policy request unresolved.  Read
-// the form synchronously before yielding to the VM promise jobs so this smoke
-// child cannot be kept alive by a cross-realm pending promise on Windows.
-if (scenario === 'pending') {
-  submitAndExit();
-} else {
-  setImmediate(submitAndExit);
-}
+});
     """
     output_path = tmp_path / f"web-policy-{scenario}.json"
     subprocess.run(

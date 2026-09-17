@@ -933,6 +933,8 @@ const context = {
       ['target', 'edge.example.invalid'],
     ][Symbol.iterator]()};
   },
+  setTimeout,
+  clearTimeout,
 };
 vm.createContext(context);
 vm.runInContext(source, context, {filename: 'apps/web/app.js'});

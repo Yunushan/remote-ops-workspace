@@ -411,7 +411,7 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
             "Python 3.15 native Windows SSH artifact path"
         ),
         (
-            "        if: ${{ always() && runner.os == 'Windows' }}\n"
+            "        if: ${{ always() && runner.os == 'Windows' && hashFiles('artifacts/python315-windows-ssh/**') != '' }}\n"
             "        with:\n"
             "          name: python315-windows-ssh-${{ matrix.os }}\n"
             "          path: artifacts/python315-windows-ssh\n"
@@ -441,8 +441,23 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
         errors.append(
             "ci python315-optional-dependencies job must render the default complete preset set"
         )
-    if block.count("if: ${{ always() }}") < 5:
-        errors.append("ci Python 3.15 evidence uploads must run after success or failure")
+    evidence_guards = {
+        "python315-gui": "        if: ${{ always() && hashFiles('artifacts/python315-gui/**') != '' }}",
+        "python315-interactions": "        if: ${{ always() && hashFiles('artifacts/python315-interactions/**') != '' }}",
+        "python315-dist": "        if: ${{ always() && hashFiles('artifacts/python315-dist/**') != '' }}",
+        "python315-runtime": "        if: ${{ always() && hashFiles('artifacts/python315-runtime/**') != '' }}",
+        "python315-frozen": "        if: ${{ always() && hashFiles('artifacts/python315-frozen/**') != '' }}",
+        "python315-windows-ssh": (
+            "        if: ${{ always() && runner.os == 'Windows' && "
+            "hashFiles('artifacts/python315-windows-ssh/**') != '' }}"
+        ),
+    }
+    for artifact, guard in evidence_guards.items():
+        if guard not in block:
+            errors.append(
+                "ci Python 3.15 evidence upload must run after success or failure "
+                f"only when {artifact} files exist"
+            )
     if block.count("if-no-files-found: error") < 6:
         errors.append("ci Python 3.15 evidence uploads must fail closed for all artifact groups")
     if block.count("retention-days: 90") < 6:

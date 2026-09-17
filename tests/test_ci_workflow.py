@@ -873,7 +873,7 @@ def test_ci_workflow_requires_durable_python_315_evidence_uploads() -> None:
         "          name: python315-windows-ssh-removed-${{ matrix.os }}\n",
     )
     advisory_windows_ssh = source.replace(
-        "        if: ${{ always() && runner.os == 'Windows' }}\n",
+        "        if: ${{ always() && runner.os == 'Windows' && hashFiles('artifacts/python315-windows-ssh/**') != '' }}\n",
         "        if: ${{ runner.os == 'Windows' }}\n",
         1,
     )

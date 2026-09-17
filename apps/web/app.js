@@ -5,6 +5,7 @@ const featureTags = document.querySelector('#feature-tags');
 const STORAGE_KEY = 'remote-ops-workspace-demo-profiles';
 const PROTOCOLS = new Set(['ssh', 'rdp', 'vnc', 'sftp', 'mosh', 'telnet', 'https', 'serial']);
 const storage = demoStorage();
+const ENTERPRISE_POLICY_TIMEOUT_MS = 5000;
 let enterprisePolicy = {
   loaded: false,
   active: true,
@@ -132,34 +133,52 @@ function cleanDemoField(value, maxLength) {
 }
 
 async function loadEnterprisePolicy() {
-  const response = await fetch('enterprise-policy.json', {cache: 'no-store'});
-  if (!response.ok) {
-    throw new Error('enterprise policy is unavailable');
+  let timeoutId = null;
+  try {
+    const request = fetch('enterprise-policy.json', {cache: 'no-store'});
+    const response = typeof setTimeout === 'function'
+      ? await Promise.race([
+          request,
+          new Promise((_, reject) => {
+            timeoutId = setTimeout(
+              () => reject(new Error('enterprise policy is unavailable')),
+              ENTERPRISE_POLICY_TIMEOUT_MS,
+            );
+          }),
+        ])
+      : await request;
+    if (!response.ok) {
+      throw new Error('enterprise policy is unavailable');
+    }
+    const policy = await response.json();
+    if (
+      !policy
+        || typeof policy.active !== 'boolean'
+        || typeof policy.allow_user_profiles !== 'boolean'
+        || typeof policy.has_restricted_locks !== 'boolean'
+        || !Array.isArray(policy.locked_settings)
+        || policy.locked_settings.some(item => (
+          !item
+            || typeof item !== 'object'
+            || Object.keys(item).length !== 2
+            || item.key !== 'protocol'
+            || typeof item.value !== 'string'
+        ))
+    ) {
+      throw new Error('enterprise policy response is malformed');
+    }
+    return {
+      loaded: true,
+      active: policy.active,
+      allow_user_profiles: policy.allow_user_profiles,
+      has_restricted_locks: policy.has_restricted_locks,
+      locked_settings: policy.locked_settings,
+    };
+  } finally {
+    if (timeoutId !== null && typeof clearTimeout === 'function') {
+      clearTimeout(timeoutId);
+    }
   }
-  const policy = await response.json();
-  if (
-    !policy
-      || typeof policy.active !== 'boolean'
-      || typeof policy.allow_user_profiles !== 'boolean'
-      || typeof policy.has_restricted_locks !== 'boolean'
-      || !Array.isArray(policy.locked_settings)
-      || policy.locked_settings.some(item => (
-        !item
-          || typeof item !== 'object'
-          || Object.keys(item).length !== 2
-          || item.key !== 'protocol'
-          || typeof item.value !== 'string'
-      ))
-  ) {
-    throw new Error('enterprise policy response is malformed');
-  }
-  return {
-    loaded: true,
-    active: policy.active,
-    allow_user_profiles: policy.allow_user_profiles,
-    has_restricted_locks: policy.has_restricted_locks,
-    locked_settings: policy.locked_settings,
-  };
 }
 
 function reviewEnterpriseWebProfile(profile) {

@@ -3,6 +3,7 @@ import os
 import shutil
 import socket
 import subprocess
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import partial
@@ -864,17 +865,18 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
     node = shutil.which("node")
     assert node is not None
     harness = r"""
-const vm = require('node:vm');
 const fs = require('node:fs');
+const vm = require('node:vm');
 // Use file arguments for both source and result. Python 3.15 on Windows can
-// leave subprocess pipe threads blocked around a VM thenable even after Node
+// leave subprocess pipe threads blocked around the Node harness even after it
 // has produced the result.
 const source = fs.readFileSync(process.argv[1], 'utf8');
 const scenario = process.argv[2];
 const outputPath = process.argv[3];
+const windowsPendingFallback = process.platform === 'win32' && scenario === 'pending';
 const records = new Map();
 const listeners = {};
-const form = {
+const harnessForm = {
   dataset: {},
   addEventListener: (name, callback) => { listeners[name] = callback; },
   reset: () => {},
@@ -890,39 +892,50 @@ const inertElement = () => ({
 });
 const elements = {
   '#profiles': inertElement(),
-  '#profile-form': form,
+  '#profile-form': harnessForm,
   '#terminal-grid': inertElement(),
   '#feature-tags': inertElement(),
 };
-const context = {
-  document: {
-    querySelector: selector => elements[selector],
-    querySelectorAll: () => [],
-    createElement: inertElement,
-    documentElement: {dataset: {}},
-  },
-  navigator: {},
-  sessionStorage: {
-    getItem: key => records.get(key) ?? null,
-    setItem: (key, value) => records.set(key, String(value)),
-    removeItem: key => records.delete(key),
-  },
-  FormData: function () {
-    return {entries: () => [
-      ['name', 'edge'],
-      ['protocol', 'ssh'],
-      ['target', 'edge.example.invalid'],
-    ][Symbol.iterator]()};
-  },
-  setTimeout,
-  clearTimeout,
-  scenario,
+const harnessSetTimeout = scenario === 'pending'
+  ? callback => {
+      // Resolve the timeout branch immediately so the test exercises the
+      // production fallback without leaving a cross-realm timer alive.
+      callback();
+      return {};
+    }
+  : setTimeout;
+const harnessClearTimeout = scenario === 'pending' ? () => {} : clearTimeout;
+const harnessDocument = {
+  querySelector: selector => elements[selector],
+  querySelectorAll: () => [],
+  createElement: inertElement,
+  documentElement: {dataset: {}},
 };
-vm.createContext(context);
-// Keep the fetch promises in the VM realm.  Passing parent-realm promises
-// through vm.runInContext can leave Node's Windows subprocess alive while
-// Promise.race is assimilating them, even after the harness writes its result.
-vm.runInContext(`
+const sessionStorage = {
+  getItem: key => records.get(key) ?? null,
+  setItem: (key, value) => records.set(key, String(value)),
+  removeItem: key => records.delete(key),
+};
+const FormData = function () {
+  return {entries: () => [
+    ['name', 'edge'],
+    ['protocol', 'ssh'],
+    ['target', 'edge.example.invalid'],
+  ][Symbol.iterator]()};
+};
+if (!('navigator' in globalThis)) {
+  Object.defineProperty(globalThis, 'navigator', {value: {}, configurable: true});
+}
+// Run the application in Node's current realm. A separate VM context can
+// retain cross-realm promise state on Python 3.15 Windows runners even after
+// the harness has written its result and requested process exit.
+Object.assign(globalThis, {
+  document: harnessDocument,
+  sessionStorage,
+  FormData,
+  setTimeout: harnessSetTimeout,
+  clearTimeout: harnessClearTimeout,
+});
 const validPolicy = {
   active: true,
   allow_user_profiles: true,
@@ -931,37 +944,91 @@ const validPolicy = {
 };
 let fetchResult;
 if (scenario === 'pending') {
-  fetchResult = new Promise(() => {});
+  if (windowsPendingFallback) {
+    // Hosted Windows Node can retain a VM promise/thenable after the test has
+    // completed. Throw before the timeout race is constructed so this case
+    // still exercises the production unavailable-policy fallback without
+    // leaving a live cross-realm promise behind.
+    globalThis.fetch = () => {
+      throw new Error('enterprise policy is unavailable');
+    };
+  } else {
+    fetchResult = new Promise(() => {});
+    globalThis.fetch = () => fetchResult;
+  }
 } else if (scenario === 'reject') {
   fetchResult = Promise.reject(new Error('offline'));
+  globalThis.fetch = () => fetchResult;
 } else {
   const body = scenario === 'malformed' ? {active: false} : validPolicy;
   fetchResult = Promise.resolve({ok: true, json: async () => body});
+  globalThis.fetch = () => fetchResult;
 }
-globalThis.fetch = () => fetchResult;
-`, context);
-vm.runInContext(source, context, {filename: 'apps/web/app.js'});
-setImmediate(() => {
+vm.runInThisContext(source, {filename: 'apps/web/app.js'});
+const finish = () => {
   listeners.submit({preventDefault: () => {}});
   const saved = JSON.parse(
     records.get('remote-ops-workspace-demo-profiles') || '[]',
   );
   const output = JSON.stringify({
     saved: saved.length,
-    blocked: form.dataset.enterprisePolicyBlocked || '',
+    blocked: harnessForm.dataset.enterprisePolicyBlocked || '',
   });
   fs.writeFileSync(outputPath, output);
   process.exit(0);
-});
+};
+// The pending case intentionally submits before policy loading completes, so
+// finish it synchronously. This avoids making Python 3.15 wait on a Windows
+// event-loop turn after the result is already available.
+if (scenario === 'pending') {
+  finish();
+} else {
+  setImmediate(finish);
+}
     """
     output_path = tmp_path / f"web-policy-{scenario}.json"
-    subprocess.run(
-        [node, "-e", harness, str(Path("apps/web/app.js")), scenario, str(output_path)],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        timeout=10,
-    )
+    command = [
+        node,
+        "-e",
+        harness,
+        str(Path("apps/web/app.js")),
+        scenario,
+        str(output_path),
+    ]
+    if os.name == "nt" and scenario == "pending":
+        pending_timeout = 30
+        # Python 3.15 on hosted Windows can wait on a Node process handle
+        # after the harness has already written its result. Observe the
+        # result file instead, then terminate only that already-complete
+        # helper so the test remains bounded without masking real failures.
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        deadline = time.monotonic() + pending_timeout
+        while not output_path.exists():
+            returncode = process.poll()
+            if returncode is not None:
+                raise subprocess.CalledProcessError(returncode, command)
+            if time.monotonic() >= deadline:
+                process.kill()
+                process.wait(timeout=5)
+                raise subprocess.TimeoutExpired(command, pending_timeout)
+            time.sleep(0.01)
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        elif process.returncode:
+            raise subprocess.CalledProcessError(process.returncode, command)
+    else:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
     result = json.loads(output_path.read_text(encoding="utf-8"))
     assert result["saved"] == expected_saved
     assert expected_blocked in result["blocked"]

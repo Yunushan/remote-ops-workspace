@@ -22,9 +22,9 @@ The protected-platform gate must report `4/4` accepted targets and the strict
 MobaXterm gate must report `8/8`. Candidate workflow success is deliberately not
 counted as accepted evidence.
 
-The repository is intentionally fail-closed today. `pyproject.toml` still says
-`Development Status :: 3 - Alpha`, and
-`configs/release_compliance_policy.json` is
+The v1.0.25 package metadata declares `Development Status :: 5 -
+Production/Stable`. The repository remains intentionally fail-closed for
+publication while `configs/release_compliance_policy.json` is
 `blocked-pending-independent-review`, has no trusted approver key, no approved
 closed-world inventory, and no per-platform fully hashed locks. The normal
 resolver installs can therefore select unpinned transitive packages. Native

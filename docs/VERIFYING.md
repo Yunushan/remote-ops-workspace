@@ -150,9 +150,9 @@ must consume their platform locks with `--require-hashes`. GUI evidence must
 also prove the selected commercial or open-source PyQt/Qt channel. A signed
 self-assertion naming an unused or missing lock does not pass.
 
-The same target runs `scripts/check_release_maturity.py`; the present Alpha
-classifier is an explicit production blocker until maintainers deliberately
-approve and declare `Development Status :: 5 - Production/Stable`. It then runs
+The same target runs `scripts/check_release_maturity.py`; v1.0.25 declares
+`Development Status :: 5 - Production/Stable`, while any future Alpha/Beta
+classifier remains an explicit production blocker. It then runs
 `scripts/check_release_provenance.py` to match every local file to the live
 GitHub Release size and SHA-256 digest. GitHub CLI then cryptographically
 verifies every asset in the complete certified release inventory against the exact repository,

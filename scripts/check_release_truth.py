@@ -86,12 +86,12 @@ REQUIRED_DOC_SNIPPETS = (
     "Production/Stable",
     "--require-hashes",
     "unsigned-preview.yml",
-    "remote-ops-workspace-v1.0.24-linux-<amd64|arm64>.deb",
-    "remote-ops-workspace-v1.0.24-linux-<x86_64|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.24-linux-<x86_64|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.24-linux-<x86_64|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.24-macos-<x64|arm64>.dmg",
-    "remote-ops-workspace-v1.0.24-macos-<x64|arm64>.pkg",
+    "remote-ops-workspace-v1.0.25-linux-<amd64|arm64>.deb",
+    "remote-ops-workspace-v1.0.25-linux-<x86_64|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.25-linux-<x86_64|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.25-linux-<x86_64|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.25-macos-<x64|arm64>.dmg",
+    "remote-ops-workspace-v1.0.25-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
     "release_asset_provenance_complete=false",
     "asset-backed protected goal gate",
@@ -144,7 +144,7 @@ REQUIRED_DOC_SNIPPETS = (
 )
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
-    "![release](https://img.shields.io/badge/release-v1.0.24-blue)",
+    "![release](https://img.shields.io/badge/release-v1.0.25-blue)",
     "configs/platform_verified_evidence.json",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
@@ -235,12 +235,12 @@ STALE_TURKISH_RELEASE_SNIPPETS = (
 )
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
-    "remote-ops-workspace-v1.0.24-linux-<i386|amd64|armhf|arm64>.deb",
-    "remote-ops-workspace-v1.0.24-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.24-linux-<i686|x86_64|armhf|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.24-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.24-macos-<arch>.dmg",
-    "remote-ops-workspace-v1.0.24-macos-<arch>.pkg",
+    "remote-ops-workspace-v1.0.25-linux-<i386|amd64|armhf|arm64>.deb",
+    "remote-ops-workspace-v1.0.25-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
+    "remote-ops-workspace-v1.0.25-linux-<i686|x86_64|armhf|aarch64>.AppImage",
+    "remote-ops-workspace-v1.0.25-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v1.0.25-macos-<arch>.dmg",
+    "remote-ops-workspace-v1.0.25-macos-<arch>.pkg",
 )
 
 STALE_PLATFORM_EVIDENCE_SNIPPETS = (
@@ -1261,7 +1261,7 @@ def contains_snippet(text: str, snippet: str) -> bool:
 
 
 def contains_exact_release_version_snippet(text: str, snippet: str) -> bool:
-    """Match a stale release token without treating v1.0.24 as v1.0.1."""
+    """Match a stale release token without treating v1.0.25 as v1.0.1."""
 
     return re.search(rf"{re.escape(snippet)}(?!\d)", text) is not None
 

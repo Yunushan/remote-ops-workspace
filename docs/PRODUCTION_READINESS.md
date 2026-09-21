@@ -22,7 +22,7 @@ The protected-platform gate must report `4/4` accepted targets and the strict
 MobaXterm gate must report `8/8`. Candidate workflow success is deliberately not
 counted as accepted evidence.
 
-The v1.0.25 package metadata declares `Development Status :: 5 -
+The v1.0.26 package metadata declares `Development Status :: 5 -
 Production/Stable`. The repository remains intentionally fail-closed for
 publication while `configs/release_compliance_policy.json` is
 `blocked-pending-independent-review`, has no trusted approver key, no approved

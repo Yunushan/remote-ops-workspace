@@ -14,9 +14,15 @@ def _load_checker():
     return module
 
 
-def test_current_alpha_metadata_cannot_receive_production_certification() -> None:
+def test_preproduction_metadata_cannot_receive_production_certification() -> None:
     checker = _load_checker()
-    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    pyproject = '''
+[project]
+version = "1.0.24"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+]
+'''
 
     errors = checker.check_maturity(pyproject, "v1.0.24")
 

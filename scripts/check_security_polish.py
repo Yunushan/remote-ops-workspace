@@ -55,9 +55,9 @@ def check_redaction_samples() -> list[str]:
     redacted = redact_value(payload)
     serialized = json.dumps(redacted, sort_keys=True)
     errors = []
-    for sample in SECRET_SAMPLES:
+    for sample_number, sample in enumerate(SECRET_SAMPLES, start=1):
         if sample in serialized:
-            errors.append(f"redaction leaked sample secret: {sample}")
+            errors.append(f"redaction leaked synthetic sample #{sample_number}")
     if REDACTED not in serialized:
         errors.append("redaction output must include the standard redaction marker")
     for key in ("credential_ref", "password", "api_token", "private_key", "auth_cookie"):

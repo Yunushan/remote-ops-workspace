@@ -5,7 +5,8 @@
 ### SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, seri konsollar, raw socket'ler, bolunmus paneller, vault, snippet, sync, CLI, GUI ve Web/PWA icin operator odakli uzak erisim calisma alani.
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
-![release](https://img.shields.io/badge/release-v1.0.26-blue)
+![published preview](https://img.shields.io/badge/published%20preview-v1.0.24-orange)
+![candidate](https://img.shields.io/badge/candidate-v1.0.27-yellow)
 ![license](https://img.shields.io/badge/license-0BSD-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.15-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
@@ -281,10 +282,14 @@ python scripts/check_repository_cleanup.py
 python scripts/check_repository_cleanup.py --require-clean
 ```
 
-Yayin akisi `v1.0.26` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip
+`v1.0.27` su anda yalnizca hazirlanan bir yayin adayidir; guvenlik kapsami ve
+yayin durumu icin [`docs/RELEASE_NOTES_v1.0.27.md`](docs/RELEASE_NOTES_v1.0.27.md)
+dosyasina bakin. Tag veya GitHub yayini olusturulmadi.
+
+Yayin akisi `v1.0.27` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip
 paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux
 `x86_64`/`aarch64` native paketleri, release manifestleri ve
-`remote-ops-workspace-v1.0.26-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve
+`remote-ops-workspace-v1.0.27-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve
 `armhf` ciktisi eslesen builder ile betik desteklidir, fakat varsayilan GitHub
 release is akisinda accepted evidence olmadan yuklenmez. Makine tarafindan
 okunabilen yayin karari `configs/release_matrix.json` icindedir;

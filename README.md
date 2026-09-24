@@ -5,7 +5,8 @@
 ### Operator-first remote terminal and connection workspace for SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, serial consoles, raw sockets, split panes, vaults, snippets, sync, CLI, GUI and Web/PWA.
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
-![release](https://img.shields.io/badge/release-v1.0.26-blue)
+![published preview](https://img.shields.io/badge/published%20preview-v1.0.24-orange)
+![candidate](https://img.shields.io/badge/candidate-v1.0.27-yellow)
 ![license](https://img.shields.io/badge/license-0BSD-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.15-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
@@ -573,20 +574,20 @@ Create local release bundles for the advertised targets:
 python scripts/make_release.py
 ```
 
-The GitHub release workflow is manually promoted from the trusted default branch
-with an immutable tag input such as `v1.0.26`; it builds that tag and uploads
-these assets only after accepted platform evidence is present:
+The v1.0.27 changes are a release candidate; see
+[`docs/RELEASE_NOTES_v1.0.27.md`](docs/RELEASE_NOTES_v1.0.27.md) for the security
+scope and publication status. A trusted default-branch commit tagged `v1.0.27`
+starts `.github/workflows/release.yml`, which builds and seals candidate assets.
+The separately dispatched `.github/workflows/release-promotion.yml` verifies
+independently signed evidence and publishes only after all promotion gates pass.
 
 The complete 100/100 production-readiness checklist, including signing secrets,
 real evidence-host prerequisites, and the final promotion sequence, is in
 [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
 
-Signed installers are the production channel. If protected Windows/macOS
-credentials are unavailable, maintainers may use the manual
-`allow_unsigned_preview` workflow input to publish an **UNSIGNED PREVIEW**
-prerelease. Those installers are intentionally not production-trusted.
-When either protected native signing stack is unavailable, every native installer
-in that preview remains unsigned; production signing requires both stacks.
+Signed installers are the production channel. Both protected Windows and macOS
+signing stacks are required before `release.yml` can stage a candidate. The
+separate preview workflow produces explicitly unsigned prereleases for testing.
 
 For branch-only review, `.github/workflows/unsigned-preview.yml` is an isolated
 preview lane. It runs only from `preview` or `preview/*`, creates a uniquely named
@@ -597,31 +598,31 @@ are for smoke testing only and must never be treated as trusted production media
 
 | Target | Asset |
 |---|---|
-| Python wheel | `remote_ops_workspace-1.0.26-py3-none-any.whl` |
-| Python sdist | `remote_ops_workspace-1.0.26.tar.gz` |
-| Source/Python SBOM | `remote-ops-workspace-v1.0.26-sbom.cdx.json` |
-| Source | `remote-ops-workspace-v1.0.26-source.zip` |
-| Windows | `remote-ops-workspace-v1.0.26-windows.zip` |
-| Linux | `remote-ops-workspace-v1.0.26-linux.tar.gz` |
-| macOS | `remote-ops-workspace-v1.0.26-macos.tar.gz` |
-| BSD | `remote-ops-workspace-v1.0.26-bsd.tar.gz` |
-| Solaris/illumos | `remote-ops-workspace-v1.0.26-solaris.tar.gz` |
-| Android/Termux | `remote-ops-workspace-v1.0.26-android-termux.tar.gz` |
-| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.26-web-pwa.zip` |
-| Web/PWA | `remote-ops-workspace-v1.0.26-web-pwa.zip` |
-| Windows native | `remote-ops-workspace-v1.0.26-windows-<x86\|x64\|arm64>-setup.exe` |
-| Windows native | `remote-ops-workspace-v1.0.26-windows-<x86\|x64\|arm64>.msi` |
-| Windows native | `remote-ops-workspace-v1.0.26-windows-<x86\|x64\|arm64>-native.zip` |
-| macOS native | `remote-ops-workspace-v1.0.26-macos-<x64\|arm64>.dmg` |
-| macOS native | `remote-ops-workspace-v1.0.26-macos-<x64\|arm64>.pkg` |
-| macOS native | `remote-ops-workspace-v1.0.26-macos-<x64\|arm64>-native-manifest.json` |
-| Linux native | `remote-ops-workspace-v1.0.26-linux-<amd64\|arm64>.deb` |
-| Linux native | `remote-ops-workspace-v1.0.26-linux-<x86_64\|aarch64>.rpm` |
-| Linux native | `remote-ops-workspace-v1.0.26-linux-<x86_64\|aarch64>.AppImage` |
-| Linux native | `remote-ops-workspace-v1.0.26-linux-<x86_64\|aarch64>-native.tar.gz` |
-| Linux native | `remote-ops-workspace-v1.0.26-linux-<x86_64\|aarch64>-native-manifest.json` |
-| Manifests | `remote-ops-workspace-v1.0.26-*-manifest.json` |
-| Checksums | `remote-ops-workspace-v1.0.26-SHA256SUMS.txt` |
+| Python wheel | `remote_ops_workspace-1.0.27-py3-none-any.whl` |
+| Python sdist | `remote_ops_workspace-1.0.27.tar.gz` |
+| Source/Python SBOM | `remote-ops-workspace-v1.0.27-sbom.cdx.json` |
+| Source | `remote-ops-workspace-v1.0.27-source.zip` |
+| Windows | `remote-ops-workspace-v1.0.27-windows.zip` |
+| Linux | `remote-ops-workspace-v1.0.27-linux.tar.gz` |
+| macOS | `remote-ops-workspace-v1.0.27-macos.tar.gz` |
+| BSD | `remote-ops-workspace-v1.0.27-bsd.tar.gz` |
+| Solaris/illumos | `remote-ops-workspace-v1.0.27-solaris.tar.gz` |
+| Android/Termux | `remote-ops-workspace-v1.0.27-android-termux.tar.gz` |
+| iOS/iPadOS Web/PWA | `remote-ops-workspace-v1.0.27-web-pwa.zip` |
+| Web/PWA | `remote-ops-workspace-v1.0.27-web-pwa.zip` |
+| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>-setup.exe` |
+| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>.msi` |
+| Windows native | `remote-ops-workspace-v1.0.27-windows-<x86\|x64\|arm64>-native.zip` |
+| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>.dmg` |
+| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>.pkg` |
+| macOS native | `remote-ops-workspace-v1.0.27-macos-<x64\|arm64>-native-manifest.json` |
+| Linux native | `remote-ops-workspace-v1.0.27-linux-<amd64\|arm64>.deb` |
+| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>.rpm` |
+| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>.AppImage` |
+| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>-native.tar.gz` |
+| Linux native | `remote-ops-workspace-v1.0.27-linux-<x86_64\|aarch64>-native-manifest.json` |
+| Manifests | `remote-ops-workspace-v1.0.27-*-manifest.json` |
+| Checksums | `remote-ops-workspace-v1.0.27-SHA256SUMS.txt` |
 
 Native protocol rendering still depends on the external clients installed on the target system.
 Windows x64 and ARM64 native portable zips include a top-level

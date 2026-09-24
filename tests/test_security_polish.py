@@ -108,9 +108,41 @@ def test_redaction_handles_direct_urls_assignments_and_non_string_values() -> No
     assert redact_value(["mode=read"]) == ["mode=read"]
 
 
+def test_redaction_handles_long_unmatched_keys_and_schemes() -> None:
+    non_secret = "a" * 12_000
+    assert redact_text(non_secret) == non_secret
+    assert redact_text(f"{non_secret}token{non_secret}") == f"{non_secret}token{non_secret}"
+    malformed_urls = "h://u:p" * 2_000
+    assert redact_text(malformed_urls) == malformed_urls
+
+
+def test_redaction_keeps_embedded_url_and_assignment_boundaries() -> None:
+    assert redact_text("1https://user:first@host +://user:visible@host") == (
+        f"1https://user:{REDACTED}@host +://user:visible@host"
+    )
+    assert redact_text("public=visible opaqueapikey:secret") == (
+        f"public=visible opaqueapikey:{REDACTED}"
+    )
+
+
 def test_security_polish_checker_passes() -> None:
     checker = load_security_checker()
     assert checker.main() == 0
+
+
+def test_security_polish_does_not_log_failed_redaction_sample_values(monkeypatch, capsys) -> None:
+    checker = load_security_checker()
+    monkeypatch.setattr(checker, "redact_value", lambda payload: payload)
+    monkeypatch.setattr(checker, "check_support_bundle_redaction", lambda: [])
+    monkeypatch.setattr(checker, "check_legacy_security_policy", lambda: [])
+    monkeypatch.setattr(checker, "check_docs_and_verifier", lambda: [])
+    monkeypatch.setattr(checker, "check_profile_only_security_defaults", lambda: [])
+
+    assert checker.main() == 1
+    stderr = capsys.readouterr().err
+    assert "redaction leaked synthetic sample #1" in stderr
+    for sample in checker.SECRET_SAMPLES:
+        assert sample not in stderr
 
 
 def test_security_polish_rejects_protected_goal_security_boundary_drift() -> None:

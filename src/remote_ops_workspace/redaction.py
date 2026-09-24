@@ -261,7 +261,12 @@ def _redact_url_password(value: str) -> str:
         parsed = urlsplit(value)
     except ValueError:
         return value
-    if not parsed.scheme or not parsed.netloc or parsed.password is None:
+    if (
+        not parsed.scheme
+        or parsed.scheme[0] not in URL_SCHEME_LETTERS
+        or not parsed.netloc
+        or parsed.password is None
+    ):
         return value
     username = parsed.username or ""
     hostname = parsed.hostname or ""

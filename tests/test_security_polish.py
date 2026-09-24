@@ -2,7 +2,9 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from urllib.parse import SplitResult
 
+from remote_ops_workspace import redaction
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.redaction import REDACTED, redact_text, redact_value
 
@@ -122,6 +124,15 @@ def test_redaction_keeps_embedded_url_and_assignment_boundaries() -> None:
     )
     assert redact_text("public=visible opaqueapikey:secret") == (
         f"public=visible opaqueapikey:{REDACTED}"
+    )
+
+
+def test_redaction_rejects_invalid_scheme_from_legacy_urlsplit(monkeypatch) -> None:
+    parsed = SplitResult("1https", "user:first@host +:", "//user:visible@host", "", "")
+    monkeypatch.setattr(redaction, "urlsplit", lambda _: parsed)
+
+    assert redact_text("1https://user:first@host +://user:visible@host") == (
+        f"1https://user:{REDACTED}@host +://user:visible@host"
     )
 
 

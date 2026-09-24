@@ -127,6 +127,18 @@ def test_redaction_keeps_embedded_url_and_assignment_boundaries() -> None:
     )
 
 
+def test_redaction_handles_url_like_text_inside_a_password() -> None:
+    assert redact_text("https://user:inner://guest:secret@host") == (
+        f"https://user:{REDACTED}@host"
+    )
+
+
+def test_redaction_finds_embedded_url_after_an_earlier_at_sign() -> None:
+    assert redact_text("contact@https://user:secret@host") == (
+        f"contact@https://user:{REDACTED}@host"
+    )
+
+
 def test_redaction_rejects_invalid_scheme_from_legacy_urlsplit(monkeypatch) -> None:
     parsed = SplitResult("1https", "user:first@host +:", "//user:visible@host", "", "")
     monkeypatch.setattr(redaction, "urlsplit", lambda _: parsed)

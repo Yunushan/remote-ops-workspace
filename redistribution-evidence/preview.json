@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "release_tag": "v1.0.27",
+  "channel": "gpl-lgpl",
+  "materials": {
+    "third_party_notices": {
+      "file": "THIRD_PARTY_NOTICES.md",
+      "sha256": "fcb04f40d68d90280e3f3337133ea316e9146513d6f9e064b648493304ba1113"
+    },
+    "pyqt6_gplv3": {
+      "file": "PyQt6-GPL-3.0.txt",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    "qt_lgplv3": {
+      "file": "Qt-LGPL-3.0.txt",
+      "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+    },
+    "pyqt6_source": {
+      "file": "PyQt6-6.11.0-source.json",
+      "sha256": "0b0471854aa2c3a3d9eade6a27f542dcf80fd3cbb63ff661b4606c287d89532f"
+    },
+    "qt_source": {
+      "file": "qt-everywhere-src-6.11.2-source.json",
+      "sha256": "afd0e979c6a49bbd2b319579aaf9788e8202c04da8cce355e362de4eb0e61c8a"
+    },
+    "qt_relink_instructions": {
+      "file": "Qt-Relinking.md",
+      "sha256": "c76bf601ab3526031481fd02510c8f2b4d93ac3c3ade55b8d6dae37efbeef1dd"
+    }
+  }
+}

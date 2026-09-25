@@ -55,6 +55,36 @@ def test_commercial_channel_has_no_self_asserted_bypass(tmp_path: Path) -> None:
         module.evidence_materials(evidence, "v1.0.27")
 
 
+def test_source_archive_records_pin_official_urls_versions_and_upstream_digests() -> None:
+    module = checker()
+    materials = module.evidence_materials(Path("redistribution-evidence"), "v1.0.27")
+    records = module.source_archive_records(materials)
+
+    assert records["pyqt6_source"] == {
+        "component": "PyQt6",
+        "version": "6.11.0",
+        "filename": "pyqt6-6.11.0.tar.gz",
+        "url": "https://files.pythonhosted.org/packages/8b/47/b25c13eca5bebc6505394d0223e46d7ebf0c57dcac2ed908d7d19b18ab6b/pyqt6-6.11.0.tar.gz",
+        "sha256": "45dd60aa69976de1918b5ced6b4e7b6a25abd2a919ecef5fd5826ecc76718889",
+        "upstream_checksum_page": "https://pypi.org/project/PyQt6/",
+    }
+    assert records["qt_source"]["version"] == "6.11.2"
+    assert records["qt_source"]["filename"] == "qt-everywhere-src-6.11.2.tar.xz"
+    assert records["qt_source"]["url"].startswith("https://download.qt.io/official_releases/")
+    assert records["qt_source"]["sha256"] == "6dcfbca271d76a6502741a2c0dc6fc98ef7dd0b7b4cfd0abcebb285a86a26f33"
+
+
+def test_source_archive_record_rejects_unpinned_hosts_or_versions(tmp_path: Path) -> None:
+    module = checker()
+    record = json.loads(Path("redistribution-evidence/PyQt6-6.11.0-source.json").read_text())
+    record["url"] = "https://attacker.example/pyqt6-6.11.0.tar.gz"
+    path = tmp_path / "source.json"
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="official upstream archive"):
+        module.source_archive_record(path, "pyqt6_source")
+
+
 def test_packaged_license_bytes_are_read_from_real_archives(tmp_path: Path) -> None:
     module = checker()
     zip_path = tmp_path / "portable.zip"

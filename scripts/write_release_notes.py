@@ -10,11 +10,13 @@ the release page cannot silently omit that context.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+\Z")
@@ -31,6 +33,51 @@ def load_json(root: Path, relative: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError(f"{relative} must contain a JSON object")
     return value
+
+
+def preview_source_archives(root: Path, *, tag: str) -> dict[str, dict[str, str]]:
+    evidence_root = root / "redistribution-evidence"
+    manifest = load_json(root, "redistribution-evidence/preview.json")
+    if manifest.get("release_tag") != tag or manifest.get("channel") != "gpl-lgpl":
+        raise ValueError("unsigned preview redistribution evidence does not match the release tag")
+    materials = manifest.get("materials")
+    if not isinstance(materials, dict):
+        raise ValueError("preview redistribution materials are missing")
+    result: dict[str, dict[str, str]] = {}
+    for key in ("pyqt6_source", "qt_source"):
+        item = materials.get(key)
+        if not isinstance(item, dict) or set(item) != {"file", "sha256"}:
+            raise ValueError(f"preview redistribution material {key} is malformed")
+        relative = item["file"]
+        if not isinstance(relative, str) or Path(relative).name != relative:
+            raise ValueError(f"preview redistribution material {key} must be a flat file")
+        path = evidence_root / relative
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"preview redistribution material {key} is missing")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        if digest != item["sha256"]:
+            raise ValueError(f"preview redistribution material {key} digest differs")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(record, dict):
+            raise ValueError(f"preview source record {key} is malformed")
+        url = record.get("url")
+        parsed = urlsplit(url) if isinstance(url, str) else None
+        source_digest = record.get("sha256")
+        filename = record.get("filename")
+        version = record.get("version")
+        if (
+            parsed is None or parsed.scheme != "https" or not parsed.hostname
+            or not isinstance(source_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", source_digest)
+            or not isinstance(filename, str) or not isinstance(version, str)
+        ):
+            raise ValueError(f"preview source record {key} is incomplete")
+        result[key] = {
+            "filename": filename,
+            "url": url,
+            "sha256": source_digest,
+            "version": version,
+        }
+    return result
 
 
 def accepted_target_ids(registry: dict[str, object], *, tag: str) -> set[str]:
@@ -128,6 +175,20 @@ def write_notes(
             "Use a signed release for production deployment."
         )
 
+    license_lines: list[str] = []
+    if channel == "unsigned-preview":
+        sources = preview_source_archives(source_root, tag=tag)
+        pyqt_source = sources["pyqt6_source"]
+        qt_source = sources["qt_source"]
+        license_lines = [
+            "",
+            "## GUI package licenses and corresponding source",
+            "",
+            "Windows x64/ARM64 and macOS GUI packages combine the application with PyQt6 under GPLv3 and Qt under LGPLv3. The project source remains available under its existing 0BSD license. Full GPLv3/LGPLv3 texts and Qt relinking instructions are included in each GUI package.",
+            f"- PyQt6 {pyqt_source['version']} source: [{pyqt_source['filename']}]({pyqt_source['url']}) — SHA-256 `{pyqt_source['sha256']}`.",
+            f"- Qt {qt_source['version']} source: [{qt_source['filename']}]({qt_source['url']}) — SHA-256 `{qt_source['sha256']}`.",
+        ]
+
     lines = [
         f"# {tag}",
         "",
@@ -159,6 +220,7 @@ def write_notes(
         "- For protected-platform promotion, run the evidence source-ref, accepted-record, release-asset, and remote byte-provenance gates documented in `docs/PLATFORM_SUPPORT.md`; do not substitute candidate builds for accepted host evidence.",
         "",
         "This release note is generated from the frozen source commit's release matrix and the selected evidence registry. It intentionally reports missing evidence instead of inferring support from a successful candidate build.",
+        *license_lines,
         "",
     ]
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -36,6 +36,7 @@ PROJECT_FILES = [
     "docker",
     "docs",
     "installers",
+    "redistribution-evidence",
     "scripts",
     "src",
     "tests",

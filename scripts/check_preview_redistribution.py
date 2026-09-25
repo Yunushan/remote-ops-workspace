@@ -4,7 +4,8 @@
 This is an artifact/evidence check, not a legal certification.  The tagged source
 must contain ``redistribution-evidence/preview.json`` and the files it names.
 The open-source channel requires exact PyQt6 GPLv3 and Qt LGPLv3 license texts,
-corresponding source archives, LGPL relink instructions, and third-party notices.
+version-pinned upstream source archive URLs and digests, LGPL relink instructions,
+and third-party notices.
 The license texts and notices must be found in every actual native package;
 GUI packages must also contain the PyQt6 and Qt texts.  All downloaded release
 asset hashes are recorded in the output report.
@@ -26,6 +27,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
@@ -116,6 +118,89 @@ def regular_child(root: Path, relative: Any, label: str) -> Path:
     return candidate
 
 
+def source_archive_record(path: Path, key: str) -> dict[str, str]:
+    """Validate an upstream source link and its published archive digest."""
+    specs = {
+        "pyqt6_source": {
+            "component": "PyQt6",
+            "version_name": "PyQt6",
+            "filename": "pyqt6-{version}.tar.gz",
+            "host": "files.pythonhosted.org",
+            "path_suffix": "/pyqt6-{version}.tar.gz",
+            "checksum_host": "pypi.org",
+        },
+        "qt_source": {
+            "component": "Qt",
+            "version_name": "PyQt6-Qt6",
+            "filename": "qt-everywhere-src-{version}.tar.xz",
+            "host": "download.qt.io",
+            "path_suffix": "/official_releases/qt/{major}.{minor}/{version}/single/qt-everywhere-src-{version}.tar.xz",
+            "checksum_host": "download.qt.io",
+        },
+    }
+    spec = specs.get(key)
+    if spec is None:
+        raise ValueError(f"{key} is not a recognized source archive record")
+    record = json.loads(path.read_text(encoding="utf-8"))
+    required_fields = {
+        "schema_version", "component", "version", "filename", "url",
+        "sha256", "upstream_checksum_page",
+    }
+    if not isinstance(record, dict) or set(record) != required_fields or record.get("schema_version") != 1:
+        raise ValueError(f"{key} source record has an invalid schema")
+    versions = pinned_gui_versions()
+    version = versions[spec["version_name"]]
+    filename = spec["filename"].format(version=version)
+    expected_path = spec["path_suffix"].format(
+        version=version,
+        major=version.split(".")[0],
+        minor=version.split(".")[1],
+    )
+    url = record.get("url")
+    parsed = urlsplit(url) if isinstance(url, str) else None
+    if parsed is None:
+        raise ValueError(f"{key} source URL must be the pinned official upstream archive")
+    path_matches = (
+        re.fullmatch(
+            rf"/packages/[0-9a-f]{{2}}/[0-9a-f]{{2}}/[0-9a-f]{{60}}/{re.escape(filename)}",
+            parsed.path,
+        ) is not None
+        if key == "pyqt6_source"
+        else parsed.path == expected_path
+    )
+    if record.get("component") != spec["component"] or record.get("version") != version:
+        raise ValueError(f"{key} source record does not match pinned {spec['component']} {version}")
+    if record.get("filename") != filename:
+        raise ValueError(f"{key} source filename must be {filename}")
+    digest = record.get("sha256")
+    if not isinstance(digest, str) or not HEX.fullmatch(digest):
+        raise ValueError(f"{key} source archive sha256 must be lowercase SHA-256")
+    if (
+        parsed.scheme != "https" or parsed.hostname != spec["host"]
+        or not path_matches or parsed.username is not None
+        or parsed.password is not None or parsed.port is not None
+        or parsed.query or parsed.fragment
+    ):
+        raise ValueError(f"{key} source URL must be the pinned official upstream archive")
+    checksum_page = record.get("upstream_checksum_page")
+    checksum_parsed = urlsplit(checksum_page) if isinstance(checksum_page, str) else None
+    if (
+        checksum_parsed is None or checksum_parsed.scheme != "https"
+        or checksum_parsed.hostname != spec["checksum_host"]
+        or checksum_parsed.username is not None or checksum_parsed.password is not None
+        or checksum_parsed.port is not None or checksum_parsed.query or checksum_parsed.fragment
+    ):
+        raise ValueError(f"{key} checksum page must be hosted by the upstream project")
+    return {
+        "component": spec["component"],
+        "version": version,
+        "filename": filename,
+        "url": url,
+        "sha256": digest,
+        "upstream_checksum_page": checksum_page,
+    }
+
+
 def evidence_materials(evidence_dir: Path, tag: str) -> dict[str, tuple[Path, str]]:
     manifest_path = regular_child(evidence_dir, "preview.json", "preview evidence manifest")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -145,7 +230,12 @@ def evidence_materials(evidence_dir: Path, tag: str) -> dict[str, tuple[Path, st
             raise ValueError(f"{key} must use {required_name}")
         if file_hash(path) != digest:
             raise ValueError(f"{key} sha256 does not match evidence bytes")
-        minimum_size = 10_000 if key == "pyqt6_gplv3" else 5_000 if key == "qt_lgplv3" else 500
+        minimum_size = (
+            10_000 if key == "pyqt6_gplv3"
+            else 5_000 if key == "qt_lgplv3"
+            else 100 if key in {"pyqt6_source", "qt_source"}
+            else 500
+        )
         if path.stat().st_size < minimum_size:
             raise ValueError(f"{key} evidence is too small to establish its claimed material")
         if key == "pyqt6_gplv3" and "GNU GENERAL PUBLIC LICENSE" not in path.read_text(encoding="utf-8"):
@@ -153,29 +243,19 @@ def evidence_materials(evidence_dir: Path, tag: str) -> dict[str, tuple[Path, st
         if key == "qt_lgplv3" and "GNU LESSER GENERAL PUBLIC LICENSE" not in path.read_text(encoding="utf-8"):
             raise ValueError("Qt license material must contain the LGPL terms")
         verified[key] = path, digest
-    versions = pinned_gui_versions()
-    source_prefixes = {
-        "pyqt6_source": f"PyQt6-{versions['PyQt6']}",
-        "qt_source": f"qt-everywhere-src-{versions['PyQt6-Qt6']}",
-    }
-    for key, prefix in source_prefixes.items():
-        path = verified[key][0]
-        if not path.name.startswith(prefix + "."):
-            raise ValueError(f"{key} filename must bind installed version {prefix}")
-        if tarfile.is_tarfile(path):
-            with tarfile.open(path, "r:*") as archive:
-                names = archive.getnames()
-        elif zipfile.is_zipfile(path):
-            with zipfile.ZipFile(path) as archive:
-                names = archive.namelist()
-        else:
-            raise ValueError(f"{key} must be a real source archive")
-        if len(names) < 25 or not all(name.startswith(prefix + "/") for name in names):
-            raise ValueError(f"{key} archive must contain the pinned version's source tree")
+    for key in ("pyqt6_source", "qt_source"):
+        source_archive_record(verified[key][0], key)
     instructions = verified["qt_relink_instructions"][0].read_text(encoding="utf-8")
     if not all(word in instructions.lower() for word in ("qt", "relink", "replace")):
         raise ValueError("Qt relink instructions must explain replacement and relinking")
     return verified
+
+
+def source_archive_records(materials: dict[str, tuple[Path, str]]) -> dict[str, dict[str, str]]:
+    return {
+        key: source_archive_record(materials[key][0], key)
+        for key in ("pyqt6_source", "qt_source")
+    }
 
 
 def capture_builder_inventory(
@@ -328,7 +408,7 @@ def audit(
             raise ValueError(f"native package belongs to another version: {package.name}")
         required = ["third_party_notices"]
         if GUI_TARGET.search(package.name):
-            required += ["pyqt6_gplv3", "qt_lgplv3"]
+            required += ["pyqt6_gplv3", "qt_lgplv3", "qt_relink_instructions"]
         for key in required:
             expected_name = materials[key][0].name
             embedded = embedded_file_bytes(package, expected_name)
@@ -344,6 +424,7 @@ def audit(
         "release_tag": tag,
         "release_sha": sha,
         "channel": "gpl-lgpl",
+        "source_archives": source_archive_records(materials),
         "materials_sha256": {key: digest for key, (_, digest) in sorted(materials.items())},
         "builder_inventory_sha256": {
             target: file_hash(inventory_dir / f"{target}.json") for target in inventories
@@ -375,6 +456,7 @@ def main(argv: list[str] | None = None) -> int:
                 "kind": "unsigned-preview-redistribution-source-preflight",
                 "release_tag": args.tag,
                 "materials_sha256": {key: digest for key, (_, digest) in sorted(materials.items())},
+                "source_archives": source_archive_records(materials),
             }
         elif args.capture_target:
             report = capture_builder_inventory(

@@ -204,8 +204,12 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   }
   $LicenseSource = XmlEscape (Join-Path $Stage "docs\LICENSE")
   $NoticeSource = XmlEscape (Join-Path $Stage "docs\NOTICE")
+  $ThirdPartyNoticesSource = XmlEscape (Join-Path $Stage "docs\THIRD_PARTY_NOTICES.md")
   $ReadmeSource = XmlEscape (Join-Path $Stage "docs\README.md")
   $TargetSource = XmlEscape (Join-Path $Stage "RELEASE_TARGET.md")
+  $PyQtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
+  $QtLicenseSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
+  $QtRelinkSource = XmlEscape (Join-Path $Stage "docs\licenses\Qt-Relinking.md")
   $IconSource = XmlEscape $IconPath
 
 @"
@@ -230,12 +234,26 @@ $RowGuiFile
           <Component Id="NoticeComponent" Guid="A30D9507-7836-47E3-A8F3-D91E7842EA48">
             <File Id="NoticeFile" Source="$NoticeSource" KeyPath="yes" />
           </Component>
+          <Component Id="ThirdPartyNoticesComponent" Guid="39A32D3A-CFE5-4F09-B4DA-6A5C93866E5C">
+            <File Id="ThirdPartyNoticesFile" Source="$ThirdPartyNoticesSource" KeyPath="yes" />
+          </Component>
           <Component Id="ReadmeComponent" Guid="0184E6B4-1D6F-4F2A-855A-F13BF37B1C9E">
             <File Id="ReadmeFile" Source="$ReadmeSource" KeyPath="yes" />
           </Component>
           <Component Id="TargetReadmeComponent" Guid="2A3A7D0E-1FF2-437E-88C4-8A432DB29D1B">
             <File Id="TargetReadmeFile" Source="$TargetSource" KeyPath="yes" />
           </Component>
+          <Directory Id="LICENSESDIR" Name="licenses">
+            <Component Id="PyQtLicenseComponent" Guid="BFA62B82-EA32-4B88-9FC2-88B20C0A4F7F">
+              <File Id="PyQtLicenseFile" Source="$PyQtLicenseSource" KeyPath="yes" />
+            </Component>
+            <Component Id="QtLicenseComponent" Guid="0570ED19-9AC2-41BC-9B33-0A5674ACF0E1">
+              <File Id="QtLicenseFile" Source="$QtLicenseSource" KeyPath="yes" />
+            </Component>
+            <Component Id="QtRelinkComponent" Guid="D7D26461-21E9-4B15-94B1-EF8AA8EF0C37">
+              <File Id="QtRelinkFile" Source="$QtRelinkSource" KeyPath="yes" />
+            </Component>
+          </Directory>
         </Directory>
       </Directory>
     </StandardDirectory>
@@ -243,8 +261,12 @@ $RowGuiFile
       <ComponentRef Id="RowExeComponent" />
       <ComponentRef Id="LicenseComponent" />
       <ComponentRef Id="NoticeComponent" />
+      <ComponentRef Id="ThirdPartyNoticesComponent" />
       <ComponentRef Id="ReadmeComponent" />
       <ComponentRef Id="TargetReadmeComponent" />
+      <ComponentRef Id="PyQtLicenseComponent" />
+      <ComponentRef Id="QtLicenseComponent" />
+      <ComponentRef Id="QtRelinkComponent" />
     </Feature>
   </Package>
 </Wix>
@@ -390,12 +412,17 @@ if ($BuildGuiLauncher -and !(Test-Path $RowGuiExe)) {
 }
 
 New-Item -ItemType Directory -Force (Join-Path $Stage "bin"), (Join-Path $Stage "docs") | Out-Null
+New-Item -ItemType Directory -Force (Join-Path $Stage "docs\licenses") | Out-Null
 Copy-Item $RowExe (Join-Path $Stage "bin\row.exe")
 if ($BuildGuiLauncher) {
   Copy-Item $RowGuiExe (Join-Path $Stage "bin\row-gui.exe")
 }
 Copy-Item (Join-Path $Root "LICENSE") (Join-Path $Stage "docs\LICENSE")
 Copy-Item (Join-Path $Root "NOTICE") (Join-Path $Stage "docs\NOTICE")
+Copy-Item (Join-Path $Root "redistribution-evidence\THIRD_PARTY_NOTICES.md") (Join-Path $Stage "docs\THIRD_PARTY_NOTICES.md")
+Copy-Item (Join-Path $Root "redistribution-evidence\PyQt6-GPL-3.0.txt") (Join-Path $Stage "docs\licenses\PyQt6-GPL-3.0.txt")
+Copy-Item (Join-Path $Root "redistribution-evidence\Qt-LGPL-3.0.txt") (Join-Path $Stage "docs\licenses\Qt-LGPL-3.0.txt")
+Copy-Item (Join-Path $Root "redistribution-evidence\Qt-Relinking.md") (Join-Path $Stage "docs\licenses\Qt-Relinking.md")
 Copy-Item (Join-Path $Root "README.md") (Join-Path $Stage "docs\README.md")
 Copy-Item (Join-Path $Root "README.tr.md") (Join-Path $Stage "docs\README.tr.md")
 
@@ -403,6 +430,11 @@ $GuiTargetNote = if ($BuildGuiLauncher) {
   "It also includes the double-clickable bin\row-gui.exe launcher for the PyQt6 desktop UI."
 } else {
   "This 32-bit Windows build is CLI-first because PyQt6 does not publish 32-bit Windows wheels."
+}
+$GuiLicenseNote = if ($BuildGuiLauncher) {
+  "The bundled GUI uses PyQt6 under GPLv3 and Qt under LGPLv3; see docs\THIRD_PARTY_NOTICES.md and docs\licenses."
+} else {
+  "This x86 package does not include the PyQt6 GUI."
 }
 
 @"
@@ -413,7 +445,7 @@ Version: v$Version
 Target: Windows $Arch
 
 This native package installs the standalone row.exe command built with
-PyInstaller. $GuiTargetNote Protocol sessions still depend on Windows system tools such as
+PyInstaller. $GuiTargetNote $GuiLicenseNote Protocol sessions still depend on Windows system tools such as
 OpenSSH, MSTSC, PuTTY, VcXsrv, and VNC clients.
 "@ | Set-Content -Encoding UTF8 (Join-Path $Stage "RELEASE_TARGET.md")
 

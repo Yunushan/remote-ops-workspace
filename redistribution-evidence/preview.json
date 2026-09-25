@@ -17,7 +17,7 @@
     },
     "pyqt6_source": {
       "file": "PyQt6-6.11.0-source.json",
-      "sha256": "0b0471854aa2c3a3d9eade6a27f542dcf80fd3cbb63ff661b4606c287d89532f"
+      "sha256": "99918650302b1edefacac2313550898b557ba17679d127d6cd0344d35670b576"
     },
     "qt_source": {
       "file": "qt-everywhere-src-6.11.2-source.json",

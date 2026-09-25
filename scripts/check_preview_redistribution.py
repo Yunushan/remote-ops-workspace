@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import re
 import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -128,6 +130,7 @@ def source_archive_record(path: Path, key: str) -> dict[str, str]:
             "host": "files.pythonhosted.org",
             "path_suffix": "/pyqt6-{version}.tar.gz",
             "checksum_host": "pypi.org",
+            "checksum_path": "/pypi/PyQt6/{version}/json",
         },
         "qt_source": {
             "component": "Qt",
@@ -136,6 +139,7 @@ def source_archive_record(path: Path, key: str) -> dict[str, str]:
             "host": "download.qt.io",
             "path_suffix": "/official_releases/qt/{major}.{minor}/{version}/single/qt-everywhere-src-{version}.tar.xz",
             "checksum_host": "download.qt.io",
+            "checksum_path": "/official_releases/qt/{major}.{minor}/{version}/single/qt-everywhere-src-{version}.tar.xz.mirrorlist",
         },
     }
     spec = specs.get(key)
@@ -184,13 +188,22 @@ def source_archive_record(path: Path, key: str) -> dict[str, str]:
         raise ValueError(f"{key} source URL must be the pinned official upstream archive")
     checksum_page = record.get("upstream_checksum_page")
     checksum_parsed = urlsplit(checksum_page) if isinstance(checksum_page, str) else None
+    expected_checksum_path = spec["checksum_path"].format(
+        version=version,
+        major=version.split(".")[0],
+        minor=version.split(".")[1],
+    )
     if (
         checksum_parsed is None or checksum_parsed.scheme != "https"
         or checksum_parsed.hostname != spec["checksum_host"]
+        or checksum_parsed.path != expected_checksum_path
         or checksum_parsed.username is not None or checksum_parsed.password is not None
         or checksum_parsed.port is not None or checksum_parsed.query or checksum_parsed.fragment
     ):
         raise ValueError(f"{key} checksum page must be hosted by the upstream project")
+    upstream_digest = fetch_upstream_checksum(key, checksum_page, filename)
+    if digest != upstream_digest:
+        raise ValueError(f"{key} sha256 does not match the official upstream checksum")
     return {
         "component": spec["component"],
         "version": version,
@@ -199,6 +212,71 @@ def source_archive_record(path: Path, key: str) -> dict[str, str]:
         "sha256": digest,
         "upstream_checksum_page": checksum_page,
     }
+
+
+_UPSTREAM_CHECKSUM_CACHE: dict[tuple[str, str, str], str] = {}
+
+
+def parse_upstream_checksum(payload: bytes, key: str, filename: str) -> str:
+    """Extract one archive SHA-256 from PyPI JSON or a Qt mirror list page."""
+    if key == "pyqt6_source":
+        try:
+            metadata = json.loads(payload)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError("PyPI checksum metadata is not valid JSON") from exc
+        files = metadata.get("urls") if isinstance(metadata, dict) else None
+        matches: list[Any] = []
+        if isinstance(files, list):
+            for item in files:
+                if (
+                    not isinstance(item, dict)
+                    or item.get("filename") != filename
+                    or item.get("packagetype") != "sdist"
+                ):
+                    continue
+                digests = item.get("digests")
+                matches.append(digests.get("sha256") if isinstance(digests, dict) else None)
+    elif key == "qt_source":
+        try:
+            page = payload.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError("Qt checksum metadata is not UTF-8") from exc
+        if filename not in page:
+            raise ValueError("Qt checksum metadata does not name the pinned archive")
+        plain = html.unescape(re.sub(r"<[^>]*>", " ", page))
+        matches = re.findall(
+            r"SHA-256(?:\s+Hash)?\s*:?\s*([0-9a-f]{64})",
+            plain,
+            flags=re.IGNORECASE,
+        )
+    else:
+        raise ValueError(f"{key} has no recognized upstream checksum format")
+    digests = {value.lower() for value in matches if isinstance(value, str) and HEX.fullmatch(value.lower())}
+    if len(digests) != 1:
+        raise ValueError(f"upstream checksum metadata must contain one SHA-256 for {filename}")
+    return digests.pop()
+
+
+def fetch_upstream_checksum(key: str, url: str, filename: str) -> str:
+    """Fetch a small official checksum document without downloading the source archive."""
+    cache_key = (key, url, filename)
+    cached = _UPSTREAM_CHECKSUM_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "remote-ops-workspace-release-check/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        final_url = urlsplit(response.geturl())
+        if response.status != 200 or final_url.scheme != "https" or final_url.hostname != urlsplit(url).hostname:
+            raise ValueError("upstream checksum request left its pinned HTTPS host")
+        payload = response.read(2_000_001)
+    if len(payload) > 2_000_000:
+        raise ValueError("upstream checksum metadata exceeds the size limit")
+    digest = parse_upstream_checksum(payload, key, filename)
+    _UPSTREAM_CHECKSUM_CACHE[cache_key] = digest
+    return digest
 
 
 def evidence_materials(evidence_dir: Path, tag: str) -> dict[str, tuple[Path, str]]:

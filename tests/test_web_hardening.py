@@ -866,11 +866,9 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
     assert node is not None
     harness = r"""
 const fs = require('node:fs');
-const vm = require('node:vm');
+const path = require('node:path');
 // Use file arguments for both source and result. Python 3.15 on Windows can
-// leave subprocess pipe threads blocked around the Node harness even after it
-// has produced the result.
-const source = fs.readFileSync(process.argv[1], 'utf8');
+// leave a Node process handle blocked even after it has produced the result.
 const scenario = process.argv[2];
 const outputPath = process.argv[3];
 const windowsPendingFallback = process.platform === 'win32' && scenario === 'pending';
@@ -899,7 +897,7 @@ const elements = {
 const harnessSetTimeout = scenario === 'pending'
   ? callback => {
       // Resolve the timeout branch immediately so the test exercises the
-      // production fallback without leaving a cross-realm timer alive.
+      // production fallback without leaving a timer alive.
       callback();
       return {};
     }
@@ -926,9 +924,7 @@ const FormData = function () {
 if (!('navigator' in globalThis)) {
   Object.defineProperty(globalThis, 'navigator', {value: {}, configurable: true});
 }
-// Run the application in Node's current realm. A separate VM context can
-// retain cross-realm promise state on Python 3.15 Windows runners even after
-// the harness has written its result and requested process exit.
+// Load the actual application as CommonJS, avoiding an unnecessary VM context.
 Object.assign(globalThis, {
   document: harnessDocument,
   sessionStorage,
@@ -945,10 +941,8 @@ const validPolicy = {
 let fetchResult;
 if (scenario === 'pending') {
   if (windowsPendingFallback) {
-    // Hosted Windows Node can retain a VM promise/thenable after the test has
-    // completed. Throw before the timeout race is constructed so this case
-    // still exercises the production unavailable-policy fallback without
-    // leaving a live cross-realm promise behind.
+    // Keep this case synchronous so it exercises the unavailable-policy
+    // fallback without leaving an unresolved promise behind.
     globalThis.fetch = () => {
       throw new Error('enterprise policy is unavailable');
     };
@@ -964,7 +958,7 @@ if (scenario === 'pending') {
   fetchResult = Promise.resolve({ok: true, json: async () => body});
   globalThis.fetch = () => fetchResult;
 }
-vm.runInThisContext(source, {filename: 'apps/web/app.js'});
+require(path.resolve(process.argv[1]));
 const finish = () => {
   listeners.submit({preventDefault: () => {}});
   const saved = JSON.parse(

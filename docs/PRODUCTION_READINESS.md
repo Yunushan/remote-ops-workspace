@@ -85,8 +85,11 @@ all of it through the tag-pinned Ed25519 policy. It then performs the full audit
 attests the complete inventory, creates a draft,
 verifies every draft byte and attestation against its own tag-bound invocation,
 rechecks the tag, and promotes the draft once. Manual `release.yml` runs never
-publish. The separate `unsigned-preview.yml` workflow is the only preview lane;
-its unique non-`v*` tag and `UNSIGNED PREVIEW` prerelease cannot satisfy 100/100.
+publish. The `unsigned-preview.yml` branch lane publishes source/Python assets
+under a unique non-`v*` tag. The separate `versioned-unsigned-release.yml` lane
+may publish the standard downloads under an exact `vX.Y.Z` tag as an explicitly
+labeled `UNSIGNED PREVIEW` prerelease. Neither preview is production
+certification or satisfies the 100/100 gate.
 
 Bring the required evidence infrastructure online before dispatching the
 protected workflows:

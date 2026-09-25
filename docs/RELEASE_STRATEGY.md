@@ -11,13 +11,20 @@ Release integrity rules:
   connections.
 
 - Release tags must match `pyproject.toml` exactly, for example `v1.0.27`.
-- Pushing a `vX.Y.Z` tag builds and smoke-tests the standard native assets, then
-  imports already accepted Linux i386/armhf and Windows XP evidence into one
-  certified inventory. The tag must resolve to a commit reachable from the
-  trusted default branch. Manual `release.yml` dispatch may stage that evidence
-  for review but cannot publish or mutate the production tag. The tag run waits
-  for the independent exact-byte compliance review, uploads one draft, verifies
-  every byte and attestation, and promotes it once.
+- Pushing a `vX.Y.Z` tag starts `release.yml`. With protected Windows and macOS
+  signing material, that workflow builds and seals the standard native candidate
+  inventory. It never publishes a GitHub Release. `release-promotion.yml`
+  separately requires independent signed exact-byte evidence before it imports
+  protected-platform artifacts, verifies the complete inventory, and publishes
+  the production release.
+- For versioned downloads without signing material,
+  `versioned-unsigned-release.yml` runs only by manual dispatch from the exact
+  `vX.Y.Z` tag. It builds the standard source/Python and native asset families,
+  validates their redistribution materials, attests their bytes, and publishes
+  a clearly named **UNSIGNED PREVIEW** GitHub prerelease. The tagged source
+  must be reachable from `main`
+  and pass exact-SHA CI evidence checks. This lane does not confer production
+  signing, independent compliance approval, or protected-platform readiness.
 - Source/install bundles and the Python wheel/sdist backend receive deterministic
   archive metadata through `SOURCE_DATE_EPOCH` or a fixed default.
 - Python release build dependencies are constrained by `requirements-release.txt`
@@ -101,8 +108,9 @@ Release integrity rules:
   install their tracked locks with `--require-hashes`, and requires a full
   compliance audit before release upload. The current policy-only preflight
   therefore withholds production publication. Manual `release.yml` runs cannot
-  publish; only the isolated `unsigned-preview.yml` workflow creates a unique
-  non-source-tag `UNSIGNED PREVIEW` prerelease.
+  publish. The isolated `unsigned-preview.yml` lane creates uniquely tagged
+  branch previews, while `versioned-unsigned-release.yml` can publish an exact
+  `vX.Y.Z` prerelease with the standard unsigned download families.
   When the policy and hashed locks are approved, the exact-tag build retains its
   signed/notarized candidates and the `release-compliance-review` environment
   holds the publish job. The independent reviewer signs those exact bytes and
@@ -130,8 +138,8 @@ Release integrity rules:
   protected-platform readiness and then runs
   `python scripts/check_repository_cleanup.py --require-clean` before standard
   assets build. The production tag path is fail-closed on unavailable i386,
-  armhf or XP evidence; the separate unsigned-preview workflow remains outside
-  this certified inventory.
+  armhf or XP evidence; both unsigned-preview workflows remain outside this
+  certified inventory.
 - Immediately before dispatching protected-platform evidence, an authorized
   operator must run `python scripts/check_platform_evidence_runner_readiness.py
   --repository <owner>/<repo> --require-goal-targets --require-idle`. It confirms
@@ -641,8 +649,9 @@ Implementation:
   `5.0.2`.
 - The signed production path requires Authenticode credentials. Without them,
   a tag-triggered release is withheld before publication. Manual runs of
-  `release.yml` cannot publish; the isolated `unsigned-preview.yml` workflow is
-  the only clearly labeled **UNSIGNED PREVIEW** prerelease lane.
+  `release.yml` cannot publish. `versioned-unsigned-release.yml` can publish
+  explicitly unsigned Windows test installers under an **UNSIGNED PREVIEW**
+  prerelease after native smoke and full asset validation.
 - Treats Windows XP, Vista, Windows 7 and Windows 8.0 as legacy remote targets,
   not as first-class modern native runtime targets. Windows XP x86/x64 remote
   endpoints use isolated per-profile legacy opt-ins.
@@ -667,8 +676,8 @@ Implementation:
   uninstall the `.dmg` and `.pkg` artifacts before upload.
 - CI candidate artifacts use ad-hoc signing only. The signed production path
   requires Developer ID signing and Apple notarization. Without them,
-  production publication is withheld; only `unsigned-preview.yml` may create a
-  clearly labeled **UNSIGNED PREVIEW** prerelease.
+  production publication is withheld; `versioned-unsigned-release.yml` may
+  publish clearly labeled **UNSIGNED PREVIEW** test installers.
 
 For branch review without a production merge, use the isolated
 `.github/workflows/unsigned-preview.yml` lane from a `preview` or `preview/*`
@@ -676,6 +685,10 @@ branch. It publishes only a uniquely named `unsigned-preview-*` prerelease with
 source/Python assets and an `UNSIGNED_PREVIEW.txt` marker. The lane rejects
 `main`, rejects all tag triggers (including `v*`), and never changes the
 protected production release requirements or verified-commit policy.
+For an exact version tag and the full standard download set, use
+`.github/workflows/versioned-unsigned-release.yml` after the tag is on `main`.
+Its prerelease title and notes explicitly disclose unavailable signing and
+missing accepted evidence. The two preview lanes remain distinct.
 
 ## Phase 4: Linux native packages
 

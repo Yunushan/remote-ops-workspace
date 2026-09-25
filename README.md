@@ -587,7 +587,11 @@ real evidence-host prerequisites, and the final promotion sequence, is in
 
 Signed installers are the production channel. Both protected Windows and macOS
 signing stacks are required before `release.yml` can stage a candidate. The
-separate preview workflow produces explicitly unsigned prereleases for testing.
+separate `.github/workflows/versioned-unsigned-release.yml` workflow can build
+the same standard download families from an exact `vX.Y.Z` tag and publish an
+explicitly labeled **UNSIGNED PREVIEW** prerelease after the source and native
+smoke and redistribution checks pass. This preview does not claim signed
+installers, accepted protected-platform evidence, or production certification.
 
 For branch-only review, `.github/workflows/unsigned-preview.yml` is an isolated
 preview lane. It runs only from `preview` or `preview/*`, creates a uniquely named

@@ -438,8 +438,12 @@ $PortableInstallCommand = if ($BuildGuiLauncher) {
   "Extract and run bin\row.exe. The Windows x86 portable build is CLI-first."
 }
 $PortableNotes = @("Standalone PyInstaller CLI executable plus docs.", "Built for Windows $Arch.")
-$InstallerNotes = @("Authenticode-signing is mandatory for release workflow artifacts.", "Built for Windows $Arch.")
 $ReleaseSigningEnabled = $env:ROW_REQUIRE_RELEASE_SIGNING -eq "1"
+$InstallerNotes = if ($ReleaseSigningEnabled) {
+  @("Authenticode-signed and timestamped for the production release channel.", "Built for Windows $Arch.")
+} else {
+  @("Unsigned preview installer for testing only; not trusted production media.", "Built for Windows $Arch.")
+}
 $ReleaseChannel = if ($ReleaseSigningEnabled) { "production-signed" } else { "unsigned-preview" }
 $SigningMetadata = @{
   release_channel = $ReleaseChannel

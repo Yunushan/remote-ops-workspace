@@ -286,6 +286,13 @@ python scripts/check_repository_cleanup.py --require-clean
 yayin durumu icin [`docs/RELEASE_NOTES_v1.0.27.md`](docs/RELEASE_NOTES_v1.0.27.md)
 dosyasina bakin. Tag veya GitHub yayini olusturulmadi.
 
+`.github/workflows/versioned-unsigned-release.yml`, tam `vX.Y.Z` etiketi icin
+standart indirme dosyalarini ayri bir **UNSIGNED PREVIEW** on yayini olarak
+hazirlar. Kaynak ve native smoke kontrolleri zorunludur; Windows/macOS
+imzasi, korumali platform kaniti veya uretim sertifikasyonu iddia edilmez.
+`.github/workflows/unsigned-preview.yml` ise yalnizca `preview` dallarindan
+benzersiz `unsigned-preview-*` etiketiyle kaynak/Python on yayini uretir.
+
 Yayin akisi `v1.0.27` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip
 paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux
 `x86_64`/`aarch64` native paketleri, release manifestleri ve

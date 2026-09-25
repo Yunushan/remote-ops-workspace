@@ -30,6 +30,8 @@ def test_unsigned_preview_notes_report_boundaries(tmp_path: Path) -> None:
     )
     notes = output.read_text(encoding="utf-8")
     assert "Channel: unsigned preview" in notes
+    assert "This lane does not use production signing or notarization credentials." in notes
+    assert "selected signed promotion registry" not in notes
     assert "remote-ops-workspace-v1.0.27-windows.zip" in notes
     assert "Native jobs: windows-native, macos-native, linux-native." in notes
     assert "Protected platform evidence accepted for this source is 0/4" in notes

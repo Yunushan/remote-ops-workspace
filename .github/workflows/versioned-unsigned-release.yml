@@ -1,0 +1,740 @@
+name: versioned-unsigned-release
+
+# Exact-tag, full-matrix unsigned downloads. This lane never uses protected
+# production signing material or the production compliance approval path.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: versioned-unsigned-release-${{ github.repository }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SOURCE_DATE_EPOCH: "1704067200"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONHASHSEED: "0"
+  ROW_REQUIRE_RELEASE_SIGNING: "0"
+  RELEASE_TAG: ${{ github.ref_name }}
+
+jobs:
+  release-preflight:
+    name: Bind exact unsigned source
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    outputs:
+      release_sha: ${{ steps.release-source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          clean: true
+          fetch-depth: 0
+      - name: Bind exact tag and main source
+        id: release-source
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$GITHUB_REF_TYPE" = "tag"
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$DEFAULT_BRANCH" = "main"
+          release_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          test "$(git rev-parse HEAD)" = "$release_sha"
+          test "$GITHUB_SHA" = "$release_sha"
+          git fetch --no-tags origin "refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$release_sha" "refs/remotes/origin/$DEFAULT_BRANCH"
+          echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_SHA=$release_sha" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Require tagged preview redistribution materials before builds
+        run: >-
+          python scripts/check_preview_redistribution.py
+          --preflight
+          --assets-dir .
+          --evidence-dir redistribution-evidence
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --repository "$GITHUB_REPOSITORY"
+          --report "$RUNNER_TEMP/preview-redistribution-preflight.json"
+      - name: Require version and verified release source
+        run: |
+          set -euo pipefail
+          python scripts/check_release_version.py --release-tag "$RELEASE_TAG"
+          python scripts/check_release_maturity.py --release-tag "$RELEASE_TAG"
+          python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
+          python scripts/check_repository_cleanup.py --require-clean
+      - name: Require exact-SHA Python 3.15 and Windows CI evidence
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_python315_ci_evidence.py
+          --repository "${{ github.repository }}"
+          --branch "$DEFAULT_BRANCH"
+          --sha "$RELEASE_SHA"
+          --wait-seconds 5400
+          --poll-interval-seconds 15
+
+  source-and-python:
+    needs: release-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.release-preflight.outputs.release_sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify frozen release source commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Install release build tools
+        run: python -m pip install --constraint requirements-release.txt pip setuptools wheel build ".[desktop,security,package]"
+      - name: Build source and Python package assets
+        run: python scripts/make_release.py
+      - name: Validate source and Python package assets
+        run: python scripts/check_release_publish_assets.py --assets-dir dist --tag "$RELEASE_TAG" --source-assets-only
+      - name: Smoke-test installed source Python wheel
+        shell: bash
+        run: |
+          python -m venv wheel-smoke
+          wheel-smoke/bin/python -m pip install --no-deps "dist/remote_ops_workspace-${RELEASE_TAG#v}-py3-none-any.whl"
+          wheel-smoke/bin/row --help
+          wheel-smoke/bin/python -m remote_ops_workspace features --coverage
+      - name: Smoke-test installed Web/PWA wheel
+        shell: bash
+        run: |
+          log="$RUNNER_TEMP/wheel-web-smoke.log"
+          headers="$RUNNER_TEMP/wheel-web-smoke.headers"
+          index="$RUNNER_TEMP/wheel-web-smoke-index.html"
+          wheel-smoke/bin/python -m remote_ops_workspace serve-web --host 127.0.0.1 --port 18767 >"$log" 2>&1 &
+          server_pid=$!
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          ready=false
+          for _ in $(seq 1 15); do
+            if curl --fail --silent --show-error http://127.0.0.1:18767/healthz | grep -Fqx '{"status": "ok"}'; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ready" != true ]]; then
+            cat "$log"
+            exit 1
+          fi
+          curl --fail --silent --show-error --dump-header "$headers" --output "$index" http://127.0.0.1:18767/index.html
+          grep -Eiq '^content-security-policy:' "$headers"
+          grep -Eiq '^x-frame-options:[[:space:]]*DENY' "$headers"
+          grep -Eiq '<!doctype html>' "$index"
+      - name: Smoke-test installed source distribution
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/sdist-smoke-package"
+          python -m pip install --no-deps --no-build-isolation --target "$RUNNER_TEMP/sdist-smoke-package" "dist/remote_ops_workspace-${RELEASE_TAG#v}.tar.gz"
+          (
+            cd "$RUNNER_TEMP"
+            PYTHONPATH="$RUNNER_TEMP/sdist-smoke-package" python -m remote_ops_workspace features --coverage
+          )
+      - name: Smoke-test installed portable source bundle
+        shell: bash
+        run: |
+          python -c "import pathlib, zipfile; archive = pathlib.Path('dist/remote-ops-workspace-v${RELEASE_TAG#v}-source.zip'); destination = pathlib.Path('${RUNNER_TEMP}') / 'source-bundle-smoke'; zipfile.ZipFile(archive).extractall(destination)"
+          python -m pip install --no-deps --no-build-isolation --target "$RUNNER_TEMP/source-bundle-smoke-package" "$RUNNER_TEMP/source-bundle-smoke/remote-ops-workspace-v${RELEASE_TAG#v}-source"
+          (
+            cd "$RUNNER_TEMP"
+            PYTHONPATH="$RUNNER_TEMP/source-bundle-smoke-package" python -m remote_ops_workspace features --coverage
+          )
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-source-python
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 90
+
+  windows-native:
+    needs: release-preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            python-architecture: x64
+            runner: windows-latest
+          - arch: x86
+            python-architecture: x86
+            runner: windows-latest
+          - arch: arm64
+            python-architecture: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.release-preflight.outputs.release_sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify frozen release source commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+          architecture: ${{ matrix.python-architecture }}
+      - name: Install Python packaging dependencies
+        shell: powershell
+        run: |
+          $ExpectedOpenSsl = ""
+          if ("${{ matrix.arch }}" -eq "x86") {
+            python -m pip uninstall -y bcrypt cryptography truststore
+            python -m pip install --constraint requirements-release-compat.txt pip setuptools wheel ".[package]"
+            $ExpectedCryptography = ""
+            python -c "import importlib.util; assert importlib.util.find_spec('bcrypt') is None; assert importlib.util.find_spec('cryptography') is None; print('bcrypt=unavailable cryptography=unavailable security-backends=fail-closed')"
+          } elseif ("${{ matrix.arch }}" -eq "arm64") {
+            if (-not $env:VCPKG_INSTALLATION_ROOT) {
+              throw "windows-11-arm runner did not provide VCPKG_INSTALLATION_ROOT"
+            }
+            $VcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+            $VcpkgCommit = "42e4e33e1505c9f47b58c21e0f557c1571b751ee"
+            git -C $VcpkgRoot fetch --no-tags --depth 1 origin $VcpkgCommit
+            git -C $VcpkgRoot checkout --detach $VcpkgCommit
+            if ((git -C $VcpkgRoot rev-parse HEAD).Trim() -ne $VcpkgCommit) {
+              throw "vcpkg checkout did not resolve to the pinned commit"
+            }
+            & (Join-Path $VcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
+            if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed" }
+            $Vcpkg = Join-Path $VcpkgRoot "vcpkg.exe"
+            & $Vcpkg install "openssl:arm64-windows-static-md" --clean-after-build
+            if ($LASTEXITCODE -ne 0) { throw "ARM64 OpenSSL installation failed" }
+            $OpenSslRoot = Join-Path $VcpkgRoot "installed\arm64-windows-static-md"
+            foreach ($RequiredPath in @(
+              "include\openssl\opensslv.h",
+              "lib\libcrypto.lib",
+              "lib\libssl.lib"
+            )) {
+              if (-not (Test-Path (Join-Path $OpenSslRoot $RequiredPath))) {
+                throw "ARM64 OpenSSL output missing: $RequiredPath"
+              }
+            }
+            $env:OPENSSL_DIR = $OpenSslRoot
+            $env:OPENSSL_STATIC = "1"
+            $env:OPENSSL_NO_VENDOR = "1"
+            python -m pip install --constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser
+            python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"
+            $ExpectedCryptography = "50.0.1"
+            $ExpectedOpenSsl = "OpenSSL 3.6.3"
+          } else {
+            python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
+            $ExpectedCryptography = "50.0.1"
+          }
+          if ($ExpectedCryptography) {
+            python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; actual_openssl = backend.openssl_version_text(); assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '$ExpectedCryptography'; assert not '$ExpectedOpenSsl' or actual_openssl.startswith('$ExpectedOpenSsl'), actual_openssl; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={actual_openssl}')"
+          } else {
+            Write-Host "Windows x86 security backends intentionally unavailable and fail-closed"
+          }
+      - name: Install Windows installer toolchains
+        shell: powershell
+        run: |
+          if (-not (Get-Command "iscc.exe" -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --version=6.3.3 -y --no-progress
+          } else {
+            Write-Host "Inno Setup compiler already available"
+          }
+          dotnet tool install --global wix --version 5.0.2
+      - name: Build Windows EXE and MSI installers
+        shell: powershell
+        run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
+      - name: Run Windows native installer smoke tests
+        shell: powershell
+        timeout-minutes: 20
+        run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows"
+      - name: Capture exact Windows redistribution inventory
+        shell: bash
+        run: >-
+          python scripts/check_preview_redistribution.py
+          --capture-target "windows-${{ matrix.arch }}"
+          --assets-dir native-dist/windows
+          --tag "$RELEASE_TAG"
+          --sha "${{ needs.release-preflight.outputs.release_sha }}"
+          --repository "$GITHUB_REPOSITORY"
+          --report "preview-license-inventory/windows-${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: preview-license-windows-${{ matrix.arch }}
+          path: preview-license-inventory/*.json
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-windows-native-${{ matrix.arch }}
+          path: native-dist/windows/*
+          if-no-files-found: error
+          retention-days: 90
+
+  macos-native:
+    needs: release-preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.release-preflight.outputs.release_sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify frozen release source commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Install Python packaging dependencies
+        run: |
+          if [[ "${{ matrix.arch }}" == "x64" ]]; then
+            python -m pip install --constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser
+            python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"
+            expected_cryptography="50.0.1"
+          else
+            python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
+            expected_cryptography="50.0.1"
+          fi
+          EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+      - name: Build macOS DMG and PKG installers
+        run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
+      - name: Run macOS native installer smoke tests
+        run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
+      - name: Capture exact macOS redistribution inventory
+        run: >-
+          python scripts/check_preview_redistribution.py
+          --capture-target "macos-${{ matrix.arch }}"
+          --assets-dir native-dist/macos
+          --tag "$RELEASE_TAG"
+          --sha "${{ needs.release-preflight.outputs.release_sha }}"
+          --repository "$GITHUB_REPOSITORY"
+          --report "preview-license-inventory/macos-${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: preview-license-macos-${{ matrix.arch }}
+          path: preview-license-inventory/*.json
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-macos-native-${{ matrix.arch }}
+          path: native-dist/macos/*
+          if-no-files-found: error
+          retention-days: 90
+
+  linux-native:
+    needs: release-preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+            appimage_runtime_sha256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+            appimage_runtime_sha256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.release-preflight.outputs.release_sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify frozen release source commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Install Linux packaging toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+      - name: Install Python packaging dependencies
+        run: |
+          python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
+          python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.1'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+      - name: Build Linux DEB, RPM and AppImage packages
+        env:
+          APPIMAGETOOL_VERSION: "1.9.1"
+          APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
+          APPIMAGE_RUNTIME_VERSION: "20251108"
+          APPIMAGE_RUNTIME_SHA256: ${{ matrix.appimage_runtime_sha256 }}
+        run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
+      - name: Run Linux native installer smoke tests
+        run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
+      - name: Capture exact Linux redistribution inventory
+        run: >-
+          python scripts/check_preview_redistribution.py
+          --capture-target "linux-${{ matrix.arch }}"
+          --assets-dir native-dist/linux
+          --tag "$RELEASE_TAG"
+          --sha "${{ needs.release-preflight.outputs.release_sha }}"
+          --repository "$GITHUB_REPOSITORY"
+          --report "preview-license-inventory/linux-${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: preview-license-linux-${{ matrix.arch }}
+          path: preview-license-inventory/*.json
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-linux-native-${{ matrix.arch }}
+          path: native-dist/linux/*
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-unsigned-preview:
+    name: Publish exact-tag UNSIGNED PREVIEW
+    needs:
+      - release-preflight
+      - source-and-python
+      - windows-native
+      - macos-native
+      - linux-native
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      attestations: write
+      artifact-metadata: write
+      contents: write
+      id-token: write
+    env:
+      RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.release-preflight.outputs.release_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          clean: true
+      - name: Verify frozen unsigned release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$GITHUB_REF_TYPE" = "tag"
+          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
+        with:
+          path: release-assets
+          pattern: release-*
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v4
+        with:
+          path: preview-license-inventory
+          pattern: preview-license-*
+          merge-multiple: true
+      - name: Validate complete unsigned release asset inventory
+        run: >-
+          python scripts/check_release_publish_assets.py
+          --assets-dir release-assets
+          --tag "$RELEASE_TAG"
+          --repository "$GITHUB_REPOSITORY"
+          --native-release-channel unsigned-preview
+      - name: Install native archive inspector
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+      - name: Require exact-artifact preview redistribution evidence
+        shell: bash
+        run: >-
+          python scripts/check_preview_redistribution.py
+          --assets-dir release-assets
+          --evidence-dir redistribution-evidence
+          --inventory-dir preview-license-inventory
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --repository "$GITHUB_REPOSITORY"
+          --report "$RUNNER_TEMP/preview-redistribution-report.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-preview-redistribution-audit
+          path: ${{ runner.temp }}/preview-redistribution-report.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Generate explicit unsigned release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/write_release_notes.py \
+            --tag "$RELEASE_TAG" \
+            --channel unsigned-preview \
+            --repository "$GITHUB_REPOSITORY" \
+            --root . \
+            --out release-notes.md
+          cat >> release-notes.md <<EOF
+
+          ## Exact build source
+
+          - Source tag: \`$RELEASE_TAG\`
+          - Source commit: \`$RELEASE_SHA\`
+          - Build run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT
+          - Windows installers have no Authenticode signature; macOS packages have no Developer ID signature or notarization. The macOS app uses only an ad-hoc signature.
+          - This is an unsigned preview for evaluation, not a production-signed or independently approved release.
+          EOF
+          test -s release-notes.md
+          grep -Fq '**Channel: unsigned preview.**' release-notes.md
+          grep -Fq '## Support boundaries' release-notes.md
+      - name: Re-resolve exact tag before release mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-unsigned-before-publish"
+          test "$(git rev-parse 'refs/tags/row-unsigned-before-publish^{commit}')" = "$RELEASE_SHA"
+      - name: Require unused release namespace including drafts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_release_remote_preconditions.py namespace
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+      - name: Attest every unsigned release asset
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/**
+      - name: Verify exact-tag unsigned asset attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(release-assets/*)
+          test "${#assets[@]}" -gt 0
+          for asset in "${assets[@]}"; do
+            gh attestation verify "$asset" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/versioned-unsigned-release.yml" \
+              --source-digest "$RELEASE_SHA" \
+              --source-ref "refs/tags/$RELEASE_TAG" \
+              --predicate-type https://slsa.dev/provenance/v1 \
+              --deny-self-hosted-runners \
+              --format json > /dev/null
+          done
+      - name: Create new unsigned draft by numeric API identity
+        id: create-draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          request="$RUNNER_TEMP/create-unsigned-release.json"
+          response="$RUNNER_TEMP/created-unsigned-release.json"
+          transaction_marker="<!-- remote-ops-unsigned-transaction:$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"
+          jq -n --arg tag "$RELEASE_TAG" --arg sha "$RELEASE_SHA" --arg marker "$transaction_marker" --rawfile body release-notes.md \
+            '{tag_name: $tag, target_commitish: $sha, name: ($tag + " (UNSIGNED PREVIEW)"), body: ($body + "\n" + $marker + "\n"), draft: true, prerelease: true}' > "$request"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"
+          release_id="$(jq -er 'select(.draft == true and .prerelease == true) | .id | select(type == "number" and . > 0)' "$response")"
+          test "$(jq -r '.tag_name' "$response")" = "$RELEASE_TAG"
+          test "$(jq -r '.name' "$response")" = "$RELEASE_TAG (UNSIGNED PREVIEW)"
+          upload_url="$(jq -er '.upload_url | select(type == "string") | sub("\\{.*$"; "")' "$response")"
+          test "$upload_url" = "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets"
+          test "$(jq -r '.body' "$response")" = "$(jq -r '.body' "$request")"
+          echo "release-id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "upload-url=$upload_url" >> "$GITHUB_OUTPUT"
+      - name: Upload every unsigned asset to the new numeric draft
+        shell: bash
+        env:
+          RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+          UPLOAD_URL: ${{ steps.create-draft.outputs.upload-url }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(release-assets/*)
+          test "${#assets[@]}" -gt 0
+          for asset in "${assets[@]}"; do
+            test -f "$asset"
+            test ! -L "$asset"
+            name="${asset##*/}"
+            encoded_name="$(jq -rn --arg value "$name" '$value | @uri')"
+            response="$RUNNER_TEMP/uploaded-unsigned-asset.json"
+            status="$(curl --silent --show-error --output "$response" --write-out '%{http_code}' \
+              --request POST \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "Content-Type: application/octet-stream" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              --data-binary "@$asset" \
+              "$UPLOAD_URL?name=$encoded_name")"
+            test "$status" = "201"
+            expected_size="$(wc -c < "$asset" | tr -d ' ')"
+            expected_digest="sha256:$(sha256sum "$asset" | cut -d' ' -f1)"
+            jq -e --arg name "$name" --arg digest "$expected_digest" --argjson size "$expected_size" \
+              '.name == $name and .state == "uploaded" and .size == $size and .digest == $digest and (.id | type == "number" and . > 0)' \
+              "$response" > /dev/null
+          done
+      - name: Verify complete numeric unsigned draft inventory
+        shell: bash
+        env:
+          RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$RUNNER_TEMP/unsigned-draft.json"
+          python - "$RUNNER_TEMP/unsigned-draft.json" true <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          expected_draft = sys.argv[2] == "true"
+          tag = os.environ["RELEASE_TAG"]
+          sha = os.environ["RELEASE_SHA"]
+          release_id = int(os.environ["RELEASE_ID"])
+          assert payload["id"] == release_id
+          assert payload["tag_name"] == tag
+          assert payload["name"] == f"{tag} (UNSIGNED PREVIEW)"
+          assert payload["draft"] is expected_draft
+          assert payload["prerelease"] is True
+          assert f"**Channel: unsigned preview.**" in payload["body"]
+          marker = f"<!-- remote-ops-unsigned-transaction:{tag}:{sha}:{os.environ['GITHUB_RUN_ID']}:{os.environ['GITHUB_RUN_ATTEMPT']} -->"
+          assert marker in payload["body"]
+          files = list(Path("release-assets").iterdir())
+          assert files and all(path.is_file() and not path.is_symlink() for path in files)
+          def sha256_file(path):
+              with path.open("rb") as stream:
+                  return "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
+          expected = {
+              path.name: (path.stat().st_size, sha256_file(path))
+              for path in files
+          }
+          assets = payload["assets"]
+          assert len(assets) == len(expected)
+          assert len({asset["name"].casefold() for asset in assets}) == len(assets)
+          for asset in assets:
+              name = asset["name"]
+              assert name in expected
+              assert asset["state"] == "uploaded"
+              assert (asset["size"], asset["digest"]) == expected[name]
+              assert asset["url"] == f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/releases/assets/{asset['id']}"
+          print(f"verified {len(assets)} exact unsigned release assets for numeric release {release_id}")
+          PY
+      - name: Re-resolve exact tag before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-unsigned-final-candidate"
+          test "$(git rev-parse 'refs/tags/row-unsigned-final-candidate^{commit}')" = "$RELEASE_SHA"
+      - name: Publish verified unsigned draft by numeric ID once
+        id: publish-draft
+        shell: bash
+        env:
+          RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: >-
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
+          --raw-field tag_name="$RELEASE_TAG"
+          --raw-field name="$RELEASE_TAG (UNSIGNED PREVIEW)"
+          --field draft=false
+          --field prerelease=true
+          --silent
+      - name: Verify published unsigned release notes
+        run: >-
+          python scripts/check_published_release_notes.py
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --channel unsigned-preview
+      - name: Verify final numeric release and exact asset bytes
+        shell: bash
+        env:
+          RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$RUNNER_TEMP/unsigned-published.json"
+          python - "$RUNNER_TEMP/unsigned-published.json" false <<'PY'
+          import hashlib
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          tag = os.environ["RELEASE_TAG"]
+          release_id = int(os.environ["RELEASE_ID"])
+          assert payload["id"] == release_id
+          assert payload["tag_name"] == tag
+          assert payload["name"] == f"{tag} (UNSIGNED PREVIEW)"
+          assert payload["draft"] is False
+          assert payload["prerelease"] is True
+          files = list(Path("release-assets").iterdir())
+          assert files and all(path.is_file() and not path.is_symlink() for path in files)
+          def sha256_file(path):
+              with path.open("rb") as stream:
+                  return "sha256:" + hashlib.file_digest(stream, "sha256").hexdigest()
+          expected = {
+              path.name: (path.stat().st_size, sha256_file(path))
+              for path in files
+          }
+          assets = payload["assets"]
+          assert len(assets) == len(expected)
+          assert len({asset["name"].casefold() for asset in assets}) == len(assets)
+          for asset in assets:
+              assert asset["name"] in expected
+              assert asset["state"] == "uploaded"
+              assert (asset["size"], asset["digest"]) == expected[asset["name"]]
+              assert asset["browser_download_url"] == f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{tag}/{asset['name']}"
+          print(f"verified published unsigned release {tag}: {len(assets)} exact assets")
+          PY
+          git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-unsigned-published"
+          test "$(git rev-parse 'refs/tags/row-unsigned-published^{commit}')" = "$RELEASE_SHA"
+      - name: Delete only this run's failed unsigned draft
+        if: ${{ always() && failure() && steps.create-draft.outputs.release-id != '' && steps.publish-draft.outcome != 'success' }}
+        shell: bash
+        env:
+          RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: |
+          set -euo pipefail
+          response="$RUNNER_TEMP/failed-unsigned-draft.json"
+          marker="<!-- remote-ops-unsigned-transaction:$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$response"
+          jq -e --argjson id "$RELEASE_ID" --arg tag "$RELEASE_TAG" --arg marker "$marker" \
+            '.id == $id and .tag_name == $tag and .draft == true and (.body | type == "string" and contains($marker))' \
+            "$response" > /dev/null
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --silent

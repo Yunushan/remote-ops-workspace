@@ -123,7 +123,7 @@ def write_notes(
         )
     else:
         channel_section = (
-            "**Channel: unsigned preview.** Signing/notarization material was unavailable. "
+            "**Channel: unsigned preview.** This lane does not use production signing or notarization credentials. "
             "Native installers are for testing only and must not be treated as trusted production artifacts. "
             "Use a signed release for production deployment."
         )
@@ -146,7 +146,7 @@ def write_notes(
             "required Linux i386, Linux armhf, and Windows XP x86/x64 targets."
             if not missing_platform
             else "- The release does not claim verified native-host readiness for protected "
-            "targets absent from the selected signed promotion registry."
+            "targets absent from the selected release evidence registry."
         ),
         f"- Protected platform evidence accepted for this source is {len(accepted_platform)}/{len(GOAL_TARGETS)} targets; missing: {', '.join(missing_platform) or 'none'}.",
         "- Legacy XP compatibility remains isolated and opt-in; modern platform security defaults are not weakened.",
@@ -158,7 +158,7 @@ def write_notes(
         f"- Verify the source and release matrix with `python scripts/verify.py --quick --no-cli-smoke --release-tag {tag}`.",
         "- For protected-platform promotion, run the evidence source-ref, accepted-record, release-asset, and remote byte-provenance gates documented in `docs/PLATFORM_SUPPORT.md`; do not substitute candidate builds for accepted host evidence.",
         "",
-        "This release note is generated from the immutable source matrix and the explicitly selected promotion evidence registry. It intentionally reports missing evidence instead of inferring support from a successful candidate build.",
+        "This release note is generated from the frozen source commit's release matrix and the selected evidence registry. It intentionally reports missing evidence instead of inferring support from a successful candidate build.",
         "",
     ]
     output.parent.mkdir(parents=True, exist_ok=True)

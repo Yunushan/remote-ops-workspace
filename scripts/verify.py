@@ -92,6 +92,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "versioned unsigned release workflow policy",
+            [python, "scripts/check_versioned_unsigned_release_workflow.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "GitHub Action supply-chain pins",
             [python, "scripts/check_workflow_action_pins.py"],
             env=_source_env(),

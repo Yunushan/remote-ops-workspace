@@ -27,6 +27,7 @@ import tarfile
 import tempfile
 import urllib.request
 import zipfile
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -336,6 +337,24 @@ def source_archive_records(materials: dict[str, tuple[Path, str]]) -> dict[str, 
     }
 
 
+def installed_distribution_versions() -> dict[str, str]:
+    """Read installed package names and versions directly from dist-info metadata."""
+    versions: dict[str, str] = {}
+    for distribution in metadata.distributions():
+        name = distribution.metadata.get("Name")
+        version = distribution.version
+        if not isinstance(name, str) or not name.strip() or not isinstance(version, str) or not version.strip():
+            continue
+        normalized = re.sub(r"[-_.]+", "-", name).lower()
+        previous = versions.get(normalized)
+        if previous is not None and previous != version:
+            raise ValueError(f"conflicting installed versions for {normalized}")
+        versions[normalized] = version
+    if not versions:
+        raise ValueError("Python distribution metadata did not contain installed packages")
+    return versions
+
+
 def capture_builder_inventory(
     *, assets_dir: Path, tag: str, sha: str, repository: str, target: str
 ) -> dict[str, Any]:
@@ -349,26 +368,7 @@ def capture_builder_inventory(
     files = list(assets_dir.iterdir())
     if {path.name for path in files} != expected or any(not path.is_file() or path.is_symlink() for path in files):
         raise ValueError(f"{target} builder output differs from the exact native matrix")
-    result = subprocess.run(
-        [sys.executable, "-m", "pip", "inspect", "--local"],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
-    if result.returncode:
-        raise ValueError(f"pip inspect failed for {target}")
-    inspect = json.loads(result.stdout)
-    installed = inspect.get("installed")
-    if not isinstance(installed, list):
-        raise ValueError("pip inspect did not contain installed distributions")
-    versions = {
-        item["metadata"]["name"].lower().replace("_", "-"): item["metadata"]["version"]
-        for item in installed
-        if isinstance(item, dict) and isinstance(item.get("metadata"), dict)
-        and isinstance(item["metadata"].get("name"), str)
-        and isinstance(item["metadata"].get("version"), str)
-    }
+    versions = installed_distribution_versions()
     required = pinned_gui_versions()
     if target.startswith("windows-") and target != "windows-x86" or target.startswith("macos-"):
         for name, version in required.items():
@@ -380,6 +380,7 @@ def capture_builder_inventory(
         "release_tag": tag,
         "release_sha": sha,
         "target": target,
+        "distribution_inventory_source": "importlib.metadata",
         "distributions": {name: versions.get(name.lower()) for name in required},
         "assets_sha256": {path.name: file_hash(path) for path in files},
     }
@@ -406,6 +407,8 @@ def check_builder_inventories(
             "release_sha": sha, "target": target,
         }.items()):
             raise ValueError(f"{target} builder inventory is not bound to this release")
+        if record.get("distribution_inventory_source") != "importlib.metadata":
+            raise ValueError(f"{target} builder inventory has an unsupported package metadata source")
         expected_assets = target_asset_names(tag, target)
         hashes = record.get("assets_sha256")
         if not isinstance(hashes, dict) or set(hashes) != expected_assets:

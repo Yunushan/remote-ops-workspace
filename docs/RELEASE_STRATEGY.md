@@ -25,6 +25,11 @@ Release integrity rules:
   must be reachable from `main`
   and pass exact-SHA CI evidence checks. This lane does not confer production
   signing, independent compliance approval, or protected-platform readiness.
+  The exact-tag workflow is self-service for a repository administrator and
+  does not require another developer or signing certificate. The current PyQt6
+  GUI packages use GPLv3 for the combined GUI distribution, retain the project's
+  0BSD source license, and include Qt LGPLv3 notices, source links, and relinking
+  instructions.
 - Source/install bundles and the Python wheel/sdist backend receive deterministic
   archive metadata through `SOURCE_DATE_EPOCH` or a fixed default.
 - Python release build dependencies are constrained by `requirements-release.txt`

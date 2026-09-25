@@ -114,6 +114,15 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
+LICENSE_DIR="$APP_PATH/Contents/Resources/licenses"
+mkdir -p "$LICENSE_DIR"
+cp "$ROOT/LICENSE" "$LICENSE_DIR/LICENSE"
+cp "$ROOT/NOTICE" "$LICENSE_DIR/NOTICE"
+cp "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$LICENSE_DIR/THIRD_PARTY_NOTICES.md"
+cp "$ROOT/redistribution-evidence/PyQt6-GPL-3.0.txt" "$LICENSE_DIR/PyQt6-GPL-3.0.txt"
+cp "$ROOT/redistribution-evidence/Qt-LGPL-3.0.txt" "$LICENSE_DIR/Qt-LGPL-3.0.txt"
+cp "$ROOT/redistribution-evidence/Qt-Relinking.md" "$LICENSE_DIR/Qt-Relinking.md"
+
 sign_macos_artifact "$APP_PATH"
 
 DMG_STAGE="$BUILD_DIR/dmg-stage"
@@ -130,6 +139,9 @@ Version: v$VERSION
 Target: macOS $ARTIFACT_ARCH
 
 This native package installs a PyInstaller app bundle for the PyQt6 desktop UI.
+The bundled GUI uses PyQt6 under GPLv3 and Qt under LGPLv3. Full license texts,
+third-party notices, and Qt relinking instructions are included in the app at
+Contents/Resources/licenses.
 Protocol sessions still depend on macOS system tools such as OpenSSH, XQuartz,
 Microsoft Remote Desktop/FreeRDP, and VNC clients.
 

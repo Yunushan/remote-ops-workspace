@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "component": "Qt",
+  "version": "6.11.2",
+  "filename": "qt-everywhere-src-6.11.2.tar.xz",
+  "url": "https://download.qt.io/official_releases/qt/6.11/6.11.2/single/qt-everywhere-src-6.11.2.tar.xz",
+  "sha256": "6dcfbca271d76a6502741a2c0dc6fc98ef7dd0b7b4cfd0abcebb285a86a26f33",
+  "upstream_checksum_page": "https://download.qt.io/official_releases/qt/6.11/6.11.2/single/qt-everywhere-src-6.11.2.tar.xz.mirrorlist"
+}

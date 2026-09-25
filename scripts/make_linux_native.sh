@@ -107,6 +107,7 @@ PKGROOT="$BUILD_DIR/pkgroot"
 install -Dm755 "$ROW_BIN" "$PKGROOT/usr/bin/row"
 install -Dm644 "$ROOT/LICENSE" "$PKGROOT/usr/share/doc/remote-ops-workspace/LICENSE"
 install -Dm644 "$ROOT/NOTICE" "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTICE"
+install -Dm644 "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md"
 install -Dm644 "$ROOT/README.md" "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md"
 cat > "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" <<EOF
 # Linux native release
@@ -170,6 +171,7 @@ mkdir -p %{buildroot}/usr/share/doc/remote-ops-workspace
 cp "$PKGROOT/usr/bin/row" %{buildroot}/usr/bin/row
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/LICENSE" %{buildroot}/usr/share/doc/remote-ops-workspace/LICENSE
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTICE" %{buildroot}/usr/share/doc/remote-ops-workspace/NOTICE
+cp "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md" %{buildroot}/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md" %{buildroot}/usr/share/doc/remote-ops-workspace/README.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" %{buildroot}/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
 
@@ -177,6 +179,7 @@ cp "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" %{buildroot}/
 /usr/bin/row
 /usr/share/doc/remote-ops-workspace/LICENSE
 /usr/share/doc/remote-ops-workspace/NOTICE
+/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md
 /usr/share/doc/remote-ops-workspace/README.md
 /usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
 EOF
@@ -190,6 +193,7 @@ APPDIR="$BUILD_DIR/Remote_Ops_Workspace.AppDir"
 install -Dm755 "$ROW_BIN" "$APPDIR/usr/bin/row"
 install -Dm644 "$ROOT/LICENSE" "$APPDIR/usr/share/doc/remote-ops-workspace/LICENSE"
 install -Dm644 "$ROOT/NOTICE" "$APPDIR/usr/share/doc/remote-ops-workspace/NOTICE"
+install -Dm644 "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$APPDIR/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md"
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/usr/bin/env sh
 HERE="$(dirname "$(readlink -f "$0")")"

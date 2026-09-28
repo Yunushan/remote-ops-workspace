@@ -6,6 +6,7 @@ import json
 import tarfile
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -119,6 +120,52 @@ def test_source_archive_record_rejects_unpinned_hosts_or_versions(tmp_path: Path
         module.source_archive_record(path, "pyqt6_source")
 
 
+def test_installed_distribution_versions_normalizes_package_names() -> None:
+    module = checker()
+    distributions = [
+        SimpleNamespace(metadata={"Name": "Example_Package.Name"}, version="1.2.3"),
+        SimpleNamespace(metadata={"Name": "PyQt6"}, version="6.11.0"),
+    ]
+    with patch.object(module.metadata, "distributions", return_value=distributions):
+        assert module.installed_distribution_versions() == {
+            "example-package-name": "1.2.3",
+            "pyqt6": "6.11.0",
+        }
+
+
+def test_installed_distribution_versions_rejects_conflicts_and_empty_inventory() -> None:
+    module = checker()
+    conflicting = [
+        SimpleNamespace(metadata={"Name": "Example_Package"}, version="1.0"),
+        SimpleNamespace(metadata={"Name": "example-package"}, version="2.0"),
+    ]
+    with patch.object(module.metadata, "distributions", return_value=conflicting):
+        with pytest.raises(ValueError, match="conflicting installed versions"):
+            module.installed_distribution_versions()
+    with patch.object(module.metadata, "distributions", return_value=[]):
+        with pytest.raises(ValueError, match="did not contain installed packages"):
+            module.installed_distribution_versions()
+
+
+def test_capture_builder_inventory_uses_installed_distribution_metadata(tmp_path: Path) -> None:
+    module = checker()
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    target = "windows-x64"
+    tag = "v1.0.27"
+    for name in module.target_asset_names(tag, target):
+        (assets / name).write_bytes(b"actual asset")
+    versions = {"pyqt6": "6.11.0", "pyqt6-qt6": "6.11.2"}
+    with patch.object(module, "installed_distribution_versions", return_value=versions):
+        record = module.capture_builder_inventory(
+            assets_dir=assets, tag=tag, sha="a" * 40,
+            repository="owner/project", target=target,
+        )
+    assert record["distribution_inventory_source"] == "importlib.metadata"
+    assert record["distributions"] == {"PyQt6": "6.11.0", "PyQt6-Qt6": "6.11.2"}
+    assert set(record["assets_sha256"]) == module.target_asset_names(tag, target)
+
+
 def test_packaged_license_bytes_are_read_from_real_archives(tmp_path: Path) -> None:
     module = checker()
     zip_path = tmp_path / "portable.zip"
@@ -154,6 +201,7 @@ def test_builder_inventory_rejects_unhashed_native_bytes(tmp_path: Path) -> None
                 "release_tag": tag,
                 "release_sha": sha,
                 "target": target,
+                "distribution_inventory_source": "importlib.metadata",
                 "distributions": {"PyQt6": "6.11.0", "PyQt6-Qt6": "6.11.2"},
                 "assets_sha256": {name: "0" * 64 for name in names},
             }),

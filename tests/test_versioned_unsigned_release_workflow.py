@@ -44,6 +44,23 @@ def test_release_boundary_rejects_removed_guards(old: str, new: str, expected: s
     assert any(expected in error for error in errors), errors
 
 
+def test_release_boundary_requires_clean_checkout_before_and_after_verification() -> None:
+    source = workflow()
+    clean_gate = "          python scripts/check_repository_cleanup.py --require-clean\n"
+    quick_verify = '          python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"\n'
+    assert source.count(clean_gate) == 2
+    assert source.index(clean_gate) < source.index(quick_verify) < source.rindex(clean_gate)
+
+    missing_precheck = source.replace(clean_gate + quick_verify, quick_verify + clean_gate, 1)
+    errors = checker().check_versioned_unsigned_release_workflow(missing_precheck)
+    assert any("clean before and after quick verification" in error for error in errors)
+
+    before_last_check, after_last_check = source.rsplit(clean_gate, 1)
+    missing_postcheck = before_last_check + after_last_check
+    errors = checker().check_versioned_unsigned_release_workflow(missing_postcheck)
+    assert any("clean before and after quick verification" in error for error in errors)
+
+
 def test_release_boundary_rejects_automatic_tag_publication() -> None:
     source = workflow().replace("on:\n  workflow_dispatch:\n", 'on:\n  push:\n    tags: ["v*"]\n', 1)
     assert any(

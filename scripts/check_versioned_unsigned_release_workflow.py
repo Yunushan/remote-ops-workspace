@@ -111,10 +111,21 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
             (
                 'check_release_version.py --release-tag "$RELEASE_TAG"',
                 'check_release_maturity.py --release-tag "$RELEASE_TAG"',
-                'verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"',
                 "check_repository_cleanup.py --require-clean",
+                'verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"',
             ),
         )
+        source_step = _step_block(preflight, "Require version and verified release source")
+        clean_before_position = source_step.find("check_repository_cleanup.py --require-clean")
+        verify_position = source_step.find("verify.py --quick --no-cli-smoke")
+        clean_after_position = source_step.rfind("check_repository_cleanup.py --require-clean")
+        if (
+            clean_before_position < 0
+            or verify_position < 0
+            or clean_before_position >= verify_position
+            or clean_after_position <= verify_position
+        ):
+            errors.append("release checkout must be clean before and after quick verification")
         _require_step(
             errors,
             preflight,

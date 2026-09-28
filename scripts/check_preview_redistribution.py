@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import io
 import json
 import mmap
 import re
@@ -531,8 +532,39 @@ def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
     return extracted.stdout
 
 
+def deb_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+    """Read a packaged file from a Debian filesystem tar stream."""
+    try:
+        result = subprocess.run(
+            ["dpkg-deb", "--fsys-tarfile", str(archive)],
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot read {archive.name} with dpkg-deb: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()[:300]
+        raise ValueError(
+            f"cannot read {archive.name} filesystem tar stream (exit {result.returncode})"
+            + (f": {detail}" if detail else "")
+        )
+    try:
+        with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:*") as package:
+            matches = [
+                member for member in package.getmembers()
+                if member.isfile() and PurePosixPath(member.name).name == wanted
+            ]
+            if len(matches) != 1:
+                return None
+            stream = package.extractfile(matches[0])
+            return stream.read() if stream else None
+    except tarfile.TarError as exc:
+        raise ValueError(f"cannot read {archive.name} filesystem tar stream: {exc}") from exc
+
+
 def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read a real packaged file from ZIP, tar, AppImage, or 7z-supported archives."""
+    """Read a real packaged file from ZIP, tar, Debian/RPM, AppImage, or 7z archives."""
     if zipfile.is_zipfile(archive):
         with zipfile.ZipFile(archive) as package:
             matches = [name for name in package.namelist() if Path(name).name == wanted]
@@ -548,6 +580,8 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
             return stream.read() if stream else None
     if archive.suffix.lower() == ".rpm":
         return rpm_embedded_file_bytes(archive, wanted)
+    if archive.suffix.lower() == ".deb":
+        return deb_embedded_file_bytes(archive, wanted)
     if archive.suffix.lower() == ".appimage":
         offset = appimage_squashfs_offset(archive)
         with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
@@ -700,3 +734,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

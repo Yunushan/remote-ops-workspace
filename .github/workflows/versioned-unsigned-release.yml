@@ -485,7 +485,7 @@ jobs:
       - name: Install native archive inspector
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full
+          sudo apt-get install -y p7zip-full squashfs-tools
       - name: Require exact-artifact preview redistribution evidence
         shell: bash
         run: >-

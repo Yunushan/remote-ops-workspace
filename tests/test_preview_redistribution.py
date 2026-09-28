@@ -182,6 +182,35 @@ def test_packaged_license_bytes_are_read_from_real_archives(tmp_path: Path) -> N
     assert module.embedded_file_bytes(zip_path, "PyQt6-GPL-3.0.txt") is None
 
 
+def test_appimage_license_bytes_come_from_the_validated_squashfs_offset(tmp_path: Path) -> None:
+    module = checker()
+    appimage = tmp_path / "remote-ops-workspace-v1.0.27-linux-aarch64.AppImage"
+    prefix = b"\x7fELF" + b"unrelated hsqs marker"
+    squashfs_offset = len(prefix) + 11
+    appimage.write_bytes(prefix + b"\x00" * 11 + b"hsqs" + b"\x00" * 64)
+    payload = b"Third party release notices from AppImage\n"
+
+    def inspect(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        if command[1] == "-s":
+            offset = int(command[command.index("-offset") + 1])
+            return SimpleNamespace(returncode=int(offset != squashfs_offset), stdout="", stderr="")
+        destination = Path(command[command.index("-d") + 1])
+        destination.mkdir()
+        (destination / "usr" / "share" / "doc").mkdir(parents=True)
+        (destination / "usr" / "share" / "doc" / "THIRD_PARTY_NOTICES.md").write_bytes(payload)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with patch.object(module.subprocess, "run", side_effect=inspect) as run:
+        assert module.embedded_file_bytes(appimage, "THIRD_PARTY_NOTICES.md") == payload
+
+    inspected_offsets = [
+        int(call.args[0][call.args[0].index("-offset") + 1])
+        for call in run.call_args_list if call.args[0][1] == "-s"
+    ]
+    assert inspected_offsets == [prefix.index(b"hsqs"), squashfs_offset]
+    assert run.call_args_list[-1].args[0][0:2] == ["unsquashfs", "-d"]
+
+
 def test_builder_inventory_rejects_unhashed_native_bytes(tmp_path: Path) -> None:
     module = checker()
     assets = tmp_path / "assets"

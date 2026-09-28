@@ -20,6 +20,7 @@ import argparse
 import hashlib
 import html
 import json
+import mmap
 import re
 import subprocess
 import sys
@@ -427,8 +428,43 @@ def check_builder_inventories(
     return records
 
 
+def appimage_squashfs_offset(archive: Path) -> int:
+    """Find the one SquashFS image appended to a Type 2 AppImage."""
+    candidates: set[int] = set()
+    if archive.stat().st_size:
+        with archive.open("rb") as stream:
+            with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as image:
+                for magic in (b"hsqs", b"sqsh"):
+                    cursor = 0
+                    while (offset := image.find(magic, cursor)) >= 0:
+                        candidates.add(offset)
+                        cursor = offset + 1
+    if not candidates:
+        raise ValueError(f"cannot find an embedded SquashFS filesystem in {archive.name}")
+
+    valid_offsets: list[int] = []
+    for offset in sorted(candidates):
+        try:
+            result = subprocess.run(
+                ["unsquashfs", "-s", "-offset", str(offset), str(archive)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            raise ValueError(f"cannot inspect {archive.name} with unsquashfs: {exc}") from exc
+        if result.returncode == 0:
+            valid_offsets.append(offset)
+            if len(valid_offsets) > 1:
+                raise ValueError(f"{archive.name} contains multiple valid SquashFS filesystems")
+    if len(valid_offsets) != 1:
+        raise ValueError(f"cannot locate a valid SquashFS filesystem in {archive.name}")
+    return valid_offsets[0]
+
+
 def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read a real packaged file, using 7z for non-ZIP/non-tar installers."""
+    """Read a real packaged file from ZIP, tar, AppImage, or 7z-supported archives."""
     if zipfile.is_zipfile(archive):
         with zipfile.ZipFile(archive) as package:
             matches = [name for name in package.namelist() if Path(name).name == wanted]
@@ -442,6 +478,33 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
                 return None
             stream = package.extractfile(matches[0])
             return stream.read() if stream else None
+    if archive.suffix.lower() == ".appimage":
+        offset = appimage_squashfs_offset(archive)
+        with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
+            destination = Path(temp) / "filesystem"
+            try:
+                result = subprocess.run(
+                    ["unsquashfs", "-d", str(destination), "-offset", str(offset), str(archive)],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    check=False,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+                raise ValueError(f"cannot extract {archive.name} with unsquashfs: {exc}") from exc
+            if result.returncode != 0:
+                detail = result.stderr.strip()[:300]
+                raise ValueError(
+                    f"cannot extract {archive.name} with unsquashfs (exit {result.returncode})"
+                    + (f": {detail}" if detail else "")
+                )
+            matches = [
+                path for path in destination.rglob(wanted)
+                if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(destination)
+            ]
+            if len(matches) != 1:
+                return None
+            return matches[0].read_bytes()
     with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
         destination = Path(temp)
         try:

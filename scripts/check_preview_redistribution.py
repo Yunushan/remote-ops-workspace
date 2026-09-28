@@ -29,7 +29,7 @@ import tempfile
 import urllib.request
 import zipfile
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -463,6 +463,74 @@ def appimage_squashfs_offset(archive: Path) -> int:
     return valid_offsets[0]
 
 
+def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+    """Read a file from an RPM's CPIO payload without writing package paths."""
+    try:
+        converted = subprocess.run(
+            ["rpm2cpio", str(archive)],
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot inspect {archive.name} with rpm2cpio: {exc}") from exc
+    if converted.returncode != 0:
+        detail = converted.stderr.decode("utf-8", errors="replace").strip()[:300]
+        raise ValueError(
+            f"cannot convert {archive.name} to CPIO (exit {converted.returncode})"
+            + (f": {detail}" if detail else "")
+        )
+
+    try:
+        listing = subprocess.run(
+            ["cpio", "-it"],
+            input=converted.stdout,
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot list {archive.name} CPIO payload: {exc}") from exc
+    if listing.returncode != 0:
+        detail = listing.stderr.decode("utf-8", errors="replace").strip()[:300]
+        raise ValueError(
+            f"cannot list {archive.name} CPIO payload (exit {listing.returncode})"
+            + (f": {detail}" if detail else "")
+        )
+    names = listing.stdout.decode("utf-8", errors="strict").splitlines()
+    matches = [name for name in names if PurePosixPath(name).name == wanted]
+    if len(matches) != 1:
+        return None
+    member = matches[0]
+    member_path = PurePosixPath(member)
+    if (
+        not member
+        or member_path.is_absolute()
+        or ".." in member_path.parts
+        or any(char in part for part in member_path.parts for char in "*?[]")
+    ):
+        raise ValueError(f"unsafe CPIO member path in {archive.name}")
+
+    try:
+        extracted = subprocess.run(
+            ["cpio", "-i", "--to-stdout", "--", member],
+            input=converted.stdout,
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot read {wanted} from {archive.name} CPIO payload: {exc}") from exc
+    if extracted.returncode != 0:
+        detail = extracted.stderr.decode("utf-8", errors="replace").strip()[:300]
+        raise ValueError(
+            f"cannot read {wanted} from {archive.name} CPIO payload "
+            f"(exit {extracted.returncode})"
+            + (f": {detail}" if detail else "")
+        )
+    return extracted.stdout
+
+
 def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
     """Read a real packaged file from ZIP, tar, AppImage, or 7z-supported archives."""
     if zipfile.is_zipfile(archive):
@@ -478,6 +546,8 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
                 return None
             stream = package.extractfile(matches[0])
             return stream.read() if stream else None
+    if archive.suffix.lower() == ".rpm":
+        return rpm_embedded_file_bytes(archive, wanted)
     if archive.suffix.lower() == ".appimage":
         offset = appimage_squashfs_offset(archive)
         with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:

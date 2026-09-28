@@ -211,6 +211,35 @@ def test_appimage_license_bytes_come_from_the_validated_squashfs_offset(tmp_path
     assert run.call_args_list[-1].args[0][0:2] == ["unsquashfs", "-d"]
 
 
+def test_rpm_license_bytes_are_read_from_cpio_without_extracting_paths(tmp_path: Path) -> None:
+    module = checker()
+    rpm_path = tmp_path / "remote-ops-workspace-v1.0.27-linux-x86_64.rpm"
+    rpm_path.write_bytes(b"rpm fixture")
+    cpio_payload = b"validated cpio stream"
+    notices = b"Third party release notices from RPM\n"
+
+    def inspect(command: list[str], **kwargs: object) -> SimpleNamespace:
+        if command[0] == "rpm2cpio":
+            return SimpleNamespace(returncode=0, stdout=cpio_payload, stderr=b"")
+        assert kwargs["input"] == cpio_payload
+        if command == ["cpio", "-it"]:
+            listing = (
+                b"./usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md\n"
+                b"./usr/share/doc/remote-ops-workspace/README.md\n"
+            )
+            return SimpleNamespace(returncode=0, stdout=listing, stderr=b"")
+        assert command == [
+            "cpio", "-i", "--to-stdout", "--",
+            "./usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md",
+        ]
+        return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
+
+    with patch.object(module.subprocess, "run", side_effect=inspect) as run:
+        assert module.embedded_file_bytes(rpm_path, "THIRD_PARTY_NOTICES.md") == notices
+
+    assert [call.args[0][0] for call in run.call_args_list] == ["rpm2cpio", "cpio", "cpio"]
+
+
 def test_builder_inventory_rejects_unhashed_native_bytes(tmp_path: Path) -> None:
     module = checker()
     assets = tmp_path / "assets"

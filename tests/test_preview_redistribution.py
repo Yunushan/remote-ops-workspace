@@ -293,4 +293,3 @@ def test_builder_inventory_rejects_unhashed_native_bytes(tmp_path: Path) -> None
         )
     with pytest.raises(ValueError, match="digest differs"):
         module.check_builder_inventories(inventories, assets, tag, sha, "owner/project")
-

@@ -182,6 +182,32 @@ def test_packaged_license_bytes_are_read_from_real_archives(tmp_path: Path) -> N
     assert module.embedded_file_bytes(zip_path, "PyQt6-GPL-3.0.txt") is None
 
 
+def test_deb_license_bytes_are_read_from_filesystem_tar_without_extraction(tmp_path: Path) -> None:
+    module = checker()
+    deb_path = tmp_path / "remote-ops-workspace-v1.0.27-linux-amd64.deb"
+    deb_path.write_bytes(b"Debian package fixture")
+    notices = b"Third party release notices from Debian\n"
+    filesystem_tar = io.BytesIO()
+    with tarfile.open(fileobj=filesystem_tar, mode="w") as package:
+        member = tarfile.TarInfo("./usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md")
+        member.size = len(notices)
+        package.addfile(member, io.BytesIO(notices))
+
+    with patch.object(
+        module.subprocess,
+        "run",
+        return_value=SimpleNamespace(returncode=0, stdout=filesystem_tar.getvalue(), stderr=b""),
+    ) as run:
+        assert module.embedded_file_bytes(deb_path, "THIRD_PARTY_NOTICES.md") == notices
+
+    run.assert_called_once_with(
+        ["dpkg-deb", "--fsys-tarfile", str(deb_path)],
+        capture_output=True,
+        timeout=300,
+        check=False,
+    )
+
+
 def test_appimage_license_bytes_come_from_the_validated_squashfs_offset(tmp_path: Path) -> None:
     module = checker()
     appimage = tmp_path / "remote-ops-workspace-v1.0.27-linux-aarch64.AppImage"
@@ -267,3 +293,4 @@ def test_builder_inventory_rejects_unhashed_native_bytes(tmp_path: Path) -> None
         )
     with pytest.raises(ValueError, match="digest differs"):
         module.check_builder_inventories(inventories, assets, tag, sha, "owner/project")
+

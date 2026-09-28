@@ -498,9 +498,11 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
                     f"cannot extract {archive.name} with unsquashfs (exit {result.returncode})"
                     + (f": {detail}" if detail else "")
                 )
+            resolved_destination = destination.resolve()
             matches = [
                 path for path in destination.rglob(wanted)
-                if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(destination)
+                if path.is_file() and not path.is_symlink()
+                and path.resolve().is_relative_to(resolved_destination)
             ]
             if len(matches) != 1:
                 return None
@@ -519,9 +521,11 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
             raise ValueError(f"cannot inspect {archive.name} with 7z: {exc}") from exc
         if result.returncode != 0:
             raise ValueError(f"cannot extract {archive.name} with 7z (exit {result.returncode})")
+        resolved_destination = destination.resolve()
         matches = [
             path for path in destination.rglob(wanted)
-            if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(destination)
+            if path.is_file() and not path.is_symlink()
+            and path.resolve().is_relative_to(resolved_destination)
         ]
         if len(matches) != 1:
             return None

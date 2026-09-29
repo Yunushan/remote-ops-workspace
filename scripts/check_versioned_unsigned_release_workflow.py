@@ -184,6 +184,14 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
         if "continue-on-error:" in block:
             errors.append(f"{name} must not ignore build or smoke failures")
 
+    windows = _job_block(text, "windows-native")
+    if windows:
+        _require_step(
+            errors, windows, "Install Windows installer toolchains",
+            ("innosetup --version=6.7.1", "VersionInfo",
+             'if ($InnoVersion -ne "6.7.1") { throw', "$env:GITHUB_PATH"),
+        )
+
     source = _job_block(text, "source-and-python")
     if source:
         for name in (
@@ -255,6 +263,7 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
                 errors.append("full unsigned asset validation must be mandatory")
         required_steps = (
             "Validate complete unsigned release asset inventory",
+            "Install native archive inspector",
             "Require exact-artifact preview redistribution evidence",
             "Generate explicit unsigned release notes",
             "Require unused release namespace including drafts",
@@ -274,6 +283,15 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
                 errors.append(f"publish-unsigned-preview missing mandatory step: {name}")
         if all(position >= 0 for position in positions) and positions != sorted(positions):
             errors.append("unsigned publication must validate, attest, verify draft bytes, then publish")
+        _require_step(
+            errors, publish, "Install native archive inspector",
+            ("msitools", "cpio", "p7zip-full", "cmake --build",
+             "https://codeload.github.com/dscho/innoextract/legacy.tar.gz/376a13e7c41cc5528b6088d0dd16ec1b323a8d37",
+             "16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede",
+             "sha256sum --check --strict", "/usr/local/bin/innoextract"),
+        )
+        if "runs-on: ubuntu-24.04" not in publish:
+            errors.append("archive inspector build requires the pinned Ubuntu 24.04 toolchain")
         redistribution = _step_block(publish, "Require exact-artifact preview redistribution evidence")
         if redistribution:
             for snippet in (

@@ -17,6 +17,7 @@ channel needs a separately verifiable vendor grant/trust anchor first.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import html
 import io
@@ -464,28 +465,12 @@ def appimage_squashfs_offset(archive: Path) -> int:
     return valid_offsets[0]
 
 
-def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read a file from an RPM's CPIO payload without writing package paths."""
-    try:
-        converted = subprocess.run(
-            ["rpm2cpio", str(archive)],
-            capture_output=True,
-            timeout=300,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        raise ValueError(f"cannot inspect {archive.name} with rpm2cpio: {exc}") from exc
-    if converted.returncode != 0:
-        detail = converted.stderr.decode("utf-8", errors="replace").strip()[:300]
-        raise ValueError(
-            f"cannot convert {archive.name} to CPIO (exit {converted.returncode})"
-            + (f": {detail}" if detail else "")
-        )
-
+def cpio_embedded_file_bytes(payload: bytes, archive: Path, wanted: str) -> bytes | None:
+    """Read one CPIO member to stdout without writing package paths."""
     try:
         listing = subprocess.run(
             ["cpio", "-it"],
-            input=converted.stdout,
+            input=payload,
             capture_output=True,
             timeout=300,
             check=False,
@@ -515,7 +500,7 @@ def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
     try:
         extracted = subprocess.run(
             ["cpio", "-i", "--to-stdout", "--", member],
-            input=converted.stdout,
+            input=payload,
             capture_output=True,
             timeout=300,
             check=False,
@@ -530,6 +515,130 @@ def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
             + (f": {detail}" if detail else "")
         )
     return extracted.stdout
+
+
+def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+    """Read a file from an RPM's CPIO payload without writing package paths."""
+    try:
+        converted = subprocess.run(
+            ["rpm2cpio", str(archive)],
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot inspect {archive.name} with rpm2cpio: {exc}") from exc
+    if converted.returncode != 0:
+        detail = converted.stderr.decode("utf-8", errors="replace").strip()[:300]
+        raise ValueError(
+            f"cannot convert {archive.name} to CPIO (exit {converted.returncode})"
+            + (f": {detail}" if detail else "")
+        )
+    return cpio_embedded_file_bytes(converted.stdout, archive, wanted)
+
+
+def pkg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+    """Read an installed file from pkgbuild's gzip CPIO payload inside XAR."""
+    try:
+        result = subprocess.run(
+            ["7z", "x", "-so", "-txar", str(archive), "Payload"],
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot inspect {archive.name} XAR payload: {exc}") from exc
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()[:300]
+        raise ValueError(
+            f"cannot read {archive.name} XAR payload (exit {result.returncode})"
+            + (f": {detail}" if detail else "")
+        )
+    try:
+        payload = gzip.decompress(result.stdout)
+    except (OSError, EOFError) as exc:
+        raise ValueError(f"cannot decompress {archive.name} CPIO payload: {exc}") from exc
+    return cpio_embedded_file_bytes(payload, archive, wanted)
+
+
+def dmg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+    """Read a regular DMG member without extracting unrelated app symlinks."""
+    try:
+        listing = subprocess.run(
+            ["7z", "l", "-slt", "-ba", str(archive)],
+            capture_output=True, text=True, timeout=300, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot list {archive.name} with 7z: {exc}") from exc
+    if listing.returncode != 0:
+        raise ValueError(f"cannot list {archive.name} with 7z (exit {listing.returncode})")
+    records: list[dict[str, str]] = []
+    record: dict[str, str] = {}
+    for line in [*listing.stdout.splitlines(), ""]:
+        if not line.strip():
+            if record:
+                records.append(record)
+                record = {}
+        elif " = " in line:
+            key, value = line.split(" = ", 1)
+            record[key] = value
+    matches = [
+        record["Path"] for record in records
+        if "Path" in record and PurePosixPath(record["Path"]).name == wanted
+        and record.get("Mode", "").startswith("-") and not record.get("Symbolic Link")
+    ]
+    if len(matches) != 1:
+        return None
+    member = matches[0]
+    member_path = PurePosixPath(member)
+    if member_path.is_absolute() or ".." in member_path.parts or member.startswith("-"):
+        raise ValueError(f"unsafe DMG member path in {archive.name}")
+    try:
+        result = subprocess.run(
+            ["7z", "x", "-so", "-spd", str(archive), member],
+            capture_output=True, timeout=300, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot read {wanted} from {archive.name}: {exc}") from exc
+    if result.returncode != 0:
+        raise ValueError(f"cannot read {wanted} from {archive.name} (exit {result.returncode})")
+    return result.stdout
+
+
+def extracted_file_bytes(destination: Path, wanted: str) -> bytes | None:
+    resolved_destination = destination.resolve()
+    matches = [
+        path for path in destination.rglob(wanted)
+        if path.is_file() and not path.is_symlink()
+        and path.resolve().is_relative_to(resolved_destination)
+    ]
+    return matches[0].read_bytes() if len(matches) == 1 else None
+
+
+def windows_installer_file_bytes(archive: Path, wanted: str) -> bytes | None:
+    """Decode Inno Setup and MSI installed files with their format readers."""
+    with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
+        destination = Path(temp)
+        if archive.suffix.lower() == ".msi":
+            command = ["msiextract", "-C", str(destination), str(archive)]
+        else:
+            command = [
+                "innoextract", "--silent", "--extract", "--test", "--no-extract-unknown",
+                "--include", wanted, "--output-dir", str(destination), str(archive),
+            ]
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=300, check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            raise ValueError(f"cannot inspect {archive.name} with {command[0]}: {exc}") from exc
+        if result.returncode != 0:
+            detail = result.stderr.strip()[:300]
+            raise ValueError(
+                f"cannot extract {archive.name} with {command[0]} (exit {result.returncode})"
+                + (f": {detail}" if detail else "")
+            )
+        return extracted_file_bytes(destination, wanted)
 
 
 def deb_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
@@ -564,10 +673,13 @@ def deb_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
 
 
 def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read a real packaged file from ZIP, tar, Debian/RPM, AppImage, or 7z archives."""
+    """Read the actual installed file from each native package format."""
     if zipfile.is_zipfile(archive):
         with zipfile.ZipFile(archive) as package:
-            matches = [name for name in package.namelist() if Path(name).name == wanted]
+            matches = [
+                name for name in package.namelist()
+                if PurePosixPath(name.replace("\\", "/")).name == wanted
+            ]
             if len(matches) != 1:
                 return None
             return package.read(matches[0])
@@ -582,6 +694,12 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
         return rpm_embedded_file_bytes(archive, wanted)
     if archive.suffix.lower() == ".deb":
         return deb_embedded_file_bytes(archive, wanted)
+    if archive.suffix.lower() == ".pkg":
+        return pkg_embedded_file_bytes(archive, wanted)
+    if archive.suffix.lower() == ".dmg":
+        return dmg_embedded_file_bytes(archive, wanted)
+    if archive.suffix.lower() in {".exe", ".msi"}:
+        return windows_installer_file_bytes(archive, wanted)
     if archive.suffix.lower() == ".appimage":
         offset = appimage_squashfs_offset(archive)
         with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
@@ -625,15 +743,7 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
             raise ValueError(f"cannot inspect {archive.name} with 7z: {exc}") from exc
         if result.returncode != 0:
             raise ValueError(f"cannot extract {archive.name} with 7z (exit {result.returncode})")
-        resolved_destination = destination.resolve()
-        matches = [
-            path for path in destination.rglob(wanted)
-            if path.is_file() and not path.is_symlink()
-            and path.resolve().is_relative_to(resolved_destination)
-        ]
-        if len(matches) != 1:
-            return None
-        return matches[0].read_bytes()
+        return extracted_file_bytes(destination, wanted)
 
 
 def audit(

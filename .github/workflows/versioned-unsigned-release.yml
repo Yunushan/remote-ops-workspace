@@ -263,11 +263,20 @@ jobs:
       - name: Install Windows installer toolchains
         shell: powershell
         run: |
-          if (-not (Get-Command "iscc.exe" -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
-            choco install innosetup --version=6.3.3 -y --no-progress
-          } else {
-            Write-Host "Inno Setup compiler already available"
+          $InnoCompiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $InnoVersion = if (Test-Path -LiteralPath $InnoCompiler) {
+            $Info = (Get-Item -LiteralPath $InnoCompiler).VersionInfo
+            "$($Info.FileMajorPart).$($Info.FileMinorPart).$($Info.FileBuildPart)"
+          } else { "" }
+          if ($InnoVersion -ne "6.7.1") {
+            choco install innosetup --version=6.7.1 --allow-downgrade --force -y --no-progress
+            if ($LASTEXITCODE -notin @(0, 3010)) { throw "Pinned Inno Setup installation failed" }
           }
+          $Info = (Get-Item -LiteralPath $InnoCompiler).VersionInfo
+          $InnoVersion = "$($Info.FileMajorPart).$($Info.FileMinorPart).$($Info.FileBuildPart)"
+          if ($InnoVersion -ne "6.7.1") { throw "Expected Inno Setup 6.7.1, got $InnoVersion" }
+          Split-Path -Parent $InnoCompiler | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Verified Inno Setup compiler $InnoVersion at $InnoCompiler"
           dotnet tool install --global wix --version 5.0.2
       - name: Build Windows EXE and MSI installers
         shell: powershell
@@ -439,7 +448,7 @@ jobs:
       - windows-native
       - macos-native
       - linux-native
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       actions: read
@@ -489,8 +498,25 @@ jobs:
           --native-release-channel unsigned-preview
       - name: Install native archive inspector
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y p7zip-full squashfs-tools rpm2cpio cpio
+          sudo apt-get install -y p7zip-full squashfs-tools rpm2cpio cpio msitools \
+            build-essential cmake libboost-iostreams-dev libboost-filesystem-dev \
+            libboost-date-time-dev libboost-system-dev libboost-program-options-dev liblzma-dev
+          # Upstream PR 210 adds the loader and payload formats used by Inno Setup 6.7.
+          # Pin its reviewed source bytes for compatible format inspection.
+          inspector_source="$RUNNER_TEMP/innoextract-source"
+          inspector_archive="$RUNNER_TEMP/innoextract-source.tar.gz"
+          curl --fail --location --retry 3 \
+            https://codeload.github.com/dscho/innoextract/legacy.tar.gz/376a13e7c41cc5528b6088d0dd16ec1b323a8d37 \
+            --output "$inspector_archive"
+          echo "16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede  $inspector_archive" | sha256sum --check --strict
+          mkdir "$inspector_source"
+          tar --extract --gzip --file "$inspector_archive" --directory "$inspector_source" --strip-components=1
+          cmake -S "$inspector_source" -B "$inspector_source/build" -DCMAKE_BUILD_TYPE=Release -DUSE_LTO=OFF
+          cmake --build "$inspector_source/build" --parallel 2
+          sudo install -m 755 "$inspector_source/build/innoextract" /usr/local/bin/innoextract
+          innoextract --version
       - name: Require exact-artifact preview redistribution evidence
         shell: bash
         run: >-

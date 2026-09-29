@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import importlib.util
 import io
 import json
@@ -264,6 +265,76 @@ def test_rpm_license_bytes_are_read_from_cpio_without_extracting_paths(tmp_path:
         assert module.embedded_file_bytes(rpm_path, "THIRD_PARTY_NOTICES.md") == notices
 
     assert [call.args[0][0] for call in run.call_args_list] == ["rpm2cpio", "cpio", "cpio"]
+
+
+def test_pkg_license_bytes_are_read_from_nested_gzip_cpio_payload(tmp_path: Path) -> None:
+    module = checker()
+    pkg_path = tmp_path / "remote-ops-workspace-v1.0.27-macos-arm64.pkg"
+    pkg_path.write_bytes(b"xar fixture")
+    cpio_payload = b"old ASCII CPIO payload"
+    notices = b"Third party release notices from installed macOS app\n"
+    member = "./Applications/Remote Ops Workspace.app/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md"
+
+    def inspect(command: list[str], **kwargs: object) -> SimpleNamespace:
+        if command[0] == "7z":
+            assert command == ["7z", "x", "-so", "-txar", str(pkg_path), "Payload"]
+            return SimpleNamespace(returncode=0, stdout=gzip.compress(cpio_payload), stderr=b"")
+        assert kwargs["input"] == cpio_payload
+        if command == ["cpio", "-it"]:
+            return SimpleNamespace(returncode=0, stdout=member.encode() + b"\n", stderr=b"")
+        assert command == ["cpio", "-i", "--to-stdout", "--", member]
+        return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
+
+    with patch.object(module.subprocess, "run", side_effect=inspect):
+        assert module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md") == notices
+
+
+def test_pkg_rejects_invalid_compressed_payload(tmp_path: Path) -> None:
+    module = checker()
+    pkg_path = tmp_path / "installer.pkg"
+    pkg_path.write_bytes(b"xar fixture")
+    with patch.object(
+        module.subprocess, "run",
+        return_value=SimpleNamespace(returncode=0, stdout=b"not gzip", stderr=b""),
+    ):
+        with pytest.raises(ValueError, match="cannot decompress.*CPIO payload"):
+            module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md")
+
+
+@pytest.mark.parametrize("suffix,tool", [(".exe", "innoextract"), (".msi", "msiextract")])
+def test_windows_installer_reads_restored_installed_filenames(
+    tmp_path: Path, suffix: str, tool: str
+) -> None:
+    module = checker()
+    archive = tmp_path / f"installer{suffix}"
+    archive.write_bytes(b"Windows installer fixture")
+    notices = b"Actual installed notices, not a cabinet file ID\n"
+
+    def inspect(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        assert command[0] == tool
+        option = "-C" if suffix == ".msi" else "--output-dir"
+        destination = Path(command[command.index(option) + 1])
+        installed = destination / "Remote Ops Workspace" / "docs"
+        installed.mkdir(parents=True)
+        (installed / "THIRD_PARTY_NOTICES.md").write_bytes(notices)
+        (installed / "ThirdPartyNoticesFile").write_bytes(b"cabinet key is not a filename")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    with patch.object(module.subprocess, "run", side_effect=inspect):
+        assert module.embedded_file_bytes(archive, "THIRD_PARTY_NOTICES.md") == notices
+
+
+@pytest.mark.parametrize("suffix", [".exe", ".msi"])
+def test_windows_installer_extraction_failure_is_not_accepted(tmp_path: Path, suffix: str) -> None:
+    module = checker()
+    archive = tmp_path / f"installer{suffix}"
+    archive.write_bytes(b"Windows installer fixture")
+    with patch.object(
+        module.subprocess, "run",
+        return_value=SimpleNamespace(returncode=1, stdout="", stderr="unsupported installer"),
+    ):
+        with pytest.raises(ValueError, match="cannot extract.*exit 1.*unsupported installer"):
+            module.embedded_file_bytes(archive, "THIRD_PARTY_NOTICES.md")
 
 
 def test_builder_inventory_rejects_unhashed_native_bytes(tmp_path: Path) -> None:

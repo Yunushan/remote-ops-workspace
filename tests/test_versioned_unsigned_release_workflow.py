@@ -126,3 +126,21 @@ def test_release_boundary_rejects_late_redistribution_gate() -> None:
     changed = changed.replace(draft, step + draft, 1)
     errors = checker().check_versioned_unsigned_release_workflow(changed)
     assert any("validate, attest" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected"),
+    [
+        ("innosetup --version=6.7.1", "innosetup --version=6.3.3", "installer toolchains"),
+        ('if ($InnoVersion -ne "6.7.1") { throw', 'if ($false) { throw', "installer toolchains"),
+        (" cpio msitools ", " cpio ", "msitools"),
+        ("sha256sum --check --strict", "sha256sum", "sha256sum"),
+        ("16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede", "0" * 64, "archive inspector"),
+        ("runs-on: ubuntu-24.04\n    timeout-minutes: 90", "runs-on: ubuntu-latest\n    timeout-minutes: 90", "pinned Ubuntu"),
+    ],
+)
+def test_installer_audit_requires_compatible_pinned_tools(old: str, new: str, expected: str) -> None:
+    source = workflow()
+    assert old in source
+    errors = checker().check_versioned_unsigned_release_workflow(source.replace(old, new, 1))
+    assert any(expected in error for error in errors), errors

@@ -167,13 +167,14 @@ def test_capture_builder_inventory_uses_installed_distribution_metadata(tmp_path
     assert set(record["assets_sha256"]) == module.target_asset_names(tag, target)
 
 
-def test_packaged_license_bytes_are_read_from_real_archives(tmp_path: Path) -> None:
+@pytest.mark.parametrize("separator", ["/", "\\"])
+def test_packaged_license_bytes_are_read_from_real_archives(tmp_path: Path, separator: str) -> None:
     module = checker()
     zip_path = tmp_path / "portable.zip"
     tar_path = tmp_path / "portable.tar.gz"
     payload = b"Third party release notices\n"
     with zipfile.ZipFile(zip_path, "w") as package:
-        package.writestr("docs/THIRD_PARTY_NOTICES.md", payload)
+        package.writestr(f"docs{separator}THIRD_PARTY_NOTICES.md", payload)
     with tarfile.open(tar_path, "w:gz") as package:
         member = tarfile.TarInfo("usr/share/doc/THIRD_PARTY_NOTICES.md")
         member.size = len(payload)
@@ -299,6 +300,57 @@ def test_pkg_rejects_invalid_compressed_payload(tmp_path: Path) -> None:
     ):
         with pytest.raises(ValueError, match="cannot decompress.*CPIO payload"):
             module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md")
+
+
+def test_dmg_reads_only_the_regular_license_member_to_stdout(tmp_path: Path) -> None:
+    module = checker()
+    dmg_path = tmp_path / "installer.dmg"
+    dmg_path.write_bytes(b"DMG fixture")
+    member = "Remote Ops Workspace.app/Contents/Resources/licenses/THIRD_PARTY_NOTICES.md"
+    notices = b"Installed DMG notices\n"
+    listing = (
+        "Path = Remote Ops Workspace.app/Contents/Resources/QtCore\n"
+        "Mode = lrwxr-xr-x\nSymbolic Link = ../Frameworks/QtCore.framework\n\n"
+        f"Path = {member}\nMode = -rw-r--r--\nSymbolic Link = \n\n"
+    )
+
+    def inspect(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        if command[1] == "l":
+            return SimpleNamespace(returncode=0, stdout=listing, stderr="")
+        assert command == ["7z", "x", "-so", "-spd", str(dmg_path), member]
+        return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
+
+    with patch.object(module.subprocess, "run", side_effect=inspect):
+        assert module.embedded_file_bytes(dmg_path, "THIRD_PARTY_NOTICES.md") == notices
+
+
+@pytest.mark.parametrize("prefix,mode", [("../docs/", "-rw-r--r--"), ("/docs/", "-rw-r--r--")])
+def test_dmg_rejects_unsafe_regular_member_paths(tmp_path: Path, prefix: str, mode: str) -> None:
+    module = checker()
+    dmg_path = tmp_path / "installer.dmg"
+    dmg_path.write_bytes(b"DMG fixture")
+    listing = f"Path = {prefix}THIRD_PARTY_NOTICES.md\nMode = {mode}\n\n"
+    with patch.object(
+        module.subprocess, "run",
+        return_value=SimpleNamespace(returncode=0, stdout=listing, stderr=""),
+    ):
+        with pytest.raises(ValueError, match="unsafe DMG member"):
+            module.embedded_file_bytes(dmg_path, "THIRD_PARTY_NOTICES.md")
+
+
+def test_dmg_does_not_accept_a_license_symlink_or_ambiguous_file(tmp_path: Path) -> None:
+    module = checker()
+    dmg_path = tmp_path / "installer.dmg"
+    dmg_path.write_bytes(b"DMG fixture")
+    symlink = "Path = docs/THIRD_PARTY_NOTICES.md\nMode = lrwxrwxrwx\nSymbolic Link = elsewhere\n\n"
+    regular = "Path = docs/THIRD_PARTY_NOTICES.md\nMode = -rw-r--r--\n\n"
+    for listing in (symlink, regular + regular.replace("docs/", "other/")):
+        with patch.object(
+            module.subprocess, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=listing, stderr=""),
+        ) as run:
+            assert module.embedded_file_bytes(dmg_path, "THIRD_PARTY_NOTICES.md") is None
+        assert run.call_count == 1
 
 
 @pytest.mark.parametrize("suffix,tool", [(".exe", "innoextract"), (".msi", "msiextract")])

@@ -561,6 +561,50 @@ def pkg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
     return cpio_embedded_file_bytes(payload, archive, wanted)
 
 
+def dmg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
+    """Read a regular DMG member without extracting unrelated app symlinks."""
+    try:
+        listing = subprocess.run(
+            ["7z", "l", "-slt", "-ba", str(archive)],
+            capture_output=True, text=True, timeout=300, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot list {archive.name} with 7z: {exc}") from exc
+    if listing.returncode != 0:
+        raise ValueError(f"cannot list {archive.name} with 7z (exit {listing.returncode})")
+    records: list[dict[str, str]] = []
+    record: dict[str, str] = {}
+    for line in [*listing.stdout.splitlines(), ""]:
+        if not line.strip():
+            if record:
+                records.append(record)
+                record = {}
+        elif " = " in line:
+            key, value = line.split(" = ", 1)
+            record[key] = value
+    matches = [
+        record["Path"] for record in records
+        if "Path" in record and PurePosixPath(record["Path"]).name == wanted
+        and record.get("Mode", "").startswith("-") and not record.get("Symbolic Link")
+    ]
+    if len(matches) != 1:
+        return None
+    member = matches[0]
+    member_path = PurePosixPath(member)
+    if member_path.is_absolute() or ".." in member_path.parts or member.startswith("-"):
+        raise ValueError(f"unsafe DMG member path in {archive.name}")
+    try:
+        result = subprocess.run(
+            ["7z", "x", "-so", "-spd", str(archive), member],
+            capture_output=True, timeout=300, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot read {wanted} from {archive.name}: {exc}") from exc
+    if result.returncode != 0:
+        raise ValueError(f"cannot read {wanted} from {archive.name} (exit {result.returncode})")
+    return result.stdout
+
+
 def extracted_file_bytes(destination: Path, wanted: str) -> bytes | None:
     resolved_destination = destination.resolve()
     matches = [
@@ -578,7 +622,10 @@ def windows_installer_file_bytes(archive: Path, wanted: str) -> bytes | None:
         if archive.suffix.lower() == ".msi":
             command = ["msiextract", "-C", str(destination), str(archive)]
         else:
-            command = ["innoextract", "--silent", "--extract", "--output-dir", str(destination), str(archive)]
+            command = [
+                "innoextract", "--silent", "--extract", "--test", "--no-extract-unknown",
+                "--include", wanted, "--output-dir", str(destination), str(archive),
+            ]
         try:
             result = subprocess.run(
                 command, capture_output=True, text=True, timeout=300, check=False,
@@ -629,7 +676,10 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
     """Read the actual installed file from each native package format."""
     if zipfile.is_zipfile(archive):
         with zipfile.ZipFile(archive) as package:
-            matches = [name for name in package.namelist() if Path(name).name == wanted]
+            matches = [
+                name for name in package.namelist()
+                if PurePosixPath(name.replace("\\", "/")).name == wanted
+            ]
             if len(matches) != 1:
                 return None
             return package.read(matches[0])
@@ -646,6 +696,8 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
         return deb_embedded_file_bytes(archive, wanted)
     if archive.suffix.lower() == ".pkg":
         return pkg_embedded_file_bytes(archive, wanted)
+    if archive.suffix.lower() == ".dmg":
+        return dmg_embedded_file_bytes(archive, wanted)
     if archive.suffix.lower() in {".exe", ".msi"}:
         return windows_installer_file_bytes(archive, wanted)
     if archive.suffix.lower() == ".appimage":

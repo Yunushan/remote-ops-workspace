@@ -133,6 +133,9 @@ def test_release_boundary_rejects_late_redistribution_gate() -> None:
     [
         ("innosetup --version=6.7.1", "innosetup --version=6.3.3", "installer toolchains"),
         ('if ($InnoVersion -ne "6.7.1") { throw', 'if ($false) { throw', "installer toolchains"),
+        ("$InnoProbeExit -ne 0", "$false", "installer toolchains"),
+        ("$InnoVersionLines.Count -ne 1", "$false", "installer toolchains"),
+        ('& $InnoCompiler /O- "/O$InnoProbeDirectory" $InnoProbe', "& $InnoCompiler /?", "installer toolchains"),
         (" cpio msitools ", " cpio ", "msitools"),
         ("sha256sum --check --strict", "sha256sum", "sha256sum"),
         ("16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede", "0" * 64, "archive inspector"),

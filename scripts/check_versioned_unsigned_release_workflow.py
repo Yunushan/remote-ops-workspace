@@ -188,7 +188,11 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
     if windows:
         _require_step(
             errors, windows, "Install Windows installer toolchains",
-            ("innosetup --version=6.7.1", "VersionInfo",
+            ("innosetup --version=6.7.1", "function Get-InnoCompilerVersion",
+             '& $InnoCompiler /O- "/O$InnoProbeDirectory" $InnoProbe', "Output=no",
+             "$InnoProbeExit -ne 0", "$InnoVersionLines.Count -ne 1",
+             "^Compiler engine version: Inno Setup ([0-9]+\\.[0-9]+\\.[0-9]+)\\r?$",
+             "$InnoVersion = Get-InnoCompilerVersion",
              'if ($InnoVersion -ne "6.7.1") { throw', "$env:GITHUB_PATH"),
         )
 

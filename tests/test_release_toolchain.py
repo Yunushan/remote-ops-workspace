@@ -1,7 +1,11 @@
 import importlib.util
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 def test_release_toolchain_checker_passes_current_tree() -> None:
@@ -20,6 +24,93 @@ def test_release_toolchain_pins_exact_native_python_patch_in_every_release_job()
     assert workflow.count('python-version: "3.14.7"') == 6
     assert promotion.count('python-version: "3.14.7"') == 1
     assert certification.count('python-version: "3.14.7"') == 1
+
+
+@pytest.mark.parametrize("mutation", ["presence-only", "file-metadata", "no-final-probe"])
+def test_release_toolchain_rejects_unverified_preinstalled_inno(mutation) -> None:
+    checker = _load_release_toolchain_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    if mutation == "presence-only":
+        workflow = workflow.replace(
+            'if ($InnoVersion -ne "6.7.1") {',
+            'if (-not (Test-Path -LiteralPath $InnoCompiler)) {',
+            1,
+        )
+    elif mutation == "file-metadata":
+        workflow = workflow.replace(
+            '& $InnoCompiler /O- "/O$InnoProbeDirectory" $InnoProbe 2>&1',
+            '(Get-Item -LiteralPath $InnoCompiler).VersionInfo.FileVersion',
+            1,
+        )
+    else:
+        workflow = workflow.replace(
+            'if ($InnoVersion -ne "6.7.1") { throw "Expected Inno Setup 6.7.1, got $InnoVersion" }',
+            'Write-Host "Trust installed compiler without rechecking"',
+            1,
+        )
+
+    assert checker.check_windows_inno_compiler(workflow, "6.7.1")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="executes the real Windows toolchain step")
+@pytest.mark.parametrize(
+    ("preinstalled", "replacement", "succeeds", "installations"),
+    [("6.7.1", "6.7.1", True, 0), ("6.3.3", "6.7.1", True, 1), ("6.3.3", "6.3.3", False, 1)],
+)
+def test_windows_toolchain_checks_preinstalled_engine_and_replacement(
+    tmp_path, preinstalled, replacement, succeeds, installations
+) -> None:
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    assert powershell is not None
+    compiler = tmp_path / "iscc.ps1"
+    version = tmp_path / "engine-version.txt"
+    probes = tmp_path / "compiler-probes.txt"
+    installs = tmp_path / "package-installs.txt"
+
+    def literal(path):
+        return "'" + str(path).replace("'", "''") + "'"
+
+    version.write_text(preinstalled, encoding="utf-8")
+    compiler.write_text(
+        f"Add-Content -LiteralPath {literal(probes)} -Value 'compiled'\n"
+        # File metadata can describe the loader version; only engine output counts.
+        "Write-Output 'File metadata version: 6.7.1'\n"
+        f"$Engine = Get-Content -LiteralPath {literal(version)} -Raw\n"
+        "Write-Output \"Compiler engine version: Inno Setup $($Engine.Trim())\"\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    step = workflow.split("      - name: Install Windows installer toolchains\n", 1)[1]
+    step = step.split("      - name:", 1)[0].split("        run: |\n", 1)[1]
+    step = "\n".join(line[10:] for line in step.splitlines())
+    step = step.replace(
+        '$InnoCompiler = "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe"',
+        f"$InnoCompiler = {literal(compiler)}",
+        1,
+    )
+    runner = tmp_path / "run-toolchain.ps1"
+    runner.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        f"$env:RUNNER_TEMP = {literal(tmp_path)}\n"
+        f"$env:GITHUB_PATH = {literal(tmp_path / 'github-path.txt')}\n"
+        "function choco {\n"
+        f"  Add-Content -LiteralPath {literal(installs)} -Value 'installed'\n"
+        f"  Set-Content -LiteralPath {literal(version)} -Value '{replacement}'\n"
+        "  $global:LASTEXITCODE = 0\n}\n"
+        "function dotnet { $global:LASTEXITCODE = 0 }\n" + step,
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-File", str(runner)],
+        capture_output=True, text=True, timeout=30, check=False,
+    )
+
+    assert (result.returncode == 0) is succeeds, result.stdout + result.stderr
+    assert len(probes.read_text(encoding="utf-8-sig").splitlines()) == 2
+    assert (len(installs.read_text(encoding="utf-8-sig").splitlines()) if installs.exists() else 0) == installations
+    if not succeeds:
+        assert "Expected Inno Setup 6.7.1" in result.stderr
 
 
 def test_release_toolchain_checker_requires_pinned_python_build_backend() -> None:

@@ -219,7 +219,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="RemoteOpsWorkspaceIcon" SourceFile="$IconSource" />
     <Property Id="ARPPRODUCTICON" Value="RemoteOpsWorkspaceIcon" />
-    <StandardDirectory Id="ProgramFilesFolder">
+    <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="Remote Ops Workspace">
         <Directory Id="BINDIR" Name="bin">
           <Component Id="RowExeComponent" Guid="7689D62F-2557-4DD3-8C58-38C5E245E44C">
@@ -273,6 +273,9 @@ $RowGuiFile
 "@ | Set-Content -Encoding UTF8 $Wxs
 
   & $Wix.Source build $Wxs -arch $WixArch -o $Msi
+  if ($LASTEXITCODE -ne 0) {
+    throw "WiX MSI build failed with exit code $LASTEXITCODE"
+  }
   if (!(Test-Path $Msi)) {
     throw "WiX did not create $Msi"
   }

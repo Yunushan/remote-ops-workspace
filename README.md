@@ -746,7 +746,7 @@ Native installer smoke coverage is declared in
 and checked by `python scripts/check_native_installer_smoke.py`. The release
 workflow runs `scripts/smoke_windows_native.ps1`,
 `scripts/smoke_macos_native.sh` and `scripts/smoke_linux_native.sh` after native
-builds and before upload, covering install, verify, upgrade and uninstall paths
+builds and before upload, covering install, verify, same-version reinstall and uninstall paths
 for `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm` and AppImage artifacts.
 
 Release phases:

@@ -133,7 +133,7 @@
       {
         "name": "innosetup",
         "provider": "chocolatey",
-        "version": "6.3.3"
+        "version": "6.7.1"
       },
       {
         "name": "wix",

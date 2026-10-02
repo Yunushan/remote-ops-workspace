@@ -1,0 +1,52 @@
+# Native candidate validation
+
+The `Native PR candidate validation` workflow builds and tests unreleased native
+packages. Its token has read access, and its outputs are Actions artifacts.
+Passing this workflow does not approve publication or establish publisher trust.
+
+## Run a candidate
+
+Changes to native build inputs run Windows x64 validation on the exact pull
+request head commit. The workflow records the event commit separately, along
+with the checkout tree, file hashes, workflow identity and run attempt.
+
+Apply the `native-all-modern` label to the pull request to request all seven
+modern targets. Once the workflow is available on the default branch, its manual
+run also offers `windows-x64` and `all-modern` scopes and accepts an exact source
+commit. The broad scope uses hosted Windows, macOS and Linux runners.
+
+| Targets | Packaged runtime contract |
+| --- | --- |
+| Windows x64 and ARM64 | CLI, EXE/MSI installation, and native Qt GUI startup/profile selection/paint |
+| macOS x64 and ARM64 | DMG/PKG installation and native Qt GUI startup/profile selection/paint |
+| Windows x86 | CLI and EXE/MSI installation; maintained vault backends unavailable and fail closed |
+| Linux x86_64 and aarch64 | CLI and DEB/RPM/AppImage installation; these packages do not include Qt |
+
+## Read the evidence
+
+Candidate artifacts include source fingerprints, realized Python distributions,
+native package hashes, PyInstaller archive inventories and native smoke results.
+Windows smoke compares executable bytes in portable, EXE and MSI locations to
+the inspected build outputs before launching them. Archive parsing is narrower
+than a complete external runtime inventory or an independent license approval.
+
+Windows commands run hidden in an owned Job Object with bounded cleanup. A
+failed original GUI smoke remains failed when a separate console diagnostic is
+built; the diagnostic has its own filename, hash, outcome and logs.
+
+Full Windows installer smoke refuses local and self-hosted execution and an
+existing application installation. Its directory removal checks stay within the
+checkout's smoke directory. Successful runs verify their normal uninstalls.
+Failure or timeout relies on disposal of the hosted runner; an incomplete run
+does not prove installer rollback or successful cleanup outside the owned Job.
+macOS and Linux failure cleanup has the same hosted-runner disposal boundary.
+
+## Remaining production requirements
+
+The existing reinstall smoke repeats the same candidate. Genuine upgrade and
+rollback from a previous native release require a separate transition drill.
+macOS uses ad-hoc signing here, without publisher identity or notarization.
+These checks do not establish Windows Smart App Control acceptance, independent
+redistribution approval, complete supported-host workflows, or production
+readiness of published v1.0.27. Existing unsigned self-service releases remain
+available through the versioned unsigned release workflow.

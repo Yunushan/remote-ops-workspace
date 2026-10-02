@@ -333,7 +333,7 @@ def test_release_workflow_uses_pinned_toolchain() -> None:
     assert "requirements-locks/windows-arm64-bootstrap.txt" in workflow
     assert 'python -m pip install --no-deps --no-build-isolation' in workflow
     assert "python -m pip install --upgrade" not in workflow
-    assert "choco install innosetup --version=6.3.3" in workflow
+    assert "choco install innosetup --version=6.7.1" in workflow
     assert "dotnet tool install --global wix --version 5.0.2" in workflow
 
 

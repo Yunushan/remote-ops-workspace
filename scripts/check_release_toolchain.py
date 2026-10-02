@@ -246,6 +246,60 @@ def check_python_build_backend(
     return errors
 
 
+def check_windows_inno_compiler(workflow: str, expected_version: str) -> list[str]:
+    """Require compilation to identify both preinstalled and replacement ISCC."""
+    step = re.search(
+        r"(?ms)^      - name: Install Windows installer toolchains\n"
+        r"(.*?)(?=^      - |\Z)",
+        workflow,
+    )
+    if step is None:
+        return ["release workflow missing Windows installer toolchain step"]
+    active = "\n".join(
+        line for line in step.group(1).splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    errors: list[str] = []
+    for snippet, label in {
+        'function Get-InnoCompilerVersion {': "actual Inno compiler engine probe",
+        '& $InnoCompiler /O- "/O$InnoProbeDirectory" $InnoProbe 2>&1': (
+            "actual preinstalled Inno compiler invocation"
+        ),
+        "^Compiler engine version: Inno Setup ": "compiler engine version output parsing",
+        'if ($InnoProbeExit -ne 0) { return "" }': "failed compiler probe rejection",
+        'if ($InnoVersionLines.Count -ne 1) { return "" }': (
+            "ambiguous compiler engine version rejection"
+        ),
+        'Split-Path -Parent $InnoCompiler | Out-File': (
+            "PATH binding to the verified Inno compiler"
+        ),
+    }.items():
+        if snippet not in active:
+            errors.append(f"release workflow missing {label}")
+    version = re.escape(expected_version)
+    guard = re.search(
+        rf'\$InnoVersion = Get-InnoCompilerVersion\s+'
+        rf'if \(\$InnoVersion -ne "{version}"\) \{{\s+'
+        rf'choco install innosetup --version={version} --allow-downgrade --force',
+        active,
+    )
+    if guard is None:
+        errors.append(
+            f"release workflow must replace a preinstalled Inno engine other than {expected_version}"
+        )
+    final_probe = re.search(
+        rf'\$InnoVersion = Get-InnoCompilerVersion\s+'
+        rf'if \(\$InnoVersion -ne "{version}"\) \{{ throw '
+        rf'"Expected Inno Setup {version}, got \$InnoVersion" \}}',
+        active,
+    )
+    if final_probe is None:
+        errors.append(
+            f"release workflow must re-probe and reject an actual Inno engine other than {expected_version}"
+        )
+    return errors
+
+
 def check_workflow(
     toolchain: dict[str, object], workflow_text: str | None = None
 ) -> list[str]:
@@ -360,6 +414,8 @@ def check_workflow(
     wix_version = str(windows_tool_rows.get("wix", {}).get("version", ""))
     if inno_version and f"choco install innosetup --version={inno_version}" not in workflow:
         errors.append(f"release workflow must pin Inno Setup to {inno_version}")
+    if inno_version:
+        errors.extend(check_windows_inno_compiler(workflow, inno_version))
     if wix_version and f"dotnet tool install --global wix --version {wix_version}" not in workflow:
         errors.append(f"release workflow must pin WiX to {wix_version}")
 

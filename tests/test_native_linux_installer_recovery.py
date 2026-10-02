@@ -20,9 +20,7 @@ DRAFT = REPO / ".tmp/native-linux-prior-transition-draft-20261002"
 @pytest.fixture
 def module():
     # At adoption load the canonical tracked controller, never a test-only copy.
-    path = REPO / "scripts/native_linux_installer_recovery.py"
-    if not path.is_file():
-        path = DRAFT / "scripts/native_linux_installer_recovery.py"
+    path = Path(__file__).resolve().parents[1] / "scripts/native_linux_installer_recovery.py"
     spec = importlib.util.spec_from_file_location("linux_transition_test", path)
     import sys
 
@@ -94,7 +92,10 @@ def test_local_run_refuses_without_spoofing_gate_or_mutation(module, monkeypatch
     )
     monkeypatch.setattr(module, "save", lambda *a, **k: pytest.fail("unexpected receipt write"))
     assert module.main(["run", "--candidate-source-sha", "a" * 40]) == 1
-    assert "refused" in capsys.readouterr().err
+    output = capsys.readouterr()
+    assert not output.out
+    assert "failure_code=hosted-ubuntu-x64-required" in output.err
+    assert "no private command output published" in output.err
 
 
 @pytest.mark.parametrize(
@@ -977,3 +978,91 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
         section.index("      - name: Retain unreleased candidate proof and artifacts") :
     ]
     assert ".tmp/" not in upload and "build/native-smoke/linux-${{ matrix.arch }}/" in upload
+
+
+@pytest.mark.parametrize(
+    "kind,value,expected",
+    [
+        ("evidence", "preexisting-or-residual-owned-path", "preexisting-or-residual-owned-path"),
+        ("evidence", "package-database-query-malformed", "package-database-query-malformed"),
+        ("evidence", "sensitive-sentinel-private-path", "private-fixture-or-evidence-failure"),
+        (
+            "evidence",
+            "/tmp/sensitive-sentinel/private-state",
+            "private-fixture-or-evidence-failure",
+        ),
+        ("evidence", ["sensitive-sentinel"], "private-fixture-or-evidence-failure"),
+        ("value", "sensitive-sentinel captured command", "private-fixture-or-evidence-failure"),
+    ],
+)
+def test_public_static_failure_diagnostics_never_publish_unknown_text(
+    module, kind, value, expected, monkeypatch, capsys
+):
+    failure = module.EvidenceError(value) if kind == "evidence" else ValueError(value)
+
+    def refusal(args):
+        raise failure
+
+    monkeypatch.setattr(module, "run", refusal)
+    monkeypatch.setattr(
+        module.subprocess, "Popen", lambda *a, **kw: pytest.fail("unexpected launch")
+    )
+    monkeypatch.setattr(module, "save", lambda *a, **kw: pytest.fail("unexpected write"))
+    assert module.main(["run"]) == 1
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert "failure_code=" + expected + ";" in captured.err
+    assert "sensitive-sentinel" not in captured.err
+    assert "/tmp/" not in captured.err
+
+
+def test_public_static_failure_code_sanitizes_authorized_receipt(module, monkeypatch, capsys):
+    records = []
+
+    def refusal(args):
+        args.authorized = True
+        raise module.EvidenceError("sensitive-sentinel private output")
+
+    monkeypatch.setattr(module, "run", refusal)
+    monkeypatch.setattr(module, "save", lambda path, record: records.append(record))
+    monkeypatch.setattr(
+        module.subprocess, "Popen", lambda *a, **kw: pytest.fail("unexpected launch")
+    )
+    assert module.main(["run"]) == 1
+    assert len(records) == 1
+    assert records[0]["failure_code"] == "private-fixture-or-evidence-failure"
+    assert "sensitive-sentinel" not in json.dumps(records)
+    assert "sensitive-sentinel" not in capsys.readouterr().err
+
+
+def test_public_static_failure_code_rejects_impersonating_string_subclass(
+    module, monkeypatch, capsys
+):
+    allowlisted = "preexisting-or-residual-owned-path"
+
+    class ImpersonatingCode(str):
+        def __hash__(self):
+            return hash(allowlisted)
+
+        def __eq__(self, other):
+            return str(other) == allowlisted
+
+    code = ImpersonatingCode("sensitive-sentinel private diagnostic")
+    assert isinstance(code, str) and code in module.PUBLIC_FAILURE_CODES
+    records = []
+
+    def refusal(args):
+        args.authorized = True
+        raise module.EvidenceError(code)
+
+    monkeypatch.setattr(module, "run", refusal)
+    monkeypatch.setattr(module, "save", lambda path, record: records.append(record))
+    monkeypatch.setattr(
+        module.subprocess, "Popen", lambda *a, **kw: pytest.fail("unexpected launch")
+    )
+    assert module.main(["run"]) == 1
+    assert records[0]["failure_code"] == "private-fixture-or-evidence-failure"
+    assert "sensitive-sentinel" not in json.dumps(records)
+    captured = capsys.readouterr()
+    assert "failure_code=private-fixture-or-evidence-failure" in captured.err
+    assert "sensitive-sentinel" not in captured.err and not captured.out

@@ -90,9 +90,12 @@ these environment secrets before creating a release:
 - `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`, and
   `ROW_MACOS_NOTARY_ISSUER` for Apple notarization and stapling.
 
-The environment accepts only protected `main` dispatches and `v*` tags. Keep
-that policy in place: `main` is required for the controlled evidence-promotion
-dispatch, while version tags are required for automatic production publishing.
+Pushing a `vX.Y.Z` tag starts `release.yml` to stage signed native candidates.
+Production publication requires a separate `release-promotion.yml` manual
+dispatch from that exact tag, using the bound candidate inventory and independent
+signed evidence. For self-service unsigned downloads, manually dispatch
+`versioned-unsigned-release.yml` from the exact version tag. It publishes an
+`UNSIGNED PREVIEW` prerelease and does not satisfy production promotion.
 
 Every GitHub Action used by release, CI, and protected-evidence workflows is
 commit-pinned and checked locally. The Web/PWA Python base image is also

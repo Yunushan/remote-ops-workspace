@@ -99,9 +99,10 @@ Release integrity rules:
   It matches every downloaded file to the live GitHub Release size and SHA-256
   digest, requires the remote GitHub Release `immutable` flag, and cryptographically verifies every asset in the
   complete certified inventory's SLSA
-  attestation against this repository, `.github/workflows/release.yml` and the
-  exact release SHA and exact `refs/tags/<tag>` source ref, requires a common certificate-bound run attempt across the
-  entire inventory, and checks that exact tag-push run attempt completed successfully.
+  attestation against this repository, `.github/workflows/release-promotion.yml`,
+  the exact release SHA and exact `refs/tags/<tag>` source ref. It requires a
+  common certificate-bound run attempt across the entire inventory and checks
+  that exact-tag `workflow_dispatch` promotion run attempt completed successfully.
   A local checksum set, a green run for another commit, or mere attestation
   metadata cannot satisfy this gate.
 - Production certification separately runs

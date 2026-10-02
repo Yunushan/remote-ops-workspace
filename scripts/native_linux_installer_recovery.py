@@ -104,8 +104,125 @@ native = load_module(ROOT / "scripts/native_installer_recovery.py", "row_linux_n
 recovery = load_module(ROOT / "scripts/smoke_workspace_recovery.py", "row_linux_recovery_state")
 
 
+# Explicit public diagnostic vocabulary. Unknown errors never expose text.
+PUBLIC_FAILURE_CODES = frozenset(
+    {
+        "candidate-asset-bytes-mismatch",
+        "candidate-asset-path-set-mismatch",
+        "candidate-assets-incomplete",
+        "candidate-backup-modified-state",
+        "candidate-basic-proof-incomplete",
+        "candidate-checkout-evidence-mismatch",
+        "candidate-full-state-restore-mismatch",
+        "candidate-inventory-input-mismatch",
+        "candidate-native-restore-or-original-mismatch",
+        "candidate-original-carchive-mismatch",
+        "candidate-original-launcher-changed",
+        "candidate-original-or-distinct-bytes-mismatch",
+        "candidate-per-probe-byte-binding-mismatch",
+        "candidate-pip-inventory-malformed",
+        "candidate-rescue-bytes-mismatch",
+        "candidate-run-evidence-mismatch",
+        "candidate-source-not-exact-clean",
+        "candidate-version-not-newer",
+        "canonical-bound-deb-digest-missing-or-duplicate",
+        "canonical-source-controller-required",
+        "cleanup-owned-package-uncertain",
+        "command-late-completed-exit",
+        "command-late-completed-output",
+        "command-lifetime-uncertain",
+        "command-output-bound-or-read",
+        "command-pipe-lifetime-or-bound",
+        "command-stdin-bound",
+        "command-timeout",
+        "command-unexpected-exit",
+        "control-archive-bound",
+        "deb-bytes-mismatch-before-inspection",
+        "deb-changed-during-inspection",
+        "default-owned-child-reaping-required",
+        "duplicate-control-field",
+        "duplicate-or-unexpected-package-member",
+        "file-bytes-changed-or-bound",
+        "file-identity-changed",
+        "final-source-proof-or-candidate-changed",
+        "fixed-system-tool-unavailable",
+        "harness-deadline",
+        "hosted-source-root-mismatch",
+        "hosted-ubuntu-x64-required",
+        "immutable-prior-pins-changed",
+        "invalid-source-or-run-binding",
+        "isolated-worker-counts-shape",
+        "isolated-worker-summary-shape",
+        "malformed-control-continuation",
+        "malformed-control-field",
+        "native-byte-mismatch-after-launch",
+        "native-byte-mismatch-before-launch",
+        "native-checksum-bytes-disagree",
+        "native-checksum-file-set-mismatch",
+        "native-checksum-row-invalid",
+        "native-linux-x64-required",
+        "native-manifest-bytes-disagree",
+        "native-manifest-row-set",
+        "native-upgrade-changed-prior-state",
+        "native-vault-or-profile-mutation-absent",
+        "negative-restore-wrong-reason-or-state-changed",
+        "noncanonical-version",
+        "owned-documentation-directory-changed",
+        "owned-installed-package-identity-mismatch",
+        "owned-installed-payload-bytes-or-path-mismatch",
+        "package-byte-mismatch-before-install",
+        "package-changed-during-install",
+        "package-database-query-malformed",
+        "package-expanded-payload-bound",
+        "package-payload-files-incomplete",
+        "payload-archive-bound",
+        "pinned-cpython3147-required",
+        "preexisting-or-partial-package-registration",
+        "preexisting-or-residual-owned-path",
+        "previous-backup-modified-state",
+        "previous-v2-full-state-rollback-mismatch",
+        "prior-input-changed-during-transition",
+        "prior-native-rollback-or-preservation-mismatch",
+        "prior-publication-channel-changed",
+        "prior-seeding-version-or-vault",
+        "private-fixture-content-bound",
+        "private-fixture-path-containment",
+        "private-fixture-path-count-bound",
+        "private-fixture-path-shape",
+        "private-parent-not-restricted",
+        "private-parent-root-containment",
+        "receipt-or-private-parent-link",
+        "rpm-database-query-malformed",
+        "source-changed-before-privileged-operation",
+        "ubuntu2404-required",
+        "unexpected-file-parent-link",
+        "unexpected-file-type-or-bound",
+        "unexpected-native-entrypoint",
+        "unexpected-package-control-identity",
+        "unexpected-package-directory",
+        "unexpected-state-file-type",
+        "unexpected-state-root",
+        "unreviewed-package-control-or-script",
+        "unreviewed-package-file-type-path-or-mode",
+        "unsafe-package-member-name",
+        "unverified-installed-command",
+    }
+)
+
+
 class EvidenceError(RuntimeError):
     """Public static code; captured command/state text is never forwarded."""
+
+
+def public_failure_code(exc: Exception) -> str:
+    if (
+        type(exc) is EvidenceError
+        and len(exc.args) == 1
+        and type(exc.args[0]) is str
+        and exc.args[0] in PUBLIC_FAILURE_CODES
+    ):
+        return exc.args[0]
+    return "private-fixture-or-evidence-failure"
 
 
 def regular(path: Path, limit=MAX_FILE) -> bytes:
@@ -1392,9 +1509,7 @@ def main(argv=None) -> int:
             "status": "failed",
             "phase": args.phase,
             "failure_type": type(exc).__name__,
-            "failure_code": str(exc)
-            if isinstance(exc, EvidenceError)
-            else "private-fixture-or-evidence-failure",
+            "failure_code": public_failure_code(exc),
             "scope": "unreleased-hosted-linux-deb-transition",
             "limits": LIMITS,
         }
@@ -1407,7 +1522,9 @@ def main(argv=None) -> int:
         if args.authorized:
             save(ROOT / REPORT, report)
         print(
-            "native Linux transition refused or failed; no private command output published",
+            "native Linux transition refused or failed; failure_code="
+            + report["failure_code"]
+            + "; no private command output published",
             file=sys.stderr,
         )
         return 1

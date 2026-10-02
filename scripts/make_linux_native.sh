@@ -188,6 +188,7 @@ cp "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" %{buildroot}/
 cmp "$PKGROOT/usr/bin/row" %{buildroot}/usr/bin/row
 
 %files
+%dir /usr/share/doc/remote-ops-workspace
 /usr/bin/row
 /usr/share/doc/remote-ops-workspace/LICENSE
 /usr/share/doc/remote-ops-workspace/NOTICE

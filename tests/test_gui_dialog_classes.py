@@ -135,18 +135,29 @@ def test_direct_dialogs_use_injected_screen_services_and_literal_preview(gui_win
         app.processEvents()
 
 
-def test_confirmation_seam_has_safe_default_and_literal_text(gui_window, monkeypatch) -> None:
+@pytest.mark.parametrize("native_title_ignored", [False, True])
+def test_confirmation_seam_has_safe_default_and_literal_text(gui_window, monkeypatch, native_title_ignored) -> None:
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QMessageBox
 
     _app, window = gui_window
     observed = []
     answers = iter([QMessageBox.StandardButton.No.value, QMessageBox.StandardButton.Yes.value])
+    requested_titles = {}
+    set_window_title = QMessageBox.setWindowTitle
+
+    def record_title(dialog, title):
+        # Qt ignores QMessageBox window titles on macOS; verify the setter call.
+        requested_titles[dialog] = title
+        set_window_title(dialog, title)
 
     def answer(dialog):
-        observed.append((dialog.windowTitle(), dialog.text(), dialog.textFormat(), dialog.standardButton(dialog.defaultButton()), dialog.standardButtons()))
+        observed.append((requested_titles[dialog], dialog.text(), dialog.textFormat(), dialog.standardButton(dialog.defaultButton()), dialog.standardButtons()))
         return next(answers)
 
+    monkeypatch.setattr(QMessageBox, "setWindowTitle", record_title)
+    if native_title_ignored:
+        monkeypatch.setattr(QMessageBox, "windowTitle", lambda _dialog: "")
     monkeypatch.setattr(QMessageBox, "exec", answer)
     for expected in (False, True):
         assert window.confirm_action("Remove profile", "Remove <b>literal profile</b>?") is expected

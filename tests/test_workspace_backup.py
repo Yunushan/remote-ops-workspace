@@ -465,6 +465,91 @@ def test_file_changes_during_opened_read_are_detected(tmp_path, monkeypatch, kin
         recovery._read_regular(victim, 3 if kind == "growing" else 1000)
 
 
+@pytest.mark.parametrize("before,after", [
+    (b"unchanged" * 10000 + b"old", b"unchanged" * 10000 + b"new"),
+    (b"unchanged" * 10000 + b"old", b"unchanged" * 10000),
+    (b"unchanged" * 10000 + b"old", b"unchanged" * 10000 + b"old-extra"),
+    (b"", b"new"),
+], ids=["same-size", "truncated", "extended", "empty-became-nonempty"])
+def test_changed_bytes_are_rejected_when_windows_metadata_observations_are_unchanged(
+    tmp_path, monkeypatch, before, after,
+):
+    victim = tmp_path / "state"
+    victim.write_bytes(before)
+    initial = victim.lstat()
+    original_fdopen, original_fstat, original_lstat = os.fdopen, os.fstat, Path.lstat
+    snapshots = {}
+
+    class ChangingReader:
+        def __init__(self, descriptor, mode):
+            self.stream = original_fdopen(descriptor, mode)
+            snapshots[descriptor] = original_fstat(descriptor)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def fileno(self):
+            return self.stream.fileno()
+
+        def read(self, size):
+            payload = self.stream.read(size)
+            victim.write_bytes(after)
+            return payload
+
+    # Model Windows timestamp granularity/deferred updates across an open read
+    # handle. The bytes really change; both metadata APIs retain their own
+    # original snapshots, including their platform-specific ctime semantics.
+    monkeypatch.setattr(os, "fdopen", ChangingReader)
+    monkeypatch.setattr(os, "fstat", lambda descriptor: snapshots.get(descriptor) or original_fstat(descriptor))
+    monkeypatch.setattr(Path, "lstat", lambda path, *args, **kwargs: initial if path == victim else original_lstat(path, *args, **kwargs))
+    with pytest.raises(recovery.WorkspaceBackupError, match="changed while reading"):
+        recovery._read_regular(victim, 200000)
+    assert victim.read_bytes() == after
+
+
+def test_metadata_change_after_content_reinspection_still_refuses_read(tmp_path, monkeypatch):
+    victim = tmp_path / "state"
+    payload = b"unchanged file bytes"
+    victim.write_bytes(payload)
+    initial = victim.lstat()
+    original_read = os.read
+
+    def changed_metadata(descriptor, size):
+        block = original_read(descriptor, size)
+        if not block:
+            # Explicitly advance the real timestamp after the second content
+            # pass; identical bytes must not discard the metadata guard.
+            os.utime(victim, ns=(initial.st_atime_ns, initial.st_mtime_ns + 2_000_000_000))
+        return block
+
+    monkeypatch.setattr(os, "read", changed_metadata)
+    with pytest.raises(recovery.WorkspaceBackupError, match="changed while reading"):
+        recovery._read_regular(victim, 1000)
+    assert victim.read_bytes() == payload
+    assert victim.lstat().st_mtime_ns != initial.st_mtime_ns
+
+
+@pytest.mark.parametrize("payload", [b"", b"stable bytes" * 10000], ids=["empty", "multiple-partial-reads"])
+def test_content_reinspection_accepts_stable_empty_and_partial_os_reads(tmp_path, monkeypatch, payload):
+    victim = tmp_path / "state"
+    victim.write_bytes(payload)
+    original_read = os.read
+    requests = []
+
+    def partial_read(descriptor, size):
+        requests.append(size)
+        return original_read(descriptor, min(size, 4093))
+
+    monkeypatch.setattr(os, "read", partial_read)
+    observed, _identity = recovery._read_regular(victim, len(payload))
+    assert observed == payload
+    assert all(1 <= size <= 64 * 1024 for size in requests)
+    assert len(requests) > 2 if payload else requests == [1]
+
+
 @pytest.mark.parametrize("kind", ["write-denied", "chmod-denied", "rename-denied", "bytes-corrupt", "destination-appeared"])
 def test_restore_io_failure_preserves_original_and_cleans_private_stage(home, tmp_path, monkeypatch, kind):
     backup = _write_archive(tmp_path / "backup.json", _manifest())

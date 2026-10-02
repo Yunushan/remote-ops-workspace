@@ -230,6 +230,18 @@ def _read_regular(path: Path, limit: int) -> tuple[bytes, tuple[int, ...]]:
         payload = source.read(limit + 1)
         if len(payload) > limit:
             raise WorkspaceBackupError("workspace backup exceeds its byte limit")
+        # Same-size writes can retain the observed Windows timestamps while a
+        # handle is open. Re-read the same descriptor through the OS, bypassing
+        # BufferedReader caches, and bound inspection to the payload plus one
+        # byte. This detects content drift; offline use remains mandatory.
+        os.lseek(source.fileno(), 0, os.SEEK_SET)
+        offset = 0
+        while block := os.read(source.fileno(), min(64 * 1024, len(payload) - offset + 1)):
+            if block != payload[offset:offset + len(block)]:
+                raise WorkspaceBackupError("workspace file changed while reading")
+            offset += len(block)
+        if offset != len(payload):
+            raise WorkspaceBackupError("workspace file changed while reading")
         if _metadata(os.fstat(source.fileno())) != _metadata(opened) or _metadata(path.lstat()) != _metadata(initial):
             raise WorkspaceBackupError("workspace file changed while reading")
     return payload, (*_metadata(initial), *_metadata(opened))

@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 
 import pytest
@@ -271,12 +272,29 @@ def test_ambiguous_existing_record_refuses_start_without_launch_or_cookie(kind, 
 def test_start_replaces_only_confirmed_stopped_or_completed_record(kind, prior_state, tmp_path):
     _module, _state, start, _load, stop = _lifecycle(kind, tmp_path / "home")
     children = []
+    completed = tmp_path / "child-may-exit"
+
+    def launch_until_completed(_command, env):
+        # Keep the real Popen registered after its natural exit. Other POSIX
+        # platforms can prove status only while this owned handle is retained.
+        process = subprocess.Popen(
+            [sys.executable, "-c",
+             "import sys,time; from pathlib import Path\n"
+             "deadline=time.monotonic()+60\n"
+             "while not Path(sys.argv[1]).exists() and time.monotonic()<deadline: time.sleep(0.01)\n",
+             str(completed)],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        children.append(process)
+        return process
+
     try:
-        first = start(popen_factory=_spawn_owned(children))
+        first = start(popen_factory=launch_until_completed)
         if prior_state == "verified-stopped":
             stop()
         else:
-            terminate_owned_process(children[0])
+            completed.write_text("complete", encoding="utf-8")
+            assert children[0].wait(timeout=5) == 0
             if prior_state == "stopped-with-completed-pid":
                 state = Path(first.state_path)
                 payload = json.loads(state.read_text())
@@ -335,7 +353,7 @@ def test_concurrent_start_and_stop_share_one_serialized_record_transaction(kind,
                 assert first_launched.wait(5)
                 second = workers.submit(second_start)
                 assert second_attempted.wait(5)
-                with pytest.raises(TimeoutError):
+                with pytest.raises(FutureTimeoutError):
                     second.result(timeout=0.05)
                 with pytest.raises(FileLockTimeoutError):
                     stop(lock_timeout_seconds=0.05)

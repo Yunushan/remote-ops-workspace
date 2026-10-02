@@ -26,10 +26,19 @@ def workspace(monkeypatch, tmp_path):
 
     from PyQt6.QtWidgets import QMessageBox
 
+    requested_titles = {}
+    set_window_title = QMessageBox.setWindowTitle
+
+    def record_title(dialog, title):
+        # Qt ignores QMessageBox window titles on macOS; verify the setter call.
+        requested_titles[dialog] = title
+        set_window_title(dialog, title)
+
     def message(dialog):
-        messages.append((dialog.windowTitle(), dialog.text()))
+        messages.append((requested_titles[dialog], dialog.text()))
         return QMessageBox.StandardButton.Yes.value
 
+    monkeypatch.setattr(QMessageBox, "setWindowTitle", record_title)
     monkeypatch.setattr(QMessageBox, "exec", message)
     yield app, window, messages
     window.close()

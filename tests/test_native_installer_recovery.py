@@ -4,6 +4,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import sys
 import types
@@ -27,6 +28,17 @@ def load(path, name):
 def helper(monkeypatch):
     module = load(REPO_ROOT / "scripts/native_installer_recovery.py", "transition_successor_test")
     return module
+
+
+@pytest.mark.skipif(
+    os.name != "nt" or shutil.which("pwsh") is None,
+    reason="Actual Windows PowerShell 7 DACL provisioning requires its native host",
+)
+def test_private_fixture_provisions_actual_protected_windows_dacl(helper, tmp_path):
+    # Fresh owned directory only: no runner spoof, installers or fixture secrets.
+    parent = tmp_path / "private-native-fixture"
+    helper.private_parent(parent)
+    assert parent.is_dir()
 
 
 @pytest.fixture

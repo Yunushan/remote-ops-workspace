@@ -48,6 +48,14 @@ PLAN = (
 )
 
 
+class PrivateFixtureError(RuntimeError):
+    """Static diagnostic code; never expose captured fixture output."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.failure_code = code
+
+
 def digest(path: Path) -> str:
     value = hashlib.sha256()
     with path.open("rb") as stream:
@@ -527,7 +535,7 @@ def private_parent(path: Path) -> None:
     path.mkdir()
     powershell = shutil.which("pwsh")
     if not powershell:
-        raise RuntimeError("PowerShell 7 required for private runner fixture")
+        raise PrivateFixtureError("private-fixture-powershell7-unavailable")
     code = """
 $ErrorActionPreference='Stop'
 $path=$env:ROW_PROOF_PRIVATE_PARENT
@@ -536,7 +544,8 @@ $acl=New-Object System.Security.AccessControl.DirectorySecurity
 $acl.SetOwner($sid)
 $acl.SetAccessRuleProtection($true,$false)
 foreach($identity in @($sid.Value,'S-1-5-18','S-1-5-32-544')) {
- $rule=New-Object System.Security.AccessControl.FileSystemAccessRule($identity,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
+ $principal=[System.Security.Principal.SecurityIdentifier]::new($identity)
+ $rule=New-Object System.Security.AccessControl.FileSystemAccessRule($principal,'FullControl','ContainerInherit,ObjectInherit','None','Allow')
  $acl.AddAccessRule($rule)
 }
 Set-Acl -LiteralPath $path -AclObject $acl
@@ -556,7 +565,7 @@ foreach($ace in $actual.GetAccessRules($true,$true,[System.Security.Principal.Se
         check=False,
     )
     if result.returncode:
-        raise RuntimeError("private runner fixture DACL provisioning failed")
+        raise PrivateFixtureError("private-fixture-dacl-provisioning-failed")
 
 
 class Drill:
@@ -717,6 +726,7 @@ def run(args) -> dict:
         raise ValueError("candidate must have a different version from the prior native installer")
     candidates, finish = candidate_assets(args, version)
     pins = json.loads(args.previous_pins.read_text(encoding="utf-8"))
+    args._phase = "recovery-tools-loading"
     recovery = load_module(
         ROOT / "scripts/smoke_workspace_recovery.py", "row_recovery_fixture_worker"
     )
@@ -724,6 +734,7 @@ def run(args) -> dict:
     import truststore
 
     truststore.inject_into_ssl()
+    args._phase = "private-fixture-provisioning"
     parent = ROOT / ".tmp"
     parent.mkdir(exist_ok=True)
     private = parent / ("native-inno-recovery-" + uuid.uuid4().hex)
@@ -1113,6 +1124,9 @@ def main() -> int:
             "run_id": os.environ["GITHUB_RUN_ID"],
             "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
             "failure_type": type(exc).__name__,
+            "failure_code": (
+                exc.failure_code if isinstance(exc, PrivateFixtureError) else "unclassified"
+            ),
             "failed_phase": getattr(args, "_phase", "runner-validated"),
             "owned_commands": getattr(args, "_owned_calls", []),
             "limits": [

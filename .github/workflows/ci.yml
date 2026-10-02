@@ -53,6 +53,65 @@ jobs:
       - name: Non-GUI production type gate
         run: python scripts/check_non_gui_types.py
 
+  secure-server-runtime:
+    name: Authenticated FTP and FTPS runtime (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            lock: requirements-locks/linux-x86_64.txt
+            bootstrap_lock: requirements-locks/linux-x86_64-bootstrap.txt
+          - os: windows-2025-vs2026
+            lock: requirements-locks/windows-x64.txt
+            bootstrap_lock: requirements-locks/windows-x64-bootstrap.txt
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Install complete hash-locked server runtime
+        shell: bash
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+          python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
+          python -m pip check
+      - name: Prove authenticated FTP and mandatory FTPS transport
+        run: python scripts/smoke_embedded_server_security.py --out artifacts/embedded-server-security.json
+      - name: Prove process identity, verified stop and offline recovery
+        run: python scripts/smoke_managed_process_lifecycle.py --out artifacts/managed-process-lifecycle.json
+      - name: Prove encrypted full-state recovery and released-wheel rollback
+        run: >-
+          python scripts/smoke_workspace_recovery.py --download-previous-wheel
+          --out artifacts/workspace-recovery.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: embedded-server-security-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/embedded-server-security.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: managed-process-lifecycle-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/managed-process-lifecycle.json
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: workspace-recovery-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: artifacts/workspace-recovery.json
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
+
   coverage:
     name: Python branch-aware coverage
     runs-on: windows-2025-vs2026

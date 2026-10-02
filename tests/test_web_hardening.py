@@ -1,8 +1,11 @@
+import io
 import json
 import os
+import secrets
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -10,11 +13,13 @@ from functools import partial
 from http.client import HTTPConnection
 from pathlib import Path
 from threading import Thread
+from types import SimpleNamespace
 
 import pytest
 
 from remote_ops_workspace import cli, web_server
 from remote_ops_workspace.models import Profile
+from remote_ops_workspace.process_status import terminate_owned_process
 from remote_ops_workspace.storage import ProfileStore
 from remote_ops_workspace.web_server import (
     SECURITY_HEADERS,
@@ -82,6 +87,26 @@ def test_web_security_headers_include_browser_hardening() -> None:
     assert SECURITY_HEADERS["X-Content-Type-Options"] == "nosniff"
     assert SECURITY_HEADERS["Referrer-Policy"] == "no-referrer"
     assert "camera=()" in SECURITY_HEADERS["Permissions-Policy"]
+
+
+def test_web_request_logs_escape_accepted_terminal_control_sequences(capsys) -> None:
+    handler = object.__new__(QuietHandler)
+    handler.raw_requestline = b"GET /\x1b[2J\x08\x7f\x9b HTTP/1.1\r\n"
+    handler.rfile = io.BytesIO(b"Host: localhost\r\n\r\n")
+
+    assert handler.parse_request() is True
+    handler.log_request(404)
+
+    logged = capsys.readouterr().out
+    assert 'web: "GET /\\x1b[2J\\x08\\x7f\\x9b HTTP/1.1" 404 -\n' == logged
+    assert all(character not in logged for character in ("\x1b", "\x08", "\x7f", "\x9b"))
+
+
+def test_web_log_messages_escape_line_breaks_and_backslashes(capsys) -> None:
+    handler = object.__new__(QuietHandler)
+    handler.log_message("value %s", "safe\\path\r\nforged\tentry")
+
+    assert capsys.readouterr().out == "web: value safe\\\\path\\x0d\\x0aforged\\x09entry\n"
 
 
 def test_web_handler_emits_security_headers(tmp_path: Path) -> None:
@@ -845,6 +870,323 @@ def test_web_assets_avoid_persistent_profile_storage() -> None:
     assert "cleanDemoField" in app_js
 
 
+def _completed_web_policy_result(path: Path, scenario: str, nonce: str) -> dict | None:
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    if (
+        not isinstance(record, dict)
+        or set(record) != {"complete", "scenario", "nonce", "saved", "blocked"}
+        or record["complete"] is not True
+        or record["scenario"] != scenario
+        or record["nonce"] != nonce
+        or type(record["saved"]) is not int
+        or record["saved"] not in (0, 1)
+        or not isinstance(record["blocked"], str)
+    ):
+        raise ValueError("Node completion record does not match this exact test invocation")
+    return record
+
+
+def _run_web_policy_harness(
+    command: list[str],
+    result_path: Path,
+    scenario: str,
+    nonce: str,
+    *,
+    timeout: float = 10,
+    cleanup_timeout: float = 5,
+) -> dict:
+    """Retain result-vs-exit evidence; preserve timeout/nonzero as failures."""
+    report = {"result_exists": False, "complete_result": False, "child_reaped": False}
+    process = None
+    result = None
+    failure = None
+    started = time.monotonic()
+    try:
+        with (
+            result_path.with_suffix(".stdout.log").open("wb") as stdout,
+            result_path.with_suffix(".stderr.log").open("wb") as stderr,
+        ):
+            options = {}
+            if os.name == "nt":
+                startup = subprocess.STARTUPINFO()
+                startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startup.wShowWindow = subprocess.SW_HIDE
+                options = {"startupinfo": startup, "creationflags": subprocess.CREATE_NO_WINDOW}
+            process = subprocess.Popen(command, stdout=stdout, stderr=stderr, **options)
+            deadline = time.monotonic() + timeout
+            while True:
+                report["result_exists"] = result_path.exists()
+                returncode = process.poll()
+                if returncode is not None:
+                    report["observed_returncode"] = returncode
+                    if returncode != 0:
+                        raise RuntimeError(
+                            "Node harness exited nonzero; completion cannot override failure"
+                        )
+                unreadable = False
+                try:
+                    result = _completed_web_policy_result(result_path, scenario, nonce)
+                except PermissionError:
+                    # Windows rename/file-inspection sharing can transiently
+                    # prevent opening a complete publication. Retry within the
+                    # same deadline; an unreadable result never passes.
+                    report["result_error_type"] = "PermissionError"
+                    result = None
+                    unreadable = True
+                except (ValueError, UnicodeError) as exc:
+                    report["result_error_type"] = type(exc).__name__
+                    raise
+                report["complete_result"] = result is not None
+                if time.monotonic() >= deadline:
+                    report["timed_out"] = True
+                    raise TimeoutError(
+                        f"Node harness timed out; complete_result={result is not None}"
+                    )
+                if returncode is not None and not unreadable:
+                    if result is None:
+                        raise RuntimeError("Node harness exited without its completion record")
+                    break
+                time.sleep(0.01)
+        return result
+    except Exception as exc:
+        failure = exc
+        report["failure_type"] = type(exc).__name__
+        raise
+    finally:
+        try:
+            if process is not None:
+                if process.poll() is None:
+                    terminate_owned_process(process, timeout_seconds=cleanup_timeout)
+                process.wait(timeout=0)
+                report.update(child_reaped=True, final_returncode=process.returncode)
+        except Exception as exc:
+            report["cleanup_failure_type"] = type(exc).__name__
+            raise
+        finally:
+            report["elapsed_seconds"] = time.monotonic() - started
+            progress = result_path.with_suffix(".progress.json")
+            try:
+                milestones = json.loads(progress.read_text(encoding="utf-8"))
+                allowed = {
+                    "harness-start",
+                    "require-enter",
+                    "require-return",
+                    "submit-enter",
+                    "submit-return",
+                    "result-write-enter",
+                    "result-published",
+                    "exit-call",
+                }
+                report["milestones"] = [
+                    item["stage"]
+                    for item in milestones
+                    if isinstance(item, dict) and item.get("stage") in allowed
+                ][:10]
+            except (OSError, ValueError, TypeError, KeyError, UnicodeError) as exc:
+                report["milestones"] = []
+                report["milestone_error_type"] = type(exc).__name__
+            result_path.with_suffix(".runner.json").write_text(json.dumps(report, indent=2) + "\n")
+            if isinstance(failure, TimeoutError):
+                failure.args = (
+                    f"{failure.args[0]}; result_exists={report['result_exists']}; "
+                    f"milestones={','.join(report['milestones']) or 'none'}; "
+                    f"child_reaped={report['child_reaped']}",
+                )
+
+
+@pytest.mark.parametrize(
+    "mode", ("success", "nonzero", "complete-hang", "no-result-hang", "wrong-nonce")
+)
+def test_complete_result_never_excuses_failure_and_child_is_reaped(tmp_path, mode):
+    result_path = tmp_path / "result.json"
+    code = r"""
+import json, os, sys, time
+from pathlib import Path
+path, mode = Path(sys.argv[1]), sys.argv[2]
+if mode != "no-result-hang":
+    record={"complete":True,"scenario":"pending","nonce":"wrong" if mode=="wrong-nonce" else "this-run", "saved":0,"blocked":"enterprise policy is unavailable"}
+    temporary=path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(record))
+    os.replace(temporary,path)
+if mode in ("complete-hang","no-result-hang"):
+    time.sleep(60)
+raise SystemExit(1 if mode=="nonzero" else 0)
+"""
+    command = [sys.executable, "-c", code, str(result_path), mode]
+    # These fixture-only deadlines allow child startup before checking its
+    # semantic result. The actual Node test retains its 10/30 second limits.
+    fixture_timeout = 0.2 if mode == "no-result-hang" else 3
+    if mode == "success":
+        result = _run_web_policy_harness(
+            command, result_path, "pending", "this-run", timeout=fixture_timeout
+        )
+        assert result["saved"] == 0
+    else:
+        error = (
+            TimeoutError
+            if mode.endswith("hang")
+            else ValueError
+            if mode == "wrong-nonce"
+            else RuntimeError
+        )
+        with pytest.raises(error):
+            _run_web_policy_harness(
+                command, result_path, "pending", "this-run", timeout=fixture_timeout
+            )
+    report = json.loads(result_path.with_suffix(".runner.json").read_text())
+    assert report["child_reaped"] is True
+    if mode == "complete-hang":
+        assert report["result_exists"] and report["complete_result"] and report["timed_out"]
+    elif mode == "no-result-hang":
+        assert report["result_exists"] is False and report["complete_result"] is False
+
+
+def test_existing_exists_only_protocol_can_read_partial_json_but_atomic_protocol_cannot(tmp_path):
+    result = tmp_path / "legacy.json"
+    code = r"""
+import sys,time
+from pathlib import Path
+path=Path(sys.argv[1]); path.write_text('{"saved":')
+time.sleep(60)
+"""
+    process = subprocess.Popen([sys.executable, "-c", code, str(result)])
+    try:
+        import time
+
+        deadline = time.monotonic() + 3
+        while not result.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert result.exists()
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(result.read_text())
+    finally:
+        terminate_owned_process(process, timeout_seconds=1)
+        process.wait(timeout=0)
+    published = tmp_path / "atomic.json"
+    temporary = published.with_suffix(".tmp")
+    temporary.write_text('{"complete":')
+    assert not published.exists()
+    assert _completed_web_policy_result(published, "pending", "this-run") is None
+    temporary.write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "scenario": "pending",
+                "nonce": "this-run",
+                "saved": 0,
+                "blocked": "enterprise policy is unavailable",
+            }
+        )
+    )
+    temporary.replace(published)
+    assert _completed_web_policy_result(published, "pending", "this-run")["saved"] == 0
+
+
+def test_zero_exit_and_complete_record_observed_after_deadline_still_fail(tmp_path, monkeypatch):
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "scenario": "pending",
+                "nonce": "this-run",
+                "saved": 0,
+                "blocked": "unavailable",
+            }
+        )
+    )
+
+    class ExitedChild:
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout):
+            assert timeout == 0
+            return 0
+
+    clock = iter((0, 0, 2, 3))
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: ExitedChild())
+    monkeypatch.setitem(
+        _run_web_policy_harness.__globals__,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(clock), sleep=lambda _: None),
+    )
+    with pytest.raises(TimeoutError, match="complete_result=True"):
+        _run_web_policy_harness(
+            ["harmless-placeholder"], result_path, "pending", "this-run", timeout=1
+        )
+    report = json.loads(result_path.with_suffix(".runner.json").read_text())
+    assert report["timed_out"] and report["complete_result"] and report["child_reaped"]
+    assert report["observed_returncode"] == 0
+
+
+def test_unreadable_progress_preserves_timeout_and_owned_cleanup(tmp_path, monkeypatch):
+    result_path = tmp_path / "result.json"
+    progress_path = result_path.with_suffix(".progress.json")
+    progress_path.write_text("[]")
+    real_read_text = Path.read_text
+
+    def unreadable_progress(path, *args, **kwargs):
+        if path == progress_path:
+            raise PermissionError("harmless simulated sharing conflict")
+        return real_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", unreadable_progress)
+    with pytest.raises(TimeoutError, match="child_reaped=True"):
+        _run_web_policy_harness(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            result_path,
+            "pending",
+            "this-run",
+            timeout=0.1,
+        )
+    report = json.loads(result_path.with_suffix(".runner.json").read_text())
+    assert report["failure_type"] == "TimeoutError"
+    assert report["milestone_error_type"] == "PermissionError"
+    assert report["milestones"] == []
+    assert report["child_reaped"] is True
+
+
+def test_valid_zero_exit_completion_still_fails_when_reaping_is_unconfirmed(tmp_path, monkeypatch):
+    result_path = tmp_path / "result.json"
+    result_path.write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "scenario": "pending",
+                "nonce": "this-run",
+                "saved": 0,
+                "blocked": "unavailable",
+            }
+        )
+    )
+
+    class UnreapedChild:
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout):
+            assert timeout == 0
+            raise subprocess.TimeoutExpired("harmless-placeholder", timeout)
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: UnreapedChild())
+    with pytest.raises(subprocess.TimeoutExpired):
+        _run_web_policy_harness(
+            ["harmless-placeholder"], result_path, "pending", "this-run", timeout=1
+        )
+    report = json.loads(result_path.with_suffix(".runner.json").read_text())
+    assert report["observed_returncode"] == 0 and report["complete_result"] is True
+    assert report["cleanup_failure_type"] == "TimeoutExpired"
+    assert report["child_reaped"] is False
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
 @pytest.mark.parametrize(
     ("scenario", "expected_saved", "expected_blocked"),
@@ -867,10 +1209,20 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
     harness = r"""
 const fs = require('node:fs');
 const path = require('node:path');
-// Use file arguments for both source and result. Python 3.15 on Windows can
-// leave a Node process handle blocked even after it has produced the result.
+// Keep source, completion and progress separate so the parent can diagnose
+// where execution stopped without accepting an unobserved completion.
 const scenario = process.argv[2];
 const outputPath = process.argv[3];
+const nonce = process.argv[4];
+const progressPath = process.argv[5];
+const marks = [];
+function milestone(stage) {
+  marks.push({stage, at: Date.now()});
+  const temp = progressPath + '.tmp';
+  fs.writeFileSync(temp, JSON.stringify(marks));
+  fs.renameSync(temp, progressPath);
+}
+milestone('harness-start');
 const windowsPendingFallback = process.platform === 'win32' && scenario === 'pending';
 const records = new Map();
 const listeners = {};
@@ -958,22 +1310,31 @@ if (scenario === 'pending') {
   fetchResult = Promise.resolve({ok: true, json: async () => body});
   globalThis.fetch = () => fetchResult;
 }
+milestone('require-enter');
 require(path.resolve(process.argv[1]));
+milestone('require-return');
 const finish = () => {
+  milestone('submit-enter');
   listeners.submit({preventDefault: () => {}});
+  milestone('submit-return');
   const saved = JSON.parse(
     records.get('remote-ops-workspace-demo-profiles') || '[]',
   );
   const output = JSON.stringify({
+    complete: true, scenario, nonce,
     saved: saved.length,
     blocked: harnessForm.dataset.enterprisePolicyBlocked || '',
   });
-  fs.writeFileSync(outputPath, output);
+  milestone('result-write-enter');
+  fs.writeFileSync(outputPath + '.tmp', output);
+  fs.renameSync(outputPath + '.tmp', outputPath);
+  milestone('result-published');
+  milestone('exit-call');
   process.exit(0);
 };
 // The pending case intentionally submits before policy loading completes, so
-// finish it synchronously. This avoids making Python 3.15 wait on a Windows
-// event-loop turn after the result is already available.
+// finish it synchronously. All other scenarios allow policy-loading promises
+// to settle before submitting.
 if (scenario === 'pending') {
   finish();
 } else {
@@ -981,6 +1342,7 @@ if (scenario === 'pending') {
 }
     """
     output_path = tmp_path / f"web-policy-{scenario}.json"
+    nonce = secrets.token_hex(16)
     command = [
         node,
         "-e",
@@ -988,43 +1350,12 @@ if (scenario === 'pending') {
         str(Path("apps/web/app.js")),
         scenario,
         str(output_path),
+        nonce,
+        str(output_path.with_suffix(".progress.json")),
     ]
-    if os.name == "nt":
-        process_timeout = 30
-        # Hosted Windows Python can wait on a Node process handle after the
-        # harness has already written its result (the VM can retain a
-        # cross-realm promise/thenable). Observe the result file instead,
-        # then terminate only that already-complete helper so the test remains
-        # bounded without masking real failures.
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        deadline = time.monotonic() + process_timeout
-        while not output_path.exists():
-            returncode = process.poll()
-            if returncode is not None:
-                raise subprocess.CalledProcessError(returncode, command)
-            if time.monotonic() >= deadline:
-                process.kill()
-                process.wait(timeout=5)
-                raise subprocess.TimeoutExpired(command, process_timeout)
-            time.sleep(0.01)
-        if process.poll() is None:
-            process.kill()
-            process.wait(timeout=5)
-        elif process.returncode:
-            raise subprocess.CalledProcessError(process.returncode, command)
-    else:
-        subprocess.run(
-            command,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-        )
-    result = json.loads(output_path.read_text(encoding="utf-8"))
+    result = _run_web_policy_harness(
+        command, output_path, scenario, nonce, timeout=30 if os.name == "nt" else 10
+    )
     assert result["saved"] == expected_saved
     assert expected_blocked in result["blocked"]
 

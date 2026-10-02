@@ -219,7 +219,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="RemoteOpsWorkspaceIcon" SourceFile="$IconSource" />
     <Property Id="ARPPRODUCTICON" Value="RemoteOpsWorkspaceIcon" />
-    <StandardDirectory Id="ProgramFilesFolder">
+    <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="Remote Ops Workspace">
         <Directory Id="BINDIR" Name="bin">
           <Component Id="RowExeComponent" Guid="7689D62F-2557-4DD3-8C58-38C5E245E44C">
@@ -273,6 +273,9 @@ $RowGuiFile
 "@ | Set-Content -Encoding UTF8 $Wxs
 
   & $Wix.Source build $Wxs -arch $WixArch -o $Msi
+  if ($LASTEXITCODE -ne 0) {
+    throw "WiX MSI build failed with exit code $LASTEXITCODE"
+  }
   if (!(Test-Path $Msi)) {
     throw "WiX did not create $Msi"
   }
@@ -357,6 +360,10 @@ raise SystemExit(main())
 "@ | Set-Content -Encoding UTF8 $GuiLauncher
 }
 
+$ServerImports = if ($Arch -ne "x86") {
+  @("--collect-submodules", "pyftpdlib", "--collect-submodules", "OpenSSL", "--hidden-import", "asyncore", "--hidden-import", "asynchat")
+} else { @() }
+
 & $Python -m PyInstaller `
   --clean `
   --noconfirm `
@@ -372,6 +379,7 @@ raise SystemExit(main())
   --add-data "$Root\configs;remote_ops_workspace/configs" `
   --add-data "$Root\apps\web;remote_ops_workspace/web" `
   --copy-metadata remote-ops-workspace `
+  @ServerImports `
   --exclude-module PyQt6 `
   --exclude-module remote_ops_workspace.gui `
   --exclude-module remote_ops_workspace.gui_designs `
@@ -396,6 +404,7 @@ if ($BuildGuiLauncher) {
     --add-data "$Root\configs;remote_ops_workspace/configs" `
     --add-data "$Root\apps\web;remote_ops_workspace/web" `
     --copy-metadata remote-ops-workspace `
+    @ServerImports `
     --hidden-import PyQt6.QtCore `
     --hidden-import PyQt6.QtGui `
     --hidden-import PyQt6.QtWidgets `

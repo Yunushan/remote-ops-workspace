@@ -1,0 +1,38 @@
+{
+  "assets": [
+    {
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-linux-amd64.deb",
+      "digest": "sha256:d64ef85359085440798b86515c4751e73ef2633a3cd761f93b6d168d4a8456af",
+      "id": 544041417,
+      "name": "remote-ops-workspace-v1.0.24-linux-amd64.deb",
+      "size": 27817068
+    },
+    {
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-linux-x86_64-native-manifest.json",
+      "digest": "sha256:06e92c851821df92206ca6236894babc96282e113ada03595c289663922008f5",
+      "id": 544041401,
+      "name": "remote-ops-workspace-v1.0.24-linux-x86_64-native-manifest.json",
+      "size": 2533
+    },
+    {
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-linux-x86_64-native-SHA256SUMS.txt",
+      "digest": "sha256:54abddbf16b774dba6f8935f99dcae364af231c75a0f5e4466e4e54628f0ab69",
+      "id": 544041409,
+      "name": "remote-ops-workspace-v1.0.24-linux-x86_64-native-SHA256SUMS.txt",
+      "size": 591
+    },
+    {
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote_ops_workspace-1.0.24-py3-none-any.whl",
+      "digest": "sha256:9fe56c3b4f09365cdc7a21249a41b9b60d5944f2ce0f596f9b45443184db585e",
+      "id": 544041398,
+      "name": "remote_ops_workspace-1.0.24-py3-none-any.whl",
+      "size": 542385
+    }
+  ],
+  "published_at": "2026-09-04T08:39:52Z",
+  "release_id": 382583184,
+  "repository": "Yunushan/remote-ops-workspace",
+  "schema": "row.previous-native-release-pins.v1",
+  "tag": "v1.0.24",
+  "tag_commit": "2165989ca9f3ffbd59a8f27a296cda3fb295a404"
+}

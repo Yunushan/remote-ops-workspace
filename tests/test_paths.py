@@ -42,6 +42,21 @@ def test_data_dir_honors_portable_home(tmp_path, monkeypatch) -> None:
     assert paths.data_dir() == portable.resolve()
 
 
+@pytest.mark.parametrize("configured", [True, False])
+def test_windows_data_dir_uses_appdata_or_roaming_fallback(tmp_path, monkeypatch, configured) -> None:
+    monkeypatch.delenv("ROW_HOME", raising=False)
+    monkeypatch.setattr(paths.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(paths.Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    if configured:
+        monkeypatch.setenv("APPDATA", str(tmp_path / "configured-roaming"))
+        expected_base = tmp_path / "configured-roaming"
+    else:
+        monkeypatch.delenv("APPDATA", raising=False)
+        expected_base = tmp_path / "home" / "AppData" / "Roaming"
+
+    assert paths.data_dir() == expected_base / paths.APP_TITLE
+
+
 def test_runtime_paths_use_packaged_resources(tmp_path, monkeypatch) -> None:
     repository = tmp_path / "repository"
     package = tmp_path / "package"

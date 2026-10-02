@@ -241,6 +241,12 @@ def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
     assert "pane = TerminalPane(plan, profile=profile)" in source
     assert "widget.plan,\n                    profile=widget.profile," in source
     assert "self.open_terminal_tab(\n                        plan,\n                        profile=profile," in source
+    dialog_source = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "remote_ops_workspace"
+        / "gui_dialogs.py"
+    ).read_text(encoding="utf-8")
     for required in (
         "allow_insecure_sshv1=true",
         "legacy_target=windows-xp-32",
@@ -248,7 +254,7 @@ def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
         "allow_legacy_crypto=true",
         "isolated legacy systems",
     ):
-        assert required in source
+        assert required in dialog_source
 
 
 def test_gui_state_transitions_preserve_stable_identity_contracts() -> None:

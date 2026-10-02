@@ -1,8 +1,8 @@
 # Full Feature Coverage Manifest
 
-Remote Ops Workspace targets **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed product workflow parity** for the requested product feature families.
+Remote Ops Workspace targets **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% implementation-backed workflow coverage** for the requested product feature families.
 
-The project publishes separate generated scores from `configs/feature_manifest.json`. Feature-family mapping answers whether each public feature family is represented by built-in code, external-client adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key remains for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. Platform verified readiness is separate from feature coverage so verified native release targets, verified mobile Web/PWA contracts and extended compatibility rows do not get blended into one misleading product score.
+The project publishes generated implementation inventories from `configs/feature_manifest.json`. Mapping records built-in code, external-client adapters, optional implementations, CLI/GUI workflows, platform scripts and extension points. The legacy `production_parity_coverage` key measures implementation-backed workflow coverage from status and repository references. This is not a proprietary native clone claim. Execution of a shipped release, host compatibility, artifact trust and recovery require separate production evidence. The report explicitly keeps `runtime_verified: false` and `production_readiness_percent: null` for catalog-derived metrics.
 
 MobaXterm Home/Professional parity is tracked more strictly in
 [`MOBAXTERM_PARITY.md`](MOBAXTERM_PARITY.md). That ledger lists remaining
@@ -15,7 +15,7 @@ claim.
 
 ## Current coverage score
 
-| Product target | Feature-family mapping | Adapter-ready coverage | Release-backed workflow parity | Workflow gap to 100% | Feature families tracked |
+| Product target | Feature-family mapping | Adapter-ready coverage | Implementation-backed workflow coverage | Workflow gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
 | MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 50 |
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
@@ -47,9 +47,9 @@ claim.
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
 | **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **70** |
 
-## Platform verified readiness
+## Platform build contract coverage
 
-| Target | Platform | Channel | Verified readiness | Gap to 100% | Status |
+| Target | Platform | Channel | Build contract coverage | Gap to 100% | Status |
 |---|---|---|---:|---:|---|
 | windows-x86 | Windows x86 | default-native | 100.0% | 0.0% | verified-default-native |
 | windows-x64 | Windows x64 | default-native | 100.0% | 0.0% | verified-default-native |
@@ -220,7 +220,7 @@ Adapter-ready coverage weights:
 | manifest-seam | 0.15 |
 | script-seam | 0.15 |
 
-Release-backed workflow parity weights:
+Implementation-backed workflow coverage weights:
 
 | Status | Weight |
 |---|---:|
@@ -240,7 +240,7 @@ Release-backed workflow parity weights:
 
 Every feature record also exposes generated evidence in `row features --coverage --json`, including feature id, status, implementation kind, product mapping and manifest extension point. `scripts/check_feature_reality.py` separately verifies implemented feature families against executable evidence such as CLI parser command paths, launch-plan builders, implementation symbols and shipped PWA/Termux files.
 
-## Release-backed workflow evidence
+## Implementation-backed workflow inventory
 
 `row features --coverage --json` includes `workflow_parity_contract` and
 `workflow_parity_evidence`. The evidence ledger has one row for `Overall` and
@@ -249,7 +249,9 @@ one row for each product target. Each row lists:
 - `product`, `coverage_percent`, `gap_percent` and `feature_count`;
 - `feature_ids`, the exact feature-family IDs used by that product score;
 - `feature_evidence`, with `id`, `status`, `implementation_kind`,
-  `extension_point`, `status_weight`, `release_backed` and `evidence_refs`;
+  `extension_point`, `status_weight`, `implementation_backed`, `release_backed` and `evidence_refs`;
+- `runtime_verified: false` and `release_backed: false`, because catalog metadata
+  does not record successful execution of an exact shipped artifact;
 - `native_clone_claimed: false`, because the score is not a proprietary native
   clone claim or embedded protocol-engine parity claim.
 
@@ -257,11 +259,12 @@ one row for each product target. Each row lists:
 that evidence, has partial mapped features, uses blanket overrides, or blends
 platform readiness into product feature coverage.
 
-Adapter-ready coverage and release-backed product workflow parity use the
+Adapter-ready coverage and implementation-backed workflow coverage use the
 manifest status weights directly and do not use blanket per-product overrides.
 Seam-only and docs-only rows remain partial, while implemented adapter,
 optional, CLI, GUI, shell and combined workflows count as workflow parity when
-they are tied to executable release evidence.
+they are tied to repository implementation references. Production release
+execution is verified by the separate evidence gate.
 
 ## Product feature family mapping
 
@@ -344,9 +347,9 @@ The current v1.0.27 repo is an adapter-first foundation, not a proprietary clone
 
 For each requested product target, the repository maps every tracked public
 feature family and the implemented rows now score as adapter-ready under the
-adapter-first readiness contract. Release-backed product workflow parity is also
-100% for the tracked workflows because every mapped row is tied to implemented
+implementation-inventory contract. Implementation-backed workflow coverage is
+100% for the tracked workflows because every mapped row references implemented
 code, tested launch-plan builders, shipped platform scripts, GUI/CLI workflows
-or explicit plugin boundaries. Platform verified readiness remains separate
-because manual native builders and legacy Windows remote-target tiers are
-extended compatibility rows, not verified release targets.
+or explicit plugin boundaries. Platform build contract coverage remains separate.
+Catalog percentages do not establish runtime production readiness; exact host,
+artifact, trust and recovery evidence is assessed by the production gate.

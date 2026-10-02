@@ -32,7 +32,7 @@
           "artifact_glob": "remote-ops-workspace-v*-windows-*-setup.exe",
           "lifecycle": {
             "install": "Inno Setup silent install into build/native-smoke/windows-<arch>/exe-install",
-            "verify": "installed bin/row.exe --version and platforms --json consume the packaged platform catalog; bin/row-gui.exe exists on x64/ARM64",
+            "verify": "installed bin/row.exe --version and platforms --json consume the packaged platform catalog; x64/ARM64 bin/row-gui.exe proves bounded frozen Windows GUI startup, persisted profile selection and painted screenshot digest",
             "upgrade": "rerun the same setup.exe silently over the installed copy, then rerun bin/row.exe --version and platforms --json",
             "uninstall": "run generated unins*.exe silently and verify row.exe and row-gui.exe are removed"
           }
@@ -42,7 +42,7 @@
           "artifact_glob": "remote-ops-workspace-v*-windows-*.msi",
           "lifecycle": {
             "install": "msiexec /i <artifact> /qn /norestart",
-            "verify": "installed Program Files row.exe --version and platforms --json consume the packaged platform catalog; row-gui.exe exists on x64/ARM64",
+            "verify": "installed Program Files row.exe --version and platforms --json consume the packaged platform catalog; x64/ARM64 row-gui.exe proves bounded frozen Windows GUI startup, persisted profile selection and painted screenshot digest",
             "upgrade": "msiexec /i <artifact> /qn /norestart over the installed product, then rerun row.exe --version and platforms --json",
             "uninstall": "msiexec /x <artifact> /qn /norestart and verify row.exe and row-gui.exe are removed"
           }
@@ -59,7 +59,7 @@
           "artifact_glob": "remote-ops-workspace-v*-macos-*.dmg",
           "lifecycle": {
             "install": "hdiutil attach read-only DMG and copy Remote Ops Workspace.app into a smoke Applications directory",
-            "verify": "codesign --verify --deep --strict on the copied app bundle and run its executable with platforms --json to consume the packaged platform catalog",
+            "verify": "codesign --verify --deep --strict on the copied app bundle, platforms --json consumes the packaged catalog, and gui --smoke-json proves bounded frozen Cocoa GUI startup, persisted profile selection and painted screenshot digest",
             "upgrade": "replace the copied app bundle from the mounted DMG, reverify its signature, and rerun its executable with platforms --json",
             "uninstall": "remove the copied app bundle and detach the DMG"
           }
@@ -69,7 +69,7 @@
           "artifact_glob": "remote-ops-workspace-v*-macos-*.pkg",
           "lifecycle": {
             "install": "sudo installer -pkg <artifact> -target /",
-            "verify": "installed /Applications/Remote Ops Workspace.app exists, passes codesign verification, and its executable runs platforms --json against the packaged platform catalog",
+            "verify": "installed /Applications/Remote Ops Workspace.app passes codesign verification, platforms --json consumes the packaged catalog, and gui --smoke-json proves bounded frozen Cocoa GUI startup, persisted profile selection and painted screenshot digest",
             "upgrade": "sudo installer -pkg <artifact> -target / over the installed package, reverify its signature, and rerun its executable with platforms --json",
             "uninstall": "remove /Applications/Remote Ops Workspace.app and forget the package receipt"
           }

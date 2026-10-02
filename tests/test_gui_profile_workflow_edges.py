@@ -8,13 +8,6 @@ from remote_ops_workspace.models import Profile
 from remote_ops_workspace.profile_importers import ProfileImportResult
 
 
-def _set_closure_value(monkeypatch, function, name: str, value) -> None:
-    index = function.__code__.co_freevars.index(name)
-    closure = function.__closure__
-    assert closure is not None
-    monkeypatch.setattr(closure[index], "cell_contents", value)
-
-
 @pytest.fixture
 def gui_window(monkeypatch, tmp_path):
     if "QT_QPA_PLATFORM" not in os.environ:
@@ -127,17 +120,12 @@ def test_profile_dialog_preserves_protocol_missing_from_current_registry(gui_win
     from PyQt6.QtWidgets import QComboBox
 
     _app, window = gui_window
-    create_profile = type(window).create_profile
-    index = create_profile.__code__.co_freevars.index("ProfileDialog")
-    closure = create_profile.__closure__
-    assert closure is not None
-    dialog_type = closure[index].cell_contents
     profile = Profile(
         name="retired-plugin-profile",
         protocol="retired-plugin-protocol",
         host="retired-plugin.example.invalid",
     )
-    dialog = dialog_type(profile, window)
+    dialog = window.create_profile_dialog(profile)
     protocol = dialog.fields["protocol"]
     assert isinstance(protocol, QComboBox)
     assert protocol.currentText() == "retired-plugin-protocol"
@@ -190,12 +178,7 @@ def test_profile_create_edit_remove_and_import_workflow_edges(
     def dialog_factory(*_args, **_kwargs):
         return dialog_queue.pop(0)
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).create_profile,
-        "ProfileDialog",
-        dialog_factory,
-    )
+    monkeypatch.setattr(window, "create_profile_dialog", dialog_factory)
 
     class _Store:
         def __init__(self) -> None:
@@ -210,6 +193,16 @@ def test_profile_create_edit_remove_and_import_workflow_edges(
             if self.fail_next_add:
                 self.fail_next_add = False
                 raise ValueError("duplicate profile")
+
+        def add_many(self, profiles, **_kwargs):
+            accepted = []
+            for profile in profiles:
+                try:
+                    self.add(profile)
+                except ValueError:
+                    continue
+                accepted.append(profile)
+            return accepted
 
         def get(self, _name: str):
             if isinstance(self.get_value, Exception):
@@ -248,18 +241,13 @@ def test_profile_create_edit_remove_and_import_workflow_edges(
         ]
     )
 
-    def fake_message_box(_parent, _icon, title, text, **_kwargs):
+    def fake_message_box(_icon, title, text, **_kwargs):
         messages.append(str(text))
         if title == "Remove profile":
             return next(remove_answers)
         return QMessageBox.StandardButton.Ok
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).edit_selected_profile,
-        "_literal_message_box",
-        fake_message_box,
-    )
+    monkeypatch.setattr(window, "show_message", fake_message_box)
     monkeypatch.setattr(window, "selected_profile_name", lambda: None)
     window.edit_selected_profile()
     assert "Select a profile first" in messages[-1]
@@ -316,12 +304,7 @@ def test_profile_create_edit_remove_and_import_workflow_edges(
         def exec(self):
             return next(import_dialog_results)
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).import_profiles_with_preview,
-        "ProfileImportPreviewDialog",
-        _ImportDialog,
-    )
+    monkeypatch.setattr(window, "create_profile_import_preview_dialog", _ImportDialog)
     file_responses = iter(
         [
             ("", ""),
@@ -435,17 +418,12 @@ def test_profile_save_order_duplicates_and_import_warning_dialog_edges(
 
 def test_profile_dialog_can_materialize_unsubmitted_editor_data(gui_window) -> None:
     _app, window = gui_window
-    create_profile = type(window).create_profile
-    index = create_profile.__code__.co_freevars.index("ProfileDialog")
-    closure = create_profile.__closure__
-    assert closure is not None
-    dialog_type = closure[index].cell_contents
     profile = Profile(
         name="editor-materialized",
         protocol="ssh",
         host="editor-materialized.example.invalid",
     )
-    dialog = dialog_type(profile, window)
+    dialog = window.create_profile_dialog(profile)
 
     materialized = dialog.profile()
 

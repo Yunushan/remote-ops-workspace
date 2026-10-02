@@ -35,7 +35,9 @@ def test_moba_x_server_plan_discovers_windows_runtime_and_extensions() -> None:
     assert plan.command[:2] == ["C:/Tools/vcxsrv.exe", ":7"]
     assert "-multiwindow" in plan.command
     assert "-clipboard" in plan.command
-    assert plan.environment == {"DISPLAY": ":7"}
+    assert plan.environment["DISPLAY"] == ":7"
+    assert plan.command[-4:] == ["-auth", plan.environment["XAUTHORITY"], "-listen", "tcp"]
+    assert "-ac" not in plan.command
     assert plan.display_in_use is False
     assert {"glx", "randr", "composite", "xdmcp"}.issubset(
         {extension.key for extension in plan.extensions}
@@ -148,6 +150,7 @@ def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path) -> None:
         plan,
         state_path=state_path,
         popen_factory=lambda command, env: _FakeProcess(pid=4242),
+        identity_factory=lambda process: {"pid": process.pid, "kind": "test"},
     )
     loaded = load_moba_x_server_record(state_path=state_path, pid_probe=lambda pid: pid == 4242)
     terminated: list[int] = []
@@ -163,6 +166,7 @@ def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path) -> None:
     assert loaded.running is True
     assert stopped.state == "stopped"
     assert stopped.running is False
+    assert stopped.pid is None
     assert terminated == [4242]
 
 
@@ -193,6 +197,7 @@ def test_moba_x_server_status_includes_lifecycle_record(tmp_path) -> None:
         plan,
         state_path=state_path,
         popen_factory=lambda command, env: _FakeProcess(pid=5252),
+        identity_factory=lambda process: {"pid": process.pid, "kind": "test"},
     )
     status = build_moba_x_server_status(
         display=":12",
@@ -367,6 +372,9 @@ def test_moba_x_server_release_evidence_rejects_host_only_runtime(tmp_path: Path
 class _FakeProcess:
     def __init__(self, pid: int) -> None:
         self.pid = pid
+
+    def poll(self):
+        return None
 
 
 class _FakeCompletedProcess:

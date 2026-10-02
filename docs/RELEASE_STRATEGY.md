@@ -541,8 +541,8 @@ published bytes and reviewer provenance are accepted in the registry.
 
 ## Native installer smoke tests
 
-Every default native installer format has an install, verify, upgrade and
-uninstall smoke path before upload. Each verify and upgrade phase also runs an
+Every default native installer format has an install, verify, same-version
+reinstall and uninstall smoke path before upload. Each verify and reinstall phase also runs an
 installed-artifact runtime-resource probe: the artifact's own entrypoint must
 execute `platforms --json`, return valid JSON, and load non-empty
 `release_architectures` and `windows_legacy_targets` arrays from the packaged
@@ -550,6 +550,13 @@ execute `platforms --json`, return valid JSON, and load non-empty
 but omit or misplace its bundled runtime configuration. The macOS app launcher
 defaults to `gui` when opened normally and forwards explicitly supplied CLI
 arguments, including this bounded installed-artifact probe:
+
+These reinstall paths do not establish migration or rollback from a previous
+native release. The separate [native candidate workflow](native-candidate-validation.md)
+retains exact candidate identity and runtime evidence. Full Windows installer
+smoke requires a disposable GitHub-hosted runner, refuses existing installations,
+and checks executable bytes and cleanup paths before use. Failure or timeout
+does not prove successful uninstall; the hosted runner is discarded.
 
 - Windows `.exe`: silent Inno Setup install into a smoke directory, `row.exe
   --version`, `row.exe platforms --json`, `row-gui.exe` presence on x64/ARM64,
@@ -650,7 +657,7 @@ Implementation:
   uninstall the native portable `.zip`, `.exe` and `.msi` artifacts before
   upload, including `Remote Ops Workspace GUI.exe` in portable zips and
   `row-gui.exe` presence on GUI-capable Windows architectures.
-- Pins the Windows installer toolchain in CI: Inno Setup `6.3.3` and WiX
+- Pins and probes the Windows installer toolchain in CI: Inno Setup `6.7.1` and WiX
   `5.0.2`.
 - The signed production path requires Authenticode credentials. Without them,
   a tag-triggered release is withheld before publication. Manual runs of

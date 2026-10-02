@@ -72,6 +72,16 @@ done
 rm -rf "$SMOKE_ROOT"
 mkdir -p "$MOUNT_DIR" "$DMG_APP_DIR"
 
+BINDING_TARGET="macos-${ARCH}"
+BINDING_REPORT="$SMOKE_ROOT/candidate-runtime-byte-binding.json"
+python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" --root "$ROOT"
+
+candidate_check_app() {
+  local executable="$1" public_path="$2" phase="$3" probe="$4"
+  python3 scripts/candidate_posix_byte_binding.py check --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+    --path "$executable" --public-path "$public_path" --stage "$phase" --probe "$probe"
+}
+
 cleanup() {
   hdiutil detach "$MOUNT_DIR" -quiet >/dev/null 2>&1 || true
 }
@@ -80,6 +90,7 @@ trap cleanup EXIT
 verify_app_runtime_resources() {
   local app_path="$1"
   local label="$2"
+  local public_path="$3" phase="$4"
   local executable="$app_path/Contents/MacOS/$APP_EXECUTABLE_NAME"
   local probe_name
   local probe_file
@@ -89,6 +100,7 @@ verify_app_runtime_resources() {
     echo "$label installed app executable missing: $executable" >&2
     exit 1
   fi
+  candidate_check_app "$executable" "$public_path" "$phase" platforms || return $?
   if ! "$executable" platforms --json >"$probe_file"; then
     echo "$label platforms --json failed for $executable" >&2
     exit 1
@@ -117,6 +129,8 @@ PY
 verify_app_gui() {
   local app_path="$1"
   local label="$2"
+  local public_path="$3" phase="$4"
+  candidate_check_app "$app_path/Contents/MacOS/$APP_EXECUTABLE_NAME" "$public_path" "$phase" gui || return $?
   python3 - "$app_path/Contents/MacOS/$APP_EXECUTABLE_NAME" "$SMOKE_ROOT" "$VERSION" "$label" <<'PY'
 import hashlib
 import json
@@ -153,14 +167,14 @@ ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 
 echo "native installer smoke: DMG verify"
 codesign --verify --deep --strict "$DMG_APP"
-verify_app_runtime_resources "$DMG_APP" "DMG verify"
-verify_app_gui "$DMG_APP" "DMG verify"
+verify_app_runtime_resources "$DMG_APP" "DMG verify" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
+verify_app_gui "$DMG_APP" "DMG verify" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
 
 echo "native installer smoke: DMG upgrade"
 rm -rf "$DMG_APP"
 ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 codesign --verify --deep --strict "$DMG_APP"
-verify_app_runtime_resources "$DMG_APP" "DMG upgrade"
+verify_app_runtime_resources "$DMG_APP" "DMG upgrade" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall
 
 echo "native installer smoke: DMG uninstall"
 rm -rf "$DMG_APP"
@@ -180,8 +194,8 @@ fi
 
 echo "native installer smoke: PKG verify"
 codesign --verify --deep --strict "$PKG_APP"
-verify_app_runtime_resources "$PKG_APP" "PKG verify"
-verify_app_gui "$PKG_APP" "PKG verify"
+verify_app_runtime_resources "$PKG_APP" "PKG verify" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
+verify_app_gui "$PKG_APP" "PKG verify" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
 
 echo "native installer smoke: PKG upgrade"
 sudo installer -pkg "$PKG" -target /
@@ -190,7 +204,7 @@ if [[ ! -d "$PKG_APP" ]]; then
   exit 1
 fi
 codesign --verify --deep --strict "$PKG_APP"
-verify_app_runtime_resources "$PKG_APP" "PKG upgrade"
+verify_app_runtime_resources "$PKG_APP" "PKG upgrade" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall
 
 echo "native installer smoke: PKG uninstall"
 sudo rm -rf "$PKG_APP"
@@ -200,4 +214,5 @@ if [[ -e "$PKG_APP" ]]; then
   exit 1
 fi
 
+python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT"
 echo "native installer smoke passed for macOS $ARCH"

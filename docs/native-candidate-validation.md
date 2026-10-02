@@ -27,8 +27,23 @@ commit. The broad scope uses hosted Windows, macOS and Linux runners.
 Candidate artifacts include source fingerprints, realized Python distributions,
 native package hashes, PyInstaller archive inventories and native smoke results.
 Windows smoke compares executable bytes in portable, EXE and MSI locations to
-the inspected build outputs before launching them. Archive parsing is narrower
-than a complete external runtime inventory or an independent license approval.
+the inspected build outputs before launching them. Modern macOS smoke compares
+the executable in each DMG and PKG copy to the original signed app executable
+before its runtime and GUI probes. Modern Linux smoke compares installed DEB and
+RPM executables to the original PyInstaller executable before each probe.
+
+AppImage smoke checks the copied AppImage bytes before extraction, then checks
+the extracted executable and AppRun before invoking that same extracted AppRun.
+The launcher is also bound to its generated build source. The existing 32-bit
+Linux smoke keeps its separate runtime method and makes no new binding claim.
+`finish.json` requires the binding report for every modern target, including all
+required install and same-candidate reinstall probes. A successful smoke with
+missing or mismatched binding evidence fails validation.
+
+These are candidate-produced hashes taken immediately before launch. They do
+not protect against a hostile file replacement between checking and launching,
+or establish a complete external runtime inventory or independent license
+approval. Parsing the original PyInstaller archive has the same limits.
 
 Windows commands run hidden in an owned Job Object with bounded cleanup. A
 failed original GUI smoke remains failed when a separate console diagnostic is

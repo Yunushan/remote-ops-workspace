@@ -113,6 +113,74 @@ def validate_windows_byte_binding(report, archives, target):
             raise ValueError("candidate observed executable bytes do not match inspected PyInstaller archive")
 
 
+def validate_posix_byte_binding(report, archives, target, assets, launchers=()):
+    """Validate per-probe entrypoint hashes; external runtime files are excluded."""
+    import re
+
+    from candidate_posix_byte_binding import APPIMAGE_LAUNCHER, target_contract
+
+    outputs, paths, probes = target_contract(target)
+    if not isinstance(report, dict) or (
+        type(report.get("schema_version")) is not int or report["schema_version"] != 1
+        or report.get("target") != target or report.get("status") != "bound"
+        or report.get("smoke_complete") is not True
+        or set(report.get("required_paths", [])) != set(paths)
+        or {(row["path"], row["phase"], row["probe"]) for row in report.get("required_probes", [])} != probes
+    ):
+        raise ValueError("candidate POSIX executable binding report is incomplete or belongs to another target")
+    expected = report.get("expected_executables", [])
+    if len(expected) != len(outputs) or {row.get("role") for row in expected} != set(outputs):
+        raise ValueError("candidate POSIX expected build outputs are incomplete")
+    hashes = {}
+    for row in expected:
+        role = row["role"]
+        inspected = [item for item in archives if item.get("path", "").replace("\\", "/") == outputs[role]
+                     and "inventory_error" not in item and item.get("toc")]
+        if len(inspected) != 1 or row.get("path") != outputs[role] or row.get("sha256") != inspected[0].get("artifact_sha256"):
+            raise ValueError("candidate POSIX executable bytes differ from inspected original PyInstaller archive")
+        hashes[role] = row["sha256"]
+    observations = report.get("observations", [])
+    if {(row["path"], row["phase"], row["probe"]) for row in observations} != probes:
+        raise ValueError("candidate POSIX smoke did not bind every required probe")
+    for row in observations:
+        role = paths[row["path"]]
+        if row.get("role") != role or row.get("matched") is not True or row.get("expected_sha256") != hashes[role] or row.get("observed_sha256") != hashes[role]:
+            raise ValueError("candidate POSIX observed executable bytes do not match inspected original PyInstaller archive")
+    packages = report.get("expected_packages", [])
+    package_observations = report.get("package_observations", [])
+    if target.startswith("linux-"):
+        if len(packages) != 2 or {row.get("role") for row in packages} != {"appimage-runtime", "appimage-launcher"}:
+            raise ValueError("candidate AppImage build artifact or launcher binding is missing")
+        hashes = {}
+        for package in packages:
+            package_path = package.get("path", "")
+            if package["role"] == "appimage-launcher":
+                if package_path != APPIMAGE_LAUNCHER:
+                    raise ValueError("candidate AppImage launcher source path is not canonical")
+            elif (
+                not isinstance(package_path, str) or "\\" in package_path
+                or Path(package_path).is_absolute() or ".." in Path(package_path).parts
+                or not re.fullmatch(r"remote-ops-workspace-v[0-9]+\.[0-9]+\.[0-9]+-" + re.escape(target) + r"\.AppImage", Path(package_path).name)
+            ):
+                raise ValueError("candidate AppImage runtime source path belongs to another target")
+            source = assets if package["role"] == "appimage-runtime" else launchers
+            matching = [row for row in source if row.get("path", "").replace("\\", "/") == package.get("path")]
+            if len(matching) != 1 or matching[0].get("sha256") != package.get("sha256"):
+                raise ValueError("candidate AppImage runtime or launcher bytes differ from recorded build output")
+            hashes[package["role"]] = package["sha256"]
+        required_packages = {("appimage/runtime.AppImage", stage, "extract") for stage in ("install", "reinstall")}
+        required_packages.update({("appimage/AppRun", stage, probe) for stage in ("install", "reinstall") for probe in ("version", "platforms")})
+        if {(row["path"], row["phase"], row["probe"]) for row in package_observations} != required_packages:
+            raise ValueError("candidate AppImage runtime or launcher was not checked before every invocation")
+        for row in package_observations:
+            role = "appimage-runtime" if row["path"] == "appimage/runtime.AppImage" else "appimage-launcher"
+            if row.get("role") != role or row.get("matched") is not True or row.get("expected_sha256") != hashes[role] or row.get("observed_sha256") != hashes[role]:
+                raise ValueError("candidate observed AppImage runtime or launcher bytes differ from recorded build output")
+
+    elif packages or package_observations:
+        raise ValueError("unexpected package runtime binding for macOS")
+
+
 def main():
     parser = argparse.ArgumentParser(description=SCOPE)
     parser.add_argument("phase", choices=["bind", "finish"])
@@ -250,12 +318,22 @@ def main():
     )
     record["native_executable_byte_binding"] = {"status": "not-bound", "scope": "Executable bytes observed immediately before smoke launch, excludes adversarial races and external runtime closure"}
     binding_error = None
-    if args.target.startswith("windows-"):
+    record["native_packaged_launchers"] = []
+    if args.target in ("linux-x86_64", "linux-aarch64"):
+        launcher_path = ROOT / "build/native/linux/Remote_Ops_Workspace.AppDir/AppRun"
+        if launcher_path.is_file() and not launcher_path.is_symlink():
+            record["native_packaged_launchers"] = [{"path": launcher_path.relative_to(ROOT).as_posix(), "sha256": digest(launcher_path)}]
+    binding_supported = args.target.startswith("windows-") or args.target in ("macos-x64", "macos-arm64", "linux-x86_64", "linux-aarch64")
+    if binding_supported:
         binding_path = ROOT / "build/native-smoke" / args.target / "candidate-runtime-byte-binding.json"
         if binding_path.is_file():
             record["native_executable_byte_binding"].update(report_path=str(binding_path.relative_to(ROOT)).replace("\\", "/"), report_sha256=digest(binding_path))
             try:
-                validate_windows_byte_binding(json.loads(binding_path.read_text(encoding="utf-8")), archives, args.target)
+                binding_report = json.loads(binding_path.read_text(encoding="utf-8"))
+                if args.target.startswith("windows-"):
+                    validate_windows_byte_binding(binding_report, archives, args.target)
+                else:
+                    validate_posix_byte_binding(binding_report, archives, args.target, record["assets"], record["native_packaged_launchers"])
                 if args.native_smoke_outcome != "success":
                     raise ValueError("native smoke did not succeed")
                 record["native_executable_byte_binding"]["status"] = "bound"
@@ -294,7 +372,7 @@ def main():
         raise RuntimeError(
             "successful native build has missing or erroneous PyInstaller inventories"
         )
-    if args.target.startswith("windows-") and args.native_smoke_outcome == "success" and binding_error:
+    if binding_supported and args.native_smoke_outcome == "success" and binding_error:
         raise RuntimeError(binding_error)
     if not record["installed_project_sources_match_checkout"]:
         raise RuntimeError("installed project source bytes differ from candidate checkout")

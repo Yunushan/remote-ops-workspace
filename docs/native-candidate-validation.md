@@ -45,6 +45,14 @@ macOS and Linux failure cleanup has the same hosted-runner disposal boundary.
 
 The existing reinstall smoke repeats the same candidate. Genuine upgrade and
 rollback from a previous native release require a separate transition drill.
+The Windows x64 lane includes a guarded Inno drill using the pinned v1.0.24
+installer and portable executable bytes. It checks actual previous/candidate/
+previous CLI state and vault reads, encrypted full-state backup and recovery,
+and unchanged source/package bytes. Its dry regressions do not establish a
+successful native transition; read `native-upgrade-rollback.json` and its owned
+cleanup result from the actual runner. Only sanitized reports are uploaded.
+The private synthetic state and installer logs stay outside artifact paths.
+MSI, ARM, macOS and Linux previous-version transitions remain separate work.
 macOS uses ad-hoc signing here, without publisher identity or notarization.
 These checks do not establish Windows Smart App Control acceptance, independent
 redistribution approval, complete supported-host workflows, or production

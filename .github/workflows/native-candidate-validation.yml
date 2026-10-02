@@ -256,6 +256,20 @@ jobs:
           --target "windows-${{ matrix.arch }}"
           --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
           --asset-dir native-dist/windows
+      - name: Verify previous Windows native release upgrade and recovery
+        if: ${{ success() && matrix.arch == 'x64' }}
+        shell: powershell
+        timeout-minutes: 35
+        run: >-
+          python scripts/candidate_windows_owned.py --timeout 1800
+          --out build/candidate-proof/windows-x64/owned-recovery.json
+          -- python scripts/native_installer_recovery.py run
+          --allow-disposable-runner-install
+          --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --candidate-dir native-dist/windows
+          --candidate-evidence build/candidate-proof/windows-x64/finish.json
+          --previous-pins configs/native_previous_release_pins.json
+          --out build/candidate-proof/windows-x64/native-upgrade-rollback.json
       - name: Retain unreleased candidate proof and artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

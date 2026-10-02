@@ -36,7 +36,7 @@ def test_actual_wrong_bytes_are_refused_before_execution_with_public_path_receip
     )
     result = subprocess.run(
         [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-Command", commands],
-        env={**os.environ, "PSModulePath": str(Path(os.environ["WINDIR"]) / "System32/WindowsPowerShell/v1.0/Modules")},
+        env={**os.environ, "PSMODULEPATH": str(Path(os.environ["WINDIR"]) / "System32/WindowsPowerShell/v1.0/Modules")},
         capture_output=True, text=True, timeout=45, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
@@ -106,7 +106,7 @@ def test_full_native_entry_and_recursive_deletion_guards(tmp_path, case):
     commands = "$FixtureRoot=" + _ps_quote(tmp_path) + ";$Case=" + _ps_quote(case) + ";$SmokeSource=" + _ps_quote(ROOT / "scripts/smoke_windows_native.ps1") + "\n" + commands
     result = subprocess.run(
         [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-Command", commands],
-        env={**os.environ, "PSModulePath": str(Path(os.environ["WINDIR"]) / "System32/WindowsPowerShell/v1.0/Modules")},
+        env={**os.environ, "PSMODULEPATH": str(Path(os.environ["WINDIR"]) / "System32/WindowsPowerShell/v1.0/Modules")},
         capture_output=True, text=True, timeout=45, check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr

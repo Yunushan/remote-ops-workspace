@@ -173,12 +173,13 @@ def check_windows_gui_launcher() -> list[str]:
     required_cli_snippets = {
         "getattr(sys, \"frozen\", False)": "frozen executable detection",
         "Path(sys.executable).with_name(\"row-gui.exe\")": "sibling GUI launcher delegation",
-        "subprocess.run([str(gui_launcher)]": "row-gui.exe subprocess launch",
+        "command = [str(gui_launcher)]": "row-gui.exe subprocess argument preparation",
+        "subprocess.run(command, check=False)": "row-gui.exe subprocess launch",
     }
     for snippet, label in required_cli_snippets.items():
         if snippet not in cli:
             errors.append(f"src/remote_ops_workspace/cli.py missing Windows GUI delegation {label}: {snippet}")
-    if '".[desktop,security,package]"' not in workflow or "matrix.arch" not in workflow:
+    if '".[desktop,security,package,servers]"' not in workflow or "matrix.arch" not in workflow:
         errors.append("release workflow must install the desktop extra for Windows GUI-capable native builds")
     if "Test-RowGuiLauncher" not in smoke or "row-gui.exe" not in smoke:
         errors.append("scripts/smoke_windows_native.ps1 must verify the installed Windows GUI launcher")
@@ -188,7 +189,7 @@ def check_windows_gui_launcher() -> list[str]:
         errors.append("scripts/smoke_windows_native.ps1 must verify the top-level portable GUI alias")
     if "Run Windows native installer smoke tests" not in windows_job or "timeout-minutes: 20" not in windows_job:
         errors.append("release workflow must bound Windows native installer smoke with timeout-minutes")
-    if "row-gui.exe exists on x64/ARM64" not in smoke_contract:
+    if "row-gui.exe proves bounded frozen Windows GUI startup" not in smoke_contract:
         errors.append("configs/native_installer_smoke.json must document Windows GUI launcher verification")
     return errors
 

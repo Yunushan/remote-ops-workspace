@@ -120,7 +120,7 @@ from .moba_text import (
 )
 from .models import Profile, Tunnel
 from .network_tools import build_network_tool_plan, check_tcp_port, run_network_tool
-from .paths import ensure_data_dir
+from .paths import data_dir, ensure_data_dir
 from .platform_targets import load_platform_targets
 from .plugin_dev import (
     DEFAULT_PLUGIN_CHECK_HOST,
@@ -131,6 +131,7 @@ from .plugin_dev import (
     validate_installed_plugins,
 )
 from .plugins import load_plugin_registry
+from .process_status import ProcessStatusError
 from .profile_importers import SUPPORTED_IMPORT_FORMATS, import_profiles_into_store
 from .snippets import Snippet, SnippetStore, run_snippet
 from .storage import ProfileStore
@@ -157,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (KeyError, ValueError, FileExistsError, LauncherError, VaultError, VaultBackendUnavailable) as exc:
+    except (KeyError, ValueError, OSError, LauncherError, VaultError, VaultBackendUnavailable, ProcessStatusError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -965,9 +966,17 @@ def build_parser() -> argparse.ArgumentParser:
     servers_start.add_argument("--port", type=int)
     servers_start.add_argument("--root", type=Path)
     servers_start.add_argument("--allow-public-bind", action="store_true")
+    servers_start.add_argument("--require-tls", action="store_true")
+    servers_start.add_argument("--hardening-profile", default="loopback-private")
     servers_start.add_argument("--dry-run", action="store_true")
     servers_start.add_argument("--json", action="store_true")
     servers_start.set_defaults(func=cmd_servers_start)
+
+    ftp_runtime = servers_sub.add_parser("_ftp-runtime", help=argparse.SUPPRESS)
+    ftp_runtime.add_argument("--host", required=True)
+    ftp_runtime.add_argument("--port", required=True, type=int)
+    ftp_runtime.add_argument("--root", required=True, type=Path)
+    ftp_runtime.set_defaults(func=cmd_servers_ftp_runtime)
     servers_stop = servers_sub.add_parser("stop", help="stop a managed local server")
     servers_stop.add_argument("service", choices=list(SERVER_DEFAULT_PORTS))
     servers_stop.add_argument("--json", action="store_true")
@@ -977,6 +986,8 @@ def build_parser() -> argparse.ArgumentParser:
     x11_sub = x11.add_subparsers(required=True)
     x11_start = x11_sub.add_parser("start", help="start or inspect a local X server helper")
     x11_start.add_argument("--display", default=":0")
+    x11_start.add_argument("--allow-tcp", action="store_true")
+    x11_start.add_argument("--authority-file", type=Path)
     x11_start.add_argument("--dry-run", action="store_true")
     x11_start.add_argument("--json", action="store_true")
     x11_start.set_defaults(func=cmd_x11_start)
@@ -1058,6 +1069,20 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--out", required=True, type=Path)
     export.set_defaults(func=cmd_export)
 
+    workspace = sub.add_parser("workspace", help="encrypted offline backup and restore of full workspace state")
+    workspace_sub = workspace.add_subparsers(required=True)
+    workspace_backup = workspace_sub.add_parser("backup", help="snapshot ROW_HOME after closing all ROW processes")
+    workspace_backup.add_argument("--out", required=True, type=Path, help="encrypted backup path outside ROW_HOME")
+    workspace_backup.add_argument("--offline", required=True, action="store_true", help="confirm all other ROW processes and managed helpers are stopped")
+    workspace_backup.add_argument("--passphrase-env", metavar="ENV", help="read backup passphrase from this variable; otherwise prompt with confirmation")
+    workspace_backup.set_defaults(func=cmd_workspace_backup)
+    workspace_restore = workspace_sub.add_parser("restore", help="restore into a new sibling ROW_HOME, retaining the original")
+    workspace_restore.add_argument("--backup", required=True, type=Path)
+    workspace_restore.add_argument("--destination", required=True, type=Path, help="new sibling directory next to the current ROW_HOME")
+    workspace_restore.add_argument("--offline", required=True, action="store_true", help="confirm all other ROW processes and managed helpers are stopped")
+    workspace_restore.add_argument("--passphrase-env", metavar="ENV", help="read backup passphrase from this variable; otherwise prompt")
+    workspace_restore.set_defaults(func=cmd_workspace_restore)
+
     imp = sub.add_parser("import", help="import profiles bundle or external session export")
     imp.add_argument("--in", dest="input", required=True, type=Path)
     imp.add_argument(
@@ -1100,6 +1125,7 @@ def build_parser() -> argparse.ArgumentParser:
     team_pull.set_defaults(func=cmd_team_sync_pull)
 
     gui = sub.add_parser("gui", help="start PyQt6 desktop UI")
+    gui.add_argument("--smoke-json", type=Path, help="write a bounded packaged GUI smoke report")
     gui.set_defaults(func=cmd_gui)
 
     web = sub.add_parser("serve-web", help="serve static Web/PWA app")
@@ -1345,19 +1371,23 @@ def cmd_features(args: argparse.Namespace) -> int:
             f"({parity_overall['gap_percent']:.1f}% gap)"
         )
         print(
-            f"Platform verified readiness   : {platform_overall['current_percent']:.1f}% "
+            f"Platform build contract coverage: {platform_overall['current_percent']:.1f}% "
             f"({platform_overall['gap_percent']:.1f}% gap across "
-            f"{platform_overall['target_count']} verified targets; "
+            f"{platform_overall['target_count']} included build targets; "
             f"{platform_overall.get('extended_target_count', 0)} extended rows)"
         )
         denominator = platform.get("denominator", {})
         if denominator:
             print(
-                "Verified denominator        : "
+                "Build contract denominator    : "
                 f"{int(denominator.get('included_target_count', 0))} included, "
                 f"{int(denominator.get('excluded_target_count', 0))} extended excluded; "
                 f"protected goal source={denominator.get('protected_goal_score_source', 'unknown')}"
             )
+        print(
+            "Runtime verification          : not assessed by this catalog; "
+            "production readiness requires artifact, host, trust and recovery evidence"
+        )
         protected_goal = platform.get("protected_goal_parity", {})
         if protected_goal:
             missing_targets = [
@@ -1407,8 +1437,13 @@ def cmd_features(args: argparse.Namespace) -> int:
                 f"({row['feature_count']} families)"
             )
         if platform["targets"]:
-            print("\nPlatform readiness:")
+            print("\nPlatform build contracts:")
             target_width = max(len(row["target"]) for row in platform["targets"])
+            display_statuses = {
+                "verified-default-native": "declared-default-native",
+                "verified-termux-web-mobile": "declared-termux-web-mobile",
+                "verified-ios-web-pwa": "declared-ios-web-pwa",
+            }
             for row in platform["targets"]:
                 remote = ""
                 if row.get("remote_target_coverage_percent") is not None:
@@ -1425,7 +1460,8 @@ def cmd_features(args: argparse.Namespace) -> int:
                 provenance = _protected_platform_row_provenance_note(row)
                 print(
                     f"  {row['target']:<{target_width}} {row['current_percent']:>5.1f}% "
-                    f"{row['status']} ({row['channel']}){remote}{missing}{provenance}"
+                    f"{display_statuses.get(row['status'], row['status'])} "
+                    f"({row['channel']}){remote}{missing}{provenance}"
                 )
         return 0
     for row in feature_summary():
@@ -2769,6 +2805,8 @@ def cmd_servers_start(args: argparse.Namespace) -> int:
         port=args.port,
         root=args.root,
         allow_public_bind=args.allow_public_bind,
+        require_tls=getattr(args, "require_tls", False),
+        hardening_profile=getattr(args, "hardening_profile", "loopback-private"),
     )
     record = start_moba_server(plan, dry_run=args.dry_run)
     if args.json:
@@ -2783,6 +2821,12 @@ def cmd_servers_start(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_servers_ftp_runtime(args: argparse.Namespace) -> int:
+    from .embedded_ftp import main as ftp_main
+
+    return ftp_main(["--host", args.host, "--port", str(args.port), "--root", str(args.root)])
+
+
 def cmd_servers_stop(args: argparse.Namespace) -> int:
     record = stop_moba_server(args.service)
     if args.json:
@@ -2793,7 +2837,11 @@ def cmd_servers_stop(args: argparse.Namespace) -> int:
 
 
 def cmd_x11_start(args: argparse.Namespace) -> int:
-    managed_plan = build_moba_x_server_plan(display=args.display)
+    managed_plan = build_moba_x_server_plan(
+        display=args.display,
+        allow_tcp=getattr(args, "allow_tcp", False),
+        authority_path=getattr(args, "authority_file", None),
+    )
     record = start_moba_x_server(managed_plan, dry_run=args.dry_run)
     if args.json:
         payload = managed_plan.to_dict()
@@ -2987,6 +3035,37 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _workspace_backup_passphrase(args: argparse.Namespace, *, confirm: bool) -> str:
+    if args.passphrase_env:
+        return _secret_from_env(args.passphrase_env, "backup passphrase")
+    passphrase = getpass("Backup passphrase: ")
+    if confirm and passphrase != getpass("Confirm backup passphrase: "):
+        raise ValueError("backup passphrases do not match")
+    return passphrase
+
+
+def cmd_workspace_backup(args: argparse.Namespace) -> int:
+    from .workspace_backup import create_workspace_backup
+
+    result = create_workspace_backup(
+        data_dir().resolve(), args.out, _workspace_backup_passphrase(args, confirm=True),
+        offline_confirmed=args.offline,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_workspace_restore(args: argparse.Namespace) -> int:
+    from .workspace_backup import restore_workspace_backup
+
+    result = restore_workspace_backup(
+        args.backup, args.destination, _workspace_backup_passphrase(args, confirm=False),
+        current_home=data_dir().resolve(), offline_confirmed=args.offline,
+    )
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     result = import_profiles_into_store(args.input, ProfileStore(), source_format=args.format, replace=args.replace)
     print(f"imported profiles: {len(result.profiles)}")
@@ -3041,22 +3120,35 @@ def cmd_team_sync_pull(args: argparse.Namespace) -> int:
 
 
 def cmd_gui(args: argparse.Namespace) -> int:
-    frozen_gui_result = _run_frozen_windows_gui_launcher()
+    smoke_path = getattr(args, "smoke_json", None)
+    frozen_gui_result = (
+        _run_frozen_windows_gui_launcher(smoke_path)
+        if smoke_path is not None
+        else _run_frozen_windows_gui_launcher()
+    )
     if frozen_gui_result is not None:
         return frozen_gui_result
+
+    if smoke_path is not None:
+        from .gui_smoke import run as gui_smoke_run
+
+        return gui_smoke_run(smoke_path)
 
     from .gui import main as gui_main
 
     return int(gui_main())
 
 
-def _run_frozen_windows_gui_launcher() -> int | None:
+def _run_frozen_windows_gui_launcher(smoke_path: Path | None = None) -> int | None:
     if os.name != "nt" or not getattr(sys, "frozen", False):
         return None
     gui_launcher = Path(sys.executable).with_name("row-gui.exe")
     if not gui_launcher.exists():
         return None
-    completed = subprocess.run([str(gui_launcher)], check=False)
+    command = [str(gui_launcher)]
+    if smoke_path is not None:
+        command.extend(["--smoke-json", str(smoke_path)])
+    completed = subprocess.run(command, check=False)
     return int(completed.returncode)
 
 

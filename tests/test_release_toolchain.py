@@ -155,7 +155,7 @@ def test_windows_x86_constraints_exclude_unavailable_security_backend() -> None:
     assert profile["name"] == "windows-x86-vault-fail-closed"
     assert profile["targets"] == ["windows-x86"]
     assert profile["package_overrides"] == {}
-    assert excluded == {"bcrypt", "cryptography", "truststore"}
+    assert excluded == {"bcrypt", "cryptography", "truststore", "pyftpdlib", "pyopenssl", "pyasyncore", "pyasynchat"}
     assert profile["security_backend"] == {
         "feature": "encrypted-vault",
         "state": "unavailable-fail-closed",
@@ -181,8 +181,8 @@ def test_release_toolchain_checker_requires_pinned_arm64_build_isolation_policy(
     checker = _load_release_toolchain_checker()
     manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(
-        "--no-cache-dir --no-build-isolation --no-binary=cryptography",
-        "--no-cache-dir --no-binary=cryptography",
+        "--no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib",
+        "--no-cache-dir --only-binary=:all: --no-binary=cryptography,pyftpdlib",
     )
 
     errors = checker.check_workflow(manifest, workflow)

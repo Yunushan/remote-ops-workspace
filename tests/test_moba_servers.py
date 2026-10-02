@@ -22,7 +22,8 @@ from remote_ops_workspace.moba_servers import (
 )
 
 
-def test_moba_server_suite_status_includes_builtin_http_and_daemon_adapters(tmp_path: Path) -> None:
+def test_moba_server_suite_status_includes_builtin_http_and_daemon_adapters(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("remote_ops_workspace.moba_servers.importlib.util.find_spec", lambda _name: None)
     status = build_moba_server_suite_status(
         system="Linux",
         which=lambda name: "/usr/sbin/sshd" if name == "sshd" else None,
@@ -167,6 +168,7 @@ def test_moba_server_lifecycle_writes_loads_and_stops_state(tmp_path: Path) -> N
         plan,
         state_dir=tmp_path,
         popen_factory=lambda command, env: _FakeProcess(pid=6262),
+        identity_factory=lambda process: {"pid": process.pid, "kind": "test"},
     )
     loaded = load_moba_server_record("http", state_dir=tmp_path, pid_probe=lambda pid: pid == 6262)
     terminated: list[int] = []
@@ -183,6 +185,7 @@ def test_moba_server_lifecycle_writes_loads_and_stops_state(tmp_path: Path) -> N
     assert loaded.running is True
     assert stopped.state == "stopped"
     assert stopped.running is False
+    assert stopped.pid is None
     assert terminated == [6262]
 
 
@@ -195,7 +198,7 @@ def test_moba_ssh_server_adapter_plan_uses_discovered_sshd() -> None:
         which=lambda name: "/usr/sbin/sshd" if name == "sshd" else None,
     )
 
-    assert plan.command == ["/usr/sbin/sshd", "-D", "-p", "2224", "-o", "ListenAddress=127.0.0.1"]
+    assert plan.command == ["/usr/sbin/sshd", "-D", "-p", "2224", "-o", "ListenAddress=127.0.0.1", "-o", "PermitEmptyPasswords=no", "-o", "PermitRootLogin=no"]
     assert plan.runtime.available is True
 
 
@@ -246,6 +249,9 @@ def test_moba_server_release_evidence_rejects_missing_service(tmp_path: Path) ->
 class _FakeProcess:
     def __init__(self, pid: int) -> None:
         self.pid = pid
+
+    def poll(self):
+        return None
 
 
 def _write_server_evidence_bundle(tmp_path: Path) -> Path:

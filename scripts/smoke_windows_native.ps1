@@ -59,6 +59,44 @@ function Test-RowRuntimeResources([string]$Path, [string]$Label) {
   Write-Host "native installer smoke runtime resources: $Label platforms --json"
 }
 
+function Test-PackagedGui([string]$GuiPath, [string]$Label) {
+  $OldRowHome = [Environment]::GetEnvironmentVariable("ROW_HOME", "Process")
+  $OldQtPlatform = [Environment]::GetEnvironmentVariable("QT_QPA_PLATFORM", "Process")
+  $GuiHome = Join-Path $SmokeRoot ("gui-" + [Guid]::NewGuid().ToString("N"))
+  $Report = Join-Path $GuiHome "result.json"
+  $Process = $null
+  try {
+    $env:ROW_HOME = $GuiHome
+    $env:QT_QPA_PLATFORM = "windows"
+    $Process = Start-Process -FilePath $GuiPath -ArgumentList @("--smoke-json", ('"' + $Report + '"')) -WindowStyle Hidden -PassThru
+    if (!$Process.WaitForExit(25000)) {
+      throw "$Label packaged GUI startup exceeded 25 seconds"
+    }
+    $Process.Refresh()
+    if ($Process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $Report -PathType Leaf)) {
+      throw "$Label packaged GUI did not produce a successful startup report"
+    }
+    $Result = Get-Content -LiteralPath $Report -Raw | ConvertFrom-Json
+    if ($Result.success -ne $true -or $Result.frozen -ne $true -or $Result.qt_platform -ne "windows" -or $Result.version -ne $Version) {
+      throw "$Label GUI report did not prove the frozen native Windows release"
+    }
+    if ($Result.profile_persisted -ne $true -or $Result.profile_selected -ne $true -or $Result.window_visible -ne $true -or $Result.paint_colour_count -lt 3) {
+      throw "$Label GUI profile workflow or paint evidence failed"
+    }
+    $Image = [IO.Path]::ChangeExtension($Report, ".png")
+    if (!(Test-Path -LiteralPath $Image -PathType Leaf) -or (Get-FileHash -LiteralPath $Image -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Result.screenshot_sha256) {
+      throw "$Label GUI screenshot digest did not match the startup report"
+    }
+    Write-Host "native installer smoke packaged GUI: $Label startup, profile selection and paint passed"
+  } finally {
+    if ($Process -and !$Process.HasExited) {
+      Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    }
+    [Environment]::SetEnvironmentVariable("ROW_HOME", $OldRowHome, "Process")
+    [Environment]::SetEnvironmentVariable("QT_QPA_PLATFORM", $OldQtPlatform, "Process")
+  }
+}
+
 function Test-RowGuiLauncher([string]$RowPath, [string]$Arch) {
   if ($Arch -eq "x86") {
     return
@@ -67,6 +105,7 @@ function Test-RowGuiLauncher([string]$RowPath, [string]$Arch) {
   if (!(Test-Path $GuiPath)) {
     throw "expected installed GUI launcher missing: $GuiPath"
   }
+  Test-PackagedGui $GuiPath "installed GUI"
 }
 
 function Test-PortableGuiLauncher([string]$InstallDir, [string]$Arch) {
@@ -81,6 +120,7 @@ function Test-PortableGuiLauncher([string]$InstallDir, [string]$Arch) {
   if (!(Test-Path $BinGuiPath)) {
     throw "expected portable bin GUI launcher missing: $BinGuiPath"
   }
+  Test-PackagedGui $RootGuiPath "portable GUI alias"
 }
 
 function Test-RowVault([string]$Path, [string]$Label, [bool]$ExpectedBackend) {

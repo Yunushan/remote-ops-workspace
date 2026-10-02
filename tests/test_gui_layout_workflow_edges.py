@@ -10,20 +10,6 @@ from remote_ops_workspace.models import Profile
 from remote_ops_workspace.terminal import TerminalPanePlan
 
 
-def _set_closure_value(monkeypatch, function, name: str, value) -> None:
-    index = function.__code__.co_freevars.index(name)
-    closure = function.__closure__
-    assert closure is not None
-    monkeypatch.setattr(closure[index], "cell_contents", value)
-
-
-def _closure_value(function, name: str):
-    index = function.__code__.co_freevars.index(name)
-    closure = function.__closure__
-    assert closure is not None
-    return closure[index].cell_contents
-
-
 @pytest.fixture
 def gui_window(monkeypatch, tmp_path):
     if "QT_QPA_PLATFORM" not in os.environ:
@@ -148,12 +134,7 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     def dialog_factory(*_args, **_kwargs):
         return dialogs.pop(0)
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).create_layout,
-        "LayoutDialog",
-        dialog_factory,
-    )
+    monkeypatch.setattr(window, "create_layout_dialog", dialog_factory)
     create_dialog = _Dialog(
         [QDialog.DialogCode.Accepted, QDialog.DialogCode.Accepted],
         [original, created],
@@ -173,18 +154,13 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
         ]
     )
 
-    def fake_message_box(_parent, _icon, title, text, **_kwargs):
+    def fake_message_box(_icon, title, text, **_kwargs):
         messages.append(str(text))
         if title == "Remove layout":
             return next(remove_answers)
         return QMessageBox.StandardButton.Ok
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).edit_selected_layout,
-        "_literal_message_box",
-        fake_message_box,
-    )
+    monkeypatch.setattr(window, "show_message", fake_message_box)
 
     window.layout_select.clear()
     window.edit_selected_layout()
@@ -444,7 +420,6 @@ def test_layout_dialog_validation_and_splitter_preservation_edges(gui_window) ->
     from PyQt6.QtWidgets import QDialog
 
     app, window = gui_window
-    dialog_type = _closure_value(type(window).create_layout, "LayoutDialog")
     original = Layout(
         name="dialog-layout",
         orientation="horizontal",
@@ -454,7 +429,7 @@ def test_layout_dialog_validation_and_splitter_preservation_edges(gui_window) ->
         ],
         splitter_sizes=[[260, 540]],
     )
-    dialog = dialog_type(original, window)
+    dialog = window.create_layout_dialog(original)
     dialog.show()
     app.processEvents()
 
@@ -483,7 +458,7 @@ def test_layout_dialog_validation_and_splitter_preservation_edges(gui_window) ->
     assert dialog.result() == QDialog.DialogCode.Accepted
     assert dialog.workspace_layout().name == "dialog-layout-updated"
 
-    fresh = dialog_type(parent=window)
+    fresh = window.create_layout_dialog()
     fresh.name.setText("fresh-layout")
     fresh.orientation.setCurrentText("vertical")
     fresh.panes.setPlainText("command:echo fresh")

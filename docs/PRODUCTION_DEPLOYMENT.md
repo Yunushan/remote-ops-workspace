@@ -114,7 +114,7 @@ specific release workflow before deployment:
 ```sh
 gh attestation verify ./remote-ops-workspace-v<version>-linux-x86_64.AppImage \
   --repo Yunushan/remote-ops-workspace \
-  --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/release.yml
+  --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/release-promotion.yml
 ```
 
 Use the matching local filename for any Windows, macOS, Linux, source, or
@@ -181,6 +181,21 @@ notarization evidence have been verified.
 
 ## Updates and Dependencies
 
+Modern release builds install complete, target-specific dependency locks with
+`pip --require-hashes`. Where a reviewed source build is required, its build
+backends come from a separately hashed subset of the final lock, and automatic
+build isolation is disabled. Validate the input receipt and workflow wiring with
+`python scripts/check_release_dependency_locks.py`. To regenerate the locks, use
+the exact resolver version in `configs/release_dependency_locks.json`:
+
+```sh
+python scripts/lock_release_dependencies.py --uv /path/to/pinned/uv --system-certs
+```
+
+Review regenerated dependency/hash changes and verify installation on each native
+builder before publishing. The resolver receipt proves dependency inputs; the
+production approval separately binds components actually present in every package.
+
 Enterprise update manifests use Ed25519 public keys only. Generate and protect
 the private key outside deployed clients; distribute only the base64-encoded
 32-byte public key as `ed25519:<public-key>`. The current command validates a
@@ -194,7 +209,76 @@ approved clients, versions, certificates, and host-key policy through your OS
 package-management or endpoint-management platform. A green package install is
 not evidence that every protocol client is installed or usable.
 
+## Offline Workstation Recovery
+
+`row export` exports profiles. To retain the complete workstation state, use
+the encrypted offline workspace backup with the security extra installed. Close
+all other ROW GUI, Web and CLI processes and stop managed server/X11 helpers
+before acknowledging `--offline`; the backup does not suspend active writers.
+It acquires all five known store locks and the locks of managed runtime records
+that already exist, then rejects detected inventory changes. This does not
+provide an online snapshot guarantee.
+
+```sh
+row workspace backup --out /secure-backups/workstation.rowbak --offline
+row workspace restore --backup /secure-backups/workstation.rowbak --destination /private/workstation-restored --offline
+```
+
+Both commands use the current `ROW_HOME`; the restore destination must be a new
+direct sibling of that home. Prompts keep the backup passphrase out of command
+arguments. For automated recovery drills, `--passphrase-env ENVIRONMENT_NAME`
+reads a separately provisioned secret variable. Retain that passphrase securely;
+the encrypted archive cannot be recovered without it.
+
+The versioned authenticated archive preserves raw profiles and group defaults,
+vault ciphertext, layouts and splitter sizes, snippets, macros, browser settings,
+unknown regular plugin state and empty directories. Known advisory lock files and recognized
+ordinary write staging files are omitted. Verified predecessor recovery copies
+are retained. Archives are bounded to 64 MiB of file data and 10,000 entries and
+reject linked, reparse, special, hard-linked and nonportable paths. POSIX restore
+permissions are owner-only, preserving the owner executable bit. Windows privacy
+requires an operator-secured destination parent DACL so the new staging and
+restored directories inherit private access; `chmod` does not verify that ACL.
+The result explicitly reports `windows_acl_verified: false`.
+External identity keys, served roots, machine policy and host runtimes remain
+separate recovery dependencies.
+
+Restore validates the entire authenticated manifest before staging a new home,
+then verifies the restored bytes before installing that directory. The original
+home is retained. Inspect the restored stores and decrypt a known vault item in
+an isolated drill before selecting the restored `ROW_HOME` for normal use. Keep
+the archive private and encrypted at rest; CI retains only sanitized recovery
+results, never archive payloads or passphrases.
+
+For a rollback to an older release, restore the snapshot taken before the
+upgrade. Current vault writes migrate earlier vaults to format v3; v1.0.24 cannot
+read that newer format. Reinstalling an older executable over a newly written
+vault is insufficient. Native installer upgrade and rollback must additionally
+be verified on the actual operated host; released-wheel compatibility evidence
+does not prove native installer lifecycle or platform trust.
+
+Managed shutdown binds a saved process to its native creation identity. Windows
+uses the same verified process handle for termination and exit confirmation;
+Linux uses a verified process descriptor. Stale or unverifiable legacy records
+are refused. Start and stop serialize changes to each lifecycle record; a repeat
+start refuses an active or ambiguous record before changing authorization files
+or launching another child. A `started` record confirms child ownership;
+listener readiness requires the separate service or X11 probe. Other POSIX hosts can stop retained, unreaped children in the
+running GUI; separate-process shutdown requires a supported native mechanism
+or the host's process manager. A failed shutdown retains the lifecycle record
+and prevents an offline snapshot of that active or ambiguous helper.
+Owned POSIX child management requires default `SIGCHLD` handling and reaping
+through the retained `Popen` object. Cleanup uses a bounded shutdown deadline
+and refuses uncertain ownership.
+
 ## Team Data
+
+Private-state writes retain a secured predecessor while committing a replacement.
+If permissions cannot be verified after replacement, the writer restores the
+previous bytes and reports failure. If the OS prevents recovery, the error names
+the verified `.<name>.rollback.*.tmp` copy to retain for operator recovery. Stop
+writers before investigating, preserve that copy, and verify its permissions and
+contents before restoring it. A recovery error never indicates a successful save.
 
 The directory team-sync backend is a file-backed metadata exchange intended
 for a single trusted shared filesystem. It does not provide identity,

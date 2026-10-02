@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import shutil
@@ -82,6 +83,26 @@ def test_web_security_headers_include_browser_hardening() -> None:
     assert SECURITY_HEADERS["X-Content-Type-Options"] == "nosniff"
     assert SECURITY_HEADERS["Referrer-Policy"] == "no-referrer"
     assert "camera=()" in SECURITY_HEADERS["Permissions-Policy"]
+
+
+def test_web_request_logs_escape_accepted_terminal_control_sequences(capsys) -> None:
+    handler = object.__new__(QuietHandler)
+    handler.raw_requestline = b"GET /\x1b[2J\x08\x7f\x9b HTTP/1.1\r\n"
+    handler.rfile = io.BytesIO(b"Host: localhost\r\n\r\n")
+
+    assert handler.parse_request() is True
+    handler.log_request(404)
+
+    logged = capsys.readouterr().out
+    assert 'web: "GET /\\x1b[2J\\x08\\x7f\\x9b HTTP/1.1" 404 -\n' == logged
+    assert all(character not in logged for character in ("\x1b", "\x08", "\x7f", "\x9b"))
+
+
+def test_web_log_messages_escape_line_breaks_and_backslashes(capsys) -> None:
+    handler = object.__new__(QuietHandler)
+    handler.log_message("value %s", "safe\\path\r\nforged\tentry")
+
+    assert capsys.readouterr().out == "web: value safe\\\\path\\x0d\\x0aforged\\x09entry\n"
 
 
 def test_web_handler_emits_security_headers(tmp_path: Path) -> None:

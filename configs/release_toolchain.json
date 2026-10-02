@@ -15,7 +15,11 @@
         "excluded_packages": [
           "bcrypt",
           "cryptography",
-          "truststore"
+          "truststore",
+          "pyftpdlib",
+          "pyOpenSSL",
+          "pyasyncore",
+          "pyasynchat"
         ],
         "security_backend": {
           "feature": "encrypted-vault",
@@ -102,6 +106,26 @@
       "name": "truststore",
       "version": "0.10.4",
       "purpose": "Pinned native certificate-store integration used by the security extra."
+    },
+    {
+      "name": "pyftpdlib",
+      "version": "2.2.0",
+      "purpose": "Pinned authenticated loopback FTP/FTPS server bundled in secure native release profiles."
+    },
+    {
+      "name": "pyOpenSSL",
+      "version": "26.4.0",
+      "purpose": "Pinned OpenSSL TLS bridge for the embedded FTPS server."
+    },
+    {
+      "name": "pyasyncore",
+      "version": "1.0.5",
+      "purpose": "Pinned Python 3.12+ asyncore compatibility module used by pyftpdlib."
+    },
+    {
+      "name": "pyasynchat",
+      "version": "1.0.5",
+      "purpose": "Pinned Python 3.12+ asynchat compatibility module used by pyftpdlib."
     }
   ],
   "native_toolchains": {

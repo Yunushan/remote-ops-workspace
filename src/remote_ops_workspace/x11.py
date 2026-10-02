@@ -5,9 +5,10 @@ import json
 import os
 import platform
 import re
+import secrets
 import shutil
-import signal
 import socket
+import struct
 import subprocess
 import sys
 from collections.abc import Callable, Iterable
@@ -17,9 +18,17 @@ from pathlib import Path
 from typing import Any
 
 from . import command_safety as safe
-from .file_safety import write_json_atomic
-from .paths import ensure_data_dir
+from .file_safety import write_bytes_atomic, write_json_atomic
+from .paths import data_dir, ensure_data_dir
 from .process_launch import popen_hidden, run_hidden
+from .process_status import (
+    process_is_running,
+    recorded_process_is_running,
+    register_process,
+    terminate_owned_process,
+    terminate_recorded_process,
+)
+from .state_lock import DEFAULT_LOCK_TIMEOUT_SECONDS, exclusive_file_lock
 
 WhichResolver = Callable[[str], str | None]
 DisplayProbe = Callable[[str], bool]
@@ -219,6 +228,7 @@ class XServerLifecycleRecord:
     dry_run: bool = False
     state_path: str = ""
     running: bool = False
+    process_identity: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any], *, state_path: Path | None = None, running: bool | None = None) -> XServerLifecycleRecord:
@@ -235,6 +245,7 @@ class XServerLifecycleRecord:
             dry_run=bool(data.get("dry_run", False)),
             state_path=str(state_path or data.get("state_path") or ""),
             running=bool(running) if running is not None else bool(data.get("running", False)),
+            process_identity=_record_process_identity(data),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -249,6 +260,7 @@ class XServerLifecycleRecord:
             "dry_run": self.dry_run,
             "state_path": self.state_path,
             "running": self.running,
+            "process_identity": self.process_identity,
         }
 
 
@@ -325,6 +337,8 @@ def build_moba_x_server_plan(
     packaged_roots: Iterable[Path] | None = None,
     display_probe: DisplayProbe | None = None,
     allow_display_in_use: bool = False,
+    allow_tcp: bool = False,
+    authority_path: Path | None = None,
 ) -> ManagedXServerPlan:
     display = safe.display(display)
     system_key = (system or platform.system()).lower()
@@ -334,14 +348,19 @@ def build_moba_x_server_plan(
     display_in_use = probe(display)
     if display_in_use and not allow_display_in_use:
         raise ValueError(f"X display {display} appears to be in use; choose another display or stop the existing X server")
-    command = _runtime_command(runtime, display, system_key)
+    authority = (authority_path or _authority_path(display)).expanduser().resolve()
+    command = _runtime_command(runtime, display, system_key, authority_path=authority, allow_tcp=allow_tcp)
     notes = _runtime_notes(runtime, display, display_in_use, system_key)
+    notes.append(f"MIT-MAGIC-COOKIE-1 authentication is required; clients use XAUTHORITY={authority}.")
+    if system_key == "windows" or allow_tcp:
+        notes.append("Authenticated TCP transport is enabled. This runtime may listen on all interfaces; configure the host firewall to restrict port "
+                     f"{6000 + _display_number(display)} to intended clients. ROW does not change firewall rules.")
     return ManagedXServerPlan(
         display=display,
         command=command,
         runtime=runtime,
         extensions=x_server_extension_inventory(runtime),
-        environment={"DISPLAY": display},
+        environment={"DISPLAY": display, "XAUTHORITY": str(authority)},
         display_in_use=display_in_use,
         notes=notes,
         candidates=candidates,
@@ -525,7 +544,14 @@ def write_moba_x_server_runtime_bundle(plan: XServerRuntimeBundlePlan) -> XServe
 def run_x_server(plan: XServerPlan, dry_run: bool = False) -> XServerPlan:
     if not dry_run:
         safe.argv_list(plan.command, "x server command")
-        popen_hidden(plan.command)
+        if len(plan.command) < 2 or "-auth" not in plan.command:
+            raise ValueError("X server launch requires a managed authorization file")
+        index = plan.command.index("-auth")
+        if index + 1 >= len(plan.command):
+            raise ValueError("X server launch requires a managed authorization file")
+        environment = {"DISPLAY": safe.display(plan.command[1]), "XAUTHORITY": plan.command[index + 1]}
+        _prepare_x_server_authority(plan.command, environment, environment["DISPLAY"])
+        popen_hidden(plan.command, env={**os.environ, **environment})
     return plan
 
 
@@ -535,6 +561,8 @@ def start_moba_x_server(
     dry_run: bool = False,
     state_path: Path | None = None,
     popen_factory: Callable[..., Any] | None = None,
+    identity_factory: Callable[[Any], dict[str, Any]] | None = None,
+    lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
 ) -> XServerLifecycleRecord:
     safe.argv_list(plan.command, "managed x server command")
     target_state_path = moba_x_server_state_path(state_path)
@@ -553,21 +581,41 @@ def start_moba_x_server(
         )
     if not plan.runtime.available:
         raise ValueError(f"X server runtime is not available: {plan.runtime.label}")
+    with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
+        _require_replaceable_x_server_record(target_state_path)
+        return _start_moba_x_server_locked(plan, target_state_path, now, popen_factory, identity_factory)
+
+
+def _start_moba_x_server_locked(
+    plan: ManagedXServerPlan,
+    target_state_path: Path,
+    now: str,
+    popen_factory: Callable[..., Any] | None,
+    identity_factory: Callable[[Any], dict[str, Any]] | None,
+) -> XServerLifecycleRecord:
+    _prepare_x_server_authority(plan.command, plan.environment, plan.display)
     factory = popen_hidden if popen_factory is None else popen_factory
     process = factory(plan.command, env={**os.environ, **plan.environment})
-    pid = int(process.pid)
-    record = XServerLifecycleRecord(
-        display=plan.display,
-        runtime_key=plan.runtime.key,
-        command=plan.command,
-        state="started",
-        pid=pid,
-        started_at=now,
-        dry_run=False,
-        state_path=str(target_state_path),
-        running=True,
-    )
-    write_json_atomic(target_state_path, record.to_dict(), private=True)
+    try:
+        identity = (identity_factory or register_process)(process)
+        if process.poll() is not None:
+            raise ProcessLookupError("managed X server exited before its lifecycle state could be saved")
+        record = XServerLifecycleRecord(
+            display=plan.display,
+            runtime_key=plan.runtime.key,
+            command=plan.command,
+            state="started",
+            pid=int(process.pid),
+            started_at=now,
+            dry_run=False,
+            state_path=str(target_state_path),
+            running=True,
+            process_identity=identity,
+        )
+        write_json_atomic(target_state_path, record.to_dict(), private=True)
+    except BaseException:
+        terminate_owned_process(process)
+        raise
     return record
 
 
@@ -576,27 +624,59 @@ def stop_moba_x_server(
     state_path: Path | None = None,
     pid_probe: PidProbe | None = None,
     terminator: ProcessTerminator | None = None,
+    lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
 ) -> XServerLifecycleRecord:
     target_state_path = moba_x_server_state_path(state_path)
+    with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
+        return _stop_moba_x_server_locked(target_state_path, pid_probe, terminator)
+
+
+def _stop_moba_x_server_locked(
+    target_state_path: Path,
+    pid_probe: PidProbe | None,
+    terminator: ProcessTerminator | None,
+) -> XServerLifecycleRecord:
     record = load_moba_x_server_record(state_path=target_state_path, pid_probe=pid_probe)
     if record is None:
         raise ValueError(f"no managed X server state found at {target_state_path}")
-    if record.pid is not None and record.running:
-        (terminator or _terminate_pid)(record.pid)
+    if terminator is not None:
+        if record.pid is not None and record.running:
+            terminator(record.pid)
+    elif record.pid is not None:
+        terminate_recorded_process(record.pid, record.process_identity)
+    elif record.state != "stopped":
+        raise ValueError("managed X server state has no verifiable process; inspect the host process and recover its lifecycle state")
     stopped = XServerLifecycleRecord(
         display=record.display,
         runtime_key=record.runtime_key,
         command=record.command,
         state="stopped",
-        pid=record.pid,
+        pid=None,
         started_at=record.started_at,
         stopped_at=_timestamp(),
         dry_run=record.dry_run,
         state_path=str(target_state_path),
         running=False,
+        process_identity=record.process_identity,
     )
     write_json_atomic(target_state_path, stopped.to_dict(), private=True)
     return stopped
+
+
+def _require_replaceable_x_server_record(state_path: Path) -> None:
+    record = load_moba_x_server_record(state_path=state_path)
+    if record is None:
+        return
+    stored = json.loads(state_path.read_text(encoding="utf-8"))
+    if record.state not in {"started", "stopped"} or record.dry_run:
+        raise ValueError("managed X server state is active or ambiguous; stop or recover it before starting again")
+    if record.pid is None:
+        if record.state == "stopped" and stored.get("running", False) is False:
+            return
+        raise ValueError("managed X server state is active or ambiguous; stop or recover it before starting again")
+    if recorded_process_is_running(record.pid, record.process_identity):
+        raise ValueError("managed X server is already running; stop it before starting again")
+    terminate_recorded_process(record.pid, record.process_identity)
 
 
 def load_moba_x_server_record(
@@ -613,7 +693,9 @@ def load_moba_x_server_record(
         raise ValueError(f"managed X server state must be a JSON object: {target_state_path}")
     pid_value = data.get("pid")
     pid = int(str(pid_value)) if pid_value not in (None, "") else None
-    running = (pid_probe or _pid_exists)(pid) if pid is not None and str(data.get("state", "")) == "started" else False
+    running = False
+    if pid is not None and str(data.get("state", "")) == "started":
+        running = pid_probe(pid) if pid_probe is not None else recorded_process_is_running(pid, _record_process_identity(data))
     return XServerLifecycleRecord.from_dict(data, state_path=target_state_path, running=running)
 
 
@@ -671,7 +753,7 @@ def run_moba_x_server_smoke(
     try:
         completed = runner(
             command,
-            env={**os.environ, "DISPLAY": display},
+            env={**os.environ, **managed_x11_environment(display)},
             capture_output=True,
             text=True,
             timeout=float(timeout_seconds),
@@ -1133,32 +1215,117 @@ def _select_runtime(
     system: str,
 ) -> XServerRuntimeCandidate:
     for candidate in candidates:
-        if candidate.available:
+        if candidate.available and candidate.key not in {"xlaunch", "xquartz"}:
             return candidate
     fallback = {
         "windows": XServerRuntimeCandidate("vcxsrv", "VcXsrv", "vcxsrv", False, "fallback"),
-        "darwin": XServerRuntimeCandidate("xquartz", "XQuartz", "open", False, "fallback"),
+        "darwin": XServerRuntimeCandidate("xquartz-xorg", "XQuartz Xorg", "Xquartz", False, "fallback"),
     }.get(system)
     return fallback or XServerRuntimeCandidate("xorg", "Xorg", "Xorg", False, "fallback")
 
 
-def _runtime_command(runtime: XServerRuntimeCandidate, display: str, system: str) -> list[str]:
+def _runtime_command(
+    runtime: XServerRuntimeCandidate,
+    display: str,
+    system: str,
+    *,
+    authority_path: Path | None = None,
+    allow_tcp: bool = False,
+) -> list[str]:
     executable = safe.path_arg(runtime.executable, "x server executable")
+    if runtime.key in {"xlaunch", "xquartz"}:
+        raise ValueError("managed X servers require the direct VcXsrv/Xming/Xquartz executable so authentication and transport settings can be enforced")
+    authority = authority_path or _authority_path(display)
+    security = ["-auth", str(authority), "-listen" if system == "windows" or allow_tcp else "-nolisten", "tcp"]
     if system == "windows":
-        if runtime.key == "xlaunch":
-            return [executable]
         if runtime.key == "xming":
-            return [executable, display, "-multiwindow", "-clipboard", "-ac"]
-        return [executable, display, "-multiwindow", "-clipboard", "-wgl", "-ac"]
+            return [executable, display, "-multiwindow", "-clipboard", *security]
+        return [executable, display, "-multiwindow", "-clipboard", "-wgl", *security]
     if system == "darwin":
-        if runtime.key == "xquartz-xorg":
-            return [executable, display]
-        return [executable, "-a", "XQuartz"]
+        return [executable, display, *security]
     if runtime.key == "xvfb":
-        return [executable, display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"]
-    if runtime.key in {"xephyr", "xnest"}:
-        return [executable, display, "-nolisten", "tcp"]
-    return [executable, display, "-nolisten", "tcp"]
+        return [executable, display, "-screen", "0", "1920x1080x24", *security]
+    return [executable, display, *security]
+
+
+def _authority_path(display: str) -> Path:
+    return data_dir() / "x11" / f"Xauthority-{_display_number(safe.display(display))}"
+
+
+def managed_x11_environment(display: str = ":0") -> dict[str, str]:
+    """Preserve an external X11 session or share a managed local server's authority.
+
+    Xlib client display names support transports and remote hosts; managed
+    server commands intentionally accept only the narrower ``:N`` form.
+    XQuartz also exposes a launchd socket pathname in DISPLAY.
+    """
+    display = safe.clean_text(display or ":0", "client display")
+    if not re.fullmatch(
+        r"(?:(?:[A-Za-z][A-Za-z0-9_-]*/)?"
+        r"(?:[A-Za-z0-9_][A-Za-z0-9_.-]*|\[[0-9A-Fa-f:.]+(?:%[A-Za-z0-9_.-]+)?\])?:{1,2}"
+        r"|/[A-Za-z0-9_./-]+:)[0-9]+(?:\.[0-9]+)?",
+        display,
+    ):
+        raise safe.CommandSafetyError("client display must name an X11 host or socket and a numeric display/screen")
+    environment = {"DISPLAY": display}
+    configured = os.environ.get("XAUTHORITY")
+    if configured:
+        environment["XAUTHORITY"] = safe.path_arg(configured, "XAUTHORITY")
+        return environment
+    # Never substitute a ROW cookie for a forwarded or host-managed display.
+    # Its normal Xlib authority discovery must remain intact.
+    if not re.fullmatch(r":[0-9]+(?:\.[0-9]+)?", display):
+        return environment
+    authority = _authority_path(display)
+    if authority.is_file():
+        environment["XAUTHORITY"] = str(authority.resolve())
+    return environment
+
+
+def managed_xauth_location(
+    *,
+    which: WhichResolver = shutil.which,
+    system: str | None = None,
+    packaged_roots: Iterable[Path] | None = None,
+) -> str | None:
+    """Find a real xauth executable for SSH's XAuthLocation setting."""
+    resolved = which("xauth")
+    if resolved and Path(resolved).is_file():
+        return safe.path_arg(str(Path(resolved).resolve()), "xauth executable")
+    system_key = (system or platform.system()).lower()
+    candidates = discover_x_server_runtimes(system=system_key, which=which, packaged_roots=packaged_roots)
+    runtime = _select_runtime(candidates, system_key)
+    names = ("xauth.exe", "xauth") if system_key == "windows" else ("xauth",)
+    for name in names:
+        candidate = Path(runtime.executable).parent / name
+        if candidate.is_file():
+            return safe.path_arg(str(candidate.resolve()), "xauth executable")
+    if system_key == "darwin":
+        candidate = Path("/opt/X11/bin/xauth")
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def _prepare_x_server_authority(command: list[str], environment: dict[str, str], display: str) -> None:
+    if "-ac" in command or "-auth" not in command:
+        raise ValueError("managed X servers require cookie authentication and must not disable access control")
+    index = command.index("-auth")
+    if index + 1 >= len(command) or command[index + 1] != environment.get("XAUTHORITY"):
+        raise ValueError("X server authorization file must match the client XAUTHORITY environment")
+    cookie = secrets.token_bytes(16)
+    number = str(_display_number(display)).encode("ascii")
+    protocol = b"MIT-MAGIC-COOKIE-1"
+    # Xau records use unsigned 16-bit network-order lengths, including family.
+    # Local plus IPv4/IPv6 loopback records allow SSH/xauth and local clients to
+    # locate the same cookie without a wildcard authorization entry.
+    records = []
+    for family, address in ((256, socket.gethostname().encode("utf-8")), (0, socket.inet_aton("127.0.0.1")), (6, socket.inet_pton(socket.AF_INET6, "::1"))):
+        record = struct.pack("!H", family)
+        for field in (address, number, protocol, cookie):
+            record += struct.pack("!H", len(field)) + field
+        records.append(record)
+    write_bytes_atomic(Path(command[index + 1]), b"".join(records), private=True)
 
 
 def _runtime_notes(
@@ -1184,7 +1351,7 @@ def _runtime_notes(
     if system == "windows":
         notes.append("Windows multiwindow and clipboard flags mirror the common MobaXterm-style X server workflow.")
     elif system == "darwin":
-        notes.append("macOS uses XQuartz through LaunchServices when available.")
+        notes.append("macOS uses the direct XQuartz executable so authentication and transport options are enforced.")
     else:
         notes.append("POSIX launch disables TCP listening by default; use SSH X11 forwarding for transport.")
     return notes
@@ -1224,34 +1391,14 @@ def _subprocess_output_text(value: bytes | str | None) -> str:
 def _pid_exists(pid: int) -> bool:
     if pid <= 0:
         return False
-    if os.name == "nt":
-        try:
-            completed = run_hidden(
-                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=3,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False
-        return str(pid) in completed.stdout
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
+    return process_is_running(pid)
 
 
-def _terminate_pid(pid: int) -> None:
-    if os.name == "nt":
-        run_hidden(["taskkill", "/PID", str(pid), "/T"], check=False, capture_output=True, text=True)
-        return
-    os.kill(pid, signal.SIGTERM)
+def _record_process_identity(data: dict[str, Any]) -> dict[str, Any] | None:
+    identity = data.get("process_identity")
+    if identity is not None and not isinstance(identity, dict):
+        raise ValueError("managed X server process_identity must be a JSON object")
+    return identity
 
 
 def _timestamp() -> str:

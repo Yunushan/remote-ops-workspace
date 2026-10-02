@@ -357,6 +357,10 @@ raise SystemExit(main())
 "@ | Set-Content -Encoding UTF8 $GuiLauncher
 }
 
+$ServerImports = if ($Arch -ne "x86") {
+  @("--collect-submodules", "pyftpdlib", "--collect-submodules", "OpenSSL", "--hidden-import", "asyncore", "--hidden-import", "asynchat")
+} else { @() }
+
 & $Python -m PyInstaller `
   --clean `
   --noconfirm `
@@ -372,6 +376,7 @@ raise SystemExit(main())
   --add-data "$Root\configs;remote_ops_workspace/configs" `
   --add-data "$Root\apps\web;remote_ops_workspace/web" `
   --copy-metadata remote-ops-workspace `
+  @ServerImports `
   --exclude-module PyQt6 `
   --exclude-module remote_ops_workspace.gui `
   --exclude-module remote_ops_workspace.gui_designs `
@@ -396,6 +401,7 @@ if ($BuildGuiLauncher) {
     --add-data "$Root\configs;remote_ops_workspace/configs" `
     --add-data "$Root\apps\web;remote_ops_workspace/web" `
     --copy-metadata remote-ops-workspace `
+    @ServerImports `
     --hidden-import PyQt6.QtCore `
     --hidden-import PyQt6.QtGui `
     --hidden-import PyQt6.QtWidgets `

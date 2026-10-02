@@ -258,13 +258,13 @@ Docker entrypoint. The compose file publishes the container on
 
 ## Feature Coverage
 
-Coverage target: **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% release-backed product workflow parity** for the requested tools. Per-platform release readiness is tracked separately so verified release/mobile targets, manual architecture builds and legacy Windows remote-target tiers remain visible with their own scope.
+Coverage target: **100% public feature-family mapping**, **100% adapter-ready coverage** and **100% implementation-backed workflow coverage** for the requested tools. These percentages measure repository implementation inventory. Runtime production readiness requires exact release, host execution, security and recovery evidence.
 
-Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage counts implemented adapter, optional, CLI, GUI and combined workflows as ready when they are tied to executable evidence. The `production_parity_coverage` JSON key is kept for compatibility, but the public contract is release-backed product workflow parity: implemented workflows count only when tied to executable release evidence, and seam-only or docs-only rows remain partial if they appear. This is not a proprietary native clone claim. The verifier runs both `scripts/check_feature_reality.py` and `scripts/check_product_readiness.py` so coverage claims stay tied to real CLI command paths, launch-plan builders, implementation symbols, shipped files and visible platform gaps.
+Coverage is generated from [`configs/feature_manifest.json`](configs/feature_manifest.json). Feature-family mapping answers whether each public feature family is represented by built-in code, external adapters, optional implementations, CLI/GUI workflows, platform scripts, or plugin extension points. Adapter-ready coverage and implementation-backed workflow coverage use implementation status and references to repository code. The legacy `production_parity_coverage` JSON key remains for compatibility. Its evidence identifies `implementation_backed`, while `release_backed` and `runtime_verified` remain false: manifest entries do not prove execution of a shipped release. This is not a proprietary native clone claim. The verifier checks real command paths, implementation symbols, shipped files and visible platform gaps; the separate production gate checks release execution and trust.
 
 For the stricter MobaXterm Home/Professional parity backlog, see [`docs/MOBAXTERM_PARITY.md`](docs/MOBAXTERM_PARITY.md). That ledger tracks remaining product-depth articles beyond the generated feature-family score, with accepted release evidence recorded in [`configs/mobaxterm_parity_evidence.json`](configs/mobaxterm_parity_evidence.json) and checked by `python scripts/check_mobaxterm_parity_evidence.py`.
 
-| Product target | Feature-family mapping | Adapter-ready coverage | Release-backed workflow parity | Workflow gap to 100% | Feature families tracked |
+| Product target | Feature-family mapping | Adapter-ready coverage | Implementation-backed workflow coverage | Workflow gap to 100% | Feature families tracked |
 |---|---:|---:|---:|---:|---:|
 | MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 50 |
 | Remmina | 100.0% | 100.0% | 100.0% | 0.0% | 11 |
@@ -296,7 +296,7 @@ For the stricter MobaXterm Home/Professional parity backlog, see [`docs/MOBAXTER
 | Xming (or VcXsrv) + PuTTY / mRemoteNG | 100.0% | 100.0% | 100.0% | 0.0% | 10 |
 | **Overall** | **100.0%** | **100.0%** | **100.0%** | **0.0%** | **70** |
 
-Adapter-ready coverage and release-backed product workflow parity use the manifest status weights directly and do not use blanket per-product overrides. Platform verified readiness is still separate and currently reports **100.0% overall** for verified default-native, Termux/Web and Web/PWA release targets; manual Linux i386/armhf and legacy Windows rows remain visible outside the verified-readiness denominator. Protected platform goal parity is **0.0%** for the current accepted-evidence registry (status=missing-accepted-evidence); that separate goal is the only score that can reach 100% for Linux i386/armhf plus Windows XP x86/x64 native-host readiness.
+Adapter-ready coverage and implementation-backed workflow coverage use manifest status weights without blanket per-product overrides. The legacy `platform_verified_readiness` key reports **100.0% overall build-contract coverage** for declared default-native, Termux/Web and Web/PWA channels. It explicitly reports `runtime_verified: false` and `production_readiness_percent: null`; the catalog score does not certify host support or production readiness. Manual Linux i386/armhf and legacy Windows rows remain visible. Protected platform goal parity is **0.0%** for the current accepted-evidence registry (status=missing-accepted-evidence); that separate goal requires actual evidence for Linux i386/armhf and Windows XP x86/x64 native-host readiness.
 Linux i386/armhf and Windows XP native-host promotion to 100% is gated by
 [`configs/platform_parity_promotion.json`](configs/platform_parity_promotion.json)
 and `python scripts/check_platform_parity_promotion.py`; real builder output is
@@ -383,7 +383,7 @@ row features --coverage
 row features --coverage --json
 ```
 
-The JSON report includes `workflow_parity_contract` and `workflow_parity_evidence`. Each evidence row lists the product row, mapped feature IDs, implementation status, implementation kind, manifest extension point and evidence refs used to justify the percentage. That is the source of truth for every 100% workflow-parity row.
+The JSON report includes `workflow_parity_contract` and `workflow_parity_evidence`. Each row lists mapped feature IDs, implementation status, implementation kind, manifest extension point and repository references behind the inventory percentage. Release execution and production readiness require the separate evidence gate in `docs/PRODUCTION_READINESS.md`.
 
 | Feature family | MobaXterm | Remmina | mRemoteNG | Terminator | Termius | Project coverage |
 |---|---:|---:|---:|---:|---:|---|

@@ -151,7 +151,11 @@ jobs:
         with:
           python-version: "3.14.7"
       - name: Install release build tools
-        run: python -m pip install --constraint requirements-release.txt pip setuptools wheel build ".[desktop,security,package]"
+        run: |
+          python -m pip install --require-hashes --only-binary=:all: --requirement requirements-locks/source-linux-x86_64-bootstrap.txt
+          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement requirements-locks/source-linux-x86_64.txt
+          python -m pip install --no-deps --no-build-isolation ".[desktop,security,package,servers]"
+          python -m pip check
       - name: Build source and Python package assets
         run: python scripts/make_release.py
       - name: Validate source and Python package assets
@@ -228,12 +232,18 @@ jobs:
           - arch: x64
             python-architecture: x64
             runner: windows-latest
+            lock: requirements-locks/windows-x64.txt
+            bootstrap_lock: requirements-locks/windows-x64-bootstrap.txt
           - arch: x86
             python-architecture: x86
             runner: windows-latest
+            lock: requirements-locks/windows-x86.txt
+            bootstrap_lock: requirements-locks/windows-x86.txt
           - arch: arm64
             python-architecture: arm64
             runner: windows-11-arm
+            lock: requirements-locks/windows-arm64.txt
+            bootstrap_lock: requirements-locks/windows-arm64-bootstrap.txt
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
     steps:
@@ -257,7 +267,8 @@ jobs:
           $ExpectedOpenSsl = ""
           if ("${{ matrix.arch }}" -eq "x86") {
             python -m pip uninstall -y bcrypt cryptography truststore
-            python -m pip install --constraint requirements-release-compat.txt pip setuptools wheel ".[package]"
+            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed x86 runtime installation failed" }
             $ExpectedCryptography = ""
             python -c "import importlib.util; assert importlib.util.find_spec('bcrypt') is None; assert importlib.util.find_spec('cryptography') is None; print('bcrypt=unavailable cryptography=unavailable security-backends=fail-closed')"
           } elseif ("${{ matrix.arch }}" -eq "arm64") {
@@ -289,12 +300,17 @@ jobs:
             $env:OPENSSL_DIR = $OpenSslRoot
             $env:OPENSSL_STATIC = "1"
             $env:OPENSSL_NO_VENDOR = "1"
-            python -m pip install --constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser
-            python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"
+            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed ARM64 build bootstrap installation failed" }
+            python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed ARM64 runtime installation failed" }
             $ExpectedCryptography = "50.0.1"
             $ExpectedOpenSsl = "OpenSSL 3.6.3"
           } else {
-            python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
+            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed Windows build bootstrap installation failed" }
+            python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed Windows runtime installation failed" }
             $ExpectedCryptography = "50.0.1"
           }
           if ($ExpectedCryptography) {
@@ -302,6 +318,12 @@ jobs:
           } else {
             Write-Host "Windows x86 security backends intentionally unavailable and fail-closed"
           }
+          if ($LASTEXITCODE -ne 0) { throw "Hashed Windows release dependency installation failed" }
+          $Extras = if ("${{ matrix.arch }}" -eq "x86") { "package" } else { "desktop,security,package,servers" }
+          python -m pip install --no-deps --no-build-isolation ".[${Extras}]"
+          if ($LASTEXITCODE -ne 0) { throw "Windows project installation failed" }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "Windows release dependency consistency check failed" }
       - name: Install Windows installer toolchains
         shell: powershell
         run: |
@@ -339,6 +361,13 @@ jobs:
         shell: powershell
         timeout-minutes: 20
         run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows"
+      - name: Retain installed Windows GUI workflow evidence
+        if: ${{ always() && matrix.arch != 'x86' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-windows-gui-smoke-${{ matrix.arch }}
+          path: build/native-smoke/windows-${{ matrix.arch }}/gui-*
+          if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-windows-native-${{ matrix.arch }}
@@ -356,8 +385,12 @@ jobs:
         include:
           - arch: x64
             runner: macos-15-intel
+            lock: requirements-locks/macos-x64.txt
+            bootstrap_lock: requirements-locks/macos-x64-bootstrap.txt
           - arch: arm64
             runner: macos-latest
+            lock: requirements-locks/macos-arm64.txt
+            bootstrap_lock: requirements-locks/macos-arm64-bootstrap.txt
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     steps:
@@ -377,13 +410,16 @@ jobs:
       - name: Install Python packaging dependencies
         run: |
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
-            python -m pip install --constraint requirements-release.txt pip setuptools wheel maturin cffi pycparser
-            python -m pip install --no-cache-dir --no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"
+            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
             expected_cryptography="50.0.1"
           else
-            python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[desktop,security,package]"
+            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
             expected_cryptography="50.0.1"
           fi
+          python -m pip install --no-deps --no-build-isolation ".[desktop,security,package,servers]"
+          python -m pip check
           EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Prepare macOS release signing keychain
         env:
@@ -424,6 +460,13 @@ jobs:
         run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
       - name: Run macOS native installer smoke tests
         run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
+      - name: Retain installed macOS GUI workflow evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-macos-gui-smoke-${{ matrix.arch }}
+          path: build/native-smoke/macos-${{ matrix.arch }}/gui-*
+          if-no-files-found: error
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-macos-native-${{ matrix.arch }}
@@ -440,10 +483,14 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-latest
+            lock: requirements-locks/linux-x86_64.txt
+            bootstrap_lock: requirements-locks/linux-x86_64-bootstrap.txt
             appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
             appimage_runtime_sha256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
           - arch: aarch64
             runner: ubuntu-24.04-arm
+            lock: requirements-locks/linux-aarch64.txt
+            bootstrap_lock: requirements-locks/linux-aarch64-bootstrap.txt
             appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
             appimage_runtime_sha256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
     runs-on: ${{ matrix.runner }}
@@ -468,7 +515,10 @@ jobs:
           sudo apt-get install -y rpm
       - name: Install Python packaging dependencies
         run: |
-          python -m pip install --only-binary=cryptography --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
+          python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+          python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
+          python -m pip check
           python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.1'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Build Linux DEB, RPM and AppImage packages
         env:

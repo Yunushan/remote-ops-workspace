@@ -149,22 +149,12 @@ from .gui_designs import (
     gui_design_workflow_cards,
     gui_design_workspace_surface,
 )
-from .gui_editors import (
-    layout_from_editor_data,
-    layout_to_editor_data,
-    profile_editor_protocols,
-    profile_from_editor_data,
-    profile_to_editor_data,
-    protocol_preset_editor_data,
-)
 from .gui_lifecycle import ProcessStopPolicy, ProcessStopResult, stop_process
 from .launcher import LauncherError, build_launch_plan
 from .layouts import (
     Layout,
     LayoutStore,
     build_layout_terminal_sessions,
-    layout_splitter_size_lengths,
-    validate_layout,
 )
 from .moba_connected import (
     MobaConnectedSessionState,
@@ -211,6 +201,7 @@ from .moba_text import (
 )
 from .models import Profile
 from .paths import ensure_data_dir
+from .process_status import ProcessStatusError
 from .profile_importers import import_profiles
 from .storage import ProfileStore
 from .terminal import (
@@ -573,6 +564,7 @@ def create_main_window(
             QIODevice,
             QPoint,
             QProcess,
+            QProcessEnvironment,
             QSize,
             Qt,
             QTimer,
@@ -639,6 +631,9 @@ def create_main_window(
         )
     except Exception as exc:  # pragma: no cover - optional dependency
         raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
+
+    # Imported only after Qt is available so CLI commands keep working without it.
+    from .gui_dialogs import DialogServices, LayoutDialog, ProfileDialog, ProfileImportPreviewDialog
 
     def _application_clipboard() -> QClipboard:
         return _required_gui_value(QApplication.clipboard(), "application clipboard")
@@ -838,6 +833,13 @@ def create_main_window(
             available.bottom() - frame.height() + 1,
         )
         dialog.move(dialog.pos() + QPoint(left - frame.left(), top - frame.top()))
+
+    dialog_services = DialogServices(
+        size_for_screen=_size_dialog_for_parent_screen,
+        clamp_to_screen=_clamp_dialog_frame_to_parent_screen,
+        literal_label=_literal_label,
+        require_value=_required_gui_value,
+    )
 
     class _ScreenBoundedDialog(QDialog):
         def showEvent(self, event) -> None:
@@ -2121,7 +2123,7 @@ def create_main_window(
             if self.profile is not None:
                 try:
                     assert_profile_launch_allowed(self.profile, surface="gui")
-                except ValueError as exc:
+                except (OSError, ValueError) as exc:
                     self.set_status("policy blocked", "blocked")
                     self.append_text(f"[policy blocked] {exc}\n")
                     self.update_process_actions()
@@ -2159,6 +2161,11 @@ def create_main_window(
                 )
             self.process.setProgram(runtime_command[0])
             self.process.setArguments(runtime_command[1:])
+            if self.plan.environment:
+                environment = QProcessEnvironment.systemEnvironment()
+                for key, value in self.plan.environment.items():
+                    environment.insert(key, value)
+                self.process.setProcessEnvironment(environment)
             self.resize_terminal_backend()
             self.process.start()
             self.update_process_actions()
@@ -8403,413 +8410,6 @@ def create_main_window(
                 max(1, available_width),
             )
 
-    class ProfileDialog(_ScreenBoundedDialog):
-        def __init__(self, profile=None, parent=None) -> None:
-            super().__init__(parent)
-            self.setObjectName("workflowDialog")
-            self.setWindowTitle("Profile")
-            _size_dialog_for_parent_screen(
-                self,
-                parent,
-                maximum_width=560,
-                maximum_height=720,
-                minimum_width=460,
-                minimum_height=420,
-            )
-            data = profile_to_editor_data(profile)
-            self.fields: dict[str, QLineEdit | QComboBox | QPlainTextEdit] = {}
-            self._validated_profile: Profile | None = None
-
-            root = QVBoxLayout(self)
-            root.setContentsMargins(18, 16, 18, 16)
-            root.setSpacing(10)
-            title = QLabel("Session profile")
-            title.setObjectName("workflowTitle")
-            subtitle = QLabel(
-                "Create or edit a connection profile, including tunnels and protocol options."
-            )
-            subtitle.setObjectName("workflowSubtitle")
-            subtitle.setWordWrap(True)
-            root.addWidget(title)
-            root.addWidget(subtitle)
-
-            self.form_scroll = QScrollArea()
-            self.form_scroll.setObjectName("profileFormScroll")
-            self.form_scroll.setWidgetResizable(True)
-            self.form_scroll.setFrameShape(QFrame.Shape.NoFrame)
-            self.form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            form_body = QWidget()
-            form_body.setObjectName("profileFormBody")
-            form = QFormLayout(form_body)
-            form.setContentsMargins(0, 0, 8, 0)
-            form.setSpacing(8)
-            form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-            form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-
-            for key, label in [
-                ("name", "Name"),
-                ("protocol", "Protocol"),
-                ("host", "Host"),
-                ("port", "Port"),
-                ("username", "Username"),
-                ("group", "Group"),
-                ("tags", "Tags"),
-                ("path", "Path"),
-                ("url", "URL"),
-                ("command", "Command"),
-                ("identity_file", "Identity file"),
-                ("credential_ref", "Credential ref"),
-            ]:
-                widget: QLineEdit | QComboBox
-                if key == "protocol":
-                    widget = QComboBox()
-                    widget.setEditable(False)
-                    widget.setMaxVisibleItems(8)
-                    protocols = list(profile_editor_protocols())
-                    if data[key] not in protocols:
-                        protocols.append(data[key])
-                    widget.addItems(protocols)
-                    widget.setCurrentText(data[key])
-                    model = _required_gui_value(
-                        widget.model(),
-                        "profile protocol model",
-                    )
-                    for row, protocol in enumerate(protocols):
-                        if protocol in {"ssh1", "sshv1"}:
-                            model.setData(
-                                model.index(row, 0),
-                                "Legacy SSH v1: launch requires allow_insecure_sshv1=true, "
-                                "legacy_target=windows-xp-32 or windows-xp-64, and "
-                                "allow_legacy_crypto=true; use only for isolated legacy systems.",
-                                Qt.ItemDataRole.ToolTipRole,
-                            )
-                else:
-                    widget = QLineEdit(data[key])
-                widget.setObjectName(f"profile{key.title().replace('_', '')}")
-                self.fields[key] = widget
-                form.addRow(label, widget)
-
-            self.preset_button = QPushButton("Apply protocol defaults")
-            self.preset_button.setObjectName("profileProtocolDefaults")
-            self.preset_note = QLabel(
-                "Sets safe port and option defaults; existing identity fields are kept."
-            )
-            self.preset_note.setObjectName("profileProtocolDefaultsNote")
-            self.preset_note.setTextFormat(Qt.TextFormat.PlainText)
-            self.preset_note.setWordWrap(True)
-            self.preset_button.clicked.connect(self.apply_protocol_preset)
-            preset_row = QWidget()
-            preset_row.setObjectName("profileProtocolDefaultsRow")
-            preset_layout = QHBoxLayout(preset_row)
-            preset_layout.setContentsMargins(0, 0, 0, 0)
-            preset_layout.setSpacing(10)
-            preset_layout.addWidget(self.preset_button)
-            preset_layout.addWidget(self.preset_note, 1)
-            form.addRow(preset_row)
-
-            description = QPlainTextEdit()
-            description.setPlainText(data["description"])
-            description.setMaximumBlockCount(200)
-            self.configure_multiline_editor(description, "profileDescription")
-            self.fields["description"] = description
-            form.addRow("Description", description)
-
-            options = QPlainTextEdit()
-            options.setPlainText(data["options"])
-            options.setPlaceholderText("key=value")
-            self.configure_multiline_editor(options, "profileOptions")
-            self.fields["options"] = options
-            form.addRow("Options", options)
-
-            tunnels = QPlainTextEdit()
-            tunnels.setPlainText(data["tunnels"])
-            tunnels.setPlaceholderText("dynamic:1080\nlocal:15432:127.0.0.1:5432")
-            self.configure_multiline_editor(tunnels, "profileTunnels")
-            self.fields["tunnels"] = tunnels
-            form.addRow("Tunnels", tunnels)
-
-            self.form_scroll.setWidget(form_body)
-            root.addWidget(self.form_scroll, 1)
-
-            self.validation_error = QLabel()
-            self.validation_error.setObjectName("profileValidationError")
-            self.validation_error.setTextFormat(Qt.TextFormat.PlainText)
-            self.validation_error.setWordWrap(True)
-            self.validation_error.setVisible(False)
-            root.addWidget(self.validation_error)
-
-            self.buttons = QDialogButtonBox(
-                QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-            )
-            self.buttons.setObjectName("profileDialogButtons")
-            self.save_button = _required_gui_value(
-                self.buttons.button(QDialogButtonBox.StandardButton.Save),
-                "profile dialog save button",
-            )
-            self.save_button.setObjectName("primaryAction")
-            self.save_button.setDefault(True)
-            self.buttons.accepted.connect(self.submit)
-            self.buttons.rejected.connect(self.reject)
-            root.addWidget(self.buttons)
-
-        @staticmethod
-        def configure_multiline_editor(editor: QPlainTextEdit, object_name: str) -> None:
-            editor.setObjectName(object_name)
-            editor.setMinimumHeight(72)
-            editor.setMaximumHeight(96)
-            editor.resize(editor.width(), 84)
-            editor.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-        def submit(self) -> None:
-            try:
-                self._validated_profile = profile_from_editor_data(self.editor_data())
-            except ValueError as exc:
-                self.show_validation_error(str(exc))
-                return
-            self.validation_error.setVisible(False)
-            self.accept()
-
-        def show_validation_error(self, message: str) -> None:
-            self._validated_profile = None
-            self.validation_error.setText(f"Cannot save profile: {message}")
-            self.validation_error.setVisible(True)
-            normalized = message.lower()
-            field_key = next(
-                (
-                    key
-                    for token, key in (
-                        ("profile name", "name"),
-                        ("already exists", "name"),
-                        ("protocol", "protocol"),
-                        ("host", "host"),
-                        ("port", "port"),
-                        ("url", "url"),
-                        ("command", "command"),
-                        ("identity", "identity_file"),
-                        ("credential", "credential_ref"),
-                        ("tunnel", "tunnels"),
-                        ("option", "options"),
-                    )
-                    if token in normalized
-                ),
-                "name",
-            )
-            widget = self.fields.get(field_key)
-            if isinstance(widget, QWidget):
-                self.form_scroll.ensureWidgetVisible(widget)
-                widget.setFocus()
-
-        def apply_protocol_preset(self) -> None:
-            protocol = self.fields["protocol"]
-            if not isinstance(protocol, QComboBox):
-                return
-            preset = protocol_preset_editor_data(protocol.currentText())
-            port = self.fields["port"]
-            options = self.fields["options"]
-            if isinstance(port, QLineEdit) and "port" in preset:
-                port.setText(preset["port"])
-            if isinstance(options, QPlainTextEdit) and "options" in preset:
-                options.setPlainText(preset["options"])
-            self.preset_note.setText(f"Applied {protocol.currentText().upper()} defaults.")
-
-        def editor_data(self) -> dict[str, str]:
-            data: dict[str, str] = {}
-            for key, widget in self.fields.items():
-                if isinstance(widget, QPlainTextEdit):
-                    data[key] = widget.toPlainText()
-                elif isinstance(widget, QComboBox):
-                    data[key] = widget.currentText()
-                else:
-                    data[key] = widget.text()
-            return data
-
-        def profile(self):
-            if self._validated_profile is not None:
-                return self._validated_profile
-            return profile_from_editor_data(self.editor_data())
-
-    class ProfileImportPreviewDialog(_ScreenBoundedDialog):
-        def __init__(self, source: str, result, parent=None) -> None:
-            super().__init__(parent)
-            self.setObjectName("profileImportPreviewDialog")
-            self.setWindowTitle("Import profile preview")
-            _size_dialog_for_parent_screen(
-                self,
-                parent,
-                maximum_width=660,
-                maximum_height=480,
-                minimum_width=420,
-                minimum_height=320,
-            )
-            root = QVBoxLayout(self)
-            title = _literal_label("Profile import preview")
-            title.setObjectName("workflowTitle")
-            root.addWidget(title)
-            source_label = _literal_label(
-                f"Source: {source}\nFormat: {result.source_format}\nProfiles: {len(result.profiles)}"
-            )
-            source_label.setObjectName("profileImportSource")
-            root.addWidget(source_label)
-            preview = QTreeWidget()
-            preview.setObjectName("profileImportPreview")
-            preview.setColumnCount(4)
-            preview.setHeaderLabels(["Name", "Protocol", "Target", "Group"])
-            preview.setRootIsDecorated(False)
-            for profile in result.profiles:
-                preview.addTopLevelItem(
-                    QTreeWidgetItem([profile.name, profile.protocol, profile.display_target, profile.group])
-                )
-            preview.resizeColumnToContents(0)
-            preview.resizeColumnToContents(1)
-            root.addWidget(preview, 1)
-            if result.warnings:
-                warnings = QTextEdit()
-                warnings.setObjectName("profileImportWarnings")
-                warnings.setReadOnly(True)
-                warnings.setMaximumHeight(96)
-                warnings.setPlainText("\n".join(f"warning: {item}" for item in result.warnings))
-                root.addWidget(warnings)
-            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-            buttons.setObjectName("profileImportDialogButtons")
-            import_button = _required_gui_value(
-                buttons.button(QDialogButtonBox.StandardButton.Ok),
-                "profile import confirmation button",
-            )
-            import_button.setText("Import profiles")
-            buttons.accepted.connect(self.accept)
-            buttons.rejected.connect(self.reject)
-            root.addWidget(buttons)
-
-    class LayoutDialog(_ScreenBoundedDialog):
-        def __init__(self, layout: Layout | None = None, parent=None) -> None:
-            super().__init__(parent)
-            self.setObjectName("workflowDialog")
-            self.setWindowTitle("Layout")
-            _size_dialog_for_parent_screen(
-                self,
-                parent,
-                maximum_width=560,
-                maximum_height=660,
-                minimum_width=460,
-                minimum_height=420,
-            )
-            data = layout_to_editor_data(layout)
-            self._original_layout: Layout | None = layout
-            self._validated_layout: Layout | None = None
-
-            root = QVBoxLayout(self)
-            root.setContentsMargins(18, 16, 18, 16)
-            root.setSpacing(10)
-            title = QLabel("Workspace layout")
-            title.setObjectName("workflowTitle")
-            subtitle = QLabel("Arrange multiple terminal panes from profiles and commands.")
-            subtitle.setObjectName("workflowSubtitle")
-            subtitle.setWordWrap(True)
-            root.addWidget(title)
-            root.addWidget(subtitle)
-
-            self.form_scroll = QScrollArea()
-            self.form_scroll.setObjectName("layoutFormScroll")
-            self.form_scroll.setWidgetResizable(True)
-            self.form_scroll.setFrameShape(QFrame.Shape.NoFrame)
-            self.form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            form_body = QWidget()
-            form_body.setObjectName("layoutFormBody")
-            form = QFormLayout(form_body)
-            form.setContentsMargins(0, 0, 8, 0)
-            form.setSpacing(8)
-            form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-            form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-            self.name = QLineEdit(data["name"])
-            self.name.setObjectName("layoutName")
-            self.orientation = QComboBox()
-            self.orientation.setObjectName("layoutOrientation")
-            self.orientation.addItems(["grid", "horizontal", "vertical"])
-            self.orientation.setCurrentText(data["orientation"])
-            self.description = QPlainTextEdit()
-            self.description.setObjectName("layoutDescription")
-            self.description.setPlainText(data["description"])
-            self.description.setMinimumHeight(76)
-            self.description.setMaximumHeight(96)
-            self.panes = QPlainTextEdit()
-            self.panes.setObjectName("layoutPanes")
-            self.panes.setPlainText(data["panes"])
-            self.panes.setPlaceholderText("profile:edge | Edge\ncommand:python -V | Version")
-            self.panes.setMinimumHeight(150)
-            form.addRow("Name", self.name)
-            form.addRow("Orientation", self.orientation)
-            form.addRow("Description", self.description)
-            form.addRow("Panes", self.panes)
-            self.form_scroll.setWidget(form_body)
-            root.addWidget(self.form_scroll, 1)
-
-            self.validation_error = QLabel()
-            self.validation_error.setObjectName("layoutValidationError")
-            self.validation_error.setTextFormat(Qt.TextFormat.PlainText)
-            self.validation_error.setWordWrap(True)
-            self.validation_error.setVisible(False)
-            root.addWidget(self.validation_error)
-
-            self.buttons = QDialogButtonBox(
-                QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-            )
-            self.buttons.setObjectName("layoutDialogButtons")
-            self.save_button = _required_gui_value(
-                self.buttons.button(QDialogButtonBox.StandardButton.Save),
-                "layout dialog save button",
-            )
-            self.save_button.setObjectName("primaryAction")
-            self.save_button.setDefault(True)
-            self.buttons.accepted.connect(self.submit)
-            self.buttons.rejected.connect(self.reject)
-            root.addWidget(self.buttons)
-
-        def submit(self) -> None:
-            try:
-                self._validated_layout = self.parsed_layout()
-            except ValueError as exc:
-                self.show_validation_error(str(exc))
-                return
-            self.validation_error.setVisible(False)
-            self.accept()
-
-        def show_validation_error(self, message: str) -> None:
-            self._validated_layout = None
-            self.validation_error.setText(f"Cannot save layout: {message}")
-            self.validation_error.setVisible(True)
-            target = (
-                self.panes
-                if "pane" in message.lower()
-                else self.orientation
-                if "orientation" in message.lower()
-                else self.name
-            )
-            self.form_scroll.ensureWidgetVisible(target)
-            target.setFocus()
-
-        def parsed_layout(self) -> Layout:
-            parsed = layout_from_editor_data(self.editor_data())
-            original = self._original_layout
-            if original is not None and layout_splitter_size_lengths(
-                parsed
-            ) == layout_splitter_size_lengths(original):
-                parsed.splitter_sizes = [list(sizes) for sizes in original.splitter_sizes]
-                validate_layout(parsed)
-            return parsed
-
-        def editor_data(self) -> dict[str, str]:
-            return {
-                "name": self.name.text(),
-                "orientation": self.orientation.currentText(),
-                "description": self.description.toPlainText(),
-                "panes": self.panes.toPlainText(),
-            }
-
-        def workspace_layout(self) -> Layout:
-            if self._validated_layout is not None:
-                return self._validated_layout
-            return self.parsed_layout()
-
     class TransferQueueDialog(_ScreenBoundedDialog):
         def __init__(self, profile, parent=None, *, process_factory=None) -> None:
             super().__init__(parent)
@@ -9107,8 +8707,11 @@ def create_main_window(
             detail: str,
             actions: Sequence[tuple[str, Callable[..., object]]] | None = None,
             parent=None,
+            *,
+            message_handler: Callable[..., object],
         ) -> None:
             super().__init__(parent)
+            self.message_handler = message_handler
             self.setObjectName("workflowDialog")
             self.setWindowTitle(title)
             _size_dialog_for_parent_screen(
@@ -9170,8 +8773,12 @@ def create_main_window(
 
         def workflow_action(self, callback):
             def run(*_args) -> None:
+                try:
+                    callback()
+                except (OSError, ProcessStatusError) as exc:
+                    self.message_handler(QMessageBox.Icon.Warning, "Workspace operation failed", str(exc))
+                    return
                 self.accept()
-                callback()
 
             return run
 
@@ -10457,7 +10064,19 @@ def create_main_window(
             callback = callbacks.get(action_key) if callbacks is not None else None
             if callback is None:
                 raise RuntimeError(f"missing {family} menu callback: {action_key}")
-            callback()
+            self.run_operator_action(callback)
+
+        def run_operator_action(self, callback: Callable[[], object]) -> None:
+            """Contain expected I/O failures at an operator-triggered Qt boundary."""
+
+            try:
+                callback()
+            except (OSError, ProcessStatusError) as exc:
+                self.show_message(
+                    QMessageBox.Icon.Warning,
+                    "Workspace operation failed",
+                    str(exc),
+                )
 
         def populate_view_design_menu(self) -> None:
             design_menu = _required_gui_value(
@@ -10521,13 +10140,13 @@ def create_main_window(
             callback = self.product_toolbar_callbacks.get(action_key)
             if callback is None:
                 raise RuntimeError(f"missing product toolbar callback: {action_key}")
-            callback()
+            self.run_operator_action(callback)
 
         def run_layout_toolbar_action(self, action_key: str) -> None:
             callback = self.layout_toolbar_callbacks.get(action_key)
             if callback is None:
                 raise RuntimeError(f"missing layout toolbar callback: {action_key}")
-            callback()
+            self.run_operator_action(callback)
 
         def generated_icon_pixmap(
             self,
@@ -11088,7 +10707,7 @@ def create_main_window(
             callback = self.moba_ribbon_callbacks.get(action_key)
             if callback is None:
                 raise RuntimeError(f"missing Moba ribbon callback: {action_key}")
-            callback()
+            self.run_operator_action(callback)
 
         def standard_icon(self, icon_name: str):
             return getattr(QStyle.StandardPixmap, icon_name, QStyle.StandardPixmap.SP_FileIcon)
@@ -11883,8 +11502,12 @@ def create_main_window(
 
         def refresh_profiles(self) -> None:
             selected_name = self.selected_profile_name()
+            try:
+                profiles = sorted(self.store.load(), key=lambda item: (item.group, item.name))
+            except (OSError, ValueError) as exc:
+                _literal_message_box(self, QMessageBox.Icon.Warning, "Profile refresh failed", str(exc))
+                return
             self.profile_list.clear()
-            profiles = sorted(self.store.load(), key=lambda item: (item.group, item.name))
             mremoteng_route = (
                 gui_design_mremoteng_connection_document_route()
                 if self.current_design_id() == "mremoteng"
@@ -12652,8 +12275,13 @@ def create_main_window(
             return _widget_style(self).standardIcon(self.standard_icon(icon_name))
 
         def refresh_layouts(self) -> None:
+            try:
+                layouts = self.layout_store.load()
+            except (OSError, ValueError) as exc:
+                _literal_message_box(self, QMessageBox.Icon.Warning, "Layout refresh failed", str(exc))
+                return
             self.layout_select.clear()
-            for layout in self.layout_store.load():
+            for layout in layouts:
                 self.layout_select.addItem(layout.name)
 
         def begin_design_transition(self) -> None:
@@ -14508,11 +14136,11 @@ def create_main_window(
                     self.profile_list.setProperty(property_name, None)
 
         def update_quick_connect_suggestions(self) -> None:
-            self.quick_connect_suggestions.clear()
             chrome = gui_design_moba_quick_connect_suggestion_chrome()
             quick_connect_chrome = gui_design_moba_quick_connect_chrome()
             self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionQuery", self.quick_connect.text().strip())
             if not self.current_design_is_moba():
+                self.quick_connect_suggestions.clear()
                 self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionKinds", [])
                 self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionLabels", [])
                 self.quick_connect_suggestions.setProperty("mobaQuickConnectSuggestionDetails", [])
@@ -14530,7 +14158,12 @@ def create_main_window(
             self.moba_quick_connect_chrome.setProperty("mobaQuickConnectConnectedMode", connected_mode)
             self.quick_connect.setProperty("mobaQuickConnectConnectedMode", connected_mode)
             self.quick_connect_suggestions.setProperty("mobaQuickConnectConnectedMode", connected_mode)
-            candidates = quick_connect_candidates(self.quick_connect.text(), self.store.load(), limit=6)
+            try:
+                candidates = quick_connect_candidates(self.quick_connect.text(), self.store.load(), limit=6)
+            except (OSError, ValueError) as exc:
+                self.statusBar().showMessage(f"Quick connect unavailable: {exc}")
+                return
+            self.quick_connect_suggestions.clear()
             self.quick_connect_suggestions.setProperty(
                 "mobaQuickConnectSuggestionKinds",
                 [candidate.kind for candidate in candidates],
@@ -14582,7 +14215,11 @@ def create_main_window(
                 if isinstance(candidate, QuickConnectCandidate):
                     self.run_quick_connect_candidate(item)
                     return
-            candidates = quick_connect_candidates(text, self.store.load(), limit=1)
+            try:
+                candidates = quick_connect_candidates(text, self.store.load(), limit=1)
+            except (OSError, ValueError) as exc:
+                _literal_message_box(self, QMessageBox.Icon.Warning, "Quick connect failed", str(exc))
+                return
             if candidates:
                 self.run_quick_connect_candidate_value(candidates[0])
                 return
@@ -14595,11 +14232,15 @@ def create_main_window(
                 self.run_quick_connect_candidate_value(candidate)
 
         def run_quick_connect_candidate_value(self, candidate: QuickConnectCandidate) -> None:
-            if candidate.kind == "profile" and candidate.profile_name:
-                self.select_profile(candidate.profile_name)
-                self.connect_selected(False)
-            elif candidate.profile is not None:
-                self.launch_profile(candidate.profile, dry_run=False, prefix="QUICK CONNECT")
+            try:
+                if candidate.kind == "profile" and candidate.profile_name:
+                    self.select_profile(candidate.profile_name)
+                    self.connect_selected(False)
+                elif candidate.profile is not None:
+                    self.launch_profile(candidate.profile, dry_run=False, prefix="QUICK CONNECT")
+            except (OSError, ValueError, LauncherError) as exc:
+                _literal_message_box(self, QMessageBox.Icon.Warning, "Quick connect failed", str(exc))
+                return
             self.quick_connect_suggestions.setVisible(False)
             self.statusBar().showMessage(f"Quick connect: {candidate.label}")
 
@@ -15302,7 +14943,10 @@ def create_main_window(
             *,
             actions: Sequence[tuple[str, Callable[..., object]]] | None = None,
         ):
-            return WorkflowDialog(title, subtitle, rows, detail, actions=actions, parent=self)
+            return WorkflowDialog(
+                title, subtitle, rows, detail, actions=actions, parent=self,
+                message_handler=self.show_message,
+            )
 
         def selected_profile_for_workflow(self) -> Profile | None:
             return self.profile_by_name(self.selected_profile_name())
@@ -16214,13 +15858,41 @@ def create_main_window(
             ):
                 self.set_toolbar_widget_enabled(button, has_layout)
 
+        def create_profile_dialog(self, profile: Profile | None = None) -> ProfileDialog:
+            return ProfileDialog(profile, self, services=dialog_services)
+
+        def create_layout_dialog(self, layout: Layout | None = None) -> LayoutDialog:
+            return LayoutDialog(layout, self, services=dialog_services)
+
+        def show_message(
+            self,
+            icon,
+            title: object,
+            message: object,
+            *,
+            buttons=QMessageBox.StandardButton.Ok,
+            default_button=None,
+        ):
+            return _literal_message_box(
+                self, icon, title, message, buttons=buttons, default_button=default_button
+            )
+
+        def confirm_action(self, title: str, message: str) -> bool:
+            return self.show_message(
+                QMessageBox.Icon.Question,
+                title,
+                message,
+                buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                default_button=QMessageBox.StandardButton.No,
+            ) == QMessageBox.StandardButton.Yes
+
         def create_profile(self) -> None:
-            dialog = ProfileDialog(parent=self)
+            dialog = self.create_profile_dialog()
             while dialog.exec() == QDialog.DialogCode.Accepted:
                 try:
                     profile = dialog.profile()
                     self.store.add(profile, surface="profile-editor")
-                except ValueError as exc:
+                except (OSError, ValueError) as exc:
                     dialog.show_validation_error(str(exc))
                     continue
                 self.refresh_profiles()
@@ -16240,50 +15912,52 @@ def create_main_window(
             try:
                 result = import_profiles(Path(source), source_format="auto")
             except (OSError, ValueError) as exc:
-                _literal_message_box(
-                    self,
+                self.show_message(
                     QMessageBox.Icon.Warning,
                     "Profile import failed",
                     str(exc),
                 )
                 return
             if not result.profiles:
-                _literal_message_box(
-                    self,
+                self.show_message(
                     QMessageBox.Icon.Information,
                     "Profile import",
                     "The import contains no supported profiles.",
                 )
                 return
-            dialog = ProfileImportPreviewDialog(source, result, self)
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                return
-            imported = 0
-            skipped: list[str] = []
-            for profile in result.profiles:
+            dialog = self.create_profile_import_preview_dialog(source, result)
+            while dialog.exec() == QDialog.DialogCode.Accepted:
                 try:
-                    self.store.add(profile, surface="profile-editor")
-                    imported += 1
-                except ValueError as exc:
-                    skipped.append(f"{profile.name}: {exc}")
-            self.refresh_profiles()
-            self.log.append(f"PROFILE IMPORTED: {imported} from {result.source_format}")
-            if skipped:
-                _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Warning,
-                    "Profile import",
-                    "Some profiles were skipped:\n" + "\n".join(skipped),
-                )
+                    imported = self.store.add_many(
+                        result.profiles,
+                        skip_existing=True,
+                        surface="profile-editor",
+                    )
+                except (OSError, ValueError) as exc:
+                    self.show_message(QMessageBox.Icon.Warning, "Profile import failed", str(exc))
+                    continue
+                imported_names = {profile.name for profile in imported}
+                skipped = [
+                    f"{profile.name}: profile already exists"
+                    for profile in result.profiles if profile.name not in imported_names
+                ]
+                self.refresh_profiles()
+                self.log.append(f"PROFILE IMPORTED: {len(imported)} from {result.source_format}")
+                if skipped:
+                    self.show_message(
+                        QMessageBox.Icon.Warning,
+                        "Profile import",
+                        "Some profiles were skipped:\n" + "\n".join(skipped),
+                    )
+                return
 
         def create_profile_import_preview_dialog(self, source: str, result):
-            return ProfileImportPreviewDialog(source, result, self)
+            return ProfileImportPreviewDialog(source, result, self, services=dialog_services)
 
         def edit_selected_profile(self) -> None:
             name = self.selected_profile_name()
             if not name:
-                _literal_message_box(
-                    self,
+                self.show_message(
                     QMessageBox.Icon.Information,
                     "Remote Ops Workspace",
                     "Select a profile first.",
@@ -16291,20 +15965,19 @@ def create_main_window(
                 return
             try:
                 current = self.store.get(name)
-            except KeyError as exc:
-                _literal_message_box(
-                    self,
+            except (KeyError, OSError, ValueError) as exc:
+                self.show_message(
                     QMessageBox.Icon.Warning,
                     "Profile failed",
                     str(exc),
                 )
                 return
-            dialog = ProfileDialog(current, self)
+            dialog = self.create_profile_dialog(current)
             while dialog.exec() == QDialog.DialogCode.Accepted:
                 try:
                     profile = dialog.profile()
                     self.save_profile(profile, original_name=name)
-                except (KeyError, ValueError) as exc:
+                except (KeyError, OSError, ValueError) as exc:
                     dialog.show_validation_error(str(exc))
                     continue
                 self.refresh_profiles()
@@ -16315,30 +15988,20 @@ def create_main_window(
         def remove_selected_profile(self) -> None:
             name = self.selected_profile_name()
             if not name:
-                _literal_message_box(
-                    self,
+                self.show_message(
                     QMessageBox.Icon.Information,
                     "Remote Ops Workspace",
                     "Select a profile first.",
                 )
                 return
-            answer = _literal_message_box(
-                self,
-                QMessageBox.Icon.Question,
-                "Remove profile",
-                f"Remove profile {name}?",
-                buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                default_button=QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            if not self.confirm_action("Remove profile", f"Remove profile {name}?"):
                 return
             try:
                 self.store.remove(name, surface="profile-editor")
                 self.refresh_profiles()
                 self.log.append(f"PROFILE REMOVED: {name}")
-            except KeyError as exc:
-                _literal_message_box(
-                    self,
+            except (KeyError, OSError, ValueError) as exc:
+                self.show_message(
                     QMessageBox.Icon.Warning,
                     "Profile failed",
                     str(exc),
@@ -16488,7 +16151,7 @@ def create_main_window(
             try:
                 profile = self.store.get(name)
                 self.launch_profile(profile, dry_run=dry_run, prefix="DRY RUN" if dry_run else "LAUNCHED")
-            except (KeyError, LauncherError, ValueError) as exc:
+            except (KeyError, LauncherError, OSError, ValueError) as exc:
                 _literal_message_box(
                     self,
                     QMessageBox.Icon.Warning,
@@ -16553,7 +16216,7 @@ def create_main_window(
                     pane_plan = terminal_plan_for_sftp_browser(profile)
                     self.open_terminal_tab(pane_plan, profile=profile)
                 self.log.append(f"FILES: {pane_plan.printable()}")
-            except (KeyError, LauncherError, ValueError) as exc:
+            except (KeyError, LauncherError, OSError, ValueError) as exc:
                 _literal_message_box(
                     self,
                     QMessageBox.Icon.Warning,
@@ -16583,7 +16246,7 @@ def create_main_window(
                     self.log.append(f"  {command}")
                 for note in plan.notes:
                     self.log.append(f"  note: {note}")
-            except (KeyError, LauncherError, ValueError) as exc:
+            except (KeyError, LauncherError, OSError, ValueError) as exc:
                 _literal_message_box(
                     self,
                     QMessageBox.Icon.Warning,
@@ -16877,7 +16540,7 @@ def create_main_window(
             callback = self.home_action_callbacks.get(action_key)
             if callback is None:
                 raise RuntimeError(f"missing home action callback: {action_key}")
-            callback()
+            self.run_operator_action(callback)
 
         def build_moba_home_welcome(self, surface) -> QFrame:
             chrome = gui_design_moba_home_welcome_chrome()
@@ -21504,12 +21167,12 @@ def create_main_window(
             self.log.append(f"RECOVERED: {len(sessions)} recent session pane(s)")
 
         def create_layout(self) -> None:
-            dialog = LayoutDialog(parent=self)
+            dialog = self.create_layout_dialog()
             while dialog.exec() == QDialog.DialogCode.Accepted:
                 try:
                     layout = dialog.workspace_layout()
                     self.layout_store.add(layout)
-                except ValueError as exc:
+                except (OSError, ValueError) as exc:
                     dialog.show_validation_error(str(exc))
                     continue
                 self.refresh_layouts()
@@ -21520,8 +21183,7 @@ def create_main_window(
         def edit_selected_layout(self) -> None:
             name = self.layout_select.currentText()
             if not name:
-                _literal_message_box(
-                    self,
+                self.show_message(
                     QMessageBox.Icon.Information,
                     "Remote Ops Workspace",
                     "No saved layout selected.",
@@ -21529,20 +21191,19 @@ def create_main_window(
                 return
             try:
                 current = self.layout_store.get(name)
-            except KeyError as exc:
-                _literal_message_box(
-                    self,
+            except (KeyError, OSError, ValueError) as exc:
+                self.show_message(
                     QMessageBox.Icon.Warning,
                     "Layout failed",
                     str(exc),
                 )
                 return
-            dialog = LayoutDialog(current, self)
+            dialog = self.create_layout_dialog(current)
             while dialog.exec() == QDialog.DialogCode.Accepted:
                 try:
                     layout = dialog.workspace_layout()
                     self.save_layout(layout, original_name=name)
-                except (KeyError, ValueError) as exc:
+                except (KeyError, OSError, ValueError) as exc:
                     dialog.show_validation_error(str(exc))
                     continue
                 self.refresh_layouts()
@@ -21553,30 +21214,20 @@ def create_main_window(
         def remove_selected_layout(self) -> None:
             name = self.layout_select.currentText()
             if not name:
-                _literal_message_box(
-                    self,
+                self.show_message(
                     QMessageBox.Icon.Information,
                     "Remote Ops Workspace",
                     "No saved layout selected.",
                 )
                 return
-            answer = _literal_message_box(
-                self,
-                QMessageBox.Icon.Question,
-                "Remove layout",
-                f"Remove layout {name}?",
-                buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                default_button=QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            if not self.confirm_action("Remove layout", f"Remove layout {name}?"):
                 return
             try:
                 self.layout_store.remove(name)
                 self.refresh_layouts()
                 self.log.append(f"LAYOUT REMOVED: {name}")
-            except KeyError as exc:
-                _literal_message_box(
-                    self,
+            except (KeyError, OSError, ValueError) as exc:
+                self.show_message(
                     QMessageBox.Icon.Warning,
                     "Layout failed",
                     str(exc),
@@ -21627,8 +21278,7 @@ def create_main_window(
         def open_selected_layout(self) -> None:
             name = self.layout_select.currentText()
             if not name:
-                _literal_message_box(
-                    self,
+                self.show_message(
                     QMessageBox.Icon.Information,
                     "Remote Ops Workspace",
                     "No saved layout selected.",
@@ -21656,9 +21306,8 @@ def create_main_window(
                 self.update_session_status()
                 for pane in self.terminal_panes_in(widget):
                     self.start_terminal_pane_when_active(pane, tab_index)
-            except (KeyError, LauncherError, ValueError) as exc:
-                _literal_message_box(
-                    self,
+            except (KeyError, LauncherError, OSError, ValueError) as exc:
+                self.show_message(
                     QMessageBox.Icon.Warning,
                     "Layout failed",
                     str(exc),
@@ -21769,7 +21418,12 @@ def create_main_window(
             ]
             if not sizes:
                 return
-            if self.layout_store.update_splitter_sizes(name, sizes):
+            try:
+                saved = self.layout_store.update_splitter_sizes(name, sizes)
+            except (OSError, ValueError) as exc:
+                self.statusBar().showMessage(f"Layout resize could not be saved: {exc}")
+                return
+            if saved:
                 self.log.append(f"LAYOUT RESIZE SAVED: {name}")
 
         def new_terminal_pane(
@@ -22128,6 +21782,10 @@ def create_main_window(
 
 
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "--smoke-json":
+        from .gui_smoke import main as gui_smoke_main
+
+        return gui_smoke_main(["--out", *sys.argv[2:]])
     try:
         app, _window = create_main_window(sys.argv, show=True)
     except GuiDependencyError as exc:
@@ -22135,7 +21793,26 @@ def main() -> int:
         if exc.__cause__ is not None:
             print(exc.__cause__)
         return 2
+    except (OSError, ValueError) as exc:
+        message = f"Unable to open workspace: {exc}"
+        print(message, file=sys.stderr)
+        _show_gui_startup_error(message)
+        return 1
     return app.exec()
+
+
+def _show_gui_startup_error(message: str) -> None:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtWidgets import QApplication, QMessageBox
+
+    if QApplication.instance() is None:
+        return
+    dialog = QMessageBox()
+    dialog.setIcon(QMessageBox.Icon.Critical)
+    dialog.setWindowTitle("Remote Ops Workspace startup failed")
+    dialog.setTextFormat(Qt.TextFormat.PlainText)
+    dialog.setText(message)
+    dialog.exec()
 
 
 if __name__ == "__main__":

@@ -636,7 +636,16 @@ def check_source_and_python_job(workflow: str) -> list[str]:
     errors = check_job_block_disallows_continue_on_error("source-and-python", block)
     errors.extend(check_checkout_step(block, job="source-and-python"))
     required_snippets = {
-        '".[desktop,security,package]"': "isolated source/Python release environment install",
+        "python -m pip install --require-hashes --only-binary=:all: --requirement requirements-locks/source-linux-x86_64-bootstrap.txt": (
+            "hashed source/Python build bootstrap"
+        ),
+        "python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement requirements-locks/source-linux-x86_64.txt": (
+            "hashed source/Python GUI and server runtime"
+        ),
+        'python -m pip install --no-deps --no-build-isolation ".[desktop,security,package,servers]"': (
+            "isolated source/Python release environment install"
+        ),
+        "python -m pip check": "source/Python installed dependency consistency check",
         "python scripts/make_release.py": "source/Python release build",
         "python scripts/check_release_publish_assets.py --assets-dir dist --tag": (
             "source/Python release asset validation"

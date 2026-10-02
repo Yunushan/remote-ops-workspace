@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 SUPPORTED_HOSTED_RUNNERS = {
+    "ubuntu-24.04",
     "ubuntu-24.04-arm",
     "ubuntu-latest",
     "windows-11-arm",
@@ -49,6 +50,41 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors.extend(check_gui_render_job(text))
     errors.extend(check_gui_interactions_windows_job(text))
     errors.extend(check_native_windows_readiness_job(text))
+    errors.extend(check_secure_server_runtime_job(text))
+    return errors
+
+
+def check_secure_server_runtime_job(workflow: str) -> list[str]:
+    block = "\n".join(line for line in workflow_job_block(workflow, "secure-server-runtime").splitlines() if not line.lstrip().startswith("#"))
+    required = {
+        "requirements-locks/linux-x86_64.txt": "Linux server runtime lock",
+        "requirements-locks/windows-x64.txt": "Windows server runtime lock",
+        "- os: ubuntu-24.04": "Linux lifecycle smoke runner",
+        "- os: windows-2025-vs2026": "Windows lifecycle smoke runner",
+        '--require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"': "hashed server build bootstrap",
+        '--require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"': "complete hashed server dependencies",
+        '--no-deps --no-build-isolation ".[security,package,servers]"': "project install without mutable dependencies",
+        "python -m pip check": "server dependency consistency check",
+        "python scripts/smoke_embedded_server_security.py --out artifacts/embedded-server-security.json": "real authenticated FTP/FTPS proof",
+        "python scripts/smoke_managed_process_lifecycle.py --out artifacts/managed-process-lifecycle.json": "real process identity and verified lifecycle proof",
+        "- name: Prove process identity, verified stop and offline recovery\n        run: python scripts/smoke_managed_process_lifecycle.py --out artifacts/managed-process-lifecycle.json": "unconditional lifecycle proof on both matrix runners",
+        "path: artifacts/managed-process-lifecycle.json": "retained sanitized lifecycle report",
+        "name: managed-process-lifecycle-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}": "distinct lifecycle evidence artifact",
+        "name: managed-process-lifecycle-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}\n          path: artifacts/managed-process-lifecycle.json\n          if-no-files-found: error\n          include-hidden-files: false\n          retention-days: 14": "dedicated sanitized lifecycle upload contract",
+        "path: artifacts/embedded-server-security.json": "retained server security evidence",
+        "if-no-files-found: error": "required server security evidence artifact",
+        "python scripts/smoke_workspace_recovery.py --download-previous-wheel": "pinned released-wheel full-state recovery drill",
+        "--out artifacts/workspace-recovery.json": "sanitized workspace recovery report",
+        "path: artifacts/workspace-recovery.json": "retained workspace recovery report",
+        "name: workspace-recovery-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}": "distinct recovery evidence artifact",
+        "retention-days: 14": "bounded recovery evidence retention",
+    }
+    errors = [f"secure-server-runtime missing {label}" for snippet, label in required.items() if snippet not in block]
+    if "continue-on-error: true" in block:
+        errors.append("secure-server-runtime recovery and security proofs must remain blocking")
+    artifact_paths = re.findall(r"(?m)^\s+path:\s*(\S+)", block)
+    if set(artifact_paths) != {"artifacts/embedded-server-security.json", "artifacts/managed-process-lifecycle.json", "artifacts/workspace-recovery.json"}:
+        errors.append("secure-server-runtime must upload only sanitized security, lifecycle and recovery JSON reports")
     return errors
 
 
@@ -1033,8 +1069,7 @@ def discover_hosted_runner_labels(workflow: str) -> set[str]:
         if value.startswith("${{"):
             continue
         labels.update(parse_runner_label_value(value))
-    test_block = workflow_job_block(workflow, "test")
-    for match in re.finditer(r"(?m)^\s*(?:-\s*)?os:\s+([^\n#]+)", test_block):
+    for match in re.finditer(r"(?m)^\s*(?:-\s*)?os:\s+([^\n#]+)", workflow):
         labels.update(parse_runner_label_value(match.group(1).strip()))
     return labels
 

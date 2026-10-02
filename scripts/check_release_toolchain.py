@@ -257,13 +257,12 @@ def check_workflow(
 
     python_version = str(python.get("version", ""))
     source_date_epoch = str(python.get("source_date_epoch", ""))
-    constraints_file = str(python.get("constraints_file", ""))
     if f'python-version: "{python_version}"' not in workflow:
         errors.append(f"release workflow must use Python {python_version}")
     if f'SOURCE_DATE_EPOCH: "{source_date_epoch}"' not in workflow:
         errors.append(f"release workflow must set SOURCE_DATE_EPOCH={source_date_epoch}")
-    if f"--constraint {constraints_file}" not in workflow:
-        errors.append(f"release workflow must install Python release deps with --constraint {constraints_file}")
+    if "--require-hashes" not in workflow or "requirements-locks/" not in workflow:
+        errors.append("release workflow must consume complete fully hashed dependency locks")
     if "python -m pip install --upgrade" in workflow:
         errors.append("release workflow must not use unbounded pip install --upgrade")
 
@@ -273,7 +272,6 @@ def check_workflow(
         if isinstance(row, dict)
     }
     compatibility = profiles.get("windows-x86-vault-fail-closed", {})
-    compatibility_file = str(compatibility.get("constraints_file", ""))
     if compatibility.get("targets") != ["windows-x86"]:
         errors.append(
             "windows-x86-vault-fail-closed profile must target exactly windows-x86"
@@ -284,9 +282,13 @@ def check_workflow(
         "bcrypt",
         "cryptography",
         "truststore",
+        "pyftpdlib",
+        "pyOpenSSL",
+        "pyasyncore",
+        "pyasynchat",
     }:
         errors.append(
-            "windows-x86-vault-fail-closed profile must exclude bcrypt, cryptography, and truststore"
+            "windows-x86-vault-fail-closed profile must exclude the security and server backends"
         )
     expected_backend = {
         "feature": "encrypted-vault",
@@ -319,10 +321,10 @@ def check_workflow(
                 "macOS x64 and ARM64 branches"
             )
     for snippet, label in {
-        f"--only-binary=cryptography --constraint {constraints_file}": (
+        "--require-hashes --only-binary=:all:": (
             "binary-only modern cryptography installs"
         ),
-        f'--constraint {compatibility_file} pip setuptools wheel ".[package]"': (
+        'lock: requirements-locks/windows-x86.txt': (
             "Windows x86 fail-closed package install"
         ),
         'if ("${{ matrix.arch }}" -eq "x86")': "explicit Windows x86 compatibility branch",
@@ -332,7 +334,7 @@ def check_workflow(
         ),
         "find_spec('bcrypt') is None": "Windows x86 bcrypt absence assertion",
         "find_spec('cryptography') is None": "Windows x86 backend absence assertion",
-        '--no-build-isolation --no-binary=cryptography --constraint requirements-release.txt ".[desktop,security,package]"': (
+        '--no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"': (
             "maintained Intel macOS cryptography source build"
         ),
         f'$ExpectedCryptography = "{cryptography_version}"': (
@@ -377,10 +379,10 @@ def check_workflow(
         '$env:OPENSSL_DIR = $OpenSslRoot': "explicit OpenSSL source-build root",
         '$env:OPENSSL_STATIC = "1"': "static OpenSSL linkage policy",
         '$env:OPENSSL_NO_VENDOR = "1"': "no untracked vendored OpenSSL fallback",
-        f"python -m pip install --constraint {constraints_file} pip setuptools wheel maturin cffi pycparser": (
+        'python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"': (
             "pinned Windows ARM64 cryptography build dependencies"
         ),
-        f"--no-cache-dir --no-build-isolation --no-binary=cryptography --constraint {constraints_file}": (
+        "--no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib": (
             "deterministic Windows ARM64 cryptography source build"
         ),
         f'$ExpectedOpenSsl = "OpenSSL {openssl_version}"': "expected ARM64 OpenSSL runtime version",
@@ -422,7 +424,7 @@ def check_release_helper(toolchain: dict[str, object]) -> list[str]:
         constraints_file = str(row.get("constraints_file", ""))
         if constraints_file and f'"{constraints_file}"' not in helper:
             errors.append(f"source release bundles must include {constraints_file}")
-    if '".[desktop,security,package]"' not in workflow:
+    if '".[desktop,security,package,servers]"' not in workflow:
         errors.append(
             "release workflow must install the source/Python release environment before SBOM generation"
         )

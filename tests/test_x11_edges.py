@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import signal
 import subprocess
 from dataclasses import replace
 from pathlib import Path
@@ -21,18 +20,18 @@ def test_x11_data_objects_are_printable_and_json_ready(tmp_path: Path) -> None:
     plan = x11.build_moba_x_server_plan(
         display=":2",
         system="darwin",
-        which=lambda name: "/usr/bin/open" if name == "open" else None,
+        which=lambda name: "/opt/X11/bin/Xquartz" if name == "Xquartz" else None,
         packaged_roots=[],
         display_probe=lambda _display: False,
     )
-    assert plan.printable() == "/usr/bin/open -a XQuartz"
-    assert plan.to_dict()["runtime"]["key"] == "xquartz"
-    assert any("macOS uses XQuartz" in note for note in plan.notes)
+    assert plan.command[:2] == ["/opt/X11/bin/Xquartz", ":2"]
+    assert plan.to_dict()["runtime"]["key"] == "xquartz-xorg"
+    assert any("macOS uses the direct XQuartz" in note for note in plan.notes)
 
     status = x11.build_moba_x_server_status(
         display=":2",
         system="darwin",
-        which=lambda name: "/usr/bin/open" if name == "open" else None,
+        which=lambda name: "/opt/X11/bin/Xquartz" if name == "Xquartz" else None,
         packaged_roots=[],
         display_probe=lambda _display: False,
         state_path=tmp_path / "missing-state.json",
@@ -148,13 +147,11 @@ def test_packaged_runtime_roots_include_environment_and_deduplicate(
 @pytest.mark.parametrize(
     ("system", "key", "expected"),
     [
-        ("windows", "xlaunch", ["runtime"]),
-        ("windows", "xming", ["runtime", ":3", "-multiwindow", "-clipboard", "-ac"]),
+        ("windows", "xming", ["runtime", ":3", "-multiwindow", "-clipboard"]),
         ("darwin", "xquartz-xorg", ["runtime", ":3"]),
-        ("darwin", "xquartz", ["runtime", "-a", "XQuartz"]),
-        ("linux", "xvfb", ["runtime", ":3", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"]),
-        ("linux", "xephyr", ["runtime", ":3", "-nolisten", "tcp"]),
-        ("linux", "xorg", ["runtime", ":3", "-nolisten", "tcp"]),
+        ("linux", "xvfb", ["runtime", ":3", "-screen", "0", "1920x1080x24"]),
+        ("linux", "xephyr", ["runtime", ":3"]),
+        ("linux", "xorg", ["runtime", ":3"]),
     ],
 )
 def test_runtime_commands_cover_supported_platform_variants(
@@ -163,18 +160,19 @@ def test_runtime_commands_cover_supported_platform_variants(
     expected: list[str],
 ) -> None:
     runtime = x11.XServerRuntimeCandidate(key, key, "runtime", True, "test")
-    assert x11._runtime_command(runtime, ":3", system) == expected
+    command = x11._runtime_command(runtime, ":3", system, authority_path=Path("authority"))
+    assert command == [*expected, "-auth", "authority", "-listen" if system == "windows" else "-nolisten", "tcp"]
 
 
 def test_run_and_lifecycle_failure_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     launched: list[list[str]] = []
-    basic = x11.XServerPlan(["Xorg", ":4"], [])
-    monkeypatch.setattr(x11, "popen_hidden", lambda command: launched.append(command))
+    basic = x11.XServerPlan(["Xorg", ":4", "-auth", str(tmp_path / "Xauthority"), "-nolisten", "tcp"], [])
+    monkeypatch.setattr(x11, "popen_hidden", lambda command, **_kwargs: launched.append(command))
 
     assert x11.run_x_server(basic, dry_run=True) is basic
     assert launched == []
     assert x11.run_x_server(basic) is basic
-    assert launched == [["Xorg", ":4"]]
+    assert launched == [basic.command]
 
     unavailable_runtime = x11.XServerRuntimeCandidate("xorg", "Xorg", "Xorg", False, "missing")
     unavailable_plan = x11.ManagedXServerPlan(
@@ -446,52 +444,14 @@ def test_display_detection_checks_unix_socket_and_tcp(monkeypatch: pytest.Monkey
         assert x11.is_x_display_in_use(":14") is False
 
 
-def test_pid_probe_covers_windows_and_posix_outcomes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pid_probe_uses_read_only_process_status(monkeypatch: pytest.MonkeyPatch) -> None:
     assert x11._pid_exists(0) is False
-
-    with monkeypatch.context() as patch:
-        patch.setattr(x11.os, "name", "nt")
-        patch.setattr(x11, "run_hidden", lambda *_args, **_kwargs: SimpleNamespace(stdout='"python","42"'))
-        assert x11._pid_exists(42) is True
-        assert x11._pid_exists(41) is False
-
-    with monkeypatch.context() as patch:
-        patch.setattr(x11.os, "name", "nt")
-        patch.setattr(x11, "run_hidden", lambda *_args, **_kwargs: _raise(OSError("tasklist failed")))
-        assert x11._pid_exists(42) is False
-
-    for failure, expected in (
-        (None, True),
-        (ProcessLookupError(), False),
-        (PermissionError(), True),
-        (OSError(), False),
-    ):
-        with monkeypatch.context() as patch:
-            patch.setattr(x11.os, "name", "posix")
-
-            def kill(_pid: int, _signal: int, failure: BaseException | None = failure) -> None:
-                if failure is not None:
-                    raise failure
-
-            patch.setattr(x11.os, "kill", kill)
-            assert x11._pid_exists(42) is expected
+    monkeypatch.setattr(x11, "process_is_running", lambda pid: pid == 42)
+    assert x11._pid_exists(42) is True
+    assert x11._pid_exists(41) is False
 
 
-def test_pid_termination_and_first_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    windows_calls: list[list[str]] = []
-    with monkeypatch.context() as patch:
-        patch.setattr(x11.os, "name", "nt")
-        patch.setattr(x11, "run_hidden", lambda command, **_kwargs: windows_calls.append(command))
-        x11._terminate_pid(51)
-    assert windows_calls == [["taskkill", "/PID", "51", "/T"]]
-
-    posix_calls: list[tuple[int, int]] = []
-    with monkeypatch.context() as patch:
-        patch.setattr(x11.os, "name", "posix")
-        patch.setattr(x11.os, "kill", lambda pid, sig: posix_calls.append((pid, sig)))
-        x11._terminate_pid(52)
-    assert posix_calls == [(52, signal.SIGTERM)]
-
+def test_first_available(monkeypatch: pytest.MonkeyPatch) -> None:
     with monkeypatch.context() as patch:
         patch.setattr(x11.shutil, "which", lambda name: f"/bin/{name}" if name == "second" else None)
         assert x11._first_available(["first", "second", "third"]) == "second"

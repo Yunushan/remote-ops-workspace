@@ -107,6 +107,10 @@ PY
   --add-data "$ROOT/configs:remote_ops_workspace/configs" \
   --add-data "$ROOT/apps/web:remote_ops_workspace/web" \
   --copy-metadata remote-ops-workspace \
+  --collect-submodules pyftpdlib \
+  --collect-submodules OpenSSL \
+  --hidden-import asyncore \
+  --hidden-import asynchat \
   "$LAUNCHER"
 
 if [[ ! -d "$APP_PATH" ]]; then

@@ -114,6 +114,35 @@ PY
   echo "native installer smoke runtime resources: $label platforms --json"
 }
 
+verify_app_gui() {
+  local app_path="$1"
+  local label="$2"
+  python3 - "$app_path/Contents/MacOS/$APP_EXECUTABLE_NAME" "$SMOKE_ROOT" "$VERSION" "$label" <<'PY'
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import uuid
+from pathlib import Path
+
+executable, smoke_root, version, label = sys.argv[1:]
+home = Path(smoke_root) / f"gui-{uuid.uuid4().hex}"
+report = home / "result.json"
+environment = {**os.environ, "ROW_HOME": str(home), "QT_QPA_PLATFORM": "cocoa"}
+subprocess.run([executable, "gui", "--smoke-json", str(report)], env=environment, timeout=25, check=True)
+payload = json.loads(report.read_text(encoding="utf-8"))
+if payload.get("success") is not True or payload.get("frozen") is not True or payload.get("qt_platform") != "cocoa" or payload.get("version") != version:
+    raise SystemExit(f"{label} GUI report did not prove the frozen native macOS release")
+if any(payload.get(key) is not True for key in ("profile_persisted", "profile_selected", "window_visible")) or payload.get("paint_colour_count", 0) < 3:
+    raise SystemExit(f"{label} GUI profile workflow or paint evidence failed")
+image = report.with_suffix(".png")
+if hashlib.sha256(image.read_bytes()).hexdigest() != payload.get("screenshot_sha256"):
+    raise SystemExit(f"{label} GUI screenshot digest did not match the startup report")
+print(f"native installer smoke packaged GUI: {label} startup, profile selection and paint passed")
+PY
+}
+
 echo "native installer smoke: DMG install"
 hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -readonly -quiet
 if [[ ! -d "$MOUNT_DIR/$APP_NAME" ]]; then
@@ -125,6 +154,7 @@ ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 echo "native installer smoke: DMG verify"
 codesign --verify --deep --strict "$DMG_APP"
 verify_app_runtime_resources "$DMG_APP" "DMG verify"
+verify_app_gui "$DMG_APP" "DMG verify"
 
 echo "native installer smoke: DMG upgrade"
 rm -rf "$DMG_APP"
@@ -151,6 +181,7 @@ fi
 echo "native installer smoke: PKG verify"
 codesign --verify --deep --strict "$PKG_APP"
 verify_app_runtime_resources "$PKG_APP" "PKG verify"
+verify_app_gui "$PKG_APP" "PKG verify"
 
 echo "native installer smoke: PKG upgrade"
 sudo installer -pkg "$PKG" -target /

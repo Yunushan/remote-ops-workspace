@@ -78,7 +78,19 @@ and unchanged source/package bytes. Its dry regressions do not establish a
 successful native transition; read `native-upgrade-rollback.json` and its owned
 cleanup result from the actual runner. Only sanitized reports are uploaded.
 The private synthetic state and installer logs stay outside artifact paths.
-MSI, ARM, macOS and Linux previous-version transitions remain separate work.
+The Linux x86_64 lane adds a separate guarded DEB drill after the candidate build,
+native smoke and binding report succeed. It inspects the pinned v1.0.24 package
+and candidate payloads, checks every installed payload before native commands,
+and exercises previous/candidate/previous state and vault reads with encrypted
+full-state recovery. It refuses pre-existing installations, package identity
+mismatches and unconfirmed command completion. A timeout prevents further
+package commands; parent cleanup does not prove descendant cleanup. Only its
+sanitized `linux-x86_64/native-upgrade-rollback.json` receipt is uploaded. Portable
+regressions establish the controller's checks, while actual DEB compatibility
+requires a successful hosted transition receipt.
+
+MSI, ARM, macOS, RPM and AppImage previous-version transitions remain separate
+work.
 macOS uses ad-hoc signing here, without publisher identity or notarization.
 These checks do not establish Windows Smart App Control acceptance, independent
 redistribution approval, complete supported-host workflows, or production

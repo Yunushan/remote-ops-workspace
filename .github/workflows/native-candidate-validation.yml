@@ -465,6 +465,7 @@ jobs:
           --repository "$GITHUB_REPOSITORY"
           --report "candidate-license-inventory/linux-${{ matrix.arch }}.json"
       - name: Record candidate provenance and actual local inventory
+        id: candidate-proof
         if: always()
         shell: bash
         run: >-
@@ -474,6 +475,15 @@ jobs:
           --target "linux-${{ matrix.arch }}"
           --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
           --asset-dir native-dist/linux
+      - name: Verify previous Linux DEB native upgrade and recovery
+        id: native-recovery
+        if: ${{ matrix.arch == 'x86_64' && steps.native-build.outcome == 'success' && steps.native-smoke.outcome == 'success' && steps.candidate-proof.outcome == 'success' }}
+        timeout-minutes: 35
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/native_linux_installer_recovery.py run
+          --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
       - name: Retain unreleased candidate proof and artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

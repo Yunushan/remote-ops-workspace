@@ -41,6 +41,8 @@ if ($Case.StartsWith("host-") -or $Case.StartsWith("deletion-")) {
         if (!(Test-CandidateRegisteredProduct "{other-guid}" "Remote Ops Workspace 1.0.27" "")) { throw "MSI display name was not recognized" }
         if (!(Test-CandidateRegisteredProduct "{other-guid}" "" (Join-Path $Root "Remote Ops Workspace"))) { throw "product installation directory was not recognized" }
         if (Test-CandidateRegisteredProduct "{other-guid}" "Another application" (Join-Path $Root "Another application")) { throw "unrelated registration was recognized as ROW" }
+        if (Test-CandidateRegisteredProduct "{other-guid}" "Another application" ('C:\Unrelated' + [char]0 + 'Install')) { throw "malformed unrelated registration was recognized as ROW" }
+        if (!(Test-CandidateRegisteredProduct "{other-guid}" "" '  "C:\Program Files\Remote Ops Workspace\"  ')) { throw "quoted ROW installation directory was not recognized" }
       }
     }
     try { Assert-DisposableCandidateHost } catch { $Caught = $true }

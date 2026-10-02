@@ -11,7 +11,13 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 function Test-CandidateRegisteredProduct([string]$KeyName, [string]$DisplayName, [string]$InstallLocation) {
   if ($KeyName -ieq "{5C887096-F4E5-4AB8-8D6F-65052D08D284}_is1") { return $true }
   if ($DisplayName -imatch '^Remote Ops Workspace(?:$|[\s(\-])') { return $true }
-  if ($InstallLocation -and [IO.Path]::GetFileName($InstallLocation.TrimEnd([char[]]@('\', '/'))) -ieq "Remote Ops Workspace") { return $true }
+  # Uninstall metadata is untrusted text; unrelated entries can contain quotes
+  # or invalid filesystem characters. Do not parse them with IO.Path APIs.
+  if ($InstallLocation) {
+    $LocationText = $InstallLocation.Trim().Trim([char[]]@('"', "'")).TrimEnd([char[]]@('\', '/'))
+    $LocationParts = @($LocationText.Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries))
+    if ($LocationParts.Count -gt 0 -and $LocationParts[-1].Trim() -ieq "Remote Ops Workspace") { return $true }
+  }
   return $false
 }
 

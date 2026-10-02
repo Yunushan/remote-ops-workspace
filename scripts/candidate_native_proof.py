@@ -191,14 +191,24 @@ def main():
         key=lambda item: item["name"].lower(),
     )
     inspect = subprocess.run(
-        [sys.executable, "-m", "pip", "inspect", "--local"],
+        [sys.executable, "-X", "utf8", "-m", "pip", "inspect", "--local"],
         capture_output=True,
         timeout=120,
         check=False,
     )
     (output / "pip-inspect.json").write_bytes(inspect.stdout)
+    (output / "pip-inspect.stderr.log").write_bytes(inspect.stderr)
     record["pip_inspect_returncode"] = inspect.returncode
     record["pip_inspect_sha256"] = digest(output / "pip-inspect.json")
+    record["pip_inspect_stderr_sha256"] = digest(output / "pip-inspect.stderr.log")
+    try:
+        inspect_record = json.loads(inspect.stdout.decode("utf-8"))
+        if not isinstance(inspect_record, dict) or not isinstance(inspect_record.get("installed"), list):
+            raise ValueError("pip inspect lacks its installed distribution inventory")
+        record["pip_inspect_json_valid"] = True
+    except (UnicodeError, ValueError) as exc:
+        record["pip_inspect_json_valid"] = False
+        record["pip_inspect_json_error"] = str(exc)
     archives = []
     for stage in (ROOT / "build/native").glob("*/pyinstaller-dist"):
         for path in stage.rglob("*"):
@@ -278,7 +288,7 @@ def main():
         else "not asserted"
     )
     save(output / "finish.json", record)
-    if inspect.returncode != 0:
+    if inspect.returncode != 0 or not record["pip_inspect_json_valid"]:
         raise RuntimeError("pip inspect failed; realized runtime inventory is incomplete")
     if args.native_build_outcome == "success" and not record["native_pyinstaller_inventory_complete"]:
         raise RuntimeError(

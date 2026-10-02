@@ -177,3 +177,124 @@ def test_main_failure_report_contains_only_sanitized_failure_type(tmp_path, monk
     assert json.loads(output.read_text(encoding="utf-8")) == {
         "schema": smoke.REPORT_SCHEMA, "status": "failed", "failure_type": "RuntimeError",
     }
+
+
+@pytest.mark.parametrize("relative", [
+    ".profiles.json.lock", ".vault.json.lock", ".layouts.json.lock",
+    ".snippets.json.lock", ".moba-macros.json.lock", ".xserver-state.json.lock",
+    "servers/.http-server-state.json.lock", "servers/.ftp-server-state.json.lock",
+    "servers/.tftp-server-state.json.lock", "servers/.ssh-server-state.json.lock",
+    "servers/.sftp-server-state.json.lock", "servers/.telnet-server-state.json.lock",
+    "servers/.vnc-server-state.json.lock", "servers/.nfs-server-state.json.lock",
+    ".PROFILES.JSON.LOCK",
+])
+def test_tree_oracle_ignores_only_known_advisory_relative_lock_files(tmp_path, relative):
+    smoke = _load_smoke()
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    before = smoke._tree_summary(tmp_path)
+    target.write_bytes(b"advisory lock")
+    assert smoke._tree_summary(tmp_path) == before
+    target.write_bytes(b"changed advisory lock")
+    assert smoke._tree_summary(tmp_path) == before
+    target.unlink()
+    assert smoke._tree_summary(tmp_path) == before
+
+
+@pytest.mark.parametrize("relative", [
+    ".plugin.lock", "plugins/unrecognized/.plugin.lock",
+    "plugins/unrecognized/.profiles.json.lock",
+    "plugins/servers/.http-server-state.json.lock",
+])
+@pytest.mark.parametrize("change", ["same-size-mutation", "loss"])
+def test_tree_oracle_detects_unknown_and_nested_known_basename_lock_changes(tmp_path, relative, change):
+    smoke = _load_smoke()
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"original")
+    before = smoke._tree_summary(tmp_path)
+    assert before["file_count"] == 1
+    if change == "same-size-mutation":
+        target.write_bytes(b"modified")
+    else:
+        target.unlink()
+    changed = smoke._tree_summary(tmp_path)
+    assert changed["sha256"] != before["sha256"]
+    with pytest.raises(AssertionError, match="full-state evidence differs"):
+        smoke._assert_same(before, changed)
+    target.write_bytes(b"original")
+    smoke._assert_same(before, smoke._tree_summary(tmp_path))
+
+
+def test_tree_oracle_keeps_empty_directories_even_with_advisory_lock_basename(tmp_path):
+    smoke = _load_smoke()
+    target = tmp_path / ".profiles.json.lock"
+    target.mkdir()
+    before = smoke._tree_summary(tmp_path)
+    assert before["directory_count"] == 1
+    target.rmdir()
+    assert smoke._tree_summary(tmp_path)["sha256"] != before["sha256"]
+
+
+def test_recovery_fixture_seeds_both_opaque_locks_without_changing_known_store_counts():
+    fixture = _load_smoke().load_fixture()
+    assert set(fixture["opaque_files"]) == {
+        "plugins/unrecognized/state.json", "plugins/unrecognized/cache.dat",
+        "plugins/unrecognized/.plugin.lock", "plugins/unrecognized/.profiles.json.lock",
+    }
+    assert fixture["empty_directories"] == ["plugins/unrecognized/empty"]
+    assert len(fixture["profiles"]) == 2 and len(fixture["group_defaults"]) == 1
+    assert len(fixture["layouts"]) == len(fixture["snippets"]) == len(fixture["macros"]) == 1
+
+
+def test_encrypted_recovery_and_oracle_preserve_opaque_locks_bytes_and_empty_directories(tmp_path):
+    import secrets
+
+    from remote_ops_workspace.workspace_backup import (
+        create_workspace_backup,
+        restore_workspace_backup,
+    )
+
+    smoke = _load_smoke()
+    fixture = smoke.load_fixture()
+    source = tmp_path / "original"
+    source.mkdir()
+    expected_bytes = {name: content.encode("utf-8") for name, content in fixture["opaque_files"].items()}
+    for name, content in expected_bytes.items():
+        target = source / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
+    for name in fixture["empty_directories"]:
+        (source / name).mkdir(parents=True)
+    (source / ".profiles.json.lock").write_bytes(b"advisory state")
+    expected = smoke._tree_summary(source)
+    passphrase = secrets.token_urlsafe(32)
+    archive = tmp_path / "encrypted.rowbackup"
+    created = create_workspace_backup(source, archive, passphrase, offline_confirmed=True)
+    assert created["file_count"] == len(expected_bytes)
+    assert created["directory_count"] == expected["directory_count"]
+    ciphertext = archive.read_bytes()
+    assert passphrase.encode() not in ciphertext
+    assert all(name.encode() not in ciphertext and content not in ciphertext for name, content in expected_bytes.items())
+    restored = tmp_path / "restored"
+    restore_workspace_backup(archive, restored, passphrase, current_home=source, offline_confirmed=True)
+    smoke._assert_same(expected, smoke._tree_summary(restored))
+    assert not (restored / ".profiles.json.lock").exists()
+    assert all((restored / name).read_bytes() == content for name, content in expected_bytes.items())
+    assert all((restored / name).is_dir() for name in fixture["empty_directories"])
+    for index, name in enumerate((
+        "plugins/unrecognized/.plugin.lock", "plugins/unrecognized/.profiles.json.lock",
+        "plugins/unrecognized/cache.dat", "plugins/unrecognized/empty",
+    )):
+        target = restored / name
+        if target.is_dir():
+            target.rmdir()
+        else:
+            target.unlink()
+        with pytest.raises(AssertionError, match="full-state evidence differs"):
+            smoke._assert_same(expected, smoke._tree_summary(restored))
+        fresh = tmp_path / f"recovered-{index}"
+        restore_workspace_backup(archive, fresh, passphrase, current_home=source, offline_confirmed=True)
+        smoke._assert_same(expected, smoke._tree_summary(fresh))
+        restored = fresh
+    smoke._assert_same(expected, smoke._tree_summary(source))

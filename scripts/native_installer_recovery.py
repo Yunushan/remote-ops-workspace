@@ -608,6 +608,7 @@ class Drill:
         self.owned = owned
         self.serial = 0
         self.calls = []
+        self.uninstaller_checks = []
 
     def command(
         self,
@@ -617,11 +618,15 @@ class Drill:
         *,
         expected_success=True,
         timeout=180,
+        drain_descendants=False,
     ) -> str:
+        if type(drain_descendants) is not bool:
+            raise ValueError("drain_descendants must be a bool")
         self.serial += 1
         output = self.root / f"command-{self.serial}.json"
         executable_hash = digest(executable)
-        record = self.owned.run_owned(executable, arguments, environment, output, timeout)
+        drain_options = {"drain_descendants": True} if drain_descendants else {}
+        record = self.owned.run_owned(executable, arguments, environment, output, timeout, **drain_options)
         save(output, record)
         self.calls.append(
             {
@@ -633,6 +638,15 @@ class Drill:
                 "job_assigned": record.get("job_assigned"),
                 "wait_result": record.get("wait_result"),
                 "owned_parent_cleanup_wait": record.get("owned_parent_cleanup_wait"),
+                "descendant_drain_required": drain_descendants,
+                "descendant_drain_requested": record.get("descendant_drain_requested"),
+                "natural_job_drain_confirmed": record.get("natural_job_drain_confirmed"),
+                "active_owned_processes_at_parent_exit": record.get("active_owned_processes_at_parent_exit"),
+                "active_owned_processes_after_natural_drain": record.get("active_owned_processes_after_natural_drain"),
+                "execution_deadline_scope": record.get("execution_deadline_scope"),
+                "execution_elapsed_seconds": record.get("execution_elapsed_seconds"),
+                "natural_job_drain_elapsed_seconds": record.get("natural_job_drain_elapsed_seconds"),
+                "timeout_seconds": record.get("timeout_seconds"),
                 "active_owned_processes_before_cleanup": record.get(
                     "active_owned_processes_before_cleanup"
                 ),
@@ -644,14 +658,18 @@ class Drill:
                 "cleanup_errors": len(record["cleanup_errors"]),
             }
         )
+        drain_predicate = {"require_descendant_drain": True} if drain_descendants else {}
         if (
-            not self.owned.owned_result_succeeded({**record, "exit_code": 0})
+            not self.owned.owned_result_succeeded({**record, "exit_code": 0}, **drain_predicate)
             or type(record.get("exit_code")) is not int
         ):
             raise RuntimeError("owned native command failed to start or stop safely")
         if record["exit_code"] != (0 if expected_success else 1):
             raise RuntimeError("native command did not have its expected outcome")
         return output.with_suffix(".log").read_text(encoding="utf-8-sig")
+
+    def setup(self, executable: Path, arguments: list[str], environment: dict[str, str]) -> None:
+        self.command(executable, arguments, environment, timeout=300, drain_descendants=True)
 
     def installed(self, install: Path, hashes: dict[str, str]) -> Path:
         for name, expected in hashes.items():
@@ -739,10 +757,12 @@ class Drill:
 
     def uninstall(self, install: Path, environment: dict[str, str]) -> None:
         paths = list(install.glob("unins*.exe"))
+        self.uninstaller_checks.append({"before_step": self.serial + 1, "count": len(paths)})
         if len(paths) != 1:
             raise TransitionValidationError("owned-uninstaller-count-mismatch")
         self.command(
-            paths[0], ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], environment, timeout=300
+            paths[0], ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], environment,
+            timeout=300, drain_descendants=True,
         )
         if (install / "bin/row.exe").exists() or (install / "bin/row-gui.exe").exists():
             raise ValueError("uninstall retained a native entrypoint")
@@ -815,6 +835,7 @@ def run(args) -> dict:
     environment = clean_environment(home, payload["vault_passphrase"], backup_password)
     drill = Drill(private, owned)
     args._owned_calls = drill.calls
+    args._uninstaller_checks = drill.uninstaller_checks
     install = private / "installation"
     old_setup = prior[f"remote-ops-workspace-v{PREVIOUS}-windows-x64-setup.exe"]
     new_setup = candidates[f"remote-ops-workspace-v{version}-windows-x64-setup.exe"]
@@ -835,7 +856,7 @@ def run(args) -> dict:
     if digest(rescue) != after_hashes["bin/row.exe"]:
         raise ValueError("candidate recovery tool bytes mismatch")
     args._phase = "previous-native-install-and-inspection"
-    drill.command(old_setup, install_args, environment, timeout=300)
+    drill.setup(old_setup, install_args, environment)
     installed = drill.installed(install, before_hashes)
     seeded = recovery._worker(wheel, home, {**payload, "mode": "seed"})
     if seeded["version"] != PREVIOUS or seeded["vault_version"] != 2:
@@ -860,7 +881,7 @@ def run(args) -> dict:
     )
     previous_backup_hash = digest(previous_backup)
     args._phase = "candidate-native-upgrade-and-inspection"
-    drill.command(new_setup, install_args, environment, timeout=300)
+    drill.setup(new_setup, install_args, environment)
     installed = drill.installed(install, after_hashes)
     candidate_previous_state = drill.inspect(
         installed, home, version, environment, payload["secret"], 2, expected_previous_profiles
@@ -998,7 +1019,7 @@ def run(args) -> dict:
     args._phase = "previous-native-rollback-and-inspection"
     drill.uninstall(install, environment)
     args._phase = "previous-native-reinstall"
-    drill.command(old_setup, install_args, environment, timeout=300)
+    drill.setup(old_setup, install_args, environment)
     installed = drill.installed(install, before_hashes)
     rollback = private / "restored-previous"
     drill.command(
@@ -1058,6 +1079,7 @@ def run(args) -> dict:
         "previous_release": pins,
         "candidate_installer_sha256": digest(new_setup),
         "candidate_rescue_sha256": digest(rescue),
+        "uninstaller_checks": drill.uninstaller_checks,
         "candidate_assets": {
             name: {"size": path.stat().st_size, "sha256": digest(path)}
             for name, path in candidates.items()
@@ -1180,6 +1202,7 @@ def main() -> int:
             "failure_code": failure_code(exc),
             "failed_phase": getattr(args, "_phase", "runner-validated"),
             "owned_commands": getattr(args, "_owned_calls", []),
+            "uninstaller_checks": getattr(args, "_uninstaller_checks", []),
             "limits": [
                 "No passing native upgrade/rollback evidence was produced; private fixture and installer logs are not uploaded."
             ],

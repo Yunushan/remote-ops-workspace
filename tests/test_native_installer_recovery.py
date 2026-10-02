@@ -62,6 +62,7 @@ def test_ambiguous_uninstaller_refuses_before_any_command(helper, tmp_path, coun
     with pytest.raises(helper.TransitionValidationError) as error:
         drill.uninstall(tmp_path, {})
     assert helper.failure_code(error.value) == "owned-uninstaller-count-mismatch"
+    assert drill.uninstaller_checks == [{"before_step": 1, "count": count}]
 
 
 def test_successful_vault_command_with_wrong_bytes_is_rejected_and_private_file_removed(
@@ -490,6 +491,84 @@ def test_owned_command_requires_exact_exit_and_cleanup_and_freezes_hash_before_l
             drill.command(executable, [], {}, expected_success=expected_success)
     assert drill.calls[0]["exe_sha256"] == expected_hash
     assert (tmp_path / "command-1.json").is_file()
+
+
+@pytest.mark.parametrize("kind", ("setup", "uninstall"))
+@pytest.mark.parametrize(
+    "change,accepted",
+    (
+        ("confirmed", True),
+        ("missing-request", False),
+        ("unconfirmed", False),
+        ("active-descendant", False),
+        ("boolean-count", False),
+        ("deadline-error-cleanup-zero", False),
+    ),
+)
+def test_inno_commands_couple_required_drain_with_runtime_and_success_predicate(
+    helper, tmp_path, kind, change, accepted
+):
+    owned = load(REPO_ROOT / "scripts/candidate_windows_owned.py", "transition_drain_test")
+    executable = tmp_path / ("setup.exe" if kind == "setup" else "unins000.exe")
+    executable.write_bytes(b"fixture bytes; never launched")
+    calls = []
+
+    def fake_run(exe, arguments, environment, output, timeout, **options):
+        calls.append((exe, arguments, environment, timeout, options))
+        output.with_suffix(".log").write_text("safe fixture output")
+        record = {
+            "child_created": True, "job_assigned": True, "wait_result": 0,
+            "exit_code": 0, "owned_parent_cleanup_wait": 0,
+            "active_owned_processes_after_cleanup": 0, "job_closed": True,
+            "cleanup_errors": [], "descendant_drain_requested": True,
+            "natural_job_drain_confirmed": True,
+            "active_owned_processes_at_parent_exit": 1,
+            "active_owned_processes_after_natural_drain": 0,
+            "execution_deadline_scope": "parent-and-natural-job-drain",
+            "execution_elapsed_seconds": 0.3, "natural_job_drain_elapsed_seconds": 0.1,
+            "timeout_seconds": timeout,
+        }
+        if change == "missing-request":
+            for name in ("descendant_drain_requested", "natural_job_drain_confirmed", "active_owned_processes_after_natural_drain"):
+                record.pop(name)
+        elif change == "unconfirmed":
+            record["natural_job_drain_confirmed"] = False
+        elif change == "active-descendant":
+            record["active_owned_processes_after_natural_drain"] = 1
+        elif change == "boolean-count":
+            record["active_owned_processes_after_natural_drain"] = False
+        elif change == "deadline-error-cleanup-zero":
+            record["error"] = "TimeoutError: owned descendants exceeded original deadline"
+        return record
+
+    owned.run_owned = fake_run
+    drill = helper.Drill(tmp_path, owned)
+    def invoke():
+        if kind == "setup":
+            drill.setup(executable, ["/VERYSILENT"], {})
+        else:
+            drill.uninstall(tmp_path, {})
+    if accepted:
+        invoke()
+    else:
+        with pytest.raises(RuntimeError, match="start or stop safely"):
+            invoke()
+    assert len(calls) == 1 and calls[0][3:] == (300, {"drain_descendants": True})
+    assert drill.calls[0]["descendant_drain_required"] is True
+    if kind == "uninstall":
+        assert drill.uninstaller_checks == [{"before_step": 1, "count": 1}]
+    else:
+        assert drill.uninstaller_checks == []
+
+
+@pytest.mark.parametrize("malformed", (None, 0, 1, "yes"))
+def test_transition_drain_option_type_refuses_before_file_or_owned_command(
+    helper, tmp_path, malformed
+):
+    drill = helper.Drill(tmp_path, None)
+    with pytest.raises(ValueError, match="must be a bool"):
+        drill.command(tmp_path / "absent.exe", [], {}, drain_descendants=malformed)
+    assert drill.calls == [] and list(tmp_path.iterdir()) == []
 
 
 class ReadOnlyRegistry:

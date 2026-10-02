@@ -32,6 +32,11 @@ the executable in each DMG and PKG copy to the original signed app executable
 before its runtime and GUI probes. Modern Linux smoke compares installed DEB and
 RPM executables to the original PyInstaller executable before each probe.
 
+The RPM build preserves the finalized onefile executable by disabling its ELF
+stripping hooks. Its `%check` compares the staged executable with the original
+package input and fails the build if their bytes differ. Other packaging hooks
+remain enabled; installed-byte verification is still required on the runner.
+
 AppImage smoke checks the copied AppImage bytes before extraction, then checks
 the extracted executable and AppRun before invoking that same extracted AppRun.
 The launcher is also bound to its generated build source. The existing 32-bit
@@ -48,6 +53,12 @@ approval. Parsing the original PyInstaller archive has the same limits.
 Windows commands run hidden in an owned Job Object with bounded cleanup. A
 failed original GUI smoke remains failed when a separate console diagnostic is
 built; the diagnostic has its own filename, hash, outcome and logs.
+
+The previous-version Inno drill also requires the same owned Job to reach zero
+naturally for setup and uninstall commands. Parent wait and descendant completion
+share the original command deadline. A timeout or unconfirmed completion remains
+a failure even when forced cleanup later reaches zero. The generic CLI and outer
+smoke wrappers retain their existing cleanup contract.
 
 Full Windows installer smoke refuses local and self-hosted execution and an
 existing application installation. Its directory removal checks stay within the

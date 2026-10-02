@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -35,6 +36,20 @@ CHECK_NAMES = (
     "original_home_unchanged_by_restore", "wrong_passphrase_rejected", "tampered_ciphertext_rejected",
     "in_place_restore_rejected",
 )
+
+
+# Independently specified recovery-oracle exclusions. Only these exact relative
+# paths are advisory locks; unknown/plugin locks are opaque workspace state.
+# Keep this list independent of production backup exclusion helpers so a shared
+# filtering defect cannot silently certify data loss in a recovery drill.
+KNOWN_ADVISORY_LOCK_PATHS = frozenset({
+    ".profiles.json.lock", ".vault.json.lock", ".layouts.json.lock",
+    ".snippets.json.lock", ".moba-macros.json.lock", ".xserver-state.json.lock",
+    "servers/.http-server-state.json.lock", "servers/.ftp-server-state.json.lock",
+    "servers/.tftp-server-state.json.lock", "servers/.ssh-server-state.json.lock",
+    "servers/.sftp-server-state.json.lock", "servers/.telnet-server-state.json.lock",
+    "servers/.vnc-server-state.json.lock", "servers/.nfs-server-state.json.lock",
+})
 
 # A fresh interpreter with -I prevents the caller's checkout/PYTHONPATH from
 # replacing released code. The chosen wheel or source path is the only explicit
@@ -191,7 +206,7 @@ def _tree_summary(home: Path) -> dict[str, Any]:
         name = path.relative_to(home).as_posix()
         if path.is_dir():
             directories.append(name)
-        elif not re.fullmatch(r"\..+\.lock", path.name):
+        elif unicodedata.normalize("NFC", name).casefold() not in KNOWN_ADVISORY_LOCK_PATHS:
             data = path.read_bytes()
             rows.append([name, len(data), hashlib.sha256(data).hexdigest()])
     digest = hashlib.sha256(json.dumps([directories, rows], separators=(",", ":")).encode()).hexdigest()
@@ -242,7 +257,7 @@ def run_drill(previous_wheel: Path) -> dict[str, Any]:
 
         # Corrupt every known store and opaque state, then add files after the
         # snapshot. Exact inventory equality proves none leak into restoration.
-        for name in ("profiles.json", "vault.json", "layouts.json", "snippets.json", "moba-macros.json", "moba-ssh-browser-state.json", "plugins/unrecognized/state.json"):
+        for name in ("profiles.json", "vault.json", "layouts.json", "snippets.json", "moba-macros.json", "moba-ssh-browser-state.json", *fixture["opaque_files"]):
             (home / name).write_bytes(b"corrupted-after-snapshot")
         (home / "after-snapshot-only.dat").write_bytes(b"not-in-either-snapshot")
         corrupted_tree = _tree_summary(home)

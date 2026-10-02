@@ -23,6 +23,6 @@
     {"name": "recovery-macro", "description": "saved only; never replayed", "tags": ["recovery"], "source": "typed-text", "events": [{"index": 1, "text": "printf saved", "enter": true, "delay_ms": 25}, {"index": 2, "text": "exit", "enter": false, "delay_ms": 75}]}
   ],
   "browser_preferences": {"location": "below-terminal", "column_widths": {"name": 247, "size": 96, "modified": 134}, "overwrite_confirmation": true, "updated_at": "2026-09-04T00:00:00+00:00"},
-  "opaque_files": {"plugins/unrecognized/state.json": "{\"plugin_schema\":9,\"opaque\":[\"retained\",17]}\n", "plugins/unrecognized/cache.dat": "opaque-plugin-state\u0000\u00ff"},
+  "opaque_files": {"plugins/unrecognized/state.json": "{\"plugin_schema\":9,\"opaque\":[\"retained\",17]}\n", "plugins/unrecognized/cache.dat": "opaque-plugin-state\u0000\u00ff", "plugins/unrecognized/.plugin.lock": "persistent-opaque-plugin-lock\u0000", "plugins/unrecognized/.profiles.json.lock": "nested-known-basename-is-plugin-state\u0000"},
   "empty_directories": ["plugins/unrecognized/empty"]
 }

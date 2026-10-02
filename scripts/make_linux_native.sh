@@ -164,6 +164,11 @@ Summary: Operator-first remote terminal and connection workspace
 License: 0BSD
 BuildArch: $RPM_ARCH
 
+# The onefile executable has already been finalized and inspected by PyInstaller.
+# Preserve its complete bytes, including ELF metadata and the embedded CArchive.
+%global __brp_strip %{nil}
+%global __brp_strip_comment_note %{nil}
+
 %description
 Remote Ops Workspace provides a CLI and adapter-first workflows for SSH, RDP,
 VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, serial consoles,
@@ -178,6 +183,9 @@ cp "$PKGROOT/usr/share/doc/remote-ops-workspace/NOTICE" %{buildroot}/usr/share/d
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md" %{buildroot}/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/README.md" %{buildroot}/usr/share/doc/remote-ops-workspace/README.md
 cp "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md" %{buildroot}/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md
+
+%check
+cmp "$PKGROOT/usr/bin/row" %{buildroot}/usr/bin/row
 
 %files
 /usr/bin/row

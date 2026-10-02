@@ -32,7 +32,18 @@ def timeout_argument(value):
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
-def owned_result_succeeded(evidence):
+def owned_result_succeeded(evidence, *, require_descendant_drain=False):
+    requested = evidence.get("descendant_drain_requested", False)
+    if type(require_descendant_drain) is not bool or type(requested) is not bool:
+        return False
+    if require_descendant_drain and not requested:
+        return False
+    if requested and (
+        evidence.get("natural_job_drain_confirmed") is not True
+        or type(evidence.get("active_owned_processes_after_natural_drain")) is not int
+        or evidence.get("active_owned_processes_after_natural_drain") != 0
+    ):
+        return False
     return (
         evidence.get("child_created") is True
         and evidence.get("job_assigned") is True
@@ -130,8 +141,38 @@ class Accounting(ctypes.Structure):
     ]
 
 
-def run_owned(executable, cli_arguments, env, output, timeout):
+def wait_natural_job_drain(api, job, deadline, evidence):
+    """Observe the same retained Job reach zero within the execution deadline."""
+    evidence["natural_job_drain_confirmed"] = False
+    started = time.monotonic()
+    accounting = Accounting()
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("owned descendants exceeded the original command timeout")
+            if not api.QueryInformationJobObject(
+                job, 1, ctypes.byref(accounting), ctypes.sizeof(accounting), None
+            ):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if "active_owned_processes_at_parent_exit" not in evidence:
+                evidence["active_owned_processes_at_parent_exit"] = accounting.active
+            evidence["active_owned_processes_after_natural_drain"] = accounting.active
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("owned descendants exceeded the original command timeout")
+            if accounting.active == 0:
+                evidence["natural_job_drain_confirmed"] = True
+                return
+            time.sleep(min(0.02, remaining))
+    finally:
+        evidence["natural_job_drain_elapsed_seconds"] = time.monotonic() - started
+
+
+def run_owned(executable, cli_arguments, env, output, timeout, *, drain_descendants=False):
     validate_timeout(timeout)
+    if type(drain_descendants) is not bool:
+        raise ValueError("drain_descendants must be a bool")
     api = ctypes.WinDLL("kernel32", use_last_error=True)
     declarations = {
         "CreateFileW": (
@@ -191,6 +232,8 @@ def run_owned(executable, cli_arguments, env, output, timeout):
         "child_created": False,
         "job_assigned": False,
         "cleanup_errors": [],
+        "descendant_drain_requested": drain_descendants,
+        "execution_deadline_scope": "parent-and-natural-job-drain" if drain_descendants else "parent-only",
     }
     job = None
     information = ProcessInformation()
@@ -252,9 +295,17 @@ def run_owned(executable, cli_arguments, env, output, timeout):
         if not api.AssignProcessToJobObject(job, information.process):
             raise ctypes.WinError(ctypes.get_last_error())
         evidence["job_assigned"] = True
+        execution_started = time.monotonic()
+        execution_deadline = execution_started + timeout
         if api.ResumeThread(information.thread) == 0xFFFFFFFF:
             raise ctypes.WinError(ctypes.get_last_error())
-        waited = api.WaitForSingleObject(information.process, timeout * 1000)
+        wait_ms = timeout * 1000
+        if drain_descendants:
+            remaining = execution_deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("owned command exceeded its original execution deadline")
+            wait_ms = max(0, int(remaining * 1000))
+        waited = api.WaitForSingleObject(information.process, wait_ms)
         evidence["wait_result"] = waited
         if waited != 0:
             if waited == 258:
@@ -264,6 +315,9 @@ def run_owned(executable, cli_arguments, env, output, timeout):
         if not api.GetExitCodeProcess(information.process, ctypes.byref(exit_code)):
             raise ctypes.WinError(ctypes.get_last_error())
         evidence["exit_code"] = exit_code.value
+        if drain_descendants:
+            wait_natural_job_drain(api, job, execution_deadline, evidence)
+            evidence["execution_elapsed_seconds"] = time.monotonic() - execution_started
     except Exception as exc:
         evidence["error"] = f"{type(exc).__name__}: {exc}"
         evidence["winerror"] = getattr(exc, "winerror", None)
@@ -338,7 +392,7 @@ def run_owned(executable, cli_arguments, env, output, timeout):
                         f"CloseHandle(stdio): {ctypes.get_last_error()}"
                     )
         evidence["finished_at_utc"] = utc()
-    evidence["success"] = owned_result_succeeded(evidence)
+    evidence["success"] = owned_result_succeeded(evidence, require_descendant_drain=drain_descendants)
     return evidence
 
 
@@ -347,6 +401,7 @@ if __name__ == "__main__":
         description="Bounded Windows Job Object ownership for candidate validation only"
     )
     parser.add_argument("--timeout", type=timeout_argument, default=1200)
+    parser.add_argument("--drain-descendants", action="store_true")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -359,7 +414,8 @@ if __name__ == "__main__":
     if not executable:
         raise RuntimeError("command executable missing")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    result = run_owned(Path(executable), command[1:], os.environ.copy(), args.out, args.timeout)
+    result = run_owned(Path(executable), command[1:], os.environ.copy(), args.out, args.timeout,
+                       drain_descendants=args.drain_descendants)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))
-    raise SystemExit(0 if owned_result_succeeded(result) else 1)
+    raise SystemExit(0 if owned_result_succeeded(result, require_descendant_drain=args.drain_descendants) else 1)

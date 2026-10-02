@@ -41,6 +41,99 @@ def test_private_fixture_provisions_actual_protected_windows_dacl(helper, tmp_pa
     assert parent.is_dir()
 
 
+def test_failure_diagnostic_exports_only_fixed_codes(helper):
+    for code in helper.TRANSITION_FAILURE_CODES:
+        assert helper.failure_code(helper.TransitionValidationError(code)) == code
+    for code in helper.PRIVATE_FAILURE_CODES:
+        assert helper.failure_code(helper.PrivateFixtureError(code)) == code
+    private_text = "private captured output must remain private"
+    assert helper.failure_code(ValueError(private_text)) == "unclassified"
+    assert helper.failure_code(helper.PrivateFixtureError(private_text)) == "unclassified"
+    with pytest.raises(ValueError, match="unknown transition diagnostic"):
+        helper.TransitionValidationError(private_text)
+
+
+@pytest.mark.parametrize("count", (0, 2))
+def test_ambiguous_uninstaller_refuses_before_any_command(helper, tmp_path, count):
+    for index in range(count):
+        (tmp_path / f"unins{index:03}.exe").write_bytes(b"never executed fixture")
+    drill = helper.Drill(tmp_path, None)
+    drill.command = lambda *_args, **_kwargs: pytest.fail("ambiguous uninstaller launched")
+    with pytest.raises(helper.TransitionValidationError) as error:
+        drill.uninstall(tmp_path, {})
+    assert helper.failure_code(error.value) == "owned-uninstaller-count-mismatch"
+
+
+def test_successful_vault_command_with_wrong_bytes_is_rejected_and_private_file_removed(
+    helper, tmp_path
+):
+    drill = helper.Drill(tmp_path, None)
+
+    def command(_executable, arguments, _environment):
+        if arguments == ["--version"]:
+            return "remote-ops-workspace 1.0.24"
+        if arguments[0] == "platforms":
+            return json.dumps({"release_architectures": [1], "windows_legacy_targets": [1]})
+        if arguments[0] == "profile":
+            return "[]"
+        if arguments[0] == "layout":
+            return json.dumps({"splitter_sizes": [[300, 700], [125, 375]]})
+        if arguments[0] == "snippet":
+            return json.dumps([{"name": "recovery-snippet"}])
+        if arguments[0] == "macro":
+            return json.dumps({"events": [{"text": "printf saved"}]})
+        if arguments[1] == "status":
+            return json.dumps({"backend_available": True, "initialized": True, "version": 2})
+        if arguments[1] == "list":
+            return "recovery-secret\n"
+        assert arguments[:2] == ["vault", "get"]
+        Path(arguments[-1]).write_text("wrong synthetic value", encoding="utf-8")
+        return "command exit success, but not the expected decrypted bytes"
+
+    drill.command = command
+    with pytest.raises(helper.TransitionValidationError) as error:
+        drill.inspect(Path("never-executed.exe"), tmp_path, "1.0.24", {}, "expected", 2, [])
+    assert helper.failure_code(error.value) == "native-vault-secret-mismatch"
+    assert not list(tmp_path.glob("private-vault-check-*"))
+
+
+@pytest.mark.parametrize(
+    "change,expected_code",
+    (
+        ("none", None),
+        ("original", "rollback-original-state-mismatch"),
+        ("previous", "rollback-previous-snapshot-mismatch"),
+        ("candidate", "rollback-candidate-snapshot-mismatch"),
+    ),
+)
+def test_rollback_preservation_detects_actual_byte_changes(
+    helper, tmp_path, change, expected_code
+):
+    recovery = load(REPO_ROOT / "scripts/smoke_workspace_recovery.py", "preservation_oracle_test")
+    home = tmp_path / "original"
+    home.mkdir()
+    state = home / "opaque-state.dat"
+    state.write_bytes(b"preserve damaged original")
+    previous = tmp_path / "previous.rowbackup"
+    candidate = tmp_path / "candidate.rowbackup"
+    previous.write_bytes(b"opaque prior ciphertext fixture")
+    candidate.write_bytes(b"opaque candidate ciphertext fixture")
+    inventory = recovery._tree_summary(home)
+    old_hash, new_hash = helper.digest(previous), helper.digest(candidate)
+    if change != "none":
+        {"original": state, "previous": previous, "candidate": candidate}[change].write_bytes(
+            b"unexpected change"
+        )
+    arguments = (recovery, home, previous, candidate, inventory, old_hash, new_hash)
+    if expected_code is None:
+        helper.check_rollback_preservation(*arguments)
+    else:
+        with pytest.raises(helper.TransitionValidationError) as error:
+            helper.check_rollback_preservation(*arguments)
+        assert helper.failure_code(error.value) == expected_code
+    assert home.is_dir() and state.is_file() and previous.is_file() and candidate.is_file()
+
+
 @pytest.fixture
 def candidate(helper, tmp_path, monkeypatch):
     helper.ROOT = tmp_path

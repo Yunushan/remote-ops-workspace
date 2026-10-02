@@ -56,6 +56,40 @@ class PrivateFixtureError(RuntimeError):
         self.failure_code = code
 
 
+TRANSITION_FAILURE_CODES = frozenset(
+    (
+        "native-vault-secret-mismatch",
+        "owned-uninstaller-count-mismatch",
+        "rollback-native-summary-mismatch",
+        "rollback-original-state-mismatch",
+        "rollback-previous-snapshot-mismatch",
+        "rollback-candidate-snapshot-mismatch",
+    )
+)
+PRIVATE_FAILURE_CODES = frozenset(
+    ("private-fixture-powershell7-unavailable", "private-fixture-dacl-provisioning-failed")
+)
+
+
+class TransitionValidationError(ValueError):
+    """Allowlisted static code; private output never becomes a diagnostic."""
+
+    def __init__(self, code: str):
+        if code not in TRANSITION_FAILURE_CODES:
+            raise ValueError("unknown transition diagnostic code")
+        super().__init__(code)
+        self.failure_code = code
+
+
+def failure_code(exc: Exception) -> str:
+    if type(exc) not in (PrivateFixtureError, TransitionValidationError):
+        return "unclassified"
+    code = exc.failure_code
+    if type(code) is str and code in PRIVATE_FAILURE_CODES | TRANSITION_FAILURE_CODES:
+        return code
+    return "unclassified"
+
+
 def digest(path: Path) -> str:
     value = hashlib.sha256()
     with path.open("rb") as stream:
@@ -599,6 +633,9 @@ class Drill:
                 "job_assigned": record.get("job_assigned"),
                 "wait_result": record.get("wait_result"),
                 "owned_parent_cleanup_wait": record.get("owned_parent_cleanup_wait"),
+                "active_owned_processes_before_cleanup": record.get(
+                    "active_owned_processes_before_cleanup"
+                ),
                 "active_owned_processes_after_cleanup": record.get(
                     "active_owned_processes_after_cleanup"
                 ),
@@ -681,7 +718,7 @@ class Drill:
             try:
                 self.command(row, ["vault", "get", name, "--out", str(secret_output)], environment)
                 if secret_output.read_text(encoding="utf-8") != expected_secret:
-                    raise ValueError("installed native vault did not decrypt fixture secret")
+                    raise TransitionValidationError("native-vault-secret-mismatch")
             finally:
                 secret_output.unlink(missing_ok=True)
         return {
@@ -703,12 +740,24 @@ class Drill:
     def uninstall(self, install: Path, environment: dict[str, str]) -> None:
         paths = list(install.glob("unins*.exe"))
         if len(paths) != 1:
-            raise ValueError("expected one owned drill uninstaller")
+            raise TransitionValidationError("owned-uninstaller-count-mismatch")
         self.command(
             paths[0], ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], environment, timeout=300
         )
         if (install / "bin/row.exe").exists() or (install / "bin/row-gui.exe").exists():
             raise ValueError("uninstall retained a native entrypoint")
+
+
+def check_rollback_preservation(
+    recovery, home, previous_backup, candidate_backup, original_inventory,
+    previous_backup_hash, candidate_backup_hash,
+):
+    if recovery._tree_summary(home) != original_inventory:
+        raise TransitionValidationError("rollback-original-state-mismatch")
+    if digest(previous_backup) != previous_backup_hash:
+        raise TransitionValidationError("rollback-previous-snapshot-mismatch")
+    if digest(candidate_backup) != candidate_backup_hash:
+        raise TransitionValidationError("rollback-candidate-snapshot-mismatch")
 
 
 def run(args) -> dict:
@@ -948,6 +997,7 @@ def run(args) -> dict:
         raise ValueError("candidate installed native restored state differs")
     args._phase = "previous-native-rollback-and-inspection"
     drill.uninstall(install, environment)
+    args._phase = "previous-native-reinstall"
     drill.command(old_setup, install_args, environment, timeout=300)
     installed = drill.installed(install, before_hashes)
     rollback = private / "restored-previous"
@@ -966,22 +1016,25 @@ def run(args) -> dict:
         ],
         environment,
     )
+    args._phase = "previous-restored-inventory-and-worker-check"
     if (
         recovery._tree_summary(rollback) != before_tree
         or recovery._worker(wheel, rollback, {**payload, "mode": "inspect"}) != seeded
     ):
         raise ValueError("prior full-state rollback mismatch")
+    args._phase = "previous-restored-native-inspection"
     rolled_back_native = drill.inspect(
         installed, rollback, PREVIOUS, environment, payload["secret"], 2, expected_previous_profiles
     )
+    args._phase = "previous-restored-native-summary-comparison"
     if rolled_back_native != previous_native:
-        raise ValueError("previous installed native did not read/decrypt rolled-back state")
-    if (
-        recovery._tree_summary(home) != original_corrupted
-        or digest(previous_backup) != previous_backup_hash
-        or digest(candidate_backup) != candidate_backup_hash
-    ):
-        raise ValueError("original state or encrypted snapshot changed during rollback")
+        raise TransitionValidationError("rollback-native-summary-mismatch")
+    args._phase = "post-rollback-original-and-snapshot-preservation"
+    check_rollback_preservation(
+        recovery, home, previous_backup, candidate_backup, original_corrupted,
+        previous_backup_hash, candidate_backup_hash,
+    )
+    args._phase = "final-owned-drill-uninstall"
     drill.uninstall(install, environment)
     args._phase = "final-source-and-artifact-revalidation"
     final_binding = revalidate_end(
@@ -1124,9 +1177,7 @@ def main() -> int:
             "run_id": os.environ["GITHUB_RUN_ID"],
             "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
             "failure_type": type(exc).__name__,
-            "failure_code": (
-                exc.failure_code if isinstance(exc, PrivateFixtureError) else "unclassified"
-            ),
+            "failure_code": failure_code(exc),
             "failed_phase": getattr(args, "_phase", "runner-validated"),
             "owned_commands": getattr(args, "_owned_calls", []),
             "limits": [

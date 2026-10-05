@@ -7,12 +7,14 @@ import hashlib
 import io
 import json
 import os
+import stat
 import sys
 import tarfile
 import tempfile
 import unittest
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 HERE = Path(__file__).resolve().parent
@@ -268,6 +270,258 @@ class FocusedTests(unittest.TestCase):
             self.assertIn(text, raw)
         for text in ("pull_request_target", "\n      false &&", "android_browser_probe.mjs", "fixture_server.py", "hosted_controller.py run", "am start", "npm ci", "connectOverCDP"):
             self.assertNotIn(text, raw)
+
+
+def _kvm_snapshot(**changes):
+    value = {"path": "/dev/kvm", "present": True, "mode": stat.S_IFCHR | 0o660,
+             "uid": 0, "gid": 108, "dev": 23, "ino": 45, "nlink": 1,
+             "rdev_major": 10, "rdev_minor": 232, "readable": False, "writable": False}
+    value.update(changes)
+    return value
+
+
+def _kvm_stat(**changes):
+    value = {"st_mode": stat.S_IFCHR | 0o660, "st_uid": 0, "st_gid": 108,
+             "st_dev": 23, "st_ino": 45, "st_nlink": 1, "st_rdev": 791,
+             "st_ctime_ns": 100, "st_mtime_ns": 200}
+    value.update(changes)
+    return SimpleNamespace(**value)
+
+
+@contextmanager
+def _kvm_mocked(before=None, after=None, read=False, write=False, major=10, minor=232,
+                sources=None, guard_error=None, cleanup_complete=True, access_error=None):
+    order = []
+    owner = object()
+    binding = {"source_sha": SOURCE, "source_tree": "c" * 40, "run_id": "12345", "run_attempt": "2"}
+    source_values = iter(sources if sources is not None else [binding, binding])
+    stat_values = iter([before if before is not None else _kvm_stat(),
+                        after if after is not None else _kvm_stat()])
+    accesses = iter([read, write])
+    short = mock.Mock(side_effect=AssertionError("unmocked-command-refused"))
+
+    def guard(_root):
+        order.append("event")
+        if guard_error is not None:
+            raise guard_error
+        return {}
+
+    def commands(_root, leaders):
+        order.append("commands")
+        leaders.append(owner)
+        return short, 0
+
+    def source(_root, observed_short):
+        assert observed_short is short
+        order.append("source")
+        value = next(source_values)
+        if isinstance(value, BaseException):
+            raise value
+        return value
+
+    def lstat(path):
+        assert path == "/dev/kvm"
+        order.append("lstat")
+        value = next(stat_values)
+        if isinstance(value, BaseException):
+            raise value
+        return value
+
+    def access(path, flag, **kwargs):
+        assert path == "/dev/kvm" and flag in {Q.os.R_OK, Q.os.W_OK}
+        assert kwargs == {"effective_ids": True, "follow_symlinks": False}
+        order.append("read" if flag == Q.os.R_OK else "write")
+        if access_error is not None:
+            raise access_error
+        return next(accesses)
+
+    def cleanup(leaders):
+        assert leaders == [owner]
+        order.append("cleanup")
+        return [{"complete": cleanup_complete}]
+
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with ExitStack() as stack:
+        guard_mock = stack.enter_context(mock.patch.object(Q, "event_guard", side_effect=guard))
+        command_mock = stack.enter_context(mock.patch.object(Q, "commands", side_effect=commands))
+        source_mock = stack.enter_context(mock.patch.object(Q, "source_binding", side_effect=source))
+        lstat_mock = stack.enter_context(mock.patch.object(Q.os, "lstat", side_effect=lstat))
+        access_mock = stack.enter_context(mock.patch.object(Q.os, "access", side_effect=access))
+        major_mock = stack.enter_context(mock.patch.object(Q.os, "major", return_value=major, create=True))
+        minor_mock = stack.enter_context(mock.patch.object(Q.os, "minor", return_value=minor, create=True))
+        cleanup_mock = stack.enter_context(mock.patch.object(H, "cleanup_all", side_effect=cleanup))
+        stack.enter_context(mock.patch.object(H, "Managed", side_effect=AssertionError("real-process-refused")))
+        stack.enter_context(mock.patch.object(Q.urllib.request, "build_opener", side_effect=AssertionError("real-network-refused")))
+        path_mock = stack.enter_context(mock.patch.object(Q, "Path"))
+        path_mock.cwd.return_value.resolve.return_value = HERE
+        stack.enter_context(redirect_stdout(stdout))
+        stack.enter_context(redirect_stderr(stderr))
+        yield {"order": order, "binding": binding, "stdout": stdout, "stderr": stderr,
+               "guard": guard_mock, "commands": command_mock, "source": source_mock,
+               "lstat": lstat_mock, "access": access_mock, "major": major_mock,
+               "minor": minor_mock, "cleanup": cleanup_mock, "short": short}
+
+
+class KvmFocusedTests(unittest.TestCase):
+    def test_kvm_projection_exact_layout_bounds_and_missing_errno(self):
+        for number, expected in ((2, "device-missing"), (13, "device-stat-refused")):
+            with self.subTest(errno=number):
+                value = Q.kvm_projection({"path": "/dev/kvm", "present": False, "errno": number})
+                self.assertEqual(value["classification"], expected)
+                self.assertFalse(value["qualified_device_identity"])
+        for change in ({"uid": True}, {"mode": 0o200000}, {"dev": -1}, {"ino": 0}, {"nlink": True},
+                       {"rdev_minor": "232"}, {"readable": 1}, {"writable": 0}, {"path": "/tmp/kvm"},
+                       {"present": 1}, {"ino": 1 << 63}, {"private": "must not retain"}):
+            with self.subTest(change=change), self.assertRaises(Q.KvmContractRefusal):
+                Q.kvm_projection(_kvm_snapshot(**change))
+        for value in (None, [], {"path": "/dev/kvm", "present": False, "errno": 0},
+                      {"path": "/dev/kvm", "present": False, "errno": True},
+                      {"path": "/dev/kvm", "present": False, "errno": 4096},
+                      {"path": "/dev/kvm", "present": False, "errno": 2, "private": "no"}):
+            with self.subTest(value_type=type(value).__name__), self.assertRaises(Q.KvmContractRefusal):
+                Q.kvm_projection(value)
+
+    def test_kvm_projection_identity_refuses_and_read_write_facts_have_no_credit(self):
+        for change in ({"mode": stat.S_IFLNK | 0o777}, {"mode": stat.S_IFREG | 0o660}, {"uid": 1001},
+                       {"nlink": 2}, {"rdev_major": 11}, {"rdev_minor": 233}):
+            with self.subTest(change=change):
+                value = Q.kvm_projection(_kvm_snapshot(**change))
+                self.assertEqual(value["classification"], "device-identity-refused")
+                self.assertFalse(value["qualified_device_identity"])
+        for read, write, expected in ((False, False, "device-read-access-refused"),
+                                     (False, True, "device-read-access-refused"),
+                                     (True, False, "device-write-access-refused"),
+                                     (True, True, "device-read-write-observed")):
+            with self.subTest(read=read, write=write):
+                value = Q.kvm_projection(_kvm_snapshot(readable=read, writable=write))
+                self.assertEqual(value["classification"], expected)
+                self.assertTrue(value["qualified_device_identity"])
+                self.assertEqual((value["approval"], value["permission_change"], value["readiness_credit"]), (False, False, 0))
+
+    def test_kvm_preflight_fixed_observation_is_between_source_checks_and_cleanup(self):
+        with _kvm_mocked(read=True, write=True) as case:
+            value = Q.kvm_preflight(HERE)
+            self.assertEqual(case["order"], ["event", "commands", "source", "lstat", "read", "write", "lstat", "source", "cleanup"])
+            self.assertEqual(value["binding"], case["binding"])
+            self.assertEqual(value["device"]["classification"], "device-read-write-observed")
+            self.assertEqual((value["approval"], value["readiness_credit"]), (False, 0))
+            self.assertEqual(case["stdout"].getvalue(), "")
+            self.assertEqual(case["major"].call_args.args, (791,))
+            self.assertEqual(case["minor"].call_args.args, (791,))
+            case["short"].assert_not_called()
+
+    def test_kvm_preflight_local_guard_refuses_before_commands_or_device(self):
+        refusal = H.Refusal("synthetic-local-guard")
+        with _kvm_mocked(guard_error=refusal) as case, self.assertRaises(H.Refusal) as error:
+            Q.kvm_preflight(HERE)
+        self.assertIs(error.exception, refusal)
+        self.assertEqual(case["order"], ["event"])
+        for name in ("commands", "source", "lstat", "access", "cleanup"):
+            case[name].assert_not_called()
+
+    def test_kvm_preflight_initial_source_refusal_never_observes_device(self):
+        refusal = H.Refusal("synthetic-source-refusal")
+        with _kvm_mocked(sources=[refusal]) as case, self.assertRaises(H.Refusal) as error:
+            Q.kvm_preflight(HERE)
+        self.assertIs(error.exception, refusal)
+        self.assertEqual(case["order"], ["event", "commands", "source", "cleanup"])
+        case["lstat"].assert_not_called()
+        case["access"].assert_not_called()
+        self.assertEqual(case["stdout"].getvalue(), "")
+
+    def test_kvm_preflight_changed_source_refuses_before_diagnostic_output(self):
+        with _kvm_mocked(sources=[{"head": SOURCE}, {"head": EVENT}]) as case:
+            with self.assertRaisesRegex(H.Refusal, "qualification-current-source-changed"):
+                Q.kvm_preflight(HERE)
+            self.assertEqual(case["source"].call_count, 2)
+            self.assertEqual(case["stdout"].getvalue(), "")
+            self.assertEqual(case["order"][-1], "cleanup")
+
+    def test_kvm_preflight_missing_stat_emits_only_bound_fixed_errno_facts(self):
+        for number, expected in ((2, "device-missing"), (13, "device-stat-refused"), (None, "device-stat-refused")):
+            failure = OSError(number, "private path and private exception detail")
+            with self.subTest(errno=number), _kvm_mocked(before=failure) as case:
+                with self.assertRaisesRegex(H.Refusal, "owned-host-character-kvm-identity-required"):
+                    Q.kvm_preflight(HERE)
+                record = json.loads(case["stdout"].getvalue())
+                self.assertEqual(record["binding"], case["binding"])
+                self.assertEqual(record["device"]["classification"], expected)
+                self.assertEqual(record["device"]["errno"], number if number is not None else 4095)
+                self.assertNotIn("private", case["stdout"].getvalue())
+                self.assertEqual(case["lstat"].call_count, 1)
+                case["access"].assert_not_called()
+                self.assertEqual(case["source"].call_count, 2)
+                self.assertEqual(case["order"][-1], "cleanup")
+
+    def test_kvm_preflight_changed_identity_or_second_stat_failure_refuses(self):
+        changes = ({"st_dev": 24}, {"st_ino": 46}, {"st_mode": stat.S_IFREG | 0o660},
+                   {"st_uid": 1001}, {"st_gid": 109}, {"st_nlink": 2}, {"st_rdev": 792},
+                   {"st_ctime_ns": 101}, {"st_mtime_ns": 201})
+        for after in [*(_kvm_stat(**change) for change in changes), OSError(2, "private disappearance")]:
+            with self.subTest(after=type(after).__name__), _kvm_mocked(after=after) as case:
+                with self.assertRaisesRegex(H.Refusal, "owned-host-kvm-stable-identity-required"):
+                    Q.kvm_preflight(HERE)
+                record = json.loads(case["stdout"].getvalue())
+                self.assertEqual(set(record["device"]), {"path", "classification", "permission_change", "qualified_device_identity"})
+                self.assertEqual(record["device"]["classification"], "device-stat-access-raced-refused")
+                self.assertFalse(record["device"]["qualified_device_identity"])
+                self.assertNotIn("private", case["stdout"].getvalue())
+                self.assertEqual(case["source"].call_count, 2)
+                self.assertEqual(case["order"][-1], "cleanup")
+
+    def test_kvm_preflight_wrong_node_identity_refuses_before_shell_stage(self):
+        cases = [({"st_mode": stat.S_IFLNK | 0o777}, 10, 232), ({"st_uid": 1001}, 10, 232),
+                 ({"st_nlink": 2}, 10, 232), ({}, 11, 232), ({}, 10, 233)]
+        for change, major, minor in cases:
+            with self.subTest(change=change, major=major, minor=minor), _kvm_mocked(before=_kvm_stat(**change), after=_kvm_stat(**change), major=major, minor=minor) as case:
+                with self.assertRaisesRegex(H.Refusal, "owned-host-character-kvm-identity-required"):
+                    Q.kvm_preflight(HERE)
+                record = json.loads(case["stdout"].getvalue())
+                self.assertEqual(record["device"]["classification"], "device-identity-refused")
+                self.assertFalse(record["device"]["qualified_device_identity"])
+                case["short"].assert_not_called()
+
+    def test_kvm_preflight_cleanup_uncertainty_rejects_success_preserves_original_refusal(self):
+        with _kvm_mocked(read=True, write=True, cleanup_complete=False) as case:
+            with self.assertRaisesRegex(H.Refusal, "qualification-owned-cleanup-unproved"):
+                Q.kvm_preflight(HERE)
+            self.assertEqual(case["stdout"].getvalue(), "")
+        refusal = H.Refusal("synthetic-original-refusal")
+        with _kvm_mocked(sources=[refusal], cleanup_complete=False) as case, self.assertRaises(H.Refusal) as error:
+            Q.kvm_preflight(HERE)
+        self.assertIs(error.exception, refusal)
+        case["cleanup"].assert_called_once()
+
+    def test_kvm_main_private_access_error_or_uncertain_cleanup_stays_nonzero(self):
+        for options in ({"access_error": RuntimeError("private host information")}, {"cleanup_complete": False}):
+            with self.subTest(options=tuple(options)), _kvm_mocked(**options) as case:
+                self.assertEqual(Q.main(["kvm-preflight"]), 1)
+                self.assertEqual(case["stdout"].getvalue(), "")
+                self.assertEqual(case["stderr"].getvalue(), "android-toolchain-qualification-refused\n")
+                self.assertNotIn("private", case["stderr"].getvalue())
+                self.assertEqual(case["order"][-1], "cleanup")
+
+    def test_kvm_main_returns_zero_only_after_cleanup_and_retains_access_refusal(self):
+        with _kvm_mocked() as case:
+            self.assertEqual(Q.main(["kvm-preflight"]), 0)
+            record = json.loads(case["stdout"].getvalue())
+            self.assertEqual(record["device"]["classification"], "device-read-access-refused")
+            self.assertFalse(record["device"]["readable"])
+            self.assertEqual(case["order"][-1], "cleanup")
+            self.assertEqual(case["stderr"].getvalue(), "")
+
+    def test_kvm_workflow_preflight_once_before_original_shell_read_write_gates(self):
+        raw = (HERE.parents[1] / Q.WORKFLOW).read_text(encoding="utf-8")
+        command = "python tests/mobile-browser/qualify_android_stack.py kvm-preflight"
+        self.assertEqual(raw.count(command), 1)
+        self.assertLess(raw.index("phase=isolated-sdkmanager-zero-exit"), raw.index(command))
+        self.assertLess(raw.index(command), raw.index("if ! test -r /dev/kvm; then"))
+        self.assertLess(raw.index("if ! test -r /dev/kvm; then"), raw.index("if ! test -w /dev/kvm; then"))
+        self.assertIn("android-kvm-read-access-refused", raw)
+        self.assertIn("android-kvm-write-access-refused", raw)
+        self.assertNotIn("sudo", raw)
+        self.assertNotIn("setfacl", raw)
+        self.assertNotIn("chmod", raw)
 
 
 if __name__ == "__main__":

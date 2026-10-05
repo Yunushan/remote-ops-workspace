@@ -68,6 +68,7 @@ jobs:
             'platform-tools' 'emulator' 'platforms;android-36' 'system-images;android-36;google_apis;x86_64'
           printf '%s\n' 'phase=isolated-sdkmanager-zero-exit'
           echo "ANDROID_HOME=$owned_sdk" >> "$GITHUB_ENV"
+          python tests/mobile-browser/qualify_android_stack.py kvm-preflight
           printf '%s\n' 'phase=owned-host-kvm-access'
           if ! test -r /dev/kvm; then
             printf '%s\n' 'android-kvm-read-access-refused' >&2

@@ -386,16 +386,123 @@ def capture(root):
             raise H.Refusal("qualification-owned-cleanup-unproved")
 
 
+DEVICE = "/dev/kvm"
+MAX_ID = (1 << 63) - 1
+
+
+class KvmContractRefusal(ValueError):
+    pass
+
+
+
+def _bounded_integer(value, minimum=0, maximum=MAX_ID):
+    if type(value) is not int or not minimum <= value <= maximum:
+        raise KvmContractRefusal("kvm-observation-layout")
+    return value
+
+
+
+def kvm_projection(snapshot):
+    """Classify only a fixed path's bounded stat/access facts, never an error string."""
+    if type(snapshot) is not dict or snapshot.get("path") != DEVICE:
+        raise KvmContractRefusal("fixed-kvm-observation-required")
+    if type(snapshot.get("present")) is not bool:
+        raise KvmContractRefusal("kvm-observation-layout")
+    if snapshot["present"] is False:
+        if set(snapshot) != {"path", "present", "errno"}:
+            raise KvmContractRefusal("kvm-observation-layout")
+        number = _bounded_integer(snapshot["errno"], 1, 4095)
+        return {"path": DEVICE, "present": False, "errno": number,
+                "classification": "device-missing" if number == 2 else "device-stat-refused",
+                "qualified_device_identity": False, "permission_change": False,
+                "approval": False, "readiness_credit": 0}
+    keys = {"path", "present", "mode", "uid", "gid", "dev", "ino", "nlink", "rdev_major", "rdev_minor", "readable", "writable"}
+    if set(snapshot) != keys or any(type(snapshot[k]) is not bool for k in ("readable", "writable")):
+        raise KvmContractRefusal("kvm-observation-layout")
+    mode = _bounded_integer(snapshot["mode"], 0, 0o177777)
+    for key in ("uid", "gid", "dev", "rdev_major", "rdev_minor"):
+        _bounded_integer(snapshot[key])
+    for key in ("ino", "nlink"):
+        _bounded_integer(snapshot[key], 1)
+    character = stat.S_ISCHR(mode)
+    symlink = stat.S_ISLNK(mode)
+    qualified = character and snapshot["uid"] == 0 and snapshot["nlink"] == 1 and (snapshot["rdev_major"], snapshot["rdev_minor"]) == (10, 232)
+    kind = "symlink" if symlink else "character-device" if character else "wrong-file-type"
+    if not qualified:
+        classification = "device-identity-refused"
+    elif not snapshot["readable"]:
+        classification = "device-read-access-refused"
+    elif not snapshot["writable"]:
+        classification = "device-write-access-refused"
+    else:
+        classification = "device-read-write-observed"
+    return {"path": DEVICE, "present": True, "kind": kind, "mode": stat.S_IMODE(mode),
+            **{k: snapshot[k] for k in ("uid", "gid", "dev", "ino", "nlink", "rdev_major", "rdev_minor", "readable", "writable")},
+            "classification": classification, "qualified_device_identity": qualified,
+            "permission_change": False, "approval": False, "readiness_credit": 0}
+
+
+
+def kvm_preflight(root):
+    # Read-only diagnostics on one literal device; no open/ioctl or ACL changes.
+    event_guard(root)
+    leaders = []
+    try:
+        short, _started = commands(root, leaders)
+        binding = source_binding(root, short)
+        context = {"schema": "row.android-kvm-readonly-preflight.v1", "binding": binding,
+                   "phase": "owned-host-kvm-lstat-preflight", "approval": False, "readiness_credit": 0}
+        try:
+            before = os.lstat("/dev/kvm")
+        except OSError as exc:
+            number = exc.errno if type(exc.errno) is int and 0 < exc.errno <= 4095 else 4095
+            snapshot = {"path": "/dev/kvm", "present": False, "errno": number}
+        else:
+            snapshot = {"path": "/dev/kvm", "present": True, "mode": before.st_mode,
+                        "uid": before.st_uid, "gid": before.st_gid, "dev": before.st_dev,
+                        "ino": before.st_ino, "nlink": before.st_nlink,
+                        "rdev_major": os.major(before.st_rdev), "rdev_minor": os.minor(before.st_rdev),
+                        "readable": os.access("/dev/kvm", os.R_OK, effective_ids=True, follow_symlinks=False),
+                        "writable": os.access("/dev/kvm", os.W_OK, effective_ids=True, follow_symlinks=False)}
+            fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink", "st_rdev", "st_ctime_ns", "st_mtime_ns")
+            try:
+                after = os.lstat("/dev/kvm")
+                stable = all(getattr(before, name) == getattr(after, name) for name in fields)
+            except OSError:
+                stable = False
+            if not stable:
+                if source_binding(root, short) != binding:
+                    raise H.Refusal("qualification-current-source-changed")
+                context["device"] = {"path": "/dev/kvm", "classification": "device-stat-access-raced-refused",
+                                     "permission_change": False, "qualified_device_identity": False}
+                print(json.dumps(context))
+                raise H.Refusal("owned-host-kvm-stable-identity-required")
+        context["device"] = kvm_projection(snapshot)
+        if source_binding(root, short) != binding:
+            raise H.Refusal("qualification-current-source-changed")
+        if not context["device"]["qualified_device_identity"]:
+            print(json.dumps(context))
+            raise H.Refusal("owned-host-character-kvm-identity-required")
+        return context
+    finally:
+        initial = sys.exc_info()[1]
+        if any(not row["complete"] for row in H.cleanup_all(leaders)) and initial is None:
+            raise H.Refusal("qualification-owned-cleanup-unproved")
+
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("plan", "guard", "observe-public", "bootstrap", "guard-clone", "capture"), default="plan", nargs="?")
+    parser.add_argument("action", choices=("plan", "guard", "observe-public", "bootstrap", "guard-clone", "kvm-preflight", "capture"), default="plan", nargs="?")
     args = parser.parse_args(argv)
     if args.action == "plan":
         print(json.dumps({"status": "qualification-only", "no_browser_or_product_launch": True, "CDP_availability": "requires-separate-actual-browser-proof", "readiness_credit": 0}))
         return 0
     try:
         root = Path.cwd().resolve()
-        if args.action == "bootstrap":
+        if args.action == "kvm-preflight":
+            value = kvm_preflight(root)
+        elif args.action == "bootstrap":
             value = bootstrap(root)
         elif args.action == "observe-public":
             value = observe_public(root)

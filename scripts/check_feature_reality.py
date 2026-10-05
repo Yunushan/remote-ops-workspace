@@ -613,7 +613,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "cancel_prompt_verified",
                 "Production parity requires the supplied evidence files",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_terminal.py": [
                 "macro_record_button",
                 "mobaMacroCaptureActive",
                 "capture_terminal_macro_input",
@@ -757,7 +757,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     "protocol.serial": {"protocols": ["serial"]},
     "terminal.tabs": {
         "module_attrs": ["remote_ops_workspace.terminal:TerminalPanePlan"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["class TerminalPane"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_terminal.py": ["class TerminalPane"]},
     },
     "terminal.local-shell": {
         "protocols": ["local-shell"],
@@ -788,7 +788,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.terminal_highlighting:terminal_highlight_fragments",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_terminal.py": [
                 "terminalSyntaxHighlightingEnabled",
                 "terminalAnsiSgrColorEnabled",
                 "terminalLinkActivation",

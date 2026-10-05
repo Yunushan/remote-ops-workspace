@@ -4630,8 +4630,10 @@
               "gui_design_preset_reference_control_route",
               "active-reference-tab-terminal-controls"
             ],
+            "src/remote_ops_workspace/gui_terminal.py": [
+              "terminalActionKey"
+            ],
             "src/remote_ops_workspace/gui.py": [
-              "terminalActionKey",
               "presetReferenceControlCapturedActionKeys",
               "apply_reference_control_route_to_terminal_tab"
             ],
@@ -6477,8 +6479,10 @@
               "gui_design_preset_reference_control_route",
               "active-reference-tab-terminal-controls"
             ],
+            "src/remote_ops_workspace/gui_terminal.py": [
+              "terminalActionKey"
+            ],
             "src/remote_ops_workspace/gui.py": [
-              "terminalActionKey",
               "presetReferenceControlCapturedActionKeys",
               "apply_reference_control_route_to_terminal_tab"
             ],
@@ -8290,8 +8294,10 @@
               "gui_design_preset_reference_control_route",
               "active-reference-tab-terminal-controls"
             ],
+            "src/remote_ops_workspace/gui_terminal.py": [
+              "terminalActionKey"
+            ],
             "src/remote_ops_workspace/gui.py": [
-              "terminalActionKey",
               "presetReferenceControlCapturedActionKeys",
               "apply_reference_control_route_to_terminal_tab"
             ],
@@ -10027,8 +10033,10 @@
               "gui_design_preset_reference_control_route",
               "active-reference-tab-terminal-controls"
             ],
+            "src/remote_ops_workspace/gui_terminal.py": [
+              "terminalActionKey"
+            ],
             "src/remote_ops_workspace/gui.py": [
-              "terminalActionKey",
               "presetReferenceControlCapturedActionKeys",
               "apply_reference_control_route_to_terminal_tab"
             ],

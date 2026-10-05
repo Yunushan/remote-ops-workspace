@@ -833,13 +833,16 @@ def test_deb_expected_hashes_come_only_from_original_pins_and_finish(module, fau
 
 def test_late_zero_exit_is_uncertain_and_not_success(module, monkeypatch):
     calls = []
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr(module, "time", SimpleNamespace(monotonic=lambda: clock.now))
 
     class FakeChild:
         stdout, stderr, stdin = io.BytesIO(b""), io.BytesIO(b""), None
         returncode = None
 
         def wait(self, timeout):
-            module.time.sleep(0.03)
+            assert 0 < timeout <= 0.01
+            clock.now += 0.03
             self.returncode = 0
             return 0
 

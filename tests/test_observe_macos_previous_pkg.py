@@ -462,7 +462,7 @@ def publication_fixture():
         "tag_name": pin["tag"],
         "published_at": pin["published_at"],
         "draft": False,
-        "prerelease": False,
+        "prerelease": pin["prerelease"],
         "assets": [dict(asset)],
     }
     tag = {
@@ -770,7 +770,7 @@ class IntegrationGuardTests(unittest.TestCase):
         for index, field, value in (
             (0, "id", True),
             (0, "draft", True),
-            (0, "prerelease", True),
+            (0, "prerelease", False),
             (0, "published_at", "changed"),
             (0, "assets", []),
             (0, "assets", {}),
@@ -788,6 +788,36 @@ class IntegrationGuardTests(unittest.TestCase):
                 self.refusal(M.validate_previous_identity, *fixtures)
         release["assets"].append(dict(asset))
         self.refusal(M.validate_previous_identity, release, tag, asset)
+
+    def test_pinned_prerelease_is_literal_true_and_returned(self):
+        self.assertIs(M.PREVIOUS["prerelease"], True)
+        release, tag, asset = publication_fixture()
+        identity = M.validate_previous_identity(release, tag, asset)
+        self.assertIs(identity["prerelease"], True)
+        for value in (False, None, "true", "True", 1, 0, 1.0, [], {}):
+            release, tag, asset = publication_fixture()
+            release["prerelease"] = value
+            with self.subTest(value_type=type(value).__name__, value=value):
+                self.refusal(M.validate_previous_identity, release, tag, asset)
+        release, tag, asset = publication_fixture()
+        del release["prerelease"]
+        self.refusal(M.validate_previous_identity, release, tag, asset)
+
+    def test_prerelease_flag_drift_refuses_before_and_after_readback(self):
+        release, tag, asset = publication_fixture()
+        identity = M.validate_previous_identity(release, tag, asset)
+        before = {**identity, "metadata_sha256": ["a" * 64] * 3}
+        after = {**identity, "metadata_sha256": ["b" * 64] * 3}
+        self.assertTrue(M.publication_recheck(before, after)["immutable_identity_equal"])
+        for side in (0, 1):
+            for value in (False, None, "true", 1, 0):
+                observations = [dict(before), dict(after)]
+                observations[side]["prerelease"] = value
+                with self.subTest(side=side, value_type=type(value).__name__, value=value):
+                    self.refusal(M.publication_recheck, *observations)
+            observations = [dict(before), dict(after)]
+            del observations[side]["prerelease"]
+            self.refusal(M.publication_recheck, *observations)
 
     def test_mutable_public_download_count_does_not_weaken_identity_readback(self):
         release, tag, asset = publication_fixture()

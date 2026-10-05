@@ -59,6 +59,7 @@ PREVIOUS = {
     "tag": "v1.0.24",
     "tag_commit": "2165989ca9f3ffbd59a8f27a296cda3fb295a404",
     "published_at": "2026-09-04T08:39:52Z",
+    "prerelease": True,
     "asset_id": 544041419,
     "asset_name": "remote-ops-workspace-v1.0.24-macos-x64.pkg",
     "size": 34437450,
@@ -1265,7 +1266,7 @@ def validate_previous_identity(release, tag, asset):
         or release.get("tag_name") != PREVIOUS["tag"]
         or release.get("published_at") != PREVIOUS["published_at"]
         or release.get("draft") is not False
-        or release.get("prerelease") is not False
+        or release.get("prerelease") is not PREVIOUS["prerelease"]
     ):
         raise Refusal("previous-publication-identity-changed")
     expected_object = {
@@ -1304,6 +1305,7 @@ def validate_previous_identity(release, tag, asset):
         raise Refusal("previous-release-asset-membership-changed")
     return {
         "release_id": PREVIOUS["release_id"],
+        "prerelease": PREVIOUS["prerelease"],
         "tag": PREVIOUS["tag"],
         "tag_commit": PREVIOUS["tag_commit"],
         "asset_id": PREVIOUS["asset_id"],
@@ -1349,10 +1351,12 @@ def safe_directory(path, root):
 def publication_recheck(before, after):
     # Download counts and other mutable public API fields may change. Immutable
     # release/tag/asset identity was revalidated separately on both responses.
-    keys = {"release_id", "tag", "tag_commit", "asset_id", "size", "sha256"}
+    keys = {"release_id", "prerelease", "tag", "tag_commit", "asset_id", "size", "sha256"}
     if (
         not isinstance(before, dict)
         or not isinstance(after, dict)
+        or before.get("prerelease") is not PREVIOUS["prerelease"]
+        or after.get("prerelease") is not PREVIOUS["prerelease"]
         or any(before.get(key) != after.get(key) for key in keys)
     ):
         raise Refusal("previous-publication-identity-changed")

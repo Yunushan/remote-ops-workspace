@@ -43,6 +43,15 @@ TARGETS = {
 HEX = re.compile(r"[0-9a-f]{64}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 VERSION = re.compile(r"[0-9]+(?:\.[A-Za-z0-9]+)*(?:[-+][A-Za-z0-9.]+)?\Z")
+# Exact public anchor independently checked against cffi 2.1.1 PyPI metadata.
+# This does not exempt direct URLs, other components/versions/fields or secrets.
+REVIEWED_METADATA_URL_SHA256 = {
+    (
+        "cffi",
+        "2.1.1",
+        "project_url",
+    ): "d3f54037ffe5862d66646769fbc2ff400acc8cc2d6ea2f1a1d87e3ffa4d37d56",
+}
 COOKIE = b"MEI\014\013\012\013\016"
 PE_MAGICS = (
     b"\xfe\xed\xfa\xce",
@@ -136,6 +145,19 @@ def receipt_relative(raw: object, target: str) -> str:
     if isinstance(raw, str) and "\\" in raw:
         if not target.startswith("windows-") or "/" in raw:
             raise Refusal("receipt-path-separator-invalid")
+        raw = raw.replace("\\", "/")
+    return relative(raw)
+
+
+def carchive_member_relative(raw: object, target: str | None) -> str:
+    """Windows bootloaders use native TOC separators; other paths stay strict."""
+    if (
+        isinstance(raw, str)
+        and "\\" in raw
+        and target in ("windows-x86", "windows-x64", "windows-arm64")
+    ):
+        if "/" in raw:
+            raise Refusal("carchive-member-separator-invalid")
         raw = raw.replace("\\", "/")
     return relative(raw)
 
@@ -250,8 +272,9 @@ def native_kind(raw: bytes) -> str | None:
 
 
 class Observations:
-    def __init__(self, limits: Limits):
+    def __init__(self, limits: Limits, *, target: str | None = None):
         self.limits = limits
+        self.target = target
         self.blobs: dict[str, bytes] = {}
         self.files: list[dict] = []
         self.licenses: dict[str, list[dict]] = {}
@@ -347,10 +370,6 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
         if kind == b"o":
             observations.gap("carchive-runtime-option-unclassified", label)
             continue
-        name = relative(name)
-        if name.casefold() in seen:
-            raise Refusal("duplicate-member")
-        seen.add(name.casefold())
         if (
             size > observations.limits.member_bytes
             or stored > observations.limits.input_bytes
@@ -359,8 +378,14 @@ def scan_carchive(raw: bytes, label: str, observations: Observations, depth: int
         ):
             raise Refusal("carchive-member-bound")
         if kind in (b"n", b"d"):
-            observations.gap("carchive-indirection-unobserved", f"{label}::{name}")
+            # Dependency/link names are descriptors, not observed payload paths.
+            # Keep their uncertainty without resolving or retaining raw descriptors.
+            observations.gap("carchive-indirection-unobserved", label)
             continue
+        name = carchive_member_relative(name, observations.target)
+        if name.casefold() in seen:
+            raise Refusal("duplicate-member")
+        seen.add(name.casefold())
         payload = raw[start + position : start + position + stored]
         data = decompressed(payload, "zlib", size) if compression else payload
         if len(data) != size:
@@ -863,7 +888,9 @@ def inspect_distributions(
                 if isinstance(value, str):
                     for token in value.split():
                         if "://" in token:
-                            public_url(token)
+                            public_metadata_url(
+                                token, metadata.get("name"), metadata.get("version"), field
+                            )
         name = metadata.get("name") if isinstance(metadata, dict) else None
         version = metadata.get("version") if isinstance(metadata, dict) else None
         if (
@@ -897,6 +924,32 @@ def inspect_distributions(
             }
         )
     return sorted(result, key=lambda item: item["normalized_name"])
+
+
+def public_metadata_url(value: object, name: object, version: object, field: str):
+    """Permit one reviewed public anchor only in its bound metadata context."""
+    if (
+        isinstance(value, str)
+        and len(value) <= 8192
+        and isinstance(name, str)
+        and len(name) <= 128
+        and isinstance(version, str)
+    ):
+        normalized = re.sub(r"[-_.]+", "-", name).lower()
+        expected = REVIEWED_METADATA_URL_SHA256.get((normalized, version, field))
+        if expected is not None and digest(value.encode("utf-8")) == expected:
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme in {"http", "https"}
+                and parsed.hostname
+                and parsed.username is None
+                and parsed.password is None
+                and not parsed.query
+                and parsed.fragment
+            ):
+                public_url(parsed._replace(fragment="").geturl())
+                return parsed
+    return public_url(value)
 
 
 def public_url(value: object):
@@ -1200,7 +1253,7 @@ def collect(
     archives = load(raw_archives, array=True)
     if not 1 <= len(archives) <= 32:
         raise Refusal("carchive-receipt-shape-invalid")
-    observations = Observations(limits)
+    observations = Observations(limits, target=target)
     components = inspect_distributions(raw_inspect, limits, root)
     scan_metadata(components, site_roots, observations)
     runtime_component = {

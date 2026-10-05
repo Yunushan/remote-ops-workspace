@@ -25,7 +25,10 @@ capture to this lane.
 The CLI also requires a GitHub-hosted runner, the current run/attempt identity,
 matching target and builder version, unchanged source fingerprints and exact
 finish/pip-inspect/CArchive/asset hashes. Known URL fields reject credentials,
-queries and fragments; direct source URLs must name the bound checkout.
+queries and unknown fragments. One exact cffi 2.1.1 project metadata anchor is
+allowed by its reviewed URL digest, component, version and field; it was matched
+to [official version metadata](https://pypi.org/pypi/cffi/2.1.1/json). This exception
+does not apply to transport/direct URLs. Direct source URLs must name the bound checkout.
 Upstream pip metadata retains free-form fields, so this is not a universal
 metadata sanitizer. Raw transport receipts contribute validated facts/hashes,
 not arbitrary extra fields.
@@ -51,8 +54,12 @@ it still rejects the collector's incomplete/unapproved inventory.
 Every bound source/input/asset is rechecked after parsing. This is a local
 receipt/byte check, not an independent hosted attestation or hostile race
 guarantee. Windows receipt separators normalize only typed asset/CArchive
-receipt paths. Archive, source and output paths keep strict traversal, device,
-duplicate, link and alias checks.
+receipt paths. Windows CArchive member separators also normalize within the
+explicit target context, including CArchives inside ZIP/TAR companions. This
+matches the [pinned PyInstaller writer](https://github.com/pyinstaller/pyinstaller/blob/v6.22.3/PyInstaller/archive/writers.py).
+Strict traversal, device, casefold duplicate, link and alias checks remain.
+ZIP/TAR member, source and output names retain their strict separator rules.
+Dependency/link/runtime-option descriptors remain uncertainty gaps, not observed files.
 
 ## Supported observations and remaining work
 

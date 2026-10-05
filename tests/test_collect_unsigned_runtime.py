@@ -810,5 +810,196 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
             capture.assert_not_called()
 
 
+class ReviewedPublicMetadataAnchorTests(unittest.TestCase):
+    # Exact public token from source-bound pip bytes; independently matched to
+    # https://pypi.org/pypi/cffi/2.1.1/json, not invented by the fixture.
+    KNOWN = "https://groups.google.com/forum/#!forum/python-cffi"
+
+    def test_exact_anchor_is_metadata_only_and_preserves_url(self):
+        parsed = c.public_metadata_url(self.KNOWN, "cffi", "2.1.1", "project_url")
+        self.assertEqual(parsed.geturl(), self.KNOWN)
+        raw = c.canonical(
+            {
+                "version": "1",
+                "installed": [
+                    {
+                        "metadata": {
+                            "name": "cffi",
+                            "version": "2.1.1",
+                            "project_url": ["Discussion, " + self.KNOWN],
+                        }
+                    }
+                ],
+            }
+        )
+        self.assertEqual(c.inspect_distributions(raw, c.DEFAULT_LIMITS)[0]["name"], "cffi")
+        with self.assertRaisesRegex(c.Refusal, "pip-url-credential-refused"):
+            c.public_url(self.KNOWN)
+        with self.assertRaisesRegex(c.Refusal, "pip-url-credential-refused"):
+            c.validate_direct_url({"url": self.KNOWN, "dir_info": {}}, ROOT)
+
+    def test_unknown_context_or_modified_anchor_still_refuses(self):
+        cases = [
+            (self.KNOWN, "different", "2.1.1", "project_url"),
+            (self.KNOWN, "cffi", "2.1.2", "project_url"),
+            (self.KNOWN, "cffi", "2.1.1", "home_page"),
+            (self.KNOWN + "-different", "cffi", "2.1.1", "project_url"),
+            (self.KNOWN.partition("#")[0] + "?secret=value#anchor", "cffi", "2.1.1", "project_url"),
+            (self.KNOWN.replace("://", "://user:secret@", 1), "cffi", "2.1.1", "project_url"),
+        ]
+        for value, name, version, field in cases:
+            with self.subTest(name=name, version=version, field=field):
+                with self.assertRaisesRegex(c.Refusal, "pip-url-credential-refused"):
+                    c.public_metadata_url(value, name, version, field)
+
+    def test_even_an_accidentally_reviewed_credential_url_refuses(self):
+        secret = self.KNOWN.replace("://", "://user:secret@", 1)
+        with mock.patch.dict(
+            c.REVIEWED_METADATA_URL_SHA256,
+            {("cffi", "2.1.1", "project_url"): c.digest(secret.encode())},
+        ):
+            with self.assertRaisesRegex(c.Refusal, "pip-url-credential-refused"):
+                c.public_metadata_url(secret, "cffi", "2.1.1", "project_url")
+
+
+class WindowsCArchiveRepresentationTests(unittest.TestCase):
+    # Exact source-bound TOC names only; these fixtures contain harmless synthetic
+    # payloads and do not replay downloaded native executables.
+    ACTUAL_NAMES = (
+        "remote_ops_workspace-1.0.27.dist-info\\INSTALLER",
+        "remote_ops_workspace-1.0.27.dist-info\\METADATA",
+        "remote_ops_workspace-1.0.27.dist-info\\RECORD",
+        "remote_ops_workspace-1.0.27.dist-info\\REQUESTED",
+        "remote_ops_workspace-1.0.27.dist-info\\WHEEL",
+        "remote_ops_workspace-1.0.27.dist-info\\direct_url.json",
+        "remote_ops_workspace-1.0.27.dist-info\\entry_points.txt",
+        "remote_ops_workspace-1.0.27.dist-info\\licenses\\LICENSE",
+        "remote_ops_workspace-1.0.27.dist-info\\licenses\\NOTICE",
+        "remote_ops_workspace-1.0.27.dist-info\\top_level.txt",
+        "remote_ops_workspace\\assets\\remote_ops_workspace.ico",
+        "remote_ops_workspace\\assets\\remote_ops_workspace.svg",
+        "remote_ops_workspace\\assets\\remote_ops_workspace_gui.manifest",
+        "remote_ops_workspace\\configs\\feature_manifest.json",
+        "remote_ops_workspace\\configs\\gui_parity_criteria.json",
+        "remote_ops_workspace\\configs\\gui_visual_metrics.json",
+        "remote_ops_workspace\\configs\\gui_visual_reference_overrides.json",
+        "remote_ops_workspace\\configs\\mobaxterm_parity_evidence.json",
+        "remote_ops_workspace\\configs\\mobile_test_matrix.json",
+        "remote_ops_workspace\\configs\\native_installer_smoke.json",
+        "remote_ops_workspace\\configs\\native_linux_previous_release_pins.json",
+        "remote_ops_workspace\\configs\\native_previous_release_pins.json",
+        "remote_ops_workspace\\configs\\platform_parity_promotion.json",
+        "remote_ops_workspace\\configs\\platform_targets.json",
+        "remote_ops_workspace\\configs\\platform_verified_evidence.json",
+        "remote_ops_workspace\\configs\\profiles.example.json",
+        "remote_ops_workspace\\configs\\release_compliance_policy.json",
+        "remote_ops_workspace\\configs\\release_dependency_locks.json",
+        "remote_ops_workspace\\configs\\release_matrix.json",
+        "remote_ops_workspace\\configs\\release_toolchain.json",
+        "remote_ops_workspace\\configs\\security_baseline.json",
+        "remote_ops_workspace\\configs\\settings.example.json",
+        "remote_ops_workspace\\configs\\workspace_recovery_fixture.json",
+        "remote_ops_workspace\\configs\\xp_native_evidence_contract.json",
+        "remote_ops_workspace\\py.typed",
+        "remote_ops_workspace\\web\\app.js",
+        "remote_ops_workspace\\web\\index.html",
+        "remote_ops_workspace\\web\\manifest.json",
+        "remote_ops_workspace\\web\\styles.css",
+        "remote_ops_workspace\\web\\sw.js",
+    )
+
+    def test_actual_names_observed_in_direct_and_nested_windows_carchive(self):
+        data = carchive([(name, b"harmless") for name in self.ACTUAL_NAMES])
+        for target in ("windows-x86", "windows-x64", "windows-arm64"):
+            for backend in ("direct", "zip", "tar"):
+                with self.subTest(target=target, backend=backend):
+                    observations = c.Observations(c.DEFAULT_LIMITS, target=target)
+                    if backend == "direct":
+                        c.scan_carchive(data, "row.exe", observations)
+                    else:
+                        raw = (
+                            zip_bytes([("row.exe", data)])
+                            if backend == "zip"
+                            else tar_bytes([("row.exe", data)])
+                        )
+                        c.scan_package(raw, "bundle." + backend, observations)
+                    observed = {
+                        row["path"]
+                        for row in observations.files
+                        if row["path"].startswith("carchive/")
+                    }
+                    self.assertEqual(
+                        observed,
+                        {"carchive/" + name.replace("\\", "/") for name in self.ACTUAL_NAMES},
+                    )
+
+    def test_other_targets_and_other_archive_formats_keep_strict_paths(self):
+        data = carchive([(self.ACTUAL_NAMES[0], b"harmless")])
+        for target in (None, "linux-x86_64", "macos-arm64"):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(c.Refusal, "path-invalid"):
+                    c.scan_carchive(data, "row", c.Observations(c.DEFAULT_LIMITS, target=target))
+        for backend, data in (
+            (
+                "zip",
+                zip_bytes([("folder/license.txt", b"license")]).replace(
+                    b"folder/license.txt", b"folder\\license.txt"
+                ),
+            ),
+            ("tar", tar_bytes([(r"folder\license.txt", b"license")])),
+        ):
+            with self.subTest(backend=backend):
+                with self.assertRaisesRegex(c.Refusal, "path-invalid"):
+                    c.scan_package(
+                        data,
+                        "bundle." + backend,
+                        c.Observations(c.DEFAULT_LIMITS, target="windows-x64"),
+                    )
+
+    def test_windows_traversal_devices_mixed_and_duplicate_aliases_refuse(self):
+        invalid = [
+            r"dir\..\file",
+            r"C:\dir\file",
+            r"\server\share\file",
+            r"dir\NUL",
+            "dir\\name.",
+            "dir\\file ",
+            r"dir\\file",
+        ]
+        for name in invalid:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(c.Refusal, "path-invalid"):
+                    c.scan_carchive(
+                        carchive([(name, b"harmless")]),
+                        "row.exe",
+                        c.Observations(c.DEFAULT_LIMITS, target="windows-x64"),
+                    )
+        with self.assertRaisesRegex(c.Refusal, "carchive-member-separator-invalid"):
+            c.scan_carchive(
+                carchive([(r"dir\sub/file", b"harmless")]),
+                "row.exe",
+                c.Observations(c.DEFAULT_LIMITS, target="windows-x64"),
+            )
+        with self.assertRaisesRegex(c.Refusal, "duplicate-member"):
+            c.scan_carchive(
+                carchive([(r"dir\file", b"one"), ("DIR/file", b"two")]),
+                "row.exe",
+                c.Observations(c.DEFAULT_LIMITS, target="windows-x64"),
+            )
+
+    def test_dependency_descriptor_is_gap_and_never_followed_as_file(self):
+        raw = bytearray(carchive([("unobserved:dependency", b"")]))
+        position = bytes(raw).rfind(c.COOKIE)
+        _, length, toc_offset, _, _, _ = struct.unpack("!8sIIII64s", raw[position : position + 88])
+        start = position + 88 - length
+        raw[start + toc_offset + 17] = ord("d")
+        observations = c.Observations(c.DEFAULT_LIMITS, target="windows-x64")
+        c.scan_carchive(bytes(raw), "row.exe", observations)
+        self.assertEqual(observations.files, [])
+        self.assertTrue(
+            any(row["code"] == "carchive-indirection-unobserved" for row in observations.gaps)
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

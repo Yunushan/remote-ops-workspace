@@ -1,0 +1,56 @@
+name: Previous macOS PKG metadata qualification
+
+# Observes a pinned public old package; no install, application or release action.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'scripts/observe_macos_previous_pkg.py'
+      - 'tests/test_observe_macos_previous_pkg.py'
+      - 'src/remote_ops_workspace/process_status.py'
+      - '.github/workflows/macos-previous-pkg-metadata.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: macos-previous-metadata-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  observe-previous-pkg:
+    if: >-
+      github.repository == 'Yunushan/remote-ops-workspace' &&
+      github.event.repository.private == false &&
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.base.ref == 'main') ||
+       (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/')))
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    env:
+      ROW_EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Observe pinned old PKG and installed metadata readers
+        id: capture
+        run: python scripts/observe_macos_previous_pkg.py capture
+      - name: Retain bounded public observations only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        # Refusal receipts preserve the failed capture result and fixed phase.
+        if: ${{ always() && steps.capture.outputs.public_receipt == 'saved' }}
+        with:
+          name: macos-previous-pkg-metadata-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/native-smoke/macos-x64/previous-pkg-metadata.json
+          if-no-files-found: error
+          retention-days: 14

@@ -206,6 +206,13 @@ staged manifest and assets. It does not fetch, install, or roll back updates,
 so use your existing endpoint-management system for staged deployment and
 rollback until a managed updater is introduced.
 
+Configure the trusted public key independently of the received manifest.
+`row customizer update-verify` and the standalone manifest checker reject an
+empty or malformed configured key, an unsupported signature algorithm, or a
+forged signature and return a nonzero exit status. The security extra must be
+available for Ed25519 verification; an unavailable backend also rejects the
+manifest. A payload checksum alone does not establish the publisher identity.
+
 RDP, VNC, X2Go, SPICE, serial, and other protocol sessions delegate to native
 system clients. Treat `row doctor` as a post-install preflight, then deploy the
 approved clients, versions, certificates, and host-key policy through your OS

@@ -52,6 +52,15 @@ FILES = (
         )
     ),
 )
+# The byte-pinned v1.0.24 DEB predates THIRD_PARTY_NOTICES.md. Its actual
+# five-file inventory is explicit; current candidates still require all six.
+PREVIOUS_FILES = (
+    "usr/bin/row",
+    "usr/share/doc/remote-ops-workspace/LICENSE",
+    "usr/share/doc/remote-ops-workspace/NOTICE",
+    "usr/share/doc/remote-ops-workspace/README.md",
+    "usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md",
+)
 DIRECTORIES = {
     ".",
     "usr",
@@ -661,7 +670,15 @@ class Payload:
         return next(row[2] for row in self.files if row[0] == "usr/bin/row")
 
 
+def expected_payload_files(version: str) -> tuple[str, ...]:
+    if version == PREVIOUS:
+        return PREVIOUS_FILES
+    require_newer_version(version)
+    return FILES
+
+
 def payload_inventory(raw: bytes, version: str) -> Payload:
+    expected_files = set(expected_payload_files(version))
     if len(raw) > MAX_PAYLOAD:
         raise EvidenceError("payload-archive-bound")
     seen, rows, total = set(), [], 0
@@ -684,7 +701,7 @@ def payload_inventory(raw: bytes, version: str) -> Payload:
             expected_mode = 0o755 if name == "usr/bin/row" else 0o644
             bound = MAX_FILE if name == "usr/bin/row" else 4 * 1024 * 1024
             if (
-                name not in FILES
+                name not in expected_files
                 or item.type != tarfile.REGTYPE
                 or item.name.endswith("/")
                 or item.mode != expected_mode
@@ -700,7 +717,7 @@ def payload_inventory(raw: bytes, version: str) -> Payload:
             if size != item.size or total > MAX_PAYLOAD:
                 raise EvidenceError("package-expanded-payload-bound")
             rows.append((name, size, value.hexdigest(), expected_mode))
-    if {row[0] for row in rows} != set(FILES) or not DIRECTORIES.issubset(seen):
+    if {row[0] for row in rows} != expected_files or not DIRECTORIES.issubset(seen):
         raise EvidenceError("package-payload-files-incomplete")
     return Payload(version, tuple(sorted(rows)))
 
@@ -729,6 +746,8 @@ def installed_identity(commands: Commands, payload: Payload) -> None:
 
 
 def verify_payload_files(root: Path, payload: Payload) -> None:
+    if {row[0] for row in payload.files} != set(expected_payload_files(payload.version)):
+        raise EvidenceError("package-payload-files-incomplete")
     for name, size, sha, mode in payload.files:
         path = root / name
         if (
@@ -740,7 +759,7 @@ def verify_payload_files(root: Path, payload: Payload) -> None:
             raise EvidenceError("owned-installed-payload-bytes-or-path-mismatch")
     docs = root / "usr/share/doc/remote-ops-workspace"
     if {path.name for path in docs.iterdir()} != {
-        PurePosixPath(name).name for name in FILES if name.startswith("usr/share/doc/")
+        PurePosixPath(name).name for name, *_ in payload.files if name.startswith("usr/share/doc/")
     }:
         raise EvidenceError("owned-documentation-directory-changed")
 

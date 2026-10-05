@@ -42,7 +42,16 @@ def tar_bytes(rows):
     return result.getvalue()
 
 
-def payload_rows(module):
+PREVIOUS_PAYLOAD_PATHS = (
+    "usr/bin/row",
+    "usr/share/doc/remote-ops-workspace/LICENSE",
+    "usr/share/doc/remote-ops-workspace/NOTICE",
+    "usr/share/doc/remote-ops-workspace/README.md",
+    "usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md",
+)
+
+
+def payload_rows(module, version="1.0.27"):
     return [
         (name if name != "." else "./", b"", tarfile.DIRTYPE, 0o755, 0)
         for name in sorted(module.DIRECTORIES)
@@ -54,7 +63,7 @@ def payload_rows(module):
             0o755 if name == "usr/bin/row" else 0o644,
             0,
         )
-        for name in module.FILES
+        for name in (PREVIOUS_PAYLOAD_PATHS if version == "1.0.24" else module.FILES)
     ]
 
 
@@ -137,7 +146,7 @@ def test_unsafe_payload_names(module, name):
 
 def test_genuine_shape_control_and_payload_are_data_only(module):
     module.control_identity(tar_bytes(control_rows()), "1.0.24")
-    payload = module.payload_inventory(tar_bytes(payload_rows(module)), "1.0.24")
+    payload = module.payload_inventory(tar_bytes(payload_rows(module)), "1.0.27")
     assert len(payload.files) == 6
     assert payload.row_sha256 == hashlib.sha256(b"harmless-fixture:usr/bin/row").hexdigest()
 
@@ -174,8 +183,9 @@ def test_control_identity_and_types(module, change):
     "change",
     ["duplicate", "missing", "symlink", "hardlink", "fifo", "unexpected", "mode", "owner", "bound"],
 )
-def test_payload_exact_regular_bounded_files(module, change, monkeypatch):
-    rows = payload_rows(module)
+@pytest.mark.parametrize("version", ["1.0.24", "1.0.27"])
+def test_payload_exact_regular_bounded_files(module, change, version, monkeypatch):
+    rows = payload_rows(module, version)
     index = next(i for i, row in enumerate(rows) if row[0] == "usr/bin/row")
     if change == "duplicate":
         rows.append(rows[index])
@@ -200,7 +210,75 @@ def test_payload_exact_regular_bounded_files(module, change, monkeypatch):
             123 if change == "owner" else owner,
         )
     with pytest.raises(module.EvidenceError):
+        module.payload_inventory(tar_bytes(rows), version)
+
+
+def test_prior_package_requires_exact_observed_five_file_manifest(module):
+    payload = module.payload_inventory(tar_bytes(payload_rows(module, "1.0.24")), "1.0.24")
+    assert {row[0] for row in payload.files} == set(PREVIOUS_PAYLOAD_PATHS)
+    assert len(payload.files) == 5
+    assert payload.row_sha256 == hashlib.sha256(b"harmless-fixture:usr/bin/row").hexdigest()
+
+
+@pytest.mark.parametrize("name", PREVIOUS_PAYLOAD_PATHS)
+def test_prior_manifest_never_accepts_an_arbitrary_subset(module, name):
+    rows = [row for row in payload_rows(module, "1.0.24") if row[0] != name]
+    with pytest.raises(module.EvidenceError, match="files-incomplete"):
         module.payload_inventory(tar_bytes(rows), "1.0.24")
+
+
+def test_prior_compatibility_does_not_allow_unpinned_six_file_layout(module):
+    with pytest.raises(module.EvidenceError, match="unreviewed"):
+        module.payload_inventory(tar_bytes(payload_rows(module)), "1.0.24")
+
+
+def test_candidate_still_requires_third_party_notices(module):
+    with pytest.raises(module.EvidenceError, match="files-incomplete"):
+        module.payload_inventory(tar_bytes(payload_rows(module, "1.0.24")), "1.0.27")
+
+
+@pytest.mark.parametrize("version", ["1.0.23", "1.0.024", "1.0.24\n"])
+def test_compatibility_is_only_for_exact_reviewed_previous_version(module, version):
+    with pytest.raises(module.EvidenceError):
+        module.payload_inventory(tar_bytes(payload_rows(module, "1.0.24")), version)
+
+
+@pytest.mark.parametrize("version", ["1.0.24", "1.0.27"])
+@pytest.mark.parametrize("name", ["usr/share/doc", "usr/share/doc/remote-ops-workspace"])
+def test_both_versions_still_require_every_owned_directory(module, version, name):
+    rows = [row for row in payload_rows(module, version) if row[0] != name]
+    with pytest.raises(module.EvidenceError, match="files-incomplete"):
+        module.payload_inventory(tar_bytes(rows), version)
+
+
+@pytest.mark.parametrize("version", ["1.0.24", "1.0.27"])
+@pytest.mark.parametrize("fault", [None, "extra-doc", "missing-doc", "changed-bytes"])
+def test_installed_documentation_matches_its_validated_version(module, version, fault, tmp_path):
+    import os
+
+    if os.name != "posix":
+        pytest.skip("Actual POSIX installed mode verification")
+    rows = payload_rows(module, version)
+    payload = module.payload_inventory(tar_bytes(rows), version)
+    for name, data, kind, mode, _ in rows:
+        path = tmp_path / name
+        if kind == tarfile.DIRTYPE:
+            path.mkdir(parents=True, exist_ok=True)
+        else:
+            path.write_bytes(data)
+        path.chmod(mode)
+    docs = tmp_path / "usr/share/doc/remote-ops-workspace"
+    if fault == "extra-doc":
+        (docs / "unreviewed-document").write_bytes(b"unexpected")
+    elif fault == "missing-doc":
+        (docs / "NOTICE").unlink()
+    elif fault == "changed-bytes":
+        (docs / "NOTICE").write_bytes(b"different contents")
+    if fault is None:
+        module.verify_payload_files(tmp_path, payload)
+    else:
+        with pytest.raises((module.EvidenceError, FileNotFoundError)):
+            module.verify_payload_files(tmp_path, payload)
 
 
 @pytest.mark.parametrize("status", ["ii ", "rc ", "iU ", "iF ", "un "])

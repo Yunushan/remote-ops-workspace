@@ -142,6 +142,69 @@ class RuntimeObservationCollectorTests(unittest.TestCase):
         with self.assertRaisesRegex(c.Refusal, code):
             function(*args)
 
+    def test_tiny_and_empty_files_do_not_request_the_global_input_limit(self):
+        for raw in (b"small tracked source\n", b""):
+            with self.subTest(size=len(raw)):
+                path = self.root / "source.txt"
+                path.write_bytes(raw)
+                with path.open("rb") as stream:
+                    wrapper = mock.MagicMock()
+                    wrapper.__enter__.return_value = wrapper
+                    wrapper.fileno.side_effect = stream.fileno
+
+                    read_cap = len(raw) + 1
+
+                    def bounded_read(size, cap=read_cap):
+                        self.assertLessEqual(size, cap)
+                        return stream.read(size)
+
+                    wrapper.read.side_effect = bounded_read
+                    with mock.patch.object(Path, "open", return_value=wrapper):
+                        self.assertEqual(c.read(path, c.DEFAULT_LIMITS.input_bytes), raw)
+
+    def test_oversized_input_is_refused_before_opening(self):
+        path = self.root / "source.txt"
+        path.write_bytes(b"1234")
+        with mock.patch.object(Path, "open", side_effect=AssertionError("must not open")):
+            self.refuses("input-byte-bound", c.read, path, 3)
+
+    def test_file_growth_and_shrink_during_read_still_refuse(self):
+        opening = Path.open
+        for changed in (b"12345", b"1"):
+            with self.subTest(changed_size=len(changed)):
+                path = self.root / "source.txt"
+                path.write_bytes(b"1234")
+                with opening(path, "rb") as stream:
+                    wrapper = mock.MagicMock()
+                    wrapper.__enter__.return_value = wrapper
+                    wrapper.fileno.side_effect = stream.fileno
+
+                    def changed_read(size, target=path, value=changed):
+                        self.assertLessEqual(size, 5)
+                        with opening(target, "wb") as writer:
+                            writer.write(value)
+                        return stream.read(size)
+
+                    wrapper.read.side_effect = changed_read
+                    with mock.patch.object(Path, "open", return_value=wrapper):
+                        self.refuses("input-changed", c.read, path, c.DEFAULT_LIMITS.input_bytes)
+
+    def test_opened_identity_and_post_read_metadata_changes_still_refuse(self):
+        path = self.root / "source.txt"
+        path.write_bytes(b"1234")
+        before = c.plain(path)
+        opened = mock.Mock(st_dev=before.st_dev, st_ino=before.st_ino + 1, st_size=4)
+        with mock.patch.object(c.os, "fstat", return_value=opened):
+            self.refuses("input-changed", c.read, path, c.DEFAULT_LIMITS.input_bytes)
+        changed = mock.Mock(
+            st_dev=before.st_dev,
+            st_ino=before.st_ino,
+            st_size=before.st_size,
+            st_mtime_ns=before.st_mtime_ns + 1,
+        )
+        with mock.patch.object(c, "plain", side_effect=[before, changed]):
+            self.refuses("input-changed", c.read, path, c.DEFAULT_LIMITS.input_bytes)
+
     def fixture(self):
         for name in ("proof", "stage", "site/example-1.2.dist-info", "assets"):
             (self.root / name).mkdir(parents=True)

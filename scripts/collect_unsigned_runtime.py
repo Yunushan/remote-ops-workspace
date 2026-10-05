@@ -194,7 +194,9 @@ def read(path: Path, maximum: int) -> bytes:
             before.st_size,
         ):
             raise Refusal("input-changed")
-        raw = stream.read(maximum + 1)
+        # Pin the allocation to the observed file size, plus one growth sentinel.
+        # Buffered reads can allocate the entire request even for a tiny file.
+        raw = stream.read(before.st_size + 1)
     after = plain(path)
     if len(raw) != before.st_size or (
         after.st_dev,

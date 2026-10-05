@@ -889,6 +889,44 @@ def _completed_web_policy_result(path: Path, scenario: str, nonce: str) -> dict 
     return record
 
 
+def _web_policy_milestones(path: Path) -> list[dict]:
+    """Read bounded, monotonic diagnostics without treating them as completion."""
+    with path.open("rb") as stream:
+        raw = stream.read(4097)
+    if len(raw) > 4096:
+        raise ValueError("Node milestone diagnostics exceed their byte limit")
+    records = json.loads(raw)
+    stages = (
+        "harness-start",
+        "require-enter",
+        "require-return",
+        "submit-enter",
+        "submit-return",
+        "result-write-enter",
+        "result-published",
+        "exit-requested",
+        "exit-event",
+    )
+    if not isinstance(records, list) or len(records) > len(stages):
+        raise ValueError("Node milestone diagnostics exceed their stage limit")
+    previous_ms = -1
+    previous_stage = -1
+    for record in records:
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"stage", "elapsed_ms"}
+            or record["stage"] not in stages
+            or type(record["elapsed_ms"]) is not int
+            or not 0 <= record["elapsed_ms"] <= 86_400_000
+            or record["elapsed_ms"] < previous_ms
+            or stages.index(record["stage"]) <= previous_stage
+        ):
+            raise ValueError("Node milestone diagnostics are not bounded monotonic stages")
+        previous_ms = record["elapsed_ms"]
+        previous_stage = stages.index(record["stage"])
+    return records
+
+
 def _run_web_policy_harness(
     command: list[str],
     result_path: Path,
@@ -899,7 +937,13 @@ def _run_web_policy_harness(
     cleanup_timeout: float = 5,
 ) -> dict:
     """Retain result-vs-exit evidence; preserve timeout/nonzero as failures."""
-    report = {"result_exists": False, "complete_result": False, "child_reaped": False}
+    report = {
+        "result_exists": False,
+        "complete_result": False,
+        "child_reaped": False,
+        "cleanup_requested": False,
+        "pre_cleanup_returncode": None,
+    }
     process = None
     result = None
     failure = None
@@ -915,7 +959,9 @@ def _run_web_policy_harness(
                 startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 startup.wShowWindow = subprocess.SW_HIDE
                 options = {"startupinfo": startup, "creationflags": subprocess.CREATE_NO_WINDOW}
-            process = subprocess.Popen(command, stdout=stdout, stderr=stderr, **options)
+            process = subprocess.Popen(
+                command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, **options
+            )
             deadline = time.monotonic() + timeout
             while True:
                 report["result_exists"] = result_path.exists()
@@ -940,7 +986,9 @@ def _run_web_policy_harness(
                     report["result_error_type"] = type(exc).__name__
                     raise
                 report["complete_result"] = result is not None
-                if time.monotonic() >= deadline:
+                observed_at = time.monotonic()
+                report["last_observation_elapsed_seconds"] = observed_at - started
+                if observed_at >= deadline:
                     report["timed_out"] = True
                     raise TimeoutError(
                         f"Node harness timed out; complete_result={result is not None}"
@@ -958,7 +1006,9 @@ def _run_web_policy_harness(
     finally:
         try:
             if process is not None:
-                if process.poll() is None:
+                report["pre_cleanup_returncode"] = process.poll()
+                if report["pre_cleanup_returncode"] is None:
+                    report["cleanup_requested"] = True
                     terminate_owned_process(process, timeout_seconds=cleanup_timeout)
                 process.wait(timeout=0)
                 report.update(child_reaped=True, final_returncode=process.returncode)
@@ -969,30 +1019,21 @@ def _run_web_policy_harness(
             report["elapsed_seconds"] = time.monotonic() - started
             progress = result_path.with_suffix(".progress.json")
             try:
-                milestones = json.loads(progress.read_text(encoding="utf-8"))
-                allowed = {
-                    "harness-start",
-                    "require-enter",
-                    "require-return",
-                    "submit-enter",
-                    "submit-return",
-                    "result-write-enter",
-                    "result-published",
-                    "exit-call",
-                }
-                report["milestones"] = [
-                    item["stage"]
-                    for item in milestones
-                    if isinstance(item, dict) and item.get("stage") in allowed
-                ][:10]
+                milestones = _web_policy_milestones(progress)
+                report["milestones"] = [item["stage"] for item in milestones]
+                report["milestone_timings"] = milestones
             except (OSError, ValueError, TypeError, KeyError, UnicodeError) as exc:
                 report["milestones"] = []
+                report["milestone_timings"] = []
                 report["milestone_error_type"] = type(exc).__name__
             result_path.with_suffix(".runner.json").write_text(json.dumps(report, indent=2) + "\n")
             if isinstance(failure, TimeoutError):
                 failure.args = (
                     f"{failure.args[0]}; result_exists={report['result_exists']}; "
                     f"milestones={','.join(report['milestones']) or 'none'}; "
+                    f"milestone_timings={report['milestone_timings']}; "
+                    f"pre_cleanup_returncode={report['pre_cleanup_returncode']}; "
+                    f"cleanup_requested={report['cleanup_requested']}; "
                     f"child_reaped={report['child_reaped']}",
                 )
 
@@ -1038,6 +1079,12 @@ raise SystemExit(1 if mode=="nonzero" else 0)
             )
     report = json.loads(result_path.with_suffix(".runner.json").read_text())
     assert report["child_reaped"] is True
+    if mode.endswith("hang"):
+        assert report["cleanup_requested"] is True
+        assert report["pre_cleanup_returncode"] is None
+    elif mode in ("success", "nonzero"):
+        assert report["cleanup_requested"] is False
+        assert report["pre_cleanup_returncode"] == (1 if mode == "nonzero" else 0)
     if mode == "complete-hang":
         assert report["result_exists"] and report["complete_result"] and report["timed_out"]
     elif mode == "no-result-hang":
@@ -1123,20 +1170,22 @@ def test_zero_exit_and_complete_record_observed_after_deadline_still_fail(tmp_pa
     report = json.loads(result_path.with_suffix(".runner.json").read_text())
     assert report["timed_out"] and report["complete_result"] and report["child_reaped"]
     assert report["observed_returncode"] == 0
+    assert report["cleanup_requested"] is False
+    assert report["pre_cleanup_returncode"] == 0
 
 
 def test_unreadable_progress_preserves_timeout_and_owned_cleanup(tmp_path, monkeypatch):
     result_path = tmp_path / "result.json"
     progress_path = result_path.with_suffix(".progress.json")
     progress_path.write_text("[]")
-    real_read_text = Path.read_text
+    real_open = Path.open
 
     def unreadable_progress(path, *args, **kwargs):
         if path == progress_path:
             raise PermissionError("harmless simulated sharing conflict")
-        return real_read_text(path, *args, **kwargs)
+        return real_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_text", unreadable_progress)
+    monkeypatch.setattr(Path, "open", unreadable_progress)
     with pytest.raises(TimeoutError, match="child_reaped=True"):
         _run_web_policy_harness(
             [sys.executable, "-c", "import time; time.sleep(60)"],
@@ -1150,6 +1199,41 @@ def test_unreadable_progress_preserves_timeout_and_owned_cleanup(tmp_path, monke
     assert report["milestone_error_type"] == "PermissionError"
     assert report["milestones"] == []
     assert report["child_reaped"] is True
+    assert report["cleanup_requested"] is True
+    assert report["pre_cleanup_returncode"] is None
+
+
+@pytest.mark.parametrize(
+    "records",
+    (
+        [{"stage": "harness-start", "elapsed_ms": True}],
+        [{"stage": "harness-start", "elapsed_ms": -1}],
+        [{"stage": "harness-start", "elapsed_ms": 86_400_001}],
+        [{"stage": "harness-start", "elapsed_ms": 0, "unexpected": "private"}],
+        [{"stage": "unknown", "elapsed_ms": 0}],
+        [
+            {"stage": "harness-start", "elapsed_ms": 2},
+            {"stage": "require-enter", "elapsed_ms": 1},
+        ],
+        [
+            {"stage": "require-enter", "elapsed_ms": 1},
+            {"stage": "harness-start", "elapsed_ms": 2},
+        ],
+        [{"stage": "harness-start", "elapsed_ms": 0}] * 10,
+    ),
+)
+def test_web_policy_milestone_diagnostics_refuse_invalid_bounds(tmp_path, records):
+    progress_path = tmp_path / "progress.json"
+    progress_path.write_text(json.dumps(records), encoding="utf-8")
+    with pytest.raises(ValueError):
+        _web_policy_milestones(progress_path)
+
+
+def test_web_policy_milestone_diagnostics_refuse_oversized_input(tmp_path):
+    progress_path = tmp_path / "progress.json"
+    progress_path.write_bytes(b" " * 4097)
+    with pytest.raises(ValueError, match="byte limit"):
+        _web_policy_milestones(progress_path)
 
 
 def test_valid_zero_exit_completion_still_fails_when_reaping_is_unconfirmed(tmp_path, monkeypatch):
@@ -1216,13 +1300,15 @@ const outputPath = process.argv[3];
 const nonce = process.argv[4];
 const progressPath = process.argv[5];
 const marks = [];
+const started = process.hrtime.bigint();
 function milestone(stage) {
-  marks.push({stage, at: Date.now()});
+  marks.push({stage, elapsed_ms: Number((process.hrtime.bigint() - started) / 1000000n)});
   const temp = progressPath + '.tmp';
   fs.writeFileSync(temp, JSON.stringify(marks));
   fs.renameSync(temp, progressPath);
 }
 milestone('harness-start');
+process.once('exit', () => milestone('exit-event'));
 const windowsPendingFallback = process.platform === 'win32' && scenario === 'pending';
 const records = new Map();
 const listeners = {};
@@ -1329,8 +1415,10 @@ const finish = () => {
   fs.writeFileSync(outputPath + '.tmp', output);
   fs.renameSync(outputPath + '.tmp', outputPath);
   milestone('result-published');
-  milestone('exit-call');
-  process.exit(0);
+  milestone('exit-requested');
+  // Let handled policy promises settle and the event loop finish naturally.
+  // The parent still requires an observed zero exit within its original limit.
+  process.exitCode = 0;
 };
 // The pending case intentionally submits before policy loading completes, so
 // finish it synchronously. All other scenarios allow policy-loading promises
@@ -1358,6 +1446,10 @@ if (scenario === 'pending') {
     )
     assert result["saved"] == expected_saved
     assert expected_blocked in result["blocked"]
+    report = json.loads(output_path.with_suffix(".runner.json").read_text())
+    assert report["cleanup_requested"] is False
+    assert report["pre_cleanup_returncode"] == report["final_returncode"] == 0
+    assert report["milestones"][-2:] == ["exit-requested", "exit-event"]
 
 
 def test_service_worker_cache_is_same_origin_get_only() -> None:

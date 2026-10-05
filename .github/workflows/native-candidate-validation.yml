@@ -96,6 +96,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       RELEASE_TAG: ${{ needs.candidate-source.outputs.version_tag }}
+      PIP_CONFIG_FILE: "nul"
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -130,7 +131,7 @@ jobs:
           $ExpectedOpenSsl = ""
           if ("${{ matrix.arch }}" -eq "x86") {
             python -m pip uninstall -y bcrypt cryptography truststore
-            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed x86 runtime installation failed" }
             $ExpectedCryptography = ""
             python -c "import importlib.util; assert importlib.util.find_spec('bcrypt') is None; assert importlib.util.find_spec('cryptography') is None; print('bcrypt=unavailable cryptography=unavailable security-backends=fail-closed')"
@@ -163,16 +164,16 @@ jobs:
             $env:OPENSSL_DIR = $OpenSslRoot
             $env:OPENSSL_STATIC = "1"
             $env:OPENSSL_NO_VENDOR = "1"
-            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed ARM64 build bootstrap installation failed" }
-            python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed ARM64 runtime installation failed" }
             $ExpectedCryptography = "50.0.1"
             $ExpectedOpenSsl = "OpenSSL 3.6.3"
           } else {
-            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed Windows build bootstrap installation failed" }
-            python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed Windows runtime installation failed" }
             $ExpectedCryptography = "50.0.1"
           }
@@ -183,7 +184,7 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw "Hashed Windows release dependency installation failed" }
           $Extras = if ("${{ matrix.arch }}" -eq "x86") { "package" } else { "desktop,security,package,servers" }
-          python -m pip install --no-deps --no-build-isolation ".[${Extras}]"
+          python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[${Extras}]"
           if ($LASTEXITCODE -ne 0) { throw "Windows project installation failed" }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { throw "Windows release dependency consistency check failed" }
@@ -256,6 +257,16 @@ jobs:
           --target "windows-${{ matrix.arch }}"
           --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
           --asset-dir native-dist/windows
+      - name: Collect unsigned runtime observations for external review
+        if: ${{ success() && github.event.repository.visibility == 'public' }}
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          mkdir -p candidate-runtime-inventory
+          python scripts/collect_unsigned_runtime.py --target "windows-${{ matrix.arch }}" \
+            --sha "${{ needs.candidate-source.outputs.candidate_sha }}" --proof-dir "build/candidate-proof/windows-${{ matrix.arch }}" \
+            --stage-dir build/native/windows/pyinstaller-dist \
+            --output "candidate-runtime-inventory/windows-${{ matrix.arch }}"
       - name: Verify previous Windows native release upgrade and recovery
         if: ${{ success() && matrix.arch == 'x64' }}
         shell: powershell
@@ -282,6 +293,7 @@ jobs:
             build/native/windows/pyinstaller-work/*/xref-*.html
             native-dist/windows/
             candidate-license-inventory/
+            candidate-runtime-inventory/windows-${{ matrix.arch }}/
           if-no-files-found: error
           retention-days: 30
 
@@ -303,6 +315,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       RELEASE_TAG: ${{ needs.candidate-source.outputs.version_tag }}
+      PIP_CONFIG_FILE: "/dev/null"
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -333,15 +346,15 @@ jobs:
       - name: Install Python packaging dependencies
         run: |
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
-            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
-            python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
             expected_cryptography="50.0.1"
           else
-            python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
-            python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
             expected_cryptography="50.0.1"
           fi
-          python -m pip install --no-deps --no-build-isolation ".[desktop,security,package,servers]"
+          python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[desktop,security,package,servers]"
           python -m pip check
           EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Build macOS DMG and PKG installers
@@ -369,6 +382,16 @@ jobs:
           --target "macos-${{ matrix.arch }}"
           --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
           --asset-dir native-dist/macos
+      - name: Collect unsigned runtime observations for external review
+        if: ${{ success() && github.event.repository.visibility == 'public' }}
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          mkdir -p candidate-runtime-inventory
+          python scripts/collect_unsigned_runtime.py --target "macos-${{ matrix.arch }}" \
+            --sha "${{ needs.candidate-source.outputs.candidate_sha }}" --proof-dir "build/candidate-proof/macos-${{ matrix.arch }}" \
+            --stage-dir build/native/macos/pyinstaller-dist \
+            --output "candidate-runtime-inventory/macos-${{ matrix.arch }}"
       - name: Retain unreleased candidate proof and artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -381,6 +404,7 @@ jobs:
             build/native/macos/pyinstaller-work/*/xref-*.html
             native-dist/macos/
             candidate-license-inventory/
+            candidate-runtime-inventory/macos-${{ matrix.arch }}/
           if-no-files-found: error
           retention-days: 30
 
@@ -406,6 +430,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       RELEASE_TAG: ${{ needs.candidate-source.outputs.version_tag }}
+      PIP_CONFIG_FILE: "/dev/null"
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -439,9 +464,9 @@ jobs:
           sudo apt-get install -y rpm
       - name: Install Python packaging dependencies
         run: |
-          python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
-          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
-          python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
+          python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+          python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+          python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[security,package,servers]"
           python -m pip check
           python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.1'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Build Linux DEB, RPM and AppImage packages
@@ -475,6 +500,16 @@ jobs:
           --target "linux-${{ matrix.arch }}"
           --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
           --asset-dir native-dist/linux
+      - name: Collect unsigned runtime observations for external review
+        if: ${{ success() && github.event.repository.visibility == 'public' }}
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          mkdir -p candidate-runtime-inventory
+          python scripts/collect_unsigned_runtime.py --target "linux-${{ matrix.arch }}" \
+            --sha "${{ needs.candidate-source.outputs.candidate_sha }}" --proof-dir "build/candidate-proof/linux-${{ matrix.arch }}" \
+            --stage-dir build/native/linux/pyinstaller-dist \
+            --output "candidate-runtime-inventory/linux-${{ matrix.arch }}"
       - name: Verify previous Linux DEB native upgrade and recovery
         id: native-recovery
         if: ${{ matrix.arch == 'x86_64' && steps.native-build.outcome == 'success' && steps.native-smoke.outcome == 'success' && steps.candidate-proof.outcome == 'success' }}
@@ -496,5 +531,6 @@ jobs:
             build/native/linux/pyinstaller-work/*/xref-*.html
             native-dist/linux/
             candidate-license-inventory/
+            candidate-runtime-inventory/linux-${{ matrix.arch }}/
           if-no-files-found: error
           retention-days: 30

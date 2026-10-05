@@ -46,6 +46,13 @@ MAX_EXPANDED = 512 * 1024 * 1024
 MAX_NETWORK_METADATA = 2 * 1024 * 1024
 MAX_SOURCE_TOTAL = 512 * 1024 * 1024
 MAX_PRIVATE_COMMAND_BYTES = 256 * 1024 * 1024
+READONLY_SYSTEM_TOOLS = (
+    "/usr/bin/git",
+    "/usr/bin/man",
+    "/bin/cat",
+    "/usr/bin/lsbom",
+    "/usr/sbin/pkgutil",
+)
 REPORT = "build/native-smoke/macos-x64/previous-pkg-metadata.json"
 CONTRACTS = (
     "scripts/observe_macos_previous_pkg.py",
@@ -144,6 +151,9 @@ REFUSAL_CODES = frozenset(
         "relevant-receipt-projection-bound",
         "runner-output-protocol-shape",
         "same-repository-pr-source-required",
+        "system-tool-bound-type-or-ownership-refused",
+        "system-tool-index-refused",
+        "system-tool-nofollow-unavailable",
         "tracked-source-byte-bound",
         "tracked-source-path-layout",
         "tracked-source-path-link",
@@ -215,6 +225,67 @@ def regular(path, maximum, *, allow_empty=False):
         raise Refusal("input-changed-during-read")
     return raw
 
+
+
+def _system_tool_stat_identity(item):
+    return (
+        item.st_dev,
+        item.st_ino,
+        item.st_mode,
+        item.st_uid,
+        item.st_gid,
+        item.st_nlink,
+        item.st_size,
+        item.st_mtime_ns,
+        item.st_ctime_ns,
+        getattr(item, "st_flags", None),
+    )
+
+
+def readonly_system_tool_bytes(index):
+    """Read only a fixed root-owned system tool; its hardlinks are OS metadata."""
+
+    if type(index) is not int or not 0 <= index < len(READONLY_SYSTEM_TOOLS):
+        raise Refusal("system-tool-index-refused")
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if type(nofollow) is not int or nofollow <= 0:
+        raise Refusal("system-tool-nofollow-unavailable")
+    path = Path(READONLY_SYSTEM_TOOLS[index])
+    before = path.lstat()
+    if (
+        type(before.st_mode) is not int
+        or not stat.S_ISREG(before.st_mode)
+        or type(before.st_uid) is not int
+        or before.st_uid != 0
+        or type(before.st_gid) is not int
+        or not 0 <= before.st_gid <= (1 << 32) - 1
+        or before.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        or type(before.st_nlink) is not int
+        or not 1 <= before.st_nlink <= MAX_ROWS
+        or type(before.st_size) is not int
+        or not 1 <= before.st_size <= 16 * 1024 * 1024
+    ):
+        raise Refusal("system-tool-bound-type-or-ownership-refused")
+    fd = os.open(path, os.O_RDONLY | nofollow)
+    try:
+        stream = os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
+    with stream:
+        opened = os.fstat(stream.fileno())
+        if _system_tool_stat_identity(before) != _system_tool_stat_identity(opened):
+            raise Refusal("input-changed-during-read")
+        raw = stream.read(before.st_size + 1)
+        after = os.fstat(stream.fileno())
+    after_path = path.lstat()
+    if (
+        _system_tool_stat_identity(before) != _system_tool_stat_identity(after)
+        or _system_tool_stat_identity(before) != _system_tool_stat_identity(after_path)
+        or len(raw) != before.st_size
+    ):
+        raise Refusal("input-changed-during-read")
+    return raw
 
 def fixed_text(parent, tag):
     nodes = parent.findall(tag)
@@ -1427,15 +1498,7 @@ def diagnostic_phase(phase, **facts):
 
 def readonly_system_tool_hashes():
     result = {}
-    for index, name in enumerate(
-        (
-            "/usr/bin/git",
-            "/usr/bin/man",
-            "/bin/cat",
-            "/usr/bin/lsbom",
-            "/usr/sbin/pkgutil",
-        )
-    ):
+    for index, name in enumerate(READONLY_SYSTEM_TOOLS):
         # The fixed index identifies the attempted literal path even if lstat
         # itself fails. Metadata is bounded public stat data, not tool output.
         diagnostic_phase("readonly-system-tool", system_tool_index=index)
@@ -1448,8 +1511,8 @@ def readonly_system_tool_hashes():
             system_tool_link_count=before.st_nlink,
             system_tool_is_regular=stat.S_ISREG(before.st_mode),
         )
-        # Keep the original strict link/type/size and full read identity guards.
-        result[name] = sha(regular(path, 16 * 1024 * 1024))
+        # Only these literal root-owned tools may have stable system hardlinks.
+        result[name] = sha(readonly_system_tool_bytes(index))
     return result
 
 

@@ -1087,5 +1087,178 @@ class IntegrationGuardTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"private preexisting bytes")
 
 
+class SystemToolReaderTests(unittest.TestCase):
+    def fixture(self, **changes):
+        values = {
+            "st_dev": 3, "st_ino": 9, "st_mode": M.stat.S_IFREG | 0o555,
+            "st_uid": 0, "st_gid": 0, "st_nlink": 78, "st_size": 3,
+            "st_mtime_ns": 11, "st_ctime_ns": 12, "st_flags": 0,
+        }
+        values.update(changes)
+        state = SimpleNamespace(
+            before=SimpleNamespace(**values),
+            opened=SimpleNamespace(**values),
+            after=SimpleNamespace(**values),
+            after_path=SimpleNamespace(**values),
+            raw=b"abc", paths=[], open_calls=[], read_requests=[], closed=False,
+            closed_fds=[], read_error=None, fdopen_error=None, path_calls=0,
+        )
+
+        class FakePath:
+            def __init__(self, value):
+                state.paths.append(value)
+                self.value = value
+
+            def lstat(self):
+                state.path_calls += 1
+                return state.before if state.path_calls == 1 else state.after_path
+
+            def __str__(self):
+                return self.value
+
+        class Stream:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                state.closed = True
+
+            def fileno(self):
+                return 97
+
+            def read(self, maximum):
+                state.read_requests.append(maximum)
+                if state.read_error is not None:
+                    raise state.read_error
+                return state.raw
+
+        stats = iter((state.opened, state.after))
+
+        def opened(path, flags):
+            state.open_calls.append((str(path), flags))
+            return 97
+
+        def fdopen(fd, mode):
+            self.assertEqual((fd, mode), (97, "rb"))
+            if state.fdopen_error is not None:
+                raise state.fdopen_error
+            return Stream()
+
+        def fstat(fd):
+            self.assertEqual(fd, 97)
+            return next(stats)
+
+        state.path = FakePath
+        state.os = SimpleNamespace(
+            O_RDONLY=0, O_NOFOLLOW=256, open=opened, fdopen=fdopen, fstat=fstat,
+            close=lambda fd: state.closed_fds.append(fd),
+        )
+        return state
+
+    def read(self, state, index=0):
+        with patch.object(M, "Path", state.path), patch.object(M, "os", state.os):
+            return M.readonly_system_tool_bytes(index)
+
+    def test_fixed_paths_allow_stable_root_owned_system_hardlinks(self):
+        expected = ("/usr/bin/git", "/usr/bin/man", "/bin/cat", "/usr/bin/lsbom", "/usr/sbin/pkgutil")
+        self.assertEqual(M.READONLY_SYSTEM_TOOLS, expected)
+        for index, path in enumerate(expected):
+            for nlink in (1, 78):
+                with self.subTest(index=index, nlink=nlink):
+                    state = self.fixture(st_nlink=nlink)
+                    self.assertEqual(self.read(state, index), b"abc")
+                    self.assertEqual(state.paths, [path])
+                    self.assertEqual(state.open_calls, [(path, 256)])
+                    self.assertEqual(state.read_requests, [4])
+                    self.assertTrue(state.closed)
+                    self.assertEqual(state.path_calls, 2)
+
+    def test_index_and_nofollow_guards_refuse_before_path_or_open(self):
+        for index in (-1, 5, True, False, "0", None):
+            with self.subTest(index=index):
+                state = self.fixture()
+                with self.assertRaisesRegex(M.Refusal, "^system-tool-index-refused$"):
+                    self.read(state, index)
+                self.assertEqual(state.paths, [])
+                self.assertEqual(state.open_calls, [])
+        for flag in (0, None, True):
+            with self.subTest(flag=flag):
+                state = self.fixture()
+                state.os.O_NOFOLLOW = flag
+                with self.assertRaisesRegex(M.Refusal, "^system-tool-nofollow-unavailable$"):
+                    self.read(state)
+                self.assertEqual(state.paths, [])
+                self.assertEqual(state.open_calls, [])
+        state = self.fixture()
+        del state.os.O_NOFOLLOW
+        with self.assertRaisesRegex(M.Refusal, "^system-tool-nofollow-unavailable$"):
+            self.read(state)
+        self.assertEqual(state.paths, [])
+
+    def test_type_owner_permissions_and_byte_bounds_refuse_before_open(self):
+        cases = (
+            {"st_mode": M.stat.S_IFLNK | 0o555}, {"st_mode": M.stat.S_IFDIR | 0o555},
+            {"st_mode": M.stat.S_IFREG | 0o575}, {"st_mode": M.stat.S_IFREG | 0o557},
+            {"st_mode": True}, {"st_uid": 1}, {"st_uid": False},
+            {"st_gid": -1}, {"st_gid": 1 << 32}, {"st_gid": False},
+            {"st_nlink": 0}, {"st_nlink": M.MAX_ROWS + 1}, {"st_nlink": True},
+            {"st_size": 0}, {"st_size": 16 * 1024 * 1024 + 1}, {"st_size": True},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes):
+                state = self.fixture(**changes)
+                with self.assertRaisesRegex(M.Refusal, "^system-tool-bound-type-or-ownership-refused$"):
+                    self.read(state)
+                self.assertEqual(state.open_calls, [])
+                self.assertEqual(state.read_requests, [])
+
+    def test_each_full_identity_field_is_bound_before_read_and_after_fd_path(self):
+        changes = {
+            "st_dev": 4, "st_ino": 10, "st_mode": M.stat.S_IFREG | 0o554,
+            "st_uid": 1, "st_gid": 1, "st_nlink": 79, "st_size": 4,
+            "st_mtime_ns": 12, "st_ctime_ns": 13, "st_flags": 1,
+        }
+        for stage in ("opened", "after", "after_path"):
+            for field, value in changes.items():
+                with self.subTest(stage=stage, field=field):
+                    state = self.fixture()
+                    setattr(getattr(state, stage), field, value)
+                    with self.assertRaisesRegex(M.Refusal, "^input-changed-during-read$"):
+                        self.read(state)
+                    self.assertTrue(state.closed)
+                    self.assertEqual(state.read_requests, [] if stage == "opened" else [4])
+
+    def test_growing_and_shrinking_bytes_refuse_with_only_one_sentinel(self):
+        for raw in (b"ab", b"abcd"):
+            with self.subTest(size=len(raw)):
+                state = self.fixture()
+                state.raw = raw
+                with self.assertRaisesRegex(M.Refusal, "^input-changed-during-read$"):
+                    self.read(state)
+                self.assertEqual(state.read_requests, [4])
+                self.assertTrue(state.closed)
+
+    def test_fdopen_and_read_errors_keep_failure_and_close_owned_fd(self):
+        state = self.fixture()
+        state.fdopen_error = OSError("synthetic fdopen failure")
+        with self.assertRaises(OSError):
+            self.read(state)
+        self.assertEqual(state.closed_fds, [97])
+        self.assertEqual(state.read_requests, [])
+        state = self.fixture()
+        state.read_error = OSError("synthetic read failure")
+        with self.assertRaises(OSError):
+            self.read(state)
+        self.assertTrue(state.closed)
+        self.assertEqual(state.closed_fds, [])
+
+    def test_shared_regular_reader_keeps_single_link_guard(self):
+        state = self.fixture(st_nlink=78)
+        with patch.object(M, "os", state.os):
+            with self.assertRaisesRegex(M.Refusal, "^regular-input-bound-or-link$"):
+                M.regular(state.path("owned-synthetic-input"), 16 * 1024 * 1024)
+        self.assertEqual(state.open_calls, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

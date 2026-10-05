@@ -895,7 +895,7 @@ def validate_professional_update_manifest(
     actual_payload_digest = hashlib.sha256(payload).hexdigest()
     if payload_digest and actual_payload_digest != payload_digest:
         errors.append("signature.payload_sha256 does not match canonical manifest payload")
-    if algorithm and signature_value and public_key and not _verify_update_manifest_signature(
+    if algorithm and signature_value and not _verify_update_manifest_signature(
         algorithm,
         public_key=public_key,
         signature_value=signature_value,

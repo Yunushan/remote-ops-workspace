@@ -6,6 +6,7 @@ import json
 from base64 import b64encode
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -177,6 +178,57 @@ def test_moba_professional_update_manifest_accepts_signed_https_artifacts(tmp_pa
     assert result.passed is True
     assert result.summary["signature_algorithm"] == "ed25519"
     assert result.summary["artifact_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "public_key",
+    ["", None, False, 0, " ", "not-a-key", "ed25519:", "ed25519:not-base64!"],
+)
+def test_update_manifest_requires_valid_configured_trust_key(
+    tmp_path: Path, public_key: object
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "fixture.bin", "harmless data")
+    manifest = _write_signed_update_manifest(
+        tmp_path, artifact=artifact, public_key=UPDATE_PUBLIC_KEY
+    )
+    result = validate_professional_update_manifest(
+        manifest, public_key=cast(str, public_key), assets_dir=tmp_path
+    )
+    assert result.passed is False
+    assert result.errors
+
+
+@pytest.mark.parametrize("algorithm", ["ed25519", "unsupported-fixture-algorithm"])
+def test_update_manifest_rejects_forged_signature_without_trust_key(
+    tmp_path: Path, algorithm: str
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "fixture.bin", "harmless data")
+    manifest = _write_signed_update_manifest(
+        tmp_path, artifact=artifact, public_key=UPDATE_PUBLIC_KEY
+    )
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["signature"]["algorithm"] = algorithm
+    data["signature"]["value"] = "not-a-real-signature"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    result = validate_professional_update_manifest(manifest, public_key="", assets_dir=tmp_path)
+    assert result.passed is False
+    assert result.errors
+
+
+def test_update_verify_cli_rejects_empty_public_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "fixture.bin", "harmless data")
+    manifest = _write_signed_update_manifest(
+        tmp_path, artifact=artifact, public_key=UPDATE_PUBLIC_KEY
+    )
+    args = build_parser().parse_args(
+        ["customizer", "update-verify", "--manifest", str(manifest), "--public-key", "", "--json"]
+    )
+    assert args.func(args) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["passed"] is False
+    assert payload["errors"]
 
 
 def test_moba_professional_update_manifest_rejects_tampered_signature(tmp_path: Path) -> None:

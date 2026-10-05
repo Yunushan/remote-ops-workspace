@@ -1372,6 +1372,7 @@ def diagnostic_phase(phase, **facts):
         "executed-workflow-bind",
         "previous-public-identity-and-download",
         "previous-toc",
+        "readonly-system-tool",
         "package-info",
         "installed-lsbom-manual",
         "installed-bom-reader",
@@ -1384,6 +1385,15 @@ def diagnostic_phase(phase, **facts):
         raise Refusal("diagnostic-phase-refused")
     if REFUSAL_CONTEXT is not None:
         REFUSAL_CONTEXT["phase"] = phase
+        if phase == "readonly-system-tool":
+            # A new literal tool must not inherit another tool's stat facts.
+            for key in (
+                "system_tool_index",
+                "system_tool_size_bytes",
+                "system_tool_link_count",
+                "system_tool_is_regular",
+            ):
+                REFUSAL_CONTEXT["observed"].pop(key, None)
         for key, value in facts.items():
             if key in {
                 "whole_pkg_sha256",
@@ -1397,6 +1407,50 @@ def diagnostic_phase(phase, **facts):
             elif key in {"component_count", "receipt_namespace_count", "receipts_queried"}:
                 if type(value) is int and 0 <= value <= MAX_ROWS:
                     REFUSAL_CONTEXT["observed"][key] = value
+            elif phase == "readonly-system-tool":
+                if (
+                    (key == "system_tool_index" and type(value) is int and 0 <= value < 5)
+                    or (
+                        key == "system_tool_size_bytes"
+                        and type(value) is int
+                        and 0 <= value <= (1 << 63) - 1
+                    )
+                    or (
+                        key == "system_tool_link_count"
+                        and type(value) is int
+                        and 0 <= value <= MAX_ROWS
+                    )
+                    or (key == "system_tool_is_regular" and type(value) is bool)
+                ):
+                    REFUSAL_CONTEXT["observed"][key] = value
+
+
+def readonly_system_tool_hashes():
+    result = {}
+    for index, name in enumerate(
+        (
+            "/usr/bin/git",
+            "/usr/bin/man",
+            "/bin/cat",
+            "/usr/bin/lsbom",
+            "/usr/sbin/pkgutil",
+        )
+    ):
+        # The fixed index identifies the attempted literal path even if lstat
+        # itself fails. Metadata is bounded public stat data, not tool output.
+        diagnostic_phase("readonly-system-tool", system_tool_index=index)
+        path = Path(name)
+        before = path.lstat()
+        diagnostic_phase(
+            "readonly-system-tool",
+            system_tool_index=index,
+            system_tool_size_bytes=before.st_size,
+            system_tool_link_count=before.st_nlink,
+            system_tool_is_regular=stat.S_ISREG(before.st_mode),
+        )
+        # Keep the original strict link/type/size and full read identity guards.
+        result[name] = sha(regular(path, 16 * 1024 * 1024))
+    return result
 
 
 def public_refusal(code):
@@ -1525,16 +1579,7 @@ def observe(root):
         "physical_ownership_proof": False,
         "process_tree_cleanup": "not-proven",
     }
-    record["system_tool_sha256"] = {
-        name: sha(regular(Path(name), 16 * 1024 * 1024))
-        for name in (
-            "/usr/bin/git",
-            "/usr/bin/man",
-            "/bin/cat",
-            "/usr/bin/lsbom",
-            "/usr/sbin/pkgutil",
-        )
-    }
+    record["system_tool_sha256"] = readonly_system_tool_hashes()
     if "PackageInfo" in material:
         diagnostic_phase("package-info")
         record["package_info"] = package_info_projection(material["PackageInfo"], parser)

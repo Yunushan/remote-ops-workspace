@@ -66,9 +66,18 @@ jobs:
           env -i PATH="$PATH" JAVA_HOME="$JAVA_HOME" HOME="$RUNNER_TEMP" LANG=C.UTF-8 \
             "$owned_sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$owned_sdk" --install \
             'platform-tools' 'emulator' 'platforms;android-36' 'system-images;android-36;google_apis;x86_64'
+          printf '%s\n' 'phase=isolated-sdkmanager-zero-exit'
           echo "ANDROID_HOME=$owned_sdk" >> "$GITHUB_ENV"
-          test -r /dev/kvm
-          test -w /dev/kvm
+          printf '%s\n' 'phase=owned-host-kvm-access'
+          if ! test -r /dev/kvm; then
+            printf '%s\n' 'android-kvm-read-access-refused' >&2
+            exit 1
+          fi
+          if ! test -w /dev/kvm; then
+            printf '%s\n' 'android-kvm-write-access-refused' >&2
+            exit 1
+          fi
+          printf '%s\n' 'phase=owned-host-kvm-read-write-observed'
       - name: Observe owned emulator package identities without starting Chrome
         id: capture
         run: python tests/mobile-browser/qualify_android_stack.py capture

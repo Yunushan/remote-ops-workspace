@@ -194,7 +194,7 @@ IMPLEMENTED_ITEMS = (
         evidence=(
             Evidence("src/remote_ops_workspace/terminal_emulation.py", "class AnsiTerminalTranscript"),
             Evidence("src/remote_ops_workspace/terminal_emulation.py", "TERMINAL_EMULATOR_BACKEND"),
-            Evidence("src/remote_ops_workspace/gui.py", "terminalEmulatorBackend"),
+            Evidence("src/remote_ops_workspace/gui_terminal.py", "terminalEmulatorBackend"),
             Evidence("tests/test_terminal_emulation.py", "test_ansi_transcript_rewrites_carriage_return_progress_and_backspaces"),
             Evidence("docs/TERMINAL.md", "not a PTY"),
         ),

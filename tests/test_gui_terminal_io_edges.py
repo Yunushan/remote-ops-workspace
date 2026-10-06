@@ -1955,8 +1955,14 @@ def test_stop_and_window_close_process_optional_close_edges(
 def test_shared_terminal_component_keeps_two_window_ownership_independent(
     monkeypatch,
     tmp_path,
+    request,
 ) -> None:
     """Real Qt ownership with controlled processes; no external process launch."""
+
+    def checkpoint(phase):
+        callback = getattr(request.node, "_row_ownership_checkpoint", None)
+        if callable(callback):
+            callback(phase)
 
     if "QT_QPA_PLATFORM" not in os.environ:
         monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -1967,11 +1973,13 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
 
     from remote_ops_workspace import gui, gui_terminal
 
+    checkpoint("test-before-first-window")
     app, first = gui.create_main_window(
         ["gui-terminal-first-window"],
         show=False,
         preview_samples=False,
     )
+    checkpoint("test-first-window-created")
     second = None
     callbacks: list[str] = []
 
@@ -2000,11 +2008,13 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
     monkeypatch.setattr(first, "update_session_status", lambda: callbacks.append("first"))
     monkeypatch.setattr(first, "confirm_stop_processes", lambda *_args: True)
     try:
+        checkpoint("test-before-second-window")
         second_app, second = gui.create_main_window(
             ["gui-terminal-second-window"],
             show=False,
             preview_samples=False,
         )
+        checkpoint("test-second-window-created")
         monkeypatch.setattr(second, "update_session_status", lambda: callbacks.append("second"))
         monkeypatch.setattr(second, "confirm_stop_processes", lambda *_args: True)
         assert second_app is app
@@ -2022,6 +2032,7 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         for window, pane in zip((first, second), panes, strict=True):
             window.tabs.addTab(pane, pane.plan.title)
         app.processEvents()
+        checkpoint("test-panes-created")
         first_pane, second_pane = panes
         assert type(first_pane) is type(second_pane) is gui_terminal.TerminalPane
         assert type(first_pane.output) is type(second_pane.output) is gui_terminal.TerminalTextEdit
@@ -2061,7 +2072,9 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         first_pane._stop_timer.start(60_000)
         second_pane._stop_timer.start(60_000)
         second_output = second_pane.output.toPlainText()
+        checkpoint("test-before-first-close")
         assert first.close()
+        checkpoint("test-first-window-closed")
         assert first_pane.process.kill_requests == 1
         assert first_pane.process.close_requests == 1
         assert not first_pane._stop_timer.isActive()
@@ -2073,9 +2086,14 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         assert second_pane.property("terminalClosing") is not True
         assert second_pane.output.toPlainText() == second_output
         assert second_pane.macro_capture_state is second_capture
+        checkpoint("test-before-first-delete")
         first.deleteLater()
+        checkpoint("test-before-first-deferred-delete")
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        checkpoint("test-after-first-deferred-delete")
+        checkpoint("test-before-first-process-events")
         app.processEvents()
+        checkpoint("test-first-delete-events-completed")
         assert sip.isdeleted(first)
         assert not sip.isdeleted(second_pane)
         callbacks.clear()
@@ -2086,9 +2104,12 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
     finally:
         for window in (first, second):
             if window is not None and not sip.isdeleted(window):
+                checkpoint("test-final-window-close")
                 window.close()
                 window.deleteLater()
+        checkpoint("test-before-final-deferred-delete")
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        checkpoint("test-after-final-deferred-delete")
         app.processEvents()
         if second is not None:
             assert sip.isdeleted(second)

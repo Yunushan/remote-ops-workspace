@@ -252,3 +252,191 @@ def test_output_capture_is_bounded_and_records_truncation_without_raw_public_tex
     assert capture.write("private-after-limit") == len("private-after-limit")
     assert capture.exceeded is True
     assert len(capture.text) == 65536
+
+
+def test_durable_initial_refusal_is_written_before_any_guarded_child_or_pytest(tmp_path, monkeypatch):
+    module = checker()
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    calls = []
+    monkeypatch.setattr(module.subprocess, "run", lambda *_args, **_kwargs: calls.append("child"))
+    target = tmp_path / "receipt.json"
+    assert module.run_gate(target) == 1
+    record = json.loads(target.read_bytes())
+    assert record["phase"] == "refused"
+    assert record["refusal_code"] == "host-identity-refused"
+    assert record["passed"] is False
+    assert calls == []
+
+
+def test_durable_checkpoints_cover_collection_and_every_stage_start_and_report():
+    module = checker()
+    recorder = module.CaseRecorder()
+    phases = []
+    recorder.checkpoint = phases.append
+    item = types.SimpleNamespace(nodeid=module.TEST_NODE)
+    recorder.pytest_collection_finish(types.SimpleNamespace(items=[item]))
+    for stage in ("setup", "call", "teardown"):
+        getattr(recorder, "pytest_runtest_" + stage)(item)
+        recorder.pytest_runtest_logreport(report(module, stage))
+    assert phases == ["collection-complete", "setup-started", "setup-reported", "call-started", "call-reported", "teardown-started", "teardown-reported"]
+    assert callable(item._row_ownership_checkpoint)
+    item._row_ownership_checkpoint("test-before-first-process-events")
+    assert phases[-1] == "test-before-first-process-events"
+    assert recorder.passed(0) is True
+
+
+def test_durable_unexpected_case_and_malformed_reports_cannot_pass():
+    module = checker()
+    recorder = passed_recorder(module)
+    phases = []
+    recorder.checkpoint = phases.append
+    recorder.pytest_runtest_call(types.SimpleNamespace(nodeid="PRIVATE-other-case"))
+    recorder.pytest_runtest_logreport(object())
+    assert phases == ["unexpected-case", "report-refused"]
+    assert recorder.passed(0) is False
+    assert "PRIVATE" not in json.dumps(phases)
+
+
+def test_durable_atomic_publication_retains_prior_complete_record_on_replace_failure(tmp_path, monkeypatch):
+    module = checker()
+    target = tmp_path / "receipt.json"
+    original = b'{"passed":false,"phase":"initialized"}\n'
+    target.write_bytes(original)
+
+    def refused(*_args):
+        raise OSError("PRIVATE-replace-error")
+
+    monkeypatch.setattr(module.os, "replace", refused)
+    with pytest.raises(OSError):
+        module.persist_receipt(target, {"passed": False, "phase": "call-started"})
+    assert target.read_bytes() == original
+    assert list(tmp_path.glob("*.partial")) == []
+
+
+def test_durable_public_receipt_has_explicit_byte_bound(tmp_path):
+    module = checker()
+    target = tmp_path / "receipt.json"
+    with pytest.raises(ValueError, match="public-receipt-bound"):
+        module.persist_receipt(target, {"padding": "x" * module.RECEIPT_LIMIT_BYTES})
+    assert not target.exists()
+
+
+def test_durable_refuses_unavailable_publication_before_running_pytest(tmp_path, monkeypatch, capsys):
+    import pytest as pytest_module
+
+    module = checker()
+    target = mocked_hosted_gate(module, tmp_path, monkeypatch)
+    calls = []
+
+    def never_run(*_args, **_kwargs):
+        calls.append("pytest")
+
+    def publication_failed(*_args):
+        raise OSError("PRIVATE-output-path-diagnostic")
+
+    monkeypatch.setattr(pytest_module, "main", never_run)
+    monkeypatch.setattr(module, "persist_receipt", publication_failed)
+    assert module.run_gate(target) == 1
+    assert calls == []
+    assert "PRIVATE" not in capsys.readouterr().out
+
+
+def test_durable_mock_native_like_termination_leaves_source_bound_failed_checkpoint(tmp_path, monkeypatch):
+    import pytest as pytest_module
+
+    module = checker()
+    target = mocked_hosted_gate(module, tmp_path, monkeypatch)
+    original_hook = module.sys.excepthook
+
+    class SimulatedUncatchableTermination(BaseException):
+        pass
+
+    def interrupted(_arguments, *, plugins):
+        recorder = plugins[0]
+        item = types.SimpleNamespace(nodeid=module.TEST_NODE)
+        recorder.pytest_collection_finish(types.SimpleNamespace(items=[item]))
+        recorder.pytest_runtest_setup(item)
+        recorder.pytest_runtest_logreport(report(module, "setup"))
+        recorder.pytest_runtest_call(item)
+        item._row_ownership_checkpoint("test-before-first-process-events")
+        raise SimulatedUncatchableTermination("PRIVATE-native-like-fixture")
+
+    monkeypatch.setattr(pytest_module, "main", interrupted)
+    with pytest.raises(SimulatedUncatchableTermination):
+        module.run_gate(target)
+    record = json.loads(target.read_bytes())
+    assert record["passed"] is False
+    assert record["phase"] == "test-before-first-process-events"
+    assert record["collected_exact_case"] is True
+    assert record["stages"] == {"setup": "passed"}
+    assert set(record["source_files"]) == set(module.SOURCE_FILES)
+    assert record["source_sha"] == "a" * 40
+    assert module.sys.excepthook is original_hook
+    assert "PRIVATE" not in target.read_text()
+
+
+def test_durable_callback_exception_projection_never_publishes_message_or_local_values(tmp_path, monkeypatch):
+    module = checker()
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    filename = str(tmp_path / module.SOURCE_FILES[0])
+    try:
+        exec(compile("raise NameError('PRIVATE-message-and-value')", filename, "exec"), {})
+    except NameError as error:
+        projection = module.callback_exception_projection(type(error), error.__traceback__)
+    assert projection["kind"] == "NameError"
+    assert projection["source_frames"] == [{"source": module.SOURCE_FILES[0], "line": 1}]
+    assert "PRIVATE" not in json.dumps(projection)
+    private_kind = type("PRIVATE-type-name", (Exception,), {})
+    assert module.callback_exception_projection(private_kind, None)["kind"] == "other"
+
+
+def test_durable_callback_exception_refuses_even_if_mocked_pytest_reports_all_passed(tmp_path, monkeypatch):
+    import pytest as pytest_module
+
+    module = checker()
+    target = mocked_hosted_gate(module, tmp_path, monkeypatch)
+    original_hook = module.sys.excepthook
+
+    def fake_main(_arguments, *, plugins):
+        recorder = plugins[0]
+        item = types.SimpleNamespace(nodeid=module.TEST_NODE)
+        recorder.pytest_collection_finish(types.SimpleNamespace(items=[item]))
+        for stage in ("setup", "call", "teardown"):
+            getattr(recorder, "pytest_runtest_" + stage)(item)
+            recorder.pytest_runtest_logreport(report(module, stage))
+        try:
+            raise RuntimeError("PRIVATE-callback-diagnostic")
+        except RuntimeError as error:
+            module.sys.excepthook(type(error), error, error.__traceback__)
+        return 0
+
+    monkeypatch.setattr(pytest_module, "main", fake_main)
+    assert module.run_gate(target) == 1
+    record = json.loads(target.read_bytes())
+    assert record["stages"] == dict.fromkeys(("setup", "call", "teardown"), "passed")
+    assert record["callback_exception_observed"] is True
+    assert record["callback_exception"]["kind"] == "RuntimeError"
+    assert record["refusal_code"] == "uncaught-callback-exception-observed"
+    assert record["passed"] is False
+    assert module.sys.excepthook is original_hook
+    assert "PRIVATE" not in target.read_text()
+
+
+@pytest.mark.parametrize("exception", [SystemExit("PRIVATE-exit-value"), KeyboardInterrupt("PRIVATE-interrupt-value")])
+def test_durable_abnormal_python_exit_is_bounded_and_never_passes(tmp_path, monkeypatch, exception):
+    import pytest as pytest_module
+
+    module = checker()
+    target = mocked_hosted_gate(module, tmp_path, monkeypatch)
+    original_hook = module.sys.excepthook
+
+    def fake_main(_arguments, *, plugins):
+        raise exception
+
+    monkeypatch.setattr(pytest_module, "main", fake_main)
+    assert module.run_gate(target) == 1
+    record = json.loads(target.read_bytes())
+    assert record["refusal_code"] == "hosted-selected-case-abnormal-python-exit"
+    assert record["passed"] is False
+    assert module.sys.excepthook is original_hook
+    assert "PRIVATE" not in target.read_text()

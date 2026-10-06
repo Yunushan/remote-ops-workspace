@@ -1260,5 +1260,99 @@ class SystemToolReaderTests(unittest.TestCase):
         self.assertEqual(state.open_calls, [])
 
 
+class StrictUtf8ManualTests(unittest.TestCase):
+    def test_utf8_documentation_keeps_ascii_projection_without_raw_text(self):
+        preamble = "Synthetic café documentation — “quoted” ©\n"
+        fields = " f file name\n m file mode\n u user ID\n g group ID\n s file size\n"
+        raw = (preamble + fields).encode("utf-8")
+        result = M.manual_projection(raw)
+        self.assertEqual(result["raw_sha256"], M.sha(raw))
+        self.assertEqual(result["requested_parameter_descriptions"], {
+            "f": "file name", "m": "file mode", "u": "user ID", "g": "group ID", "s": "file size",
+        })
+        self.assertTrue(result["all_requested_descriptions_observed"])
+        self.assertFalse(result["output_schema_independently_qualified"])
+        self.assertNotIn("café", json.dumps(result, ensure_ascii=False))
+        self.assertNotIn("quoted", json.dumps(result))
+
+    def test_unicode_whitespace_and_descriptions_do_not_expand_ascii_field_grammar(self):
+        for line in ("\u00a0m mode", "m café", "m mode\u00a0", "\u2003m mode", "m mode\u2003"):
+            with self.subTest(line_kind=M.sha(line.encode())):
+                result = M.manual_projection((line + "\n").encode("utf-8"))
+                self.assertEqual(result["requested_parameter_descriptions"], {})
+                self.assertFalse(result["all_requested_descriptions_observed"])
+
+    def test_utf8_preamble_retains_ascii_overstrike_and_formatting(self):
+        raw = "Synthetic café — manual\n\tf f\bfile name\r\nm m\bmode\f".encode()
+        result = M.manual_projection(raw)
+        self.assertEqual(result["requested_parameter_descriptions"], {"f": "file name", "m": "mode"})
+        self.assertFalse(result["all_requested_descriptions_observed"])
+
+    def test_duplicate_ascii_fields_still_refuse_after_utf8_preamble(self):
+        raw = "Synthetic café\nm mode\nm changed\n".encode()
+        with self.assertRaisesRegex(M.Refusal, "^installed-manual-field-ambiguity$"):
+            M.manual_projection(raw)
+
+    def test_invalid_utf8_remains_refused_with_only_bounded_decoder_facts(self):
+        for raw in (b"\xff", b"\xc2", b"ok \xe2\x82", b"\xc0\xaf", b"\xed\xa0\x80", b"\xff\xfe"):
+            context = {"phase": "installed-lsbom-manual", "observed": {}}
+            with self.subTest(raw_digest=M.sha(raw)), patch.object(M, "REFUSAL_CONTEXT", context):
+                with self.assertRaisesRegex(M.Refusal, "^installed-manual-encoding-unobserved$"):
+                    M.manual_projection(raw)
+                facts = context["observed"]
+                self.assertEqual(set(facts), {"manual_raw_sha256", "manual_size_bytes", "manual_decoder", "manual_utf8_valid", "manual_decode_error_offset", "manual_decode_error_width"})
+                self.assertEqual(facts["manual_raw_sha256"], M.sha(raw))
+                self.assertEqual(facts["manual_size_bytes"], len(raw))
+                self.assertEqual(facts["manual_decoder"], "strict-utf8")
+                self.assertIs(facts["manual_utf8_valid"], False)
+                self.assertTrue(0 <= facts["manual_decode_error_offset"] < len(raw))
+                self.assertTrue(1 <= facts["manual_decode_error_width"] <= 4)
+                self.assertLess(len(json.dumps(facts)), 400)
+
+    def test_unicode_controls_formats_and_separators_refuse_before_overstrike(self):
+        controls = "\u0085\u00ad\u061c\u200b\u200e\u200f\u2028\u2029\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\ufeff"
+        for char in controls:
+            for suffix in ("", "\b"):
+                with self.subTest(codepoint=ord(char), overstrike=bool(suffix)):
+                    raw = ("Synthetic manual\nm mode\n" + char + suffix).encode("utf-8")
+                    with self.assertRaisesRegex(M.Refusal, "^installed-manual-controls$"):
+                        M.manual_projection(raw)
+
+    def test_decoder_diagnostics_are_phase_scoped_typed_bounded_and_text_free(self):
+        context = {"phase": "installed-lsbom-manual", "observed": {}}
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            M.diagnostic_phase("installed-bom-reader", manual_raw_sha256="a" * 64, manual_decoder="strict-utf8")
+            self.assertEqual(context["observed"], {})
+            M.diagnostic_phase("installed-lsbom-manual", manual_raw_sha256="private raw manual",
+                manual_size_bytes=True, manual_decoder="private/encoding/path", manual_utf8_valid=1,
+                manual_decode_error_offset=-1, manual_decode_error_width=0, raw_text="private raw manual",
+                argv="private args", exception_message="private message")
+            self.assertEqual(context["observed"], {})
+            M.diagnostic_phase("installed-lsbom-manual", manual_raw_sha256="a" * 64,
+                manual_size_bytes=512 * 1024, manual_decoder="strict-utf8", manual_utf8_valid=False,
+                manual_decode_error_offset=512 * 1024 - 1, manual_decode_error_width=1)
+            self.assertEqual(len(context["observed"]), 6)
+            M.manual_projection("Synthetic café\nm mode\n".encode())
+            self.assertIs(context["observed"]["manual_utf8_valid"], True)
+            self.assertNotIn("manual_decode_error_offset", context["observed"])
+            self.assertNotIn("manual_decode_error_width", context["observed"])
+            self.assertNotIn("café", json.dumps(context["observed"], ensure_ascii=False))
+            for invalid in ({"manual_size_bytes": 512 * 1024 + 1}, {"manual_size_bytes": -1},
+                {"manual_decode_error_offset": True}, {"manual_decode_error_offset": 512 * 1024 + 1},
+                {"manual_decode_error_width": 5}, {"manual_decode_error_width": False}):
+                M.diagnostic_phase("installed-lsbom-manual", **invalid)
+                self.assertEqual(context["observed"], {})
+
+    def test_manual_byte_bound_precedes_decoding_and_diagnostics(self):
+        with patch.object(M, "diagnostic_phase", side_effect=AssertionError("no oversized diagnostics")):
+            with self.assertRaisesRegex(M.Refusal, "^installed-manual-bound$"):
+                M.manual_projection(b"x" * (512 * 1024 + 1))
+        raw = b"\xc3\xa9" * (256 * 1024)
+        self.assertEqual(len(raw), 512 * 1024)
+        result = M.manual_projection(raw)
+        self.assertEqual(result["requested_parameter_descriptions"], {})
+        self.assertEqual(result["raw_sha256"], M.sha(raw))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

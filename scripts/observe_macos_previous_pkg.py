@@ -655,10 +655,25 @@ def observe_capabilities(path):
 def manual_projection(raw):
     if len(raw) > 512 * 1024:
         raise Refusal("installed-manual-bound")
+    # The command requests en_US.UTF-8. Record decoder facts, never raw text or
+    # a guessed encoding for an earlier unobserved host output.
+    facts = {
+        "manual_raw_sha256": sha(raw),
+        "manual_size_bytes": len(raw),
+        "manual_decoder": "strict-utf8",
+    }
     try:
-        text = raw.decode("ascii")
-    except UnicodeError as exc:
+        text = raw.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        diagnostic_phase(
+            "installed-lsbom-manual",
+            **facts,
+            manual_utf8_valid=False,
+            manual_decode_error_offset=exc.start,
+            manual_decode_error_width=exc.end - exc.start,
+        )
         raise Refusal("installed-manual-encoding-unobserved") from exc
+    diagnostic_phase("installed-lsbom-manual", **facts, manual_utf8_valid=True)
     # Linear bounded overstrike removal; no repeated full-text substitutions.
     normalized = []
     for char in text:
@@ -670,12 +685,18 @@ def manual_projection(raw):
             raise Refusal("installed-manual-controls")
         elif ord(char) == 127:
             raise Refusal("installed-manual-controls")
+        elif ord(char) > 127 and unicodedata.category(char) in {"Cc", "Cf", "Cs", "Zl", "Zp"}:
+            # Includes bidi/format controls and Unicode line separators; they
+            # cannot manufacture an ASCII field line or disappear in overstrike.
+            raise Refusal("installed-manual-controls")
         else:
             normalized.append(char)
     text = "".join(normalized)
     fields = {}
     for line in text.splitlines():
-        match = re.fullmatch(r"\s*([fmugs])\s+([A-Za-z][A-Za-z0-9 ()/.,:-]{0,180})\s*", line)
+        match = re.fullmatch(
+            r"\s*([fmugs])\s+([A-Za-z][A-Za-z0-9 ()/.,:-]{0,180})\s*", line, flags=re.ASCII
+        )
         if match:
             if match[1] in fields:
                 raise Refusal("installed-manual-field-ambiguity")
@@ -1465,6 +1486,12 @@ def diagnostic_phase(phase, **facts):
                 "system_tool_is_regular",
             ):
                 REFUSAL_CONTEXT["observed"].pop(key, None)
+        if phase == "installed-lsbom-manual":
+            for key in (
+                "manual_raw_sha256", "manual_size_bytes", "manual_decoder", "manual_utf8_valid",
+                "manual_decode_error_offset", "manual_decode_error_width",
+            ):
+                REFUSAL_CONTEXT["observed"].pop(key, None)
         for key, value in facts.items():
             if key in {
                 "whole_pkg_sha256",
@@ -1492,6 +1519,18 @@ def diagnostic_phase(phase, **facts):
                         and 0 <= value <= MAX_ROWS
                     )
                     or (key == "system_tool_is_regular" and type(value) is bool)
+                ):
+                    REFUSAL_CONTEXT["observed"][key] = value
+
+            elif phase == "installed-lsbom-manual":
+                if (
+                    (key == "manual_raw_sha256" and isinstance(value, str)
+                     and re.fullmatch(r"[0-9a-f]{64}", value))
+                    or (key == "manual_size_bytes" and type(value) is int and 0 <= value <= 512 * 1024)
+                    or (key == "manual_decoder" and type(value) is str and value == "strict-utf8")
+                    or (key == "manual_utf8_valid" and type(value) is bool)
+                    or (key == "manual_decode_error_offset" and type(value) is int and 0 <= value <= 512 * 1024)
+                    or (key == "manual_decode_error_width" and type(value) is int and 1 <= value <= 4)
                 ):
                     REFUSAL_CONTEXT["observed"][key] = value
 

@@ -1457,7 +1457,13 @@ def test_service_worker_cache_is_same_origin_get_only() -> None:
     assert "event.request.method !== 'GET'" in service_worker
     assert "url.origin !== self.location.origin" in service_worker
     assert "caches.delete" in service_worker
-    assert "remote-ops-workspace-static-v2" in service_worker
+    assert "remote-ops-workspace-static-v3" in service_worker
+    assert "!PUBLIC_PATHS.has(url.pathname)" in service_worker
+    assert "event.request.headers.has('Authorization')" in service_worker
+    assert "event.request.cache === 'no-store'" in service_worker
+    assert "publicStaticResponse(response)" in service_worker
+    assert "key.startsWith(CACHE_PREFIX)" in service_worker
+    assert "caches.match(" not in service_worker
 
 
 def test_web_pwa_declares_android_and_ios_browser_install_contract() -> None:
@@ -1503,3 +1509,30 @@ def test_web_image_uses_an_explicit_runtime_allowlist() -> None:
     assert "*\n" in dockerignore
     assert "!src/**" in dockerignore
     assert "!apps/web/**" in dockerignore
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
+@pytest.mark.parametrize("scenario", [
+    "catalogue-read", "create", "mapping", "origin-refusal", "auth-refusal", "demo-pagehide",
+    "policy-refusal", "server-refusal", "header-deadline", "body-deadline",
+    "malformed", "oversized", "stale-response", "write-deadline", "policy-deadline",
+    "worker-guards", "worker-private-install",
+])
+def test_browser_catalogue_with_pure_mock_boundaries(tmp_path: Path, scenario: str) -> None:
+    """No listener/browser; completion also requires owned zero exit and reaping."""
+    node = shutil.which("node")
+    assert node is not None
+    output_path = tmp_path / f"catalogue-{scenario}.json"
+    nonce = secrets.token_hex(16)
+    result = _run_web_policy_harness([
+        node, str(Path("tests/fixtures/web_catalogue_mock.cjs")),
+        str(Path("apps/web/app.js")), str(Path("apps/web/sw.js")),
+        scenario, str(output_path), nonce, str(output_path.with_suffix(".progress.json")),
+    ], output_path, scenario, nonce, timeout=30 if os.name == "nt" else 10)
+    assert result["saved"] == 1
+    assert result["blocked"] == ""
+    report = json.loads(output_path.with_suffix(".runner.json").read_text())
+    assert report["cleanup_requested"] is False
+    assert report["child_reaped"] is True
+    assert report["pre_cleanup_returncode"] == report["final_returncode"] == 0
+    assert report["milestones"][-2:] == ["exit-requested", "exit-event"]

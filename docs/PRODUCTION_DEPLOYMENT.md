@@ -28,6 +28,34 @@ local log driver with bounded rotation; forward or retain proxy and container
 logs in your operating environment according to its incident and compliance
 requirements.
 
+## Optional Local Browser Catalogue
+
+The browser starts in demo mode. To use persisted public profile metadata,
+start `row serve-web` on its default loopback host with `--api-token-env`
+and the name of a separately provisioned per-launch token environment variable.
+Open that same loopback server in the browser and select **Connect local catalogue**.
+The UI accepts a printable token of 24 to 256 characters, keeps it only in page
+memory, and clears the input immediately. Disconnect or leaving the page clears
+the credential and returned catalogue. Authentication is refused on non-loopback
+origins. Do not put the token in a URL or forward the API through a public proxy.
+
+Catalogue creation accepts host/IP targets with an optional port, bracketed IPv6,
+or an HTTPS origin without credentials, paths, queries or fragments. It requests
+`replace: false`, obtains current public enterprise policy before writing, and
+leaves final validation and policy enforcement to the server. Serial and local
+device targets are unavailable for browser creation. Existing public metadata
+for other protocols can still be read safely. No browser terminal or native
+remote session is opened by this catalogue.
+
+API failures stay visible; the UI never silently switches to demo storage.
+A save timeout can occur after the server commits: reconnect and refresh before
+retrying to inspect the stored catalogue. Requests have a five-second total
+deadline and reject JSON above 256 KiB or catalogues above 1,000 rows. Larger
+catalogues require a future paginated API. The service worker caches only the
+listed public static assets; API, policy and authenticated requests bypass it.
+Actual browser lifecycle, offline upgrade and operated-host persistence checks
+remain required before claiming browser production readiness.
+
 ## Operational Go/No-Go
 
 Before exposing the Web/PWA beyond localhost, record the managed reverse

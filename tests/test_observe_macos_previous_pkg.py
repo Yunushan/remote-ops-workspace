@@ -1550,5 +1550,159 @@ class BomDirectorySizeGrammarTests(unittest.TestCase):
         self.assertEqual([row["requested_columns_as_strings"][-1] for row in result["rows"]], ["", "123"])
 
 
+class ReceiptCommandDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def context(operation="info", phase="receipt-info-and-files"):
+        return {"phase": phase, "observed": {"receipt_operation": operation}}
+
+    def test_separate_retained_hash_counts_never_project_raw_bytes(self):
+        facts = M.command_stream_facts((b"private-stdout", b"private-stderr"), 64,
+            (False, False, False, False, False), 0)
+        self.assertEqual(facts["command_stdout_bytes"], 14)
+        self.assertEqual(facts["command_stderr_bytes"], 14)
+        self.assertEqual(facts["command_stdout_sha256"], M.sha(b"private-stdout"))
+        self.assertEqual(facts["command_stderr_sha256"], M.sha(b"private-stderr"))
+        self.assertNotIn("private-stdout", json.dumps(facts))
+        self.assertNotIn("private-stderr", json.dumps(facts))
+
+    def test_stream_conditions_are_independent_observations(self):
+        keys = ("command_stdout_overflow_observed", "command_stderr_overflow_observed",
+            "command_stdout_read_error_observed", "command_stderr_read_error_observed",
+            "command_stdin_write_error_observed")
+        for selected in range(5):
+            with self.subTest(selected=selected):
+                flags = tuple(index == selected for index in range(5))
+                facts = M.command_stream_facts((b"", b""), 64, flags, 0)
+                self.assertEqual([facts[key] for key in keys], list(flags))
+
+    def test_live_pipe_count_and_multiple_flags_do_not_claim_cleanup(self):
+        facts = M.command_stream_facts((b"", b""), 64, (True, True, True, True, True), 3)
+        self.assertEqual(facts["command_live_pipe_threads"], 3)
+        self.assertNotIn("cleanup_complete", facts)
+        self.assertNotIn("approval", facts)
+
+    def test_projection_bounds_and_plain_types_are_strict(self):
+        valid = ((b"", b""), 64, (False,) * 5, 0)
+        for index, replacement in ((0, [b"", b""]), (0, (b"", "text")), (0, (b"x" * 65, b"")),
+            (0, (b"", b"x" * (1024 * 1024 + 1))), (1, True), (1, 0),
+            (1, 4 * 1024 * 1024 + 1), (2, (False,) * 4), (2, (0,) * 5),
+            (3, True), (3, -1), (3, 4)):
+            with self.subTest(index=index, type_name=type(replacement).__name__):
+                args = list(valid)
+                args[index] = replacement
+                with self.assertRaises(M.Refusal):
+                    M.command_stream_facts(*args)
+
+    def test_fixed_operation_stage_and_ordinal_project_without_identifier(self):
+        context = self.context()
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            for operation in sorted(M.RECEIPT_OPERATIONS):
+                M.diagnostic_phase("receipt-info-and-files", receipt_operation=operation, receipt_query_index=5)
+                self.assertEqual(context["observed"]["receipt_operation"], operation)
+                self.assertEqual(context["observed"]["receipt_query_index"], 5)
+            M.diagnostic_phase("receipt-info-and-files", receipt_operation="info")
+            for stage in sorted(M.COMMAND_DIAGNOSTIC_STAGES):
+                M.receipt_command_checkpoint(stage)
+                self.assertEqual(context["observed"]["command_stage"], stage)
+        self.assertNotIn("identifier", context["observed"])
+
+    def test_raw_fields_wrong_types_and_unknown_enums_are_not_retained(self):
+        context = self.context()
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            M.diagnostic_phase("receipt-info-and-files", receipt_identifier="private.receipt",
+                argv=["private"], stderr="private", exception="private", command_stage="/private/path",
+                receipt_query_index=True, command_stdout_bytes=True, command_stdout_sha256="private",
+                command_stdout_read_error_observed=1, command_live_pipe_threads=True)
+        self.assertEqual(context["observed"], {"receipt_operation": "info"})
+
+    def test_operation_transition_clears_command_facts_new_receipt_clears_old_hashes(self):
+        context = self.context()
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            M.receipt_command_checkpoint("wait", streams=(b"old", b""), limit=64,
+                flags=(False,) * 5, live_threads=0)
+            M.diagnostic_phase("receipt-info-and-files", receipt_info_sha256="a" * 64,
+                receipt_files_sha256="b" * 64, receipts_queried=4)
+            M.diagnostic_phase("receipt-info-and-files", receipt_operation="files")
+            self.assertFalse(set(M.COMMAND_DIAGNOSTIC_KEYS) & set(context["observed"]))
+            self.assertIn("receipt_info_sha256", context["observed"])
+            M.diagnostic_phase("receipt-info-and-files", receipt_operation="info", receipt_query_index=5)
+        self.assertNotIn("receipt_info_sha256", context["observed"])
+        self.assertNotIn("receipt_files_sha256", context["observed"])
+        self.assertEqual(context["observed"]["receipts_queried"], 4)
+
+    def test_no_command_diagnostics_outside_current_receipt_capture(self):
+        for phase, operation in (("receipt-namespace", "info"), ("installed-bom-reader", "files"),
+            ("receipt-info-and-files", "projection"), ("receipt-info-and-files", "relevance")):
+            with self.subTest(phase=phase, operation=operation):
+                context = self.context(operation, phase)
+                with patch.object(M, "REFUSAL_CONTEXT", context):
+                    M.receipt_command_checkpoint("wait", streams=None)
+                self.assertNotIn("command_stage", context["observed"])
+        with patch.object(M, "REFUSAL_CONTEXT", None):
+            M.receipt_command_checkpoint("wait")
+
+    def test_capture_actual_wait_refusal_distinguishes_each_stream_condition(self):
+        # All child/thread/cleanup operations are synthetic. No observer main,
+        # native process, tool, file helper, ctypes or network is invoked.
+        class Thread:
+            def __init__(self, *, target, args=(), daemon=False):
+                self.target, self.args = target, args
+            def start(self):
+                self.target(*self.args)
+            def join(self, _timeout):
+                pass
+            def is_alive(self):
+                return False
+        class ReadError:
+            def read(self, _amount):
+                raise OSError("private-error-message")
+            def close(self):
+                pass
+        class Child:
+            def __init__(self, stdout, stderr):
+                self.stdout, self.stderr, self.stdin = stdout, stderr, None
+                self.returncode = None
+            def wait(self, **_kwargs):
+                raise AssertionError("the observed pipe failure must refuse before wait")
+        for stream, condition in (("stdout", "overflow"), ("stderr", "overflow"),
+            ("stdout", "read_error"), ("stderr", "read_error")):
+            with self.subTest(stream=stream, condition=condition):
+                stdout, stderr = io.BytesIO(), io.BytesIO()
+                value = (io.BytesIO(b"x" * (3 if stream == "stdout" else 1024 * 1024 + 1))
+                    if condition == "overflow" else ReadError())
+                child = Child(value if stream == "stdout" else stdout,
+                    value if stream == "stderr" else stderr)
+                context = self.context()
+                context["observed"].update(receipt_query_index=5, receipts_queried=4)
+                def terminate_owned_process(process, timeout_seconds, *, expected_child=child):
+                    self.assertIs(process, expected_child)
+                    self.assertEqual(timeout_seconds, 5)
+                    process.returncode = -15
+                with patch.object(M, "REFUSAL_CONTEXT", context), patch.object(M.os, "name", "nt"),                     patch.object(M.time, "monotonic", return_value=100),                     patch.object(M.threading, "Thread", Thread),                     patch.object(M.subprocess, "Popen", return_value=child),                     patch.object(M, "load_module", return_value=SimpleNamespace(terminate_owned_process=terminate_owned_process)):
+                    commands = M.Commands()
+                    with self.assertRaisesRegex(M.EvidenceError, "^command-output-bound-or-read$"):
+                        commands.capture(["fixed-private-argv"], timeout=30, limit=2)
+                facts = context["observed"]
+                self.assertEqual(facts["command_stage"], "wait")
+                self.assertTrue(facts["command_" + stream + "_" + condition + "_observed"])
+                self.assertEqual(facts["receipt_query_index"], 5)
+                self.assertEqual(facts["receipts_queried"], 4)
+                self.assertTrue(commands.uncertain)
+                self.assertTrue(commands.calls[0]["leader_cleanup_attempted"])
+                self.assertEqual(commands.calls[0]["process_tree_cleanup"], "not-proven")
+                self.assertNotIn("private-error-message", json.dumps(facts))
+                self.assertNotIn("fixed-private-argv", json.dumps(facts))
+
+    def test_new_operation_without_capture_has_no_stream_or_partial_success_claim(self):
+        context = self.context()
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            M.diagnostic_phase("receipt-info-and-files", receipt_query_index=5, receipt_operation="info",
+                receipts_queried=4)
+        self.assertEqual(context["observed"], {"receipt_operation": "info", "receipt_query_index": 5,
+            "receipts_queried": 4})
+        for key in ("approval", "signing_trust", "all_listed_receipts_queried", "complete"):
+            self.assertNotIn(key, context["observed"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

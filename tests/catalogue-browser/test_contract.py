@@ -360,5 +360,77 @@ class QualificationMismatchTests(unittest.TestCase):
                     self.assertFalse(owner.cleanup_observed())
 
 
+class PreparationDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def refused_record():
+        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused',
+            'complete': False, 'phase': 'preparation', 'readiness_credit': 0, 'limits': contract.LIMITS}
+
+    def test_each_literal_preparation_step_is_privacy_valid(self):
+        for step in contract.PREPARATION_STEPS:
+            with self.subTest(step=step):
+                record = self.refused_record()
+                host_controller.preparation_note(record, step)
+                raw = json.dumps(record).encode()
+                self.assertEqual(contract.public_bytes(raw), raw)
+                self.assertEqual(record['preparation_step'], step)
+                self.assertFalse(record['complete'])
+                self.assertEqual(record['readiness_credit'], 0)
+
+    def test_unknown_private_or_wrong_type_step_is_refused(self):
+        for step in ('private/path/example', 'exception-message-example', 'source-checks' * 100,
+            '', True, 1, None, ['source-checks'], {'step': 'source-checks'}):
+            with self.subTest(type_name=type(step).__name__):
+                record = self.refused_record()
+                record['preparation_step'] = step
+                with self.assertRaises(contract.GateRefusal):
+                    contract.public_bytes(json.dumps(record).encode())
+
+    def test_marker_refuses_invalid_value_without_mutating_record(self):
+        record = self.refused_record()
+        original = copy.deepcopy(record)
+        with self.assertRaises(contract.GateRefusal):
+            host_controller.preparation_note(record, '/private/path')
+        self.assertEqual(record, original)
+
+    def test_marker_refuses_after_preparation_without_mutating_record(self):
+        record = self.refused_record()
+        record['phase'] = 'api-read'
+        original = copy.deepcopy(record)
+        with self.assertRaises(contract.GateRefusal):
+            host_controller.preparation_note(record, 'source-checks')
+        self.assertEqual(record, original)
+
+    def test_only_runtime_transition_step_can_remain_at_runtime_phase(self):
+        for step in contract.PREPARATION_STEPS:
+            with self.subTest(step=step):
+                record = self.refused_record()
+                record.update(phase='host-runtime-observation', preparation_step=step)
+                raw = json.dumps(record).encode()
+                if step == 'runtime-checkpoint':
+                    self.assertEqual(contract.public_bytes(raw), raw)
+                else:
+                    with self.assertRaises(contract.GateRefusal):
+                        contract.public_bytes(raw)
+
+    def test_preparation_step_is_refused_in_later_case(self):
+        record = self.refused_record()
+        record.update(phase='api-read', preparation_step='runtime-checkpoint')
+        with self.assertRaises(contract.GateRefusal):
+            contract.public_bytes(json.dumps(record).encode())
+
+    def test_diagnostic_does_not_allow_private_exception_fields(self):
+        record = self.refused_record()
+        record.update(preparation_step='chrome-file-pin', exception='private-message')
+        with self.assertRaises(contract.GateRefusal):
+            contract.public_bytes(json.dumps(record).encode())
+
+    def test_completed_result_cannot_carry_preparation_diagnostic(self):
+        record, expected = sample()
+        record['preparation_step'] = 'source-checks'
+        with self.assertRaises(contract.GateRefusal):
+            contract.validate(json.dumps(record).encode(), expected)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

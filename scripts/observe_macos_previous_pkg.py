@@ -78,6 +78,18 @@ SOURCE_BINDING = None
 # reviewed stdlib-only cleanup source authorizes that first leader's cleanup.
 BOOTSTRAP_CLEANUP_SHA = "0b886bbb7e502c9c3848feb08d139872d57861209bbe3bdc85ed82783c7d3ab5"
 REFUSAL_CONTEXT = None
+RECEIPT_OPERATIONS = frozenset(("info", "files", "projection", "relevance"))
+COMMAND_DIAGNOSTIC_STAGES = frozenset((
+    "launch", "pipe-start", "wait", "exit-deadline", "pipe-drain", "output-deadline",
+    "private-output", "expected-exit", "returned",
+))
+COMMAND_DIAGNOSTIC_KEYS = (
+    "command_stage", "command_stdout_bytes", "command_stdout_sha256", "command_stdout_bound_bytes",
+    "command_stderr_bytes", "command_stderr_sha256", "command_stderr_bound_bytes",
+    "command_stdout_overflow_observed", "command_stderr_overflow_observed",
+    "command_stdout_read_error_observed", "command_stderr_read_error_observed",
+    "command_stdin_write_error_observed", "command_live_pipe_threads",
+)
 REFUSAL_CODES = frozenset(
     (
         "actual-official-intel-macos15-required",
@@ -901,17 +913,24 @@ class Commands:
         buffers = [bytearray(), bytearray()]
         overflow = threading.Event()
         failed = threading.Event()
+        stream_overflow = [threading.Event(), threading.Event()]
+        stream_read_failed = [threading.Event(), threading.Event()]
+        stdin_write_failed = threading.Event()
 
         def drain(stream, index, bound):
             try:
                 while chunk := stream.read(65536):
                     if len(buffers[index]) + len(chunk) > bound:
+                        stream_overflow[index].set()
                         overflow.set()
                     else:
                         buffers[index].extend(chunk)
             except OSError:
+                stream_read_failed[index].set()
                 failed.set()
 
+        command_stage = "launch"
+        receipt_command_checkpoint(command_stage)
         child = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -936,11 +955,14 @@ class Commands:
                         child.stdin.write(stdin_payload)
                         child.stdin.close()
                     except OSError:
+                        stdin_write_failed.set()
                         failed.set()
 
                 threads.append(threading.Thread(target=feed, daemon=True))
+            command_stage = "pipe-start"
             for thread in threads:
                 thread.start()
+            command_stage = "wait"
             while True:
                 if overflow.is_set() or failed.is_set():
                     raise EvidenceError("command-output-bound-or-read")
@@ -952,12 +974,15 @@ class Commands:
                     break
                 except subprocess.TimeoutExpired:
                     pass
+            command_stage = "exit-deadline"
             if time.monotonic() >= deadline:
                 raise EvidenceError("command-late-completed-exit")
+            command_stage = "pipe-drain"
             for thread in threads:
                 thread.join(max(0, min(1, deadline - time.monotonic())))
             if any(thread.is_alive() for thread in threads) or overflow.is_set() or failed.is_set():
                 raise EvidenceError("command-pipe-lifetime-or-bound")
+            command_stage = "output-deadline"
             if time.monotonic() >= deadline:
                 raise EvidenceError("command-late-completed-output")
         except BaseException as exc:
@@ -987,17 +1012,27 @@ class Commands:
                     "process_tree_cleanup": "not-proven",
                 }
             )
+            receipt_command_checkpoint(
+                command_stage, streams=(bytes(buffers[0]), bytes(buffers[1])), limit=limit,
+                flags=(stream_overflow[0].is_set(), stream_overflow[1].is_set(),
+                    stream_read_failed[0].is_set(), stream_read_failed[1].is_set(),
+                    stdin_write_failed.is_set()),
+                live_threads=sum(thread.is_alive() for thread in threads),
+            )
             if not any(thread.is_alive() for thread in threads):
                 child.stdout.close()
                 child.stderr.close()
                 if child.stdin is not None and not child.stdin.closed:
                     child.stdin.close()
+        receipt_command_checkpoint("private-output")
         if self.private is not None:
             serial = len(self.calls)
             (self.private / f"command-{serial}.stdout").write_bytes(buffers[0])
             (self.private / f"command-{serial}.stderr").write_bytes(buffers[1])
+        receipt_command_checkpoint("expected-exit")
         if type(exit_code) is not int or exit_code != expected:
             raise EvidenceError("command-unexpected-exit")
+        receipt_command_checkpoint("returned")
         return bytes(buffers[0] + buffers[1])
 
 
@@ -1510,6 +1545,40 @@ def publication_recheck(before, after):
     }
 
 
+def command_stream_facts(streams, limit, flags, live_threads):
+    """Bounded retained-buffer snapshots only, never a full output/prefix claim."""
+    if (
+        type(streams) is not tuple or len(streams) != 2
+        or any(type(raw) is not bytes for raw in streams)
+        or type(limit) is not int or not 1 <= limit <= 4 * 1024 * 1024
+        or len(streams[0]) > limit or len(streams[1]) > 1024 * 1024
+        or type(flags) is not tuple or len(flags) != 5
+        or any(type(value) is not bool for value in flags)
+        or type(live_threads) is not int or not 0 <= live_threads <= 3
+    ):
+        raise Refusal("diagnostic-phase-refused")
+    return {
+        "command_stdout_bytes": len(streams[0]), "command_stdout_sha256": sha(streams[0]),
+        "command_stdout_bound_bytes": limit,
+        "command_stderr_bytes": len(streams[1]), "command_stderr_sha256": sha(streams[1]),
+        "command_stderr_bound_bytes": 1024 * 1024,
+        "command_stdout_overflow_observed": flags[0], "command_stderr_overflow_observed": flags[1],
+        "command_stdout_read_error_observed": flags[2], "command_stderr_read_error_observed": flags[3],
+        "command_stdin_write_error_observed": flags[4], "command_live_pipe_threads": live_threads,
+    }
+
+
+def receipt_command_checkpoint(stage, *, streams=None, limit=None, flags=None, live_threads=None):
+    # No new I/O or diagnostic scope for Git, manual, BOM or other commands.
+    if (
+        REFUSAL_CONTEXT is not None
+        and REFUSAL_CONTEXT["phase"] == "receipt-info-and-files"
+        and REFUSAL_CONTEXT["observed"].get("receipt_operation") in {"info", "files"}
+    ):
+        facts = {} if streams is None else command_stream_facts(streams, limit, flags, live_threads)
+        diagnostic_phase("receipt-info-and-files", command_stage=stage, **facts)
+
+
 def diagnostic_phase(phase, **facts):
     if phase not in {
         "executed-workflow-bind",
@@ -1528,6 +1597,14 @@ def diagnostic_phase(phase, **facts):
         raise Refusal("diagnostic-phase-refused")
     if REFUSAL_CONTEXT is not None:
         REFUSAL_CONTEXT["phase"] = phase
+        if phase == "receipt-info-and-files" and "receipt_operation" in facts:
+            # An attempted operation cannot inherit the preceding command's
+            # captured streams; a new receipt cannot inherit old info/files hashes.
+            for key in COMMAND_DIAGNOSTIC_KEYS:
+                REFUSAL_CONTEXT["observed"].pop(key, None)
+            if facts["receipt_operation"] == "info":
+                for key in ("receipt_info_sha256", "receipt_files_sha256"):
+                    REFUSAL_CONTEXT["observed"].pop(key, None)
         if phase == "readonly-system-tool":
             # A new literal tool must not inherit another tool's stat facts.
             for key in (
@@ -1568,6 +1645,23 @@ def diagnostic_phase(phase, **facts):
                     REFUSAL_CONTEXT["observed"][key] = value
             elif key in {"component_count", "receipt_namespace_count", "receipts_queried"}:
                 if type(value) is int and 0 <= value <= MAX_ROWS:
+                    REFUSAL_CONTEXT["observed"][key] = value
+            elif phase == "receipt-info-and-files":
+                if (
+                    (key == "receipt_operation" and type(value) is str and value in RECEIPT_OPERATIONS)
+                    or (key == "receipt_query_index" and type(value) is int and 1 <= value <= 2000)
+                    or (key == "command_stage" and type(value) is str and value in COMMAND_DIAGNOSTIC_STAGES)
+                    or (key in {"command_stdout_sha256", "command_stderr_sha256"}
+                        and type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value))
+                    or (key in {"command_stdout_bytes", "command_stdout_bound_bytes"}
+                        and type(value) is int and 0 <= value <= 4 * 1024 * 1024)
+                    or (key in {"command_stderr_bytes", "command_stderr_bound_bytes"}
+                        and type(value) is int and 0 <= value <= 1024 * 1024)
+                    or (key in {"command_stdout_overflow_observed", "command_stderr_overflow_observed",
+                        "command_stdout_read_error_observed", "command_stderr_read_error_observed",
+                        "command_stdin_write_error_observed"} and type(value) is bool)
+                    or (key == "command_live_pipe_threads" and type(value) is int and 0 <= value <= 3)
+                ):
                     REFUSAL_CONTEXT["observed"][key] = value
             elif phase == "readonly-system-tool":
                 if (
@@ -1804,11 +1898,14 @@ def observe(root):
     diagnostic_phase(
         "receipt-info-and-files", receipt_namespace_count=len(identifiers), receipts_queried=0
     )
-    for identifier in identifiers:
+    for query_index, identifier in enumerate(identifiers, 1):
+        diagnostic_phase("receipt-info-and-files", receipt_query_index=query_index, receipt_operation="info")
         info = commands.capture(
             ["/usr/sbin/pkgutil", "--pkg-info-plist", identifier], timeout=30, limit=65536
         )
+        diagnostic_phase("receipt-info-and-files", receipt_operation="files")
         files = commands.capture(["/usr/sbin/pkgutil", "--files", identifier], timeout=30)
+        diagnostic_phase("receipt-info-and-files", receipt_operation="projection")
         diagnostic_phase(
             "receipt-info-and-files", receipt_info_sha256=sha(info), receipt_files_sha256=sha(files)
         )
@@ -1821,6 +1918,7 @@ def observe(root):
             }
         )
         diagnostic_phase("receipt-info-and-files", receipts_queried=len(hashes))
+        diagnostic_phase("receipt-info-and-files", receipt_operation="relevance")
         if (
             alias(identifier) == alias(APP_ID)
             or row["lexical_app_claim_count"]

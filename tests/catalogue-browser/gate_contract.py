@@ -139,6 +139,11 @@ def validate(raw, expected):
         'genuine_host_authority': False, 'readiness_credit': 0}
 
 
+PREPARATION_STEPS = ('source-checks', 'workflow-command', 'workflow-bytes', 'source-summary',
+    'python-path', 'chrome-file-pin', 'driver-file-pin', 'python-file-pin', 'git-file-pin',
+    'runtime-tool-owners', 'runtime-checkpoint')
+
+
 def public_bytes(raw):
     """Privacy reader, not an authenticity/adoption or genuine-host decision."""
     record = decode(raw)
@@ -148,12 +153,17 @@ def public_bytes(raw):
         validate(raw, {'binding': record['binding'], 'runtime': record['runtime']})
         return raw
     required = {'schema', 'status', 'complete', 'phase', 'readiness_credit', 'limits'}
-    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete'}
+    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step'}
     need(required.issubset(record) and set(record).issubset(required | optional))
     need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v1' and record['status'] == 'refused'
          and record['complete'] is False and type(record['readiness_credit']) is int and record['readiness_credit'] == 0
          and record['limits'] == LIMITS)
     need(type(record['phase']) is str and record['phase'] in ('preparation', 'host-runtime-observation', *CASES, 'cleanup'))
+    if 'preparation_step' in record:
+        step = record['preparation_step']
+        need(type(step) is str and step in PREPARATION_STEPS)
+        need(record['phase'] == 'preparation' or (record['phase'] == 'host-runtime-observation'
+             and step == 'runtime-checkpoint'))
     for key in ('forced_cleanup_attempted', 'cleanup_complete'):
         if key in record:
             need(type(record[key]) is bool)

@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 from browser_probe import SW_PROBE, Driver
-from gate_contract import LIMITS, decode, need, validate
+from gate_contract import LIMITS, PREPARATION_STEPS, decode, need, validate
 
 DIRECTORY = Path(__file__).resolve().parent
 WORKFLOW = '.github/workflows/ubuntu-catalogue-browser.yml'
@@ -282,7 +282,13 @@ def host_context():
     return {'source': expected, 'event': event_sha, 'image_version': image_version}
 
 
-def source_guard(repo, context, registry, env, deadline):
+def preparation_note(public, step):
+    # Last entered fixed preparation check only; never exception text or a cause claim.
+    need(public['phase'] == 'preparation' and type(step) is str and step in PREPARATION_STEPS)
+    public['preparation_step'] = step
+
+
+def source_guard(repo, context, registry, env, deadline, *, preparation=None):
     git = Path('/usr/bin/git')
     file_pin(git, root_owned=True, elf=True)
     def git_output(*args):
@@ -310,9 +316,15 @@ def source_guard(repo, context, registry, env, deadline):
     need(re.fullmatch(r'[0-9a-f]{40}', workflow_sha))
     workflow_ref = os.environ.get('GITHUB_WORKFLOW_REF', '')
     need(workflow_ref.startswith(PUBLIC_REPO + '/' + WORKFLOW + '@'))
+    if preparation is not None:
+        preparation('workflow-command')
     observed_workflow = git_output('show', workflow_sha + ':' + WORKFLOW)
+    if preparation is not None:
+        preparation('workflow-bytes')
     need(hashed(observed_workflow) == workflow['sha256'])
     rows.append({'path': WORKFLOW, 'sha256': workflow['sha256'], 'size': workflow['size']})
+    if preparation is not None:
+        preparation('source-summary')
     return {'head': head, 'tree': tree, 'bytes': hashed(packed(rows)), 'workflow': workflow['sha256']}
 
 
@@ -385,13 +397,24 @@ def main():
             (private / name).mkdir(mode=0o700)
         env = child_env(private)
         try:
-            source_before = source_guard(repo, context, registry, env, deadline)
+            def preparation(step):
+                preparation_note(public, step)
+            preparation('source-checks')
+            source_before = source_guard(repo, context, registry, env, deadline, preparation=preparation)
             chrome = Path('/opt/google/chrome/chrome')
             chrome_driver = Path('/usr/local/share/chromedriver-linux64/chromedriver')
+            preparation('python-path')
             python = Path(sys.executable).resolve(strict=True)
-            tools_before = {str(path): file_pin(path, trusted_owner=True, elf=True) for path in (chrome, chrome_driver, python, Path('/usr/bin/git'))}
+            tools_before = {}
+            for step, path in (('chrome-file-pin', chrome), ('driver-file-pin', chrome_driver),
+                ('python-file-pin', python), ('git-file-pin', Path('/usr/bin/git'))):
+                preparation(step)
+                tools_before[str(path)] = file_pin(path, trusted_owner=True, elf=True)
+            preparation('runtime-tool-owners')
             need(tools_before[str(chrome)]['uid'] == 0 and tools_before[str(chrome_driver)]['uid'] == 0)
+            preparation('runtime-checkpoint')
             checkpoint('host-runtime-observation')
+            public.pop('preparation_step', None)
             chrome_raw = command(registry, [str(chrome), '--version'], repo, env, deadline)
             driver_raw = command(registry, [str(chrome_driver), '--version'], repo, env, deadline)
             chrome_match = re.fullmatch(rb'Google Chrome ([0-9]+(?:\.[0-9]+){3})\s*', chrome_raw)

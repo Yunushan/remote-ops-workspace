@@ -144,6 +144,11 @@ PREPARATION_STEPS = ('source-checks', 'workflow-command', 'workflow-bytes', 'sou
     'runtime-tool-owners', 'runtime-checkpoint')
 
 
+CHROME_FILE_STAGES = ('lstat-before', 'regular-file', 'single-link', 'size-bound', 'nonempty',
+    'write-mode', 'root-owner', 'trusted-owner', 'open', 'header-read', 'rewind', 'sha256-read',
+    'elf-header', 'executable-mode', 'lstat-after', 'stable-identity')
+
+
 def public_bytes(raw):
     """Privacy reader, not an authenticity/adoption or genuine-host decision."""
     record = decode(raw)
@@ -153,7 +158,7 @@ def public_bytes(raw):
         validate(raw, {'binding': record['binding'], 'runtime': record['runtime']})
         return raw
     required = {'schema', 'status', 'complete', 'phase', 'readiness_credit', 'limits'}
-    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step'}
+    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step', 'chrome_file_stage'}
     need(required.issubset(record) and set(record).issubset(required | optional))
     need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v1' and record['status'] == 'refused'
          and record['complete'] is False and type(record['readiness_credit']) is int and record['readiness_credit'] == 0
@@ -164,6 +169,10 @@ def public_bytes(raw):
         need(type(step) is str and step in PREPARATION_STEPS)
         need(record['phase'] == 'preparation' or (record['phase'] == 'host-runtime-observation'
              and step == 'runtime-checkpoint'))
+    if 'chrome_file_stage' in record:
+        stage = record['chrome_file_stage']
+        need(type(stage) is str and stage in CHROME_FILE_STAGES)
+        need(record['phase'] == 'preparation' and record.get('preparation_step') == 'chrome-file-pin')
     for key in ('forced_cleanup_attempted', 'cleanup_complete'):
         if key in record:
             need(type(record[key]) is bool)

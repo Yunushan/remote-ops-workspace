@@ -432,5 +432,158 @@ class PreparationDiagnosticTests(unittest.TestCase):
             contract.validate(json.dumps(record).encode(), expected)
 
 
+class ChromeFileDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def record():
+        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused',
+            'complete': False, 'phase': 'preparation', 'preparation_step': 'chrome-file-pin',
+            'readiness_credit': 0, 'limits': contract.LIMITS}
+
+    @staticmethod
+    def fixture():
+        before = Mock(st_mode=0o100755, st_nlink=1, st_size=50, st_uid=0,
+            st_dev=1, st_ino=2, st_mtime_ns=3, st_ctime_ns=4)
+        path = Mock()
+        path.lstat.side_effect = [before, before]
+        stream = Mock()
+        stream.read.return_value = b'\x7fELF'
+        path.open.return_value = Mock(__enter__=Mock(return_value=stream), __exit__=Mock(return_value=False))
+        hasher = Mock()
+        hasher.hexdigest.return_value = '1' * 64
+        return path, before, stream, hasher
+
+    @staticmethod
+    def pin(path, hasher, diagnostic=None):
+        with patch.object(host_controller, 'Path', return_value=path), patch.object(host_controller.os, 'getuid', return_value=1000, create=True), patch.object(host_controller.hashlib, 'file_digest', return_value=hasher, create=True):
+            return host_controller.file_pin('/synthetic/not-accessed', trusted_owner=True, elf=True, diagnostic=diagnostic)
+
+    def test_every_fixed_stage_is_privacy_valid_without_values_or_authority(self):
+        self.assertEqual(len(contract.CHROME_FILE_STAGES), 16)
+        for stage in contract.CHROME_FILE_STAGES:
+            with self.subTest(stage=stage):
+                record = self.record()
+                host_controller.chrome_file_note(record, stage)
+                raw = json.dumps(record).encode()
+                self.assertEqual(contract.public_bytes(raw), raw)
+                self.assertEqual(record['chrome_file_stage'], stage)
+                self.assertFalse(record['complete'])
+                self.assertEqual(record['readiness_credit'], 0)
+
+    def test_unknown_private_or_untyped_stage_refuses_before_record_mutation(self):
+        for stage in ('/private/file', 'error-message', '', 'lstat-before' * 100,
+            True, 1, None, ['lstat-before'], {'stage': 'lstat-before'}):
+            with self.subTest(type_name=type(stage).__name__):
+                record = self.record()
+                original = copy.deepcopy(record)
+                with self.assertRaises(contract.GateRefusal):
+                    host_controller.chrome_file_note(record, stage)
+                self.assertEqual(record, original)
+                record['chrome_file_stage'] = stage
+                with self.assertRaises(contract.GateRefusal):
+                    contract.public_bytes(json.dumps(record).encode())
+
+    def test_stage_requires_exact_chrome_preparation_context(self):
+        for phase, step in (('api-read', 'chrome-file-pin'), ('preparation', 'driver-file-pin'),
+            ('host-runtime-observation', 'runtime-checkpoint'), ('preparation', None)):
+            with self.subTest(phase=phase, step=step):
+                record = self.record()
+                record.update(phase=phase)
+                if step is None:
+                    record.pop('preparation_step')
+                else:
+                    record['preparation_step'] = step
+                original = copy.deepcopy(record)
+                with self.assertRaises(contract.GateRefusal):
+                    host_controller.chrome_file_note(record, 'lstat-before')
+                self.assertEqual(record, original)
+                record['chrome_file_stage'] = 'lstat-before'
+                with self.assertRaises(contract.GateRefusal):
+                    contract.public_bytes(json.dumps(record).encode())
+
+    def test_private_extra_and_completed_record_cannot_carry_stage(self):
+        for field in ('path', 'exception', 'stat_uid', 'header'):
+            with self.subTest(field=field):
+                record = self.record()
+                record.update(chrome_file_stage='regular-file')
+                record[field] = 'private-detail'
+                with self.assertRaises(contract.GateRefusal):
+                    contract.public_bytes(json.dumps(record).encode())
+        record, expected = sample()
+        record['chrome_file_stage'] = 'stable-identity'
+        with self.assertRaises(contract.GateRefusal):
+            contract.validate(json.dumps(record).encode(), expected)
+
+    def test_success_retains_pin_and_order_and_none_callback_contract(self):
+        path, _, stream, hasher = self.fixture()
+        stages = []
+        pin = self.pin(path, hasher, stages.append)
+        expected = {'sha256': '1' * 64, 'size': 50, 'device': 1, 'inode': 2,
+            'mtime_ns': 3, 'ctime_ns': 4, 'mode': 0o755, 'uid': 0}
+        self.assertEqual(pin, expected)
+        self.assertEqual(stages, [stage for stage in contract.CHROME_FILE_STAGES if stage != 'root-owner'])
+        stream.read.assert_called_once_with(4)
+        stream.seek.assert_called_once_with(0)
+        path, _, _, hasher = self.fixture()
+        self.assertEqual(self.pin(path, hasher), expected)
+
+    def test_metadata_guards_keep_exact_entered_stage_and_refusal(self):
+        for field, value, stage in (('st_mode', 0o040755, 'regular-file'), ('st_nlink', 2, 'single-link'),
+            ('st_size', 536870913, 'size-bound'), ('st_size', 0, 'nonempty'),
+            ('st_mode', 0o100777, 'write-mode'), ('st_uid', 42, 'trusted-owner')):
+            with self.subTest(stage=stage):
+                record = self.record()
+                path, before, _, hasher = self.fixture()
+                setattr(before, field, value)
+                with self.assertRaises(contract.GateRefusal) as error:
+                    self.pin(path, hasher, lambda note, record=record: host_controller.chrome_file_note(record, note))
+                self.assertEqual(str(error.exception), 'catalogue-gate-contract-refused')
+                self.assertEqual(record['chrome_file_stage'], stage)
+                self.assertEqual(contract.public_bytes(json.dumps(record).encode()), json.dumps(record).encode())
+                path.open.assert_not_called()
+
+    def test_io_failures_keep_only_entered_operation_without_exception_details(self):
+        for stage in ('lstat-before', 'open', 'header-read', 'rewind', 'sha256-read', 'lstat-after'):
+            with self.subTest(stage=stage):
+                record = self.record()
+                path, before, stream, hasher = self.fixture()
+                error = OSError('private-detail-not-projected')
+                if stage == 'lstat-before':
+                    path.lstat.side_effect = error
+                elif stage == 'open':
+                    path.open.side_effect = error
+                elif stage == 'header-read':
+                    stream.read.side_effect = error
+                elif stage == 'rewind':
+                    stream.seek.side_effect = error
+                elif stage == 'sha256-read':
+                    hasher.hexdigest.side_effect = error
+                else:
+                    path.lstat.side_effect = [before, error]
+                with self.assertRaises(OSError):
+                    self.pin(path, hasher, lambda note, record=record: host_controller.chrome_file_note(record, note))
+                self.assertEqual(record['chrome_file_stage'], stage)
+                raw = json.dumps(record).encode()
+                self.assertEqual(contract.public_bytes(raw), raw)
+                self.assertNotIn(b'private-detail', raw)
+
+    def test_elf_executable_and_identity_guards_remain_strict(self):
+        for stage in ('elf-header', 'executable-mode', 'stable-identity'):
+            with self.subTest(stage=stage):
+                record = self.record()
+                path, before, stream, hasher = self.fixture()
+                if stage == 'elf-header':
+                    stream.read.return_value = b'#!sh'
+                elif stage == 'executable-mode':
+                    before.st_mode = 0o100644
+                else:
+                    after = Mock(st_dev=1, st_ino=9, st_size=50, st_mtime_ns=3, st_ctime_ns=4)
+                    path.lstat.side_effect = [before, after]
+                with self.assertRaises(contract.GateRefusal):
+                    self.pin(path, hasher, lambda note, record=record: host_controller.chrome_file_note(record, note))
+                self.assertEqual(record['chrome_file_stage'], stage)
+                raw = json.dumps(record).encode()
+                self.assertEqual(contract.public_bytes(raw), raw)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

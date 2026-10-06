@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 from browser_probe import SW_PROBE, Driver
-from gate_contract import LIMITS, PREPARATION_STEPS, decode, need, validate
+from gate_contract import CHROME_FILE_STAGES, LIMITS, PREPARATION_STEPS, decode, need, validate
 
 DIRECTORY = Path(__file__).resolve().parent
 WORKFLOW = '.github/workflows/ubuntu-catalogue-browser.yml'
@@ -33,22 +33,45 @@ def hashed(value):
     return hashlib.sha256(value).hexdigest()
 
 
-def file_pin(path, *, root_owned=False, trusted_owner=False, elf=False, maximum=536870912):
+def file_pin(path, *, root_owned=False, trusted_owner=False, elf=False, maximum=536870912, diagnostic=None):
+    def stage(value):
+        if diagnostic is not None:
+            diagnostic(value)
     path = Path(path)
+    stage('lstat-before')
     before = path.lstat()
-    need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and before.st_size <= maximum
-         and before.st_size > 0 and not before.st_mode & 0o022)
+    stage('regular-file')
+    need(stat.S_ISREG(before.st_mode))
+    stage('single-link')
+    need(before.st_nlink == 1)
+    stage('size-bound')
+    need(before.st_size <= maximum)
+    stage('nonempty')
+    need(before.st_size > 0)
+    stage('write-mode')
+    need(not before.st_mode & 0o022)
     if root_owned:
+        stage('root-owner')
         need(before.st_uid == 0)
     if trusted_owner:
+        stage('trusted-owner')
         need(before.st_uid in (0, os.getuid()))
+    stage('open')
     with path.open('rb') as stream:
+        stage('header-read')
         header = stream.read(4)
+        stage('rewind')
         stream.seek(0)
+        stage('sha256-read')
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     if elf:
-        need(header == b'\x7fELF' and before.st_mode & 0o111 != 0)
+        stage('elf-header')
+        need(header == b'\x7fELF')
+        stage('executable-mode')
+        need(before.st_mode & 0o111 != 0)
+    stage('lstat-after')
     after = path.lstat()
+    stage('stable-identity')
     need((before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
          == (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns))
     return {'sha256': digest, 'size': before.st_size, 'device': before.st_dev,
@@ -288,6 +311,13 @@ def preparation_note(public, step):
     public['preparation_step'] = step
 
 
+def chrome_file_note(public, stage):
+    # Entered guard/operation only; no observed value, raw path, exception or cause.
+    need(public['phase'] == 'preparation' and public.get('preparation_step') == 'chrome-file-pin'
+         and type(stage) is str and stage in CHROME_FILE_STAGES)
+    public['chrome_file_stage'] = stage
+
+
 def source_guard(repo, context, registry, env, deadline, *, preparation=None):
     git = Path('/usr/bin/git')
     file_pin(git, root_owned=True, elf=True)
@@ -409,7 +439,9 @@ def main():
             for step, path in (('chrome-file-pin', chrome), ('driver-file-pin', chrome_driver),
                 ('python-file-pin', python), ('git-file-pin', Path('/usr/bin/git'))):
                 preparation(step)
-                tools_before[str(path)] = file_pin(path, trusted_owner=True, elf=True)
+                diagnostic = (lambda stage: chrome_file_note(public, stage)) if step == 'chrome-file-pin' else None
+                tools_before[str(path)] = file_pin(path, trusted_owner=True, elf=True, diagnostic=diagnostic)
+                public.pop('chrome_file_stage', None)
             preparation('runtime-tool-owners')
             need(tools_before[str(chrome)]['uid'] == 0 and tools_before[str(chrome_driver)]['uid'] == 0)
             preparation('runtime-checkpoint')

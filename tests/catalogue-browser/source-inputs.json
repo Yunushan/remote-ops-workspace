@@ -1,0 +1,106 @@
+{
+  "gate_inputs": [
+    "browser_probe.py",
+    "entry.py",
+    "fixture_server.py",
+    "gate_contract.py",
+    "host_controller.py",
+    "product-source-inventory.json",
+    "source-inputs.json",
+    "test_contract.py",
+    "upload_guard.py"
+  ],
+  "product_baseline_head": "ae30991bc98490c87ecbf3ea866b7be182541c77",
+  "product_inputs": [
+    {
+      "path": "src/remote_ops_workspace/__init__.py",
+      "sha256": "d5c8c895843555f142e2628c430abb78e1805b21e4d70f18b9882e0aea5ef51c",
+      "size": 78
+    },
+    {
+      "path": "src/remote_ops_workspace/command_safety.py",
+      "sha256": "cef2b6cd3760265066ed37d855cc5d5fb0750ea8e3efbb2f50897eeec224c85b",
+      "size": 5801
+    },
+    {
+      "path": "src/remote_ops_workspace/enterprise_policy.py",
+      "sha256": "6472bc37fb472a07514f66dc4f73779047a4b466a170b6e9a56a4ed0c4ea1c46",
+      "size": 19609
+    },
+    {
+      "path": "src/remote_ops_workspace/file_safety.py",
+      "sha256": "1fc6b102bf2b228d2f9dc00e83135a2a60b188ed3147fb43e82b83881e6df76b",
+      "size": 14933
+    },
+    {
+      "path": "src/remote_ops_workspace/models.py",
+      "sha256": "a6cc2e0b979296c62e77e5f4ce1d43724f801f9fa2205adf7a18c2914a65917b",
+      "size": 4078
+    },
+    {
+      "path": "src/remote_ops_workspace/paths.py",
+      "sha256": "89550ed598d486c096e062a4a08d2b7f5f84974ed4ca71150c0f506329069252",
+      "size": 2252
+    },
+    {
+      "path": "src/remote_ops_workspace/plugins.py",
+      "sha256": "9bd51b353ad2b21b490f1c1f5d6cf3b3469689c510af5361556609ef93ddb7b7",
+      "size": 6436
+    },
+    {
+      "path": "src/remote_ops_workspace/profile_sharing.py",
+      "sha256": "d4ff3a393062e9fba7c6d3c63b2e96a7272e65e546e0cf2449aff845ccfda7c6",
+      "size": 12894
+    },
+    {
+      "path": "src/remote_ops_workspace/profile_validation.py",
+      "sha256": "0a7d7242d89193144ad90538c58bfaf1da6b0e045f8f146453050fbb15bfe182",
+      "size": 10357
+    },
+    {
+      "path": "src/remote_ops_workspace/redaction.py",
+      "sha256": "64c74f729304bc2fbaf5e00b61c2e6e05d868423a4e5a6f6bc30aeeb9c6e1ce6",
+      "size": 12540
+    },
+    {
+      "path": "src/remote_ops_workspace/state_lock.py",
+      "sha256": "e6a825d2de7cfc1d23410f6ffe3ce8a6d9fabec41650a3b09fc85ae7d0a4855e",
+      "size": 10236
+    },
+    {
+      "path": "src/remote_ops_workspace/storage.py",
+      "sha256": "37f14d178f03fe6423b93ad298457e72267a4a4e7f015305fefc2dd7630f32b9",
+      "size": 25116
+    },
+    {
+      "path": "src/remote_ops_workspace/web_server.py",
+      "sha256": "3f825e0cfd01fcc99e76d1096d1e9d4e2dd096585d7f1258b40f1a7d622dcc72",
+      "size": 14513
+    },
+    {
+      "path": "apps/web/app.js",
+      "sha256": "8230d460b616e37282be34f36e9bf711c53733f0f91ba2e2e4dfc7336c098916",
+      "size": 21469
+    },
+    {
+      "path": "apps/web/index.html",
+      "sha256": "44f34a929c895a26bbd877d75720b883a990eec030235641c6c0fb91bd1ac259",
+      "size": 3344
+    },
+    {
+      "path": "apps/web/manifest.json",
+      "sha256": "2a9cc415cdcf9266da5b7f9cf43b9c97df02e1e5d9d38ba690d57c0ed074f96e",
+      "size": 281
+    },
+    {
+      "path": "apps/web/styles.css",
+      "sha256": "a89afb5236d5bac11dd13a4c1cde85cf09a37d1c3e07730e2f007c16a76f9a52",
+      "size": 2033
+    },
+    {
+      "path": "apps/web/sw.js",
+      "sha256": "fdf5072cd7720c798dff6f32b24d473ff65fcad19d13a30621b9889211e10dda",
+      "size": 2153
+    }
+  ]
+}

@@ -1115,3 +1115,79 @@ def _write_signed_update_manifest(root: Path, *, artifact: Path, public_key: str
     path = root / "stable-update.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+@pytest.mark.parametrize("declared_size", [True, False, 1.0, "1", None, -1])
+def test_signed_update_manifest_requires_integer_byte_count(
+    tmp_path: Path, declared_size: object
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "inert.bin", "Harmless fixture.\n")
+    manifest = _write_signed_update_manifest_with_size(
+        tmp_path, artifact=artifact, declared_size=declared_size
+    )
+    result = validate_professional_update_manifest(
+        manifest, public_key=UPDATE_PUBLIC_KEY, assets_dir=tmp_path
+    )
+    assert result.passed is False
+    assert result.errors == ["artifacts[1].size_bytes must be a non-negative integer"]
+
+
+@pytest.mark.parametrize("declared_size", [0, 1, 4096])
+def test_signed_update_manifest_rejects_local_byte_count_mismatch(
+    tmp_path: Path, declared_size: int
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "inert.bin", "Harmless fixture.\n")
+    assert declared_size != artifact.stat().st_size
+    manifest = _write_signed_update_manifest_with_size(
+        tmp_path, artifact=artifact, declared_size=declared_size
+    )
+    result = validate_professional_update_manifest(
+        manifest, public_key=UPDATE_PUBLIC_KEY, assets_dir=tmp_path
+    )
+    assert result.passed is False
+    assert result.errors == ["artifacts[1].file.size_bytes does not match inert.bin"]
+
+
+@pytest.mark.parametrize("include_file", [True, False])
+def test_signed_update_manifest_retains_zero_and_metadata_only_contract(
+    tmp_path: Path, include_file: bool
+) -> None:
+    artifact = _write_evidence_asset(
+        tmp_path, "inert.bin", "" if include_file else "Harmless metadata-only fixture.\n"
+    )
+    manifest = _write_signed_update_manifest_with_size(
+        tmp_path, artifact=artifact, declared_size=0, include_file=include_file
+    )
+    result = validate_professional_update_manifest(
+        manifest, public_key=UPDATE_PUBLIC_KEY, assets_dir=tmp_path
+    )
+    assert result.passed is True
+    assert result.errors == []
+
+
+def test_signed_update_manifest_size_binding_retains_hash_rejection(tmp_path: Path) -> None:
+    artifact = _write_evidence_asset(tmp_path, "inert.bin", "Harmless fixture.\n")
+    manifest = _write_signed_update_manifest_with_size(
+        tmp_path, artifact=artifact, declared_size=artifact.stat().st_size
+    )
+    artifact.write_bytes(b"x" * artifact.stat().st_size)
+    result = validate_professional_update_manifest(
+        manifest, public_key=UPDATE_PUBLIC_KEY, assets_dir=tmp_path
+    )
+    assert result.passed is False
+    assert result.errors == ["artifacts[1].file.evidence_sha256 does not match inert.bin"]
+
+
+def _write_signed_update_manifest_with_size(
+    root: Path, *, artifact: Path, declared_size: object, include_file: bool = True
+) -> Path:
+    manifest = _write_signed_update_manifest(root, artifact=artifact, public_key=UPDATE_PUBLIC_KEY)
+    record = json.loads(manifest.read_text(encoding="utf-8"))
+    record["artifacts"][0]["size_bytes"] = declared_size
+    if not include_file:
+        record["artifacts"][0].pop("file")
+    payload = canonical_update_manifest_payload(record)
+    record["signature"]["value"] = b64encode(_UPDATE_PRIVATE_KEY.sign(payload)).decode("ascii")
+    record["signature"]["payload_sha256"] = hashlib.sha256(payload).hexdigest()
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    return manifest

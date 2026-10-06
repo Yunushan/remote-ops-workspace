@@ -136,6 +136,12 @@ jobs:
       - name: Verify shared terminal ownership across two actual Qt windows
         timeout-minutes: 3
         run: python scripts/check_gui_two_window_result.py --out artifacts/coverage/gui-two-window.json
+      - name: Verify six actual Qt scroll lifetime cases without skips
+        timeout-minutes: 3
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python scripts/check_gui_scroll_lifetime_result.py --out artifacts/coverage/gui-scroll-lifetime.json
       - name: Enforce branch coverage floor
         run: >-
           python -m pytest -q

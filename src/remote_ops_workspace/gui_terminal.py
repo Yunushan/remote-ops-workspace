@@ -229,6 +229,8 @@ class TerminalPane(QWidget):
         self._pty_initial_clear_pending = False
         self._pty_startup_probe = ""
         self._terminal_scroll_generation = 0
+        self._terminal_scroll_settle_generation = 0
+        self._terminal_scroll_closed = False
         self._terminal_follow_output = True
         self._terminal_scroll_programmatic = 0
         self._terminal_force_follow_output = False
@@ -263,6 +265,9 @@ class TerminalPane(QWidget):
         self._terminal_resize_timer.setSingleShot(True)
         self._terminal_resize_timer.setInterval(40)
         self._terminal_resize_timer.timeout.connect(self.flush_terminal_resize)
+        self._terminal_scroll_timer = QTimer(self)
+        self._terminal_scroll_timer.setSingleShot(True)
+        self._terminal_scroll_timer.timeout.connect(self.settle_terminal_scroll)
 
         self.title = QLabel(plan.title)
         self.title.setObjectName("terminalTitle")
@@ -1345,6 +1350,9 @@ class TerminalPane(QWidget):
     def prepare_for_close(self) -> None:
         """Prevent deferred restart work while a tab or window is closing."""
 
+        self._terminal_scroll_closed = True
+        self._terminal_scroll_generation += 1
+        self._terminal_scroll_timer.stop()
         self.setProperty("terminalClosing", True)
         self._stop_timer.stop()
         self.reset_process_output_pipeline()
@@ -2370,6 +2378,8 @@ class TerminalPane(QWidget):
     def scroll_terminal_to_end(self) -> None:
         """Keep live output at the true document end after layout updates."""
 
+        if self._terminal_scroll_closed:
+            return
         if self.terminal_emulator.alternate_screen_active:
             # Alternate-screen applications own the viewport. Moving the
             # QTextEdit cursor to document end fights Vim's cursor
@@ -2397,29 +2407,34 @@ class TerminalPane(QWidget):
         self._terminal_follow_output = True
         self.output.setProperty("terminalFollowOutput", True)
 
-        def settle() -> None:
-            if generation != self._terminal_scroll_generation:
-                return
-            if self.terminal_emulator.alternate_screen_active:
-                return
-            if not self._terminal_follow_output:
-                return
-            bar = _required_gui_value(
-                self.output.verticalScrollBar(),
-                "terminal vertical scroll bar",
-            )
-            self._set_terminal_scroll_value(bar.maximum())
-            self._terminal_scroll_programmatic += 1
-            try:
-                self.output.ensureCursorVisible()
-            finally:
-                self._terminal_scroll_programmatic = max(
-                    0,
-                    self._terminal_scroll_programmatic - 1,
-                )
-            self._set_terminal_scroll_value(bar.maximum())
+        self._terminal_scroll_settle_generation = generation
+        self._terminal_scroll_timer.start(0)
 
-        QTimer.singleShot(0, settle)
+    def settle_terminal_scroll(self) -> None:
+        """Settle live output only while this pane owns the scheduled timer."""
+
+        if self._terminal_scroll_closed:
+            return
+        if self._terminal_scroll_settle_generation != self._terminal_scroll_generation:
+            return
+        if self.terminal_emulator.alternate_screen_active:
+            return
+        if not self._terminal_follow_output:
+            return
+        bar = _required_gui_value(
+            self.output.verticalScrollBar(),
+            "terminal vertical scroll bar",
+        )
+        self._set_terminal_scroll_value(bar.maximum())
+        self._terminal_scroll_programmatic += 1
+        try:
+            self.output.ensureCursorVisible()
+        finally:
+            self._terminal_scroll_programmatic = max(
+                0,
+                self._terminal_scroll_programmatic - 1,
+            )
+        self._set_terminal_scroll_value(bar.maximum())
 
     def terminal_text_format(
         self,

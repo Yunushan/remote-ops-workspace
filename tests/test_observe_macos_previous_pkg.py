@@ -1354,5 +1354,124 @@ class StrictUtf8ManualTests(unittest.TestCase):
         self.assertEqual(result["raw_sha256"], M.sha(raw))
 
 
+class BomDiagnosticTests(unittest.TestCase):
+    def rejected(self, raw, code="bom-requested-column-layout-unobserved"):
+        context = {"phase": "installed-bom-reader", "observed": {}}
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            with self.assertRaisesRegex(M.Refusal, "^" + code + "$"):
+                M.bom_projection(raw, P)
+        return context["observed"]
+
+    def test_first_failed_row_has_only_bounded_shape_facts(self):
+        first = "fixture-valid-path\t40755\t0\t80\t0\n"
+        second = "private/user/name\t100644\t501\t20\n"
+        later = "later-secret\tbad\n"
+        raw = (first + second + later).encode()
+        facts = self.rejected(raw)
+        self.assertEqual(facts["bom_output_sha256"], M.sha(raw))
+        self.assertEqual(facts["bom_size_bytes"], len(raw))
+        self.assertEqual(facts["bom_row_count"], 3)
+        self.assertEqual(facts["bom_failed_row_index"], 2)
+        self.assertEqual(facts["bom_failed_column_count"], 4)
+        self.assertEqual(facts["bom_failed_layout_class"], "column-count")
+        self.assertEqual(facts["bom_failed_line_sha256"], M.sha(second.rstrip("\n").encode()))
+        self.assertEqual(facts["bom_failed_column_4_class"], "absent")
+        self.assertEqual(facts["bom_failed_column_4_size_bytes"], 0)
+        text = json.dumps(facts)
+        for private in ("private/user/name", "later-secret", '"100644"', '"501"'):
+            self.assertNotIn(private, text)
+        self.assertLess(len(text), 1500)
+
+    def test_mode_and_decimal_rejections_keep_unchanged_grammar(self):
+        cases = (
+            (b"private\t-rw-r--r--\t0\t0\t9\n", "mode-field", 1, "ascii-other", 10),
+            (b"private\t999\t0\t0\t9\n", "mode-field", 1, "ascii-decimal-digits", 3),
+            (b"private\t40755\t-1\t0\t9\n", "numeric-field", 2, "ascii-other", 2),
+            (b"private\t40755\t1234567890123\t0\t9\n", "numeric-field", 2, "ascii-decimal-digits", 13),
+        )
+        for raw, reason, column, category, length in cases:
+            with self.subTest(digest=M.sha(raw)):
+                facts = self.rejected(raw)
+                self.assertEqual(facts["bom_failed_layout_class"], reason)
+                self.assertEqual(facts[f"bom_failed_column_{column}_class"], category)
+                self.assertEqual(facts[f"bom_failed_column_{column}_characters"], length)
+
+    def test_unicode_empty_and_extra_columns_are_classified_not_accepted(self):
+        raw = "private\t40755\t٣\t\t9\textra-private\n".encode()
+        facts = self.rejected(raw)
+        self.assertEqual(facts["bom_failed_column_count"], 6)
+        self.assertEqual(facts["bom_failed_column_2_class"], "non-ascii")
+        self.assertEqual(facts["bom_failed_column_2_characters"], 1)
+        self.assertEqual(facts["bom_failed_column_2_size_bytes"], 2)
+        self.assertEqual(facts["bom_failed_column_3_class"], "empty")
+        self.assertNotIn("extra-private", json.dumps(facts, ensure_ascii=False))
+        self.assertNotIn("٣", json.dumps(facts, ensure_ascii=False))
+
+    def test_bad_utf8_has_bounded_decoder_facts_without_exception_text(self):
+        for raw in (b"private\xff", b"\xc2", b"\xed\xa0\x80"):
+            with self.subTest(digest=M.sha(raw)):
+                facts = self.rejected(raw, "bom-output-encoding")
+                self.assertEqual(set(facts), {"bom_output_sha256", "bom_size_bytes", "bom_decoder", "bom_utf8_valid", "bom_decode_error_offset", "bom_decode_error_width"})
+                self.assertEqual(facts["bom_decoder"], "strict-utf8")
+                self.assertIs(facts["bom_utf8_valid"], False)
+                self.assertTrue(0 <= facts["bom_decode_error_offset"] < len(raw))
+                self.assertTrue(1 <= facts["bom_decode_error_width"] <= 4)
+                self.assertNotIn("private", json.dumps(facts))
+
+    def test_success_clears_previous_failure_and_stays_unqualified(self):
+        context = {"phase": "installed-bom-reader", "observed": {}}
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            with self.assertRaises(M.Refusal):
+                M.bom_projection(b"private\tbad\n", P)
+            self.assertIn("bom_failed_line_sha256", context["observed"])
+            raw = (M.APP_REL + "\t40755\t0\t80\t0\n").encode()
+            result = M.bom_projection(raw, P)
+            self.assertEqual(set(context["observed"]), {"bom_output_sha256", "bom_size_bytes", "bom_decoder", "bom_utf8_valid", "bom_row_count"})
+            self.assertEqual(result["rows"][0]["requested_columns_as_strings"], ["40755", "0", "80", "0"])
+            self.assertFalse(result["native_ownership_proof"])
+            self.assertEqual(result["bom_payload_agreement"], "not-checked")
+            M.diagnostic_phase("installed-bom-reader")
+            self.assertEqual(context["observed"], {})
+
+    def test_new_fact_keys_are_phase_scoped_typed_and_private_extensions_refused(self):
+        context = {"phase": "installed-bom-reader", "observed": {}}
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            M.diagnostic_phase("receipt-namespace", bom_row_count=3, bom_failed_layout_class="column-count")
+            self.assertEqual(context["observed"], {})
+            invalids = ({"bom_size_bytes": True}, {"bom_size_bytes": M.MAX_PUBLIC + 1},
+                {"bom_row_count": False}, {"bom_row_count": -1}, {"bom_row_count": M.MAX_PUBLIC + 2},
+                {"bom_failed_row_index": 0}, {"bom_failed_row_index": M.MAX_ROWS + 1},
+                {"bom_failed_column_count": True}, {"bom_failed_column_count": M.MAX_PUBLIC + 2},
+                {"bom_failed_line_sha256": "private/path"}, {"bom_failed_layout_class": []},
+                {"bom_failed_column_1_class": ["ascii-other"]}, {"bom_failed_column_5_class": "empty"},
+                {"bom_failed_column_2_characters": True}, {"bom_failed_column_3_size_bytes": M.MAX_PUBLIC + 1},
+                {"bom_decoder": "private/decoder"}, {"bom_utf8_valid": 1},
+                {"bom_decode_error_offset": M.MAX_PUBLIC + 1}, {"bom_decode_error_width": 5},
+                {"raw_bom": "private text", "path": "private/path", "argv": "private args", "exception_message": "private message"})
+            for facts in invalids:
+                M.diagnostic_phase("installed-bom-reader", **facts)
+                self.assertEqual(context["observed"], {})
+
+    def test_byte_and_row_bounds_keep_existing_refusal_and_do_not_project_paths(self):
+        with patch.object(M, "diagnostic_phase", side_effect=AssertionError("no oversized diagnostics")):
+            with patch.object(M, "MAX_PUBLIC", 1):
+                with self.assertRaisesRegex(M.Refusal, "^bom-output-byte-bound$"):
+                    M.bom_projection(b"xx", P)
+        raw = b"private-a\t40755\t0\t0\t0\nprivate-b\t40755\t0\t0\t0\n"
+        with patch.object(M, "MAX_ROWS", 1):
+            facts = self.rejected(raw, "bom-output-row-bound")
+        self.assertEqual(facts["bom_row_count"], 2)
+        self.assertNotIn("bom_failed_row_index", facts)
+        self.assertNotIn("private", json.dumps(facts))
+
+    def test_long_numeric_field_is_counted_without_integer_conversion(self):
+        field = "9" * 5000
+        raw = ("private\t40755\t" + field + "\t0\t0\n").encode()
+        facts = self.rejected(raw)
+        self.assertEqual(facts["bom_failed_column_2_class"], "ascii-decimal-digits")
+        self.assertEqual(facts["bom_failed_column_2_characters"], 5000)
+        self.assertLess(len(json.dumps(facts)), 1500)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -495,24 +495,71 @@ def package_info_projection(raw, parser):
     }
 
 
+def _bom_failed_row_facts(line, columns, index, reason):
+    """Bounded syntax facts only; never project paths, values or semantics."""
+    raw = line.encode("utf-8")
+    facts = {
+        "bom_failed_row_index": index,
+        "bom_failed_column_count": len(columns),
+        "bom_failed_line_size_bytes": len(raw),
+        "bom_failed_line_sha256": sha(raw),
+        "bom_failed_layout_class": reason,
+    }
+    for column in range(1, 5):
+        field = columns[column] if column < len(columns) else None
+        if field is None:
+            category = "absent"
+        elif not field:
+            category = "empty"
+        elif re.fullmatch(r"[0-7]+", field):
+            category = "ascii-octal-digits"
+        elif re.fullmatch(r"[0-9]+", field):
+            category = "ascii-decimal-digits"
+        elif field.isascii():
+            category = "ascii-other"
+        else:
+            category = "non-ascii"
+        prefix = "bom_failed_column_" + str(column)
+        facts[prefix + "_class"] = category
+        facts[prefix + "_characters"] = 0 if field is None else len(field)
+        facts[prefix + "_size_bytes"] = 0 if field is None else len(field.encode("utf-8"))
+    return facts
+
+
 def bom_projection(raw, parser):
     """Public requested columns only; installed lsbom contract is still unqualified."""
     if len(raw) > MAX_PUBLIC:
         raise Refusal("bom-output-byte-bound")
+    facts = {"bom_output_sha256": sha(raw), "bom_size_bytes": len(raw), "bom_decoder": "strict-utf8"}
     try:
         lines = raw.decode("utf-8").splitlines()
     except UnicodeError as exc:
+        diagnostic_phase(
+            "installed-bom-reader", **facts, bom_utf8_valid=False,
+            bom_decode_error_offset=exc.start, bom_decode_error_width=exc.end - exc.start,
+        )
         raise Refusal("bom-output-encoding") from exc
+    facts.update(bom_utf8_valid=True, bom_row_count=len(lines))
+    diagnostic_phase("installed-bom-reader", **facts)
     if len(lines) > MAX_ROWS:
         raise Refusal("bom-output-row-bound")
     rows, keys, unprojected, app_aliases = [], set(), 0, 0
-    for line in lines:
+    for index, line in enumerate(lines, 1):
         columns = line.split("\t")
         if (
             len(columns) != 5
             or not re.fullmatch(r"[0-7]{1,8}", columns[1])
             or any(not re.fullmatch(r"[0-9]{1,12}", field) for field in columns[2:])
         ):
+            reason = (
+                "column-count" if len(columns) != 5 else
+                "mode-field" if not re.fullmatch(r"[0-7]{1,8}", columns[1]) else
+                "numeric-field"
+            )
+            diagnostic_phase(
+                "installed-bom-reader", **facts,
+                **_bom_failed_row_facts(line, columns, index, reason),
+            )
             raise Refusal("bom-requested-column-layout-unobserved")
         path = parser.member_name(columns[0], root=True)
         key = alias(path)
@@ -1492,6 +1539,19 @@ def diagnostic_phase(phase, **facts):
                 "manual_decode_error_offset", "manual_decode_error_width",
             ):
                 REFUSAL_CONTEXT["observed"].pop(key, None)
+        if phase == "installed-bom-reader":
+            # Each call supplies a complete current projection; no stale row or
+            # decoder failure may be inherited by a later capture or success.
+            for key in (
+                "bom_output_sha256", "bom_size_bytes", "bom_decoder", "bom_utf8_valid",
+                "bom_decode_error_offset", "bom_decode_error_width", "bom_row_count",
+                "bom_failed_row_index", "bom_failed_column_count", "bom_failed_line_size_bytes",
+                "bom_failed_line_sha256", "bom_failed_layout_class",
+                *("bom_failed_column_" + str(column) + suffix
+                  for column in range(1, 5)
+                  for suffix in ("_class", "_characters", "_size_bytes")),
+            ):
+                REFUSAL_CONTEXT["observed"].pop(key, None)
         for key, value in facts.items():
             if key in {
                 "whole_pkg_sha256",
@@ -1534,6 +1594,26 @@ def diagnostic_phase(phase, **facts):
                 ):
                     REFUSAL_CONTEXT["observed"][key] = value
 
+            elif phase == "installed-bom-reader":
+                if (
+                    (key == "bom_size_bytes" and type(value) is int and 0 <= value <= MAX_PUBLIC)
+                    or (key == "bom_decoder" and type(value) is str and value == "strict-utf8")
+                    or (key == "bom_utf8_valid" and type(value) is bool)
+                    or (key == "bom_decode_error_offset" and type(value) is int and 0 <= value <= MAX_PUBLIC)
+                    or (key == "bom_decode_error_width" and type(value) is int and 1 <= value <= 4)
+                    or (key == "bom_row_count" and type(value) is int and 0 <= value <= MAX_PUBLIC + 1)
+                    or (key == "bom_failed_row_index" and type(value) is int and 1 <= value <= MAX_ROWS)
+                    or (key == "bom_failed_column_count" and type(value) is int and 1 <= value <= MAX_PUBLIC + 1)
+                    or (key == "bom_failed_line_size_bytes" and type(value) is int and 0 <= value <= MAX_PUBLIC)
+                    or (key == "bom_failed_line_sha256" and type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value))
+                    or (key == "bom_failed_layout_class" and type(value) is str
+                        and value in {"column-count", "mode-field", "numeric-field"})
+                    or (re.fullmatch(r"bom_failed_column_[1-4]_class", key) and type(value) is str
+                        and value in {"absent", "empty", "ascii-octal-digits", "ascii-decimal-digits", "ascii-other", "non-ascii"})
+                    or (re.fullmatch(r"bom_failed_column_[1-4]_(?:characters|size_bytes)", key)
+                        and type(value) is int and 0 <= value <= MAX_PUBLIC)
+                ):
+                    REFUSAL_CONTEXT["observed"][key] = value
 
 def readonly_system_tool_hashes():
     result = {}

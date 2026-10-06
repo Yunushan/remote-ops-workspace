@@ -119,6 +119,8 @@ def clean_environment(home: Path, password: str, backup_password: str) -> dict[s
     environment = dict(os.environ)
     for name in list(environment):
         if name.upper() in {
+            "GITHUB_TOKEN",
+            "GH_TOKEN",
             "PYTHONPATH",
             "PYTHONHOME",
             "ROW_HOME",

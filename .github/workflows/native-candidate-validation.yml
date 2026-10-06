@@ -271,6 +271,8 @@ jobs:
         if: ${{ success() && matrix.arch == 'x64' }}
         shell: powershell
         timeout-minutes: 35
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: >-
           python scripts/candidate_windows_owned.py --timeout 1800
           --out build/candidate-proof/windows-x64/owned-recovery.json

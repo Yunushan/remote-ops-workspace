@@ -1473,5 +1473,82 @@ class BomDiagnosticTests(unittest.TestCase):
         self.assertLess(len(json.dumps(facts)), 1500)
 
 
+class BomDirectorySizeGrammarTests(unittest.TestCase):
+    def rejected(self, raw):
+        context = {"phase": "installed-bom-reader", "observed": {}}
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            with self.assertRaisesRegex(M.Refusal, "^bom-requested-column-layout-unobserved$"):
+                M.bom_projection(raw, P)
+        return context["observed"]
+
+    def test_empty_size_directory_is_retained_as_absent_string(self):
+        raw = (M.APP_REL + "\t40755\t0\t80\t\n").encode()
+        result = M.bom_projection(raw, P)
+        self.assertEqual(result["rows"][0]["requested_columns_as_strings"], ["40755", "0", "80", ""])
+        self.assertIs(result["all_rows_parsed"], True)
+        self.assertFalse(result["native_ownership_proof"])
+        self.assertEqual(result["ownership_mode_size_semantics"], "unqualified-until-installed-manual-and-output-review")
+        self.assertEqual(result["bom_payload_agreement"], "not-checked")
+
+    def test_directory_type_mask_handles_permissions_and_bounded_padding(self):
+        for mode in ("40000", "040755", "00040755", "47777"):
+            with self.subTest(mode=mode):
+                result = M.bom_projection((M.APP_REL + "\t" + mode + "\t0\t0\t\n").encode(), P)
+                self.assertEqual(result["rows"][0]["requested_columns_as_strings"], [mode, "0", "0", ""])
+
+    def test_non_directory_types_cannot_omit_size(self):
+        for mode in ("100644", "120777", "20666", "60666", "10666", "140777", "160000", "0", "755"):
+            with self.subTest(mode=mode):
+                facts = self.rejected(("private-fixture\t" + mode + "\t0\t0\t\n").encode())
+                self.assertEqual(facts["bom_failed_layout_class"], "numeric-field")
+                self.assertEqual(facts["bom_failed_column_4_class"], "empty")
+                self.assertNotIn("private-fixture", json.dumps(facts))
+
+    def test_directory_requires_exactly_five_columns(self):
+        for raw in (b"fixture\t40755\t0\t0\n", b"fixture\t40755\t0\t0\t\t\n"):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.rejected(raw)["bom_failed_layout_class"], "column-count")
+
+    def test_empty_size_requires_valid_bounded_ascii_octal_mode(self):
+        for mode in ("", "40758", " 40755", "+40755", "40755 ", "000040755", "４０７５５"):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.rejected(("fixture\t" + mode + "\t0\t0\t\n").encode())["bom_failed_layout_class"], "mode-field")
+
+    def test_uid_and_gid_remain_required_bounded_ascii_decimal(self):
+        for uid, gid in (("", "0"), ("0", ""), ("-1", "0"), ("0", "+1"), ("0", " 0"),
+                         ("１", "0"), ("9" * 13, "0"), ("0", "9" * 13)):
+            with self.subTest(uid=uid, gid=gid):
+                self.assertEqual(self.rejected(("fixture\t40755\t" + uid + "\t" + gid + "\t\n").encode())["bom_failed_layout_class"], "numeric-field")
+
+    def test_nonempty_directory_size_remains_strict_decimal(self):
+        for size in (" ", "+0", "-0", "1.0", "１", "9" * 13):
+            with self.subTest(size=size):
+                self.assertEqual(self.rejected(("fixture\t40755\t0\t0\t" + size + "\n").encode())["bom_failed_layout_class"], "numeric-field")
+
+    def test_numeric_sizes_remain_unmodified_for_directory_regular_and_symlink(self):
+        for mode in ("40755", "100644", "120777"):
+            for size in ("0", "12", "999999999999"):
+                with self.subTest(mode=mode, size=size):
+                    result = M.bom_projection((M.APP_REL + "\t" + mode + "\t0\t0\t" + size + "\n").encode(), P)
+                    self.assertEqual(result["rows"][0]["requested_columns_as_strings"], [mode, "0", "0", size])
+
+    def test_empty_directory_size_does_not_bypass_path_or_alias_refusals(self):
+        with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name$"):
+            M.bom_projection(b"../fixture\t40755\t0\t0\t\n", P)
+        with self.assertRaisesRegex(M.Refusal, "^bom-path-alias-or-duplicate$"):
+            M.bom_projection(b"Applications/Caf\xc3\xa9\t40755\t0\t0\t\nApplications/Cafe\xcc\x81\t40755\t0\t0\t\n", P)
+
+    def test_private_directory_path_is_unprojected_and_size_not_invented(self):
+        result = M.bom_projection(b"private-fixture-directory\t40755\t0\t0\t\n", P)
+        self.assertEqual(result["rows"], [])
+        self.assertEqual(result["unprojected_path_count"], 1)
+        self.assertNotIn("private-fixture-directory", json.dumps(result))
+
+    def test_mixed_rows_keep_directory_absence_and_regular_value_distinct(self):
+        raw = (M.APP_REL + "\t40755\t0\t0\t\n" + M.APP_REL + "/Contents/Info.plist\t100644\t0\t0\t123\n").encode()
+        result = M.bom_projection(raw, P)
+        self.assertEqual([row["requested_columns_as_strings"][-1] for row in result["rows"]], ["", "123"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

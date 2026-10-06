@@ -549,7 +549,11 @@ def bom_projection(raw, parser):
         if (
             len(columns) != 5
             or not re.fullmatch(r"[0-7]{1,8}", columns[1])
-            or any(not re.fullmatch(r"[0-9]{1,12}", field) for field in columns[2:])
+            or any(not re.fullmatch(r"[0-9]{1,12}", field) for field in columns[2:4])
+            or (
+                not re.fullmatch(r"[0-9]{1,12}", columns[4])
+                and not (columns[4] == "" and stat.S_ISDIR(int(columns[1], 8)))
+            )
         ):
             reason = (
                 "column-count" if len(columns) != 5 else

@@ -181,6 +181,133 @@ def validate_posix_byte_binding(report, archives, target, assets, launchers=()):
         raise ValueError("unexpected package runtime binding for macOS")
 
 
+GUI_PYZ_REQUIRED_MODULES = (
+    "remote_ops_workspace.gui_terminal",
+    "remote_ops_workspace.gui_processes",
+    "remote_ops_workspace.gui_values",
+    "remote_ops_workspace.terminal_output",
+)
+GUI_PYZ_ARCHIVE_PATHS = {
+    "windows-x64": "build/native/windows/pyinstaller-dist/row-gui.exe",
+    "windows-arm64": "build/native/windows/pyinstaller-dist/row-gui.exe",
+    "macos-x64": (
+        "build/native/macos/pyinstaller-dist/Remote Ops Workspace.app/"
+        "Contents/MacOS/Remote Ops Workspace"
+    ),
+    "macos-arm64": (
+        "build/native/macos/pyinstaller-dist/Remote Ops Workspace.app/"
+        "Contents/MacOS/Remote Ops Workspace"
+    ),
+}
+GUI_PYZ_CLI_ARCHIVE_PATHS = {
+    "windows-x64": "build/native/windows/pyinstaller-dist/row.exe",
+    "windows-arm64": "build/native/windows/pyinstaller-dist/row.exe",
+    "windows-x86": "build/native/windows/pyinstaller-dist/row.exe",
+    "linux-x86_64": "build/native/linux/pyinstaller-dist/row",
+    "linux-aarch64": "build/native/linux/pyinstaller-dist/row",
+}
+
+
+def validate_gui_pyz_modules(archives, target):
+    """Return a bounded result from archive_inventory records, without imports.
+
+    A failed result must make native_pyinstaller_inventory_complete false.
+    Ordinary modules use the recorded JSON PYZ entry [0, position, length].
+    This verifies presence and entry shape, not compiled/source byte equality.
+    """
+    expected_path = GUI_PYZ_ARCHIVE_PATHS.get(target) if type(target) is str else None
+    report = {
+        "schema_version": 1,
+        "status": "not-required" if expected_path is None else "failed",
+        "scope": "Required GUI module presence and typed PYZ TOC entries; no compiled/source byte comparison",
+        "role": None if expected_path is None else "gui",
+        "path": expected_path,
+        "artifact_sha256": None,
+        "required_modules": [] if expected_path is None else list(GUI_PYZ_REQUIRED_MODULES),
+        "observed_presence": {} if expected_path is None else dict.fromkeys(GUI_PYZ_REQUIRED_MODULES, False),
+        "errors": [],
+        "cli_observations": [],
+    }
+    if type(target) is not str or (target not in GUI_PYZ_ARCHIVE_PATHS and target not in GUI_PYZ_CLI_ARCHIVE_PATHS):
+        report["status"] = "failed"
+        report["errors"].append("unsupported-native-target")
+        return report
+    cli_path = GUI_PYZ_CLI_ARCHIVE_PATHS.get(target)
+    if cli_path is not None and type(archives) is list:
+        matching_cli = [
+            row for row in archives
+            if type(row) is dict and type(row.get("path")) is str
+            and row["path"].replace("\\", "/") == cli_path
+        ]
+        if len(matching_cli) == 1:
+            cli = matching_cli[0]
+            cli_hash = cli.get("artifact_sha256")
+            pyz = cli.get("pyz_toc")
+            report["cli_observations"] = [{
+                "role": "cli",
+                "path": cli_path,
+                "artifact_sha256": cli_hash.lower() if type(cli_hash) is str and len(cli_hash) == 64 and all(char in "0123456789abcdefABCDEF" for char in cli_hash) else None,
+                "gui_modules_required": False,
+                "observed_presence": {module: type(pyz) is dict and module in pyz for module in GUI_PYZ_REQUIRED_MODULES},
+            }]
+    if expected_path is None:
+        return report
+    if type(archives) is not list or any(type(row) is not dict for row in archives):
+        report["errors"].append("archive-inventory-malformed")
+        return report
+    matching = [
+        row
+        for row in archives
+        if type(row.get("path")) is str
+        and row["path"].replace("\\", "/") == expected_path
+    ]
+    if len(matching) != 1:
+        report["errors"].append("expected-gui-archive-not-unique")
+        return report
+    archive = matching[0]
+    if "inventory_error" in archive:
+        report["errors"].append("gui-archive-inventory-error")
+    artifact_hash = archive.get("artifact_sha256")
+    if (
+        type(artifact_hash) is str
+        and len(artifact_hash) == 64
+        and all(char in "0123456789abcdefABCDEF" for char in artifact_hash)
+    ):
+        report["artifact_sha256"] = artifact_hash.lower()
+    else:
+        report["errors"].append("gui-artifact-sha256-malformed")
+    toc = archive.get("toc")
+    if (
+        type(toc) is not list
+        or not toc
+        or any(type(entry) is not dict for entry in toc)
+        or sum(entry.get("name") == "PYZ.pyz" for entry in toc) != 1
+    ):
+        report["errors"].append("gui-carchive-toc-malformed")
+    pyz = archive.get("pyz_toc")
+    if type(pyz) is not dict or not pyz:
+        report["errors"].append("gui-pyz-toc-malformed")
+        return report
+    for module in GUI_PYZ_REQUIRED_MODULES:
+        if module not in pyz:
+            report["errors"].append("required-gui-module-missing:" + module)
+            continue
+        report["observed_presence"][module] = True
+        entry = pyz[module]
+        if (
+            type(entry) is not list
+            or len(entry) != 3
+            or any(type(value) is not int for value in entry)
+            or entry[0] != 0
+            or entry[1] <= 0
+            or entry[2] <= 0
+        ):
+            report["errors"].append("required-gui-pyz-entry-malformed:" + module)
+    if not report["errors"]:
+        report["status"] = "passed"
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=SCOPE)
     parser.add_argument("phase", choices=["bind", "finish"])
@@ -308,10 +435,12 @@ def main():
         if "inventory_error" not in item and item.get("toc")
     }
     record["expected_pyinstaller_archives"] = sorted(expected_archives)
+    record["required_gui_pyz_modules"] = validate_gui_pyz_modules(archives, args.target)
     record["native_pyinstaller_inventory_complete"] = (
         args.native_build_outcome == "success"
         and expected_archives.issubset(observed_archives)
         and not any("inventory_error" in item for item in archives)
+        and record["required_gui_pyz_modules"]["status"] in ("passed", "not-required")
     )
     record["native_pyinstaller_inventory_scope"] = (
         "Expected executable CArchive parsing only; excludes external/installed runtime closure and independent runtime/license approval"

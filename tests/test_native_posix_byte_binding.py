@@ -502,7 +502,8 @@ def test_actual_finish_fails_closed_when_successful_posix_smoke_lacks_binding(
         lambda path: {
             "path": path.relative_to(tmp_path).as_posix(),
             "artifact_sha256": binding.digest(path),
-            "toc": ["fixture"],
+            "toc": [{"name": "PYZ.pyz"}],
+            "pyz_toc": {module: [0, 1, 1] for module in proof.GUI_PYZ_REQUIRED_MODULES},
         },
     )
     monkeypatch.setattr(

@@ -1,0 +1,60 @@
+name: Chrome for Testing nonexecuting acquisition
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cft-acquisition-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  acquire-official-cft:
+    if: >-
+      github.repository == 'Yunushan/remote-ops-workspace' &&
+      (github.event_name == 'push' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      QUALIFICATION_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select exact acquisition source
+        shell: bash
+        run: |
+          test "$QUALIFICATION_SOURCE_SHA" != ""
+          /usr/bin/git -c core.hooksPath=/dev/null checkout --detach "$QUALIFICATION_SOURCE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14.7'
+          architecture: x64
+      - name: Acquire and inventory without vendor execution
+        shell: bash
+        run: python -I -S -B tests/catalogue-browser/entry.py acquire-cft
+      - name: Validate bounded acquisition receipt
+        id: receipt
+        if: always()
+        shell: bash
+        run: python -I -S -B tests/catalogue-browser/entry.py publish-cft
+      - name: Save only public source-bound vendor inventory
+        if: always() && steps.receipt.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cft-acquisition-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .tmp/catalogue-cft-upload/acquisition.json
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: true

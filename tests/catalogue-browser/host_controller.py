@@ -318,7 +318,8 @@ def chrome_file_note(public, stage):
     public['chrome_file_stage'] = stage
 
 
-def source_guard(repo, context, registry, env, deadline, *, preparation=None):
+def source_guard(repo, context, registry, env, deadline, *, preparation=None, workflow_path=WORKFLOW):
+    need(workflow_path in (WORKFLOW, '.github/workflows/chrome-for-testing-acquisition.yml'))
     git = Path('/usr/bin/git')
     file_pin(git, root_owned=True, elf=True)
     def git_output(*args):
@@ -341,18 +342,18 @@ def source_guard(repo, context, registry, env, deadline, *, preparation=None):
             pin = file_pin(path, maximum=1048576)
             rows.append({'path': path.relative_to(repo).as_posix(), 'sha256': pin['sha256'], 'size': pin['size']})
     need(set(manifest['gate_inputs']) == {row['path'].split('/')[-1] for row in rows if row['path'].startswith('tests/catalogue-browser/')})
-    workflow = file_pin(repo / WORKFLOW, maximum=65536)
+    workflow = file_pin(repo / workflow_path, maximum=65536)
     workflow_sha = os.environ.get('GITHUB_WORKFLOW_SHA', '')
     need(re.fullmatch(r'[0-9a-f]{40}', workflow_sha))
     workflow_ref = os.environ.get('GITHUB_WORKFLOW_REF', '')
-    need(workflow_ref.startswith(PUBLIC_REPO + '/' + WORKFLOW + '@'))
+    need(workflow_ref.startswith(PUBLIC_REPO + '/' + workflow_path + '@'))
     if preparation is not None:
         preparation('workflow-command')
-    observed_workflow = git_output('show', workflow_sha + ':' + WORKFLOW)
+    observed_workflow = git_output('show', workflow_sha + ':' + workflow_path)
     if preparation is not None:
         preparation('workflow-bytes')
     need(hashed(observed_workflow) == workflow['sha256'])
-    rows.append({'path': WORKFLOW, 'sha256': workflow['sha256'], 'size': workflow['size']})
+    rows.append({'path': workflow_path, 'sha256': workflow['sha256'], 'size': workflow['size']})
     if preparation is not None:
         preparation('source-summary')
     return {'head': head, 'tree': tree, 'bytes': hashed(packed(rows)), 'workflow': workflow['sha256']}

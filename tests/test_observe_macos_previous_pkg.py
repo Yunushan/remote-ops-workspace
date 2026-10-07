@@ -1704,5 +1704,245 @@ class ReceiptCommandDiagnosticTests(unittest.TestCase):
             self.assertNotIn(key, context["observed"])
 
 
+class ReceiptFilesStreamingTests(unittest.TestCase):
+    def projection(self, raw, *, width=65536, metadata=None, maximum=None):
+        kwargs = {} if maximum is None else {"maximum": maximum}
+        value = M.ReceiptFilesProjection(info() if metadata is None else metadata, P, **kwargs)
+        for start in range(0, len(raw), width):
+            value.feed(raw[start:start + width])
+        value.finish()
+        return value
+
+    def test_every_chunk_boundary_matches_whole_reference_splitlines(self):
+        raw = (".\r\nCaf\u00e9\vother\fthird\x1cfourth\x1dfifth\x1esixth\x85seventh"
+            "\u2028eighth\u2029" + M.APP_REL + "\rfinal").encode()
+        expected = M.receipt_projection(info(), raw, P)
+        for boundary in range(len(raw) + 1):
+            with self.subTest(boundary=boundary):
+                value = M.ReceiptFilesProjection(info(), P)
+                value.feed(raw[:boundary])
+                value.feed(raw[boundary:])
+                value.finish()
+                self.assertEqual(value.result(), expected)
+                self.assertEqual(value.line, [])
+                self.assertLessEqual(len(value.decoder.getstate()[0]), 3)
+
+    def test_empty_terminal_separator_and_unterminated_rows_match_reference(self):
+        for raw in (b"", b"a", b"a\n", b"a\r", b"a\r\n", b"a\r\nb"):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.projection(raw, width=1).result(), M.receipt_projection(info(), raw, P))
+        with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name$"):
+            self.projection(b"\n")
+
+    def test_valid_above_old_buffer_bound_checks_unrelated_rows_and_final_app(self):
+        raw = b"".join((f"private-unrelated-{index:05d}-" + "x" * 140 + "\n").encode()
+            for index in range(29999)) + M.APP_REL.encode() + b"\n"
+        self.assertGreater(len(raw), M.MAX_PUBLIC)
+        self.assertLess(len(raw), M.MAX_RECEIPT_FILE_BYTES)
+        value = self.projection(raw)
+        row = value.result()
+        self.assertEqual(row["path_count"], M.MAX_ROWS)
+        self.assertEqual(row["lexical_app_claim_count"], 1)
+        self.assertEqual(row["files_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(value.raw_bytes, len(raw))
+        self.assertEqual(len(value.keys), M.MAX_ROWS)
+        self.assertNotIn("private-unrelated", json.dumps(row))
+        self.assertFalse(any(isinstance(item, bytearray) for item in vars(value).values()))
+
+    def test_aliases_anywhere_after_relevance_remain_refused(self):
+        for tail in ("Caf\u00e9\nCafe\u0301\n", "unrelated\nUNRELATED\n", M.APP_REL + "\n"):
+            with self.subTest(tail=tail):
+                with self.assertRaisesRegex(M.Refusal, "^receipt-path-alias-or-duplicate$"):
+                    self.projection((M.APP_REL + "\n" + tail).encode(), width=1)
+
+    def test_base_root_alias_and_data_projection_match_unchanged_reference(self):
+        for location, raw in (("/Applications", b"Remote Ops Workspace.app\nother"),
+            ("/", (M.APP_REL.lower() + "\nSystem/Volumes/Data/" + M.APP_REL + "\n").encode()),
+            ("/fixture-base/", b".\nchild\n")):
+            with self.subTest(location=location):
+                metadata = info(**{"install-location": location})
+                self.assertEqual(self.projection(raw, metadata=metadata, width=3).result(),
+                    M.receipt_projection(metadata, raw, P))
+
+    def test_bad_utf8_line_names_and_row_bound_fail_before_result(self):
+        cases = (b"\xff", b"a\n\xc3", b"a\n../bad\n", b"a\n/absolute\n", b"x" * 1025,
+            b"a\n\n", b"a\x00\n")
+        for raw in cases:
+            with self.subTest(raw=raw[:16]):
+                with self.assertRaises(M.Refusal):
+                    self.projection(raw, width=1)
+        raw = b"".join(f"row-{index}\n".encode() for index in range(M.MAX_ROWS + 1))
+        with self.assertRaisesRegex(M.Refusal, "^receipt-metadata-layout-unobserved$"):
+            self.projection(raw)
+
+    def test_derived_limit_and_remaining_budget_exact_eof_and_sentinel(self):
+        self.assertEqual(M.MAX_RECEIPT_FILE_BYTES, 30810000)
+        self.assertEqual(M.MAX_RECEIPT_FILE_BYTES, M.MAX_ROWS * (1024 + 3))
+        value = self.projection(b"a\nb\n", maximum=4)
+        self.assertEqual(value.result()["path_count"], 2)
+        self.assertEqual(value.raw_bytes, 4)
+        charged = []
+        stream = M.ReceiptCommandStream(M.ReceiptFilesProjection(info(), P, maximum=4), charged.append)
+        stream.consume(0, b"a\nb\n")
+        self.assertEqual(stream.read_limit(0), 1)
+        with self.assertRaisesRegex(M.EvidenceError, "^command-output-bound-or-read$"):
+            stream.consume(0, b"x")
+        self.assertEqual(charged, [4, 1])
+        facts = stream.snapshot()
+        self.assertEqual(facts["receipt_stream_stdout_bytes"], 5)
+        self.assertTrue(facts["receipt_stream_hashes_partial"])
+        self.assertFalse(facts["receipt_stream_complete"])
+
+    def mock_capture(self, raw, *, stderr=b"", mode="ok", prior_bytes=0, private=None):
+        clock, cleanup = [100], []
+        class Thread:
+            def __init__(self, *, target, args=(), daemon=False):
+                self.target, self.args = target, args
+                self.live = mode == "live-pipe" and args[1] == 0
+            def start(self):
+                if not self.live:
+                    self.target(*self.args)
+            def join(self, _timeout):
+                pass
+            def is_alive(self):
+                return self.live
+        class ReadError:
+            def read(self, _maximum):
+                raise OSError("PRIVATE read error")
+            def close(self):
+                pass
+        class Child:
+            def __init__(self):
+                self.stdout = ReadError() if mode == "read-error" else io.BytesIO(raw)
+                self.stderr, self.stdin, self.returncode = io.BytesIO(stderr), None, None
+            def wait(self, **_kwargs):
+                if mode == "timeout":
+                    clock[0] = 131
+                    raise M.subprocess.TimeoutExpired("PRIVATE argv", 1)
+                if mode == "late-exit":
+                    clock[0] = 131
+                self.returncode = 1 if mode == "nonzero" else 0
+                return self.returncode
+        child = Child()
+        def terminate_owned_process(process, timeout_seconds):
+            self.assertIs(process, child)
+            self.assertEqual(timeout_seconds, 5)
+            cleanup.append(process)
+            process.returncode = -15
+        context = {"phase": "receipt-info-and-files", "observed": {
+            "receipt_operation": "files", "receipt_query_index": 5, "receipts_queried": 4}}
+        with patch.object(M.os, "name", "nt"), patch.object(M.time, "monotonic", side_effect=lambda: clock[0]), \
+            patch.object(M.threading, "Thread", Thread), patch.object(M.subprocess, "Popen", return_value=child) as popen, \
+            patch.object(M, "load_module", return_value=SimpleNamespace(terminate_owned_process=terminate_owned_process)), \
+            patch.object(M, "REFUSAL_CONTEXT", context):
+            commands = M.MetadataCommands()
+            commands.private = private
+            commands.retained_output_bytes = prior_bytes
+            result, refusal = None, None
+            try:
+                result = commands.receipt_files("fixture.receipt", info(), P)
+            except M.Refusal as error:
+                refusal = str(error)
+        return result, refusal, commands, child, cleanup, context["observed"], popen
+
+    def test_actual_capture_streams_hashes_after_zero_exit_without_stdout_retention(self):
+        raw = ("Caf\u00e9\n" + M.APP_REL + "\n").encode()
+        result, refusal, commands, child, cleanup, facts, popen = self.mock_capture(raw)
+        self.assertIsNone(refusal)
+        self.assertEqual(result, M.receipt_projection(info(), raw, P))
+        self.assertEqual(commands.retained_output_bytes, len(raw))
+        self.assertEqual(child.returncode, 0)
+        self.assertEqual(cleanup, [])
+        self.assertTrue(facts["receipt_stream_complete"])
+        self.assertFalse(facts["receipt_stream_hashes_partial"])
+        self.assertEqual(facts["receipt_stream_stdout_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(facts["command_stdout_bytes"], 0)
+        self.assertEqual(facts["receipts_queried"], 4)
+        self.assertNotIn("all_listed_receipts_queried", facts)
+        self.assertEqual(popen.call_args.args[0], ["/usr/sbin/pkgutil", "--files", "fixture.receipt"])
+        self.assertEqual(popen.call_args.kwargs["env"]["LC_ALL"], "en_US.UTF-8")
+
+    def test_parser_stderr_exit_read_and_pipe_failures_clean_only_retained_child(self):
+        cases = ((b"a\na\n", b"", "ok", "receipt-path-alias-or-duplicate"),
+            (b"a\n\xc3", b"", "ok", "receipt-metadata-layout-unobserved"),
+            (b"a\n", b"PRIVATE warning", "ok", "receipt-files-stderr-unobserved"),
+            (b"a\n", b"", "nonzero", "command-unexpected-exit"),
+            (b"a\n", b"", "read-error", "command-output-bound-or-read"),
+            (b"a\n", b"", "live-pipe", "command-pipe-lifetime-or-bound"),
+            (b"a\n", b"", "late-exit", "command-late-completed-exit"),
+            (b"a\n", b"", "timeout", "command-timeout"))
+        for raw, stderr, mode, expected in cases:
+            with self.subTest(mode=mode, expected=expected):
+                result, refusal, commands, child, cleanup, facts, _popen = self.mock_capture(raw, stderr=stderr, mode=mode)
+                self.assertIsNone(result)
+                self.assertEqual(refusal, expected)
+                self.assertTrue(commands.uncertain)
+                self.assertEqual(cleanup, [child])
+                self.assertTrue(commands.calls[0]["leader_cleanup_attempted"])
+                self.assertFalse(facts["receipt_stream_complete"])
+                self.assertTrue(facts["receipt_stream_hashes_partial"])
+                self.assertEqual(facts["receipts_queried"], 4)
+                self.assertNotIn("receipt_files_sha256", facts)
+                self.assertNotIn("PRIVATE", json.dumps(facts))
+
+    def test_aggregate_charges_stdout_stderr_and_blocks_resuming_partial_query(self):
+        result, refusal, commands, _child, _cleanup, facts, _popen = self.mock_capture(
+            b"a\n", stderr=b"xy", prior_bytes=M.MAX_PRIVATE_COMMAND_BYTES - 3)
+        self.assertIsNone(result)
+        self.assertEqual(refusal, "metadata-command-or-aggregate-bound")
+        self.assertEqual(commands.retained_output_bytes, M.MAX_PRIVATE_COMMAND_BYTES + 1)
+        self.assertTrue(commands.uncertain)
+        self.assertEqual(facts["receipt_stream_stdout_bound_bytes"], 3)
+        self.assertEqual(facts["receipt_stream_stdout_bytes"], 2)
+        self.assertEqual(facts["receipt_stream_stderr_bytes"], 2)
+        with self.assertRaisesRegex(M.Refusal, "^metadata-overall-deadline$"):
+            commands.remaining()
+
+    def test_invalid_info_identifier_and_command_budget_refuse_before_launch(self):
+        with patch.object(M.subprocess, "Popen", side_effect=AssertionError("no launch")) as popen:
+            for identifier, metadata in (("../private", info()), ("fixture.receipt", b"not a plist"),
+                ("fixture.receipt", info(**{"install-location": "relative"})),
+                ("fixture.receipt", info(**{"install-location": "/../escape"}))):
+                with self.subTest(identifier=identifier):
+                    with self.assertRaises(M.Refusal):
+                        M.MetadataCommands().receipt_files(identifier, metadata, P)
+            commands = M.MetadataCommands()
+            commands.calls = [{}] * 4050
+            with self.assertRaisesRegex(M.Refusal, "^metadata-command-or-aggregate-bound$"):
+                commands.receipt_files("fixture.receipt", info(), P)
+            popen.assert_not_called()
+
+    def test_stream_diagnostics_are_typed_partial_scoped_and_operation_cleared(self):
+        context = {"phase": "receipt-info-and-files", "observed": {"receipt_operation": "files"}}
+        stream = M.ReceiptCommandStream(M.ReceiptFilesProjection(info(), P), lambda _count: None)
+        stream.consume(0, b"a\n")
+        with patch.object(M, "REFUSAL_CONTEXT", context):
+            M.receipt_stream_checkpoint("wait", stream)
+            self.assertTrue(context["observed"]["receipt_stream_hashes_partial"])
+            M.diagnostic_phase("receipt-info-and-files", receipt_stream_stdout_bytes=True,
+                receipt_stream_complete=1, receipt_stream_private_path="PRIVATE")
+            self.assertEqual(context["observed"]["receipt_stream_stdout_bytes"], 2)
+            self.assertFalse(context["observed"]["receipt_stream_complete"])
+            self.assertNotIn("receipt_stream_private_path", context["observed"])
+            M.diagnostic_phase("receipt-info-and-files", receipt_operation="info", receipt_query_index=6)
+            self.assertFalse(any(key.startswith("receipt_stream_") for key in context["observed"]))
+
+
+    def test_actual_private_workspace_streams_without_stdout_or_stderr_artifact(self):
+        raw = ("private-unrelated\n" + M.APP_REL + "\n").encode()
+        private = M.ROOT / "fixture-private-no-write"
+        with patch.object(M.Path, "write_bytes", side_effect=AssertionError("no raw artifact"), create=True) as write:
+            result, refusal, commands, child, cleanup, facts, _popen = self.mock_capture(raw, private=private)
+        self.assertIsNone(refusal)
+        self.assertIs(commands.private, private)
+        self.assertEqual(result, M.receipt_projection(info(), raw, P))
+        self.assertEqual(child.returncode, 0)
+        self.assertEqual(cleanup, [])
+        self.assertTrue(facts["receipt_stream_complete"])
+        self.assertEqual(facts["command_stdout_bytes"], 0)
+        self.assertEqual(facts["command_stderr_bytes"], 0)
+        write.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

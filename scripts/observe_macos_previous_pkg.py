@@ -7,6 +7,7 @@ The default plan action performs no native operation or network request.
 from __future__ import annotations
 
 import argparse
+import codecs
 import ctypes
 import hashlib
 import importlib.util
@@ -37,6 +38,8 @@ APP_ID = "io.github.remoteopsworkspace.app"
 MAX_PKG = 150 * 1024 * 1024
 MAX_PUBLIC = 4 * 1024 * 1024
 MAX_ROWS = 30000
+# Accepted bytes per receipt query; retained stdout remains a bounded line.
+MAX_RECEIPT_FILE_BYTES = MAX_ROWS * (1024 + 3)
 MAX_NODES = 30000
 MAX_XML = 4 * 1024 * 1024
 MAX_XML_DEPTH = 24
@@ -83,12 +86,19 @@ COMMAND_DIAGNOSTIC_STAGES = frozenset((
     "launch", "pipe-start", "wait", "exit-deadline", "pipe-drain", "output-deadline",
     "private-output", "expected-exit", "returned",
 ))
+RECEIPT_STREAM_DIAGNOSTIC_KEYS = (
+    "receipt_stream_stdout_bytes", "receipt_stream_stdout_sha256", "receipt_stream_stdout_bound_bytes",
+    "receipt_stream_stderr_bytes", "receipt_stream_stderr_sha256", "receipt_stream_stderr_bound_bytes",
+    "receipt_stream_stdout_eof", "receipt_stream_stderr_eof", "receipt_stream_complete",
+    "receipt_stream_hashes_partial",
+)
 COMMAND_DIAGNOSTIC_KEYS = (
     "command_stage", "command_stdout_bytes", "command_stdout_sha256", "command_stdout_bound_bytes",
     "command_stderr_bytes", "command_stderr_sha256", "command_stderr_bound_bytes",
     "command_stdout_overflow_observed", "command_stderr_overflow_observed",
     "command_stdout_read_error_observed", "command_stderr_read_error_observed",
     "command_stdin_write_error_observed", "command_live_pipe_threads",
+    *RECEIPT_STREAM_DIAGNOSTIC_KEYS,
 )
 REFUSAL_CODES = frozenset(
     (
@@ -154,6 +164,7 @@ REFUSAL_CODES = frozenset(
         "private-metadata-directory-shape",
         "public-output-bound-or-existing",
         "receipt-location-unobserved",
+        "receipt-files-stderr-unobserved",
         "receipt-metadata-bound",
         "receipt-metadata-layout-unobserved",
         "receipt-namespace-bound-or-alias",
@@ -652,6 +663,183 @@ def receipt_projection(info_raw, files_raw, parser):
     }
 
 
+class ReceiptFilesProjection:
+    """Incremental exact UTF-8/splitlines projection; private aliases stay bounded."""
+
+    def __init__(self, info_raw, parser, *, maximum=MAX_RECEIPT_FILE_BYTES):
+        if len(info_raw) > 65536 or type(maximum) is not int or not 1 <= maximum <= MAX_RECEIPT_FILE_BYTES:
+            raise Refusal("receipt-metadata-bound")
+        try:
+            self.info = plistlib.loads(info_raw)
+        except Exception as exc:
+            raise Refusal("receipt-metadata-layout-unobserved") from exc
+        if (not isinstance(self.info, dict) or not isinstance(self.info.get("volume"), str)
+                or not isinstance(self.info.get("install-location"), str)):
+            raise Refusal("receipt-metadata-layout-unobserved")
+        self.location = self.info["install-location"]
+        if not self.location.startswith("/") or len(self.location.encode()) > 1024:
+            raise Refusal("receipt-location-unobserved")
+        self.base = self.location[1:].removesuffix("/")
+        if self.base:
+            parser.member_name(self.base)
+        self.parser, self.maximum = parser, maximum
+        self.info_sha256 = sha(info_raw)
+        self.decoder = codecs.getincrementaldecoder("utf-8")("strict")
+        self.raw_digest = hashlib.sha256()
+        self.raw_bytes = 0
+        self.line, self.line_bytes, self.after_cr = [], 0, False
+        self.keys = set()
+        self.app_key = alias(APP_REL)
+        self.rows = self.claims = self.aliases = self.data_claims = 0
+        self.finished = False
+
+    def _row(self):
+        self.rows += 1
+        if self.rows > MAX_ROWS:
+            raise Refusal("receipt-metadata-layout-unobserved")
+        name = self.parser.member_name("".join(self.line), root=True)
+        joined = self.base + "/" + name if self.base and name != "." else self.base or name
+        key = alias(joined)
+        if key in self.keys:
+            raise Refusal("receipt-path-alias-or-duplicate")
+        self.keys.add(key)
+        if key == self.app_key or key.startswith(self.app_key + "/"):
+            self.claims += 1
+            self.aliases += int(joined != APP_REL and not joined.startswith(APP_REL + "/"))
+        data_key = "system/volumes/data/" + self.app_key
+        self.data_claims += int(key == data_key or key.startswith(data_key + "/"))
+        self.line.clear()
+        self.line_bytes = 0
+
+    def _text(self, text):
+        for char in text:
+            if self.after_cr:
+                self.after_cr = False
+                if char == "\n":
+                    continue
+            if char in "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029":
+                self._row()
+                self.after_cr = char == "\r"
+            else:
+                self.line_bytes += len(char.encode("utf-8"))
+                if self.line_bytes > 1024:
+                    raise Refusal("unsafe-member-name")
+                self.line.append(char)
+
+    def feed(self, raw):
+        if self.finished or type(raw) is not bytes or len(raw) > 65536:
+            raise Refusal("receipt-metadata-layout-unobserved")
+        if self.raw_bytes + len(raw) > self.maximum:
+            raise Refusal("receipt-metadata-bound")
+        self.raw_bytes += len(raw)
+        self.raw_digest.update(raw)
+        try:
+            self._text(self.decoder.decode(raw, final=False))
+        except UnicodeError as exc:
+            raise Refusal("receipt-metadata-layout-unobserved") from exc
+        if len(self.decoder.getstate()[0]) > 3:
+            raise Refusal("receipt-metadata-layout-unobserved")
+
+    def finish(self):
+        if self.finished:
+            raise Refusal("receipt-metadata-layout-unobserved")
+        try:
+            self._text(self.decoder.decode(b"", final=True))
+        except UnicodeError as exc:
+            raise Refusal("receipt-metadata-layout-unobserved") from exc
+        if self.line:
+            self._row()
+        self.finished = True
+
+    def result(self):
+        if not self.finished:
+            raise Refusal("receipt-metadata-layout-unobserved")
+        return {
+            "info_sha256": self.info_sha256,
+            "files_sha256": self.raw_digest.hexdigest(),
+            "path_count": self.rows,
+            "volume_is_root": self.info["volume"] == "/",
+            "install_location_is_root": self.location == "/",
+            "lexical_app_claim_count": self.claims,
+            "app_alias_claim_count": self.aliases,
+            "data_namespace_claim_count": self.data_claims,
+            "physical_namespace_identity": "unobserved",
+            "receipt_ownership_approval": False,
+        }
+
+
+class ReceiptCommandStream:
+    """Hash and charge every read byte; only an owned successful EOF is complete."""
+
+    def __init__(self, projection, charge):
+        self.projection, self.charge = projection, charge
+        self.bounds = (projection.maximum, 1024 * 1024)
+        self.counts = [0, 0]
+        self.digests = [hashlib.sha256(), hashlib.sha256()]
+        self.eofs = [False, False]
+        self.lock = threading.Lock()
+        self.failure_code = None
+        self.complete = False
+
+    def read_limit(self, index):
+        with self.lock:
+            # One over-bound sentinel may be read only to refuse; it is charged.
+            return min(65536, max(1, self.bounds[index] + 1 - self.counts[index]))
+
+    def consume(self, index, raw):
+        with self.lock:
+            self.counts[index] += len(raw)
+            self.digests[index].update(raw)
+            count = self.counts[index]
+        self.charge(len(raw))
+        if count > self.bounds[index]:
+            raise EvidenceError("command-output-bound-or-read")
+        if index == 0:
+            self.projection.feed(raw)
+
+    def eof(self, index):
+        if index == 0:
+            self.projection.finish()
+        with self.lock:
+            self.eofs[index] = True
+
+    def fail(self, error):
+        code = str(error) if isinstance(error, Refusal) else "receipt-metadata-layout-unobserved"
+        if code not in REFUSAL_CODES:
+            code = "receipt-metadata-layout-unobserved"
+        with self.lock:
+            if self.failure_code is None:
+                self.failure_code = code
+
+    def ready(self):
+        with self.lock:
+            if self.failure_code is not None or not all(self.eofs):
+                raise EvidenceError("command-pipe-lifetime-or-bound")
+            if self.counts[1]:
+                raise Refusal("receipt-files-stderr-unobserved")
+
+    def snapshot(self):
+        with self.lock:
+            return {
+                "receipt_stream_stdout_bytes": self.counts[0],
+                "receipt_stream_stdout_sha256": self.digests[0].hexdigest(),
+                "receipt_stream_stdout_bound_bytes": self.bounds[0],
+                "receipt_stream_stderr_bytes": self.counts[1],
+                "receipt_stream_stderr_sha256": self.digests[1].hexdigest(),
+                "receipt_stream_stderr_bound_bytes": self.bounds[1],
+                "receipt_stream_stdout_eof": self.eofs[0],
+                "receipt_stream_stderr_eof": self.eofs[1],
+                "receipt_stream_complete": self.complete,
+                "receipt_stream_hashes_partial": not self.complete,
+            }
+
+
+def receipt_stream_checkpoint(stage, stream):
+    if (REFUSAL_CONTEXT is not None and REFUSAL_CONTEXT["phase"] == "receipt-info-and-files"
+            and REFUSAL_CONTEXT["observed"].get("receipt_operation") == "files"):
+        diagnostic_phase("receipt-info-and-files", command_stage=stage, **stream.snapshot())
+
+
 def capabilities_projection(raw):
     if len(raw) != 36:
         raise Refusal("getattrlist-capability-layout-unobserved")
@@ -889,11 +1077,18 @@ class Commands:
         limit=4 * 1024 * 1024,
         expected=0,
         stdin_payload: bytes | None = None,
+        _receipt_stream=None,
     ) -> bytes:
         if self.uncertain:
             raise EvidenceError("command-lifetime-uncertain")
         if stdin_payload is not None and len(stdin_payload) > 65536:
             raise EvidenceError("command-stdin-bound")
+        if _receipt_stream is not None and (
+            type(self) is not MetadataCommands or type(_receipt_stream) is not ReceiptCommandStream
+            or stdin_payload is not None or type(expected) is not int or expected != 0
+            or not command_allowed(command, self.private) or command[:2] != ["/usr/sbin/pkgutil", "--files"]
+        ):
+            raise Refusal("metadata-command-or-aggregate-bound")
         if os.name == "posix":
             import signal
 
@@ -919,12 +1114,27 @@ class Commands:
 
         def drain(stream, index, bound):
             try:
-                while chunk := stream.read(65536):
+                while chunk := stream.read(_receipt_stream.read_limit(index) if _receipt_stream is not None else 65536):
+                    if _receipt_stream is not None:
+                        try:
+                            _receipt_stream.consume(index, chunk)
+                        except BaseException as exc:
+                            _receipt_stream.fail(exc)
+                            failed.set()
+                            return
+                        if index == 0:
+                            continue
                     if len(buffers[index]) + len(chunk) > bound:
                         stream_overflow[index].set()
                         overflow.set()
                     else:
                         buffers[index].extend(chunk)
+                if _receipt_stream is not None:
+                    try:
+                        _receipt_stream.eof(index)
+                    except BaseException as exc:
+                        _receipt_stream.fail(exc)
+                        failed.set()
             except OSError:
                 stream_read_failed[index].set()
                 failed.set()
@@ -964,6 +1174,8 @@ class Commands:
                 thread.start()
             command_stage = "wait"
             while True:
+                if _receipt_stream is not None and _receipt_stream.failure_code is not None:
+                    raise Refusal(_receipt_stream.failure_code)
                 if overflow.is_set() or failed.is_set():
                     raise EvidenceError("command-output-bound-or-read")
                 wait = deadline - time.monotonic()
@@ -980,11 +1192,17 @@ class Commands:
             command_stage = "pipe-drain"
             for thread in threads:
                 thread.join(max(0, min(1, deadline - time.monotonic())))
+            if _receipt_stream is not None and _receipt_stream.failure_code is not None:
+                raise Refusal(_receipt_stream.failure_code)
             if any(thread.is_alive() for thread in threads) or overflow.is_set() or failed.is_set():
                 raise EvidenceError("command-pipe-lifetime-or-bound")
             command_stage = "output-deadline"
             if time.monotonic() >= deadline:
                 raise EvidenceError("command-late-completed-output")
+            if _receipt_stream is not None:
+                if type(exit_code) is not int or exit_code != expected:
+                    raise EvidenceError("command-unexpected-exit")
+                _receipt_stream.ready()
         except BaseException as exc:
             self.uncertain = True
             reason = type(exc).__name__
@@ -1019,20 +1237,26 @@ class Commands:
                     stdin_write_failed.is_set()),
                 live_threads=sum(thread.is_alive() for thread in threads),
             )
+            if _receipt_stream is not None:
+                receipt_stream_checkpoint(command_stage, _receipt_stream)
             if not any(thread.is_alive() for thread in threads):
                 child.stdout.close()
                 child.stderr.close()
                 if child.stdin is not None and not child.stdin.closed:
                     child.stdin.close()
         receipt_command_checkpoint("private-output")
-        if self.private is not None:
+        if self.private is not None and _receipt_stream is None:
             serial = len(self.calls)
             (self.private / f"command-{serial}.stdout").write_bytes(buffers[0])
             (self.private / f"command-{serial}.stderr").write_bytes(buffers[1])
         receipt_command_checkpoint("expected-exit")
         if type(exit_code) is not int or exit_code != expected:
             raise EvidenceError("command-unexpected-exit")
+        if _receipt_stream is not None:
+            _receipt_stream.complete = True
         receipt_command_checkpoint("returned")
+        if _receipt_stream is not None:
+            receipt_stream_checkpoint("returned", _receipt_stream)
         return bytes(buffers[0] + buffers[1])
 
 
@@ -1238,6 +1462,7 @@ class MetadataCommands(Commands):
     def __init__(self):
         super().__init__()
         self.retained_output_bytes = 0
+        self.output_lock = threading.Lock()
 
     def remaining(self):
         remaining = 1500 - (time.monotonic() - self.started)
@@ -1268,6 +1493,30 @@ class MetadataCommands(Commands):
             raise Refusal("metadata-command-or-aggregate-bound")
         self.remaining()
         return result
+
+
+    def receipt_files(self, identifier, info_raw, parser):
+        """Only the full validated pkgutil file namespace may use streaming."""
+        command = ["/usr/sbin/pkgutil", "--files", identifier]
+        if (not command_allowed(command, self.private)
+                or len(self.calls) >= 4050 or self.retained_output_bytes >= MAX_PRIVATE_COMMAND_BYTES):
+            raise Refusal("metadata-command-or-aggregate-bound")
+        self.remaining()
+        projection = ReceiptFilesProjection(info_raw, parser,
+            maximum=min(MAX_RECEIPT_FILE_BYTES, MAX_PRIVATE_COMMAND_BYTES - self.retained_output_bytes))
+
+        def charge(count):
+            with self.output_lock:
+                # Legacy counter name; streamed bytes are processed, never retained.
+                self.retained_output_bytes += count
+                if self.retained_output_bytes > MAX_PRIVATE_COMMAND_BYTES:
+                    raise Refusal("metadata-command-or-aggregate-bound")
+
+        stream = ReceiptCommandStream(projection, charge)
+        super().capture(command, {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "LANG": "en_US.UTF-8", "LC_ALL": "en_US.UTF-8"}, timeout=30, _receipt_stream=stream)
+        self.remaining()
+        return projection.result()
 
 
 def source_binding(root, commands, expected):
@@ -1661,6 +1910,17 @@ def diagnostic_phase(phase, **facts):
                         "command_stdout_read_error_observed", "command_stderr_read_error_observed",
                         "command_stdin_write_error_observed"} and type(value) is bool)
                     or (key == "command_live_pipe_threads" and type(value) is int and 0 <= value <= 3)
+                    or (key in {"receipt_stream_stdout_sha256", "receipt_stream_stderr_sha256"}
+                        and type(value) is str and re.fullmatch(r"[0-9a-f]{64}", value))
+                    or (key == "receipt_stream_stdout_bytes" and type(value) is int
+                        and 0 <= value <= MAX_RECEIPT_FILE_BYTES + 1)
+                    or (key == "receipt_stream_stdout_bound_bytes" and type(value) is int
+                        and 1 <= value <= MAX_RECEIPT_FILE_BYTES)
+                    or (key == "receipt_stream_stderr_bytes" and type(value) is int
+                        and 0 <= value <= 1024 * 1024 + 1)
+                    or (key == "receipt_stream_stderr_bound_bytes" and type(value) is int and value == 1024 * 1024)
+                    or (key in {"receipt_stream_stdout_eof", "receipt_stream_stderr_eof",
+                        "receipt_stream_complete", "receipt_stream_hashes_partial"} and type(value) is bool)
                 ):
                     REFUSAL_CONTEXT["observed"][key] = value
             elif phase == "readonly-system-tool":
@@ -1904,12 +2164,11 @@ def observe(root):
             ["/usr/sbin/pkgutil", "--pkg-info-plist", identifier], timeout=30, limit=65536
         )
         diagnostic_phase("receipt-info-and-files", receipt_operation="files")
-        files = commands.capture(["/usr/sbin/pkgutil", "--files", identifier], timeout=30)
+        row = commands.receipt_files(identifier, info, parser)
         diagnostic_phase("receipt-info-and-files", receipt_operation="projection")
         diagnostic_phase(
-            "receipt-info-and-files", receipt_info_sha256=sha(info), receipt_files_sha256=sha(files)
+            "receipt-info-and-files", receipt_info_sha256=row["info_sha256"], receipt_files_sha256=row["files_sha256"]
         )
-        row = receipt_projection(info, files, parser)
         hashes.append(
             {
                 "identifier_sha256": sha(identifier.encode()),

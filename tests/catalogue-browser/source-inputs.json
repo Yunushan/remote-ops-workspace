@@ -1,12 +1,17 @@
 {
   "gate_inputs": [
     "browser_probe.py",
+    "cft-provider-policy.json",
+    "cft_bundle.py",
+    "cft_host.py",
+    "cft_publish.py",
     "entry.py",
     "fixture_server.py",
     "gate_contract.py",
     "host_controller.py",
     "product-source-inventory.json",
     "source-inputs.json",
+    "test_cft_bundle.py",
     "test_contract.py",
     "upload_guard.py"
   ],

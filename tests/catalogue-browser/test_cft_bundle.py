@@ -1,0 +1,645 @@
+"""Authored, unexecuted pure/mocked CfT guards; synthetic ZIPs confer no authority."""
+import contextlib
+import io
+import ssl
+import stat
+import struct
+import unittest
+import urllib.request
+import zipfile
+import zlib
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from types import SimpleNamespace
+from unittest import mock
+
+import cft_bundle as bundle
+
+
+def disabled():
+    return {'schema': 'row.cft-provider-policy.v1', 'enabled': False, 'version': bundle.VERSION,
+        'platform': 'linux64', 'metadata_url': bundle.METADATA_URL, 'metadata': None,
+        'archives': {'chrome': None, 'chromedriver': None},
+        'origin_evidence': 'certificate-and-hostname-verified-official-HTTPS',
+        'independent_vendor_signature': False, 'publisher_license_approval': False,
+        'sandbox_policy': 'unchanged-default-no-fallback'}
+
+
+def metadata():
+    return {'version': bundle.VERSION, 'revision': '1689415', 'downloads': {
+        asset: [{'platform': 'linux64', 'url': bundle.asset_url(bundle.VERSION, asset)}]
+        for asset in bundle.ASSETS}}
+
+
+def synthetic_zip(*, asset='chrome', names=None, compression=zipfile.ZIP_STORED):
+    memory = io.BytesIO()
+    names = names or [(bundle.EXECUTABLES[asset], stat.S_IFREG | 0o755, b'\x7fELFsynthetic')]
+    with zipfile.ZipFile(memory, 'w', compression=compression) as archive:
+        for name, mode, raw in names:
+            info = zipfile.ZipInfo(name)
+            info.create_system = 3
+            info.external_attr = mode << 16
+            info.compress_type = compression
+            archive.writestr(info, raw)
+    return memory.getvalue()
+
+
+def plan(raw, asset='chrome'):
+    footer = raw[-22:]
+    end = struct.unpack('<4s4H2IH', footer)
+    return bundle.central_plan(footer, raw[end[6]:end[6] + end[5]], len(raw), asset)
+
+
+class Response:
+    def __init__(self, body, url, *, declared=None, status=200, headers=None):
+        self.body = io.BytesIO(body)
+        self.status = status
+        self.url = url
+        self.closed = False
+        self.headers = {'Content-Length': str(len(body) if declared is None else declared), **(headers or {})}
+
+    def geturl(self):
+        return self.url
+
+    def read(self, count):
+        return self.body.read(count)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.closed = True
+
+
+class Output(io.BytesIO):
+    def fileno(self):
+        return 71
+
+    def close(self):
+        # Retain synthetic output bytes solely for the fixture's assertions.
+        self.was_closed = True
+
+
+def fixture_path_io_refused(*_args, **_kwargs):
+    raise AssertionError('cft-fixture-unmocked-path-IO')
+
+
+class UbuntuFixturePath(PurePosixPath):
+    """Ubuntu lexical paths, with filesystem methods available only as mocks."""
+
+    lstat = stat = mkdir = exists = is_symlink = is_dir = open = read_bytes = fixture_path_io_refused
+    write_bytes = read_text = write_text = unlink = rename = replace = resolve = fixture_path_io_refused
+
+
+class CFTPureFixtureCase(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        lease = contextlib.ExitStack()
+        # Register first so a refusal midway through setup restores prior patches.
+        self.addCleanup(lease.close)
+        lease.enter_context(mock.patch.dict(globals(), {'Path': UbuntuFixturePath}))
+        lease.enter_context(mock.patch.object(bundle, 'Path', UbuntuFixturePath))
+        lease.enter_context(mock.patch.object(bundle, 'ROOT_PARENT', UbuntuFixturePath('/opt')))
+
+
+class FixtureBootstrapTests(unittest.TestCase):
+    def bootstrap_case(self):
+        class BootstrapOnlyCase(CFTPureFixtureCase):
+            def runTest(self):
+                raise AssertionError('fixture-bootstrap-body-dispatch-refused')
+
+        return BootstrapOnlyCase('runTest')
+
+    def test_actual_bootstrap_uses_POSIX_paths_with_windows_originals_and_restores(self):
+        original = (Path, bundle.Path, bundle.ROOT_PARENT)
+        with mock.patch.dict(globals(), {'Path': PureWindowsPath}), \
+             mock.patch.object(bundle, 'Path', PureWindowsPath), \
+             mock.patch.object(bundle, 'ROOT_PARENT', PureWindowsPath('/opt')):
+            simulated = (Path, bundle.Path, bundle.ROOT_PARENT)
+            case = self.bootstrap_case()
+            try:
+                case.setUp()
+                self.assertIs(Path, UbuntuFixturePath)
+                self.assertIs(bundle.Path, UbuntuFixturePath)
+                self.assertEqual(bundle.ROOT_PARENT, UbuntuFixturePath('/opt'))
+                self.assertTrue(Path('/opt/row-cft-' + 'a' * 32).is_absolute())
+                self.assertFalse(PureWindowsPath('/opt/row-cft-' + 'a' * 32).is_absolute())
+                with self.assertRaisesRegex(AssertionError, '^cft-fixture-unmocked-path-IO$'):
+                    Path('/synthetic-never-opened').open('rb')
+                with mock.patch.object(bundle.Path, 'lstat', return_value='mock-only'):
+                    self.assertEqual(Path('/synthetic-never-opened').lstat(), 'mock-only')
+            finally:
+                case.doCleanups()
+            self.assertEqual((Path, bundle.Path, bundle.ROOT_PARENT), simulated)
+        self.assertEqual((Path, bundle.Path, bundle.ROOT_PARENT), original)
+
+    def test_mid_setup_refusal_restores_every_previous_path_provider(self):
+        original = (Path, bundle.Path, bundle.ROOT_PARENT)
+        actual_object_patch = mock.patch.object
+        entered = []
+
+        def refuse_root_parent(target, name, *args, **kwargs):
+            if target is bundle:
+                entered.append(name)
+                if name == 'ROOT_PARENT':
+                    self.assertIs(Path, UbuntuFixturePath)
+                    self.assertIs(bundle.Path, UbuntuFixturePath)
+                    raise RuntimeError('cft-fixture-bootstrap-refused')
+            return actual_object_patch(target, name, *args, **kwargs)
+
+        case = self.bootstrap_case()
+        with mock.patch.object(mock.patch, 'object', side_effect=refuse_root_parent):
+            try:
+                with self.assertRaises(RuntimeError):
+                    case.setUp()
+            finally:
+                case.doCleanups()
+        self.assertEqual(entered, ['Path', 'ROOT_PARENT'])
+        self.assertEqual((Path, bundle.Path, bundle.ROOT_PARENT), original)
+
+
+class PurePolicyAndMetadataTests(CFTPureFixtureCase):
+    def test_disabled_template_cannot_enable_provisioning(self):
+        raw = bundle.packed(disabled())
+        self.assertFalse(bundle.policy(raw, enabled=False)['enabled'])
+        with self.assertRaises(bundle.BundleRefusal):
+            bundle.policy(raw, enabled=True)
+
+    def test_disabled_policy_cannot_carry_unreviewed_hashes(self):
+        value = disabled()
+        value['archives']['chrome'] = {'sha256': '0' * 64}
+        with self.assertRaises(bundle.BundleRefusal):
+            bundle.policy(bundle.packed(value), enabled=False)
+
+    def test_policy_never_promotes_signature_license_or_sandbox(self):
+        for key, value in (('independent_vendor_signature', True), ('publisher_license_approval', True),
+                           ('sandbox_policy', 'no-sandbox'), ('enabled', 0), ('platform', 'win64')):
+            with self.subTest(key=key):
+                record = disabled()
+                record[key] = value
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.policy(bundle.packed(record), enabled=False)
+
+    def test_duplicate_keys_nonfinite_and_unknown_schema_refuse(self):
+        for raw in (b'{"version":"a","version":"b"}', b'{"version":NaN}', b'{"version":Infinity}'):
+            with self.subTest(raw_hash=bundle.hashed(raw)):
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.decode(raw, 65536)
+        value = disabled()
+        value['unexpected'] = True
+        with self.assertRaises(bundle.BundleRefusal):
+            bundle.policy(bundle.packed(value), enabled=False)
+
+    def test_exact_same_version_official_urls_selected(self):
+        value = bundle.select_metadata(bundle.packed(metadata()), bundle.VERSION)
+        self.assertEqual(value, {asset: bundle.asset_url(bundle.VERSION, asset) for asset in bundle.ASSETS})
+
+    def test_wrong_version_alias_duplicate_platform_and_URL_refuse(self):
+        variants = []
+        version = metadata()
+        version['version'] = '154.0.8037.93'
+        variants.append(version)
+        duplicate = metadata()
+        duplicate['downloads']['chrome'] *= 2
+        variants.append(duplicate)
+        for suffix in ('?token=private', '#alias', '/../chrome-linux64.zip'):
+            value = metadata()
+            value['downloads']['chrome'][0]['url'] += suffix
+            variants.append(value)
+        other = metadata()
+        other['downloads']['chrome'][0]['url'] = 'https://storage.googleapis.com.evil.invalid/archive.zip'
+        variants.append(other)
+        for ordinal, value in enumerate(variants):
+            with self.subTest(ordinal=ordinal):
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.select_metadata(bundle.packed(value), bundle.VERSION)
+
+    def test_version_token_is_bounded_and_canonical(self):
+        for value in ('154.0.8037.092', '154.0.8037.92/../a', '1.' * 32, True, '154.0.8037.92?x'):
+            with self.subTest(type_name=type(value).__name__):
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.asset_url(value, 'chrome')
+
+
+class PureZIPPlanTests(CFTPureFixtureCase):
+    def test_complete_regular_plan_preserves_expected_executable(self):
+        raw = synthetic_zip()
+        rows, central = plan(raw)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['path'], bundle.EXECUTABLES['chrome'])
+        self.assertEqual(rows[0]['kind'], 'file')
+        self.assertGreater(central, rows[0]['offset'])
+
+    def test_alias_path_unicode_and_link_members_refuse(self):
+        bad_names = ['chrome-linux64/../chrome', '/chrome-linux64/chrome', 'chrome-linux64//chrome',
+            'chrome-linux64/chrome.', 'chrome-linux64/chrome\\alias', 'chrome-linux64/\u200bhidden',
+            'chrome-linux64/e\u0301', 'chromedriver-linux64/chrome', 'chrome-linux64/C:private']
+        for name in bad_names:
+            with self.subTest(name_hash=bundle.hashed(name.encode())):
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.member_name(name.encode(), 0x800, 'chrome')
+        for mode in (stat.S_IFLNK | 0o777, stat.S_IFREG | 0o4755, stat.S_IFREG | 0o2755):
+            with self.subTest(mode=mode):
+                with self.assertRaises(bundle.BundleRefusal):
+                    plan(synthetic_zip(names=[(bundle.EXECUTABLES['chrome'], mode, b'fake')]))
+
+    def test_case_alias_and_file_directory_collision_refuse(self):
+        cases = [
+            [(bundle.EXECUTABLES['chrome'], stat.S_IFREG | 0o755, b'x'),
+             ('chrome-linux64/Chrome', stat.S_IFREG | 0o755, b'y')],
+            [(bundle.EXECUTABLES['chrome'], stat.S_IFREG | 0o755, b'x'),
+             ('chrome-linux64/a', stat.S_IFREG | 0o444, b'x'),
+             ('chrome-linux64/a/child', stat.S_IFREG | 0o444, b'x')]]
+        for names in cases:
+            with self.subTest(member_count=len(names)):
+                with self.assertRaises(bundle.BundleRefusal):
+                    plan(synthetic_zip(names=names))
+
+    def test_footer_count_comment_ZIP64_and_central_bounds_refuse(self):
+        raw = synthetic_zip()
+        footer = list(struct.unpack('<4s4H2IH', raw[-22:]))
+        end = struct.unpack('<4s4H2IH', raw[-22:])
+        central = raw[end[6]:end[6] + end[5]]
+        for field, value in ((1, 1), (4, 65535), (7, 1), (5, bundle.MAX_CENTRAL + 1), (6, 0xFFFFFFFF)):
+            with self.subTest(field=field):
+                values = footer.copy()
+                values[field] = value
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.central_plan(struct.pack('<4s4H2IH', *values), central, len(raw), 'chrome')
+
+    def test_encryption_unsupported_method_and_false_plain_int_refuse(self):
+        raw = synthetic_zip()
+        end = struct.unpack('<4s4H2IH', raw[-22:])
+        central = raw[end[6]:end[6] + end[5]]
+        for field, value in ((3, 1), (4, 99), (2, 45), (16, 0xFFFFFFFF)):
+            with self.subTest(field=field):
+                header = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+                header[field] = value
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.central_plan(raw[-22:], struct.pack('<4s6H3I5H2I', *header) + central[46:], len(raw), 'chrome')
+        with self.assertRaises(bundle.BundleRefusal):
+            bundle.central_plan(raw[-22:], central, True, 'chrome')
+
+    def test_bounded_raw_deflate_full_EOF_and_no_extra_tail(self):
+        source = b'content' * 1000
+        compressor = zlib.compressobj(wbits=-15)
+        raw = compressor.compress(source) + compressor.flush()
+        row = {'data_start': 0, 'compressed_size': len(raw), 'method': 8}
+        with mock.patch.object(bundle.time, 'monotonic', return_value=1):
+            blocks = list(bundle.member_chunks(io.BytesIO(raw), row, 30))
+        self.assertEqual(b''.join(blocks), source)
+        self.assertTrue(all(len(block) <= bundle.CHUNK for block in blocks))
+        for broken in (raw + b'PRIVATE', raw[:-1]):
+            with self.subTest(length=len(broken)):
+                row = {'data_start': 0, 'compressed_size': len(broken), 'method': 8}
+                with mock.patch.object(bundle.time, 'monotonic', return_value=1):
+                    with self.assertRaises(bundle.BundleRefusal):
+                        list(bundle.member_chunks(io.BytesIO(broken), row, 30))
+
+
+class MockHTTPTests(CFTPureFixtureCase):
+    def fetch(self, response, *, expected=None, tls=None):
+        output = Output()
+        context = tls or SimpleNamespace(check_hostname=True, verify_mode=ssl.CERT_REQUIRED)
+        opener = mock.Mock()
+        opener.open.return_value = response
+        with mock.patch.object(bundle.ssl, 'create_default_context', return_value=context), \
+             mock.patch.object(bundle.urllib.request, 'build_opener', return_value=opener) as build, \
+             mock.patch.object(bundle.os, 'open', return_value=71), \
+             mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
+             mock.patch.object(bundle.os, 'fdopen', return_value=output), \
+             mock.patch.object(bundle.os, 'fsync') as fsync, mock.patch.object(bundle.os, 'fchmod', create=True) as mode, \
+             mock.patch.object(bundle.time, 'monotonic', return_value=1):
+            result = bundle.fetch(bundle.asset_url(bundle.VERSION, 'chrome'), Path('/synthetic/never-created'), 30,
+                maximum=1000, expected=expected)
+        request = opener.open.call_args.args[0]
+        self.assertEqual(request.full_url, response.url)
+        self.assertEqual(request.header_items(), [('Accept-encoding', 'identity')])
+        self.assertIsInstance(build.call_args.args[0], urllib.request.ProxyHandler)
+        self.assertEqual(build.call_args.args[0].proxies, {})
+        self.assertIsInstance(build.call_args.args[1], bundle.NoRedirect)
+        fsync.assert_called_once_with(71)
+        mode.assert_called_once_with(71, 0o400)
+        self.assertTrue(response.closed)
+        return result, output.getvalue()
+
+    def test_complete_credential_free_pinned_response(self):
+        body = b'synthetic ZIP only'
+        expected = {'bytes': len(body), 'sha256': bundle.hashed(body)}
+        observed, raw = self.fetch(Response(body, bundle.asset_url(bundle.VERSION, 'chrome')), expected=expected)
+        self.assertEqual(observed, expected)
+        self.assertEqual(raw, body)
+
+    def test_redirect_header_compression_and_wrong_origin_refuse(self):
+        url = bundle.asset_url(bundle.VERSION, 'chrome')
+        cases = [Response(b'x', url, status=302), Response(b'x', url + '?private'),
+            Response(b'x', url, headers={'Content-Encoding': 'gzip'}),
+            Response(b'x', url, headers={'Transfer-Encoding': 'chunked'})]
+        for response in cases:
+            with self.subTest(status=response.status):
+                with self.assertRaises(bundle.BundleRefusal):
+                    self.fetch(response)
+                self.assertTrue(response.closed)
+
+    def test_truncated_overlong_and_pinned_hash_mismatch_refuse(self):
+        url = bundle.asset_url(bundle.VERSION, 'chrome')
+        cases = [(Response(b'x', url, declared=2), None), (Response(b'xx', url, declared=1), None),
+            (Response(b'x', url), {'bytes': 1, 'sha256': '0' * 64}),
+            (Response(b'x', url), {'bytes': 2, 'sha256': bundle.hashed(b'x')})]
+        for response, expected in cases:
+            with self.subTest(declared=response.headers['Content-Length']):
+                with self.assertRaises(bundle.BundleRefusal):
+                    self.fetch(response, expected=expected)
+                self.assertTrue(response.closed)
+
+    def test_missing_certificate_or_hostname_checks_refuse_before_open(self):
+        for context in (SimpleNamespace(check_hostname=False, verify_mode=ssl.CERT_REQUIRED),
+                        SimpleNamespace(check_hostname=True, verify_mode=ssl.CERT_NONE)):
+            with self.subTest(hostname=context.check_hostname):
+                with mock.patch.object(bundle.ssl, 'create_default_context', return_value=context), \
+                     mock.patch.object(bundle.urllib.request, 'build_opener') as opener:
+                    with self.assertRaises(bundle.BundleRefusal):
+                        bundle.fetch(bundle.METADATA_URL, Path('/unused'), 30, maximum=100)
+                    opener.assert_not_called()
+
+    def test_transport_message_never_becomes_public_refusal(self):
+        opener = mock.Mock()
+        opener.open.side_effect = OSError('PRIVATE URL TOKEN PATH')
+        context = SimpleNamespace(check_hostname=True, verify_mode=ssl.CERT_REQUIRED)
+        with mock.patch.object(bundle.ssl, 'create_default_context', return_value=context), \
+             mock.patch.object(bundle.urllib.request, 'build_opener', return_value=opener), \
+             mock.patch.object(bundle.time, 'monotonic', return_value=1):
+            with self.assertRaises(bundle.BundleRefusal) as observed:
+                bundle.fetch(bundle.METADATA_URL, Path('/unused'), 30, maximum=100)
+        self.assertEqual(str(observed.exception), 'cft-transport-or-write-refused')
+        self.assertIsInstance(observed.exception.__cause__, OSError)
+
+    def test_inherited_CA_override_or_TLS_keylog_refuses_before_context(self):
+        for key in ('SSL_CERT_FILE', 'SSL_CERT_DIR', 'SSLKEYLOGFILE', 'ssl_cert_file'):
+            with self.subTest(key=key):
+                with mock.patch.dict(bundle.os.environ, {key: 'PRIVATE'}, clear=True), \
+                     mock.patch.object(bundle.ssl, 'create_default_context') as context:
+                    with self.assertRaises(bundle.BundleRefusal):
+                        bundle.fetch(bundle.METADATA_URL, Path('/unused'), 30, maximum=100)
+                    context.assert_not_called()
+
+
+class WriterBoundaryTests(CFTPureFixtureCase):
+    def test_root_lease_holds_no_follow_fds_and_creates_only_relative_name(self):
+        info = SimpleNamespace(st_dev=1, st_ino=2, st_size=4096, st_mtime_ns=3,
+            st_ctime_ns=4, st_nlink=2, st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        root = Path('/opt/row-cft-' + 'a' * 32)
+        with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
+             mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73]) as opened, \
+             mock.patch.object(bundle.os, 'fstat', return_value=info), \
+             mock.patch.object(bundle.os, 'O_DIRECTORY', 0x10000, create=True), \
+             mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
+             mock.patch.object(bundle.os, 'mkdir') as created, \
+             mock.patch.object(bundle.os, 'close') as closed:
+            with bundle.root_directory_lease(root, create=True) as observed:
+                self.assertEqual(observed, root)
+                closed.assert_not_called()
+            created.assert_called_once_with(root.name, mode=0o755, dir_fd=72)
+            self.assertTrue(all(call.args[1] & 0x30000 == 0x30000 for call in opened.call_args_list))
+            self.assertEqual(closed.call_args_list, [mock.call(73), mock.call(72), mock.call(71)])
+
+    def test_root_lease_identity_refusal_still_closes_every_acquired_fd(self):
+        info = SimpleNamespace(st_dev=1, st_ino=2, st_size=4096, st_mtime_ns=3,
+            st_ctime_ns=4, st_nlink=2, st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        other = SimpleNamespace(**vars(info) | {'st_ino': 8})
+        with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
+             mock.patch.object(bundle.os, 'open', return_value=71), \
+             mock.patch.object(bundle.os, 'fstat', return_value=other), \
+             mock.patch.object(bundle.os, 'O_DIRECTORY', 0x10000, create=True), \
+             mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
+             mock.patch.object(bundle.os, 'close') as closed:
+            with self.assertRaises(bundle.BundleRefusal):
+                with bundle.root_directory_lease(Path('/opt/row-cft-' + 'a' * 32), create=False):
+                    self.fail('identity mismatch reached root operation')
+            closed.assert_called_once_with(71)
+
+    def test_nonroot_install_refuses_before_new_root_write(self):
+        with mock.patch.object(bundle, 'policy', return_value={}), \
+             mock.patch.object(bundle, 'binding_contract', return_value={}), \
+             mock.patch.object(bundle.os, 'getuid', return_value=1000, create=True), \
+             mock.patch.object(bundle.os, 'geteuid', return_value=1000, create=True), \
+             mock.patch.object(bundle.Path, 'mkdir') as create:
+            with self.assertRaises(bundle.BundleRefusal):
+                bundle.install_pinned(b'fixture no authority', Path('/unused'), Path('/opt/row-cft-' + 'a' * 32), 30, {})
+            create.assert_not_called()
+
+    def test_root_destination_and_ancestor_writer_contract(self):
+        directory = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        with mock.patch.object(bundle.Path, 'lstat', return_value=directory):
+            expected = Path('/opt/row-cft-' + 'a' * 32)
+            self.assertEqual(bundle.root_ancestors(expected), expected)
+            for path in (Path('/tmp/row-cft-' + 'a' * 32), Path('/opt/google/chrome'),
+                         Path('/opt/row-cft-' + 'a' * 32 + '/child')):
+                with self.subTest(path_hash=bundle.hashed(str(path).encode())):
+                    with self.assertRaises(bundle.BundleRefusal):
+                        bundle.root_ancestors(path)
+        for mode, uid in ((stat.S_IFDIR | 0o777, 0), (stat.S_IFLNK | 0o755, 0), (stat.S_IFDIR | 0o755, 1000)):
+            with self.subTest(mode=mode, uid=uid):
+                with mock.patch.object(bundle.Path, 'lstat', return_value=SimpleNamespace(st_mode=mode, st_uid=uid)):
+                    with self.assertRaises(bundle.BundleRefusal):
+                        bundle.root_ancestors(Path('/opt/row-cft-' + 'a' * 32))
+
+    def test_complete_layout_keeps_implicit_directories_and_zero_resource(self):
+        rows = [{'path': 'chrome-linux64/locales/empty', 'kind': 'file', 'size': 0},
+                {'path': 'chromedriver-linux64/', 'kind': 'directory', 'size': 0}]
+        directories, files = bundle.expected_layout(rows)
+        self.assertEqual(directories, {'chrome-linux64', 'chrome-linux64/locales', 'chromedriver-linux64'})
+        self.assertEqual(set(files), {'chrome-linux64/locales/empty'})
+
+
+class PurePublicAcquisitionTests(CFTPureFixtureCase):
+    def checkpoint(self):
+        return {'schema': 'row.cft-acquisition.v1', 'status': 'refused', 'complete': False,
+            'phase': 'chrome-inventory', 'vendor_binary_executed': False, 'genuine_browser_qualification': False,
+            'independent_vendor_signature': False, 'publisher_license_approval': False,
+            'sandbox_policy_changed': False, 'readiness_credit': 0}
+
+    def test_checkpoint_missing_final_cleanup_keeps_unknown_fields_absent(self):
+        raw = bundle.packed(self.checkpoint())
+        self.assertEqual(bundle.public_bytes(raw, bundle.packed(disabled())), raw)
+        self.assertNotIn(b'forced_cleanup_attempted', raw)
+        self.assertNotIn(b'complete_OS_descendants_proved', raw)
+
+    def test_private_error_paths_argv_or_unknown_fields_always_refuse(self):
+        for key in ('exception', 'argv', 'path', 'private_output', 'authorization', 'approval'):
+            with self.subTest(field=key):
+                value = self.checkpoint()
+                value[key] = 'PRIVATE'
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.public_bytes(bundle.packed(value), bundle.packed(disabled()))
+
+    def test_partial_checkpoint_never_promotes_complete_credit_or_binary_execution(self):
+        for key, value in (('complete', True), ('readiness_credit', 1), ('vendor_binary_executed', True),
+                           ('genuine_browser_qualification', True), ('independent_vendor_signature', True),
+                           ('sandbox_policy_changed', True)):
+            with self.subTest(field=key):
+                record = self.checkpoint()
+                record[key] = value
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.public_bytes(bundle.packed(record), bundle.packed(disabled()))
+
+
+class MockInventoryBindingTests(CFTPureFixtureCase):
+    def source_pin(self):
+        return {'bytes': 64, 'sha256': 'a' * 64, 'identity': [1, 2, 64, 3, 4, 1, stat.S_IFREG | 0o400, 1000]}
+
+    def test_bound_inventory_uses_exact_source_pin_and_post_readback(self):
+        before = self.source_pin()
+        observed = {'fixture': 'no vendor authority'}
+        path = Path('/synthetic/archive.zip')
+        with mock.patch.object(bundle, 'stable_file', side_effect=[before, before]) as read, \
+             mock.patch.object(bundle, 'inventory', return_value=observed) as inventory:
+            self.assertIs(bundle.bound_inventory(path, 'chrome', {key: before[key] for key in ('bytes', 'sha256')}, 30), observed)
+            inventory.assert_called_once_with(path, 'chrome', 30, expected_pin=before)
+            self.assertEqual(len(read.call_args_list), 2)
+
+    def test_fetch_hash_or_size_mismatch_refuses_before_member_inventory(self):
+        before = self.source_pin()
+        for changed in ({'bytes': 65, 'sha256': before['sha256']}, {'bytes': 64, 'sha256': 'b' * 64}):
+            with self.subTest(field_count=len(changed)):
+                with mock.patch.object(bundle, 'stable_file', return_value=before), \
+                     mock.patch.object(bundle, 'inventory') as inventory:
+                    with self.assertRaises(bundle.BundleRefusal):
+                        bundle.bound_inventory(Path('/synthetic/archive.zip'), 'chrome', changed, 30)
+                    inventory.assert_not_called()
+
+    def test_archive_change_after_member_inventory_refuses(self):
+        before = self.source_pin()
+        changes = [dict(before) | {'sha256': 'b' * 64}, dict(before) | {'bytes': 65},
+            dict(before) | {'identity': [1, 8, 64, 3, 4, 1, stat.S_IFREG | 0o400, 1000]}]
+        for changed in changes:
+            with self.subTest(field_count=len(changed)):
+                with mock.patch.object(bundle, 'stable_file', side_effect=[before, changed]), \
+                     mock.patch.object(bundle, 'inventory', return_value={'fixture': True}):
+                    with self.assertRaises(bundle.BundleRefusal):
+                        bundle.bound_inventory(Path('/synthetic/archive.zip'), 'chrome',
+                            {key: before[key] for key in ('bytes', 'sha256')}, 30)
+
+
+class ArchiveInput(io.BytesIO):
+    def fileno(self):
+        return 71
+
+
+class RetainedInventoryFDTests(CFTPureFixtureCase):
+    def input_info(self, raw):
+        return SimpleNamespace(st_dev=1, st_ino=2, st_size=len(raw), st_mtime_ns=3,
+            st_ctime_ns=4, st_nlink=1, st_mode=stat.S_IFREG | 0o400, st_uid=1000)
+
+    def source_pin(self, raw):
+        info = self.input_info(raw)
+        return {'bytes': len(raw), 'sha256': bundle.hashed(raw), 'identity': list(bundle.identity(info))}
+
+    def read_inventory(self, raw, expected, *, fd_info=None):
+        info = self.input_info(raw)
+        with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
+             mock.patch.object(bundle.os, 'open', return_value=71), \
+             mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
+             mock.patch.object(bundle.os, 'fdopen', return_value=ArchiveInput(raw)), \
+             mock.patch.object(bundle.os, 'fstat', return_value=fd_info or info), \
+             mock.patch.object(bundle.time, 'monotonic', return_value=1):
+            return bundle.inventory(Path('/synthetic/archive.zip'), 'chrome', 30, expected_pin=expected)
+
+    def test_actual_retained_inventory_fd_hashes_all_synthetic_source_bytes(self):
+        raw = synthetic_zip()
+        result = self.read_inventory(raw, self.source_pin(raw))
+        self.assertEqual(result['entries'], 1)
+        self.assertEqual(result['files'], 1)
+        self.assertEqual(result['inventory'][0]['sha256'], bundle.hashed(b'\x7fELFsynthetic'))
+        self.assertEqual(result['inventory_sha256'], bundle.hashed(bundle.packed(result['inventory'])))
+
+    def test_download_A_and_source_B_same_identity_refuse_before_ZIP_enumeration(self):
+        raw = synthetic_zip()
+        expected = self.source_pin(raw)
+        expected['sha256'] = bundle.hashed(raw[:-1] + bytes([raw[-1] ^ 1]))
+        with mock.patch.object(bundle.zipfile, 'ZipFile') as enumerated:
+            with self.assertRaises(bundle.BundleRefusal):
+                self.read_inventory(raw, expected)
+            enumerated.assert_not_called()
+
+    def test_matching_path_pin_with_changed_opened_fd_identity_refuses(self):
+        raw = synthetic_zip()
+        other = SimpleNamespace(**vars(self.input_info(raw)) | {'st_ino': 8})
+        with mock.patch.object(bundle.zipfile, 'ZipFile') as enumerated:
+            with self.assertRaises(bundle.BundleRefusal):
+                self.read_inventory(raw, self.source_pin(raw), fd_info=other)
+            enumerated.assert_not_called()
+
+
+    def test_changed_full_source_readback_refuses_after_actual_member_inventory(self):
+        raw = synthetic_zip()
+        expected = self.source_pin(raw)
+        changed = dict(expected) | {'sha256': 'b' * 64}
+        with mock.patch.object(bundle, 'archive_stream_pin', side_effect=[expected, changed]) as source:
+            with self.assertRaises(bundle.BundleRefusal):
+                self.read_inventory(raw, expected)
+            self.assertEqual(source.call_count, 2)
+
+
+class FinalAcquisitionRecordTests(CFTPureFixtureCase):
+    def checkpoint(self):
+        return PurePublicAcquisitionTests.checkpoint(self)
+    def final_input(self):
+        record = self.checkpoint()
+        record.update(phase='cleanup', source_unchanged=True, private_acquisition_root_removed=True,
+            forced_cleanup_attempted=False, all_retained_zero_reaped=True, observed_groups_gone=True,
+            complete_OS_descendants_proved=False, elapsed_ms=1,
+            binding={'source_head': '1' * 40, 'source_tree': '2' * 40, 'event_sha': '3' * 40,
+                'source_bytes_sha256': '4' * 64, 'workflow_sha256': '5' * 64,
+                'run_id': '1', 'run_attempt': '1', 'image_version': '20261006.1', 'image_os': 'ubuntu24'})
+        acquired = {'version': bundle.VERSION, 'platform': 'linux64', 'metadata': {'bytes': 2, 'sha256': '0' * 64},
+            'policy_sha256': bundle.hashed(bundle.packed(disabled())),
+            'origin_evidence': 'certificate-and-hostname-verified-official-HTTPS',
+            'independent_vendor_signature': False, 'publisher_license_approval': False,
+            'vendor_binary_executed': False, 'sandbox_policy_changed': False,
+            'genuine_browser_qualification': False, 'readiness_credit': 0, 'archives': {}}
+        for asset in bundle.ASSETS:
+            rows = [{'path': bundle.EXECUTABLES[asset], 'kind': 'file', 'size': 1,
+                'compressed_size': 1, 'mode': 0o755, 'sha256': 'a' * 64}]
+            acquired['archives'][asset] = {'url': bundle.asset_url(bundle.VERSION, asset), 'bytes': 22,
+                'sha256': 'b' * 64, 'entries': 1, 'files': 1, 'unpacked_bytes': 1,
+                'inventory': rows, 'inventory_sha256': bundle.hashed(bundle.packed(rows))}
+        return record, acquired
+
+    def test_completion_requires_final_cleanup_and_validates_before_promoting(self):
+        record, acquired = self.final_input()
+        original = dict(record)
+        final = bundle.finish_acquisition(record, acquired, bundle.packed(disabled()))
+        self.assertTrue(final['complete'])
+        self.assertEqual(bundle.public_bytes(bundle.packed(final), bundle.packed(disabled())), bundle.packed(final))
+        self.assertEqual(record, original)
+
+    def test_interrupted_or_failed_cleanup_retains_valid_incomplete_checkpoint(self):
+        for key in ('private_acquisition_root_removed', 'all_retained_zero_reaped', 'observed_groups_gone', 'elapsed_ms'):
+            with self.subTest(field=key):
+                record, acquired = self.final_input()
+                record.pop(key)
+                original = dict(record)
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.finish_acquisition(record, acquired, bundle.packed(disabled()))
+                self.assertEqual(record, original)
+                self.assertFalse(record['complete'])
+                self.assertNotIn('acquisition', record)
+                self.assertEqual(bundle.public_bytes(bundle.packed(record), bundle.packed(disabled())), bundle.packed(record))
+    def test_failed_final_facts_never_promote_the_input_record(self):
+        for key, value in (('source_unchanged', False), ('private_acquisition_root_removed', False),
+                ('forced_cleanup_attempted', True), ('all_retained_zero_reaped', False),
+                ('observed_groups_gone', False), ('complete_OS_descendants_proved', True),
+                ('elapsed_ms', 300000)):
+            with self.subTest(field=key):
+                record, acquired = self.final_input()
+                record[key] = value
+                original = dict(record)
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.finish_acquisition(record, acquired, bundle.packed(disabled()))
+                self.assertEqual(record, original)
+                self.assertFalse(record['complete'])
+                self.assertNotIn('acquisition', record)
+
+
+if __name__ == '__main__':
+    unittest.main()

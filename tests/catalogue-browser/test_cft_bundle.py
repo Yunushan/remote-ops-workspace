@@ -49,6 +49,52 @@ def plan(raw, asset='chrome'):
     return bundle.central_plan(footer, raw[end[6]:end[6] + end[5]], len(raw), asset)
 
 
+def with_entry_extras(raw, local_extras, central_extras):
+    """Insert synthetic metadata while preserving payload bytes and exact offsets."""
+    end = list(struct.unpack('<4s4H2IH', raw[-22:]))
+    assert end[3] == end[4] == len(local_extras) == len(central_extras)
+    headers = []
+    cursor = end[6]
+    for _ in local_extras:
+        central = list(struct.unpack_from('<4s6H3I5H2I', raw, cursor))
+        assert central[11] == central[12] == 0
+        name = raw[cursor + 46:cursor + 46 + central[10]]
+        headers.append((central, name))
+        cursor += 46 + central[10]
+    assert cursor == end[6] + end[5]
+    locals_out, centrals_out = [], []
+    local_cursor = 0
+    for index, ((central, name), local_extra, central_extra) in enumerate(zip(headers, local_extras, central_extras, strict=True)):
+        old_offset = central[16]
+        local = list(struct.unpack_from('<4s5H3I2H', raw, old_offset))
+        assert local[10] == 0 and raw[old_offset + 30:old_offset + 30 + local[9]] == name
+        old_end = headers[index + 1][0][16] if index + 1 < len(headers) else end[6]
+        payload = raw[old_offset + 30 + local[9]:old_end]
+        local[10], central[11], central[16] = len(local_extra), len(central_extra), local_cursor
+        local_bytes = struct.pack('<4s5H3I2H', *local) + name + local_extra + payload
+        locals_out.append(local_bytes)
+        local_cursor += len(local_bytes)
+        centrals_out.append(struct.pack('<4s6H3I5H2I', *central) + name + central_extra)
+    local_bytes, central_bytes = b''.join(locals_out), b''.join(centrals_out)
+    end[5], end[6] = len(central_bytes), len(local_bytes)
+    return local_bytes + central_bytes + struct.pack('<4s4H2IH', *end)
+
+
+def with_single_entry_extras(raw, local_extra, central_extra):
+    return with_entry_extras(raw, [local_extra], [central_extra])
+
+
+def extra_field(tag, body):
+    return struct.pack('<2H', tag, len(body)) + body
+
+
+def timestamp_extras(flags=7):
+    times = (b'\x01\x02\x03\x04', b'\x05\x06\x07\x08', b'\x09\x0a\x0b\x0c')
+    local = extra_field(0x5455, bytes([flags]) + b''.join(value for bit, value in enumerate(times) if flags & (1 << bit)))
+    central = extra_field(0x5455, bytes([flags]) + times[0]) if flags & 1 else b''
+    return local, central
+
+
 class Response:
     def __init__(self, body, url, *, declared=None, status=200, headers=None):
         self.body = io.BytesIO(body)
@@ -543,6 +589,109 @@ class RetainedInventoryFDTests(CFTPureFixtureCase):
              mock.patch.object(bundle.os, 'fstat', return_value=fd_info or info), \
              mock.patch.object(bundle.time, 'monotonic', return_value=1):
             return bundle.inventory(Path('/synthetic/archive.zip'), 'chrome', 30, expected_pin=expected)
+
+    def test_inert_timestamp_and_identity_metadata_preserves_actual_binary_inventory(self):
+        payload = b'\x7fELF\x00literal\r\nbinary\n\xff'
+        for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            original = synthetic_zip(compression=compression,
+                names=[(bundle.EXECUTABLES['chrome'], stat.S_IFREG | 0o755, payload)])
+            baseline = self.read_inventory(original, self.source_pin(original))
+            for flags in (1, 3, 5, 7):
+                local_ut, central_ut = timestamp_extras(flags)
+                for width in (1, 4, 8):
+                    ux = extra_field(0x7875, bytes([1, width]) + b'\xff' * width + bytes([width]) + b'\x00' * width)
+                    for central_ux in (b'', ux):
+                        with self.subTest(compression=compression, flags=flags, width=width, central_ux=bool(central_ux)):
+                            raw = with_single_entry_extras(original, local_ut + ux, central_ut + central_ux)
+                            result = self.read_inventory(raw, self.source_pin(raw))
+                            self.assertEqual(result, baseline)
+                            self.assertEqual(result['inventory'][0]['sha256'], bundle.hashed(payload))
+                            self.assertNotIn('extra_metadata', result['inventory'][0])
+
+    def test_local_only_metadata_has_no_payload_or_inventory_authority(self):
+        original = synthetic_zip()
+        baseline = self.read_inventory(original, self.source_pin(original))
+        ux = extra_field(0x7875, b'\x01\x01\xff\x01\x00')
+        for local_extra in (b'', ux):
+            with self.subTest(local_extra=local_extra):
+                raw = with_single_entry_extras(original, local_extra, b'')
+                self.assertEqual(self.read_inventory(raw, self.source_pin(raw)), baseline)
+
+    def test_malformed_or_unsupported_extras_refuse_before_payload_enumeration(self):
+        original = synthetic_zip()
+        ut, central_ut = timestamp_extras(1)
+        ux = extra_field(0x7875, b'\x01\x01\xff\x01\x00')
+        bad = (b'x', b'xyz', b'x' * 65, struct.pack('<2H', 0x5455, 9) + b'\x01',
+            extra_field(1, b''), extra_field(0x7075, b''), extra_field(0x5455, b''),
+            extra_field(0x5455, b'\x00'), extra_field(0x5455, b'\x81' + b'x' * 4),
+            *(timestamp_extras(flags)[0] for flags in (2, 4, 6)),
+            extra_field(0x5455, b'\x01' + b'x' * 3),
+            extra_field(0x7875, b'\x02\x01x\x01y'), extra_field(0x7875, b'\x01\x00\x01y'),
+            extra_field(0x7875, b'\x01\x09' + b'x' * 9 + b'\x01y'),
+            extra_field(0x7875, b'\x01\x01x\x00'), extra_field(0x7875, b'\x01\x01x\x09' + b'y' * 9),
+            extra_field(0x7875, b'\x01\x01x\x01'), extra_field(0x7875, b'\x01\x01x\x01yz'),
+            ux + ux, ut + ut)
+        for central in (False, True):
+            for extra in bad:
+                with self.subTest(central=central, extra=extra):
+                    raw = with_single_entry_extras(original, ut if central else extra, extra if central else central_ut)
+                    code = 'cft-central-extra-field-refused' if central else 'cft-local-header-layout-refused'
+                    with mock.patch.object(bundle.zipfile, 'ZipFile') as enumerated, \
+                         mock.patch.object(bundle, 'member_chunks') as chunks:
+                        with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$'):
+                            self.read_inventory(raw, self.source_pin(raw))
+                        enumerated.assert_not_called()
+                        chunks.assert_not_called()
+
+    def test_cross_header_metadata_mismatch_refuses_before_payload(self):
+        original = synthetic_zip()
+        local_ut, central_ut = timestamp_extras(7)
+        ux = extra_field(0x7875, b'\x01\x01x\x01y')
+        pairs = ((b'', central_ut), (local_ut, b''), (b'', ux),
+            (local_ut, central_ut[:-1] + b'z'), (timestamp_extras(1)[0], central_ut),
+            (ux, extra_field(0x7875, b'\x01\x01x\x01z')),
+            (ux, extra_field(0x7875, b'\x01\x02x\x00\x01y')))
+        for local_extra, central_extra in pairs:
+            with self.subTest(local_extra=local_extra, central_extra=central_extra):
+                raw = with_single_entry_extras(original, local_extra, central_extra)
+                with mock.patch.object(bundle.zipfile, 'ZipFile') as enumerated, \
+                     mock.patch.object(bundle, 'member_chunks') as chunks:
+                    with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-local-header-layout-refused$'):
+                        self.read_inventory(raw, self.source_pin(raw))
+                    enumerated.assert_not_called()
+                    chunks.assert_not_called()
+
+    def test_multiple_entries_preserve_offsets_modes_binary_and_text_inventory(self):
+        names = [(bundle.EXECUTABLES['chrome'], stat.S_IFREG | 0o755, b'\x7fELF\x00binary\r\n\xff'),
+                 ('chrome-linux64/README.txt', stat.S_IFREG | 0o644, b'literal\r\ntext\n')]
+        ux = extra_field(0x7875, b'\x01\x01x\x01y')
+        for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            original = synthetic_zip(names=names, compression=compression)
+            baseline = self.read_inventory(original, self.source_pin(original))
+            for first_metadata in (False, True):
+                local_ut, central_ut = timestamp_extras(7)
+                local = [local_ut + ux, b''] if first_metadata else [b'', local_ut + ux]
+                central = [central_ut, b''] if first_metadata else [b'', central_ut + ux]
+                with self.subTest(compression=compression, first_metadata=first_metadata):
+                    raw = with_entry_extras(original, local, central)
+                    result = self.read_inventory(raw, self.source_pin(raw))
+                    self.assertEqual(result, baseline)
+                    self.assertEqual([row['sha256'] for row in result['inventory']],
+                        [bundle.hashed(payload) for _name, _mode, payload in sorted(names)])
+                    self.assertEqual([row['mode'] for row in result['inventory']], [0o644, 0o755])
+
+    def test_inert_metadata_never_bypasses_actual_payload_crc(self):
+        for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            with self.subTest(compression=compression):
+                original = synthetic_zip(compression=compression)
+                raw = bytearray(with_single_entry_extras(original, *timestamp_extras()))
+                end = struct.unpack('<4s4H2IH', raw[-22:])
+                wrong_crc = struct.unpack_from('<I', raw, 14)[0] ^ 1
+                struct.pack_into('<I', raw, 14, wrong_crc)
+                struct.pack_into('<I', raw, end[6] + 16, wrong_crc)
+                raw = bytes(raw)
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-member-size-or-crc-refused$'):
+                    self.read_inventory(raw, self.source_pin(raw))
 
     def test_actual_retained_inventory_fd_hashes_all_synthetic_source_bytes(self):
         raw = synthetic_zip()

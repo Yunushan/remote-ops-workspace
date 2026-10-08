@@ -225,6 +225,36 @@ def member_name(raw, flags, asset):
     return value
 
 
+def inert_extra_metadata(raw, *, central, code):
+    """Validate bounded Info-ZIP UT/UX metadata; never apply times or identities."""
+    need(type(raw) is bytes and len(raw) <= 64, code)
+    result = {}
+    offset = 0
+    while offset < len(raw):
+        need(len(raw) - offset >= 4, code)
+        tag, size = struct.unpack_from('<2H', raw, offset)
+        offset += 4
+        need(tag in (0x5455, 0x7875) and tag not in result and offset + size <= len(raw), code)
+        body = raw[offset:offset + size]
+        offset += size
+        if tag == 0x5455:
+            need(len(body) >= 1 and body[0] in (1, 3, 5, 7), code)
+            flags = body[0]
+            if central:
+                # Central flags describe LOCAL times; only mtime is stored here.
+                need(flags & 1 and len(body) == 5, code)
+            else:
+                need(len(body) == 1 + 4 * flags.bit_count(), code)
+            result[tag] = (flags, body[1:5])
+        else:
+            need(len(body) >= 5 and body[0] == 1 and 1 <= body[1] <= 8, code)
+            gid_offset = 2 + body[1]
+            need(gid_offset < len(body) and 1 <= body[gid_offset] <= 8, code)
+            need(len(body) == gid_offset + 1 + body[gid_offset], code)
+            result[tag] = body
+    return result
+
+
 def central_plan(footer, central, total, asset):
     need(asset in ASSETS and type(footer) is bytes and len(footer) == 22, 'cft-central-input-shape-refused')
     integer(total, MAX_ARCHIVE, 22)
@@ -252,10 +282,14 @@ def central_plan(footer, central, total, asset):
         need(row[13] == 0, 'cft-central-disk-refused')
         # APPNOTE 4.4.14.1: bit 0 is an advisory text hint, never a byte conversion.
         need(row[14] in (0, 1), 'cft-central-internal-attributes-refused')
-        need(row[11] == 0, 'cft-central-extra-field-refused')
+        extra_len = row[11]
+        need(extra_len == 0 or (4 <= extra_len <= 64
+             and offset + 46 + row[10] + extra_len <= len(central)), 'cft-central-extra-field-refused')
         name_len = row[10]
         need(1 <= name_len <= MAX_NAME and offset + 46 + name_len <= len(central), 'cft-central-name-span-refused')
         name_raw = central[offset + 46:offset + 46 + name_len]
+        extra = inert_extra_metadata(central[offset + 46 + name_len:offset + 46 + name_len + extra_len],
+            central=True, code='cft-central-extra-field-refused')
         name = member_name(name_raw, row[3], asset)
         alias = name.rstrip('/').casefold()
         need(alias not in seen, 'cft-member-alias-refused')
@@ -277,7 +311,9 @@ def central_plan(footer, central, total, asset):
         result.append({'path': name, 'raw_name': name_raw, 'flags': row[3], 'method': row[4],
             'crc32': row[7], 'compressed_size': row[8], 'size': row[9], 'mode': stat.S_IMODE(mode),
             'offset': row[16], 'kind': 'directory' if directory else 'file'})
-        offset += 46 + name_len
+        if extra:
+            result[-1]['extra_metadata'] = extra
+        offset += 46 + name_len + extra_len
     need(offset == len(central) and len(result) == end[4], 'cft-central-entry-count-refused')
     by_name = {row['path'].rstrip('/').casefold(): row['kind'] for row in result}
     for row in result:
@@ -350,11 +386,21 @@ def inventory(path, asset, deadline, *, expected_pin):
             local = struct.unpack('<4s5H3I2H', local_raw)
             need(local[0] == b'PK\x03\x04' and local[1] <= 20
                  and local[2] == row['flags'] and local[3] == row['method']
-                 and local[9] == len(row['raw_name']) and local[10] == 0, 'cft-local-header-layout-refused')
+                 and local[9] == len(row['raw_name']) and local[10] <= 64, 'cft-local-header-layout-refused')
             need(stream.read(local[9]) == row['raw_name'], 'cft-local-name-refused')
-            row['data_start'] = row['offset'] + 30 + local[9]
-            data_end = row['offset'] + 30 + local[9] + row['compressed_size']
             next_offset = ordered[index + 1]['offset'] if index + 1 < len(ordered) else central_start
+            row['data_start'] = row['offset'] + 30 + local[9] + local[10]
+            need(row['data_start'] <= next_offset, 'cft-local-header-layout-refused')
+            local_extra_raw = stream.read(local[10])
+            need(len(local_extra_raw) == local[10], 'cft-local-header-layout-refused')
+            local_extra = inert_extra_metadata(local_extra_raw, central=False, code='cft-local-header-layout-refused')
+            central_extra = row.get('extra_metadata', {})
+            need(all(local_extra.get(tag) == value for tag, value in central_extra.items()),
+                 'cft-local-header-layout-refused')
+            local_ut = local_extra.get(0x5455)
+            need((local_ut is not None and bool(local_ut[0] & 1)) == (0x5455 in central_extra),
+                 'cft-local-header-layout-refused')
+            data_end = row['data_start'] + row['compressed_size']
             trailer_size = next_offset - data_end
             if row['flags'] & 8:
                 need(tuple(local[6:9]) in ((0, 0, 0), (row['crc32'], row['compressed_size'], row['size'])), 'cft-descriptor-local-values-refused')

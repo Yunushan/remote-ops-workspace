@@ -250,7 +250,8 @@ def central_plan(footer, central, total, asset):
         need(row[4] in (0, 8), 'cft-central-compression-refused')
         need(row[12] == 0, 'cft-central-comment-refused')
         need(row[13] == 0, 'cft-central-disk-refused')
-        need(row[14] == 0, 'cft-central-internal-attributes-refused')
+        # APPNOTE 4.4.14.1: bit 0 is an advisory text hint, never a byte conversion.
+        need(row[14] in (0, 1), 'cft-central-internal-attributes-refused')
         need(row[11] == 0, 'cft-central-extra-field-refused')
         name_len = row[10]
         need(1 <= name_len <= MAX_NAME and offset + 46 + name_len <= len(central), 'cft-central-name-span-refused')

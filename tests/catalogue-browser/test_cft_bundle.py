@@ -636,6 +636,42 @@ class RetainedInventoryFDTests(CFTPureFixtureCase):
                 with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-member-size-or-crc-refused$'):
                     self.read_inventory(raw, self.source_pin(raw))
 
+    def test_internal_text_hint_preserves_full_binary_and_text_payload_inventory(self):
+        names = [(bundle.EXECUTABLES['chrome'], stat.S_IFREG | 0o755,
+                  b'\x7fELF\x00literal\r\nbinary\n\xff'),
+                 ('chrome-linux64/README.txt', stat.S_IFREG | 0o644, b'literal\r\ntext\n')]
+        for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            original = synthetic_zip(names=names, compression=compression)
+            expected = self.read_inventory(original, self.source_pin(original))
+            for hint in (0, 1):
+                with self.subTest(compression=compression, hint=hint):
+                    raw = bytearray(original)
+                    end = struct.unpack('<4s4H2IH', raw[-22:])
+                    offset = end[6]
+                    for _ in names:
+                        header = struct.unpack_from('<4s6H3I5H2I', raw, offset)
+                        struct.pack_into('<H', raw, offset + 36, hint)
+                        offset += 46 + header[10] + header[11] + header[12]
+                    self.assertEqual(offset, end[6] + end[5])
+                    raw = bytes(raw)
+                    result = self.read_inventory(raw, self.source_pin(raw))
+                    self.assertEqual(result, expected)
+                    self.assertEqual([row['sha256'] for row in result['inventory']],
+                                     [bundle.hashed(payload) for _name, _mode, payload in sorted(names)])
+
+    def test_internal_text_hint_does_not_bypass_actual_payload_crc_validation(self):
+        for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            with self.subTest(compression=compression):
+                raw = bytearray(synthetic_zip(compression=compression))
+                end = struct.unpack('<4s4H2IH', raw[-22:])
+                wrong_crc = struct.unpack_from('<I', raw, 14)[0] ^ 1
+                struct.pack_into('<H', raw, end[6] + 36, 1)
+                struct.pack_into('<I', raw, 14, wrong_crc)
+                struct.pack_into('<I', raw, end[6] + 16, wrong_crc)
+                raw = bytes(raw)
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-member-size-or-crc-refused$'):
+                    self.read_inventory(raw, self.source_pin(raw))
+
 
 class FinalAcquisitionRecordTests(CFTPureFixtureCase):
     def checkpoint(self):
@@ -713,7 +749,7 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
             (4, 9, 'cft-central-compression-refused'),
             (12, 1, 'cft-central-comment-refused'),
             (13, 1, 'cft-central-disk-refused'),
-            (14, 1, 'cft-central-internal-attributes-refused'),
+            (14, 2, 'cft-central-internal-attributes-refused'),
             (11, 1, 'cft-central-extra-field-refused'),
         )
         for index, value, code in cases:
@@ -751,7 +787,7 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
             (4, 9, 'cft-central-compression-refused'),
             (12, 1, 'cft-central-comment-refused'),
             (13, 1, 'cft-central-disk-refused'),
-            (14, 1, 'cft-central-internal-attributes-refused'),
+            (14, 2, 'cft-central-internal-attributes-refused'),
             (11, 1, 'cft-central-extra-field-refused'),
         )
         for index, value, _code in cases:
@@ -782,6 +818,35 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
                             rows, offset = bundle.central_plan(footer, changed, len(raw), 'chrome')
                             self.assertEqual(offset, expected_offset)
                             self.assertEqual(rows, [dict(expected[0], flags=flags, method=method)])
+
+    def test_internal_text_hint_preserves_binary_central_plans(self):
+        for asset in ('chrome', 'chromedriver'):
+            for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                original = synthetic_zip(asset=asset, compression=compression)
+                expected = plan(original, asset)
+                end = struct.unpack('<4s4H2IH', original[-22:])
+                for hint in (0, 1):
+                    with self.subTest(asset=asset, compression=compression, hint=hint):
+                        raw = bytearray(original)
+                        struct.pack_into('<H', raw, end[6] + 36, hint)
+                        self.assertEqual(plan(bytes(raw), asset), expected)
+
+    def test_other_internal_attribute_bits_refuse_before_name_parsing(self):
+        for compression in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            original = synthetic_zip(compression=compression)
+            footer = original[-22:]
+            end = struct.unpack('<4s4H2IH', footer)
+            central = original[end[6]:end[6] + end[5]]
+            for bit in range(1, 16):
+                for hint in (0, 1):
+                    with self.subTest(compression=compression, bit=bit, hint=hint):
+                        changed = bytearray(central)
+                        struct.pack_into('<H', changed, 36, hint | (1 << bit))
+                        with mock.patch.object(bundle, 'member_name') as member:
+                            with self.assertRaisesRegex(bundle.BundleRefusal,
+                                    '^cft-central-internal-attributes-refused$'):
+                                bundle.central_plan(footer, bytes(changed), len(original), 'chrome')
+                            member.assert_not_called()
 
     def test_all_fixed_inventory_codes_round_trip_only_as_incomplete_inventory_refusals(self):
         self.assertEqual(len(bundle.INVENTORY_REFUSAL_CODES), 68)

@@ -1713,6 +1713,37 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         value.finish()
         return value
 
+    def test_receipt_location_fixed_causes_match_whole_and_stream_without_private_text(self):
+        cases = (("", "receipt-location-empty"),
+                 ("PRIVATE-relative", "receipt-location-relative"),
+                 (".", "receipt-location-relative"),
+                 ("PRIVATE-" + "x" * 1100, "receipt-location-relative"),
+                 ("/" + "x" * 1024, "receipt-location-byte-bound"),
+                 ("/" + "\u00e9" * 512, "receipt-location-byte-bound"))
+        for location, code in cases:
+            metadata = info(**{"install-location": location})
+            for streaming in (False, True):
+                with self.subTest(code=code, streaming=streaming):
+                    with self.assertRaisesRegex(M.Refusal, "^" + code + "$") as failure:
+                        if streaming:
+                            M.ReceiptFilesProjection(metadata, P)
+                        else:
+                            M.receipt_projection(metadata, b".\n", P)
+                    self.assertEqual(failure.exception.args, (code,))
+                    self.assertIn(code, M.REFUSAL_CODES)
+                    self.assertNotIn("PRIVATE", str(failure.exception))
+
+    def test_receipt_location_byte_boundary_stays_accepted_without_ownership_claim(self):
+        for location in ("/", "/" + "x" * 1023, "/" + "\u00e9" * 511 + "x"):
+            with self.subTest(location_bytes=len(location.encode())):
+                metadata = info(**{"install-location": location})
+                expected = M.receipt_projection(metadata, b".\n", P)
+                stream = self.projection(b".\n", width=1, metadata=metadata)
+                self.assertEqual(stream.result(), expected)
+                self.assertEqual(expected["install_location_is_root"], location == "/")
+                self.assertFalse(expected["receipt_ownership_approval"])
+                self.assertEqual(expected["physical_namespace_identity"], "unobserved")
+
     def test_every_chunk_boundary_matches_whole_reference_splitlines(self):
         raw = (".\r\nCaf\u00e9\vother\fthird\x1cfourth\x1dfifth\x1esixth\x85seventh"
             "\u2028eighth\u2029" + M.APP_REL + "\rfinal").encode()
@@ -1952,7 +1983,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
             with self.assertRaisesRegex(M.Refusal, "^receipt-files-row-bound$"):
                 value.feed(b"../PRIVATE-overflow\n")
             self.assertEqual([call.args for call in member.call_args_list], [("a",), ("b",)])
-            self.assertEqual([call.kwargs for call in member.call_args_list], [{"root": True}, {"root": True}])
+            self.assertEqual([call.kwargs for call in member.call_args_list], [{"root": True, "receipt": True}, {"root": True, "receipt": True}])
             self.assertEqual(value.rows, 3)
             self.assertEqual(len(value.keys), 2)
             self.assertFalse(value.finished)

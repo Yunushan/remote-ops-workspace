@@ -40,6 +40,10 @@ MAX_PUBLIC = 4 * 1024 * 1024
 MAX_ROWS = 30000
 # Accepted bytes per receipt query; retained stdout remains a bounded line.
 MAX_RECEIPT_FILE_BYTES = MAX_ROWS * (1024 + 3)
+# Installed receipts may have many short paths; package/BOM limits stay separate.
+MAX_RECEIPT_FILE_ROWS = 200000
+# Bound retained normalized-key payload as well as the number of set entries.
+MAX_RECEIPT_ALIAS_BYTES = 32 * 1024 * 1024
 MAX_NODES = 30000
 MAX_XML = 4 * 1024 * 1024
 MAX_XML_DEPTH = 24
@@ -165,6 +169,7 @@ REFUSAL_CODES = frozenset(
         "public-output-bound-or-existing",
         "receipt-location-unobserved",
         "receipt-files-row-bound",
+        "receipt-alias-memory-bound",
         "receipt-files-stderr-unobserved",
         "receipt-metadata-bound",
         "receipt-metadata-layout-unobserved",
@@ -626,7 +631,7 @@ def receipt_projection(info_raw, files_raw, parser):
         raise Refusal("receipt-metadata-layout-unobserved") from exc
     if (
         not isinstance(info, dict)
-        or len(lines) > MAX_ROWS
+        or len(lines) > MAX_RECEIPT_FILE_ROWS
         or not isinstance(info.get("volume"), str)
         or not isinstance(info.get("install-location"), str)
     ):
@@ -638,12 +643,17 @@ def receipt_projection(info_raw, files_raw, parser):
     if base:
         parser.member_name(base)
     app_key, keys, claims, aliases, data_claims = alias(APP_REL), set(), 0, 0, 0
+    key_bytes = 0
     for line in lines:
         name = parser.member_name(line, root=True)
         joined = base + "/" + name if base and name != "." else base or name
         key = alias(joined)
         if key in keys:
             raise Refusal("receipt-path-alias-or-duplicate")
+        size = len(key.encode("utf-8"))
+        if key_bytes + size > MAX_RECEIPT_ALIAS_BYTES:
+            raise Refusal("receipt-alias-memory-bound")
+        key_bytes += size
         keys.add(key)
         if key == app_key or key.startswith(app_key + "/"):
             claims += 1
@@ -690,19 +700,24 @@ class ReceiptFilesProjection:
         self.raw_bytes = 0
         self.line, self.line_bytes, self.after_cr = [], 0, False
         self.keys = set()
+        self.key_bytes = 0
         self.app_key = alias(APP_REL)
         self.rows = self.claims = self.aliases = self.data_claims = 0
         self.finished = False
 
     def _row(self):
         self.rows += 1
-        if self.rows > MAX_ROWS:
+        if self.rows > MAX_RECEIPT_FILE_ROWS:
             raise Refusal("receipt-files-row-bound")
         name = self.parser.member_name("".join(self.line), root=True)
         joined = self.base + "/" + name if self.base and name != "." else self.base or name
         key = alias(joined)
         if key in self.keys:
             raise Refusal("receipt-path-alias-or-duplicate")
+        size = len(key.encode("utf-8"))
+        if self.key_bytes + size > MAX_RECEIPT_ALIAS_BYTES:
+            raise Refusal("receipt-alias-memory-bound")
+        self.key_bytes += size
         self.keys.add(key)
         if key == self.app_key or key.startswith(self.app_key + "/"):
             self.claims += 1

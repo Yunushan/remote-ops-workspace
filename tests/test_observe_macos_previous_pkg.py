@@ -1771,7 +1771,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
             with self.subTest(raw=raw[:16]):
                 with self.assertRaises(M.Refusal):
                     self.projection(raw, width=1)
-        raw = b"".join(f"row-{index}\n".encode() for index in range(M.MAX_ROWS + 1))
+        raw = b"".join(f"row-{index}\n".encode() for index in range(M.MAX_RECEIPT_FILE_ROWS + 1))
         with self.assertRaisesRegex(M.Refusal, "^receipt-files-row-bound$"):
             self.projection(raw)
 
@@ -1944,7 +1944,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         write.assert_not_called()
 
     def test_row_bound_fixed_code_precedes_excess_row_name_parser(self):
-        with patch.object(M, "MAX_ROWS", 2), patch.object(P, "member_name", wraps=P.member_name) as member:
+        with patch.object(M, "MAX_RECEIPT_FILE_ROWS", 2), patch.object(P, "member_name", wraps=P.member_name) as member:
             value = M.ReceiptFilesProjection(info(), P)
             value.feed(b"a\nb\n")
             self.assertEqual(value.rows, 2)
@@ -1961,7 +1961,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
 
     def test_unterminated_excess_row_uses_fixed_code_without_eof(self):
         raw = b"a\nb\nPRIVATE-unterminated"
-        with patch.object(M, "MAX_ROWS", 2):
+        with patch.object(M, "MAX_RECEIPT_FILE_ROWS", 2):
             value = M.ReceiptFilesProjection(info(), P)
             stream = M.ReceiptCommandStream(value, lambda _count: None)
             stream.consume(0, raw)
@@ -1983,7 +1983,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
 
     def test_row_bound_capture_refuses_and_reaps_only_retained_child(self):
         raw = b"a\nb\nPRIVATE-third-row\n"
-        with patch.object(M, "MAX_ROWS", 2):
+        with patch.object(M, "MAX_RECEIPT_FILE_ROWS", 2):
             result, refusal, commands, child, cleanup, facts, _popen = self.mock_capture(raw)
         self.assertIsNone(result)
         self.assertEqual(refusal, "receipt-files-row-bound")
@@ -1995,6 +1995,74 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         self.assertEqual(facts["receipts_queried"], 4)
         self.assertEqual(facts["receipt_stream_stdout_bytes"], len(raw))
         self.assertEqual(facts["receipt_stream_stdout_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertFalse(facts["receipt_stream_stdout_eof"])
+        self.assertFalse(facts["receipt_stream_complete"])
+        self.assertTrue(facts["receipt_stream_hashes_partial"])
+        self.assertNotIn("receipt_files_sha256", facts)
+        self.assertNotIn("PRIVATE", json.dumps(facts))
+
+    def test_receipt_cardinality_limits_are_separate_from_package_and_byte_limits(self):
+        self.assertEqual(M.MAX_ROWS, 30000)
+        self.assertEqual(M.MAX_RECEIPT_FILE_ROWS, 200000)
+        self.assertEqual(M.MAX_RECEIPT_FILE_BYTES, 30810000)
+        self.assertEqual(M.MAX_RECEIPT_ALIAS_BYTES, 32 * 1024 * 1024)
+
+    def test_more_than_package_row_limit_preserves_full_receipt_projection(self):
+        raw = b"".join(f"private-file-{index:05d}\n".encode() for index in range(M.MAX_ROWS))
+        raw += M.APP_REL.encode() + b"\n"
+        value = self.projection(raw)
+        result = value.result()
+        self.assertEqual(result, M.receipt_projection(info(), raw, P))
+        self.assertEqual(result["path_count"], 30001)
+        self.assertEqual(result["lexical_app_claim_count"], 1)
+        self.assertEqual(result["files_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(len(value.keys), 30001)
+        self.assertEqual(value.key_bytes, sum(len(key.encode("utf-8")) for key in value.keys))
+        self.assertEqual(value.line, [])
+        self.assertNotIn("private-file", json.dumps(result))
+
+    def test_invalid_or_duplicate_tail_after_old_row_limit_still_refuses(self):
+        prefix = b"".join(f"private-file-{index:05d}\n".encode() for index in range(M.MAX_ROWS))
+        prefix += M.APP_REL.encode() + b"\n"
+        for tail, code in (
+            (M.APP_REL.upper().encode() + b"\n", "receipt-path-alias-or-duplicate"),
+            (b"../PRIVATE-invalid-tail\n", "unsafe-member-name"),
+        ):
+            with self.subTest(code=code):
+                with self.assertRaisesRegex(M.Refusal, "^" + code + "$"):
+                    self.projection(prefix + tail)
+
+    def test_alias_payload_budget_uses_utf8_and_refuses_before_retention(self):
+        raw = "caf\u00e9\nbeta\n".encode()
+        with patch.object(M, "MAX_RECEIPT_ALIAS_BYTES", 9):
+            value = self.projection(raw)
+            self.assertEqual(value.result(), M.receipt_projection(info(), raw, P))
+            self.assertEqual(value.key_bytes, 9)
+            limited = M.ReceiptFilesProjection(info(), P)
+            limited.feed(raw)
+            with self.assertRaisesRegex(M.Refusal, "^receipt-alias-memory-bound$"):
+                limited.feed(b"z\n")
+            self.assertEqual(limited.key_bytes, 9)
+            self.assertEqual(len(limited.keys), 2)
+            self.assertFalse(limited.finished)
+            self.assertNotIn("z", limited.keys)
+        with patch.object(M, "MAX_RECEIPT_ALIAS_BYTES", 8):
+            with self.assertRaisesRegex(M.Refusal, "^receipt-alias-memory-bound$"):
+                self.projection(raw)
+            with self.assertRaisesRegex(M.Refusal, "^receipt-alias-memory-bound$"):
+                M.receipt_projection(info(), raw, P)
+
+    def test_alias_memory_capture_refuses_and_reaps_retained_child(self):
+        raw = b"a\nPRIVATE-second-row\n"
+        with patch.object(M, "MAX_RECEIPT_ALIAS_BYTES", 1):
+            result, refusal, commands, child, cleanup, facts, _popen = self.mock_capture(raw)
+        self.assertIsNone(result)
+        self.assertEqual(refusal, "receipt-alias-memory-bound")
+        self.assertIn(refusal, M.REFUSAL_CODES)
+        self.assertTrue(commands.uncertain)
+        self.assertEqual(cleanup, [child])
+        self.assertTrue(commands.calls[0]["leader_cleanup_attempted"])
+        self.assertEqual(commands.calls[0]["process_tree_cleanup"], "not-proven")
         self.assertFalse(facts["receipt_stream_stdout_eof"])
         self.assertFalse(facts["receipt_stream_complete"])
         self.assertTrue(facts["receipt_stream_hashes_partial"])

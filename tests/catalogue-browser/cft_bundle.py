@@ -243,7 +243,8 @@ def central_plan(footer, central, total, asset):
         need(row[0] == b'PK\x01\x02', 'cft-central-signature-refused')
         need(row[1] >> 8 == 3, 'cft-central-creator-system-refused')
         need(row[2] <= 20, 'cft-central-extract-version-refused')
-        need(row[3] & ~0x808 == 0, 'cft-central-flags-refused')
+        for bit in (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
+            need(row[3] & (1 << bit) == 0, f'cft-central-flag-bit-{bit}-refused')
         need(row[4] in (0, 8), 'cft-central-compression-refused')
         need(row[12] == 0, 'cft-central-comment-refused')
         need(row[13] == 0, 'cft-central-disk-refused')
@@ -730,6 +731,20 @@ INVENTORY_REFUSAL_CODES = frozenset((
     'cft-central-creator-system-refused',
     'cft-central-extract-version-refused',
     'cft-central-flags-refused',
+    'cft-central-flag-bit-0-refused',
+    'cft-central-flag-bit-1-refused',
+    'cft-central-flag-bit-2-refused',
+    'cft-central-flag-bit-4-refused',
+    'cft-central-flag-bit-5-refused',
+    'cft-central-flag-bit-6-refused',
+    'cft-central-flag-bit-7-refused',
+    'cft-central-flag-bit-8-refused',
+    'cft-central-flag-bit-9-refused',
+    'cft-central-flag-bit-10-refused',
+    'cft-central-flag-bit-12-refused',
+    'cft-central-flag-bit-13-refused',
+    'cft-central-flag-bit-14-refused',
+    'cft-central-flag-bit-15-refused',
     'cft-central-compression-refused',
     'cft-central-comment-refused',
     'cft-central-disk-refused',

@@ -187,6 +187,13 @@ REFUSAL_CODES = frozenset(
         "tracked-source-path-layout",
         "tracked-source-path-link",
         "unsafe-member-name",
+        "unsafe-member-name-type-or-empty",
+        "unsafe-member-name-utf8-bound",
+        "unsafe-member-name-backslash",
+        "unsafe-member-name-colon",
+        "unsafe-member-name-absolute",
+        "unsafe-member-name-control",
+        "unsafe-member-name-component",
         "unsupported-event",
         "whole-pkg-bound",
         "xar-component-alias",
@@ -739,7 +746,7 @@ class ReceiptFilesProjection:
             else:
                 self.line_bytes += len(char.encode("utf-8"))
                 if self.line_bytes > 1024:
-                    raise Refusal("unsafe-member-name")
+                    raise Refusal("unsafe-member-name-utf8-bound")
                 self.line.append(char)
 
     def feed(self, raw):
@@ -987,21 +994,23 @@ def public_save(path, record):
 def member_name(value: str, *, root=False) -> str:
     if value in {".", "./"} and root:
         return "."
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value.encode("utf-8")) > 1024
-        or "\\" in value
-        or ":" in value
-        or value.startswith("/")
-        or any(ord(char) < 32 or ord(char) == 127 for char in value)
-    ):
-        raise Refusal("unsafe-member-name")
+    if not isinstance(value, str) or not value:
+        raise Refusal("unsafe-member-name-type-or-empty")
+    if len(value.encode("utf-8")) > 1024:
+        raise Refusal("unsafe-member-name-utf8-bound")
+    if "\\" in value:
+        raise Refusal("unsafe-member-name-backslash")
+    if ":" in value:
+        raise Refusal("unsafe-member-name-colon")
+    if value.startswith("/"):
+        raise Refusal("unsafe-member-name-absolute")
+    if any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise Refusal("unsafe-member-name-control")
     if value.startswith("./"):
         value = value[2:]
     value = value.removesuffix("/")
     if any(part in {"", ".", ".."} for part in value.split("/")):
-        raise Refusal("unsafe-member-name")
+        raise Refusal("unsafe-member-name-component")
     return value
 
 

@@ -1533,7 +1533,7 @@ class BomDirectorySizeGrammarTests(unittest.TestCase):
                     self.assertEqual(result["rows"][0]["requested_columns_as_strings"], [mode, "0", "0", size])
 
     def test_empty_directory_size_does_not_bypass_path_or_alias_refusals(self):
-        with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name$"):
+        with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name-component$"):
             M.bom_projection(b"../fixture\t40755\t0\t0\t\n", P)
         with self.assertRaisesRegex(M.Refusal, "^bom-path-alias-or-duplicate$"):
             M.bom_projection(b"Applications/Caf\xc3\xa9\t40755\t0\t0\t\nApplications/Cafe\xcc\x81\t40755\t0\t0\t\n", P)
@@ -1731,7 +1731,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         for raw in (b"", b"a", b"a\n", b"a\r", b"a\r\n", b"a\r\nb"):
             with self.subTest(raw=raw):
                 self.assertEqual(self.projection(raw, width=1).result(), M.receipt_projection(info(), raw, P))
-        with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name$"):
+        with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name-type-or-empty$"):
             self.projection(b"\n")
 
     def test_valid_above_old_buffer_bound_checks_unrelated_rows_and_final_app(self):
@@ -2026,7 +2026,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         prefix += M.APP_REL.encode() + b"\n"
         for tail, code in (
             (M.APP_REL.upper().encode() + b"\n", "receipt-path-alias-or-duplicate"),
-            (b"../PRIVATE-invalid-tail\n", "unsafe-member-name"),
+            (b"../PRIVATE-invalid-tail\n", "unsafe-member-name-component"),
         ):
             with self.subTest(code=code):
                 with self.assertRaisesRegex(M.Refusal, "^" + code + "$"):
@@ -2068,6 +2068,54 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         self.assertTrue(facts["receipt_stream_hashes_partial"])
         self.assertNotIn("receipt_files_sha256", facts)
         self.assertNotIn("PRIVATE", json.dumps(facts))
+
+
+class MemberNamePredicateDiagnosticTests(unittest.TestCase):
+    def test_fixed_name_predicates_do_not_disclose_input(self):
+        cases = (
+            (None, "type-or-empty"), ("", "type-or-empty"),
+            ("PRIVATE" + "x" * 1024, "utf8-bound"),
+            ("PRIVATE\\name", "backslash"), ("PRIVATE:name", "colon"),
+            ("/PRIVATE/name", "absolute"), ("PRIVATE\x00name", "control"),
+            ("PRIVATE\x7fname", "control"), ("../PRIVATE/name", "component"),
+            ("PRIVATE//name", "component"), ("./PRIVATE/./name", "component"),
+        )
+        for value, suffix in cases:
+            with self.subTest(suffix=suffix):
+                code = "unsafe-member-name-" + suffix
+                with self.assertRaisesRegex(M.Refusal, "^" + code + "$") as failure:
+                    M.member_name(value)
+                self.assertIn(code, M.REFUSAL_CODES)
+                self.assertEqual(failure.exception.args, (code,))
+                self.assertNotIn("PRIVATE", str(failure.exception))
+
+    def test_accepted_name_normalization_and_root_semantics_unchanged(self):
+        for value, expected in (("alpha", "alpha"), ("./alpha/", "alpha"),
+                ("a b/Caf\u00e9", "a b/Caf\u00e9"), ("x" * 1024, "x" * 1024)):
+            with self.subTest(value=value):
+                self.assertEqual(M.member_name(value), expected)
+        for value in (".", "./"):
+            self.assertEqual(M.member_name(value, root=True), ".")
+            with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name-component$"):
+                M.member_name(value)
+
+    def test_stream_and_reference_emit_same_fixed_predicates_without_private_names(self):
+        cases = ((b"\n", "type-or-empty"), (b"PRIVATE:name\n", "colon"),
+            (b"PRIVATE\\name\n", "backslash"), (b"/PRIVATE/name\n", "absolute"),
+            (b"PRIVATE\x00name\n", "control"), (b"../PRIVATE/name\n", "component"),
+            (("PRIVATE" + "\u00e9" * 510 + "\n").encode(), "utf8-bound"))
+        for raw, suffix in cases:
+            with self.subTest(suffix=suffix):
+                code = "unsafe-member-name-" + suffix
+                with self.assertRaisesRegex(M.Refusal, "^" + code + "$"):
+                    M.receipt_projection(info(), raw, P)
+                stream = M.ReceiptFilesProjection(info(), P)
+                with self.assertRaisesRegex(M.Refusal, "^" + code + "$") as failure:
+                    for start in range(0, len(raw), 3):
+                        stream.feed(raw[start:start + 3])
+                    stream.finish()
+                self.assertEqual(failure.exception.args, (code,))
+                self.assertFalse(stream.finished)
 
 
 if __name__ == "__main__":

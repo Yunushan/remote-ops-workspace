@@ -669,7 +669,7 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
             (0, b'BAD!', 'cft-central-signature-refused'),
             (1, 20, 'cft-central-creator-system-refused'),
             (2, 21, 'cft-central-extract-version-refused'),
-            (3, 1, 'cft-central-flags-refused'),
+            (3, 1, 'cft-central-flag-bit-0-refused'),
             (4, 9, 'cft-central-compression-refused'),
             (12, 1, 'cft-central-comment-refused'),
             (13, 1, 'cft-central-disk-refused'),
@@ -707,7 +707,7 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
             (0, b'BAD!', 'cft-central-signature-refused'),
             (1, 20, 'cft-central-creator-system-refused'),
             (2, 21, 'cft-central-extract-version-refused'),
-            (3, 1, 'cft-central-flags-refused'),
+            (3, 1, 'cft-central-flag-bit-0-refused'),
             (4, 9, 'cft-central-compression-refused'),
             (12, 1, 'cft-central-comment-refused'),
             (13, 1, 'cft-central-disk-refused'),
@@ -744,7 +744,7 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
                             self.assertEqual(rows, [dict(expected[0], flags=flags, method=method)])
 
     def test_all_fixed_inventory_codes_round_trip_only_as_incomplete_inventory_refusals(self):
-        self.assertEqual(len(bundle.INVENTORY_REFUSAL_CODES), 54)
+        self.assertEqual(len(bundle.INVENTORY_REFUSAL_CODES), 68)
         for phase in bundle.INVENTORY_PHASES:
             for code in sorted(bundle.INVENTORY_REFUSAL_CODES):
                 with self.subTest(phase=phase, code=code):
@@ -832,6 +832,40 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
             member.assert_not_called()
         self.assertEqual(bundle.inventory_refusal_code(failure.exception, 'chromedriver-inventory'),
             'cft-central-name-span-refused')
+
+    def test_each_forbidden_central_flag_bit_refuses_before_name_parsing(self):
+        raw = synthetic_zip()
+        footer = raw[-22:]
+        end = struct.unpack('<4s4H2IH', footer)
+        central = raw[end[6]:end[6] + end[5]]
+        original = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+        for bit in (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
+            for allowed in (0, 8, 0x800, 0x808):
+                with self.subTest(bit=bit, allowed=allowed):
+                    header = original.copy()
+                    header[3] = allowed | (1 << bit)
+                    changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
+                    code = f'cft-central-flag-bit-{bit}-refused'
+                    with mock.patch.object(bundle, 'member_name') as member:
+                        with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$') as failure:
+                            bundle.central_plan(footer, changed, len(raw), 'chrome')
+                        member.assert_not_called()
+                    for phase in bundle.INVENTORY_PHASES:
+                        self.assertEqual(bundle.inventory_refusal_code(failure.exception, phase), code)
+
+    def test_multiple_forbidden_bits_report_lowest_bit_before_compression(self):
+        raw = synthetic_zip()
+        footer = raw[-22:]
+        end = struct.unpack('<4s4H2IH', footer)
+        central = raw[end[6]:end[6] + end[5]]
+        original = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+        for flags, first in ((3, 0), (6, 1), (0xFFF7, 0), (0x9000, 12)):
+            with self.subTest(flags=flags):
+                header = original.copy()
+                header[3:5] = [flags, 9]
+                changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
+                with self.assertRaisesRegex(bundle.BundleRefusal, f'^cft-central-flag-bit-{first}-refused$'):
+                    bundle.central_plan(footer, changed, len(raw), 'chrome')
 
 
 if __name__ == '__main__':

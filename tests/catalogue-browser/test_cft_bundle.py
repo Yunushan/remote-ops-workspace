@@ -998,7 +998,7 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
                             member.assert_not_called()
 
     def test_all_fixed_inventory_codes_round_trip_only_as_incomplete_inventory_refusals(self):
-        self.assertEqual(len(bundle.INVENTORY_REFUSAL_CODES), 68)
+        self.assertEqual(len(bundle.INVENTORY_REFUSAL_CODES), 70)
         for phase in bundle.INVENTORY_PHASES:
             for code in sorted(bundle.INVENTORY_REFUSAL_CODES):
                 with self.subTest(phase=phase, code=code):
@@ -1099,7 +1099,8 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
                     header = original.copy()
                     header[3] = allowed | (1 << bit)
                     changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
-                    code = f'cft-central-flag-bit-{bit}-refused'
+                    code = (f'cft-central-stored-flag-bit-{bit}-refused' if bit in (1, 2)
+                            else f'cft-central-flag-bit-{bit}-refused')
                     with mock.patch.object(bundle, 'member_name') as member:
                         with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$') as failure:
                             bundle.central_plan(footer, changed, len(raw), 'chrome')

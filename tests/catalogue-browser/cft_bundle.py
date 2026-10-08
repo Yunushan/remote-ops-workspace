@@ -276,7 +276,8 @@ def central_plan(footer, central, total, asset):
         for bit in (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
             # APPNOTE 4.4.4: bits 1/2 encode Deflate compression options.
             need(row[3] & (1 << bit) == 0 or (row[4] == 8 and bit in (1, 2)),
-                 f'cft-central-flag-bit-{bit}-refused')
+                 f'cft-central-stored-flag-bit-{bit}-refused' if row[4] == 0 and bit in (1, 2)
+                 else f'cft-central-flag-bit-{bit}-refused')
         need(row[4] in (0, 8), 'cft-central-compression-refused')
         need(row[12] == 0, 'cft-central-comment-refused')
         need(row[13] == 0, 'cft-central-disk-refused')
@@ -783,6 +784,8 @@ INVENTORY_REFUSAL_CODES = frozenset((
     'cft-central-flag-bit-0-refused',
     'cft-central-flag-bit-1-refused',
     'cft-central-flag-bit-2-refused',
+    'cft-central-stored-flag-bit-1-refused',
+    'cft-central-stored-flag-bit-2-refused',
     'cft-central-flag-bit-4-refused',
     'cft-central-flag-bit-5-refused',
     'cft-central-flag-bit-6-refused',

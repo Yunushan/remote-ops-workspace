@@ -393,6 +393,16 @@ def build_parser() -> argparse.ArgumentParser:
     customizer_update.add_argument("--json", action="store_true")
     customizer_update.set_defaults(func=cmd_customizer_update_verify)
 
+    for command, handler, description in (
+        ("update-stage", cmd_customizer_update_stage, "authenticate and stage the complete signed update asset set"),
+        ("update-stage-recover", cmd_customizer_update_stage_recover, "reverify an interrupted complete update stage; never install"),
+    ):
+        updater = customizer_sub.add_parser(command, help=description)
+        updater.add_argument("--policy", required=True, type=Path)
+        updater.add_argument("--stage", required=True, type=Path)
+        updater.add_argument("--json", action="store_true")
+        updater.set_defaults(func=handler)
+
     snippet = sub.add_parser("snippet", help="manage reusable snippets and macros")
     snip_sub = snippet.add_subparsers(required=True)
     snip_add = snip_sub.add_parser("add", help="add a snippet")
@@ -1704,6 +1714,36 @@ def cmd_customizer_update_verify(args: argparse.Namespace) -> int:
         for error in result.errors:
             print(f"error: {error}", file=sys.stderr)
     return 0 if result.passed else 1
+
+
+def _customizer_authenticated_stage(args: argparse.Namespace, *, recover: bool) -> int:
+    # Load the optional signature backend only for the explicit new command.
+    from .update_channel import UpdateError, load_update_policy, recover_update, stage_update
+
+    try:
+        policy = load_update_policy(args.policy)
+        operation = recover_update if recover else stage_update
+        result = operation(policy, args.stage, current_home=data_dir())
+    except UpdateError as exc:
+        result = {"phase": "refused", "refusal": str(exc), "install_permitted": False}
+    except (OSError, ValueError, RecursionError):
+        result = {"phase": "refused", "refusal": "update-stage-input-refused", "install_permitted": False}
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    elif result["phase"] == "authenticated-staged":
+        print(f"Authenticated update staged: {result['version']} ({result['artifact_count']} assets)")
+        print("Installation is not permitted by the staging command.")
+    else:
+        print(f"Update staging refused: {result['refusal']}", file=sys.stderr)
+    return 0 if result["phase"] == "authenticated-staged" else 1
+
+
+def cmd_customizer_update_stage(args: argparse.Namespace) -> int:
+    return _customizer_authenticated_stage(args, recover=False)
+
+
+def cmd_customizer_update_stage_recover(args: argparse.Namespace) -> int:
+    return _customizer_authenticated_stage(args, recover=True)
 
 
 def cmd_snippet_add(args: argparse.Namespace) -> int:

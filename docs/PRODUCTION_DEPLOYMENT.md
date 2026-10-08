@@ -241,6 +241,92 @@ forged signature and return a nonzero exit status. The security extra must be
 available for Ed25519 verification; an unavailable backend also rejects the
 manifest. A payload checksum alone does not establish the publisher identity.
 
+### Authenticated update staging and recovery
+
+The explicit `row customizer update-stage --policy PATH --stage DIRECTORY`
+proposal adds download and authenticated staging, not installation. Its companion
+`update-stage-recover` has the same arguments and revalidates completed inputs
+without downloading. `update-verify` retains its existing local verification,
+metadata-only and zero-byte contracts; the new staging policy separately refuses
+metadata-only entries, empty assets, aliases, unsupported filenames and versions
+that are not newer than the running package's stable three-part version.
+
+An operator must fill a protected copy of `configs/update-trust-policy.example.json`
+with an independently approved HTTPS manifest URL, Ed25519 public key,
+organization, channel, selected target, all approved targets and HTTPS origins.
+The shipped example is disabled, with no publisher key or feed authority. Keep
+the private publisher key outside clients. An origin list may include operator
+approved GitHub release asset redirect origins, but no host is implicitly trusted.
+The manifest cannot supply or override this policy. The optional security extra
+must be installed; a missing Ed25519 backend refuses the operation.
+
+The original signed manifest bytes and **every declared approved asset** are
+staged. The selected target identifies future installer inputs; it never drops
+other signed entries. All filenames must be portable plain basenames and each
+`file` must equal its `name`. The unchanged canonical payload and Ed25519 helper
+authenticate the manifest before any asset URL is followed. After all exact
+sizes and SHA-256 values match, the unchanged complete manifest validator checks
+the original manifest and full local asset set. Recovery repeats authentication
+against the current policy and running version, validates the bound journal and
+rehashes every file. Journal flags and payload checksums never authorize recovery.
+
+On POSIX, use an existing empty private staging directory outside `ROW_HOME`,
+with current owner and mode 0700. The policy file must be regular, unlinked and
+not writable by other users; root-owned policy is permitted on POSIX. Path
+symlinks/reparse points, hard links, unknown files and interrupted partials are
+refused. The real cross-process `exclusive_file_lock` covers the stage and all
+revalidation. POSIX metadata checks do not protect against a compromised
+same-user process or privileged host.
+
+The Windows private-storage adapter is implemented in source but remains
+unqualified. Its production qualification flag is false: policy loading, new
+staging and recovery refuse before policy bytes, root creation, lock bytes or
+payload. The disabled example does not enable it. Mocked SDK declarations and
+ownership fixtures are source evidence, not genuine Windows ACL or ABI evidence.
+
+The Windows source requires the current process token and refuses an impersonated
+thread. It retains local NTFS ancestor and named-file handles without delete
+sharing, with exact owner-only private DACLs, descriptor-to-name identity checks
+and validation through lock, writer, recovery and full-manifest scopes. The policy
+file and its parent require the private boundary too; a public key in a permissive
+policy file does not waive that requirement. Existing direct stage entries are
+qualified before a receiving journal or lock byte. Only a missing explicit stage
+leaf may be created exclusively; current state directories, existing owners and
+DACLs are never rewritten by these commands.
+
+An explicit `ROW_HOME` must match its original local selection without expansion
+or aliases. Without it, the selected current RoamingAppData home must match the
+current/default Roaming and Local known-folder observations and any `APPDATA`
+selection. The stage stays outside the observed home. Conservative ancestor
+owner/write checks can refuse ordinary system-drive ancestry, including an
+unqualified TrustedInstaller owner or raw grants to other identities. These
+checks remain enforced; actual default-path compatibility and independent
+unprivileged-identity denial still require genuine disposable Windows evidence.
+
+HTTPS uses certificate and hostname verification, TLS 1.2 or later,
+credential-free requests, disabled environment proxies, identity encoding and a
+bounded explicit redirect policy. Manifest, per-asset, asset-set, chunk and
+collection limits are enforced. A checked operation deadline and socket timeouts
+bound work at checkpoints; synchronous DNS, file I/O, fsync, signature verification
+and the existing complete validator are not independently preempted. Socket
+reads can finish after the checked deadline, which then refuses success. This is
+not an OS-enforced wall-clock or power-loss guarantee.
+
+Writes publish an initial `receiving` journal, the original manifest and every
+asset before a `staged` journal. Complete files with a receiving journal can be
+reverified. A failed download closes its response; partial files are retained and
+refused rather than erased or trusted. To retry incomplete staging, inspect and
+retain its evidence, then use a fresh private directory. These commands return
+`install_permitted: false` even when authentication and staging succeed.
+
+Production installation still requires platform-specific verified package
+signatures/installer adapters, a trusted version floor and target closure, a
+complete offline encrypted pre-upgrade state snapshot, writer quiescence, crash
+recovery and an actual prior-binary plus encrypted-state restore/decrypt drill.
+Reinstalling an older binary alone cannot roll back a migrated vault. These
+requirements, genuine Windows storage qualification and genuine hosted update
+tests remain mandatory; this proposal confers no production readiness points.
+
 RDP, VNC, X2Go, SPICE, serial, and other protocol sessions delegate to native
 system clients. Treat `row doctor` as a post-install preflight, then deploy the
 approved clients, versions, certificates, and host-key policy through your OS

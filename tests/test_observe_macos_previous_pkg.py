@@ -2100,7 +2100,7 @@ class MemberNamePredicateDiagnosticTests(unittest.TestCase):
                 M.member_name(value)
 
     def test_stream_and_reference_emit_same_fixed_predicates_without_private_names(self):
-        cases = ((b"\n", "type-or-empty"), (b"PRIVATE:name\n", "colon"),
+        cases = ((b"\n", "type-or-empty"),
             (b"PRIVATE\\name\n", "backslash"), (b"/PRIVATE/name\n", "absolute"),
             (b"PRIVATE\x00name\n", "control"), (b"../PRIVATE/name\n", "component"),
             (("PRIVATE" + "\u00e9" * 510 + "\n").encode(), "utf8-bound"))
@@ -2115,6 +2115,72 @@ class MemberNamePredicateDiagnosticTests(unittest.TestCase):
                         stream.feed(raw[start:start + 3])
                     stream.finish()
                 self.assertEqual(failure.exception.args, (code,))
+                self.assertFalse(stream.finished)
+
+    def test_receipt_colons_are_literal_without_expanding_archive_names(self):
+        for value, expected in (("PRIVATE:name", "PRIVATE:name"),
+                ("./PRIVATE:name/", "PRIVATE:name"), ("a:b/c:d", "a:b/c:d")):
+            with self.subTest(value=value):
+                self.assertEqual(M.member_name(value, receipt=True), expected)
+                with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name-colon$"):
+                    M.member_name(value)
+                for context in (False, None, 1, "true"):
+                    with self.assertRaisesRegex(M.Refusal, "^unsafe-member-name-colon$"):
+                        M.member_name(value, receipt=context)
+
+    def test_receipt_colons_match_reference_at_every_chunk_boundary(self):
+        raw = (".\nPRIVATE:name\n" + M.APP_REL + "\n" + M.APP_REL
+            + "/Contents/x:y\n" + M.APP_REL + ":other\n").encode()
+        expected = M.receipt_projection(info(), raw, P)
+        self.assertEqual(expected["path_count"], 5)
+        self.assertEqual(expected["lexical_app_claim_count"], 2)
+        self.assertEqual(expected["app_alias_claim_count"], 0)
+        self.assertEqual(expected["data_namespace_claim_count"], 0)
+        self.assertEqual(expected["files_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertNotIn("PRIVATE", json.dumps(expected))
+        self.assertFalse(expected["receipt_ownership_approval"])
+        for boundary in range(len(raw) + 1):
+            with self.subTest(boundary=boundary):
+                stream = M.ReceiptFilesProjection(info(), P)
+                stream.feed(raw[:boundary])
+                stream.feed(raw[boundary:])
+                stream.finish()
+                self.assertEqual(stream.result(), expected)
+        metadata = info(**{"install-location": "/PRIVATE:base/"})
+        stream = M.ReceiptFilesProjection(metadata, P)
+        stream.feed(b".\nchild:name\n")
+        stream.finish()
+        self.assertEqual(stream.result(), M.receipt_projection(metadata, b".\nchild:name\n", P))
+        self.assertEqual(stream.result()["lexical_app_claim_count"], 0)
+
+    def test_receipt_colons_keep_other_path_refusals_before_result(self):
+        cases = ((b"../PRIVATE:name\n", "component"),
+            (b"/PRIVATE:name\n", "absolute"), (b"PRIVATE:name//x\n", "component"),
+            (b"PRIVATE:name\\x\n", "backslash"), (b"PRIVATE:name\x00x\n", "control"),
+            (b"PRIVATE:name\x7fx\n", "control"),
+            (("PRIVATE:" + "x" * 1017 + "\n").encode(), "utf8-bound"))
+        for raw, suffix in cases:
+            with self.subTest(suffix=suffix):
+                code = "^unsafe-member-name-" + suffix + "$"
+                with self.assertRaisesRegex(M.Refusal, code):
+                    M.receipt_projection(info(), raw, P)
+                stream = M.ReceiptFilesProjection(info(), P)
+                with self.assertRaisesRegex(M.Refusal, code):
+                    for byte in raw:
+                        stream.feed(bytes((byte,)))
+                    stream.finish()
+                self.assertFalse(stream.finished)
+
+    def test_receipt_colons_keep_case_and_unicode_alias_refusals(self):
+        for raw in (b"private:name\nPRIVATE:NAME\n",
+                "Caf\u00e9:name\nCafe\u0301:name\n".encode()):
+            with self.subTest(raw=raw):
+                with self.assertRaisesRegex(M.Refusal, "^receipt-path-alias-or-duplicate$"):
+                    M.receipt_projection(info(), raw, P)
+                stream = M.ReceiptFilesProjection(info(), P)
+                with self.assertRaisesRegex(M.Refusal, "^receipt-path-alias-or-duplicate$"):
+                    stream.feed(raw)
+                    stream.finish()
                 self.assertFalse(stream.finished)
 
 

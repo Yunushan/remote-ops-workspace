@@ -648,11 +648,11 @@ def receipt_projection(info_raw, files_raw, parser):
         raise Refusal("receipt-location-unobserved")
     base = location[1:].removesuffix("/")
     if base:
-        parser.member_name(base)
+        parser.member_name(base, receipt=True)
     app_key, keys, claims, aliases, data_claims = alias(APP_REL), set(), 0, 0, 0
     key_bytes = 0
     for line in lines:
-        name = parser.member_name(line, root=True)
+        name = parser.member_name(line, root=True, receipt=True)
         joined = base + "/" + name if base and name != "." else base or name
         key = alias(joined)
         if key in keys:
@@ -699,7 +699,7 @@ class ReceiptFilesProjection:
             raise Refusal("receipt-location-unobserved")
         self.base = self.location[1:].removesuffix("/")
         if self.base:
-            parser.member_name(self.base)
+            parser.member_name(self.base, receipt=True)
         self.parser, self.maximum = parser, maximum
         self.info_sha256 = sha(info_raw)
         self.decoder = codecs.getincrementaldecoder("utf-8")("strict")
@@ -716,7 +716,7 @@ class ReceiptFilesProjection:
         self.rows += 1
         if self.rows > MAX_RECEIPT_FILE_ROWS:
             raise Refusal("receipt-files-row-bound")
-        name = self.parser.member_name("".join(self.line), root=True)
+        name = self.parser.member_name("".join(self.line), root=True, receipt=True)
         joined = self.base + "/" + name if self.base and name != "." else self.base or name
         key = alias(joined)
         if key in self.keys:
@@ -991,7 +991,7 @@ def public_save(path, record):
         stream.write(raw)
 
 
-def member_name(value: str, *, root=False) -> str:
+def member_name(value: str, *, root=False, receipt=False) -> str:
     if value in {".", "./"} and root:
         return "."
     if not isinstance(value, str) or not value:
@@ -1000,7 +1000,8 @@ def member_name(value: str, *, root=False) -> str:
         raise Refusal("unsafe-member-name-utf8-bound")
     if "\\" in value:
         raise Refusal("unsafe-member-name-backslash")
-    if ":" in value:
+    # Receipt paths are lexical POSIX observations, never extraction targets.
+    if ":" in value and receipt is not True:
         raise Refusal("unsafe-member-name-colon")
     if value.startswith("/"):
         raise Refusal("unsafe-member-name-absolute")

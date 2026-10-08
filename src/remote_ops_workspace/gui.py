@@ -467,7 +467,6 @@ def create_main_window(
         from PyQt6.QtCore import (
             QBuffer,
             QByteArray,
-            QEvent,
             QIODevice,
             QPoint,
             QProcess,

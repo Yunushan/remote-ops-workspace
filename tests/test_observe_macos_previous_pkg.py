@@ -1730,7 +1730,9 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
                  ("PRIVATE\\base", "unsafe-member-name-backslash"),
                  ("PRIVATE\x00base", "unsafe-member-name-control"))
         for location, code in cases:
-            metadata = info(**{"install-location": location})
+            # Binary plists can carry NUL; XML serialization refuses it before the parser.
+            metadata = plistlib.dumps({"volume": "/", "install-location": location},
+                                     fmt=plistlib.FMT_BINARY)
             for streaming in (False, True):
                 with self.subTest(code=code, streaming=streaming):
                     with self.assertRaisesRegex(M.Refusal, "^" + code + "$") as failure:

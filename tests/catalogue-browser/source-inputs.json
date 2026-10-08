@@ -15,7 +15,7 @@
     "test_contract.py",
     "upload_guard.py"
   ],
-  "product_baseline_head": "ae30991bc98490c87ecbf3ea866b7be182541c77",
+  "product_baseline_head": "cd56758dd951c0a1c51770d07dec51839e4dd6df",
   "product_inputs": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -69,8 +69,8 @@
     },
     {
       "path": "src/remote_ops_workspace/state_lock.py",
-      "sha256": "e6a825d2de7cfc1d23410f6ffe3ce8a6d9fabec41650a3b09fc85ae7d0a4855e",
-      "size": 10236
+      "sha256": "c7ea5f9c97965be9917b71c7934be527cd14911a5254b6c792d875da291143b2",
+      "size": 12413
     },
     {
       "path": "src/remote_ops_workspace/storage.py",

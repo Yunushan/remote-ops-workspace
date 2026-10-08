@@ -1,5 +1,5 @@
 {
-  "baseline_head": "ae30991bc98490c87ecbf3ea866b7be182541c77",
+  "baseline_head": "cd56758dd951c0a1c51770d07dec51839e4dd6df",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -23,8 +23,8 @@
     },
     {
       "path": "src/remote_ops_workspace/cli.py",
-      "sha256": "e0d653739d70db893c00cd9a3da15a1d45e4842739bce5714eb1551ac107c28f",
-      "size": 151545
+      "sha256": "263febd885026b502cbdf88ac877d2a789e9c8354903336de8041681ee7cd301",
+      "size": 153606
     },
     {
       "path": "src/remote_ops_workspace/command_safety.py",
@@ -67,11 +67,6 @@
       "size": 3144
     },
     {
-      "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "c8de1ad7e00bbcdb574cfa1bad55298d23d6a75ee2aba8d3cebc4816138483b1",
-      "size": 1001402
-    },
-    {
       "path": "src/remote_ops_workspace/gui_designs.py",
       "sha256": "ddd8ddd31df83b1b20e86bc15bc44816b07952932ba2643577accce2dc52b756",
       "size": 313413
@@ -103,13 +98,18 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal.py",
-      "sha256": "4a7c0c391fc940234f9cccf1490bb03672e4ff6c4cccf23ac9bd77f2dd3ff6c7",
-      "size": 114641
+      "sha256": "7b3d77860092bff1751c232d139b51fa4c1e55e0acd6804b551d3d5b6f17bfba",
+      "size": 115294
     },
     {
       "path": "src/remote_ops_workspace/gui_values.py",
       "sha256": "e1dcfe6f2c193c23117ca77e42de11eb4a06177ae9f55c3557724d894afe949b",
       "size": 509
+    },
+    {
+      "path": "src/remote_ops_workspace/gui.py",
+      "sha256": "c8de1ad7e00bbcdb574cfa1bad55298d23d6a75ee2aba8d3cebc4816138483b1",
+      "size": 1001402
     },
     {
       "path": "src/remote_ops_workspace/keys.py",
@@ -248,8 +248,8 @@
     },
     {
       "path": "src/remote_ops_workspace/state_lock.py",
-      "sha256": "e6a825d2de7cfc1d23410f6ffe3ce8a6d9fabec41650a3b09fc85ae7d0a4855e",
-      "size": 10236
+      "sha256": "c7ea5f9c97965be9917b71c7934be527cd14911a5254b6c792d875da291143b2",
+      "size": 12413
     },
     {
       "path": "src/remote_ops_workspace/storage.py",
@@ -267,11 +267,6 @@
       "size": 12162
     },
     {
-      "path": "src/remote_ops_workspace/terminal.py",
-      "sha256": "53ec9b73a4340a6cc5ea68bddd8cfedb4392e7c16065bfd083514664f0370eb7",
-      "size": 27081
-    },
-    {
       "path": "src/remote_ops_workspace/terminal_emulation.py",
       "sha256": "6a8a16531971109a7bb508dbe921be10f909a236af54554cb76a2e43c4f748e3",
       "size": 50635
@@ -287,6 +282,21 @@
       "size": 1867
     },
     {
+      "path": "src/remote_ops_workspace/terminal.py",
+      "sha256": "53ec9b73a4340a6cc5ea68bddd8cfedb4392e7c16065bfd083514664f0370eb7",
+      "size": 27081
+    },
+    {
+      "path": "src/remote_ops_workspace/update_channel.py",
+      "sha256": "c4533d264c4441695f53ca6d6f8c68aa41a76b84968a38ab84f35e0dd6b074e8",
+      "size": 25496
+    },
+    {
+      "path": "src/remote_ops_workspace/update_staging.py",
+      "sha256": "97515094811ebee6067f0a95f5fe39ddd52c229f4589695955d6baecc81ba349",
+      "size": 15836
+    },
+    {
       "path": "src/remote_ops_workspace/vault.py",
       "sha256": "fb99fe1278cafaa1fcba377f09ece55f127ce78560bcab806d6e78b97a55c05e",
       "size": 14125
@@ -300,6 +310,11 @@
       "path": "src/remote_ops_workspace/windows_conpty.py",
       "sha256": "6ae74d81496b038f7ba31424105854efffbd4ef93cd85d65b6fde4eff2a1dcad",
       "size": 53451
+    },
+    {
+      "path": "src/remote_ops_workspace/windows_private_storage.py",
+      "sha256": "040216019e554be409343576ac232567ca3027b364ae7a1def131392e0bfb033",
+      "size": 31935
     },
     {
       "path": "src/remote_ops_workspace/workspace_backup.py",

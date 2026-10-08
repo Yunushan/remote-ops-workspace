@@ -77,7 +77,7 @@ def main():
                 need(expected is not None and expected['size'] == len(raw)
                      and expected['sha256'] == hashlib.sha256(raw).hexdigest())
                 rows.append({'relative': relative, 'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()})
-        need(1 <= len(rows) <= 62)
+        need(1 <= len(rows) <= 65)
         return hashlib.sha256(packed(rows)).hexdigest()
 
     loaded_before = loaded_sources()

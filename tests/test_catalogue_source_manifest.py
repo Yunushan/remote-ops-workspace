@@ -4,7 +4,6 @@ import json
 import re
 from pathlib import Path, PurePosixPath
 
-
 ROOT = Path(__file__).resolve().parents[1]
 CATALOGUE = ROOT / "tests" / "catalogue-browser"
 

@@ -580,6 +580,23 @@ class RetainedInventoryFDTests(CFTPureFixtureCase):
             self.assertEqual(source.call_count, 2)
 
 
+    def test_corrupt_local_header_gets_fixed_inventory_code_with_matching_source_pin(self):
+        raw = bytearray(synthetic_zip())
+        raw[:4] = b'BAD!'
+        raw = bytes(raw)
+        with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-local-header-layout-refused$') as failure:
+            self.read_inventory(raw, self.source_pin(raw))
+        code = bundle.inventory_refusal_code(failure.exception, 'chrome-inventory')
+        self.assertEqual(code, 'cft-local-header-layout-refused')
+        record = PurePublicAcquisitionTests.checkpoint(self)
+        record['refusal_code'] = code
+        public = bundle.packed(record)
+        self.assertEqual(bundle.public_bytes(public, bundle.packed(disabled())), public)
+        self.assertFalse(record['complete'])
+        self.assertFalse(record['vendor_binary_executed'])
+        self.assertEqual(record['readiness_credit'], 0)
+
+
 class FinalAcquisitionRecordTests(CFTPureFixtureCase):
     def checkpoint(self):
         return PurePublicAcquisitionTests.checkpoint(self)
@@ -639,6 +656,98 @@ class FinalAcquisitionRecordTests(CFTPureFixtureCase):
                 self.assertEqual(record, original)
                 self.assertFalse(record['complete'])
                 self.assertNotIn('acquisition', record)
+
+
+class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
+    def test_all_fixed_inventory_codes_round_trip_only_as_incomplete_inventory_refusals(self):
+        self.assertEqual(len(bundle.INVENTORY_REFUSAL_CODES), 45)
+        for phase in bundle.INVENTORY_PHASES:
+            for code in sorted(bundle.INVENTORY_REFUSAL_CODES):
+                with self.subTest(phase=phase, code=code):
+                    error = bundle.BundleRefusal(code)
+                    self.assertEqual(bundle.inventory_refusal_code(error, phase), code)
+                    record = PurePublicAcquisitionTests.checkpoint(self)
+                    record.update(phase=phase, refusal_code=code)
+                    raw = bundle.packed(record)
+                    self.assertEqual(bundle.public_bytes(raw, bundle.packed(disabled())), raw)
+                    self.assertFalse(record['complete'])
+                    self.assertFalse(record['genuine_browser_qualification'])
+                    self.assertEqual(record['readiness_credit'], 0)
+
+    def test_unknown_nonexact_or_private_exception_values_never_get_stringified(self):
+        class PrivateRuntimeError(RuntimeError):
+            def __str__(self):
+                raise AssertionError('exception stringification forbidden')
+        class DerivedRefusal(bundle.BundleRefusal):
+            def __str__(self):
+                raise AssertionError('derived exception stringification forbidden')
+        class PrivateString(str):
+            def __hash__(self):
+                raise AssertionError('nonexact string hashing forbidden')
+        errors = (PrivateRuntimeError('/PRIVATE/error'), bundle.BundleRefusal('/PRIVATE/path'),
+            bundle.BundleRefusal('cft-ZIP-footer-refused', '/PRIVATE/extra'), bundle.BundleRefusal(),
+            bundle.BundleRefusal(True), bundle.BundleRefusal(['/PRIVATE/list']),
+            bundle.BundleRefusal(PrivateString('cft-ZIP-footer-refused')),
+            DerivedRefusal('cft-ZIP-footer-refused'))
+        for index, error in enumerate(errors):
+            with self.subTest(index=index):
+                code = bundle.inventory_refusal_code(error, 'chrome-inventory')
+                self.assertEqual(code, 'cft-inventory-runtime-refused')
+                record = PurePublicAcquisitionTests.checkpoint(self)
+                record['refusal_code'] = code
+                raw = bundle.packed(record)
+                self.assertEqual(bundle.public_bytes(raw, bundle.packed(disabled())), raw)
+                self.assertNotIn(b'PRIVATE', raw)
+        for bad in ('/PRIVATE/path', True, None, 5, ['cft-ZIP-footer-refused']):
+            with self.subTest(type_name=type(bad).__name__):
+                record = PurePublicAcquisitionTests.checkpoint(self)
+                record['refusal_code'] = bad
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.public_bytes(bundle.packed(record), bundle.packed(disabled()))
+
+    def test_other_phases_keep_generic_code_and_refuse_inventory_predicate_projection(self):
+        for phase in bundle.ACQUISITION_PHASES:
+            if phase in bundle.INVENTORY_PHASES:
+                continue
+            with self.subTest(phase=phase):
+                error = bundle.BundleRefusal('cft-local-header-layout-refused')
+                self.assertEqual(bundle.inventory_refusal_code(error, phase), 'cft-acquisition-refused')
+                record = PurePublicAcquisitionTests.checkpoint(self)
+                record.update(phase=phase, refusal_code='cft-local-header-layout-refused')
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.public_bytes(bundle.packed(record), bundle.packed(disabled()))
+                record['refusal_code'] = 'cft-acquisition-refused'
+                raw = bundle.packed(record)
+                self.assertEqual(bundle.public_bytes(raw, bundle.packed(disabled())), raw)
+        for phase in (None, True, ['chrome-inventory'], '/PRIVATE/phase'):
+            with self.subTest(type_name=type(phase).__name__):
+                self.assertEqual(bundle.inventory_refusal_code(error, phase), 'cft-acquisition-refused')
+
+    def test_inventory_diagnostic_cannot_promote_completion_or_any_authority(self):
+        for key, value in (('complete', True), ('vendor_binary_executed', True),
+                ('genuine_browser_qualification', True), ('independent_vendor_signature', True),
+                ('publisher_license_approval', True), ('sandbox_policy_changed', True), ('readiness_credit', 1)):
+            with self.subTest(field=key):
+                record = PurePublicAcquisitionTests.checkpoint(self)
+                record.update(refusal_code='cft-local-header-layout-refused')
+                record[key] = value
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.public_bytes(bundle.packed(record), bundle.packed(disabled()))
+
+    def test_central_name_span_fixed_predicate_refuses_before_member_name_parser(self):
+        raw = synthetic_zip()
+        footer = raw[-22:]
+        end = struct.unpack('<4s4H2IH', footer)
+        central = raw[end[6]:end[6] + end[5]]
+        header = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+        header[10] = bundle.MAX_NAME + 1
+        changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
+        with mock.patch.object(bundle, 'member_name') as member:
+            with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-central-name-span-refused$') as failure:
+                bundle.central_plan(footer, changed, len(raw), 'chrome')
+            member.assert_not_called()
+        self.assertEqual(bundle.inventory_refusal_code(failure.exception, 'chromedriver-inventory'),
+            'cft-central-name-span-refused')
 
 
 if __name__ == '__main__':

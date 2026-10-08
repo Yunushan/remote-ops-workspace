@@ -11,6 +11,7 @@ from cft_bundle import (
     BundleRefusal,
     acquire,
     finish_acquisition,
+    inventory_refusal_code,
     packed,
     policy,
     public_bytes,
@@ -79,11 +80,11 @@ def main():
         if not record['private_acquisition_root_removed']:
             raise BundleRefusal('cft-private-cleanup-refused')
         operation_complete = True
-    except Exception:
+    except Exception as error:
         record['status'] = 'refused'
         record['complete'] = False
         record.pop('acquisition', None)
-        record['refusal_code'] = 'cft-acquisition-refused'
+        record['refusal_code'] = inventory_refusal_code(error, record['phase'])
     finally:
         try:
             for owner in reversed(registry):

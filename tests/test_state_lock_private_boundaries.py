@@ -129,3 +129,28 @@ def test_private_lock_metadata_refusal_closes_scope_and_descriptor_before_native
     native_conversion.assert_not_called()
     guard.verify.assert_called_once_with()
     assert path.read_bytes() == (b"xx" if defect == "size" else b"")
+
+
+@pytest.mark.parametrize(
+    ("platform", "shared", "has_scope"),
+    [("posix", False, True), ("nt", True, True), ("nt", False, False)],
+)
+def test_open_private_lock_rejects_invalid_boundary_before_filesystem_use(
+    tmp_path, monkeypatch, platform, shared, has_scope
+):
+    guard = SimpleNamespace(verify=Mock(side_effect=AssertionError("invalid boundary verified a lease")))
+    opened = Mock(side_effect=AssertionError("invalid boundary opened a lock file"))
+    private_dir = Mock(side_effect=AssertionError("invalid boundary touched a private directory"))
+    shared_dir = Mock(side_effect=AssertionError("invalid boundary touched a shared directory"))
+    _os_facade(monkeypatch, name=platform, open=opened)
+    monkeypatch.setattr(locking, "ensure_private_dir_required", private_dir)
+    monkeypatch.setattr(locking, "ensure_shared_dir", shared_dir)
+    scope = SimpleNamespace() if has_scope else None
+    path = tmp_path / "private.lock"
+    with pytest.raises(OSError, match="^private native state lock boundary refused$"):
+        locking._open_lock_file(path, shared=shared, _private_guard=guard, _private_scope=scope)
+    guard.verify.assert_not_called()
+    opened.assert_not_called()
+    private_dir.assert_not_called()
+    shared_dir.assert_not_called()
+    assert not path.exists()

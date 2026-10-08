@@ -226,7 +226,7 @@ def member_name(raw, flags, asset):
 
 
 def central_plan(footer, central, total, asset):
-    need(asset in ASSETS and type(footer) is bytes and len(footer) == 22)
+    need(asset in ASSETS and type(footer) is bytes and len(footer) == 22, 'cft-central-input-shape-refused')
     integer(total, MAX_ARCHIVE, 22)
     end = struct.unpack('<4s4H2IH', footer)
     need(end[0] == b'PK\x05\x06' and end[1] == end[2] == end[7] == 0
@@ -238,14 +238,14 @@ def central_plan(footer, central, total, asset):
     offset = 0
     expanded = 0
     while offset < len(central):
-        need(len(central) - offset >= 46)
+        need(len(central) - offset >= 46, 'cft-central-header-size-refused')
         row = struct.unpack('<4s6H3I5H2I', central[offset:offset + 46])
         need(row[0] == b'PK\x01\x02' and row[1] >> 8 == 3 and row[2] <= 20
              and row[3] & ~0x808 == 0 and row[4] in (0, 8)
              and row[12] == row[13] == row[14] == 0 and row[11] == 0,
              'cft-ZIP-member-format-refused')
         name_len = row[10]
-        need(1 <= name_len <= MAX_NAME and offset + 46 + name_len <= len(central))
+        need(1 <= name_len <= MAX_NAME and offset + 46 + name_len <= len(central), 'cft-central-name-span-refused')
         name_raw = central[offset + 46:offset + 46 + name_len]
         name = member_name(name_raw, row[3], asset)
         alias = name.rstrip('/').casefold()
@@ -257,28 +257,28 @@ def central_plan(footer, central, total, asset):
              and mode & 0o7000 == 0, 'cft-member-type-or-special-mode-refused')
         integer(row[8], MAX_ARCHIVE)
         integer(row[9], MAX_UNPACKED)
-        need(row[8] != 0xFFFFFFFF and row[9] != 0xFFFFFFFF and row[16] != 0xFFFFFFFF)
+        need(row[8] != 0xFFFFFFFF and row[9] != 0xFFFFFFFF and row[16] != 0xFFFFFFFF, 'cft-central-ZIP64-refused')
         if directory:
-            need(row[7] == row[8] == row[9] == 0 and row[4] == 0)
+            need(row[7] == row[8] == row[9] == 0 and row[4] == 0, 'cft-directory-data-layout-refused')
         else:
-            need(row[4] != 0 or row[8] == row[9])
+            need(row[4] != 0 or row[8] == row[9], 'cft-stored-member-size-refused')
             need(row[9] <= max(1, row[8]) * 200, 'cft-decompression-ratio-refused')
             expanded += row[9]
-            need(expanded <= MAX_UNPACKED)
+            need(expanded <= MAX_UNPACKED, 'cft-expanded-total-bound-refused')
         result.append({'path': name, 'raw_name': name_raw, 'flags': row[3], 'method': row[4],
             'crc32': row[7], 'compressed_size': row[8], 'size': row[9], 'mode': stat.S_IMODE(mode),
             'offset': row[16], 'kind': 'directory' if directory else 'file'})
         offset += 46 + name_len
-    need(offset == len(central) and len(result) == end[4])
+    need(offset == len(central) and len(result) == end[4], 'cft-central-entry-count-refused')
     by_name = {row['path'].rstrip('/').casefold(): row['kind'] for row in result}
     for row in result:
         parts = row['path'].rstrip('/').casefold().split('/')
         for index in range(1, len(parts)):
             need(by_name.get('/'.join(parts[:index])) != 'file', 'cft-file-directory-collision')
     offsets = sorted(row['offset'] for row in result)
-    need(len(set(offsets)) == len(offsets) and offsets[0] == 0 and offsets[-1] < end[6])
+    need(len(set(offsets)) == len(offsets) and offsets[0] == 0 and offsets[-1] < end[6], 'cft-member-offset-layout-refused')
     need(any(row['path'] == EXECUTABLES[asset] and row['kind'] == 'file'
-             and row['size'] > 0 and row['mode'] & 0o111 for row in result))
+             and row['size'] > 0 and row['mode'] & 0o111 for row in result), 'cft-expected-executable-unobserved')
     return result, end[6]
 
 
@@ -313,7 +313,7 @@ def member_chunks(stream, row, deadline):
 
 def inventory(path, asset, deadline, *, expected_pin):
     before = Path(path).lstat()
-    need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 22 <= before.st_size <= MAX_ARCHIVE)
+    need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 22 <= before.st_size <= MAX_ARCHIVE, 'cft-inventory-input-file-shape-refused')
     exact(expected_pin, {'bytes', 'sha256', 'identity'})
     integer(expected_pin['bytes'], MAX_ARCHIVE, 22)
     digest(expected_pin['sha256'])
@@ -324,11 +324,11 @@ def inventory(path, asset, deadline, *, expected_pin):
     with os.fdopen(fd, 'rb') as stream:
         need(archive_stream_pin(stream, before, deadline) == expected_pin,
              'cft-inventory-opened-source-pin-refused')
-        need(identity(Path(path).lstat()) == identity(before))
+        need(identity(Path(path).lstat()) == identity(before), 'cft-inventory-after-hash-path-identity-refused')
         stream.seek(-22, 2)
         footer = stream.read(22)
         end = struct.unpack('<4s4H2IH', footer)
-        need(end[5] <= MAX_CENTRAL and end[6] + end[5] + 22 == before.st_size)
+        need(end[5] <= MAX_CENTRAL and end[6] + end[5] + 22 == before.st_size, 'cft-inventory-footer-span-refused')
         stream.seek(end[6])
         central = stream.read(end[5])
         plan, central_start = central_plan(footer, central, before.st_size, asset)
@@ -337,56 +337,56 @@ def inventory(path, asset, deadline, *, expected_pin):
             remaining(deadline)
             stream.seek(row['offset'])
             local_raw = stream.read(30)
-            need(len(local_raw) == 30)
+            need(len(local_raw) == 30, 'cft-local-header-size-refused')
             local = struct.unpack('<4s5H3I2H', local_raw)
             need(local[0] == b'PK\x03\x04' and local[1] <= 20
                  and local[2] == row['flags'] and local[3] == row['method']
-                 and local[9] == len(row['raw_name']) and local[10] == 0)
-            need(stream.read(local[9]) == row['raw_name'])
+                 and local[9] == len(row['raw_name']) and local[10] == 0, 'cft-local-header-layout-refused')
+            need(stream.read(local[9]) == row['raw_name'], 'cft-local-name-refused')
             row['data_start'] = row['offset'] + 30 + local[9]
             data_end = row['offset'] + 30 + local[9] + row['compressed_size']
             next_offset = ordered[index + 1]['offset'] if index + 1 < len(ordered) else central_start
             trailer_size = next_offset - data_end
             if row['flags'] & 8:
-                need(tuple(local[6:9]) in ((0, 0, 0), (row['crc32'], row['compressed_size'], row['size'])))
-                need(trailer_size in (12, 16))
+                need(tuple(local[6:9]) in ((0, 0, 0), (row['crc32'], row['compressed_size'], row['size'])), 'cft-descriptor-local-values-refused')
+                need(trailer_size in (12, 16), 'cft-descriptor-span-refused')
                 stream.seek(data_end)
                 trailer = stream.read(trailer_size)
                 if trailer_size == 16:
-                    need(trailer[:4] == b'PK\x07\x08')
+                    need(trailer[:4] == b'PK\x07\x08', 'cft-descriptor-signature-refused')
                     trailer = trailer[4:]
-                need(struct.unpack('<3I', trailer) == (row['crc32'], row['compressed_size'], row['size']))
+                need(struct.unpack('<3I', trailer) == (row['crc32'], row['compressed_size'], row['size']), 'cft-descriptor-values-refused')
             else:
-                need(tuple(local[6:9]) == (row['crc32'], row['compressed_size'], row['size']) and trailer_size == 0)
+                need(tuple(local[6:9]) == (row['crc32'], row['compressed_size'], row['size']) and trailer_size == 0, 'cft-local-values-or-trailer-layout-refused')
         rows = []
         with zipfile.ZipFile(stream) as archive:
             infos = archive.infolist()
-            need(len(infos) == len(plan))
+            need(len(infos) == len(plan), 'cft-zip-info-count-refused')
             for expected, info in zip(plan, infos, strict=True):
                 need(info.orig_filename == expected['path'] and info.filename == expected['path']
                      and info.header_offset == expected['offset'] and info.flag_bits == expected['flags']
                      and info.compress_type == expected['method'] and info.CRC == expected['crc32']
-                     and info.compress_size == expected['compressed_size'] and info.file_size == expected['size'])
+                     and info.compress_size == expected['compressed_size'] and info.file_size == expected['size'], 'cft-zip-info-layout-refused')
                 digest_state = hashlib.sha256()
                 crc = 0
                 size = 0
                 if expected['kind'] == 'file':
                     for chunk in member_chunks(stream, expected, deadline):
                         remaining(deadline)
-                        need(len(chunk) <= CHUNK)
+                        need(len(chunk) <= CHUNK, 'cft-member-chunk-bound-refused')
                         size += len(chunk)
-                        need(size <= expected['size'])
+                        need(size <= expected['size'], 'cft-member-size-overrun-refused')
                         digest_state.update(chunk)
                         crc = zlib.crc32(chunk, crc)
-                    need(size == expected['size'] and crc & 0xFFFFFFFF == expected['crc32'])
+                    need(size == expected['size'] and crc & 0xFFFFFFFF == expected['crc32'], 'cft-member-size-or-crc-refused')
                 rows.append({key: expected[key] for key in ('path', 'kind', 'size', 'compressed_size', 'mode')}
                             | {'sha256': digest_state.hexdigest() if expected['kind'] == 'file' else None})
         need(archive_stream_pin(stream, before, deadline) == expected_pin,
              'cft-inventory-final-source-pin-refused')
-    need(identity(Path(path).lstat()) == identity(before))
+    need(identity(Path(path).lstat()) == identity(before), 'cft-inventory-final-path-identity-refused')
     rows.sort(key=lambda row: row['path'])
     encoded = packed(rows)
-    need(len(encoded) <= MAX_PUBLIC)
+    need(len(encoded) <= MAX_PUBLIC, 'cft-inventory-public-size-refused')
     return {'entries': len(rows), 'files': sum(row['kind'] == 'file' for row in rows),
         'unpacked_bytes': sum(row['size'] for row in rows), 'inventory_sha256': hashed(encoded), 'inventory': rows}
 
@@ -717,6 +717,67 @@ ACQUISITION_PHASES = ('source-checks', 'policy', 'metadata-fetch', 'metadata-sel
     'chrome-inventory', 'chromedriver-download', 'chromedriver-inventory', 'source-readback', 'cleanup')
 
 
+INVENTORY_PHASES = ('chrome-inventory', 'chromedriver-inventory')
+INVENTORY_REFUSAL_CODES = frozenset((
+    'cft-ZIP-footer-refused',
+    'cft-ZIP-member-format-refused',
+    'cft-central-ZIP64-refused',
+    'cft-central-entry-count-refused',
+    'cft-central-header-size-refused',
+    'cft-central-input-shape-refused',
+    'cft-central-name-span-refused',
+    'cft-contract-refused',
+    'cft-deadline-refused',
+    'cft-decompression-ratio-refused',
+    'cft-deflate-eof-refused',
+    'cft-deflate-tail-or-progress-refused',
+    'cft-descriptor-local-values-refused',
+    'cft-descriptor-signature-refused',
+    'cft-descriptor-span-refused',
+    'cft-descriptor-values-refused',
+    'cft-directory-data-layout-refused',
+    'cft-download-inventory-binding-refused',
+    'cft-expanded-total-bound-refused',
+    'cft-expected-executable-unobserved',
+    'cft-file-directory-collision',
+    'cft-inventory-after-hash-path-identity-refused',
+    'cft-inventory-final-path-identity-refused',
+    'cft-inventory-final-source-pin-refused',
+    'cft-inventory-footer-span-refused',
+    'cft-inventory-input-file-shape-refused',
+    'cft-inventory-opened-source-pin-refused',
+    'cft-inventory-path-pin-refused',
+    'cft-inventory-public-size-refused',
+    'cft-inventory-runtime-refused',
+    'cft-inventory-source-readback-refused',
+    'cft-local-header-layout-refused',
+    'cft-local-header-size-refused',
+    'cft-local-name-refused',
+    'cft-local-values-or-trailer-layout-refused',
+    'cft-member-alias-refused',
+    'cft-member-chunk-bound-refused',
+    'cft-member-name-refused',
+    'cft-member-offset-layout-refused',
+    'cft-member-size-or-crc-refused',
+    'cft-member-size-overrun-refused',
+    'cft-member-type-or-special-mode-refused',
+    'cft-stored-member-size-refused',
+    'cft-zip-info-count-refused',
+    'cft-zip-info-layout-refused',
+))
+
+
+def inventory_refusal_code(error, phase):
+    """Fixed public predicate only; never stringify an exception or expose paths."""
+    if type(phase) is not str or phase not in INVENTORY_PHASES:
+        return 'cft-acquisition-refused'
+    if type(error) is BundleRefusal and len(error.args) == 1:
+        code = error.args[0]
+        if type(code) is str and code in INVENTORY_REFUSAL_CODES:
+            return code
+    return 'cft-inventory-runtime-refused'
+
+
 def public_bytes(raw, policy_raw):
     """Pure allowlist only; validation grants no official-host or publisher trust."""
     value = decode(raw, MAX_PUBLIC)
@@ -806,7 +867,9 @@ def public_bytes(raw, policy_raw):
                          and row['size'] > 0 and row['mode'] & 0o111 for row in rows))
     else:
         need(value['status'] == 'refused' and 'acquisition' not in value
-             and ('refusal_code' not in value or value['refusal_code'] == 'cft-acquisition-refused'))
+             and ('refusal_code' not in value or value['refusal_code'] == 'cft-acquisition-refused'
+                  or (value['phase'] in INVENTORY_PHASES and type(value['refusal_code']) is str
+                      and value['refusal_code'] in INVENTORY_REFUSAL_CODES)))
     return raw
 
 

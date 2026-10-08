@@ -1772,7 +1772,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
                 with self.assertRaises(M.Refusal):
                     self.projection(raw, width=1)
         raw = b"".join(f"row-{index}\n".encode() for index in range(M.MAX_ROWS + 1))
-        with self.assertRaisesRegex(M.Refusal, "^receipt-metadata-layout-unobserved$"):
+        with self.assertRaisesRegex(M.Refusal, "^receipt-files-row-bound$"):
             self.projection(raw)
 
     def test_derived_limit_and_remaining_budget_exact_eof_and_sentinel(self):
@@ -1942,6 +1942,64 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         self.assertEqual(facts["command_stdout_bytes"], 0)
         self.assertEqual(facts["command_stderr_bytes"], 0)
         write.assert_not_called()
+
+    def test_row_bound_fixed_code_precedes_excess_row_name_parser(self):
+        with patch.object(M, "MAX_ROWS", 2), patch.object(P, "member_name", wraps=P.member_name) as member:
+            value = M.ReceiptFilesProjection(info(), P)
+            value.feed(b"a\nb\n")
+            self.assertEqual(value.rows, 2)
+            self.assertEqual(len(value.keys), 2)
+            with self.assertRaisesRegex(M.Refusal, "^receipt-files-row-bound$"):
+                value.feed(b"../PRIVATE-overflow\n")
+            self.assertEqual([call.args for call in member.call_args_list], [("a",), ("b",)])
+            self.assertEqual([call.kwargs for call in member.call_args_list], [{"root": True}, {"root": True}])
+            self.assertEqual(value.rows, 3)
+            self.assertEqual(len(value.keys), 2)
+            self.assertFalse(value.finished)
+            with self.assertRaisesRegex(M.Refusal, "^receipt-metadata-layout-unobserved$"):
+                value.result()
+
+    def test_unterminated_excess_row_uses_fixed_code_without_eof(self):
+        raw = b"a\nb\nPRIVATE-unterminated"
+        with patch.object(M, "MAX_ROWS", 2):
+            value = M.ReceiptFilesProjection(info(), P)
+            stream = M.ReceiptCommandStream(value, lambda _count: None)
+            stream.consume(0, raw)
+            with self.assertRaisesRegex(M.Refusal, "^receipt-files-row-bound$") as failure:
+                stream.eof(0)
+            stream.fail(failure.exception)
+            self.assertEqual(stream.failure_code, "receipt-files-row-bound")
+            self.assertIn(stream.failure_code, M.REFUSAL_CODES)
+            with self.assertRaisesRegex(M.EvidenceError, "^command-pipe-lifetime-or-bound$"):
+                stream.ready()
+        facts = stream.snapshot()
+        self.assertEqual(facts["receipt_stream_stdout_bytes"], len(raw))
+        self.assertEqual(facts["receipt_stream_stdout_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertFalse(facts["receipt_stream_stdout_eof"])
+        self.assertFalse(facts["receipt_stream_complete"])
+        self.assertTrue(facts["receipt_stream_hashes_partial"])
+        self.assertFalse(value.finished)
+        self.assertNotIn("PRIVATE", json.dumps(facts))
+
+    def test_row_bound_capture_refuses_and_reaps_only_retained_child(self):
+        raw = b"a\nb\nPRIVATE-third-row\n"
+        with patch.object(M, "MAX_ROWS", 2):
+            result, refusal, commands, child, cleanup, facts, _popen = self.mock_capture(raw)
+        self.assertIsNone(result)
+        self.assertEqual(refusal, "receipt-files-row-bound")
+        self.assertTrue(commands.uncertain)
+        self.assertEqual(cleanup, [child])
+        self.assertTrue(commands.calls[0]["leader_cleanup_attempted"])
+        self.assertEqual(commands.calls[0]["process_tree_cleanup"], "not-proven")
+        self.assertEqual(facts["receipt_query_index"], 5)
+        self.assertEqual(facts["receipts_queried"], 4)
+        self.assertEqual(facts["receipt_stream_stdout_bytes"], len(raw))
+        self.assertEqual(facts["receipt_stream_stdout_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertFalse(facts["receipt_stream_stdout_eof"])
+        self.assertFalse(facts["receipt_stream_complete"])
+        self.assertTrue(facts["receipt_stream_hashes_partial"])
+        self.assertNotIn("receipt_files_sha256", facts)
+        self.assertNotIn("PRIVATE", json.dumps(facts))
 
 
 if __name__ == "__main__":

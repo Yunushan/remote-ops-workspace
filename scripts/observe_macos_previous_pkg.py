@@ -164,6 +164,7 @@ REFUSAL_CODES = frozenset(
         "private-metadata-directory-shape",
         "public-output-bound-or-existing",
         "receipt-location-unobserved",
+        "receipt-files-row-bound",
         "receipt-files-stderr-unobserved",
         "receipt-metadata-bound",
         "receipt-metadata-layout-unobserved",
@@ -696,7 +697,7 @@ class ReceiptFilesProjection:
     def _row(self):
         self.rows += 1
         if self.rows > MAX_ROWS:
-            raise Refusal("receipt-metadata-layout-unobserved")
+            raise Refusal("receipt-files-row-bound")
         name = self.parser.member_name("".join(self.line), root=True)
         joined = self.base + "/" + name if self.base and name != "." else self.base or name
         key = alias(joined)

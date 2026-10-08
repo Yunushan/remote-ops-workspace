@@ -1714,7 +1714,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         return value
 
     def test_receipt_location_fixed_causes_match_whole_and_stream_without_private_text(self):
-        cases = (("", "receipt-location-empty"),
+        cases = (("", "receipt-location-empty-root-volume"),
                  ("PRIVATE-" + "x" * 1100, "receipt-location-byte-bound"),
                  ("x" * 1025, "receipt-location-byte-bound"),
                  ("\u00e9" * 512 + "x", "receipt-location-byte-bound"),
@@ -1743,6 +1743,27 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
                     self.assertEqual(failure.exception.args, (code,))
                     self.assertIn(code, M.REFUSAL_CODES)
                     self.assertNotIn("PRIVATE", str(failure.exception))
+
+    def test_empty_location_volume_partition_refuses_before_member_parsing_or_launch(self):
+        for volume in ("/", "", "/PRIVATE-volume", ".", "//"):
+            code = "receipt-location-empty-root-volume" if volume == "/" else "receipt-location-empty"
+            metadata = info(volume=volume, **{"install-location": ""})
+            for streaming in (False, True):
+                with self.subTest(root_volume=volume == "/", streaming=streaming):
+                    with patch.object(P, "member_name") as member:
+                        with self.assertRaisesRegex(M.Refusal, "^" + code + "$") as failure:
+                            if streaming:
+                                M.ReceiptFilesProjection(metadata, P)
+                            else:
+                                M.receipt_projection(metadata, b".\n", P)
+                        self.assertEqual(failure.exception.args, (code,))
+                        self.assertIn(code, M.REFUSAL_CODES)
+                        self.assertNotIn("PRIVATE", str(failure.exception))
+                        member.assert_not_called()
+            with patch.object(M.subprocess, "Popen", side_effect=AssertionError("no launch")) as popen:
+                with self.assertRaisesRegex(M.Refusal, "^" + code + "$"):
+                    M.MetadataCommands().receipt_files("fixture.receipt", metadata, P)
+                popen.assert_not_called()
 
     def test_receipt_location_byte_boundary_stays_accepted_without_ownership_claim(self):
         for location in ("/", "/" + "x" * 1023, "/" + "\u00e9" * 511 + "x",

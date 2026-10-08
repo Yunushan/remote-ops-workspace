@@ -169,6 +169,7 @@ REFUSAL_CODES = frozenset(
         "public-output-bound-or-existing",
         "receipt-location-unobserved",
         "receipt-location-empty",
+        "receipt-location-empty-root-volume",
         "receipt-location-relative",
         "receipt-relative-volume-unqualified",
         "receipt-location-byte-bound",
@@ -636,7 +637,7 @@ def receipt_location_base(info, parser):
     """Interpret root-volume receipt metadata lexically, without physical ownership."""
     location = info["install-location"]
     if not location:
-        raise Refusal("receipt-location-empty")
+        raise Refusal("receipt-location-empty-root-volume" if info["volume"] == "/" else "receipt-location-empty")
     if len(location.encode("utf-8")) > 1024:
         raise Refusal("receipt-location-byte-bound")
     if "//" in location:

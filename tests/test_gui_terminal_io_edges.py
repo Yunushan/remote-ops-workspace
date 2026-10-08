@@ -1971,7 +1971,7 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
     from PyQt6 import sip
     from PyQt6.QtCore import QCoreApplication, QEvent, QProcess
 
-    from remote_ops_workspace import gui, gui_terminal
+    from remote_ops_workspace import gui, gui_terminal, gui_workspace
 
     checkpoint("test-before-first-window")
     app, first = gui.create_main_window(
@@ -2018,6 +2018,28 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         monkeypatch.setattr(second, "update_session_status", lambda: callbacks.append("second"))
         monkeypatch.setattr(second, "confirm_stop_processes", lambda *_args: True)
         assert second_app is app
+        # Shared workspace classes must retain distinct Qt parents and callbacks.
+        first_tabs, second_tabs = first.tabs, second.tabs
+        first_bar, second_bar = first.moba_tab_bar, second.moba_tab_bar
+        assert type(first_tabs) is type(second_tabs) is gui_workspace.ResponsiveWorkspaceTabs
+        assert type(first_bar) is type(second_bar) is gui_workspace.MobaWorkspaceTabBar
+        assert first.isAncestorOf(first_tabs) and not second.isAncestorOf(first_tabs)
+        assert second.isAncestorOf(second_tabs) and not first.isAncestorOf(second_tabs)
+        assert first_bar.parent() is first_tabs and second_bar.parent() is second_tabs
+        assert first_tabs.tab_switch_prepare_handler.__self__ is first
+        assert second_tabs.tab_switch_prepare_handler.__self__ is second
+        assert first_bar.tab_switch_prepare_handler.__self__ is first
+        assert second_bar.tab_switch_prepare_handler.__self__ is second
+        assert first_bar.special_tab_handler.__self__ is first
+        assert second_bar.special_tab_handler.__self__ is second
+        first_labels = first.findChildren(gui_workspace.MobaRailLabel)
+        second_labels = second.findChildren(gui_workspace.MobaRailLabel)
+        assert first_labels and len(first_labels) == len(second_labels)
+        for owner, other, labels in ((first, second, first_labels), (second, first, second_labels)):
+            for label in labels:
+                assert owner.isAncestorOf(label) and not other.isAncestorOf(label)
+                assert owner.isAncestorOf(label.button) and not other.isAncestorOf(label.button)
+        assert first_labels[0].rail_text_pixmap() is not second_labels[0].rail_text_pixmap()
         first.resize(1024, 720)
         first.show()
         second.resize(1024, 720)
@@ -2095,6 +2117,12 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         app.processEvents()
         checkpoint("test-first-delete-events-completed")
         assert sip.isdeleted(first)
+        assert sip.isdeleted(first_tabs) and sip.isdeleted(first_bar)
+        assert not sip.isdeleted(second_tabs) and not sip.isdeleted(second_bar)
+        assert all(sip.isdeleted(label) for label in first_labels)
+        assert all(not sip.isdeleted(label) for label in second_labels)
+        assert second_tabs.tab_switch_prepare_handler.__self__ is second
+        assert second_bar.special_tab_handler.__self__ is second
         assert not sip.isdeleted(second_pane)
         callbacks.clear()
         second_pane.process.started.emit()

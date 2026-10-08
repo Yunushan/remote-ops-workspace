@@ -112,7 +112,7 @@ def project_version() -> str:
     return version.group("version")
 
 
-GUI_SOURCE_MODULES = ("gui_terminal", "gui_processes", "gui_values", "terminal_output")
+GUI_SOURCE_MODULES = ("gui_terminal", "gui_processes", "gui_values", "terminal_output", "gui_workspace")
 GUI_ARCHIVE_LIMIT = 64 * 1024 * 1024
 GUI_EXPANDED_LIMIT = 128 * 1024 * 1024
 GUI_SOURCE_LIMIT = 2 * 1024 * 1024
@@ -156,7 +156,7 @@ def _gui_member_alias(name: str) -> str:
 
 
 def _validate_distribution_gui_sources(kind: str, artifact: Path, source_root: Path) -> dict[str, Any]:
-    """Assert four literal source members, without extraction/import or closure claims."""
+    """Assert five literal source members, without extraction/import or closure claims."""
     import gzip
     import io
     import stat
@@ -245,7 +245,7 @@ def _validate_distribution_gui_sources(kind: str, artifact: Path, source_root: P
         raise ValueError("gui-source-required-member-missing")
     if _gui_regular_bytes(artifact, GUI_ARCHIVE_LIMIT) != raw or any(_gui_regular_bytes(source_root / "src" / names[module], GUI_SOURCE_LIMIT) != expected[module] for module in names):
         raise ValueError("gui-source-input-changed")
-    return {"scope": "four literal Python source members only; no imports, extraction, compiled-code equality, runtime closure or approval", "artifact_sha256": digest, "members": [found[name] for name in sorted(found)], "passed": True}
+    return {"scope": "five literal Python source members only; no imports, extraction, compiled-code equality, runtime closure or approval", "artifact_sha256": digest, "members": [found[name] for name in sorted(found)], "passed": True}
 
 
 def validate_distribution_gui_sources(kind: str, artifact: Path, source_root: Path) -> dict[str, Any]:

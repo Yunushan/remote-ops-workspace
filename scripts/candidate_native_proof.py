@@ -186,6 +186,7 @@ GUI_PYZ_REQUIRED_MODULES = (
     "remote_ops_workspace.gui_processes",
     "remote_ops_workspace.gui_values",
     "remote_ops_workspace.terminal_output",
+    "remote_ops_workspace.gui_workspace",
 )
 GUI_PYZ_ARCHIVE_PATHS = {
     "windows-x64": "build/native/windows/pyinstaller-dist/row-gui.exe",

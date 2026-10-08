@@ -156,14 +156,14 @@ def _gui_archive_fixture(checker, tmp_path, kind, changes=()):
     return artifact
 
 
-def test_gui_distribution_members_equal_all_four_canonical_sources(tmp_path):
+def test_gui_distribution_members_equal_all_five_canonical_sources(tmp_path):
     checker = _gui_source_fixture(tmp_path)
     for kind in ("wheel", "sdist"):
         artifact = _gui_archive_fixture(checker, tmp_path, kind)
         result = checker.validate_distribution_gui_sources(kind, artifact, tmp_path)
         assert result["passed"] is True
         assert result["artifact_sha256"] == checker.sha256_file(artifact)
-        assert len(result["members"]) == 4
+        assert len(result["members"]) == 5
         assert {item["source_path"] for item in result["members"]} == {"src/remote_ops_workspace/" + module + ".py" for module in checker.GUI_SOURCE_MODULES}
         for item in result["members"]:
             source = tmp_path / item["source_path"]

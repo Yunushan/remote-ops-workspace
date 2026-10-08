@@ -927,6 +927,16 @@ def _web_policy_milestones(path: Path) -> list[dict]:
     return records
 
 
+def _public_web_policy_milestone_error_type(value: object) -> str:
+    """Project only fixed categories; never stringify unknown exception metadata."""
+    if type(value) is str and value in (
+        "none", "FileNotFoundError", "PermissionError", "OSError", "ValueError",
+        "JSONDecodeError", "TypeError", "KeyError", "UnicodeError", "UnicodeDecodeError",
+    ):
+        return value
+    return "other"
+
+
 def _run_web_policy_harness(
     command: list[str],
     result_path: Path,
@@ -1032,6 +1042,8 @@ def _run_web_policy_harness(
                     f"{failure.args[0]}; result_exists={report['result_exists']}; "
                     f"milestones={','.join(report['milestones']) or 'none'}; "
                     f"milestone_timings={report['milestone_timings']}; "
+                    "milestone_error_type="
+                    f"{_public_web_policy_milestone_error_type(report.get('milestone_error_type', 'none'))}; "
                     f"pre_cleanup_returncode={report['pre_cleanup_returncode']}; "
                     f"cleanup_requested={report['cleanup_requested']}; "
                     f"child_reaped={report['child_reaped']}",
@@ -1174,6 +1186,30 @@ def test_zero_exit_and_complete_record_observed_after_deadline_still_fail(tmp_pa
     assert report["pre_cleanup_returncode"] == 0
 
 
+def test_public_web_policy_milestone_error_type_is_fixed_and_never_stringifies():
+    class PrivateString(str):
+        def __eq__(self, _other):
+            raise AssertionError("unknown string equality forbidden")
+
+        def __hash__(self):
+            raise AssertionError("unknown string hashing forbidden")
+
+        def __str__(self):
+            raise AssertionError("unknown string conversion forbidden")
+
+    class PrivateObject:
+        def __str__(self):
+            raise AssertionError("unknown object conversion forbidden")
+
+    for known in ("none", "PermissionError", "FileNotFoundError", "JSONDecodeError"):
+        assert _public_web_policy_milestone_error_type(known) == known
+    for unknown in (
+        "/PRIVATE/path", "PRIVATE" * 4096, "UnlistedError", None, True, 5, {}, [],
+        PrivateString("PermissionError"), PrivateObject(),
+    ):
+        assert _public_web_policy_milestone_error_type(unknown) == "other"
+
+
 def test_unreadable_progress_preserves_timeout_and_owned_cleanup(tmp_path, monkeypatch):
     result_path = tmp_path / "result.json"
     progress_path = result_path.with_suffix(".progress.json")
@@ -1186,7 +1222,7 @@ def test_unreadable_progress_preserves_timeout_and_owned_cleanup(tmp_path, monke
         return real_open(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", unreadable_progress)
-    with pytest.raises(TimeoutError, match="child_reaped=True"):
+    with pytest.raises(TimeoutError, match="child_reaped=True") as failure:
         _run_web_policy_harness(
             [sys.executable, "-c", "import time; time.sleep(60)"],
             result_path,
@@ -1194,6 +1230,9 @@ def test_unreadable_progress_preserves_timeout_and_owned_cleanup(tmp_path, monke
             "this-run",
             timeout=0.1,
         )
+    assert "milestone_error_type=PermissionError" in str(failure.value)
+    assert "harmless simulated sharing conflict" not in str(failure.value)
+    assert str(progress_path) not in str(failure.value)
     report = json.loads(result_path.with_suffix(".runner.json").read_text())
     assert report["failure_type"] == "TimeoutError"
     assert report["milestone_error_type"] == "PermissionError"

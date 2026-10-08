@@ -659,8 +659,92 @@ class FinalAcquisitionRecordTests(CFTPureFixtureCase):
 
 
 class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
+    def test_central_format_fields_get_fixed_codes_before_name_parsing(self):
+        raw = synthetic_zip()
+        footer = raw[-22:]
+        end = struct.unpack('<4s4H2IH', footer)
+        central = raw[end[6]:end[6] + end[5]]
+        original = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+        cases = (
+            (0, b'BAD!', 'cft-central-signature-refused'),
+            (1, 20, 'cft-central-creator-system-refused'),
+            (2, 21, 'cft-central-extract-version-refused'),
+            (3, 1, 'cft-central-flags-refused'),
+            (4, 9, 'cft-central-compression-refused'),
+            (12, 1, 'cft-central-comment-refused'),
+            (13, 1, 'cft-central-disk-refused'),
+            (14, 1, 'cft-central-internal-attributes-refused'),
+            (11, 1, 'cft-central-extra-field-refused'),
+        )
+        for index, value, code in cases:
+            with self.subTest(field=index):
+                header = original.copy()
+                header[index] = value
+                changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
+                with mock.patch.object(bundle, 'member_name') as member:
+                    with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$') as failure:
+                        bundle.central_plan(footer, changed, len(raw), 'chrome')
+                    member.assert_not_called()
+                for phase in bundle.INVENTORY_PHASES:
+                    self.assertEqual(bundle.inventory_refusal_code(failure.exception, phase), code)
+                    record = PurePublicAcquisitionTests.checkpoint(self)
+                    record.update(phase=phase, refusal_code=code)
+                    public = bundle.packed(record)
+                    self.assertEqual(bundle.public_bytes(public, bundle.packed(disabled())), public)
+                    self.assertFalse(record['complete'])
+                    self.assertFalse(record['vendor_binary_executed'])
+                    self.assertFalse(record['genuine_browser_qualification'])
+                    self.assertEqual(record['readiness_credit'], 0)
+
+    def test_central_format_refusals_keep_original_first_failure_order(self):
+        raw = synthetic_zip()
+        footer = raw[-22:]
+        end = struct.unpack('<4s4H2IH', footer)
+        central = raw[end[6]:end[6] + end[5]]
+        header = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+        original = header.copy()
+        cases = (
+            (0, b'BAD!', 'cft-central-signature-refused'),
+            (1, 20, 'cft-central-creator-system-refused'),
+            (2, 21, 'cft-central-extract-version-refused'),
+            (3, 1, 'cft-central-flags-refused'),
+            (4, 9, 'cft-central-compression-refused'),
+            (12, 1, 'cft-central-comment-refused'),
+            (13, 1, 'cft-central-disk-refused'),
+            (14, 1, 'cft-central-internal-attributes-refused'),
+            (11, 1, 'cft-central-extra-field-refused'),
+        )
+        for index, value, _code in cases:
+            header[index] = value
+        for index, _value, code in cases:
+            with self.subTest(first_remaining_field=index):
+                changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$'):
+                    bundle.central_plan(footer, changed, len(raw), 'chrome')
+                header[index] = original[index]
+        self.assertEqual(bundle.central_plan(footer, central, len(raw), 'chrome'), plan(raw))
+
+    def test_central_format_diagnostics_preserve_accepted_header_variants(self):
+        raw = synthetic_zip()
+        footer = raw[-22:]
+        end = struct.unpack('<4s4H2IH', footer)
+        central = raw[end[6]:end[6] + end[5]]
+        original = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+        expected, expected_offset = plan(raw)
+        for version in (0, 10, 20):
+            for creator_version in (0, 20, 255):
+                for flags in (0, 8, 0x800, 0x808):
+                    for method in (0, 8):
+                        with self.subTest(version=version, creator=creator_version, flags=flags, method=method):
+                            header = original.copy()
+                            header[1:5] = [(3 << 8) | creator_version, version, flags, method]
+                            changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
+                            rows, offset = bundle.central_plan(footer, changed, len(raw), 'chrome')
+                            self.assertEqual(offset, expected_offset)
+                            self.assertEqual(rows, [dict(expected[0], flags=flags, method=method)])
+
     def test_all_fixed_inventory_codes_round_trip_only_as_incomplete_inventory_refusals(self):
-        self.assertEqual(len(bundle.INVENTORY_REFUSAL_CODES), 45)
+        self.assertEqual(len(bundle.INVENTORY_REFUSAL_CODES), 54)
         for phase in bundle.INVENTORY_PHASES:
             for code in sorted(bundle.INVENTORY_REFUSAL_CODES):
                 with self.subTest(phase=phase, code=code):

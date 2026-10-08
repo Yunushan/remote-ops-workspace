@@ -240,10 +240,15 @@ def central_plan(footer, central, total, asset):
     while offset < len(central):
         need(len(central) - offset >= 46, 'cft-central-header-size-refused')
         row = struct.unpack('<4s6H3I5H2I', central[offset:offset + 46])
-        need(row[0] == b'PK\x01\x02' and row[1] >> 8 == 3 and row[2] <= 20
-             and row[3] & ~0x808 == 0 and row[4] in (0, 8)
-             and row[12] == row[13] == row[14] == 0 and row[11] == 0,
-             'cft-ZIP-member-format-refused')
+        need(row[0] == b'PK\x01\x02', 'cft-central-signature-refused')
+        need(row[1] >> 8 == 3, 'cft-central-creator-system-refused')
+        need(row[2] <= 20, 'cft-central-extract-version-refused')
+        need(row[3] & ~0x808 == 0, 'cft-central-flags-refused')
+        need(row[4] in (0, 8), 'cft-central-compression-refused')
+        need(row[12] == 0, 'cft-central-comment-refused')
+        need(row[13] == 0, 'cft-central-disk-refused')
+        need(row[14] == 0, 'cft-central-internal-attributes-refused')
+        need(row[11] == 0, 'cft-central-extra-field-refused')
         name_len = row[10]
         need(1 <= name_len <= MAX_NAME and offset + 46 + name_len <= len(central), 'cft-central-name-span-refused')
         name_raw = central[offset + 46:offset + 46 + name_len]
@@ -721,6 +726,15 @@ INVENTORY_PHASES = ('chrome-inventory', 'chromedriver-inventory')
 INVENTORY_REFUSAL_CODES = frozenset((
     'cft-ZIP-footer-refused',
     'cft-ZIP-member-format-refused',
+    'cft-central-signature-refused',
+    'cft-central-creator-system-refused',
+    'cft-central-extract-version-refused',
+    'cft-central-flags-refused',
+    'cft-central-compression-refused',
+    'cft-central-comment-refused',
+    'cft-central-disk-refused',
+    'cft-central-internal-attributes-refused',
+    'cft-central-extra-field-refused',
     'cft-central-ZIP64-refused',
     'cft-central-entry-count-refused',
     'cft-central-header-size-refused',

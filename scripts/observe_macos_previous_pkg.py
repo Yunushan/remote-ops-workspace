@@ -170,6 +170,7 @@ REFUSAL_CODES = frozenset(
         "receipt-location-unobserved",
         "receipt-location-empty",
         "receipt-location-relative",
+        "receipt-relative-volume-unqualified",
         "receipt-location-byte-bound",
         "receipt-files-row-bound",
         "receipt-alias-memory-bound",
@@ -631,6 +632,25 @@ def bom_projection(raw, parser):
     }
 
 
+def receipt_location_base(info, parser):
+    """Interpret root-volume receipt metadata lexically, without physical ownership."""
+    location = info["install-location"]
+    if not location:
+        raise Refusal("receipt-location-empty")
+    if len(location.encode("utf-8")) > 1024:
+        raise Refusal("receipt-location-byte-bound")
+    if "//" in location:
+        raise Refusal("unsafe-member-name-component")
+    absolute = location.startswith("/")
+    if not absolute and info["volume"] != "/":
+        raise Refusal("receipt-relative-volume-unqualified")
+    candidate = location[1:] if absolute else location
+    if not candidate:
+        return ""
+    base = parser.member_name(candidate, root=not absolute, receipt=True)
+    return "" if base == "." else base
+
+
 def receipt_projection(info_raw, files_raw, parser):
     if len(info_raw) > 65536 or len(files_raw) > MAX_PUBLIC:
         raise Refusal("receipt-metadata-bound")
@@ -647,15 +667,7 @@ def receipt_projection(info_raw, files_raw, parser):
     ):
         raise Refusal("receipt-metadata-layout-unobserved")
     location = info["install-location"]
-    if not location:
-        raise Refusal("receipt-location-empty")
-    if not location.startswith("/"):
-        raise Refusal("receipt-location-relative")
-    if len(location.encode()) > 1024:
-        raise Refusal("receipt-location-byte-bound")
-    base = location[1:].removesuffix("/")
-    if base:
-        parser.member_name(base, receipt=True)
+    base = receipt_location_base(info, parser)
     app_key, keys, claims, aliases, data_claims = alias(APP_REL), set(), 0, 0, 0
     key_bytes = 0
     for line in lines:
@@ -702,15 +714,7 @@ class ReceiptFilesProjection:
                 or not isinstance(self.info.get("install-location"), str)):
             raise Refusal("receipt-metadata-layout-unobserved")
         self.location = self.info["install-location"]
-        if not self.location:
-            raise Refusal("receipt-location-empty")
-        if not self.location.startswith("/"):
-            raise Refusal("receipt-location-relative")
-        if len(self.location.encode()) > 1024:
-            raise Refusal("receipt-location-byte-bound")
-        self.base = self.location[1:].removesuffix("/")
-        if self.base:
-            parser.member_name(self.base, receipt=True)
+        self.base = receipt_location_base(self.info, parser)
         self.parser, self.maximum = parser, maximum
         self.info_sha256 = sha(info_raw)
         self.decoder = codecs.getincrementaldecoder("utf-8")("strict")

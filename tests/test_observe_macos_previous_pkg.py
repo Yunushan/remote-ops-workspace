@@ -1715,11 +1715,20 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
 
     def test_receipt_location_fixed_causes_match_whole_and_stream_without_private_text(self):
         cases = (("", "receipt-location-empty"),
-                 ("PRIVATE-relative", "receipt-location-relative"),
-                 (".", "receipt-location-relative"),
-                 ("PRIVATE-" + "x" * 1100, "receipt-location-relative"),
+                 ("PRIVATE-" + "x" * 1100, "receipt-location-byte-bound"),
+                 ("x" * 1025, "receipt-location-byte-bound"),
+                 ("\u00e9" * 512 + "x", "receipt-location-byte-bound"),
                  ("/" + "x" * 1024, "receipt-location-byte-bound"),
-                 ("/" + "\u00e9" * 512, "receipt-location-byte-bound"))
+                 ("/" + "\u00e9" * 512, "receipt-location-byte-bound"),
+                 ("../PRIVATE", "unsafe-member-name-component"),
+                 ("PRIVATE/../escape", "unsafe-member-name-component"),
+                 ("PRIVATE//", "unsafe-member-name-component"),
+                 ("/PRIVATE//", "unsafe-member-name-component"),
+                 ("//PRIVATE", "unsafe-member-name-component"),
+                 ("/.", "unsafe-member-name-component"),
+                 ("/./", "unsafe-member-name-component"),
+                 ("PRIVATE\\base", "unsafe-member-name-backslash"),
+                 ("PRIVATE\x00base", "unsafe-member-name-control"))
         for location, code in cases:
             metadata = info(**{"install-location": location})
             for streaming in (False, True):
@@ -1734,7 +1743,8 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
                     self.assertNotIn("PRIVATE", str(failure.exception))
 
     def test_receipt_location_byte_boundary_stays_accepted_without_ownership_claim(self):
-        for location in ("/", "/" + "x" * 1023, "/" + "\u00e9" * 511 + "x"):
+        for location in ("/", "/" + "x" * 1023, "/" + "\u00e9" * 511 + "x",
+                         "x" * 1024, "\u00e9" * 512):
             with self.subTest(location_bytes=len(location.encode())):
                 metadata = info(**{"install-location": location})
                 expected = M.receipt_projection(metadata, b".\n", P)
@@ -1743,6 +1753,73 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
                 self.assertEqual(expected["install_location_is_root"], location == "/")
                 self.assertFalse(expected["receipt_ownership_approval"])
                 self.assertEqual(expected["physical_namespace_identity"], "unobserved")
+
+    def test_relative_location_uses_normalized_base_and_preserves_lexical_claims(self):
+        cases = (("Applications", b"Remote Ops Workspace.app\nother\n", 1, 0, 0),
+                 ("./Applications/", b"Remote Ops Workspace.app\nother\n", 1, 0, 0),
+                 ("/./Applications/", b"Remote Ops Workspace.app\nother\n", 1, 0, 0),
+                 ("applications", b"remote ops workspace.app\n", 1, 1, 0),
+                 ("System/Volumes/Data/Applications", b"Remote Ops Workspace.app\n", 0, 0, 1),
+                 ("PRIVATE:base/", b".\nchild\n", 0, 0, 0))
+        for location, raw, claims, aliases, data_claims in cases:
+            with self.subTest(location=location):
+                metadata = info(**{"install-location": location})
+                result = M.receipt_projection(metadata, raw, P)
+                self.assertEqual(self.projection(raw, width=1, metadata=metadata).result(), result)
+                self.assertEqual(result["lexical_app_claim_count"], claims)
+                self.assertEqual(result["app_alias_claim_count"], aliases)
+                self.assertEqual(result["data_namespace_claim_count"], data_claims)
+                self.assertFalse(result["install_location_is_root"])
+                self.assertFalse(result["receipt_ownership_approval"])
+                self.assertEqual(result["physical_namespace_identity"], "unobserved")
+                self.assertNotIn("PRIVATE", json.dumps(result))
+
+    def test_relative_dot_roots_match_literal_root_claims_without_literal_root_flag(self):
+        raw = (M.APP_REL + "\nSystem/Volumes/Data/" + M.APP_REL + "\n").encode()
+        literal = M.receipt_projection(info(), raw, P)
+        for location in (".", "./"):
+            with self.subTest(location=location):
+                metadata = info(**{"install-location": location})
+                result = M.receipt_projection(metadata, raw, P)
+                self.assertEqual(self.projection(raw, width=1, metadata=metadata).result(), result)
+                self.assertFalse(result["install_location_is_root"])
+                self.assertNotEqual(result["info_sha256"], literal["info_sha256"])
+                for key in literal.keys() - {"info_sha256", "install_location_is_root"}:
+                    self.assertEqual(result[key], literal[key])
+                self.assertEqual(result["lexical_app_claim_count"], 1)
+                self.assertEqual(result["data_namespace_claim_count"], 1)
+
+    def test_relative_volume_requires_literal_root_before_launch_and_without_private_text(self):
+        code = "receipt-relative-volume-unqualified"
+        for volume in ("", "/PRIVATE-volume", ".", "//"):
+            for location in (".", "./", "Applications", "./Applications/"):
+                metadata = info(volume=volume, **{"install-location": location})
+                with self.subTest(volume=volume, location=location):
+                    for streaming in (False, True):
+                        with self.assertRaisesRegex(M.Refusal, "^" + code + "$") as failure:
+                            if streaming:
+                                M.ReceiptFilesProjection(metadata, P)
+                            else:
+                                M.receipt_projection(metadata, b".\n", P)
+                        self.assertEqual(failure.exception.args, (code,))
+                        self.assertNotIn("PRIVATE", str(failure.exception))
+                    with patch.object(M.subprocess, "Popen", side_effect=AssertionError("no launch")) as popen:
+                        with self.assertRaisesRegex(M.Refusal, "^" + code + "$"):
+                            M.MetadataCommands().receipt_files("fixture.receipt", metadata, P)
+                        popen.assert_not_called()
+        self.assertIn(code, M.REFUSAL_CODES)
+
+    def test_normalized_relative_aliases_are_still_refused(self):
+        for location in ("Applications", "./Applications/", "/./Applications/"):
+            raw = b"Remote Ops Workspace.app\nREMOTE OPS WORKSPACE.APP\n"
+            metadata = info(**{"install-location": location})
+            for streaming in (False, True):
+                with self.subTest(location=location, streaming=streaming):
+                    with self.assertRaisesRegex(M.Refusal, "^receipt-path-alias-or-duplicate$"):
+                        if streaming:
+                            self.projection(raw, width=1, metadata=metadata)
+                        else:
+                            M.receipt_projection(metadata, raw, P)
 
     def test_every_chunk_boundary_matches_whole_reference_splitlines(self):
         raw = (".\r\nCaf\u00e9\vother\fthird\x1cfourth\x1dfifth\x1esixth\x85seventh"
@@ -1932,7 +2009,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
     def test_invalid_info_identifier_and_command_budget_refuse_before_launch(self):
         with patch.object(M.subprocess, "Popen", side_effect=AssertionError("no launch")) as popen:
             for identifier, metadata in (("../private", info()), ("fixture.receipt", b"not a plist"),
-                ("fixture.receipt", info(**{"install-location": "relative"})),
+                ("fixture.receipt", info(**{"install-location": "../relative"})),
                 ("fixture.receipt", info(**{"install-location": "/../escape"}))):
                 with self.subTest(identifier=identifier):
                     with self.assertRaises(M.Refusal):

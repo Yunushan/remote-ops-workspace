@@ -596,6 +596,46 @@ class RetainedInventoryFDTests(CFTPureFixtureCase):
         self.assertFalse(record['vendor_binary_executed'])
         self.assertEqual(record['readiness_credit'], 0)
 
+    def test_deflate_option_archives_keep_full_inventory_and_payload_hashes(self):
+        original = synthetic_zip(compression=zipfile.ZIP_DEFLATED)
+        baseline = self.read_inventory(original, self.source_pin(original))
+        for options in (0, 2, 4, 6):
+            for base in (0, 0x800):
+                with self.subTest(options=options, base=base):
+                    raw = bytearray(original)
+                    end = struct.unpack('<4s4H2IH', raw[-22:])
+                    struct.pack_into('<H', raw, 6, base | options)
+                    struct.pack_into('<H', raw, end[6] + 8, base | options)
+                    raw = bytes(raw)
+                    result = self.read_inventory(raw, self.source_pin(raw))
+                    self.assertEqual(result, baseline)
+                    self.assertEqual(result['inventory'][0]['sha256'], bundle.hashed(b'\x7fELFsynthetic'))
+
+    def test_deflate_options_do_not_allow_local_and_central_flag_mismatch(self):
+        for options in (0, 2, 4, 6):
+            with self.subTest(options=options):
+                raw = bytearray(synthetic_zip(compression=zipfile.ZIP_DEFLATED))
+                end = struct.unpack('<4s4H2IH', raw[-22:])
+                struct.pack_into('<H', raw, 6, options ^ 2)
+                struct.pack_into('<H', raw, end[6] + 8, options)
+                raw = bytes(raw)
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-local-header-layout-refused$'):
+                    self.read_inventory(raw, self.source_pin(raw))
+
+    def test_deflate_options_do_not_bypass_actual_payload_crc_validation(self):
+        for options in (0, 2, 4, 6):
+            with self.subTest(options=options):
+                raw = bytearray(synthetic_zip(compression=zipfile.ZIP_DEFLATED))
+                end = struct.unpack('<4s4H2IH', raw[-22:])
+                wrong_crc = struct.unpack_from('<I', raw, 14)[0] ^ 1
+                struct.pack_into('<H', raw, 6, options)
+                struct.pack_into('<H', raw, end[6] + 8, options)
+                struct.pack_into('<I', raw, 14, wrong_crc)
+                struct.pack_into('<I', raw, end[6] + 16, wrong_crc)
+                raw = bytes(raw)
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-member-size-or-crc-refused$'):
+                    self.read_inventory(raw, self.source_pin(raw))
+
 
 class FinalAcquisitionRecordTests(CFTPureFixtureCase):
     def checkpoint(self):
@@ -866,6 +906,42 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
                 changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
                 with self.assertRaisesRegex(bundle.BundleRefusal, f'^cft-central-flag-bit-{first}-refused$'):
                     bundle.central_plan(footer, changed, len(raw), 'chrome')
+
+    def test_deflate_compression_options_preserve_all_central_flag_combinations(self):
+        # Central parsing only; complete local/payload validity is tested separately.
+        raw = synthetic_zip(compression=zipfile.ZIP_DEFLATED)
+        footer = raw[-22:]
+        end = struct.unpack('<4s4H2IH', footer)
+        central = raw[end[6]:end[6] + end[5]]
+        original = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+        for options in (0, 2, 4, 6):
+            for base in (0, 8, 0x800, 0x808):
+                with self.subTest(options=options, base=base):
+                    header = original.copy()
+                    header[3] = base | options
+                    changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
+                    rows, _ = bundle.central_plan(footer, changed, len(raw), 'chrome')
+                    self.assertEqual(rows[0]['flags'], base | options)
+                    self.assertEqual(rows[0]['method'], 8)
+
+    def test_deflate_options_never_allow_other_forbidden_bits(self):
+        raw = synthetic_zip(compression=zipfile.ZIP_DEFLATED)
+        footer = raw[-22:]
+        end = struct.unpack('<4s4H2IH', footer)
+        central = raw[end[6]:end[6] + end[5]]
+        original = list(struct.unpack('<4s6H3I5H2I', central[:46]))
+        for bit in (0, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
+            for options in (0, 2, 4, 6):
+                for base in (0, 8, 0x800, 0x808):
+                    with self.subTest(bit=bit, options=options, base=base):
+                        header = original.copy()
+                        header[3] = base | options | (1 << bit)
+                        changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
+                        code = f'cft-central-flag-bit-{bit}-refused'
+                        with mock.patch.object(bundle, 'member_name') as member:
+                            with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$'):
+                                bundle.central_plan(footer, changed, len(raw), 'chrome')
+                            member.assert_not_called()
 
 
 if __name__ == '__main__':

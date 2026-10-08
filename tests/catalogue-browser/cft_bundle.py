@@ -244,7 +244,9 @@ def central_plan(footer, central, total, asset):
         need(row[1] >> 8 == 3, 'cft-central-creator-system-refused')
         need(row[2] <= 20, 'cft-central-extract-version-refused')
         for bit in (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
-            need(row[3] & (1 << bit) == 0, f'cft-central-flag-bit-{bit}-refused')
+            # APPNOTE 4.4.4: bits 1/2 encode Deflate compression options.
+            need(row[3] & (1 << bit) == 0 or (row[4] == 8 and bit in (1, 2)),
+                 f'cft-central-flag-bit-{bit}-refused')
         need(row[4] in (0, 8), 'cft-central-compression-refused')
         need(row[12] == 0, 'cft-central-comment-refused')
         need(row[13] == 0, 'cft-central-disk-refused')

@@ -536,8 +536,17 @@ def root_directory_lease(destination, *, create):
                 need(stat.S_ISDIR(current.st_mode) and current.st_uid == 0
                      and not current.st_mode & 0o022)
         finally:
+            # Attempt every retained close even if an earlier close refuses.
+            # Preserve the first failure, including cancellation, after cleanup.
+            close_error = None
             for _path, descriptor, _before in reversed(held):
-                os.close(descriptor)
+                try:
+                    os.close(descriptor)
+                except BaseException as error:
+                    if close_error is None:
+                        close_error = error
+            if close_error is not None:
+                raise close_error
 
 
 def stable_file(path, maximum, deadline, *, root_owned=False, raw=False):

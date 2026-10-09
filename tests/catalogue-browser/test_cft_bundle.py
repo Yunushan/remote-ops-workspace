@@ -463,6 +463,54 @@ class WriterBoundaryTests(CFTPureFixtureCase):
                     self.fail('identity mismatch reached root operation')
             closed.assert_called_once_with(71)
 
+    def test_root_lease_close_failure_attempts_all_fds_and_preserves_first_error(self):
+        info = SimpleNamespace(st_dev=1, st_ino=2, st_size=4096, st_mtime_ns=3,
+            st_ctime_ns=4, st_nlink=2, st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        root = Path('/opt/row-cft-' + 'a' * 32)
+        for error_type in (OSError, RuntimeError, KeyboardInterrupt, SystemExit):
+            for failing in ((73,), (72,), (71,), (73, 71)):
+                with self.subTest(error_type=error_type.__name__, failing=failing):
+                    errors = {descriptor: error_type('fixture-close-refused') for descriptor in failing}
+                    first = next(errors[descriptor] for descriptor in (73, 72, 71) if descriptor in errors)
+                    def close(descriptor):
+                        if descriptor in errors:
+                            raise errors[descriptor]
+                    with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
+                         mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73]), \
+                         mock.patch.object(bundle.os, 'fstat', return_value=info), \
+                         mock.patch.object(bundle.os, 'O_DIRECTORY', 0x10000, create=True), \
+                         mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
+                         mock.patch.object(bundle.os, 'close', side_effect=close) as closed:
+                        with self.assertRaises(error_type) as caught:
+                            with bundle.root_directory_lease(root, create=False):
+                                closed.assert_not_called()
+                        self.assertIs(caught.exception, first)
+                        self.assertEqual(closed.call_args_list, [mock.call(73), mock.call(72), mock.call(71)])
+
+    def test_root_lease_body_refusal_still_attempts_all_closes(self):
+        info = SimpleNamespace(st_dev=1, st_ino=2, st_size=4096, st_mtime_ns=3,
+            st_ctime_ns=4, st_nlink=2, st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        root = Path('/opt/row-cft-' + 'a' * 32)
+        for failing in ((), (73,), (72,), (71,), (73, 71)):
+            with self.subTest(failing=failing):
+                body_error = bundle.BundleRefusal('fixture-body-refused')
+                errors = {descriptor: OSError('fixture-close-refused') for descriptor in failing}
+                expected = next((errors[descriptor] for descriptor in (73, 72, 71) if descriptor in errors), body_error)
+                def close(descriptor):
+                    if descriptor in errors:
+                        raise errors[descriptor]
+                with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
+                     mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73]), \
+                     mock.patch.object(bundle.os, 'fstat', return_value=info), \
+                     mock.patch.object(bundle.os, 'O_DIRECTORY', 0x10000, create=True), \
+                     mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
+                     mock.patch.object(bundle.os, 'close', side_effect=close) as closed:
+                    with self.assertRaises(type(expected)) as caught:
+                        with bundle.root_directory_lease(root, create=False):
+                            raise body_error
+                    self.assertIs(caught.exception, expected)
+                    self.assertEqual(closed.call_args_list, [mock.call(73), mock.call(72), mock.call(71)])
+
     def test_nonroot_install_refuses_before_new_root_write(self):
         with mock.patch.object(bundle, 'policy', return_value={}), \
              mock.patch.object(bundle, 'binding_contract', return_value={}), \

@@ -24,7 +24,8 @@ def fake(owner=b"user", attributes=16):
 
 
 @pytest.mark.parametrize("owner,expected", [(b"user", "current-user"), (b"system", "system"),
-                                            (b"admins", "administrators"), (b"secret-other", "other")])
+                                            (b"admins", "administrators"), (observer.TRUSTED_INSTALLER_SID, "trusted-installer"),
+                                            (b"secret-other", "other")])
 @pytest.mark.parametrize("attributes", [16, 0])
 @pytest.mark.parametrize("path,index,role", [("synthetic-root", 0, "volume-root"),
                                            ("synthetic-parent", 1, "parent"), ("synthetic-home", 2, "home")])
@@ -105,3 +106,17 @@ def test_public_validator_refuses_extra_private_fields_wrong_types_and_bounds(ke
 def test_public_validator_refuses_inconsistent_role_snapshot_combinations(record):
     with pytest.raises(ValueError):
         observer.validate_parent_observation(record)
+
+
+@pytest.mark.parametrize("index", range(32))
+def test_nearby_service_owner_bytes_remain_other(index):
+    owner = bytearray(observer.TRUSTED_INSTALLER_SID)
+    owner[index] ^= 1
+    delegate, record, calls, snapshot = fake(bytes(owner))
+    handle = delegate.open_directory("synthetic-root")
+    assert delegate.snapshot(handle) is snapshot
+    assert record["owner_class"] == "other"
+    observer.validate_parent_observation(record)
+    delegate.close(handle)
+    assert record["observer_live_handle_count"] == 0
+    assert calls == [("open", "synthetic-root"), ("snapshot", 7), ("close", 7)]

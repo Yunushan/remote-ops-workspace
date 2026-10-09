@@ -33,6 +33,8 @@ FACTS = ("native_provider_constructed", "token_observed", "known_folders_observe
          "default_selection_observed", "default_parent_boundary_observed",
          "existing_home_private", "first_missing_component_observed", "token_unchanged")
 OWNER_SCOPE = "GitHub job/step; no independent process-reaping or complete-OS-descendant attestation"
+# Exact public NT SERVICE\TrustedInstaller identity, diagnostic only.
+TRUSTED_INSTALLER_SID = bytes.fromhex("010600000000000550000000b589fb381984c2cb5c6c236d5700776ec0026487")
 KEYS = {"schema", "source", "run", "status", "phase", "reason_code", "observed", "source_unchanged",
         "source_readback_complete", "observation_finished", "sdk_headers_qualified",
         "other_identity_denial_qualified", "staging_qualified", "complete", "readiness_credit", "process_owner", "parent_observation"}
@@ -63,7 +65,7 @@ def validate_parent_observation(value):
                 and ((index == 0) is (role == "volume-root")))
     if value["snapshot_observed"]:
         require(index is not None and type(value["directory_attribute"]) is bool
-                and value["owner_class"] in ("current-user", "system", "administrators", "other"))
+                and value["owner_class"] in ("current-user", "system", "administrators", "trusted-installer", "other"))
     else:
         require(value["directory_attribute"] is None and value["owner_class"] is None)
 
@@ -102,7 +104,8 @@ class ParentObservation:
         snapshot = self.native.snapshot(handle)
         owner = ("current-user" if snapshot.owner == self.user else
                  "system" if snapshot.owner == self.storage.SYSTEM_SID else
-                 "administrators" if snapshot.owner == self.storage.ADMINISTRATORS_SID else "other")
+                 "administrators" if snapshot.owner == self.storage.ADMINISTRATORS_SID else
+                 "trusted-installer" if snapshot.owner == TRUSTED_INSTALLER_SID else "other")
         self.record.update(snapshot_observed=True, directory_attribute=bool(snapshot.attributes & self.storage.DIRECTORY),
                            owner_class=owner)
         return snapshot
@@ -213,7 +216,7 @@ def capture():
         require(False)
     OUTPUT.parent.mkdir()
     ordinary(OUTPUT.parent, file=False)
-    record = {"schema": "row.windows-default-native-readonly.v2", "source": {"head": head, "tree": tree, "files": before},
+    record = {"schema": "row.windows-default-native-readonly.v3", "source": {"head": head, "tree": tree, "files": before},
               "run": run, "status": "running", "phase": "source", "reason_code": None,
               "observed": dict.fromkeys(FACTS, False), "source_unchanged": False, "source_readback_complete": False,
               "observation_finished": False, "sdk_headers_qualified": False, "other_identity_denial_qualified": False,
@@ -290,7 +293,7 @@ def publish():
     raw, _identity = read_file(OUTPUT, 32768)
     value = json.loads(raw)
     require(type(value) is dict and set(value) == KEYS and value["process_owner"] == OWNER_SCOPE
-            and value["schema"] == "row.windows-default-native-readonly.v2"
+            and value["schema"] == "row.windows-default-native-readonly.v3"
             and value["source"] == {"head": head, "tree": tree, "files": current} and value["run"] == run)
     require(value["status"] in {"running", "refused", "observed"} and value["phase"] in PHASES
             and (value["reason_code"] is None or value["reason_code"] in codes | {"native-observation-runtime-refused"}))

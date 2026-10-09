@@ -138,6 +138,29 @@ def _visible_top_level_windows_for_process_tree(
     get_class.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
     get_class.restype = ctypes.c_int
 
+    def snapshot_parent_chain(process_id: int) -> list[dict[str, object]]:
+        # Diagnostic only: numeric parent IDs can be stale or reused. This
+        # snapshot adds no ownership proof and changes no window predicate.
+        chain: list[dict[str, object]] = []
+        visited: set[int] = set()
+        for _depth in range(64):
+            if process_id in visited:
+                break
+            visited.add(process_id)
+            parent_id = parent_by_pid.get(process_id)
+            chain.append(
+                {
+                    "pid": process_id,
+                    "parent_pid": parent_id,
+                    "image": image_by_pid.get(process_id),
+                    "requested_root": process_id in process_ids,
+                }
+            )
+            if process_id in process_ids or parent_id is None or parent_id <= 0:
+                break
+            process_id = parent_id
+        return chain
+
     records: list[dict[str, object]] = []
 
     @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -175,6 +198,9 @@ def _visible_top_level_windows_for_process_tree(
             {
                 "hwnd": int(getattr(hwnd, "value", hwnd) or 0),
                 "pid": int(owner_pid.value),
+                "requested_root_pids": sorted(process_ids),
+                "snapshot_parent_chain": snapshot_parent_chain(int(owner_pid.value)),
+                "ancestry_proof": "numeric-snapshot-only",
                 "class": class_buffer.value,
                 "title": title_buffer.value,
                 "rect": [

@@ -937,6 +937,32 @@ def _public_web_policy_milestone_error_type(value: object) -> str:
     return "other"
 
 
+def _web_policy_stream_diagnostics(path: Path) -> dict:
+    """Expose bounded byte counts and fixed markers, never child output text."""
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(4097)
+    except OSError as exc:
+        return {
+            "sampled_bytes": 0,
+            "sample_truncated": False,
+            "error_markers": [],
+            "read_error_type": _public_web_policy_milestone_error_type(type(exc).__name__),
+        }
+    sample = raw[:4096]
+    markers = (
+        (b"Error: Cannot find module", "module-not-found"),
+        (b"SyntaxError:", "syntax-error"),
+        (b"FATAL ERROR:", "fatal-error"),
+    )
+    return {
+        "sampled_bytes": len(sample),
+        "sample_truncated": len(raw) > 4096,
+        "error_markers": [label for marker, label in markers if marker in sample],
+        "read_error_type": "none",
+    }
+
+
 def _run_web_policy_harness(
     command: list[str],
     result_path: Path,
@@ -1036,6 +1062,12 @@ def _run_web_policy_harness(
                 report["milestones"] = []
                 report["milestone_timings"] = []
                 report["milestone_error_type"] = type(exc).__name__
+            report["stdout_diagnostics"] = _web_policy_stream_diagnostics(
+                result_path.with_suffix(".stdout.log")
+            )
+            report["stderr_diagnostics"] = _web_policy_stream_diagnostics(
+                result_path.with_suffix(".stderr.log")
+            )
             result_path.with_suffix(".runner.json").write_text(json.dumps(report, indent=2) + "\n")
             if isinstance(failure, TimeoutError):
                 failure.args = (
@@ -1046,7 +1078,9 @@ def _run_web_policy_harness(
                     f"{_public_web_policy_milestone_error_type(report.get('milestone_error_type', 'none'))}; "
                     f"pre_cleanup_returncode={report['pre_cleanup_returncode']}; "
                     f"cleanup_requested={report['cleanup_requested']}; "
-                    f"child_reaped={report['child_reaped']}",
+                    f"child_reaped={report['child_reaped']}; "
+                    f"stdout_diagnostics={report['stdout_diagnostics']}; "
+                    f"stderr_diagnostics={report['stderr_diagnostics']}",
                 )
 
 
@@ -1208,6 +1242,72 @@ def test_public_web_policy_milestone_error_type_is_fixed_and_never_stringifies()
         PrivateString("PermissionError"), PrivateObject(),
     ):
         assert _public_web_policy_milestone_error_type(unknown) == "other"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected_bytes", "truncated", "markers"),
+    (
+        (b"", 0, False, []),
+        (b"PRIVATE/path PRIVATE_TOKEN", 26, False, []),
+        (b"Error: Cannot find module PRIVATE/path", 38, False, ["module-not-found"]),
+        (
+            b"SyntaxError: PRIVATE FATAL ERROR: PRIVATE", 41, False,
+            ["syntax-error", "fatal-error"],
+        ),
+        (b"x" * 4096, 4096, False, []),
+        (b"x" * 4096 + b"SyntaxError:", 4096, True, []),
+    ),
+)
+def test_web_policy_stream_diagnostics_are_bounded_and_do_not_publish_text(
+    tmp_path, raw, expected_bytes, truncated, markers,
+):
+    path = tmp_path / "private.stderr.log"
+    path.write_bytes(raw)
+    report = _web_policy_stream_diagnostics(path)
+    assert report == {
+        "sampled_bytes": expected_bytes,
+        "sample_truncated": truncated,
+        "error_markers": markers,
+        "read_error_type": "none",
+    }
+    assert "PRIVATE" not in json.dumps(report)
+    assert str(path) not in json.dumps(report)
+
+
+@pytest.mark.parametrize("error", (FileNotFoundError, PermissionError, OSError))
+def test_web_policy_stream_read_failure_only_publishes_fixed_category(tmp_path, monkeypatch, error):
+    def unreadable(*_args, **_kwargs):
+        raise error("PRIVATE/path PRIVATE_TOKEN")
+
+    monkeypatch.setattr(Path, "open", unreadable)
+    report = _web_policy_stream_diagnostics(tmp_path / "private.stderr.log")
+    assert report == {
+        "sampled_bytes": 0,
+        "sample_truncated": False,
+        "error_markers": [],
+        "read_error_type": error.__name__,
+    }
+    assert "PRIVATE" not in json.dumps(report)
+
+
+def test_web_policy_stream_diagnostics_request_only_one_bounded_read(tmp_path, monkeypatch):
+    class BoundedStream:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, count):
+            assert count == 4097
+            calls.append(count)
+            return b"x" * count
+
+    calls = []
+    monkeypatch.setattr(Path, "open", lambda *_args, **_kwargs: BoundedStream())
+    report = _web_policy_stream_diagnostics(tmp_path / "private.stdout.log")
+    assert calls == [4097]
+    assert report["sampled_bytes"] == 4096 and report["sample_truncated"] is True
 
 
 def test_unreadable_progress_preserves_timeout_and_owned_cleanup(tmp_path, monkeypatch):

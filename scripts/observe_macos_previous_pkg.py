@@ -637,7 +637,11 @@ def receipt_location_base(info, parser):
     """Interpret root-volume receipt metadata lexically, without physical ownership."""
     location = info["install-location"]
     if not location:
-        raise Refusal("receipt-location-empty-root-volume" if info["volume"] == "/" else "receipt-location-empty")
+        # Empty root-volume metadata uses a lexical empty base only.
+        # This does not establish physical namespace or receipt ownership.
+        if info["volume"] == "/":
+            return ""
+        raise Refusal("receipt-location-empty")
     if len(location.encode("utf-8")) > 1024:
         raise Refusal("receipt-location-byte-bound")
     if "//" in location:

@@ -1714,8 +1714,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
         return value
 
     def test_receipt_location_fixed_causes_match_whole_and_stream_without_private_text(self):
-        cases = (("", "receipt-location-empty-root-volume"),
-                 ("PRIVATE-" + "x" * 1100, "receipt-location-byte-bound"),
+        cases = (("PRIVATE-" + "x" * 1100, "receipt-location-byte-bound"),
                  ("x" * 1025, "receipt-location-byte-bound"),
                  ("\u00e9" * 512 + "x", "receipt-location-byte-bound"),
                  ("/" + "x" * 1024, "receipt-location-byte-bound"),
@@ -1745,8 +1744,8 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
                     self.assertNotIn("PRIVATE", str(failure.exception))
 
     def test_empty_location_volume_partition_refuses_before_member_parsing_or_launch(self):
-        for volume in ("/", "", "/PRIVATE-volume", ".", "//"):
-            code = "receipt-location-empty-root-volume" if volume == "/" else "receipt-location-empty"
+        for volume in ("", "/PRIVATE-volume", ".", "//"):
+            code = "receipt-location-empty"
             metadata = info(volume=volume, **{"install-location": ""})
             for streaming in (False, True):
                 with self.subTest(root_volume=volume == "/", streaming=streaming):
@@ -1800,7 +1799,7 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
     def test_relative_dot_roots_match_literal_root_claims_without_literal_root_flag(self):
         raw = (M.APP_REL + "\nSystem/Volumes/Data/" + M.APP_REL + "\n").encode()
         literal = M.receipt_projection(info(), raw, P)
-        for location in (".", "./"):
+        for location in ("", ".", "./"):
             with self.subTest(location=location):
                 metadata = info(**{"install-location": location})
                 result = M.receipt_projection(metadata, raw, P)
@@ -1811,6 +1810,25 @@ class ReceiptFilesStreamingTests(unittest.TestCase):
                     self.assertEqual(result[key], literal[key])
                 self.assertEqual(result["lexical_app_claim_count"], 1)
                 self.assertEqual(result["data_namespace_claim_count"], 1)
+
+    def test_empty_root_location_preserves_every_member_validation(self):
+        metadata = info(**{"install-location": ""})
+        cases = (b"../PRIVATE\n", b"/PRIVATE\n", b"PRIVATE\\child\n",
+                 b"PRIVATE\x00child\n", b"\xff", b"a\n\xc3", b"\n",
+                 b"x" * 1025, b"a\na\n", b"a\nA\n")
+        for raw in cases:
+            with self.subTest(raw=raw[:16]):
+                with self.assertRaises(M.Refusal) as reference:
+                    M.receipt_projection(info(), raw, P)
+                for streaming in (False, True):
+                    with self.subTest(streaming=streaming):
+                        with self.assertRaises(M.Refusal) as failure:
+                            if streaming:
+                                self.projection(raw, width=1, metadata=metadata)
+                            else:
+                                M.receipt_projection(metadata, raw, P)
+                        self.assertEqual(failure.exception.args, reference.exception.args)
+                        self.assertNotIn("PRIVATE", str(failure.exception))
 
     def test_relative_volume_requires_literal_root_before_launch_and_without_private_text(self):
         code = "receipt-relative-volume-unqualified"

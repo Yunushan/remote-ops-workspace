@@ -472,7 +472,7 @@ class WriterBoundaryTests(CFTPureFixtureCase):
                 with self.subTest(error_type=error_type.__name__, failing=failing):
                     errors = {descriptor: error_type('fixture-close-refused') for descriptor in failing}
                     first = next(errors[descriptor] for descriptor in (73, 72, 71) if descriptor in errors)
-                    def close(descriptor):
+                    def close(descriptor, errors=errors):
                         if descriptor in errors:
                             raise errors[descriptor]
                     with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
@@ -496,7 +496,7 @@ class WriterBoundaryTests(CFTPureFixtureCase):
                 body_error = bundle.BundleRefusal('fixture-body-refused')
                 errors = {descriptor: OSError('fixture-close-refused') for descriptor in failing}
                 expected = next((errors[descriptor] for descriptor in (73, 72, 71) if descriptor in errors), body_error)
-                def close(descriptor):
+                def close(descriptor, errors=errors):
                     if descriptor in errors:
                         raise errors[descriptor]
                 with mock.patch.object(bundle.Path, 'lstat', return_value=info), \

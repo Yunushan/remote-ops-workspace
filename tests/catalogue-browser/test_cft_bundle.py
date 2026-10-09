@@ -785,6 +785,118 @@ class RetainedInventoryFDTests(CFTPureFixtureCase):
                 with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-member-size-or-crc-refused$'):
                     self.read_inventory(raw, self.source_pin(raw))
 
+    def test_stored_inert_options_preserve_directory_and_binary_inventory(self):
+        payload = b'\x7fELF\x00literal\r\nbinary\n\xff'
+        original = synthetic_zip(names=[('chrome-linux64/', stat.S_IFDIR | 0o755, b''),
+            (bundle.EXECUTABLES['chrome'], stat.S_IFREG | 0o755, payload)])
+        baseline = self.read_inventory(original, self.source_pin(original))
+        for options in (0, 2, 4, 6):
+            for base in (0, 0x800):
+                with self.subTest(options=options, base=base):
+                    raw = bytearray(original)
+                    end = struct.unpack('<4s4H2IH', raw[-22:])
+                    cursor = end[6]
+                    for _ in range(end[4]):
+                        header = struct.unpack_from('<4s6H3I5H2I', raw, cursor)
+                        struct.pack_into('<H', raw, header[16] + 6, base | options)
+                        struct.pack_into('<H', raw, cursor + 8, base | options)
+                        cursor += 46 + header[10] + header[11] + header[12]
+                    raw = bytes(raw)
+                    result = self.read_inventory(raw, self.source_pin(raw))
+                    self.assertEqual(result, baseline)
+                    files = [row for row in result['inventory'] if row['kind'] == 'file']
+                    self.assertEqual(files[0]['sha256'], bundle.hashed(payload))
+
+    def test_stored_options_do_not_allow_local_central_flag_mismatch(self):
+        for options in (0, 2, 4, 6):
+            with self.subTest(options=options):
+                raw = bytearray(synthetic_zip())
+                end = struct.unpack('<4s4H2IH', raw[-22:])
+                struct.pack_into('<H', raw, 6, options ^ 2)
+                struct.pack_into('<H', raw, end[6] + 8, options)
+                raw = bytes(raw)
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-local-header-layout-refused$'):
+                    self.read_inventory(raw, self.source_pin(raw))
+
+    def test_stored_options_do_not_bypass_payload_crc(self):
+        for options in (0, 2, 4, 6):
+            with self.subTest(options=options):
+                raw = bytearray(synthetic_zip())
+                end = struct.unpack('<4s4H2IH', raw[-22:])
+                wrong_crc = struct.unpack_from('<I', raw, 14)[0] ^ 1
+                struct.pack_into('<H', raw, 6, options)
+                struct.pack_into('<H', raw, end[6] + 8, options)
+                struct.pack_into('<I', raw, 14, wrong_crc)
+                struct.pack_into('<I', raw, end[6] + 16, wrong_crc)
+                raw = bytes(raw)
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-member-size-or-crc-refused$'):
+                    self.read_inventory(raw, self.source_pin(raw))
+
+    def test_stored_options_do_not_bypass_stored_size_equality(self):
+        for options in (0, 2, 4, 6):
+            with self.subTest(options=options):
+                raw = bytearray(synthetic_zip())
+                end = struct.unpack('<4s4H2IH', raw[-22:])
+                struct.pack_into('<H', raw, 6, options)
+                struct.pack_into('<H', raw, end[6] + 8, options)
+                struct.pack_into('<I', raw, end[6] + 20, 1)
+                raw = bytes(raw)
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-stored-member-size-refused$'):
+                    self.read_inventory(raw, self.source_pin(raw))
+
+    def test_stored_options_keep_exact_data_descriptor_layout(self):
+        original = synthetic_zip()
+        baseline = self.read_inventory(original, self.source_pin(original))
+        for options in (0, 2, 4, 6):
+            for base in (0, 0x800):
+                for signature in (b'', b'PK\x07\x08'):
+                    for zero_local in (False, True):
+                        with self.subTest(options=options, base=base, signature=signature, zero_local=zero_local):
+                            raw = bytearray(original)
+                            end = list(struct.unpack('<4s4H2IH', raw[-22:]))
+                            values = struct.unpack_from('<3I', raw, 14)
+                            struct.pack_into('<H', raw, 6, base | options | 8)
+                            struct.pack_into('<H', raw, end[6] + 8, base | options | 8)
+                            if zero_local:
+                                struct.pack_into('<3I', raw, 14, 0, 0, 0)
+                            trailer = signature + struct.pack('<3I', *values)
+                            body = bytes(raw[:end[6]]) + trailer + bytes(raw[end[6]:-22])
+                            end[6] += len(trailer)
+                            raw = body + struct.pack('<4s4H2IH', *end)
+                            self.assertEqual(self.read_inventory(raw, self.source_pin(raw)), baseline)
+
+    def test_stored_options_keep_directory_zero_payload_and_mode_rules(self):
+        original = synthetic_zip(names=[('chrome-linux64/', stat.S_IFDIR | 0o755, b''),
+            (bundle.EXECUTABLES['chrome'], stat.S_IFREG | 0o755, b'\x7fELFsynthetic')])
+        end = struct.unpack('<4s4H2IH', original[-22:])
+        for options in (0, 2, 4, 6):
+            for field, value, code in ((16, 1, 'cft-directory-data-layout-refused'),
+                    (20, 1, 'cft-directory-data-layout-refused'), (24, 1, 'cft-directory-data-layout-refused'),
+                    (38, (stat.S_IFLNK | 0o755) << 16, 'cft-member-type-or-special-mode-refused')):
+                with self.subTest(options=options, field=field):
+                    raw = bytearray(original)
+                    struct.pack_into('<H', raw, 6, options)
+                    struct.pack_into('<H', raw, end[6] + 8, options)
+                    struct.pack_into('<I', raw, end[6] + field, value)
+                    raw = bytes(raw)
+                    with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$'):
+                        self.read_inventory(raw, self.source_pin(raw))
+
+    def test_stored_options_never_allow_encryption_or_other_forbidden_flags(self):
+        for bit in (0, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
+            for options in (0, 2, 4, 6):
+                with self.subTest(bit=bit, options=options):
+                    raw = bytearray(synthetic_zip())
+                    end = struct.unpack('<4s4H2IH', raw[-22:])
+                    flags = options | (1 << bit)
+                    struct.pack_into('<H', raw, 6, flags)
+                    struct.pack_into('<H', raw, end[6] + 8, flags)
+                    raw = bytes(raw)
+                    with mock.patch.object(bundle, 'member_name') as member:
+                        with self.assertRaisesRegex(bundle.BundleRefusal, f'^cft-central-flag-bit-{bit}-refused$'):
+                            self.read_inventory(raw, self.source_pin(raw))
+                        member.assert_not_called()
+
     def test_internal_text_hint_preserves_full_binary_and_text_payload_inventory(self):
         names = [(bundle.EXECUTABLES['chrome'], stat.S_IFREG | 0o755,
                   b'\x7fELF\x00literal\r\nbinary\n\xff'),
@@ -1093,14 +1205,13 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
         end = struct.unpack('<4s4H2IH', footer)
         central = raw[end[6]:end[6] + end[5]]
         original = list(struct.unpack('<4s6H3I5H2I', central[:46]))
-        for bit in (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
+        for bit in (0, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
             for allowed in (0, 8, 0x800, 0x808):
                 with self.subTest(bit=bit, allowed=allowed):
                     header = original.copy()
                     header[3] = allowed | (1 << bit)
                     changed = struct.pack('<4s6H3I5H2I', *header) + central[46:]
-                    code = (f'cft-central-stored-flag-bit-{bit}-refused' if bit in (1, 2)
-                            else f'cft-central-flag-bit-{bit}-refused')
+                    code = f'cft-central-flag-bit-{bit}-refused'
                     with mock.patch.object(bundle, 'member_name') as member:
                         with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$') as failure:
                             bundle.central_plan(footer, changed, len(raw), 'chrome')

@@ -274,8 +274,10 @@ def central_plan(footer, central, total, asset):
         need(row[1] >> 8 == 3, 'cft-central-creator-system-refused')
         need(row[2] <= 20, 'cft-central-extract-version-refused')
         for bit in (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15):
-            # APPNOTE 4.4.4: bits 1/2 encode Deflate compression options.
-            need(row[3] & (1 << bit) == 0 or (row[4] == 8 and bit in (1, 2)),
+            # APPNOTE 4.4.4 leaves bits 1/2 undefined for Stored. Treat them
+            # as inert only for our Stored/Deflate methods; preserve the raw
+            # flags for exact local/central equality and all layout/CRC checks.
+            need(row[3] & (1 << bit) == 0 or (row[4] in (0, 8) and bit in (1, 2)),
                  f'cft-central-stored-flag-bit-{bit}-refused' if row[4] == 0 and bit in (1, 2)
                  else f'cft-central-flag-bit-{bit}-refused')
         need(row[4] in (0, 8), 'cft-central-compression-refused')

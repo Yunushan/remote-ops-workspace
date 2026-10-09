@@ -24,3 +24,6 @@ li { border-bottom: 1px solid #30363d; padding: .55rem 0; }
 .terminal-pane { border: 1px solid #238636; border-radius: .5rem; padding: 1rem; background: #010409; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; color: #7ee787; min-height: 140px; white-space: pre-line; }
 #feature-tags { display: flex; flex-wrap: wrap; gap: .5rem; }
 @media (max-width: 800px) { .terminal-card { grid-column: span 1; } }
+button:disabled { opacity: .6; cursor: default; }
+.helper { color: #c9d1d9; font-size: .9rem; line-height: 1.5; }
+[role="status"] { overflow-wrap: anywhere; min-height: 1.5em; }

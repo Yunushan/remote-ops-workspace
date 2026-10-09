@@ -36,6 +36,12 @@ dependencies = []
 [project.optional-dependencies]
 desktop = ["PyQt6>=6.11.0,<7.0.0"]
 security = ["bcrypt>=5.0.0", "cryptography>=50.0.0", "truststore>=0.10"]
+servers = [
+  "pyftpdlib>=2.2,<3",
+  "pyOpenSSL>=26.4,<27",
+  "pyasyncore>=1.0.5,<2; python_version >= '3.12'",
+  "pyasynchat>=1.0.5,<2; python_version >= '3.12'",
+]
 package = ["build>=1.2", "pyinstaller>=6.21"]
 dev = [
   "build>=1.2",

@@ -872,7 +872,7 @@ def validate_professional_update_manifest(
         if url:
             _require_https_url(url, f"{label}.url", errors)
         size = raw_artifact.get("size_bytes")
-        if not isinstance(size, int) or size < 0:
+        if type(size) is not int or size < 0:
             errors.append(f"{label}.size_bytes must be a non-negative integer")
         key = (target, name)
         if key in seen_artifacts:
@@ -880,7 +880,14 @@ def validate_professional_update_manifest(
         seen_artifacts.add(key)
         artifact_file = str(raw_artifact.get("file") or "")
         if artifact_file and digest:
-            _validate_asset_hash(root, artifact_file, digest, errors, f"{label}.file")
+            _validate_asset_hash(
+                root,
+                artifact_file,
+                digest,
+                errors,
+                f"{label}.file",
+                expected_size=size if type(size) is int and size >= 0 else None,
+            )
 
     signature = _required_mapping(data, "signature", errors)
     algorithm = _required_text(signature, "algorithm", errors, prefix="signature.")
@@ -895,7 +902,7 @@ def validate_professional_update_manifest(
     actual_payload_digest = hashlib.sha256(payload).hexdigest()
     if payload_digest and actual_payload_digest != payload_digest:
         errors.append("signature.payload_sha256 does not match canonical manifest payload")
-    if algorithm and signature_value and public_key and not _verify_update_manifest_signature(
+    if algorithm and signature_value and not _verify_update_manifest_signature(
         algorithm,
         public_key=public_key,
         signature_value=signature_value,
@@ -1241,6 +1248,8 @@ def _validate_asset_hash(
     expected_sha256: str,
     errors: list[str],
     label: str,
+    *,
+    expected_size: int | None = None,
 ) -> None:
     try:
         asset = _resolve_evidence_asset(assets_dir, evidence_file)
@@ -1253,7 +1262,18 @@ def _validate_asset_hash(
     if not asset.is_file():
         errors.append(f"{label}.evidence_file is not a file: {asset}")
         return
-    actual = _sha256(asset)
+    if expected_size is None:
+        actual = _sha256(asset)
+    else:
+        digest = hashlib.sha256()
+        actual_size = 0
+        with asset.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                actual_size += len(chunk)
+                digest.update(chunk)
+        actual = digest.hexdigest()
+        if actual_size != expected_size:
+            errors.append(f"{label}.size_bytes does not match {asset.name}")
     if actual != expected_sha256:
         errors.append(f"{label}.evidence_sha256 does not match {asset.name}")
 

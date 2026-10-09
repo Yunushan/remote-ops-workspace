@@ -3259,6 +3259,7 @@ def test_gui_parity_tracks_reference_control_evidence_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    terminal_source = Path("src/remote_ops_workspace/gui_terminal.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3280,7 +3281,7 @@ def test_gui_parity_tracks_reference_control_evidence_routes() -> None:
     assert "GuiPresetReferenceControlRoute" in design_source
     assert "gui_design_preset_reference_control_route" in design_source
     assert "active-reference-tab-terminal-controls" in design_source
-    assert "terminalActionKey" in gui_source
+    assert "terminalActionKey" in terminal_source
     assert "presetReferenceControlCapturedActionKeys" in gui_source
     assert "apply_reference_control_route_to_terminal_tab" in gui_source
     assert "preset_reference_control_route" in renderer_source

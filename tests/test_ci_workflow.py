@@ -11,6 +11,55 @@ def test_ci_workflow_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_ci_workflow_requires_locked_recovery_drill_and_sanitized_report() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "secure-server-runtime")
+    assert checker.check_secure_server_runtime_job(workflow) == []
+    for snippet in (
+        "requirements-locks/linux-x86_64.txt",
+        "requirements-locks/windows-x64.txt",
+        "--require-hashes",
+        "python scripts/smoke_workspace_recovery.py --download-previous-wheel",
+        "--out artifacts/workspace-recovery.json",
+        "path: artifacts/workspace-recovery.json",
+    ):
+        changed = workflow.replace(block, block.replace(snippet, "removed-proof-input"))
+        assert checker.check_secure_server_runtime_job(changed)
+
+
+def test_ci_workflow_rejects_recovery_payload_upload_or_advisory_gate() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    payload_upload = workflow.replace("path: artifacts/workspace-recovery.json", "path: .tmp/")
+    advisory = workflow.replace("  secure-server-runtime:\n", "  secure-server-runtime:\n    continue-on-error: true\n")
+    assert any("only sanitized" in error for error in checker.check_secure_server_runtime_job(payload_upload))
+    assert any("remain blocking" in error for error in checker.check_secure_server_runtime_job(advisory))
+
+
+def test_ci_workflow_requires_managed_lifecycle_proof_on_windows_and_linux() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "secure-server-runtime")
+    for snippet in (
+        "- os: ubuntu-24.04",
+        "- os: windows-2025-vs2026",
+        "python scripts/smoke_managed_process_lifecycle.py --out artifacts/managed-process-lifecycle.json",
+        "path: artifacts/managed-process-lifecycle.json",
+        "name: managed-process-lifecycle-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}",
+    ):
+        changed = workflow.replace(block, block.replace(snippet, "removed-lifecycle-proof"))
+        assert checker.check_secure_server_runtime_job(changed)
+    payload = workflow.replace("path: artifacts/managed-process-lifecycle.json", "path: .tmp/")
+    assert any("only sanitized" in error for error in checker.check_secure_server_runtime_job(payload))
+    commented = workflow.replace("        run: python scripts/smoke_managed_process_lifecycle.py", "        # run: python scripts/smoke_managed_process_lifecycle.py")
+    skipped_windows = workflow.replace("      - name: Prove process identity, verified stop and offline recovery\n", "      - name: Prove process identity, verified stop and offline recovery\n        if: runner.os == 'Linux'\n")
+    artifact_settings = "          name: managed-process-lifecycle-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}\n          path: artifacts/managed-process-lifecycle.json\n          if-no-files-found: error\n          include-hidden-files: false\n          retention-days: 14"
+    missing_artifact_failure = workflow.replace(artifact_settings, artifact_settings.replace("if-no-files-found: error", "if-no-files-found: ignore"))
+    for changed in (commented, skipped_windows, missing_artifact_failure):
+        assert checker.check_secure_server_runtime_job(changed)
+
+
 def test_ci_workflow_requires_single_row_policy_verifier() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
@@ -856,7 +905,7 @@ def test_ci_workflow_requires_comprehensive_python_315_dependency_and_package_ev
     }
 
     for original, (replacement, expected_error) in mutations.items():
-        errors = checker.check_ci_workflow(source.replace(original, replacement, 1))
+        errors = checker.check_ci_workflow(source.replace(original, replacement))
 
         assert any(expected_error in error for error in errors)
 

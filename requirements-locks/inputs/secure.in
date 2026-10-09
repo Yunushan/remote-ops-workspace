@@ -1,0 +1,8 @@
+-r core.in
+bcrypt
+cryptography
+truststore
+pyftpdlib
+pyOpenSSL
+pyasyncore; python_version >= '3.12'
+pyasynchat; python_version >= '3.12'

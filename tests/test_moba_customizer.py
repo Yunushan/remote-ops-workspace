@@ -6,6 +6,7 @@ import json
 from base64 import b64encode
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -177,6 +178,57 @@ def test_moba_professional_update_manifest_accepts_signed_https_artifacts(tmp_pa
     assert result.passed is True
     assert result.summary["signature_algorithm"] == "ed25519"
     assert result.summary["artifact_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "public_key",
+    ["", None, False, 0, " ", "not-a-key", "ed25519:", "ed25519:not-base64!"],
+)
+def test_update_manifest_requires_valid_configured_trust_key(
+    tmp_path: Path, public_key: object
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "fixture.bin", "harmless data")
+    manifest = _write_signed_update_manifest(
+        tmp_path, artifact=artifact, public_key=UPDATE_PUBLIC_KEY
+    )
+    result = validate_professional_update_manifest(
+        manifest, public_key=cast(str, public_key), assets_dir=tmp_path
+    )
+    assert result.passed is False
+    assert result.errors
+
+
+@pytest.mark.parametrize("algorithm", ["ed25519", "unsupported-fixture-algorithm"])
+def test_update_manifest_rejects_forged_signature_without_trust_key(
+    tmp_path: Path, algorithm: str
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "fixture.bin", "harmless data")
+    manifest = _write_signed_update_manifest(
+        tmp_path, artifact=artifact, public_key=UPDATE_PUBLIC_KEY
+    )
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["signature"]["algorithm"] = algorithm
+    data["signature"]["value"] = "not-a-real-signature"
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    result = validate_professional_update_manifest(manifest, public_key="", assets_dir=tmp_path)
+    assert result.passed is False
+    assert result.errors
+
+
+def test_update_verify_cli_rejects_empty_public_key(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "fixture.bin", "harmless data")
+    manifest = _write_signed_update_manifest(
+        tmp_path, artifact=artifact, public_key=UPDATE_PUBLIC_KEY
+    )
+    args = build_parser().parse_args(
+        ["customizer", "update-verify", "--manifest", str(manifest), "--public-key", "", "--json"]
+    )
+    assert args.func(args) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["passed"] is False
+    assert payload["errors"]
 
 
 def test_moba_professional_update_manifest_rejects_tampered_signature(tmp_path: Path) -> None:
@@ -1063,3 +1115,79 @@ def _write_signed_update_manifest(root: Path, *, artifact: Path, public_key: str
     path = root / "stable-update.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+@pytest.mark.parametrize("declared_size", [True, False, 1.0, "1", None, -1])
+def test_signed_update_manifest_requires_integer_byte_count(
+    tmp_path: Path, declared_size: object
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "inert.bin", "Harmless fixture.\n")
+    manifest = _write_signed_update_manifest_with_size(
+        tmp_path, artifact=artifact, declared_size=declared_size
+    )
+    result = validate_professional_update_manifest(
+        manifest, public_key=UPDATE_PUBLIC_KEY, assets_dir=tmp_path
+    )
+    assert result.passed is False
+    assert result.errors == ["artifacts[1].size_bytes must be a non-negative integer"]
+
+
+@pytest.mark.parametrize("declared_size", [0, 1, 4096])
+def test_signed_update_manifest_rejects_local_byte_count_mismatch(
+    tmp_path: Path, declared_size: int
+) -> None:
+    artifact = _write_evidence_asset(tmp_path, "inert.bin", "Harmless fixture.\n")
+    assert declared_size != artifact.stat().st_size
+    manifest = _write_signed_update_manifest_with_size(
+        tmp_path, artifact=artifact, declared_size=declared_size
+    )
+    result = validate_professional_update_manifest(
+        manifest, public_key=UPDATE_PUBLIC_KEY, assets_dir=tmp_path
+    )
+    assert result.passed is False
+    assert result.errors == ["artifacts[1].file.size_bytes does not match inert.bin"]
+
+
+@pytest.mark.parametrize("include_file", [True, False])
+def test_signed_update_manifest_retains_zero_and_metadata_only_contract(
+    tmp_path: Path, include_file: bool
+) -> None:
+    artifact = _write_evidence_asset(
+        tmp_path, "inert.bin", "" if include_file else "Harmless metadata-only fixture.\n"
+    )
+    manifest = _write_signed_update_manifest_with_size(
+        tmp_path, artifact=artifact, declared_size=0, include_file=include_file
+    )
+    result = validate_professional_update_manifest(
+        manifest, public_key=UPDATE_PUBLIC_KEY, assets_dir=tmp_path
+    )
+    assert result.passed is True
+    assert result.errors == []
+
+
+def test_signed_update_manifest_size_binding_retains_hash_rejection(tmp_path: Path) -> None:
+    artifact = _write_evidence_asset(tmp_path, "inert.bin", "Harmless fixture.\n")
+    manifest = _write_signed_update_manifest_with_size(
+        tmp_path, artifact=artifact, declared_size=artifact.stat().st_size
+    )
+    artifact.write_bytes(b"x" * artifact.stat().st_size)
+    result = validate_professional_update_manifest(
+        manifest, public_key=UPDATE_PUBLIC_KEY, assets_dir=tmp_path
+    )
+    assert result.passed is False
+    assert result.errors == ["artifacts[1].file.evidence_sha256 does not match inert.bin"]
+
+
+def _write_signed_update_manifest_with_size(
+    root: Path, *, artifact: Path, declared_size: object, include_file: bool = True
+) -> Path:
+    manifest = _write_signed_update_manifest(root, artifact=artifact, public_key=UPDATE_PUBLIC_KEY)
+    record = json.loads(manifest.read_text(encoding="utf-8"))
+    record["artifacts"][0]["size_bytes"] = declared_size
+    if not include_file:
+        record["artifacts"][0].pop("file")
+    payload = canonical_update_manifest_payload(record)
+    record["signature"]["value"] = b64encode(_UPDATE_PRIVATE_KEY.sign(payload)).decode("ascii")
+    record["signature"]["payload_sha256"] = hashlib.sha256(payload).hexdigest()
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    return manifest

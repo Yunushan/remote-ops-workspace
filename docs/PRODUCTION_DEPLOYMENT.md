@@ -28,6 +28,34 @@ local log driver with bounded rotation; forward or retain proxy and container
 logs in your operating environment according to its incident and compliance
 requirements.
 
+## Optional Local Browser Catalogue
+
+The browser starts in demo mode. To use persisted public profile metadata,
+start `row serve-web` on its default loopback host with `--api-token-env`
+and the name of a separately provisioned per-launch token environment variable.
+Open that same loopback server in the browser and select **Connect local catalogue**.
+The UI accepts a printable token of 24 to 256 characters, keeps it only in page
+memory, and clears the input immediately. Disconnect or leaving the page clears
+the credential and returned catalogue. Authentication is refused on non-loopback
+origins. Do not put the token in a URL or forward the API through a public proxy.
+
+Catalogue creation accepts host/IP targets with an optional port, bracketed IPv6,
+or an HTTPS origin without credentials, paths, queries or fragments. It requests
+`replace: false`, obtains current public enterprise policy before writing, and
+leaves final validation and policy enforcement to the server. Serial and local
+device targets are unavailable for browser creation. Existing public metadata
+for other protocols can still be read safely. No browser terminal or native
+remote session is opened by this catalogue.
+
+API failures stay visible; the UI never silently switches to demo storage.
+A save timeout can occur after the server commits: reconnect and refresh before
+retrying to inspect the stored catalogue. Requests have a five-second total
+deadline and reject JSON above 256 KiB or catalogues above 1,000 rows. Larger
+catalogues require a future paginated API. The service worker caches only the
+listed public static assets; API, policy and authenticated requests bypass it.
+Actual browser lifecycle, offline upgrade and operated-host persistence checks
+remain required before claiming browser production readiness.
+
 ## Operational Go/No-Go
 
 Before exposing the Web/PWA beyond localhost, record the managed reverse
@@ -90,9 +118,12 @@ these environment secrets before creating a release:
 - `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`, and
   `ROW_MACOS_NOTARY_ISSUER` for Apple notarization and stapling.
 
-The environment accepts only protected `main` dispatches and `v*` tags. Keep
-that policy in place: `main` is required for the controlled evidence-promotion
-dispatch, while version tags are required for automatic production publishing.
+Pushing a `vX.Y.Z` tag starts `release.yml` to stage signed native candidates.
+Production publication requires a separate `release-promotion.yml` manual
+dispatch from that exact tag, using the bound candidate inventory and independent
+signed evidence. For self-service unsigned downloads, manually dispatch
+`versioned-unsigned-release.yml` from the exact version tag. It publishes an
+`UNSIGNED PREVIEW` prerelease and does not satisfy production promotion.
 
 Every GitHub Action used by release, CI, and protected-evidence workflows is
 commit-pinned and checked locally. The Web/PWA Python base image is also
@@ -114,7 +145,7 @@ specific release workflow before deployment:
 ```sh
 gh attestation verify ./remote-ops-workspace-v<version>-linux-x86_64.AppImage \
   --repo Yunushan/remote-ops-workspace \
-  --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/release.yml
+  --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/release-promotion.yml
 ```
 
 Use the matching local filename for any Windows, macOS, Linux, source, or
@@ -181,6 +212,21 @@ notarization evidence have been verified.
 
 ## Updates and Dependencies
 
+Modern release builds install complete, target-specific dependency locks with
+`pip --require-hashes`. Where a reviewed source build is required, its build
+backends come from a separately hashed subset of the final lock, and automatic
+build isolation is disabled. Validate the input receipt and workflow wiring with
+`python scripts/check_release_dependency_locks.py`. To regenerate the locks, use
+the exact resolver version in `configs/release_dependency_locks.json`:
+
+```sh
+python scripts/lock_release_dependencies.py --uv /path/to/pinned/uv --system-certs
+```
+
+Review regenerated dependency/hash changes and verify installation on each native
+builder before publishing. The resolver receipt proves dependency inputs; the
+production approval separately binds components actually present in every package.
+
 Enterprise update manifests use Ed25519 public keys only. Generate and protect
 the private key outside deployed clients; distribute only the base64-encoded
 32-byte public key as `ed25519:<public-key>`. The current command validates a
@@ -188,13 +234,175 @@ staged manifest and assets. It does not fetch, install, or roll back updates,
 so use your existing endpoint-management system for staged deployment and
 rollback until a managed updater is introduced.
 
+Configure the trusted public key independently of the received manifest.
+`row customizer update-verify` and the standalone manifest checker reject an
+empty or malformed configured key, an unsupported signature algorithm, or a
+forged signature and return a nonzero exit status. The security extra must be
+available for Ed25519 verification; an unavailable backend also rejects the
+manifest. A payload checksum alone does not establish the publisher identity.
+
+### Authenticated update staging and recovery
+
+The explicit `row customizer update-stage --policy PATH --stage DIRECTORY`
+proposal adds download and authenticated staging, not installation. Its companion
+`update-stage-recover` has the same arguments and revalidates completed inputs
+without downloading. `update-verify` retains its existing local verification,
+metadata-only and zero-byte contracts; the new staging policy separately refuses
+metadata-only entries, empty assets, aliases, unsupported filenames and versions
+that are not newer than the running package's stable three-part version.
+
+An operator must fill a protected copy of `configs/update-trust-policy.example.json`
+with an independently approved HTTPS manifest URL, Ed25519 public key,
+organization, channel, selected target, all approved targets and HTTPS origins.
+The shipped example is disabled, with no publisher key or feed authority. Keep
+the private publisher key outside clients. An origin list may include operator
+approved GitHub release asset redirect origins, but no host is implicitly trusted.
+The manifest cannot supply or override this policy. The optional security extra
+must be installed; a missing Ed25519 backend refuses the operation.
+
+The original signed manifest bytes and **every declared approved asset** are
+staged. The selected target identifies future installer inputs; it never drops
+other signed entries. All filenames must be portable plain basenames and each
+`file` must equal its `name`. The unchanged canonical payload and Ed25519 helper
+authenticate the manifest before any asset URL is followed. After all exact
+sizes and SHA-256 values match, the unchanged complete manifest validator checks
+the original manifest and full local asset set. Recovery repeats authentication
+against the current policy and running version, validates the bound journal and
+rehashes every file. Journal flags and payload checksums never authorize recovery.
+
+On POSIX, use an existing empty private staging directory outside `ROW_HOME`,
+with current owner and mode 0700. The policy file must be regular, unlinked and
+not writable by other users; root-owned policy is permitted on POSIX. Path
+symlinks/reparse points, hard links, unknown files and interrupted partials are
+refused. The real cross-process `exclusive_file_lock` covers the stage and all
+revalidation. POSIX metadata checks do not protect against a compromised
+same-user process or privileged host.
+
+The Windows private-storage adapter is implemented in source but remains
+unqualified. Its production qualification flag is false: policy loading, new
+staging and recovery refuse before policy bytes, root creation, lock bytes or
+payload. The disabled example does not enable it. Mocked SDK declarations and
+ownership fixtures are source evidence, not genuine Windows ACL or ABI evidence.
+
+The Windows source requires the current process token and refuses an impersonated
+thread. It retains local NTFS ancestor and named-file handles without delete
+sharing, with exact owner-only private DACLs, descriptor-to-name identity checks
+and validation through lock, writer, recovery and full-manifest scopes. The policy
+file and its parent require the private boundary too; a public key in a permissive
+policy file does not waive that requirement. Existing direct stage entries are
+qualified before a receiving journal or lock byte. Only a missing explicit stage
+leaf may be created exclusively; current state directories, existing owners and
+DACLs are never rewritten by these commands.
+
+An explicit `ROW_HOME` must match its original local selection without expansion
+or aliases. Without it, the selected current RoamingAppData home must match the
+current/default Roaming and Local known-folder observations and any `APPDATA`
+selection. The stage stays outside the observed home. Conservative ancestor
+owner/write checks can refuse ordinary system-drive ancestry, including an
+unqualified TrustedInstaller owner or raw grants to other identities. These
+checks remain enforced; actual default-path compatibility and independent
+unprivileged-identity denial still require genuine disposable Windows evidence.
+
+HTTPS uses certificate and hostname verification, TLS 1.2 or later,
+credential-free requests, disabled environment proxies, identity encoding and a
+bounded explicit redirect policy. Manifest, per-asset, asset-set, chunk and
+collection limits are enforced. A checked operation deadline and socket timeouts
+bound work at checkpoints; synchronous DNS, file I/O, fsync, signature verification
+and the existing complete validator are not independently preempted. Socket
+reads can finish after the checked deadline, which then refuses success. This is
+not an OS-enforced wall-clock or power-loss guarantee.
+
+Writes publish an initial `receiving` journal, the original manifest and every
+asset before a `staged` journal. Complete files with a receiving journal can be
+reverified. A failed download closes its response; partial files are retained and
+refused rather than erased or trusted. To retry incomplete staging, inspect and
+retain its evidence, then use a fresh private directory. These commands return
+`install_permitted: false` even when authentication and staging succeed.
+
+Production installation still requires platform-specific verified package
+signatures/installer adapters, a trusted version floor and target closure, a
+complete offline encrypted pre-upgrade state snapshot, writer quiescence, crash
+recovery and an actual prior-binary plus encrypted-state restore/decrypt drill.
+Reinstalling an older binary alone cannot roll back a migrated vault. These
+requirements, genuine Windows storage qualification and genuine hosted update
+tests remain mandatory; this proposal confers no production readiness points.
+
 RDP, VNC, X2Go, SPICE, serial, and other protocol sessions delegate to native
 system clients. Treat `row doctor` as a post-install preflight, then deploy the
 approved clients, versions, certificates, and host-key policy through your OS
 package-management or endpoint-management platform. A green package install is
 not evidence that every protocol client is installed or usable.
 
+## Offline Workstation Recovery
+
+`row export` exports profiles. To retain the complete workstation state, use
+the encrypted offline workspace backup with the security extra installed. Close
+all other ROW GUI, Web and CLI processes and stop managed server/X11 helpers
+before acknowledging `--offline`; the backup does not suspend active writers.
+It acquires all five known store locks and the locks of managed runtime records
+that already exist, then rejects detected inventory changes. This does not
+provide an online snapshot guarantee.
+
+```sh
+row workspace backup --out /secure-backups/workstation.rowbak --offline
+row workspace restore --backup /secure-backups/workstation.rowbak --destination /private/workstation-restored --offline
+```
+
+Both commands use the current `ROW_HOME`; the restore destination must be a new
+direct sibling of that home. Prompts keep the backup passphrase out of command
+arguments. For automated recovery drills, `--passphrase-env ENVIRONMENT_NAME`
+reads a separately provisioned secret variable. Retain that passphrase securely;
+the encrypted archive cannot be recovered without it.
+
+The versioned authenticated archive preserves raw profiles and group defaults,
+vault ciphertext, layouts and splitter sizes, snippets, macros, browser settings,
+unknown regular plugin state and empty directories. Known advisory lock files and recognized
+ordinary write staging files are omitted. Verified predecessor recovery copies
+are retained. Archives are bounded to 64 MiB of file data and 10,000 entries and
+reject linked, reparse, special, hard-linked and nonportable paths. POSIX restore
+permissions are owner-only, preserving the owner executable bit. Windows privacy
+requires an operator-secured destination parent DACL so the new staging and
+restored directories inherit private access; `chmod` does not verify that ACL.
+The result explicitly reports `windows_acl_verified: false`.
+External identity keys, served roots, machine policy and host runtimes remain
+separate recovery dependencies.
+
+Restore validates the entire authenticated manifest before staging a new home,
+then verifies the restored bytes before installing that directory. The original
+home is retained. Inspect the restored stores and decrypt a known vault item in
+an isolated drill before selecting the restored `ROW_HOME` for normal use. Keep
+the archive private and encrypted at rest; CI retains only sanitized recovery
+results, never archive payloads or passphrases.
+
+For a rollback to an older release, restore the snapshot taken before the
+upgrade. Current vault writes migrate earlier vaults to format v3; v1.0.24 cannot
+read that newer format. Reinstalling an older executable over a newly written
+vault is insufficient. Native installer upgrade and rollback must additionally
+be verified on the actual operated host; released-wheel compatibility evidence
+does not prove native installer lifecycle or platform trust.
+
+Managed shutdown binds a saved process to its native creation identity. Windows
+uses the same verified process handle for termination and exit confirmation;
+Linux uses a verified process descriptor. Stale or unverifiable legacy records
+are refused. Start and stop serialize changes to each lifecycle record; a repeat
+start refuses an active or ambiguous record before changing authorization files
+or launching another child. A `started` record confirms child ownership;
+listener readiness requires the separate service or X11 probe. Other POSIX hosts can stop retained, unreaped children in the
+running GUI; separate-process shutdown requires a supported native mechanism
+or the host's process manager. A failed shutdown retains the lifecycle record
+and prevents an offline snapshot of that active or ambiguous helper.
+Owned POSIX child management requires default `SIGCHLD` handling and reaping
+through the retained `Popen` object. Cleanup uses a bounded shutdown deadline
+and refuses uncertain ownership.
+
 ## Team Data
+
+Private-state writes retain a secured predecessor while committing a replacement.
+If permissions cannot be verified after replacement, the writer restores the
+previous bytes and reports failure. If the OS prevents recovery, the error names
+the verified `.<name>.rollback.*.tmp` copy to retain for operator recovery. Stop
+writers before investigating, preserve that copy, and verify its permissions and
+contents before restoring it. A recovery error never indicates a successful save.
 
 The directory team-sync backend is a file-backed metadata exchange intended
 for a single trusted shared filesystem. It does not provide identity,

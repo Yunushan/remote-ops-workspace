@@ -1,0 +1,46 @@
+{
+  "schema": "row.previous-native-release-pins.v1",
+  "repository": "Yunushan/remote-ops-workspace",
+  "release_id": 382583184,
+  "tag": "v1.0.24",
+  "tag_commit": "2165989ca9f3ffbd59a8f27a296cda3fb295a404",
+  "published_at": "2026-09-04T08:39:52Z",
+  "immutable_at_capture": false,
+  "assets": [
+    {
+      "id": 544041393,
+      "name": "remote-ops-workspace-v1.0.24-windows-x64-native-manifest.json",
+      "size": 3692,
+      "digest": "sha256:ab67872bf72d476a9faa61ac1a2c6141f6e07849d4484d6683cd485e7a5cfab2",
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-windows-x64-native-manifest.json"
+    },
+    {
+      "id": 544041381,
+      "name": "remote-ops-workspace-v1.0.24-windows-x64-native-SHA256SUMS.txt",
+      "size": 478,
+      "digest": "sha256:f0facfbabf2f8ca6521365346e30e7c152243d950fea1999387f8c5a23acf835",
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-windows-x64-native-SHA256SUMS.txt"
+    },
+    {
+      "id": 544041415,
+      "name": "remote-ops-workspace-v1.0.24-windows-x64-native.zip",
+      "size": 99392378,
+      "digest": "sha256:67998c4ea48e7aef74fd91710cb3ac3e7528b4808c766fca55155e72300831ef",
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-windows-x64-native.zip"
+    },
+    {
+      "id": 544041386,
+      "name": "remote-ops-workspace-v1.0.24-windows-x64-setup.exe",
+      "size": 58294627,
+      "digest": "sha256:3ecb317c76e3a7a7679e866368ebc70f8d1cb0c1bcb899fc388a755d83f105a9",
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote-ops-workspace-v1.0.24-windows-x64-setup.exe"
+    },
+    {
+      "id": 544041398,
+      "name": "remote_ops_workspace-1.0.24-py3-none-any.whl",
+      "size": 542385,
+      "digest": "sha256:9fe56c3b4f09365cdc7a21249a41b9b60d5944f2ce0f596f9b45443184db585e",
+      "browser_download_url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote_ops_workspace-1.0.24-py3-none-any.whl"
+    }
+  ]
+}

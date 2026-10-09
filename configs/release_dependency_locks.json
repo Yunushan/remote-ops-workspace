@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "resolver": {"name": "uv", "version": "0.12.21", "index": "https://pypi.org/simple"},
+  "python_version": "3.14.7",
+  "constraints": "requirements-release.txt",
+  "evidence_scope": "Resolved dependency inputs. Native installation, source-build toolchains, exact artifact inventory and independent approval require separate verification.",
+  "targets": {
+    "source-linux-x86_64": {"platform": "x86_64-manylinux_2_39", "input": "gui.in", "source_packages": ["pyftpdlib"], "bootstrap": true, "bootstrap_input": "installer-backends.in"},
+    "windows-x64": {"platform": "x86_64-pc-windows-msvc", "input": "gui.in", "source_packages": ["pyftpdlib"], "bootstrap": true, "bootstrap_input": "installer-backends.in"},
+    "windows-x86": {"platform": "i686-pc-windows-msvc", "input": "core.in"},
+    "windows-arm64": {"platform": "aarch64-pc-windows-msvc", "input": "windows-arm64.in", "source_packages": ["cryptography", "pyftpdlib"], "bootstrap": true},
+    "macos-x64": {"platform": "x86_64-apple-darwin", "input": "windows-arm64.in", "source_packages": ["cryptography", "pyftpdlib"], "bootstrap": true},
+    "macos-arm64": {"platform": "aarch64-apple-darwin", "input": "gui.in", "source_packages": ["pyftpdlib"], "bootstrap": true, "bootstrap_input": "installer-backends.in"},
+    "linux-x86_64": {"platform": "x86_64-manylinux_2_39", "input": "secure.in", "source_packages": ["pyftpdlib"], "bootstrap": true, "bootstrap_input": "installer-backends.in"},
+    "linux-aarch64": {"platform": "aarch64-manylinux_2_39", "input": "secure.in", "source_packages": ["pyftpdlib"], "bootstrap": true, "bootstrap_input": "installer-backends.in"},
+    "release-verifier-linux-x86_64": {"platform": "x86_64-manylinux_2_39", "input": "release-verifier.in"}
+  }
+}

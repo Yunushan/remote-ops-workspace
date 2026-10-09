@@ -155,7 +155,7 @@ IMPLEMENTED_ITEMS = (
         stale_future_snippets=("Continue enriching GUI profile and layout editors with protocol presets and import previews.",),
         evidence=(
             Evidence("src/remote_ops_workspace/gui_editors.py", "PROTOCOL_PRESETS"),
-            Evidence("src/remote_ops_workspace/gui.py", "class ProfileImportPreviewDialog"),
+            Evidence("src/remote_ops_workspace/gui_dialogs.py", "class ProfileImportPreviewDialog"),
             Evidence("src/remote_ops_workspace/gui.py", "def import_profiles_with_preview"),
             Evidence("tests/test_gui_editors.py", "test_protocol_preset_editor_data_uses_safe_protocol_defaults"),
         ),
@@ -194,7 +194,7 @@ IMPLEMENTED_ITEMS = (
         evidence=(
             Evidence("src/remote_ops_workspace/terminal_emulation.py", "class AnsiTerminalTranscript"),
             Evidence("src/remote_ops_workspace/terminal_emulation.py", "TERMINAL_EMULATOR_BACKEND"),
-            Evidence("src/remote_ops_workspace/gui.py", "terminalEmulatorBackend"),
+            Evidence("src/remote_ops_workspace/gui_terminal.py", "terminalEmulatorBackend"),
             Evidence("tests/test_terminal_emulation.py", "test_ansi_transcript_rewrites_carriage_return_progress_and_backspaces"),
             Evidence("docs/TERMINAL.md", "not a PTY"),
         ),

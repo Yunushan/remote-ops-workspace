@@ -1,0 +1,91 @@
+name: Android public toolchain qualification
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'tests/mobile-browser/qualify_android_stack.py'
+      - 'tests/mobile-browser/hosted_controller.py'
+      - 'tests/mobile-browser/observe_public_stack.py'
+      - 'tests/mobile-browser/archive_readers_frozen.py'
+      - '.github/workflows/android-toolchain-qualification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qualify-public-stack:
+    if: >-
+      github.repository == 'Yunushan/remote-ops-workspace' &&
+      github.event.repository.private == false &&
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.base.ref == 'main') ||
+       (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      ROW_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.14.7'
+      - name: Observe official public NPM bytes without executing the package
+        id: observe
+        run: |
+          mkdir -p build/mobile-browser .tmp
+          python tests/mobile-browser/qualify_android_stack.py guard
+          python tests/mobile-browser/qualify_android_stack.py observe-public
+      - name: Retain public NPM qualification even if a later SDK stage refuses
+        if: ${{ always() && steps.observe.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: Android-public-NPM-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/mobile-browser/android-public-stack-observation.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Observe original hosted SDK tooling before copying it
+        run: python tests/mobile-browser/qualify_android_stack.py bootstrap
+      - name: Provision only the fresh isolated official API36 SDK
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/mobile-browser/qualify_android_stack.py guard
+          owned_sdk="$RUNNER_TEMP/row-browser-api36-sdk"
+          test ! -e "$owned_sdk"
+          mkdir -m 700 "$owned_sdk"
+          mkdir -m 700 "$owned_sdk/cmdline-tools"
+          cp -R "$ANDROID_HOME/cmdline-tools/latest" "$owned_sdk/cmdline-tools/latest"
+          cp -R "$ANDROID_HOME/licenses" "$owned_sdk/licenses"
+          python tests/mobile-browser/qualify_android_stack.py guard-clone
+          env -i PATH="$PATH" JAVA_HOME="$JAVA_HOME" HOME="$RUNNER_TEMP" LANG=C.UTF-8 \
+            "$owned_sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$owned_sdk" --install \
+            'platform-tools' 'emulator' 'platforms;android-36' 'system-images;android-36;google_apis;x86_64'
+          printf '%s\n' 'phase=isolated-sdkmanager-zero-exit'
+          echo "ANDROID_HOME=$owned_sdk" >> "$GITHUB_ENV"
+          python tests/mobile-browser/qualify_android_stack.py kvm-preflight
+          printf '%s\n' 'phase=owned-host-kvm-access'
+          if ! test -r /dev/kvm; then
+            printf '%s\n' 'android-kvm-read-access-refused' >&2
+            exit 1
+          fi
+          if ! test -w /dev/kvm; then
+            printf '%s\n' 'android-kvm-write-access-refused' >&2
+            exit 1
+          fi
+          printf '%s\n' 'phase=owned-host-kvm-read-write-observed'
+      - name: Observe owned emulator package identities without starting Chrome
+        id: capture
+        run: python tests/mobile-browser/qualify_android_stack.py capture
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() && steps.capture.outputs.public_receipt == 'saved' }}
+        with:
+          name: Android-public-toolchain-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/mobile-browser/android-toolchain-qualification.json
+          if-no-files-found: error
+          retention-days: 14

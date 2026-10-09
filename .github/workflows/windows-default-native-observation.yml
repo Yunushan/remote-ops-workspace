@@ -1,0 +1,71 @@
+name: Windows default native read-only observation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'scripts/observe_windows_default_native.py'
+      - 'src/remote_ops_workspace/__init__.py'
+      - 'src/remote_ops_workspace/windows_private_storage.py'
+      - 'src/remote_ops_workspace/update_channel.py'
+      - 'src/remote_ops_workspace/paths.py'
+      - 'src/remote_ops_workspace/file_safety.py'
+      - '.github/workflows/windows-default-native-observation.yml'
+
+permissions:
+  contents: read
+concurrency:
+  group: windows-default-native-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  readonly-default-boundary:
+    if: >-
+      github.repository == 'Yunushan/remote-ops-workspace' &&
+      github.event.repository.private == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 8
+    env:
+      ROW_EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          clean: true
+      - name: Bind exact candidate head and tree
+        shell: pwsh
+        run: |
+          $observedHead = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $observedHead -ne $env:ROW_EXPECTED_SOURCE_SHA) { throw 'source head refused' }
+          $observedTree = git rev-parse 'HEAD^{tree}'
+          if ($LASTEXITCODE -ne 0 -or $observedTree -notmatch '^[0-9a-f]{40}$') { throw 'source tree refused' }
+          "ROW_OBSERVED_HEAD=$observedHead" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ROW_OBSERVED_TREE=$observedTree" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "Observed exact source $observedHead tree $observedTree"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        timeout-minutes: 3
+        with:
+          python-version: '3.12'
+      - name: Observe real APIs and existing default-home boundaries
+        id: capture
+        timeout-minutes: 2
+        run: python -I -S -B scripts/observe_windows_default_native.py capture
+      - name: Validate fixed public observation only
+        id: public-receipt
+        if: always() && steps.capture.outcome != 'skipped'
+        timeout-minutes: 1
+        run: python -I -S -B scripts/observe_windows_default_native.py publish
+      - name: Retain bounded public observation only
+        if: always() && steps.public-receipt.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-default-native-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .tmp/windows-default-native-public/result.json
+          if-no-files-found: error
+          retention-days: 14
+          include-hidden-files: true

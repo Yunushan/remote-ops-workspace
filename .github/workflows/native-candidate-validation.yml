@@ -1,0 +1,538 @@
+name: Native PR candidate validation
+
+# Validates unreleased candidate runtime; does not authorize release promotion.
+# Read-only token; artifacts remain Actions candidates, never GitHub Releases.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'requirements-locks/**'
+      - 'configs/**'
+      - 'pyproject.toml'
+      - 'requirements-release*.txt'
+      - 'apps/web/**'
+      - 'redistribution-evidence/**'
+      - 'MANIFEST.in'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'README.md'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/versioned-unsigned-release.yml'
+      - '.github/workflows/native-candidate-validation.yml'
+  workflow_dispatch:
+    inputs:
+      scope:
+        type: choice
+        default: windows-x64
+        options: [windows-x64, all-modern]
+      source_sha:
+        description: 'Exact candidate commit; empty uses this workflow ref commit'
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: native-candidate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SOURCE_DATE_EPOCH: "1704067200"
+  PYTHONHASHSEED: "0"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  ROW_REQUIRE_RELEASE_SIGNING: "0"
+
+jobs:
+  candidate-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      candidate_sha: ${{ steps.bind.outputs.sha }}
+      candidate_tree: ${{ steps.bind.outputs.tree }}
+      version_tag: ${{ steps.bind.outputs.version_tag }}
+      windows_matrix: ${{ steps.bind.outputs.windows_matrix }}
+      scope: ${{ steps.bind.outputs.scope }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.source_sha || github.sha }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Bind candidate head and tree without creating a tag
+        id: bind
+        env:
+          EXPECTED_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || inputs.source_sha || github.sha }}
+          CANDIDATE_SCOPE: ${{ inputs.scope || (contains(github.event.pull_request.labels.*.name, 'native-all-modern') && 'all-modern') || 'windows-x64' }}
+        run: |
+          python - <<'PY'
+          import json, os, re, subprocess, tomllib
+          from pathlib import Path
+          expected=os.environ['EXPECTED_CANDIDATE_SHA']
+          assert re.fullmatch(r'[0-9a-f]{40}',expected), 'exact lowercase commit SHA required'
+          head=subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()
+          tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}']).decode().strip()
+          assert head==expected, 'checkout differs from requested candidate'
+          assert subprocess.run(['git','diff','--quiet','HEAD','--']).returncode==0
+          version=tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          assert isinstance(version,str) and re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',version), 'project.version must be canonical numeric X.Y.Z'
+          scope=os.environ['CANDIDATE_SCOPE']
+          assert scope in ('windows-x64','all-modern'), 'unsupported candidate scope'
+          rows=[{'arch':'x64','python-architecture':'x64','runner':'windows-latest','lock':'requirements-locks/windows-x64.txt','bootstrap_lock':'requirements-locks/windows-x64-bootstrap.txt'}]
+          if scope=='all-modern':
+              rows.extend([{'arch':'x86','python-architecture':'x86','runner':'windows-latest','lock':'requirements-locks/windows-x86.txt','bootstrap_lock':'requirements-locks/windows-x86.txt'}, {'arch':'arm64','python-architecture':'arm64','runner':'windows-11-arm','lock':'requirements-locks/windows-arm64.txt','bootstrap_lock':'requirements-locks/windows-arm64-bootstrap.txt'}])
+          with open(os.environ['GITHUB_OUTPUT'],'a') as out:
+              out.write(f'sha={head}\ntree={tree}\nversion_tag=v{version}\nwindows_matrix={json.dumps({"include":rows})}\nscope={scope}\n')
+          print(json.dumps({'scope':'unreleased candidate','native_scope':scope,'candidate_head':head,'candidate_tree':tree,'event_sha':os.environ['GITHUB_SHA'],'windows_matrix':rows},indent=2))
+          PY
+  windows-native:
+    needs: candidate-source
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.candidate-source.outputs.windows_matrix) }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_TAG: ${{ needs.candidate-source.outputs.version_tag }}
+      PIP_CONFIG_FILE: "nul"
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.candidate-source.outputs.candidate_sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify exact candidate source commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+          architecture: ${{ matrix.python-architecture }}
+      - name: Isolate candidate Python environment
+        shell: powershell
+        run: |
+          python -m venv .venv-candidate
+          (Join-Path $env:GITHUB_WORKSPACE ".venv-candidate/Scripts") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Fingerprint actual candidate checkout before build
+        shell: bash
+        run: >-
+          python scripts/candidate_native_proof.py bind
+          --target "windows-${{ matrix.arch }}"
+          --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --asset-dir native-dist/windows
+      - name: Install Python packaging dependencies
+        shell: powershell
+        run: |
+          $ExpectedOpenSsl = ""
+          if ("${{ matrix.arch }}" -eq "x86") {
+            python -m pip uninstall -y bcrypt cryptography truststore
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed x86 runtime installation failed" }
+            $ExpectedCryptography = ""
+            python -c "import importlib.util; assert importlib.util.find_spec('bcrypt') is None; assert importlib.util.find_spec('cryptography') is None; print('bcrypt=unavailable cryptography=unavailable security-backends=fail-closed')"
+          } elseif ("${{ matrix.arch }}" -eq "arm64") {
+            if (-not $env:VCPKG_INSTALLATION_ROOT) {
+              throw "windows-11-arm runner did not provide VCPKG_INSTALLATION_ROOT"
+            }
+            $VcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+            $VcpkgCommit = "42e4e33e1505c9f47b58c21e0f557c1571b751ee"
+            git -C $VcpkgRoot fetch --no-tags --depth 1 origin $VcpkgCommit
+            git -C $VcpkgRoot checkout --detach $VcpkgCommit
+            if ((git -C $VcpkgRoot rev-parse HEAD).Trim() -ne $VcpkgCommit) {
+              throw "vcpkg checkout did not resolve to the pinned commit"
+            }
+            & (Join-Path $VcpkgRoot "bootstrap-vcpkg.bat") -disableMetrics
+            if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed" }
+            $Vcpkg = Join-Path $VcpkgRoot "vcpkg.exe"
+            & $Vcpkg install "openssl:arm64-windows-static-md" --clean-after-build
+            if ($LASTEXITCODE -ne 0) { throw "ARM64 OpenSSL installation failed" }
+            $OpenSslRoot = Join-Path $VcpkgRoot "installed\arm64-windows-static-md"
+            foreach ($RequiredPath in @(
+              "include\openssl\opensslv.h",
+              "lib\libcrypto.lib",
+              "lib\libssl.lib"
+            )) {
+              if (-not (Test-Path (Join-Path $OpenSslRoot $RequiredPath))) {
+                throw "ARM64 OpenSSL output missing: $RequiredPath"
+              }
+            }
+            $env:OPENSSL_DIR = $OpenSslRoot
+            $env:OPENSSL_STATIC = "1"
+            $env:OPENSSL_NO_VENDOR = "1"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed ARM64 build bootstrap installation failed" }
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed ARM64 runtime installation failed" }
+            $ExpectedCryptography = "50.0.1"
+            $ExpectedOpenSsl = "OpenSSL 3.6.3"
+          } else {
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed Windows build bootstrap installation failed" }
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+            if ($LASTEXITCODE -ne 0) { throw "Hashed Windows runtime installation failed" }
+            $ExpectedCryptography = "50.0.1"
+          }
+          if ($ExpectedCryptography) {
+            python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; actual_openssl = backend.openssl_version_text(); assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '$ExpectedCryptography'; assert not '$ExpectedOpenSsl' or actual_openssl.startswith('$ExpectedOpenSsl'), actual_openssl; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={actual_openssl}')"
+          } else {
+            Write-Host "Windows x86 security backends intentionally unavailable and fail-closed"
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Hashed Windows release dependency installation failed" }
+          $Extras = if ("${{ matrix.arch }}" -eq "x86") { "package" } else { "desktop,security,package,servers" }
+          python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[${Extras}]"
+          if ($LASTEXITCODE -ne 0) { throw "Windows project installation failed" }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "Windows release dependency consistency check failed" }
+      - name: Install Windows installer toolchains
+        shell: powershell
+        run: |
+          $InnoCompiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          $InnoProbeDirectory = Join-Path $env:RUNNER_TEMP "inno-version-probe"
+          New-Item -ItemType Directory -Path $InnoProbeDirectory -Force | Out-Null
+          $InnoProbe = Join-Path $InnoProbeDirectory "probe.iss"
+          @("[Setup]", "AppName=ROW compiler probe", "AppVersion=0",
+            "DefaultDirName={tmp}\ROWCompilerProbe", "Output=no", "Uninstallable=no") |
+            Set-Content -LiteralPath $InnoProbe -Encoding UTF8
+          function Get-InnoCompilerVersion {
+            if (-not (Test-Path -LiteralPath $InnoCompiler)) { return "" }
+            try {
+              $InnoOutput = @(& $InnoCompiler /O- "/O$InnoProbeDirectory" $InnoProbe 2>&1)
+              $InnoProbeExit = $LASTEXITCODE
+            } catch { return "" }
+            if ($InnoProbeExit -ne 0) { return "" }
+            $InnoVersionLines = @($InnoOutput | Select-String -Pattern '^Compiler engine version: Inno Setup ([0-9]+\.[0-9]+\.[0-9]+)\r?$')
+            if ($InnoVersionLines.Count -ne 1) { return "" }
+            return $InnoVersionLines[0].Matches[0].Groups[1].Value
+          }
+          $InnoVersion = Get-InnoCompilerVersion
+          if ($InnoVersion -ne "6.7.1") {
+            choco install innosetup --version=6.7.1 --allow-downgrade --force -y --no-progress
+            if ($LASTEXITCODE -notin @(0, 3010)) { throw "Pinned Inno Setup installation failed" }
+          }
+          $InnoVersion = Get-InnoCompilerVersion
+          if ($InnoVersion -ne "6.7.1") { throw "Expected Inno Setup 6.7.1, got $InnoVersion" }
+          Split-Path -Parent $InnoCompiler | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Verified Inno Setup compiler $InnoVersion at $InnoCompiler"
+          dotnet tool install --global wix --version 5.0.2
+      - name: Build Windows EXE and MSI installers
+        id: native-build
+        shell: powershell
+        run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
+      - name: Run Windows native installer smoke tests
+        id: native-smoke
+        shell: powershell
+        timeout-minutes: 25
+        run: >-
+          python scripts/candidate_windows_owned.py --timeout 1200
+          --out "build/candidate-proof/windows-${{ matrix.arch }}/owned-smoke.json"
+          -- powershell.exe -NoProfile -File scripts/smoke_windows_native.ps1
+          -Arch "${{ matrix.arch }}" -Dist "native-dist/windows"
+      - name: Retain separate console startup diagnosis if original GUI smoke failed
+        if: ${{ failure() && steps.native-smoke.outcome == 'failure' && matrix.arch != 'x86' }}
+        shell: powershell
+        timeout-minutes: 15
+        run: python scripts/candidate_windows_diagnostic.py --target "windows-${{ matrix.arch }}"
+      - name: Capture exact Windows redistribution inventory
+        shell: bash
+        run: >-
+          python scripts/check_preview_redistribution.py
+          --capture-target "windows-${{ matrix.arch }}"
+          --assets-dir native-dist/windows
+          --tag "$RELEASE_TAG"
+          --sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --repository "$GITHUB_REPOSITORY"
+          --report "candidate-license-inventory/windows-${{ matrix.arch }}.json"
+      - name: Record candidate provenance and actual local inventory
+        if: always()
+        shell: bash
+        run: >-
+          python scripts/candidate_native_proof.py finish
+          --native-build-outcome "${{ steps.native-build.outcome }}"
+          --native-smoke-outcome "${{ steps.native-smoke.outcome }}"
+          --target "windows-${{ matrix.arch }}"
+          --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --asset-dir native-dist/windows
+      - name: Collect unsigned runtime observations for external review
+        if: ${{ success() && github.event.repository.visibility == 'public' }}
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          mkdir -p candidate-runtime-inventory
+          python scripts/collect_unsigned_runtime.py --target "windows-${{ matrix.arch }}" \
+            --sha "${{ needs.candidate-source.outputs.candidate_sha }}" --proof-dir "build/candidate-proof/windows-${{ matrix.arch }}" \
+            --stage-dir build/native/windows/pyinstaller-dist \
+            --output "candidate-runtime-inventory/windows-${{ matrix.arch }}"
+      - name: Verify previous Windows native release upgrade and recovery
+        if: ${{ success() && matrix.arch == 'x64' }}
+        shell: powershell
+        timeout-minutes: 35
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/candidate_windows_owned.py --timeout 1800
+          --out build/candidate-proof/windows-x64/owned-recovery.json
+          -- python scripts/native_installer_recovery.py run
+          --allow-disposable-runner-install
+          --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --candidate-dir native-dist/windows
+          --candidate-evidence build/candidate-proof/windows-x64/finish.json
+          --previous-pins configs/native_previous_release_pins.json
+          --out build/candidate-proof/windows-x64/native-upgrade-rollback.json
+      - name: Retain unreleased candidate proof and artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: candidate-windows-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
+          path: |
+            build/candidate-proof/windows-${{ matrix.arch }}/
+            build/native-smoke/windows-${{ matrix.arch }}/
+            build/native/windows/pyinstaller-work/*/warn-*.txt
+            build/native/windows/pyinstaller-work/*/xref-*.html
+            native-dist/windows/
+            candidate-license-inventory/
+            candidate-runtime-inventory/windows-${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  macos-native:
+    needs: candidate-source
+    if: ${{ needs.candidate-source.outputs.scope == 'all-modern' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+            lock: requirements-locks/macos-x64.txt
+            bootstrap_lock: requirements-locks/macos-x64-bootstrap.txt
+          - arch: arm64
+            runner: macos-latest
+            lock: requirements-locks/macos-arm64.txt
+            bootstrap_lock: requirements-locks/macos-arm64-bootstrap.txt
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_TAG: ${{ needs.candidate-source.outputs.version_tag }}
+      PIP_CONFIG_FILE: "/dev/null"
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.candidate-source.outputs.candidate_sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify exact candidate source commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Isolate candidate Python environment
+        shell: bash
+        run: |
+          python -m venv .venv-candidate
+          echo "$GITHUB_WORKSPACE/.venv-candidate/bin" >> "$GITHUB_PATH"
+      - name: Fingerprint actual candidate checkout before build
+        shell: bash
+        run: >-
+          python scripts/candidate_native_proof.py bind
+          --target "macos-${{ matrix.arch }}"
+          --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --asset-dir native-dist/macos
+      - name: Install Python packaging dependencies
+        run: |
+          if [[ "${{ matrix.arch }}" == "x64" ]]; then
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
+            expected_cryptography="50.0.1"
+          else
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+            python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+            expected_cryptography="50.0.1"
+          fi
+          python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[desktop,security,package,servers]"
+          python -m pip check
+          EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+      - name: Build macOS DMG and PKG installers
+        id: native-build
+        run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
+      - name: Run macOS native installer smoke tests
+        id: native-smoke
+        run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
+      - name: Capture exact macOS redistribution inventory
+        run: >-
+          python scripts/check_preview_redistribution.py
+          --capture-target "macos-${{ matrix.arch }}"
+          --assets-dir native-dist/macos
+          --tag "$RELEASE_TAG"
+          --sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --repository "$GITHUB_REPOSITORY"
+          --report "candidate-license-inventory/macos-${{ matrix.arch }}.json"
+      - name: Record candidate provenance and actual local inventory
+        if: always()
+        shell: bash
+        run: >-
+          python scripts/candidate_native_proof.py finish
+          --native-build-outcome "${{ steps.native-build.outcome }}"
+          --native-smoke-outcome "${{ steps.native-smoke.outcome }}"
+          --target "macos-${{ matrix.arch }}"
+          --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --asset-dir native-dist/macos
+      - name: Collect unsigned runtime observations for external review
+        if: ${{ success() && github.event.repository.visibility == 'public' }}
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          mkdir -p candidate-runtime-inventory
+          python scripts/collect_unsigned_runtime.py --target "macos-${{ matrix.arch }}" \
+            --sha "${{ needs.candidate-source.outputs.candidate_sha }}" --proof-dir "build/candidate-proof/macos-${{ matrix.arch }}" \
+            --stage-dir build/native/macos/pyinstaller-dist \
+            --output "candidate-runtime-inventory/macos-${{ matrix.arch }}"
+      - name: Retain unreleased candidate proof and artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: candidate-macos-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
+          path: |
+            build/candidate-proof/macos-${{ matrix.arch }}/
+            build/native-smoke/macos-${{ matrix.arch }}/
+            build/native/macos/pyinstaller-work/*/warn-*.txt
+            build/native/macos/pyinstaller-work/*/xref-*.html
+            native-dist/macos/
+            candidate-license-inventory/
+            candidate-runtime-inventory/macos-${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  linux-native:
+    needs: candidate-source
+    if: ${{ needs.candidate-source.outputs.scope == 'all-modern' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            lock: requirements-locks/linux-x86_64.txt
+            bootstrap_lock: requirements-locks/linux-x86_64-bootstrap.txt
+            appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+            appimage_runtime_sha256: 2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            lock: requirements-locks/linux-aarch64.txt
+            bootstrap_lock: requirements-locks/linux-aarch64-bootstrap.txt
+            appimagetool_sha256: f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158
+            appimage_runtime_sha256: 00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444
+    runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_TAG: ${{ needs.candidate-source.outputs.version_tag }}
+      PIP_CONFIG_FILE: "/dev/null"
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ needs.candidate-source.outputs.candidate_sha }}
+          persist-credentials: false
+          clean: true
+      - name: Verify exact candidate source commit
+        shell: bash
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.14.7"
+      - name: Isolate candidate Python environment
+        shell: bash
+        run: |
+          python -m venv .venv-candidate
+          echo "$GITHUB_WORKSPACE/.venv-candidate/bin" >> "$GITHUB_PATH"
+      - name: Fingerprint actual candidate checkout before build
+        shell: bash
+        run: >-
+          python scripts/candidate_native_proof.py bind
+          --target "linux-${{ matrix.arch }}"
+          --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --asset-dir native-dist/linux
+      - name: Install Linux packaging toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+      - name: Install Python packaging dependencies
+        run: |
+          python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
+          python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
+          python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[security,package,servers]"
+          python -m pip check
+          python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.1'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+      - name: Build Linux DEB, RPM and AppImage packages
+        id: native-build
+        env:
+          APPIMAGETOOL_VERSION: "1.9.1"
+          APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
+          APPIMAGE_RUNTIME_VERSION: "20251108"
+          APPIMAGE_RUNTIME_SHA256: ${{ matrix.appimage_runtime_sha256 }}
+        run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
+      - name: Run Linux native installer smoke tests
+        id: native-smoke
+        run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
+      - name: Capture exact Linux redistribution inventory
+        run: >-
+          python scripts/check_preview_redistribution.py
+          --capture-target "linux-${{ matrix.arch }}"
+          --assets-dir native-dist/linux
+          --tag "$RELEASE_TAG"
+          --sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --repository "$GITHUB_REPOSITORY"
+          --report "candidate-license-inventory/linux-${{ matrix.arch }}.json"
+      - name: Record candidate provenance and actual local inventory
+        id: candidate-proof
+        if: always()
+        shell: bash
+        run: >-
+          python scripts/candidate_native_proof.py finish
+          --native-build-outcome "${{ steps.native-build.outcome }}"
+          --native-smoke-outcome "${{ steps.native-smoke.outcome }}"
+          --target "linux-${{ matrix.arch }}"
+          --expected-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+          --asset-dir native-dist/linux
+      - name: Collect unsigned runtime observations for external review
+        if: ${{ success() && github.event.repository.visibility == 'public' }}
+        shell: bash
+        timeout-minutes: 15
+        run: |
+          mkdir -p candidate-runtime-inventory
+          python scripts/collect_unsigned_runtime.py --target "linux-${{ matrix.arch }}" \
+            --sha "${{ needs.candidate-source.outputs.candidate_sha }}" --proof-dir "build/candidate-proof/linux-${{ matrix.arch }}" \
+            --stage-dir build/native/linux/pyinstaller-dist \
+            --output "candidate-runtime-inventory/linux-${{ matrix.arch }}"
+      - name: Verify previous Linux DEB native upgrade and recovery
+        id: native-recovery
+        if: ${{ matrix.arch == 'x86_64' && steps.native-build.outcome == 'success' && steps.native-smoke.outcome == 'success' && steps.candidate-proof.outcome == 'success' }}
+        timeout-minutes: 35
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/native_linux_installer_recovery.py run
+          --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+      - name: Retain unreleased candidate proof and artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: candidate-linux-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
+          path: |
+            build/candidate-proof/linux-${{ matrix.arch }}/
+            build/native-smoke/linux-${{ matrix.arch }}/
+            build/native/linux/pyinstaller-work/*/warn-*.txt
+            build/native/linux/pyinstaller-work/*/xref-*.html
+            native-dist/linux/
+            candidate-license-inventory/
+            candidate-runtime-inventory/linux-${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 30

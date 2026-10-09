@@ -1,16 +1,16 @@
 {
-  "coverage_goal": "100% public feature-family mapping, 100% adapter-ready coverage and 100% release-backed product workflow parity for requested products, with platform-readiness gaps tracked separately.",
+  "coverage_goal": "100% public feature-family mapping, 100% adapter-ready coverage and 100% implementation-backed workflow coverage for requested products; runtime production readiness requires separate execution evidence.",
   "coverage_scoring": {
     "contract": {
       "feature_family_mapping": "Tracks whether each requested public feature family is represented by built-in code, external-client adapters, CLI/GUI workflows, platform scripts, or plugin extension points.",
       "adapter_ready_coverage": "Tracks whether each requested product feature family has an executable implementation, adapter, optional dependency path, CLI/GUI workflow, or platform script representation.",
-      "production_parity_coverage": "Backward-compatible JSON key for release-backed product workflow parity. Implemented adapter, optional, CLI, GUI, shell and combined workflows count as full parity only when tied to executable implementation evidence; seam-only or docs-only rows remain partial. This is not a proprietary native clone parity claim.",
-      "platform_verified_readiness": "Tracks release-target readiness separately from feature coverage so verified default native builds, verified mobile Web/PWA contracts, manual native builds and legacy Windows targets are not blended into one misleading percentage.",
+      "production_parity_coverage": "Backward-compatible JSON key for implementation-backed workflow coverage. Implemented adapter, optional, CLI, GUI, shell and combined workflows count from repository implementation references; seam-only or docs-only rows remain partial. Runtime verification and production readiness require separate release execution evidence. This is not a proprietary native clone parity claim.",
+      "platform_verified_readiness": "Backward-compatible JSON key for platform build contract coverage. Declared native, mobile Web/PWA, manual and legacy channels are inventoried separately; runtime verification and production readiness require accepted host and exact-release evidence.",
       "product_ready_coverage": "Deprecated alias for adapter_ready_coverage. Kept for backwards-compatible JSON consumers only."
     },
     "feature_family_method": "Weighted feature-family mapping. Each feature family counts equally for every product it maps to. Built-in implementations, external adapters, optional implementations, CLI features, GUI features and platform scripts score as mapped; documented seams score partial credit until implemented.",
     "adapter_ready_method": "Evidence-weighted adapter readiness. Each feature family counts equally for every product it maps to. Implemented adapter, optional, CLI, GUI, shell and combined workflow rows score as ready when backed by executable reality checks; seam-only or docs-only rows remain partial.",
-    "production_parity_method": "Evidence-weighted release-backed product workflow parity. Each feature family counts equally for every product it maps to. Implemented adapter, optional, CLI, GUI, shell and combined workflows score as workflow parity when backed by executable release evidence; seam-only or docs-only rows remain partial. The metric does not claim proprietary native clone parity or embedded protocol-engine parity.",
+    "production_parity_method": "Implementation-backed workflow coverage. Each feature family counts equally for every product it maps to. Implemented adapter, optional, CLI, GUI, shell and combined workflows count from repository references; seam-only or docs-only rows remain partial. This inventory does not establish runtime execution, artifact trust or production readiness.",
     "product_ready_method": "Deprecated alias for adapter_ready_method.",
     "feature_family_mapping_target_percent": 100,
     "adapter_ready_target_percent": 100,
@@ -674,7 +674,7 @@
     },
     {
       "category": "automation",
-      "extension_point": "moba_macros.build_macro_gui_capture_plan / moba_macros.start_terminal_macro_capture / moba_macros.build_terminal_macro_replay_injection / gui.TerminalPane macro controls / moba_macros.build_macro_live_replay_plans / moba_macros.review_macro_live_replay / moba_macros.build_macro_live_evidence_bundle_plan / moba_macros.write_macro_live_evidence_bundle / moba_macros.validate_macro_live_replay_evidence / row macro capture-plan|live-plan|evidence-bundle|evidence-verify",
+      "extension_point": "moba_macros.build_macro_gui_capture_plan / moba_macros.start_terminal_macro_capture / moba_macros.build_terminal_macro_replay_injection / gui_terminal.TerminalPane macro controls / moba_macros.build_macro_live_replay_plans / moba_macros.review_macro_live_replay / moba_macros.build_macro_live_evidence_bundle_plan / moba_macros.write_macro_live_evidence_bundle / moba_macros.validate_macro_live_replay_evidence / row macro capture-plan|live-plan|evidence-bundle|evidence-verify",
       "id": "moba.macro-live-gui-evidence",
       "inspired_by": [
         "MobaXterm"
@@ -844,7 +844,7 @@
     },
     {
       "category": "terminal",
-      "extension_point": "terminal.TerminalPanePlan / gui.TerminalPane / gui_lifecycle.stop_process",
+      "extension_point": "terminal.TerminalPanePlan / gui_terminal.TerminalPane / gui_lifecycle.stop_process",
       "id": "terminal.tabs",
       "inspired_by": [
         "MobaXterm",
@@ -858,7 +858,7 @@
     },
     {
       "category": "terminal",
-      "extension_point": "launcher.build_launch_plan local-shell / terminal.TerminalPanePlan / gui.TerminalPane",
+      "extension_point": "launcher.build_launch_plan local-shell / terminal.TerminalPanePlan / gui_terminal.TerminalPane",
       "id": "terminal.local-shell",
       "inspired_by": [
         "MobaXterm",
@@ -929,7 +929,7 @@
     },
     {
       "category": "terminal",
-      "extension_point": "terminal_highlighting.highlight_terminal_text / gui TerminalPane terminalSyntaxHighlightingEnabled",
+      "extension_point": "terminal_highlighting.highlight_terminal_text / gui_terminal.TerminalPane terminalSyntaxHighlightingEnabled",
       "id": "terminal.syntax-highlighting",
       "inspired_by": [
         "MobaXterm"

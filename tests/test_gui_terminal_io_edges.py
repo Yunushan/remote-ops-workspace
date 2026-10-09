@@ -101,6 +101,8 @@ def test_terminal_response_forwarding_clear_link_and_deferred_output_edges(
 ) -> None:
     from PyQt6.QtCore import QProcess
 
+    from remote_ops_workspace import gui_terminal
+
     app, window = gui_window
     pane = _new_pane(window)
     process = _Process(QProcess.ProcessState.NotRunning)
@@ -114,12 +116,7 @@ def test_terminal_response_forwarding_clear_link_and_deferred_output_edges(
             cls.opened.append(url.toString())
             return True
 
-    _set_closure_value(
-        monkeypatch,
-        type(pane).open_terminal_link,
-        "QDesktopServices",
-        _Desktop,
-    )
+    monkeypatch.setattr(gui_terminal, "QDesktopServices", _Desktop)
     assert pane.open_terminal_link("javascript:alert(1)") is False
     assert pane.output.property("terminalLastRejectedLink") == "javascript:alert(1)"
     assert pane.open_terminal_link("https://example.invalid/path") is True
@@ -234,11 +231,11 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
     from PyQt6.QtCore import QProcess
     from PyQt6.QtWidgets import QMessageBox
 
-    from remote_ops_workspace import gui, windows_conpty
+    from remote_ops_workspace import gui, gui_processes, windows_conpty
 
     _app, window = gui_window
-    pane = _new_pane(window)
-    backend = _closure_value(type(pane).__init__, "_terminal_process_backend")
+    _pane = _new_pane(window)
+    backend = gui_processes._terminal_process_backend
     original_platform = gui.sys.platform
 
     monkeypatch.setattr(gui.sys, "platform", "linux")
@@ -940,7 +937,7 @@ def test_gui_low_level_platform_dialog_and_cursor_edges(
     from PyQt6.QtGui import QPaintEvent
     from PyQt6.QtWidgets import QApplication, QMessageBox
 
-    from remote_ops_workspace import gui, windows_conpty
+    from remote_ops_workspace import gui, gui_terminal, windows_conpty
     from remote_ops_workspace.models import Profile
 
     app, window = gui_window
@@ -968,10 +965,7 @@ def test_gui_low_level_platform_dialog_and_cursor_edges(
     gui.set_windows_taskbar_app_id()
 
     pane = _new_pane(window)
-    application_instance = _closure_value(
-        type(pane).copy_command,
-        "_application_instance",
-    )
+    application_instance = gui_terminal._application_instance
     with monkeypatch.context() as context:
         context.setattr(QApplication, "instance", staticmethod(lambda: None))
         with pytest.raises(RuntimeError, match="Qt application"):
@@ -1061,7 +1055,7 @@ def test_terminal_remaining_operator_io_and_lifecycle_edges(
     from PyQt6.QtCore import QProcess
     from PyQt6.QtWidgets import QMenu
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_terminal
     from remote_ops_workspace.models import Profile
 
     _app, window = gui_window
@@ -1072,12 +1066,12 @@ def test_terminal_remaining_operator_io_and_lifecycle_edges(
         username="operator",
     )
     monkeypatch.setattr(
-        gui,
+        gui_terminal,
         "ssh_control_path_for_profile",
         lambda _profile: "controlled-socket",
     )
     monkeypatch.setattr(
-        gui,
+        gui_terminal,
         "ssh_command_with_control_path",
         lambda command, _path, **_kwargs: [*command, "-o", "ControlMaster=auto"],
     )
@@ -1956,3 +1950,385 @@ def test_stop_and_window_close_process_optional_close_edges(
     assert killed == ["kill"]
     monkeypatch.setattr(window, "running_terminal_panes", original_running)
     monkeypatch.setattr(window, "confirm_stop_processes", original_confirm)
+
+
+def test_shared_terminal_component_keeps_two_window_ownership_independent(
+    monkeypatch,
+    tmp_path,
+    request,
+) -> None:
+    """Real Qt ownership with controlled processes; no external process launch."""
+
+    def checkpoint(phase):
+        callback = getattr(request.node, "_row_ownership_checkpoint", None)
+        if callable(callback):
+            callback(phase)
+
+    if "QT_QPA_PLATFORM" not in os.environ:
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("ROW_HOME", str(tmp_path / "row-home"))
+    pytest.importorskip("PyQt6")
+    from PyQt6 import sip
+    from PyQt6.QtCore import QCoreApplication, QEvent, QProcess
+
+    from remote_ops_workspace import gui, gui_terminal, gui_workspace
+
+    checkpoint("test-before-first-window")
+    app, first = gui.create_main_window(
+        ["gui-terminal-first-window"],
+        show=False,
+        preview_samples=False,
+    )
+    checkpoint("test-first-window-created")
+    second = None
+    callbacks: list[str] = []
+
+    class _ControlledProcess(QProcess):
+        def __init__(self, parent) -> None:
+            super().__init__(parent)
+            self.observed_state = QProcess.ProcessState.Running
+            self.kill_requests = 0
+            self.close_requests = 0
+
+        def state(self):
+            return self.observed_state
+
+        def kill(self) -> None:
+            self.kill_requests += 1
+            self.observed_state = QProcess.ProcessState.NotRunning
+
+        def close(self) -> None:
+            self.close_requests += 1
+            self.observed_state = QProcess.ProcessState.NotRunning
+
+    def controlled_backend(parent, _plan, _profile):
+        return _ControlledProcess(parent), ""
+
+    monkeypatch.setattr(gui_terminal, "_terminal_process_backend", controlled_backend)
+    monkeypatch.setattr(first, "update_session_status", lambda: callbacks.append("first"))
+    monkeypatch.setattr(first, "confirm_stop_processes", lambda *_args: True)
+    try:
+        checkpoint("test-before-second-window")
+        second_app, second = gui.create_main_window(
+            ["gui-terminal-second-window"],
+            show=False,
+            preview_samples=False,
+        )
+        checkpoint("test-second-window-created")
+        monkeypatch.setattr(second, "update_session_status", lambda: callbacks.append("second"))
+        monkeypatch.setattr(second, "confirm_stop_processes", lambda *_args: True)
+        assert second_app is app
+        # Shared workspace classes must retain distinct Qt parents and callbacks.
+        first_tabs, second_tabs = first.tabs, second.tabs
+        first_bar, second_bar = first.moba_tab_bar, second.moba_tab_bar
+        assert type(first_tabs) is type(second_tabs) is gui_workspace.ResponsiveWorkspaceTabs
+        assert type(first_bar) is type(second_bar) is gui_workspace.MobaWorkspaceTabBar
+        assert first.isAncestorOf(first_tabs) and not second.isAncestorOf(first_tabs)
+        assert second.isAncestorOf(second_tabs) and not first.isAncestorOf(second_tabs)
+        assert first_bar.parent() is first_tabs and second_bar.parent() is second_tabs
+        assert first_tabs.tab_switch_prepare_handler.__self__ is first
+        assert second_tabs.tab_switch_prepare_handler.__self__ is second
+        assert first_bar.tab_switch_prepare_handler.__self__ is first
+        assert second_bar.tab_switch_prepare_handler.__self__ is second
+        assert first_bar.special_tab_handler.__self__ is first
+        assert second_bar.special_tab_handler.__self__ is second
+        first_labels = first.findChildren(gui_workspace.MobaRailLabel)
+        second_labels = second.findChildren(gui_workspace.MobaRailLabel)
+        assert first_labels and len(first_labels) == len(second_labels)
+        for owner, other, labels in ((first, second, first_labels), (second, first, second_labels)):
+            for label in labels:
+                assert owner.isAncestorOf(label) and not other.isAncestorOf(label)
+                assert owner.isAncestorOf(label.button) and not other.isAncestorOf(label.button)
+        assert first_labels[0].rail_text_pixmap() is not second_labels[0].rail_text_pixmap()
+        first.resize(1024, 720)
+        first.show()
+        second.resize(1024, 720)
+        second.show()
+        panes = [
+            window.new_terminal_pane(
+                TerminalPanePlan(title=title, command=[], source="test"),
+                autostart=False,
+            )
+            for window, title in ((first, "first-owned"), (second, "second-owned"))
+        ]
+        for window, pane in zip((first, second), panes, strict=True):
+            window.tabs.addTab(pane, pane.plan.title)
+        app.processEvents()
+        checkpoint("test-panes-created")
+        first_pane, second_pane = panes
+        assert type(first_pane) is type(second_pane) is gui_terminal.TerminalPane
+        assert type(first_pane.output) is type(second_pane.output) is gui_terminal.TerminalTextEdit
+        assert first.isAncestorOf(first_pane) and not second.isAncestorOf(first_pane)
+        assert second.isAncestorOf(second_pane) and not first.isAncestorOf(second_pane)
+        assert first.all_terminal_panes() == [first_pane]
+        assert second.all_terminal_panes() == [second_pane]
+        assert first_pane.process is not second_pane.process
+        assert first_pane.process.parent() is first_pane
+        assert second_pane.process.parent() is second_pane
+        assert first_pane._authentication_change_handler.__self__ is first
+        assert second_pane._authentication_change_handler.__self__ is second
+        for timer_name in ("_stop_timer", "_process_output_timer", "_terminal_resize_timer"):
+            first_timer = getattr(first_pane, timer_name)
+            second_timer = getattr(second_pane, timer_name)
+            assert first_timer is not second_timer
+            assert first_timer.parent() is first_pane
+            assert second_timer.parent() is second_pane
+        assert first_pane.terminal_emulator is not second_pane.terminal_emulator
+        assert first_pane._process_output_buffer is not second_pane._process_output_buffer
+        first_pane.append_text("first transcript only\n")
+        second_pane.append_text("second transcript only\n")
+        assert "first transcript only" not in second_pane.output.toPlainText()
+        assert "second transcript only" not in first_pane.output.toPlainText()
+        first_pane.start_macro_capture()
+        assert first_pane.macro_capture_state is not None
+        assert second_pane.macro_capture_state is None
+        second_pane.start_macro_capture()
+        assert second_pane.macro_capture_state is not first_pane.macro_capture_state
+        second_capture = second_pane.macro_capture_state
+        callbacks.clear()
+        first_pane.process.started.emit()
+        assert callbacks == ["first"]
+        callbacks.clear()
+        second_pane.process.started.emit()
+        assert callbacks == ["second"]
+        first_pane._stop_timer.start(60_000)
+        second_pane._stop_timer.start(60_000)
+        second_output = second_pane.output.toPlainText()
+        checkpoint("test-before-first-close")
+        assert first.close()
+        checkpoint("test-first-window-closed")
+        assert first_pane.process.kill_requests == 1
+        assert first_pane.process.close_requests == 1
+        assert not first_pane._stop_timer.isActive()
+        assert not first_pane._process_output_timer.isActive()
+        assert second_pane.process.kill_requests == 0
+        assert second_pane.process.close_requests == 0
+        assert second_pane.process.state() == QProcess.ProcessState.Running
+        assert second_pane._stop_timer.isActive()
+        assert second_pane.property("terminalClosing") is not True
+        assert second_pane.output.toPlainText() == second_output
+        assert second_pane.macro_capture_state is second_capture
+        checkpoint("test-before-first-delete")
+        first.deleteLater()
+        checkpoint("test-before-first-deferred-delete")
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        checkpoint("test-after-first-deferred-delete")
+        checkpoint("test-before-first-process-events")
+        app.processEvents()
+        checkpoint("test-first-delete-events-completed")
+        assert sip.isdeleted(first)
+        assert sip.isdeleted(first_tabs) and sip.isdeleted(first_bar)
+        assert not sip.isdeleted(second_tabs) and not sip.isdeleted(second_bar)
+        assert all(sip.isdeleted(label) for label in first_labels)
+        assert all(not sip.isdeleted(label) for label in second_labels)
+        assert second_tabs.tab_switch_prepare_handler.__self__ is second
+        assert second_bar.special_tab_handler.__self__ is second
+        assert not sip.isdeleted(second_pane)
+        callbacks.clear()
+        second_pane.process.started.emit()
+        assert callbacks == ["second"]
+        second_pane.append_text("second still usable\n")
+        assert "second still usable" in second_pane.output.toPlainText()
+    finally:
+        for window in (first, second):
+            if window is not None and not sip.isdeleted(window):
+                checkpoint("test-final-window-close")
+                window.close()
+                window.deleteLater()
+        checkpoint("test-before-final-deferred-delete")
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        checkpoint("test-after-final-deferred-delete")
+        app.processEvents()
+        if second is not None:
+            assert sip.isdeleted(second)
+
+
+@pytest.fixture
+def scroll_lifetime_windows(monkeypatch, tmp_path):
+    """Real timers and Qt deletion; callback exceptions always fail teardown."""
+
+    import sys
+
+    if "QT_QPA_PLATFORM" not in os.environ:
+        monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("ROW_HOME", str(tmp_path / "scroll-lifetime-home"))
+    pytest.importorskip("PyQt6")
+    from PyQt6 import sip
+    from PyQt6.QtCore import QCoreApplication, QEvent, QProcess
+
+    from remote_ops_workspace import gui, gui_terminal
+
+    callback_exceptions = []
+    monkeypatch.setattr(sys, "excepthook", lambda *_args: callback_exceptions.append(True))
+
+    class _ControlledProcess(QProcess):
+        def __init__(self, parent):
+            super().__init__(parent)
+            self.observed_state = QProcess.ProcessState.NotRunning
+
+        def state(self):
+            return self.observed_state
+
+        def kill(self):
+            self.observed_state = QProcess.ProcessState.NotRunning
+
+        def close(self):
+            self.observed_state = QProcess.ProcessState.NotRunning
+
+    monkeypatch.setattr(
+        gui_terminal, "_terminal_process_backend",
+        lambda parent, _plan, _profile: (_ControlledProcess(parent), ""),
+    )
+    windows = []
+    panes = []
+    app = None
+    try:
+        for title in ("scroll-closing-owner", "scroll-surviving-owner"):
+            created_app, window = gui.create_main_window(
+                [title], show=False, preview_samples=False,
+            )
+            if app is None:
+                app = created_app
+            else:
+                assert created_app is app
+            windows.append(window)
+            monkeypatch.setattr(window, "confirm_stop_processes", lambda *_args: True)
+            window.resize(1024, 720)
+            window.show()
+            pane = window.new_terminal_pane(
+                TerminalPanePlan(title=title, command=[], source="test"), autostart=False,
+            )
+            panes.append(pane)
+            index = window.tabs.addTab(pane, title)
+            window.tabs.setCurrentIndex(index)
+            pane.output.setPlainText("scroll lifetime line\n" * 400)
+        app.processEvents()
+        for pane in panes:
+            assert pane.output.verticalScrollBar().maximum() > 0
+        yield app, windows, panes, callback_exceptions
+    finally:
+        for pane in panes:
+            if not sip.isdeleted(pane):
+                pane.process.observed_state = QProcess.ProcessState.NotRunning
+        for window in windows:
+            if not sip.isdeleted(window):
+                window.close()
+                window.deleteLater()
+        if app is not None:
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            app.processEvents()
+        assert callback_exceptions == []
+
+
+def _queue_scroll_with_viewport_away_from_tail(pane):
+    pane.scroll_terminal_to_end()
+    bar = pane.output.verticalScrollBar()
+    assert bar.maximum() > 0
+    previously_blocked = bar.blockSignals(True)
+    try:
+        bar.setValue(0)
+    finally:
+        bar.blockSignals(previously_blocked)
+    assert pane._terminal_follow_output is True
+    assert pane._terminal_scroll_timer.isActive()
+
+
+@pytest.mark.parametrize("delete_path", ["tab", "window", "pane"])
+def test_nonrunning_scroll_timer_dies_with_native_owner(
+    scroll_lifetime_windows, monkeypatch, delete_path,
+):
+    from PyQt6 import sip
+    from PyQt6.QtCore import QCoreApplication, QEvent
+
+    app, windows, panes, callback_exceptions = scroll_lifetime_windows
+    first, _second = windows
+    first_pane, second_pane = panes
+    first_timer, second_timer = first_pane._terminal_scroll_timer, second_pane._terminal_scroll_timer
+    first_timeouts, second_timeouts = [], []
+    first_timer.timeout.connect(lambda: first_timeouts.append(True))
+    second_timer.timeout.connect(lambda: second_timeouts.append(True))
+    assert first_timer.parent() is first_pane
+    assert second_timer.parent() is second_pane
+    assert first_timer.isSingleShot() and second_timer.isSingleShot()
+    assert first_timer is not second_timer
+    _queue_scroll_with_viewport_away_from_tail(first_pane)
+    _queue_scroll_with_viewport_away_from_tail(second_pane)
+    monkeypatch.setattr(
+        first, "confirm_stop_processes",
+        lambda *_args: pytest.fail("nonrunning deletion must not request confirmation"),
+    )
+    if delete_path == "tab":
+        first.close_tab(first.tabs.indexOf(first_pane))
+    elif delete_path == "window":
+        assert first.close()
+        first.deleteLater()
+    else:
+        first_pane.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert sip.isdeleted(first_pane)
+    assert sip.isdeleted(first_timer)
+    app.processEvents()
+    assert first_timeouts == []
+    assert second_timeouts
+    assert callback_exceptions == []
+    assert not sip.isdeleted(second_pane)
+    second_bar = second_pane.output.verticalScrollBar()
+    assert second_bar.value() == second_bar.maximum()
+    assert second_pane.output.property("terminalFollowOutput") is True
+    _queue_scroll_with_viewport_away_from_tail(second_pane)
+    app.processEvents()
+    assert second_bar.value() == second_bar.maximum()
+
+
+@pytest.mark.parametrize("close_path", ["tab", "window"])
+def test_cancelled_running_close_keeps_owned_scroll_live(
+    scroll_lifetime_windows, monkeypatch, close_path,
+):
+    from PyQt6 import sip
+    from PyQt6.QtCore import QProcess
+
+    app, windows, panes, callback_exceptions = scroll_lifetime_windows
+    first, _second = windows
+    first_pane, _second_pane = panes
+    first_pane.process.observed_state = QProcess.ProcessState.Running
+    monkeypatch.setattr(first, "confirm_stop_processes", lambda *_args: False)
+    original_index = first.tabs.indexOf(first_pane)
+    _queue_scroll_with_viewport_away_from_tail(first_pane)
+    if close_path == "tab":
+        first.close_tab(original_index)
+    else:
+        assert first.close() is False
+    assert first.tabs.indexOf(first_pane) == original_index
+    assert first_pane.property("terminalClosing") is not True
+    assert first_pane._terminal_scroll_closed is False
+    assert first_pane._terminal_scroll_timer.isActive()
+    app.processEvents()
+    assert not sip.isdeleted(first_pane)
+    assert callback_exceptions == []
+    bar = first_pane.output.verticalScrollBar()
+    assert bar.value() == bar.maximum()
+
+
+def test_prepared_scroll_timer_stops_before_delete_and_cannot_restart(scroll_lifetime_windows):
+    from PyQt6 import sip
+    from PyQt6.QtCore import QCoreApplication, QEvent
+
+    app, _windows, panes, callback_exceptions = scroll_lifetime_windows
+    first_pane, second_pane = panes
+    _queue_scroll_with_viewport_away_from_tail(first_pane)
+    timer = first_pane._terminal_scroll_timer
+    generation = first_pane._terminal_scroll_generation
+    first_pane.prepare_for_close()
+    assert first_pane._terminal_scroll_closed is True
+    assert first_pane._terminal_scroll_generation == generation + 1
+    assert not timer.isActive()
+    first_pane.scroll_terminal_to_end()
+    assert not timer.isActive()
+    _queue_scroll_with_viewport_away_from_tail(second_pane)
+    first_pane.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
+    assert sip.isdeleted(first_pane) and sip.isdeleted(timer)
+    assert callback_exceptions == []
+    bar = second_pane.output.verticalScrollBar()
+    assert bar.value() == bar.maximum()

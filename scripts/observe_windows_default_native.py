@@ -160,7 +160,8 @@ def capture():
 
         phase("imports")
         sys.path.insert(0, str(ROOT / "src"))
-        from remote_ops_workspace import paths, windows_private_storage as storage
+        from remote_ops_workspace import paths
+        from remote_ops_workspace import windows_private_storage as storage
 
         phase("native-bind")
         native = storage._Native()

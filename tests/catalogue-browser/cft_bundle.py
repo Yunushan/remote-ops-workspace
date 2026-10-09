@@ -161,6 +161,35 @@ def remaining(deadline):
     return min(20, result)
 
 
+@contextmanager
+def owned_binary(path, file_mode, flags, deadline, *, mode=0o777):
+    """One raw descriptor owner; buffered wrappers borrow with closefd=False."""
+    need(type(file_mode) is str and type(flags) is int and type(mode) is int)
+    need((file_mode == 'rb' and flags == os.O_RDONLY | os.O_NOFOLLOW and mode == 0o777)
+         or (file_mode == 'wb' and flags == os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW
+             and mode == 0o600))
+    fd = None
+    try:
+        remaining(deadline)
+        fd = os.open(path, flags) if file_mode == 'rb' else os.open(path, flags, mode)
+        stream = os.fdopen(fd, file_mode, closefd=False)
+        try:
+            yield stream
+        finally:
+            try:
+                stream.close()
+                need(stream.closed is True, 'cft-stream-close-unproved')
+            except BaseException:
+                raise BundleRefusal('cft-stream-close-unproved') from None
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except BaseException:
+                raise BundleRefusal('cft-source-close-unproved') from None
+    remaining(deadline)
+
+
 def fetch(url, destination, deadline, *, maximum, expected=None):
     need(url == METADATA_URL or url in {asset_url(VERSION, asset) for asset in ASSETS})
     need(not any(key.upper() in {'SSL_CERT_FILE', 'SSL_CERT_DIR', 'SSLKEYLOGFILE'} and value
@@ -184,8 +213,8 @@ def fetch(url, destination, deadline, *, maximum, expected=None):
             integer(declared, maximum, 1)
             if expected is not None:
                 need(declared == expected['bytes'], 'cft-pinned-response-length-refused')
-            fd = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
-            with os.fdopen(fd, 'wb') as stream:
+            with owned_binary(destination, 'wb', os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+                    deadline, mode=0o600) as stream:
                 while True:
                     remaining(deadline)
                     chunk = response.read(min(CHUNK, declared - received + 1))
@@ -207,7 +236,9 @@ def fetch(url, destination, deadline, *, maximum, expected=None):
         raise
     except Exception as exc:
         raise BundleRefusal('cft-transport-or-write-refused') from exc
-    return {'bytes': received, 'sha256': digest_state.hexdigest()}
+    result = {'bytes': received, 'sha256': digest_state.hexdigest()}
+    remaining(deadline)
+    return result
 
 
 def member_name(raw, flags, asset):
@@ -368,8 +399,7 @@ def inventory(path, asset, deadline, *, expected_pin):
     need(type(expected_pin['identity']) is list and len(expected_pin['identity']) == 8
          and list(identity(before)) == expected_pin['identity']
          and before.st_size == expected_pin['bytes'], 'cft-inventory-path-pin-refused')
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    with os.fdopen(fd, 'rb') as stream:
+    with owned_binary(path, 'rb', os.O_RDONLY | os.O_NOFOLLOW, deadline) as stream:
         need(archive_stream_pin(stream, before, deadline) == expected_pin,
              'cft-inventory-opened-source-pin-refused')
         need(identity(Path(path).lstat()) == identity(before), 'cft-inventory-after-hash-path-identity-refused')
@@ -445,8 +475,10 @@ def inventory(path, asset, deadline, *, expected_pin):
     rows.sort(key=lambda row: row['path'])
     encoded = packed(rows)
     need(len(encoded) <= MAX_PUBLIC, 'cft-inventory-public-size-refused')
-    return {'entries': len(rows), 'files': sum(row['kind'] == 'file' for row in rows),
+    result = {'entries': len(rows), 'files': sum(row['kind'] == 'file' for row in rows),
         'unpacked_bytes': sum(row['size'] for row in rows), 'inventory_sha256': hashed(encoded), 'inventory': rows}
+    remaining(deadline)
+    return result
 
 
 def acquire(policy_raw, private, deadline, *, require_pins=False, progress=None):
@@ -554,15 +586,16 @@ def stable_file(path, maximum, deadline, *, root_owned=False, raw=False):
     before = path.lstat()
     need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1 and 0 <= before.st_size <= maximum
          and not before.st_mode & 0o022 and (not root_owned or before.st_uid == 0))
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     digest_state = hashlib.sha256()
     collected = bytearray()
     observed = 0
-    with os.fdopen(fd, 'rb') as stream:
-        need(identity(os.fstat(stream.fileno())) == identity(before))
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    # Retain sole raw ownership; wrapper construction cannot strand this fd.
+    try:
+        need(identity(os.fstat(fd)) == identity(before))
         while True:
             remaining(deadline)
-            chunk = stream.read(CHUNK)
+            chunk = os.read(fd, CHUNK)
             if not chunk:
                 break
             observed += len(chunk)
@@ -570,10 +603,18 @@ def stable_file(path, maximum, deadline, *, root_owned=False, raw=False):
             digest_state.update(chunk)
             if raw:
                 collected.extend(chunk)
-        need(observed == before.st_size and identity(os.fstat(stream.fileno())) == identity(before))
+        need(observed == before.st_size and identity(os.fstat(fd)) == identity(before))
+        result = {'bytes': observed, 'sha256': digest_state.hexdigest(), 'identity': list(identity(before))}
+        answer = (result, bytes(collected)) if raw else result
+    finally:
+        # Attempt once. Ambiguous close failure refuses; never retry as proof.
+        try:
+            os.close(fd)
+        except BaseException:
+            raise BundleRefusal('cft-source-close-unproved') from None
     need(identity(path.lstat()) == identity(before))
-    result = {'bytes': observed, 'sha256': digest_state.hexdigest(), 'identity': list(identity(before))}
-    return (result, bytes(collected)) if raw else result
+    remaining(deadline)
+    return answer
 
 
 def expected_layout(rows):
@@ -645,8 +686,7 @@ def install_pinned(policy_raw, private, destination, deadline, binding):
             # Recheck full source bytes/identity immediately before copying members.
             pinned_source = stable_file(archive_path, MAX_ARCHIVE, deadline, root_owned=True)
             need(pinned_source['sha256'] == selected['archives'][asset]['sha256'])
-            fd = os.open(archive_path, os.O_RDONLY | os.O_NOFOLLOW)
-            with os.fdopen(fd, 'rb') as source:
+            with owned_binary(archive_path, 'rb', os.O_RDONLY | os.O_NOFOLLOW, deadline) as source:
                 need(list(identity(os.fstat(source.fileno()))) == pinned_source['identity'])
                 with zipfile.ZipFile(source) as archive:
                     for row in verified[asset]['inventory']:
@@ -654,8 +694,8 @@ def install_pinned(policy_raw, private, destination, deadline, binding):
                             continue
                         remaining(deadline)
                         target = root / row['path']
-                        descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
-                        with os.fdopen(descriptor, 'wb') as output, archive.open(row['path']) as member:
+                        with owned_binary(target, 'wb', os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+                                deadline, mode=0o600) as output, archive.open(row['path']) as member:
                             size = 0
                             digest_state = hashlib.sha256()
                             while True:
@@ -683,8 +723,8 @@ def install_pinned(policy_raw, private, destination, deadline, binding):
             'sandbox_policy': 'unchanged-default-no-fallback', 'readiness_credit': 0}
         raw = packed(manifest)
         need(len(raw) <= MAX_PUBLIC)
-        descriptor = os.open(root / 'cft-root-manifest.json', os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(descriptor, 'wb') as stream:
+        with owned_binary(root / 'cft-root-manifest.json', 'wb', os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+                deadline, mode=0o600) as stream:
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
@@ -692,7 +732,9 @@ def install_pinned(policy_raw, private, destination, deadline, binding):
         for name in sorted(directories, key=lambda value: (-value.count('/'), value)):
             os.chmod(root / name, 0o555, follow_symlinks=False)
         os.chmod(root, 0o555, follow_symlinks=False)
-        return verify_installed(policy_raw, root, deadline, binding)
+        result = verify_installed(policy_raw, root, deadline, binding)
+    remaining(deadline)
+    return result
 
 
 def verify_installed(policy_raw, destination, deadline, binding):

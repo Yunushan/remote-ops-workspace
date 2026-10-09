@@ -117,6 +117,10 @@ class Response:
 
 
 class Output(io.BytesIO):
+    @property
+    def closed(self):
+        return getattr(self, 'was_closed', False)
+
     def fileno(self):
         return 71
 
@@ -352,7 +356,8 @@ class MockHTTPTests(CFTPureFixtureCase):
              mock.patch.object(bundle.urllib.request, 'build_opener', return_value=opener) as build, \
              mock.patch.object(bundle.os, 'open', return_value=71), \
              mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
-             mock.patch.object(bundle.os, 'fdopen', return_value=output), \
+             mock.patch.object(bundle.os, 'fdopen', return_value=output) as wrapped, \
+             mock.patch.object(bundle.os, 'close') as closed, \
              mock.patch.object(bundle.os, 'fsync') as fsync, mock.patch.object(bundle.os, 'fchmod', create=True) as mode, \
              mock.patch.object(bundle.time, 'monotonic', return_value=1):
             result = bundle.fetch(bundle.asset_url(bundle.VERSION, 'chrome'), Path('/synthetic/never-created'), 30,
@@ -363,6 +368,8 @@ class MockHTTPTests(CFTPureFixtureCase):
         self.assertIsInstance(build.call_args.args[0], urllib.request.ProxyHandler)
         self.assertEqual(build.call_args.args[0].proxies, {})
         self.assertIsInstance(build.call_args.args[1], bundle.NoRedirect)
+        wrapped.assert_called_once_with(71, 'wb', closefd=False)
+        closed.assert_called_once_with(71)
         fsync.assert_called_once_with(71)
         mode.assert_called_once_with(71, 0o400)
         self.assertTrue(response.closed)
@@ -633,10 +640,14 @@ class RetainedInventoryFDTests(CFTPureFixtureCase):
         with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
              mock.patch.object(bundle.os, 'open', return_value=71), \
              mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
-             mock.patch.object(bundle.os, 'fdopen', return_value=ArchiveInput(raw)), \
+             mock.patch.object(bundle.os, 'fdopen', return_value=ArchiveInput(raw)) as wrapped, \
+             mock.patch.object(bundle.os, 'close') as closed, \
              mock.patch.object(bundle.os, 'fstat', return_value=fd_info or info), \
              mock.patch.object(bundle.time, 'monotonic', return_value=1):
-            return bundle.inventory(Path('/synthetic/archive.zip'), 'chrome', 30, expected_pin=expected)
+            observed = bundle.inventory(Path('/synthetic/archive.zip'), 'chrome', 30, expected_pin=expected)
+            wrapped.assert_called_once_with(71, 'rb', closefd=False)
+            closed.assert_called_once_with(71)
+            return observed
 
     def test_inert_timestamp_and_identity_metadata_preserves_actual_binary_inventory(self):
         payload = b'\x7fELF\x00literal\r\nbinary\n\xff'
@@ -1316,6 +1327,229 @@ class InventoryRefusalDiagnosticTests(CFTPureFixtureCase):
                             with self.assertRaisesRegex(bundle.BundleRefusal, '^' + code + '$'):
                                 bundle.central_plan(footer, changed, len(raw), 'chrome')
                             member.assert_not_called()
+
+
+class StableFileBoundaryTests(CFTPureFixtureCase):
+    def file_info(self):
+        return SimpleNamespace(st_dev=1, st_ino=2, st_size=3, st_mtime_ns=4,
+            st_ctime_ns=5, st_nlink=1, st_mode=stat.S_IFREG | 0o400, st_uid=0)
+
+    @contextlib.contextmanager
+    def file_io(self, *, chunks=(b'abc', b''), fstats=None, lstats=None, close_error=None):
+        info = self.file_info()
+        with mock.patch.object(bundle.Path, 'lstat', side_effect=lstats or [info, info]), \
+             mock.patch.object(bundle.os, 'open', return_value=71) as opened, \
+             mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
+             mock.patch.object(bundle.os, 'fdopen') as wrapped, \
+             mock.patch.object(bundle.os, 'read', side_effect=chunks) as read, \
+             mock.patch.object(bundle.os, 'fstat', side_effect=fstats or [info, info]), \
+             mock.patch.object(bundle.os, 'close', side_effect=close_error) as closed, \
+             mock.patch.object(bundle, 'remaining', return_value=1) as clock:
+            yield SimpleNamespace(opened=opened, wrapped=wrapped, read=read, closed=closed, clock=clock)
+
+    def test_exact_chunks_and_digest_return_only_after_single_close(self):
+        for raw in (False, True):
+            with self.subTest(raw=raw), self.file_io(chunks=(b'a', b'bc', b'')) as io_state:
+                observed = bundle.stable_file(Path('/synthetic/source'), 3, 30, root_owned=True, raw=raw)
+                expected = {'bytes': 3, 'sha256': 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+                    'identity': list(bundle.identity(self.file_info()))}
+                self.assertEqual(observed, (expected, b'abc') if raw else expected)
+                self.assertEqual(io_state.read.call_args_list, [mock.call(71, bundle.CHUNK)] * 3)
+                io_state.closed.assert_called_once_with(71)
+                io_state.wrapped.assert_not_called()
+                self.assertEqual(io_state.clock.call_count, 4)
+
+    def test_read_error_or_cancellation_still_attempts_close_once(self):
+        for error_type in (OSError, KeyboardInterrupt):
+            error = error_type('fixture-private-read')
+            with self.subTest(error=error_type.__name__), self.file_io(chunks=error) as io_state:
+                with self.assertRaises(error_type) as observed:
+                    bundle.stable_file(Path('/synthetic/source'), 3, 30)
+                self.assertIs(observed.exception, error)
+                io_state.closed.assert_called_once_with(71)
+                io_state.wrapped.assert_not_called()
+
+    def test_descriptor_identity_refusal_still_closes_once(self):
+        before = self.file_info()
+        changed = self.file_info()
+        changed.st_ino = 8
+        for fstats in ([changed], [before, changed]):
+            with self.subTest(observations=len(fstats)), self.file_io(fstats=fstats) as io_state:
+                with self.assertRaises(bundle.BundleRefusal):
+                    bundle.stable_file(Path('/synthetic/source'), 3, 30)
+                io_state.closed.assert_called_once_with(71)
+
+    def test_close_failure_refuses_without_retry_or_result(self):
+        for error_type in (OSError, KeyboardInterrupt):
+            with self.subTest(error=error_type.__name__), self.file_io(close_error=error_type('PRIVATE')) as io_state:
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-source-close-unproved$') as observed:
+                    bundle.stable_file(Path('/synthetic/source'), 3, 30, raw=True)
+                self.assertIsNone(observed.exception.__cause__)
+                io_state.closed.assert_called_once_with(71)
+
+    def test_raw_conversion_error_closes_before_propagating(self):
+        with self.file_io() as io_state, mock.patch.object(bundle, 'bytes', side_effect=RuntimeError('PRIVATE'), create=True):
+            with self.assertRaises(RuntimeError):
+                bundle.stable_file(Path('/synthetic/source'), 3, 30, raw=True)
+            io_state.closed.assert_called_once_with(71)
+
+    def test_digest_result_error_closes_before_propagating(self):
+        digest_state = mock.Mock()
+        digest_state.hexdigest.side_effect = RuntimeError('PRIVATE')
+        with self.file_io() as io_state, mock.patch.object(bundle.hashlib, 'sha256', return_value=digest_state):
+            with self.assertRaises(RuntimeError):
+                bundle.stable_file(Path('/synthetic/source'), 3, 30)
+            io_state.closed.assert_called_once_with(71)
+
+    def test_post_close_path_change_refuses(self):
+        changed = self.file_info()
+        changed.st_ino = 8
+        with self.file_io(lstats=[self.file_info(), changed]) as io_state:
+            with self.assertRaises(bundle.BundleRefusal):
+                bundle.stable_file(Path('/synthetic/source'), 3, 30)
+            io_state.closed.assert_called_once_with(71)
+
+    def test_final_deadline_refuses_after_descriptor_close(self):
+        error = bundle.BundleRefusal('fixture-deadline')
+        with self.file_io() as io_state:
+            io_state.clock.side_effect = [1, 1, error]
+            with self.assertRaises(bundle.BundleRefusal) as observed:
+                bundle.stable_file(Path('/synthetic/source'), 3, 30)
+            self.assertIs(observed.exception, error)
+            io_state.closed.assert_called_once_with(71)
+
+    def test_open_refusal_does_not_close_an_unacquired_descriptor(self):
+        with self.file_io() as io_state:
+            io_state.opened.side_effect = OSError('fixture-private-open')
+            with self.assertRaises(OSError):
+                bundle.stable_file(Path('/synthetic/source'), 3, 30)
+            io_state.closed.assert_not_called()
+            io_state.wrapped.assert_not_called()
+
+
+class OwnedStreamBoundaryTests(CFTPureFixtureCase):
+    @contextlib.contextmanager
+    def stream_io(self, *, open_error=None, wrap_error=None, wrapper_error=None, raw_error=None, wrapper_closed=True):
+        stream = mock.Mock()
+        stream.closed = wrapper_closed
+        stream.close.side_effect = wrapper_error
+        with mock.patch.object(bundle.os, 'open', return_value=71, side_effect=open_error) as opened, \
+             mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
+             mock.patch.object(bundle.os, 'fdopen', return_value=stream, side_effect=wrap_error) as wrapped, \
+             mock.patch.object(bundle.os, 'close', side_effect=raw_error) as closed, \
+             mock.patch.object(bundle, 'remaining', return_value=1) as clock:
+            order = mock.Mock()
+            order.attach_mock(stream.close, 'wrapper_close')
+            order.attach_mock(closed, 'raw_close')
+            yield SimpleNamespace(stream=stream, opened=opened, wrapped=wrapped, closed=closed, clock=clock, order=order)
+
+    def test_read_and_exclusive_write_modes_borrow_fd_and_close_in_order(self):
+        for file_mode in ('rb', 'wb'):
+            with self.subTest(mode=file_mode), self.stream_io() as io_state:
+                flags = bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW if file_mode == 'rb' else (
+                    bundle.os.O_CREAT | bundle.os.O_EXCL | bundle.os.O_WRONLY | bundle.os.O_NOFOLLOW)
+                options = {} if file_mode == 'rb' else {'mode': 0o600}
+                with bundle.owned_binary(Path('/synthetic/never-opened'), file_mode, flags, 30, **options) as stream:
+                    self.assertIs(stream, io_state.stream)
+                    io_state.stream.close.assert_not_called()
+                    io_state.closed.assert_not_called()
+                io_state.wrapped.assert_called_once_with(71, file_mode, closefd=False)
+                expected_open = mock.call(Path('/synthetic/never-opened'), flags) if file_mode == 'rb' else (
+                    mock.call(Path('/synthetic/never-opened'), flags, 0o600))
+                self.assertEqual(io_state.opened.call_args, expected_open)
+                self.assertEqual(io_state.order.mock_calls, [mock.call.wrapper_close(), mock.call.raw_close(71)])
+                self.assertEqual(io_state.clock.call_count, 2)
+
+    def test_wrapper_birth_failure_closes_only_the_retained_raw_fd(self):
+        for error_type in (OSError, KeyboardInterrupt):
+            error = error_type('PRIVATE')
+            with self.subTest(error=error_type.__name__), self.stream_io(wrap_error=error) as io_state:
+                with self.assertRaises(error_type) as observed, bundle.owned_binary(
+                        Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                    self.fail('constructor refusal reached body')
+                self.assertIs(observed.exception, error)
+                io_state.stream.close.assert_not_called()
+                io_state.closed.assert_called_once_with(71)
+
+    def test_body_error_or_cancellation_still_closes_wrapper_and_fd_once(self):
+        for error_type in (OSError, KeyboardInterrupt):
+            error = error_type('PRIVATE')
+            with self.subTest(error=error_type.__name__), self.stream_io() as io_state:
+                with self.assertRaises(error_type) as observed, bundle.owned_binary(
+                        Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                    raise error
+                self.assertIs(observed.exception, error)
+                self.assertEqual(io_state.order.mock_calls, [mock.call.wrapper_close(), mock.call.raw_close(71)])
+
+    def test_wrapper_close_failure_refuses_but_attempts_raw_close(self):
+        for error_type in (OSError, KeyboardInterrupt):
+            with self.subTest(error=error_type.__name__), self.stream_io(wrapper_error=error_type('PRIVATE')) as io_state:
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-stream-close-unproved$'), bundle.owned_binary(
+                        Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                    pass
+                self.assertEqual(io_state.order.mock_calls, [mock.call.wrapper_close(), mock.call.raw_close(71)])
+
+    def test_raw_close_failure_refuses_without_retry(self):
+        for error_type in (OSError, KeyboardInterrupt):
+            with self.subTest(error=error_type.__name__), self.stream_io(raw_error=error_type('PRIVATE')) as io_state:
+                with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-source-close-unproved$'), bundle.owned_binary(
+                        Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                    pass
+                io_state.closed.assert_called_once_with(71)
+                io_state.stream.close.assert_called_once_with()
+
+    def test_failed_open_never_constructs_wrapper_or_closes_unknown_fd(self):
+        with self.stream_io(open_error=OSError('PRIVATE')) as io_state:
+            with self.assertRaises(OSError), bundle.owned_binary(
+                    Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                self.fail('failed open reached body')
+            io_state.wrapped.assert_not_called()
+            io_state.closed.assert_not_called()
+
+    def test_wrapper_closed_false_refuses_and_attempts_raw_close_once(self):
+        with self.stream_io(wrapper_closed=False) as io_state:
+            with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-stream-close-unproved$'), bundle.owned_binary(
+                    Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                pass
+            io_state.closed.assert_called_once_with(71)
+            io_state.stream.close.assert_called_once_with()
+
+    def test_expired_prebirth_clock_refuses_before_open(self):
+        with self.stream_io() as io_state:
+            io_state.clock.side_effect = bundle.BundleRefusal('fixture-expired')
+            with self.assertRaises(bundle.BundleRefusal), bundle.owned_binary(
+                    Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                self.fail('expired birth reached body')
+            io_state.opened.assert_not_called()
+            io_state.wrapped.assert_not_called()
+            io_state.closed.assert_not_called()
+
+    def test_final_clock_refuses_after_wrapper_and_raw_close(self):
+        with self.stream_io() as io_state:
+            io_state.clock.side_effect = [1, bundle.BundleRefusal('fixture-expired')]
+            with self.assertRaises(bundle.BundleRefusal), bundle.owned_binary(
+                    Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                pass
+            self.assertEqual(io_state.order.mock_calls, [mock.call.wrapper_close(), mock.call.raw_close(71)])
+
+    def test_unapproved_mode_flags_or_creation_mode_refuse_before_open(self):
+        with self.stream_io() as io_state:
+            read_flags = bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW
+            write_flags = bundle.os.O_CREAT | bundle.os.O_EXCL | bundle.os.O_WRONLY | bundle.os.O_NOFOLLOW
+            for file_mode, flags, mode in (('ab', read_flags, 0o777), ('rb', bundle.os.O_RDONLY, 0o777),
+                                           ('wb', write_flags, 0o666)):
+                with self.subTest(mode=file_mode, flags=flags), self.assertRaises(bundle.BundleRefusal), bundle.owned_binary(
+                        Path('/synthetic/never-opened'), file_mode, flags, 30, mode=mode):
+                    self.fail('unapproved flags reached body')
+            io_state.opened.assert_not_called()
+            io_state.closed.assert_not_called()
+
+    def test_two_close_failures_preserve_raw_refusal_and_attempt_each_once(self):
+        with self.stream_io(wrapper_error=OSError('PRIVATE'), raw_error=OSError('PRIVATE')) as io_state:
+            with self.assertRaisesRegex(bundle.BundleRefusal, '^cft-source-close-unproved$'), bundle.owned_binary(
+                    Path('/synthetic/never-opened'), 'rb', bundle.os.O_RDONLY | bundle.os.O_NOFOLLOW, 30):
+                pass
+            self.assertEqual(io_state.order.mock_calls, [mock.call.wrapper_close(), mock.call.raw_close(71)])
 
 
 if __name__ == '__main__':

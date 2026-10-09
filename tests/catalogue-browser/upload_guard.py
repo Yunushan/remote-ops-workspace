@@ -1,4 +1,5 @@
 """Only a fixed-schema bounded receipt reaches the sole upload file."""
+import json
 import os
 import stat
 from pathlib import Path
@@ -23,6 +24,13 @@ def main():
     with (destination / 'result.json').open('xb') as stream:
         stream.write(raw)
         stream.flush()
+    diagnostic = json.loads(raw)
+    fields = ('schema', 'status', 'complete', 'phase', 'preparation_step', 'chrome_file_stage',
+        'forced_cleanup_attempted', 'cleanup_complete', 'readiness_credit')
+    summary = {key: diagnostic[key] for key in fields if key in diagnostic}
+    line = json.dumps(summary, ensure_ascii=True, sort_keys=True, separators=(',', ':'))
+    need(len(line.encode('ascii')) <= 2048)
+    print('catalogue-public-diagnostic=' + line, flush=True)
 
 
 if __name__ == '__main__':

@@ -35,12 +35,82 @@ FACTS = ("native_provider_constructed", "token_observed", "known_folders_observe
 OWNER_SCOPE = "GitHub job/step; no independent process-reaping or complete-OS-descendant attestation"
 KEYS = {"schema", "source", "run", "status", "phase", "reason_code", "observed", "source_unchanged",
         "source_readback_complete", "observation_finished", "sdk_headers_qualified",
-        "other_identity_denial_qualified", "staging_qualified", "complete", "readiness_credit", "process_owner"}
+        "other_identity_denial_qualified", "staging_qualified", "complete", "readiness_credit", "process_owner", "parent_observation"}
 
 
 def require(condition):
     if not condition:
         raise ValueError("native-observation-input-refused")
+
+
+def parent_observation():
+    return {"ancestor_index": None, "ancestor_role": None, "snapshot_observed": False,
+            "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0}
+
+
+def validate_parent_observation(value):
+    require(type(value) is dict and set(value) == set(parent_observation()))
+    require(type(value["snapshot_observed"]) is bool
+            and type(value["observer_live_handle_count"]) is int
+            and 0 <= value["observer_live_handle_count"] <= 64)
+    index, role = value["ancestor_index"], value["ancestor_role"]
+    if index is None:
+        require(role is None and not value["snapshot_observed"]
+                and value["observer_live_handle_count"] == 0)
+    else:
+        require(type(index) is int and 0 <= index <= 63
+                and role in ("volume-root", "parent", "home")
+                and ((index == 0) is (role == "volume-root")))
+    if value["snapshot_observed"]:
+        require(index is not None and type(value["directory_attribute"]) is bool
+                and value["owner_class"] in ("current-user", "system", "administrators", "other"))
+    else:
+        require(value["directory_attribute"] is None and value["owner_class"] is None)
+
+
+class ParentObservation:
+    """Transparent read-only delegate; private paths/handles/SIDs stay in memory.
+
+    This adds no native calls and applies none of the storage policy itself.
+    A live-handle count is local bookkeeping, not independent cleanup proof.
+    """
+    def __init__(self, native, user, home, storage, record):
+        self.native, self.user, self.storage, self.record = native, user, storage, record
+        ancestors = storage._ancestors(home)
+        self.positions = {path: (index, "volume-root" if index == 0 else
+                                 "home" if index == len(ancestors) - 1 else "parent")
+                          for index, path in enumerate(ancestors)}
+        self.handles = {}
+
+    def token_user(self):
+        return self.native.token_user()
+
+    def _prepare(self, position):
+        self.record.update(ancestor_index=position[0], ancestor_role=position[1],
+                           snapshot_observed=False, directory_attribute=None, owner_class=None)
+
+    def open_directory(self, path):
+        position = self.positions[path]
+        self._prepare(position)
+        handle = self.native.open_directory(path)
+        self.handles[handle] = position
+        self.record["observer_live_handle_count"] = len(self.handles)
+        return handle
+
+    def snapshot(self, handle):
+        self._prepare(self.handles[handle])
+        snapshot = self.native.snapshot(handle)
+        owner = ("current-user" if snapshot.owner == self.user else
+                 "system" if snapshot.owner == self.storage.SYSTEM_SID else
+                 "administrators" if snapshot.owner == self.storage.ADMINISTRATORS_SID else "other")
+        self.record.update(snapshot_observed=True, directory_attribute=bool(snapshot.attributes & self.storage.DIRECTORY),
+                           owner_class=owner)
+        return snapshot
+
+    def close(self, handle):
+        self.native.close(handle)
+        del self.handles[handle]
+        self.record["observer_live_handle_count"] = len(self.handles)
 
 
 def ordinary(path, *, file):
@@ -143,12 +213,12 @@ def capture():
         require(False)
     OUTPUT.parent.mkdir()
     ordinary(OUTPUT.parent, file=False)
-    record = {"schema": "row.windows-default-native-readonly.v1", "source": {"head": head, "tree": tree, "files": before},
+    record = {"schema": "row.windows-default-native-readonly.v2", "source": {"head": head, "tree": tree, "files": before},
               "run": run, "status": "running", "phase": "source", "reason_code": None,
               "observed": dict.fromkeys(FACTS, False), "source_unchanged": False, "source_readback_complete": False,
               "observation_finished": False, "sdk_headers_qualified": False, "other_identity_denial_qualified": False,
               "staging_qualified": False, "complete": False, "readiness_credit": 0,
-              "process_owner": OWNER_SCOPE}
+              "process_owner": OWNER_SCOPE, "parent_observation": parent_observation()}
     checkpoint(record)
     watchdog = threading.Timer(110, lambda: os._exit(124))
     watchdog.daemon = True
@@ -178,7 +248,8 @@ def capture():
         home = storage._selected_home(native, str(paths.data_dir()), os.environ)
         record["observed"]["default_selection_observed"] = True
         phase("default-parent")
-        with storage.private_home_guard(home, _native=native) as guard:
+        observer = ParentObservation(native, user, home, storage, record["parent_observation"])
+        with storage.private_home_guard(home, _native=observer) as guard:
             guard.verify()
             record["observed"]["existing_home_private"] = guard.missing_path is None
             record["observed"]["first_missing_component_observed"] = guard.missing_path is not None
@@ -199,6 +270,14 @@ def capture():
         record.update(status="refused", observation_finished=False,
                       phase=record["phase"] if record["phase"] != "finished" else "source-readback",
                       reason_code=candidate if candidate in codes else "native-observation-runtime-refused")
+        # Preserve the original refusal. Failed native observation must still
+        # report whether all selected source bytes/identities were read back.
+        try:
+            after, after_identities, after_codes = sources()
+            require(after == before and after_identities == identities and after_codes == codes)
+            record.update(source_unchanged=True, source_readback_complete=True)
+        except BaseException:
+            pass
         checkpoint(record)
         return 1
     finally:
@@ -211,7 +290,7 @@ def publish():
     raw, _identity = read_file(OUTPUT, 32768)
     value = json.loads(raw)
     require(type(value) is dict and set(value) == KEYS and value["process_owner"] == OWNER_SCOPE
-            and value["schema"] == "row.windows-default-native-readonly.v1"
+            and value["schema"] == "row.windows-default-native-readonly.v2"
             and value["source"] == {"head": head, "tree": tree, "files": current} and value["run"] == run)
     require(value["status"] in {"running", "refused", "observed"} and value["phase"] in PHASES
             and (value["reason_code"] is None or value["reason_code"] in codes | {"native-observation-runtime-refused"}))
@@ -220,9 +299,11 @@ def publish():
             and type(value["readiness_credit"]) is int and value["readiness_credit"] == 0)
     require(all(type(value[key]) is bool for key in ("source_unchanged", "source_readback_complete", "observation_finished")))
     require(value["source_unchanged"] is value["source_readback_complete"])
+    validate_parent_observation(value["parent_observation"])
     if value["status"] == "observed":
         require(value["phase"] == "finished" and value["reason_code"] is None
-                and value["source_unchanged"] and value["source_readback_complete"] and value["observation_finished"])
+                and value["source_unchanged"] and value["source_readback_complete"] and value["observation_finished"]
+                and value["parent_observation"]["observer_live_handle_count"] == 0)
         require(all(value["observed"][key] for key in FACTS if key not in
                     {"existing_home_private", "first_missing_component_observed"}))
         require(value["observed"]["existing_home_private"] != value["observed"]["first_missing_component_observed"])

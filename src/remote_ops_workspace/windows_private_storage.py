@@ -477,6 +477,38 @@ def descriptor_handle(descriptor):
     return handle
 
 
+def _directory_records(paths):
+    """Allocate bounded directory bookkeeping before opening any directory.
+
+    This removes later tuple/list-growth allocation from handle registration.
+    It does not prove native return-to-Python registration under arbitrary
+    asynchronous interruption, or the provider's internal resource custody.
+    """
+    return [[path, None, None, index == len(paths) - 1]
+            for index, path in enumerate(paths)]
+
+
+def _close_directory_records(native, closing):
+    """Attempt each registered handle once, even if a close raises cancellation.
+
+    The reverse iterator is prepared before acquisition. A raised close is
+    unproved cleanup, never retried or treated as success. Arbitrary repeated
+    asynchronous interruption outside a close call is not qualified here.
+    """
+    failure = None
+    for row in closing:
+        handle = row[1]
+        if handle is None:
+            continue
+        try:
+            native.close(handle)
+        except BaseException as error:
+            if failure is None:
+                failure = error
+    if failure is not None:
+        raise PrivateStorageError("native-handle-cleanup-refused") from failure
+
+
 @contextmanager
 def private_stage_guard(path, *, create=False, create_if_missing=False, _native=None):
     """Hold non-delete-shared ancestor handles through all writes/verification.
@@ -487,44 +519,40 @@ product callers must never accept a supplied provider from configuration/input.
     _require(type(create) is bool and type(create_if_missing) is bool
              and not (create and create_if_missing), "invalid-private-stage-request")
     native = _Native() if _native is None else _native
-    paths, opened = _ancestors(path), []
+    paths = _ancestors(path)
+    opened = _directory_records(paths)
+    closing = reversed(opened)
     user = _sid(native.token_user())
     try:
-        for ancestor in paths[:-1]:
-            handle = native.open_directory(ancestor)
-            opened.append((ancestor, handle, None, False))
-            snapshot = native.snapshot(handle)
+        for index, ancestor in enumerate(paths[:-1]):
+            row = opened[index]
+            row[1] = native.open_directory(ancestor)
+            snapshot = native.snapshot(row[1])
             require_parent(snapshot, user)
-            opened[-1] = (ancestor, handle, snapshot, False)
-            if len(opened) > 1:
+            row[2] = snapshot
+            if index > 0:
                 _require(snapshot.identity[0] == opened[0][2].identity[0], "private-volume-mismatch")
         if create:
             native.create_private_directory(paths[-1], user)
+        row = opened[-1]
         try:
-            handle = native.open_directory(paths[-1])
+            row[1] = native.open_directory(paths[-1])
         except PrivatePathMissing:
             _require(create_if_missing and not create, "private-stage-missing")
             # Every existing parent is still retained and already validated.
             # A racing creator makes exclusive creation refuse; never adopt it.
             native.create_private_directory(paths[-1], user)
-            handle = native.open_directory(paths[-1])
-        opened.append((paths[-1], handle, None, True))
-        snapshot = native.snapshot(handle)
+            row[1] = native.open_directory(paths[-1])
+        snapshot = native.snapshot(row[1])
         require_private(snapshot, user, directory=True)
         _require(snapshot.identity[0] == opened[0][2].identity[0], "private-volume-mismatch")
-        opened[-1] = (paths[-1], handle, snapshot, True)
+        row[2] = snapshot
         guard = PrivateDirectoryGuard(native, user, opened)
         guard.verify()
         yield guard
         guard.verify()
     finally:
-        failed = False
-        for _path, handle, _snapshot, _private in reversed(opened):
-            try:
-                native.close(handle)
-            except (OSError, PrivateStorageError):
-                failed = True
-        _require(not failed, "native-handle-cleanup-refused")
+        _close_directory_records(native, closing)
 
 
 @contextmanager
@@ -536,34 +564,34 @@ def private_home_guard(path, *, _native=None):
     missing component; no subsequent component is created by the updater.
     """
     native = _Native() if _native is None else _native
-    paths, opened, missing = _ancestors(path), [], None
+    paths, missing = _ancestors(path), None
+    opened = _directory_records(paths)
+    closing = reversed(opened)
     user = _sid(native.token_user())
     try:
+        count = 0
         for index, ancestor in enumerate(paths):
+            row = opened[index]
             try:
-                handle = native.open_directory(ancestor)
+                row[1] = native.open_directory(ancestor)
             except PrivatePathMissing:
-                _require(index > 0 and bool(opened), "native-home-volume-missing")
+                _require(index > 0 and count > 0, "native-home-volume-missing")
                 missing = ancestor
                 break
-            opened.append((ancestor, handle, None, index == len(paths) - 1))
-            observed = native.snapshot(handle)
+            observed = native.snapshot(row[1])
             private = index == len(paths) - 1
             (require_private(observed, user, directory=True) if private else require_parent(observed, user))
             _require(index == 0 or observed.identity[0] == opened[0][2].identity[0], "private-volume-mismatch")
-            opened[-1] = (ancestor, handle, observed, private)
-        guard = PrivateDirectoryGuard(native, user, opened, missing_path=missing)
+            row[2] = observed
+            count += 1
+        # Slice only validated existing rows for the guard. Any allocation
+        # failure here remains inside the finally that owns the full records.
+        guard = PrivateDirectoryGuard(native, user, opened[:count], missing_path=missing)
         guard.verify()
         yield guard
         guard.verify()
     finally:
-        failed = False
-        for _path, handle, _snapshot, _private in reversed(opened):
-            try:
-                native.close(handle)
-            except (OSError, PrivateStorageError):
-                failed = True
-        _require(not failed, "native-handle-cleanup-refused")
+        _close_directory_records(native, closing)
 
 
 def _selected_home(native, current_home, environment):

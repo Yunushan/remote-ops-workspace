@@ -194,3 +194,104 @@ def test_failed_handle_close_does_not_skip_other_owned_handles():
         with storage.private_stage_guard(ROOT, _native=native):
             pass
     assert native.closed == [4, 3, 2, 1]
+
+
+@pytest.mark.parametrize("guard_name", ["private_stage_guard", "private_home_guard"])
+def test_bookkeeping_allocation_failure_precedes_directory_birth(monkeypatch, guard_name):
+    def refuse(_paths):
+        raise MemoryError("mock-bookkeeping-allocation")
+
+    native = MockNative()
+    monkeypatch.setattr(storage, "_directory_records", refuse)
+    with pytest.raises(MemoryError, match="mock-bookkeeping-allocation"):
+        with getattr(storage, guard_name)(ROOT, _native=native):
+            pytest.fail("allocation refusal accepted")
+    assert native.opened == [] and native.closed == [] and native.created == []
+
+
+@pytest.mark.parametrize("guard_name", ["private_stage_guard", "private_home_guard"])
+@pytest.mark.parametrize("fail_at", [1, 2, 4])
+def test_snapshot_allocation_failure_closes_every_registered_directory(guard_name, fail_at):
+    class SnapshotFailure(MockNative):
+        def snapshot(self, handle):
+            if handle == fail_at:
+                raise MemoryError("mock-snapshot-allocation")
+            return super().snapshot(handle)
+
+    native = SnapshotFailure()
+    with pytest.raises(MemoryError, match="mock-snapshot-allocation"):
+        with getattr(storage, guard_name)(ROOT, _native=native):
+            pytest.fail("snapshot refusal accepted")
+    assert native.closed == list(range(fail_at, 0, -1))
+
+
+@pytest.mark.parametrize("guard_name", ["private_stage_guard", "private_home_guard"])
+@pytest.mark.parametrize("fail_at", [4, 2, 1])
+@pytest.mark.parametrize("failure_type", [KeyboardInterrupt, SystemExit, MemoryError, OSError])
+def test_close_cancellation_attempts_remaining_handles_once(guard_name, fail_at, failure_type):
+    failure = failure_type("mock-close-interruption")
+
+    class InterruptedClose(MockNative):
+        def close(self, handle):
+            super().close(handle)
+            if handle == fail_at:
+                raise failure
+
+    native = InterruptedClose()
+    with pytest.raises(storage.PrivateStorageError, match="native-handle-cleanup-refused") as caught:
+        with getattr(storage, guard_name)(ROOT, _native=native):
+            pass
+    assert native.closed == [4, 3, 2, 1]
+    assert caught.value.__cause__ is failure
+
+
+def test_cleanup_preserves_first_close_failure_and_body_exception():
+    body_failure = ValueError("mock-body-refusal")
+    first_failure = KeyboardInterrupt("mock-first-close")
+    later_failure = OSError("mock-later-close")
+
+    class MultipleCloseFailures(MockNative):
+        def close(self, handle):
+            super().close(handle)
+            if handle == 4:
+                raise first_failure
+            if handle == 2:
+                raise later_failure
+
+    native = MultipleCloseFailures()
+    with pytest.raises(storage.PrivateStorageError, match="native-handle-cleanup-refused") as caught:
+        with storage.private_stage_guard(ROOT, _native=native):
+            raise body_failure
+    assert native.closed == [4, 3, 2, 1]
+    assert caught.value.__cause__ is first_failure
+    assert first_failure.__context__ is body_failure
+
+
+def test_missing_home_only_retains_validated_prefix_and_skips_empty_slots():
+    missing = "C:\\Users\\Synthetic"
+
+    class MissingHome(MockNative):
+        def open_directory(self, path):
+            if path == missing:
+                raise storage.PrivatePathMissing("mock-directory-missing")
+            return super().open_directory(path)
+
+    native = MissingHome()
+    with storage.private_home_guard(ROOT, _native=native) as guard:
+        assert guard.missing_path == missing
+        assert guard.path == "C:\\Users"
+        assert len(guard.opened) == 2
+        assert all(row[1] is not None and row[2] is not None for row in guard.opened)
+    assert native.closed == [2, 1] and native.created == []
+
+
+def test_missing_volume_closes_no_unacquired_handles():
+    class MissingVolume(MockNative):
+        def open_directory(self, _path):
+            raise storage.PrivatePathMissing("mock-directory-missing")
+
+    native = MissingVolume()
+    with pytest.raises(storage.PrivateStorageError, match="native-home-volume-missing"):
+        with storage.private_home_guard(ROOT, _native=native):
+            pytest.fail("missing volume accepted")
+    assert native.opened == [] and native.closed == []

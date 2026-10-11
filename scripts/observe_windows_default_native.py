@@ -313,6 +313,18 @@ def publish():
     else:
         require(not value["observation_finished"] and value["phase"] != "finished")
         require((value["reason_code"] is None) is (value["status"] == "running"))
+    # Publish only validated fixed fields after the bounded receipt read closed.
+    diagnostic = {
+        "schema": "row.windows-default-native-public-diagnostic.v1",
+        "status": value["status"], "phase": value["phase"],
+        "reason_code": value["reason_code"], "observed": value["observed"],
+        "parent_observation": value["parent_observation"],
+        "source_readback_complete": value["source_readback_complete"],
+        "staging_qualified": False, "complete": False, "readiness_credit": 0,
+    }
+    encoded = json.dumps(diagnostic, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    require(len(encoded.encode("ascii")) <= 2048)
+    print("windows-default-public-diagnostic=" + encoded)
     print("Bounded read-only native observation receipt validated; staging qualification remains false.")
 
 

@@ -488,7 +488,8 @@ def main():
         else "not included in the current native artifact contract; CLI proof only"
     )
     record["previous_native_upgrade_and_rollback"] = (
-        "pending: existing script upgrade labels reinstall the same candidate; no previous native artifact fixture verified"
+        "not asserted by this pre-recovery build receipt; "
+        "inspect the separate source/run-bound native recovery receipt when present"
     )
     record["macos_signing_trust"] = (
         "ad-hoc only; no publisher identity, notarization or production trust"

@@ -144,7 +144,7 @@ jobs:
         run: python scripts/check_gui_scroll_lifetime_result.py --out artifacts/coverage/gui-scroll-lifetime.json
       - name: Enforce branch coverage floor
         run: >-
-          python -m pytest -q
+          python -m pytest -q -vv -o faulthandler_timeout=120
           --cov=remote_ops_workspace
           --cov-branch
           --cov-report=term-missing
@@ -246,7 +246,7 @@ jobs:
         run: |
           python -m pip install -e ".[security,dev]"
       - name: Pytest
-        run: python -m pytest -q
+        run: python -m pytest -q -vv -o faulthandler_timeout=120
 
   python315-optional-dependencies:
     name: Python 3.15 optional dependencies, GUI, and build on ${{ matrix.os }}
@@ -332,7 +332,7 @@ jobs:
           print(sys.version); print('Qt', QT_VERSION_STR)"
       - name: Run the complete test suite with Python 3.15 optional dependencies
         timeout-minutes: 15
-        run: python -m pytest -q
+        run: python -m pytest -q -vv -o faulthandler_timeout=120
       - name: Run Python 3.15 native Windows SSH and ConPTY evidence
         if: runner.os == 'Windows'
         timeout-minutes: 5

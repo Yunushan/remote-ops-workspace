@@ -268,7 +268,7 @@ def test_ci_workflow_requires_coverage_evidence_directory() -> None:
 def test_ci_workflow_test_matrix_runs_pytest_not_monolithic_verifier() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "        run: python -m pytest -q\n",
+        "        run: python -m pytest -q -vv -o faulthandler_timeout=120\n",
         "        run: python scripts/verify.py --lint\n",
     )
 

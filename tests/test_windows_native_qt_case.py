@@ -47,6 +47,25 @@ def test_report_requires_the_exact_successful_case(tmp_path: Path, case_id: str)
         _report().replace(b"<testsuites>", b"<other>").replace(b"</testsuites>", b"</other>"),
         _report().replace(b"</testsuites>", b"<testsuite/></testsuites>"),
     ],
+    ids=(
+        "empty",
+        "malformed",
+        "oversized",
+        "doctype-entity",
+        "zero-test-count",
+        "failure-count",
+        "error-count",
+        "skip-count",
+        "wrong-case",
+        "wrong-module",
+        "extra-case",
+        "skipped-case",
+        "failed-case",
+        "error-case",
+        "no-suite",
+        "wrong-root",
+        "extra-suite",
+    ),
 )
 def test_report_rejects_ambiguous_or_unsuccessful_results(tmp_path: Path, data: bytes) -> None:
     report = tmp_path / "junit.xml"
@@ -97,8 +116,18 @@ def test_child_uses_fixed_node_native_environment_and_fresh_report(
     assert environment["PYTEST_ADDOPTS"] == ""
     command = observed["command"]
     assert isinstance(command, list)
-    assert command[:6] == [native_case.sys.executable, "-m", "pytest", "-q", "-o", "addopts="]
-    assert command[6].endswith(f"test_windows_ssh_loopback.py::{_NAME}[{_CASE}]")
+    assert command[:9] == [
+        native_case.sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "-vv",
+        "-o",
+        "faulthandler_timeout=60",
+        "-o",
+        "addopts=",
+    ]
+    assert command[9].endswith(f"test_windows_ssh_loopback.py::{_NAME}[{_CASE}]")
     assert observed["shell"] is False
     assert observed["stdin"] == subprocess.DEVNULL
     assert "stdout" not in observed and "stderr" not in observed

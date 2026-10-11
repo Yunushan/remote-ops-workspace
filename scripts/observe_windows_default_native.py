@@ -35,6 +35,9 @@ FACTS = ("native_provider_constructed", "token_observed", "known_folders_observe
 OWNER_SCOPE = "GitHub job/step; no independent process-reaping or complete-OS-descendant attestation"
 # Exact public NT SERVICE\TrustedInstaller identity, diagnostic only.
 TRUSTED_INSTALLER_SID = bytes.fromhex("010600000000000550000000b589fb381984c2cb5c6c236d5700776ec0026487")
+PARENT_MUTATE_MASK = 0x500D0156
+DACL_KEYS = {"control", "ace_count", "untrusted_allow_count", "untrusted_mutating_count",
+             "untrusted_mutating_mask_or", "untrusted_ti_allow_count", "untrusted_ti_mutating_count"}
 KEYS = {"schema", "source", "run", "status", "phase", "reason_code", "observed", "source_unchanged",
         "source_readback_complete", "observation_finished", "sdk_headers_qualified",
         "other_identity_denial_qualified", "staging_qualified", "complete", "readiness_credit", "process_owner", "parent_observation"}
@@ -47,7 +50,59 @@ def require(condition):
 
 def parent_observation():
     return {"ancestor_index": None, "ancestor_role": None, "snapshot_observed": False,
-            "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0}
+            "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0,
+            "dacl_observation": None}
+
+
+def validate_dacl_observation(value):
+    require(type(value) is dict and set(value) == DACL_KEYS)
+    require(all(type(item) is int for item in value.values()))
+    require(0 <= value["control"] <= 65535 and 1 <= value["ace_count"] <= 64)
+    count = value["ace_count"]
+    require(0 <= value["untrusted_mutating_count"] <= value["untrusted_allow_count"] <= count
+            and 0 <= value["untrusted_ti_mutating_count"] <= value["untrusted_ti_allow_count"]
+            <= value["untrusted_allow_count"]
+            and value["untrusted_ti_mutating_count"] <= value["untrusted_mutating_count"]
+            and value["untrusted_ti_allow_count"] - value["untrusted_ti_mutating_count"]
+            <= value["untrusted_allow_count"] - value["untrusted_mutating_count"])
+    mask = value["untrusted_mutating_mask_or"]
+    require(0 <= mask <= 0xFFFFFFFF and not mask & ~PARENT_MUTATE_MASK
+            and ((mask == 0) is (value["untrusted_mutating_count"] == 0)))
+
+
+def summarize_parent_dacl(snapshot, user, storage):
+    """Fixed aggregates of already returned metadata; no access decision.
+
+    Uses the same raw allow-mask and inherit-only distinction as require_parent.
+    TrustedInstaller remains non-exempt unless it is the actual current user.
+    Paths, object identities, descriptor bytes and individual SIDs stay private.
+    """
+    require(type(storage.MUTATE) is int and storage.MUTATE == PARENT_MUTATE_MASK
+            and type(storage.KNOWN_MASK) is int
+            and type(snapshot.control) is int and 0 <= snapshot.control <= 65535
+            and type(snapshot.aces) is tuple and 1 <= len(snapshot.aces) <= 64
+            and type(user) is bytes)
+    result = {"control": snapshot.control, "ace_count": len(snapshot.aces),
+              "untrusted_allow_count": 0, "untrusted_mutating_count": 0,
+              "untrusted_mutating_mask_or": 0, "untrusted_ti_allow_count": 0,
+              "untrusted_ti_mutating_count": 0}
+    privileged = (user, storage.SYSTEM_SID, storage.ADMINISTRATORS_SID)
+    for ace in snapshot.aces:
+        require(type(ace.kind) is int and ace.kind in (0, 1)
+                and type(ace.flags) is int and 0 <= ace.flags <= 0x1F
+                and type(ace.mask) is int and 0 <= ace.mask <= 0xFFFFFFFF
+                and not ace.mask & ~storage.KNOWN_MASK and type(ace.sid) is bytes)
+        if ace.kind == 0 and not ace.flags & 0x08 and ace.sid not in privileged:
+            result["untrusted_allow_count"] += 1
+            mutation = ace.mask & storage.MUTATE
+            if mutation:
+                result["untrusted_mutating_count"] += 1
+                result["untrusted_mutating_mask_or"] |= mutation
+            if ace.sid == TRUSTED_INSTALLER_SID:
+                result["untrusted_ti_allow_count"] += 1
+                result["untrusted_ti_mutating_count"] += int(bool(mutation))
+    validate_dacl_observation(result)
+    return result
 
 
 def validate_parent_observation(value):
@@ -66,14 +121,17 @@ def validate_parent_observation(value):
     if value["snapshot_observed"]:
         require(index is not None and type(value["directory_attribute"]) is bool
                 and value["owner_class"] in ("current-user", "system", "administrators", "trusted-installer", "other"))
+        validate_dacl_observation(value["dacl_observation"])
     else:
-        require(value["directory_attribute"] is None and value["owner_class"] is None)
+        require(value["directory_attribute"] is None and value["owner_class"] is None
+                and value["dacl_observation"] is None)
 
 
 class ParentObservation:
     """Transparent read-only delegate; private paths/handles/SIDs stay in memory.
 
-    This adds no native calls and applies none of the storage policy itself.
+    This adds no native calls or access decision. It validates fixed aggregate
+    metadata before publishing; the original storage guard still decides access.
     A live-handle count is local bookkeeping, not independent cleanup proof.
     """
     def __init__(self, native, user, home, storage, record):
@@ -89,7 +147,7 @@ class ParentObservation:
 
     def _prepare(self, position):
         self.record.update(ancestor_index=position[0], ancestor_role=position[1],
-                           snapshot_observed=False, directory_attribute=None, owner_class=None)
+                           snapshot_observed=False, directory_attribute=None, owner_class=None, dacl_observation=None)
 
     def open_directory(self, path):
         position = self.positions[path]
@@ -106,8 +164,9 @@ class ParentObservation:
                  "system" if snapshot.owner == self.storage.SYSTEM_SID else
                  "administrators" if snapshot.owner == self.storage.ADMINISTRATORS_SID else
                  "trusted-installer" if snapshot.owner == TRUSTED_INSTALLER_SID else "other")
+        dacl = summarize_parent_dacl(snapshot, self.user, self.storage)
         self.record.update(snapshot_observed=True, directory_attribute=bool(snapshot.attributes & self.storage.DIRECTORY),
-                           owner_class=owner)
+                           owner_class=owner, dacl_observation=dacl)
         return snapshot
 
     def close(self, handle):
@@ -216,7 +275,7 @@ def capture():
         require(False)
     OUTPUT.parent.mkdir()
     ordinary(OUTPUT.parent, file=False)
-    record = {"schema": "row.windows-default-native-readonly.v3", "source": {"head": head, "tree": tree, "files": before},
+    record = {"schema": "row.windows-default-native-readonly.v4", "source": {"head": head, "tree": tree, "files": before},
               "run": run, "status": "running", "phase": "source", "reason_code": None,
               "observed": dict.fromkeys(FACTS, False), "source_unchanged": False, "source_readback_complete": False,
               "observation_finished": False, "sdk_headers_qualified": False, "other_identity_denial_qualified": False,
@@ -293,7 +352,7 @@ def publish():
     raw, _identity = read_file(OUTPUT, 32768)
     value = json.loads(raw)
     require(type(value) is dict and set(value) == KEYS and value["process_owner"] == OWNER_SCOPE
-            and value["schema"] == "row.windows-default-native-readonly.v3"
+            and value["schema"] == "row.windows-default-native-readonly.v4"
             and value["source"] == {"head": head, "tree": tree, "files": current} and value["run"] == run)
     require(value["status"] in {"running", "refused", "observed"} and value["phase"] in PHASES
             and (value["reason_code"] is None or value["reason_code"] in codes | {"native-observation-runtime-refused"}))
@@ -315,7 +374,7 @@ def publish():
         require((value["reason_code"] is None) is (value["status"] == "running"))
     # Publish only validated fixed fields after the bounded receipt read closed.
     diagnostic = {
-        "schema": "row.windows-default-native-public-diagnostic.v1",
+        "schema": "row.windows-default-native-public-diagnostic.v2",
         "status": value["status"], "phase": value["phase"],
         "reason_code": value["reason_code"], "observed": value["observed"],
         "parent_observation": value["parent_observation"],

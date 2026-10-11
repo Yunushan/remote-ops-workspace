@@ -12,13 +12,15 @@ SPEC.loader.exec_module(observer)
 
 def fake(owner=b"user", attributes=16):
     calls = []
-    snapshot = SimpleNamespace(owner=owner, attributes=attributes)
+    snapshot = SimpleNamespace(owner=owner, attributes=attributes, control=4,
+                               aces=(SimpleNamespace(kind=0, flags=0, mask=0, sid=b"other"),))
     native = SimpleNamespace(token_user=lambda: calls.append(("token",)) or b"user",
                              open_directory=lambda path: calls.append(("open", path)) or 7,
                              snapshot=lambda handle: calls.append(("snapshot", handle)) or snapshot,
                              close=lambda handle: calls.append(("close", handle)))
     storage = SimpleNamespace(_ancestors=lambda home: ("synthetic-root", "synthetic-parent", home),
-                              SYSTEM_SID=b"system", ADMINISTRATORS_SID=b"admins", DIRECTORY=16)
+                              SYSTEM_SID=b"system", ADMINISTRATORS_SID=b"admins", DIRECTORY=16,
+                              MUTATE=0x500D0156, KNOWN_MASK=0xF01F01FF)
     record = observer.parent_observation()
     return observer.ParentObservation(native, b"user", "synthetic-home", storage, record), record, calls, snapshot
 
@@ -37,7 +39,10 @@ def test_delegate_preserves_calls_snapshot_and_fixed_public_classification(owner
     assert delegate.snapshot(handle) is snapshot
     assert record == {"ancestor_index": index, "ancestor_role": role, "snapshot_observed": True,
                       "directory_attribute": bool(attributes & 16), "owner_class": expected,
-                      "observer_live_handle_count": 1}
+                      "observer_live_handle_count": 1,
+                      "dacl_observation": {"control": 4, "ace_count": 1, "untrusted_allow_count": 1,
+                                           "untrusted_mutating_count": 0, "untrusted_mutating_mask_or": 0,
+                                           "untrusted_ti_allow_count": 0, "untrusted_ti_mutating_count": 0}}
     observer.validate_parent_observation(record)
     delegate.close(handle)
     assert record["observer_live_handle_count"] == 0
@@ -54,7 +59,8 @@ def test_missing_open_and_failed_snapshot_leave_partial_fixed_evidence():
     with pytest.raises(OSError):
         delegate.open_directory("synthetic-parent")
     assert record == {"ancestor_index": 1, "ancestor_role": "parent", "snapshot_observed": False,
-                      "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0}
+                      "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0,
+                      "dacl_observation": None}
     observer.validate_parent_observation(record)
     delegate, record, calls, _ = fake()
     handle = delegate.open_directory("synthetic-root")
@@ -97,11 +103,14 @@ def test_public_validator_refuses_extra_private_fields_wrong_types_and_bounds(ke
 
 @pytest.mark.parametrize("record", [
     {"ancestor_index": 1, "ancestor_role": "volume-root", "snapshot_observed": False,
-     "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0},
+     "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0,
+     "dacl_observation": None},
     {"ancestor_index": 0, "ancestor_role": "parent", "snapshot_observed": False,
-     "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0},
+     "directory_attribute": None, "owner_class": None, "observer_live_handle_count": 0,
+     "dacl_observation": None},
     {"ancestor_index": None, "ancestor_role": None, "snapshot_observed": True,
-     "directory_attribute": True, "owner_class": "other", "observer_live_handle_count": 0},
+     "directory_attribute": True, "owner_class": "other", "observer_live_handle_count": 0,
+     "dacl_observation": None},
 ])
 def test_public_validator_refuses_inconsistent_role_snapshot_combinations(record):
     with pytest.raises(ValueError):
@@ -120,3 +129,64 @@ def test_nearby_service_owner_bytes_remain_other(index):
     delegate.close(handle)
     assert record["observer_live_handle_count"] == 0
     assert calls == [("open", "synthetic-root"), ("snapshot", 7), ("close", 7)]
+
+
+def test_dacl_aggregate_distinguishes_applicable_untrusted_writes_without_trusting_service_owner():
+    delegate, record, calls, snapshot = fake(observer.TRUSTED_INSTALLER_SID)
+    snapshot.aces = (
+        SimpleNamespace(kind=0, flags=0, mask=0x001F01FF, sid=b"user"),
+        SimpleNamespace(kind=0, flags=0, mask=0x001F01FF, sid=b"system"),
+        SimpleNamespace(kind=0, flags=0, mask=0x001F01FF, sid=b"admins"),
+        SimpleNamespace(kind=0, flags=0, mask=0x00040000, sid=observer.TRUSTED_INSTALLER_SID),
+        SimpleNamespace(kind=0, flags=0, mask=0x00000004, sid=b"private-principal-a"),
+        SimpleNamespace(kind=0, flags=8, mask=0x00040000, sid=b"private-principal-b"),
+        SimpleNamespace(kind=1, flags=0, mask=0x00040000, sid=b"private-principal-c"),
+        SimpleNamespace(kind=0, flags=0, mask=0x00120089, sid=b"private-principal-d"),
+    )
+    handle = delegate.open_directory("synthetic-root")
+    assert delegate.snapshot(handle) is snapshot
+    assert record["owner_class"] == "trusted-installer"
+    assert record["dacl_observation"] == {
+        "control": 4, "ace_count": 8, "untrusted_allow_count": 3,
+        "untrusted_mutating_count": 2, "untrusted_mutating_mask_or": 0x00040004,
+        "untrusted_ti_allow_count": 1, "untrusted_ti_mutating_count": 1,
+    }
+    observer.validate_parent_observation(record)
+    delegate.close(handle)
+    assert calls == [("open", "synthetic-root"), ("snapshot", 7), ("close", 7)]
+    assert "private-principal" not in repr(record)
+
+
+@pytest.mark.parametrize("field,bad", [("ace_count", True), ("ace_count", 0), ("ace_count", 65),
+    ("control", -1), ("control", 65536), ("untrusted_allow_count", 2),
+    ("untrusted_mutating_count", 1), ("untrusted_mutating_mask_or", 1),
+    ("untrusted_ti_allow_count", 2), ("untrusted_ti_mutating_count", 1), ("sid", "private")])
+def test_dacl_public_projection_refuses_private_fields_and_inconsistent_aggregates(field, bad):
+    delegate, record, _calls, _snapshot = fake()
+    handle = delegate.open_directory("synthetic-root")
+    delegate.snapshot(handle)
+    record["dacl_observation"][field] = bad
+    with pytest.raises(ValueError, match="native-observation-input-refused"):
+        observer.validate_parent_observation(record)
+    delegate.close(handle)
+
+
+def test_malformed_dacl_metadata_keeps_partial_snapshot_and_retained_handle_visible():
+    delegate, record, calls, snapshot = fake()
+    snapshot.aces = (SimpleNamespace(kind=0, flags=0, mask=True, sid=b"private"),)
+    handle = delegate.open_directory("synthetic-root")
+    with pytest.raises(ValueError, match="native-observation-input-refused"):
+        delegate.snapshot(handle)
+    assert record["snapshot_observed"] is False and record["dacl_observation"] is None
+    assert record["observer_live_handle_count"] == 1
+    delegate.close(handle)
+    observer.validate_parent_observation(record)
+    assert calls == [("open", "synthetic-root"), ("snapshot", 7), ("close", 7)]
+
+
+def test_dacl_validator_refuses_service_nonmutating_subset_larger_than_total():
+    value = {"control": 4, "ace_count": 1, "untrusted_allow_count": 1,
+             "untrusted_mutating_count": 1, "untrusted_mutating_mask_or": 4,
+             "untrusted_ti_allow_count": 1, "untrusted_ti_mutating_count": 0}
+    with pytest.raises(ValueError, match="native-observation-input-refused"):
+        observer.validate_dacl_observation(value)

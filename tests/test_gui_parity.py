@@ -1044,6 +1044,7 @@ def test_mobaxterm_rail_uses_role_based_generated_icons() -> None:
 def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
@@ -1053,8 +1054,8 @@ def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
     assert "draw_moba_sftp_file_icon" in renderer_source
     assert "gui_design_moba_sftp_file_row_icon" in renderer_source
     assert "draw_moba_monitor_icon" in renderer_source
-    assert "apply_sftp_file_row_icon" in gui_source
-    assert "SFTP_ROW_ICON_RENDER_ROLE" in gui_source
+    assert "apply_sftp_file_row_icon" in connected_source
+    assert "SFTP_ROW_ICON_RENDER_ROLE" in connected_source
     assert "generated-pixmap" in gui_source
     assert "EXPECTED_MOBA_SFTP_FILE_ROW_ICONS" in live_checker_source
     assert "expected_moba_sftp_file_row_icons" in live_checker_source
@@ -1069,6 +1070,7 @@ def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
 def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1161,50 +1163,50 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "gui_design_moba_monitoring_controls" in renderer_source
     assert "draw_moba_monitoring_control" in renderer_source
     assert "moba_monitoring_metric_text" in renderer_source
-    assert "mobaSftpActionKey" in gui_source
-    assert "mobaSftpIconKey" in gui_source
+    assert "mobaSftpActionKey" in connected_source
+    assert "mobaSftpIconKey" in connected_source
     assert "mobaConnectedDockSideWidth" in gui_source
     assert "mobaConnectedDockRailWidth" in gui_source
     assert "mobaConnectedDockWidth" in gui_source
-    assert "mobaSftpActionGroupKey" in gui_source
-    assert "mobaSftpToolbarRouteKey" in gui_source
-    assert "mobaSftpToolbarRouteHandler" in gui_source
-    assert "mobaSftpToolbarRouteActionGroups" in gui_source
-    assert "mobaSftpToolbarRouteSignal" in gui_source
-    assert "mobaSftpToolbarRouteCapturedAction" in gui_source
-    assert "mobaSftpToolbarRouteLiveAction" in gui_source
-    assert "show_moba_sftp_toolbar_action" in gui_source
-    assert "mobaSftpActionStaticX" in gui_source
-    assert "mobaSftpActionIconX" in gui_source
-    assert "mobaSftpActionSeparatorX" in gui_source
-    assert "mobaSftpToolbarSeparator" in gui_source
-    assert "mobaSftpPathDropdownMarker" in gui_source
-    assert "mobaSftpPathTextX" in gui_source
-    assert "mobaSftpDropdownRightOffset" in gui_source
-    assert "mobaSftpColumnKeys" in gui_source
-    assert "mobaSftpRowHeight" in gui_source
-    assert "mobaSftpRowModifiedX" in gui_source
-    assert "mobaSftpRowModifiedFontSize" in gui_source
-    assert "mobaSftpFollowRouteKey" in gui_source
-    assert "mobaSftpFollowRoutePath" in gui_source
-    assert "mobaSftpFollowRoutePlan" in gui_source
-    assert "mobaSftpTerminalFolderRouteKey" in gui_source
-    assert "mobaSftpTerminalFolderRoutePlan" in gui_source
-    assert "SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE" in gui_source
-    assert "mobaSftpRoutedRowsKey" in gui_source
-    assert "SFTP_ROW_ROUTE_KEY_ROLE" in gui_source
-    assert "SFTP_ROW_SELECTED_BY_ROUTE_ROLE" in gui_source
-    assert "mobaMonitoringFollowEnabled" in gui_source
-    assert "mobaSftpMonitoringHeight" in gui_source
-    assert "mobaMonitoringMetricKey" in gui_source
-    assert "mobaMonitoringControlKey" in gui_source
-    assert "mobaMonitoringControlIconKey" in gui_source
-    assert "mobaMonitoringControlStaticX" in gui_source
-    assert "mobaMonitoringControlIconSize" in gui_source
-    assert "mobaMonitoringControlLabelYOffset" in gui_source
-    assert "mobaMonitoringControlCheckmarkPoints" in gui_source
-    assert "mobaMonitoringControlLiveWidth" in gui_source
-    assert "mobaRemoteMonitoringCompact" in gui_source
+    assert "mobaSftpActionGroupKey" in connected_source
+    assert "mobaSftpToolbarRouteKey" in connected_source
+    assert "mobaSftpToolbarRouteHandler" in connected_source
+    assert "mobaSftpToolbarRouteActionGroups" in connected_source
+    assert "mobaSftpToolbarRouteSignal" in connected_source
+    assert "mobaSftpToolbarRouteCapturedAction" in connected_source
+    assert "mobaSftpToolbarRouteLiveAction" in connected_source
+    assert "show_moba_sftp_toolbar_action" in connected_source
+    assert "mobaSftpActionStaticX" in connected_source
+    assert "mobaSftpActionIconX" in connected_source
+    assert "mobaSftpActionSeparatorX" in connected_source
+    assert "mobaSftpToolbarSeparator" in connected_source
+    assert "mobaSftpPathDropdownMarker" in connected_source
+    assert "mobaSftpPathTextX" in connected_source
+    assert "mobaSftpDropdownRightOffset" in connected_source
+    assert "mobaSftpColumnKeys" in connected_source
+    assert "mobaSftpRowHeight" in connected_source
+    assert "mobaSftpRowModifiedX" in connected_source
+    assert "mobaSftpRowModifiedFontSize" in connected_source
+    assert "mobaSftpFollowRouteKey" in connected_source
+    assert "mobaSftpFollowRoutePath" in connected_source
+    assert "mobaSftpFollowRoutePlan" in connected_source
+    assert "mobaSftpTerminalFolderRouteKey" in connected_source
+    assert "mobaSftpTerminalFolderRoutePlan" in connected_source
+    assert "SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE" in connected_source
+    assert "mobaSftpRoutedRowsKey" in connected_source
+    assert "SFTP_ROW_ROUTE_KEY_ROLE" in connected_source
+    assert "SFTP_ROW_SELECTED_BY_ROUTE_ROLE" in connected_source
+    assert "mobaMonitoringFollowEnabled" in connected_source
+    assert "mobaSftpMonitoringHeight" in connected_source
+    assert "mobaMonitoringMetricKey" in connected_source
+    assert "mobaMonitoringControlKey" in connected_source
+    assert "mobaMonitoringControlIconKey" in connected_source
+    assert "mobaMonitoringControlStaticX" in connected_source
+    assert "mobaMonitoringControlIconSize" in connected_source
+    assert "mobaMonitoringControlLabelYOffset" in connected_source
+    assert "mobaMonitoringControlCheckmarkPoints" in connected_source
+    assert "mobaMonitoringControlLiveWidth" in connected_source
+    assert "mobaRemoteMonitoringCompact" in connected_source
     assert "EXPECTED_MOBA_SFTP_ACTION_KEYS" in checker_source
     assert "EXPECTED_MOBA_CONNECTED_DOCK_FRAME" in checker_source
     assert "connected-dock-frame" in checker_source
@@ -1352,7 +1354,7 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
         "interaction_states"
     ]
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1390,28 +1392,28 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "visible_metric_keys" in renderer_source
     assert "chrome.static_height" in renderer_source
     assert "chrome.divider_left_inset" in renderer_source
-    assert "mobaRemoteMonitoringTelemetrySurface" in gui_source
-    assert "mobaRemoteMonitoringCommand" in gui_source
-    assert "mobaRemoteMonitoringFollowPlan" in gui_source
-    assert "mobaMonitoringControlGeometryKeys" in gui_source
-    assert "mobaRemoteMonitoringStaticHeight" in gui_source
-    assert "mobaRemoteMonitoringLiveControlsWidth" in gui_source
-    assert "apply_remote_monitoring_control_route_properties" in gui_source
-    assert "mobaRemoteMonitoringControlRouteKey" in gui_source
-    assert "mobaRemoteMonitoringControlCapturedCommand" in gui_source
-    assert "apply_follow_terminal_folder_control_route_properties" in gui_source
-    assert "mobaFollowTerminalFolderControlRouteKey" in gui_source
-    assert "mobaFollowTerminalFolderControlCapturedPlan" in gui_source
-    assert "handle_moba_remote_monitoring_toggled" in gui_source
-    assert "handle_moba_follow_terminal_folder_toggled" in gui_source
-    assert "widget.toggled.connect" in gui_source
-    assert "route.live_checked_property" in gui_source
-    assert "control_route.live_plan_property" in gui_source
-    assert "mobaMonitoringTelemetryRouteKey" in gui_source
-    assert "mobaMonitoringTelemetryMetricCellKeys" in gui_source
-    assert "mobaMonitoringTelemetryRouted" in gui_source
-    assert "mobaMonitoringControlLabelFontSize" in gui_source
-    assert "mobaMonitoringControlCheckYOffset" in gui_source
+    assert "mobaRemoteMonitoringTelemetrySurface" in connected_source
+    assert "mobaRemoteMonitoringCommand" in connected_source
+    assert "mobaRemoteMonitoringFollowPlan" in connected_source
+    assert "mobaMonitoringControlGeometryKeys" in connected_source
+    assert "mobaRemoteMonitoringStaticHeight" in connected_source
+    assert "mobaRemoteMonitoringLiveControlsWidth" in connected_source
+    assert "apply_remote_monitoring_control_route_properties" in connected_source
+    assert "mobaRemoteMonitoringControlRouteKey" in connected_source
+    assert "mobaRemoteMonitoringControlCapturedCommand" in connected_source
+    assert "apply_follow_terminal_folder_control_route_properties" in connected_source
+    assert "mobaFollowTerminalFolderControlRouteKey" in connected_source
+    assert "mobaFollowTerminalFolderControlCapturedPlan" in connected_source
+    assert "handle_moba_remote_monitoring_toggled" in connected_source
+    assert "handle_moba_follow_terminal_folder_toggled" in connected_source
+    assert "widget.toggled.connect" in connected_source
+    assert "route.live_checked_property" in connected_source
+    assert "control_route.live_plan_property" in connected_source
+    assert "mobaMonitoringTelemetryRouteKey" in connected_source
+    assert "mobaMonitoringTelemetryMetricCellKeys" in connected_source
+    assert "mobaMonitoringTelemetryRouted" in connected_source
+    assert "mobaMonitoringControlLabelFontSize" in connected_source
+    assert "mobaMonitoringControlCheckYOffset" in connected_source
     assert "EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME" in checker_source
     assert "EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE" in checker_source
     assert "EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE" in checker_source
@@ -1604,7 +1606,7 @@ def test_mobaxterm_static_contract_excludes_obsolete_permanent_edge_surfaces() -
 
 def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
@@ -1613,10 +1615,10 @@ def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
     assert "gui_design_moba_ssh_banner_chrome" in renderer_source
     assert "gui_design_moba_ssh_banner_row_geometry_for" in renderer_source
     assert "draw_centered_text" in renderer_source
-    assert "mobaSshBannerTitle" in gui_source
-    assert "mobaSshBannerSubtitle" in gui_source
-    assert "mobaSshBannerSlot" in gui_source
-    assert "mobaSshBannerRowY" in gui_source
+    assert "mobaSshBannerTitle" in connected_source
+    assert "mobaSshBannerSubtitle" in connected_source
+    assert "mobaSshBannerSlot" in connected_source
+    assert "mobaSshBannerRowY" in connected_source
     assert "EXPECTED_MOBA_SSH_BANNER_CHROME" in checker_source
     assert "EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY" in checker_source
     assert "expected_moba_ssh_banner_row_geometry" in checker_source
@@ -1625,7 +1627,7 @@ def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
 def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
     criteria = json.loads(Path("configs/gui_parity_criteria.json").read_text(encoding="utf-8"))
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -1642,9 +1644,9 @@ def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
     assert "draw_moba_ssh_banner_card" in renderer_source
     assert "state.banner.capability_rows()" in renderer_source
     assert "state.banner.footer_links()" in renderer_source
-    assert "mobaSshBannerTargetLine" in gui_source
-    assert "mobaSshBannerCapabilityKey" in gui_source
-    assert "mobaSshBannerFooter" in gui_source
+    assert "mobaSshBannerTargetLine" in connected_source
+    assert "mobaSshBannerCapabilityKey" in connected_source
+    assert "mobaSshBannerFooter" in connected_source
     assert "EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS" in checker_source
     assert "expected_moba_ssh_banner_capability_card" in checker_source
     assert "MobaXterm-style SSH banner capability card" in docs_source
@@ -1653,7 +1655,7 @@ def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
 
 def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -1667,11 +1669,11 @@ def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
     assert "line.tone" in renderer_source
     assert "gui_design_moba_terminal_transcript_row_geometry_for" in renderer_source
     assert "geometry.font_size" in renderer_source
-    assert "apply_terminal_transcript_evidence" in gui_source
-    assert "mobaTerminalTranscriptKeys" in gui_source
-    assert "mobaTerminalTranscriptTones" in gui_source
-    assert "mobaPlainTerminalMode" in gui_source
-    assert "mobaTerminalTranscriptGeometryKeys" in gui_source
+    assert "apply_terminal_transcript_evidence" in connected_source
+    assert "mobaTerminalTranscriptKeys" in connected_source
+    assert "mobaTerminalTranscriptTones" in connected_source
+    assert "mobaPlainTerminalMode" in connected_source
+    assert "mobaTerminalTranscriptGeometryKeys" in connected_source
     assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS" in checker_source
     assert "expected_moba_terminal_transcript" in checker_source
     assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY" in checker_source
@@ -1740,6 +1742,7 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
 def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1770,14 +1773,14 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
     assert "mobaConnectedIdentityRouteKey" in gui_source
     assert "mobaConnectedIdentityWindowTitle" in gui_source
     assert "mobaConnectedIdentityTelemetryTarget" in gui_source
-    assert "moba_telemetry_cells" in gui_source
-    assert "mobaTelemetryGeometryKeys" in gui_source
-    assert "mobaTelemetryCellStaticX" in gui_source
-    assert "mobaTelemetryLabelX" in gui_source
-    assert "telemetry_icon_pixmap" in gui_source
-    assert "mobaTelemetryIconRender" in gui_source
-    assert "mobaTelemetryCellWidth" in gui_source
-    assert "mobaTelemetryKey" in gui_source
+    assert "moba_telemetry_cells" in connected_source
+    assert "mobaTelemetryGeometryKeys" in connected_source
+    assert "mobaTelemetryCellStaticX" in connected_source
+    assert "mobaTelemetryLabelX" in connected_source
+    assert "telemetry_icon_pixmap" in connected_source
+    assert "mobaTelemetryIconRender" in connected_source
+    assert "mobaTelemetryCellWidth" in connected_source
+    assert "mobaTelemetryKey" in connected_source
     assert "EXPECTED_MOBA_TELEMETRY_CELL_KEYS" in live_checker_source
     assert "EXPECTED_MOBA_TELEMETRY_CELL_GEOMETRY" in live_checker_source
     assert "expected_moba_telemetry_cells" in live_checker_source
@@ -1798,7 +1801,8 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
 
 def test_mobaxterm_live_connected_session_uses_left_dock_switch() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    connected_panel_init = gui_source.split("class MobaConnectedSessionPanel", 1)[1].split(
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    connected_panel_init = connected_source.split("class MobaConnectedSessionPanel", 1)[1].split(
         "def build_terminal_area", 1
     )[0]
 

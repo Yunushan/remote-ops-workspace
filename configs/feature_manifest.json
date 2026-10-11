@@ -484,7 +484,7 @@
     },
     {
       "category": "interface",
-      "extension_point": "moba_connected.build_moba_connected_session_state / gui.MobaConnectedSessionPanel / file_transfer.build_sftp_list_plan",
+      "extension_point": "moba_connected.build_moba_connected_session_state / gui_connected.create_moba_connected_classes (MobaConnectedSessionPanel) / file_transfer.build_sftp_list_plan",
       "id": "moba.ssh-browser",
       "inspired_by": [
         "MobaXterm"
@@ -514,7 +514,7 @@
     },
     {
       "category": "monitoring",
-      "extension_point": "moba_connected.RemoteMonitoringSnapshot / gui mobaTelemetryBar",
+      "extension_point": "moba_connected.RemoteMonitoringSnapshot / gui_connected mobaTelemetryBar",
       "id": "moba.telemetry-status-bar",
       "inspired_by": [
         "MobaXterm"

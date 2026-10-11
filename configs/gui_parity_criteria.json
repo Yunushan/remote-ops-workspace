@@ -1388,8 +1388,10 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "MobaSftpDock",
-              "mobaConnectedLeftDock",
               "MobaConnectedSessionPanel"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaConnectedLeftDock"
             ]
           }
         },
@@ -1508,13 +1510,6 @@
               "chrome.parent_row_label",
               "state.remote_path"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpToolbar",
-              "mobaSftpPath",
-              "mobaSftpFileTable",
-              "mobaSftpParentRowKind",
-              "mobaSftpSelectedRowKind"
-            ],
             "scripts/check_real_gui_render.py": [
               "mobaSftpParentRowLabel",
               "parent row must be selected"
@@ -1523,6 +1518,13 @@
               "sftp-selected-parent-row",
               "sftp-parent-row-fill",
               "sftp-parent-row-outline"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpToolbar",
+              "mobaSftpPath",
+              "mobaSftpFileTable",
+              "mobaSftpParentRowKind",
+              "mobaSftpSelectedRowKind"
             ]
           }
         },
@@ -1545,14 +1547,6 @@
               "chrome.dropdown_marker",
               "chrome.selected_row_kind"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpPathDropdownMarker",
-              "mobaSftpColumnKeys",
-              "mobaSftpColumnWidths",
-              "mobaSftpParentRowLabel",
-              "mobaSftpSelectedRowKind",
-              "gui_design_moba_sftp_browser_chrome"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_BROWSER_CHROME",
               "EXPECTED_MOBA_SFTP_COLUMN_WIDTHS",
@@ -1568,6 +1562,14 @@
               "sftp-parent-row-icon",
               "sftp-parent-row-fill",
               "sftp-parent-row-outline"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpPathDropdownMarker",
+              "mobaSftpColumnKeys",
+              "mobaSftpColumnWidths",
+              "mobaSftpParentRowLabel",
+              "mobaSftpSelectedRowKind",
+              "gui_design_moba_sftp_browser_chrome"
             ]
           }
         },
@@ -1587,12 +1589,6 @@
               "chrome.row_icon_x",
               "chrome.row_modified_font_size"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpPathTextX",
-              "mobaSftpDropdownRightOffset",
-              "mobaSftpRowModifiedX",
-              "mobaSftpRowModifiedFontSize"
-            ],
             "scripts/check_real_gui_render.py": [
               "sftp-browser-geometry",
               "expected_moba_sftp_browser_geometry",
@@ -1606,6 +1602,12 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SFTP browser geometry"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpPathTextX",
+              "mobaSftpDropdownRightOffset",
+              "mobaSftpRowModifiedX",
+              "mobaSftpRowModifiedFontSize"
             ]
           }
         },
@@ -1623,12 +1625,6 @@
               "follow_route.source_control_key",
               "follow_route.target_path_object"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpFollowRouteKey",
-              "mobaSftpFollowRoutePath",
-              "mobaSftpFollowRoutePlan",
-              "mobaMonitoringFollowEnabled"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_FOLLOW_FOLDER_ROUTE",
               "sftp-follow-folder-route",
@@ -1637,6 +1633,12 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SFTP follow-folder route"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpFollowRouteKey",
+              "mobaSftpFollowRoutePath",
+              "mobaSftpFollowRoutePlan",
+              "mobaMonitoringFollowEnabled"
             ]
           }
         },
@@ -1654,11 +1656,6 @@
               "folder_route.list_command",
               "folder_route.target_path_object"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpTerminalFolderRouteKey",
-              "SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE",
-              "mobaSftpTerminalFolderRoutePlan"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_TERMINAL_FOLDER_ROUTE",
               "sftp-terminal-folder-route",
@@ -1666,6 +1663,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SFTP terminal-folder route"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpTerminalFolderRouteKey",
+              "SFTP_ROW_TERMINAL_FOLDER_ROUTE_KEY_ROLE",
+              "mobaSftpTerminalFolderRoutePlan"
             ]
           }
         },
@@ -1683,11 +1685,6 @@
               "routed_rows.follow_route_key",
               "routed_rows.selected_row_kind"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpRoutedRowsKey",
-              "SFTP_ROW_ROUTE_KEY_ROLE",
-              "SFTP_ROW_SELECTED_BY_ROUTE_ROLE"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_ROUTED_FILE_ROWS",
               "sftp-routed-file-rows",
@@ -1696,6 +1693,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SFTP routed file rows"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpRoutedRowsKey",
+              "SFTP_ROW_ROUTE_KEY_ROLE",
+              "SFTP_ROW_SELECTED_BY_ROUTE_ROLE"
             ]
           }
         },
@@ -1714,17 +1716,19 @@
               "gui_design_moba_sftp_file_row_icon",
               "draw_moba_monitor_icon"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpAction",
-              "apply_sftp_file_row_icon",
-              "SFTP_ROW_ICON_RENDER_ROLE",
-              "generated-pixmap",
-              "mobaMonitoringMetric"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_FILE_ROW_ICONS",
               "sftp-file-row-icons",
               "expected_moba_sftp_file_row_icons"
+            ],
+            "src/remote_ops_workspace/gui.py": [
+              "generated-pixmap"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpAction",
+              "apply_sftp_file_row_icon",
+              "SFTP_ROW_ICON_RENDER_ROLE",
+              "mobaMonitoringMetric"
             ]
           }
         },
@@ -1742,11 +1746,6 @@
               "moba_monitoring_metric_text",
               "gui_design_moba_monitoring_metrics"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpActionKey",
-              "mobaSftpIconKey",
-              "mobaMonitoringMetricKey"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_ACTION_KEYS",
               "sftp-dock-chrome",
@@ -1757,6 +1756,11 @@
               "remote-monitoring-divider",
               "sftp-toolbar-action-strip",
               "sftp-toolbar-ascii-action"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpActionKey",
+              "mobaSftpIconKey",
+              "mobaMonitoringMetricKey"
             ]
           }
         },
@@ -1774,12 +1778,6 @@
               "density.file_row_height",
               "chrome.static_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpDockInnerMargin",
-              "mobaSftpToolbarHeight",
-              "mobaSftpRowHeight",
-              "mobaSftpMonitoringHeight"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_DOCK_LAYOUT",
               "sftp-dock-density",
@@ -1791,6 +1789,12 @@
               "sftp-toolbar-bottom-rule",
               "sftp-path-bottom-rule",
               "sftp-header-bottom-rule"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpDockInnerMargin",
+              "mobaSftpToolbarHeight",
+              "mobaSftpRowHeight",
+              "mobaSftpMonitoringHeight"
             ]
           }
         },
@@ -1811,11 +1815,6 @@
               "geometry.separator_after",
               "geometry.separator_x"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpActionGroupKey",
-              "mobaSftpToolbarSeparator",
-              "mobaSftpSeparatorAfterActionKey"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_SEPARATOR_AFTER_KEYS",
               "sftp-toolbar-groups",
@@ -1826,6 +1825,11 @@
               "sftp-toolbar-ascii-action",
               "sftp-toolbar-group-separator-a",
               "sftp-toolbar-group-separator-b"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpActionGroupKey",
+              "mobaSftpToolbarSeparator",
+              "mobaSftpSeparatorAfterActionKey"
             ]
           }
         },
@@ -1844,11 +1848,6 @@
               "geometry.icon_x",
               "geometry.separator_x"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSftpActionStaticX",
-              "mobaSftpActionIconX",
-              "mobaSftpActionSeparatorX"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY",
               "sftp-toolbar-geometry",
@@ -1862,6 +1861,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SFTP toolbar geometry"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSftpActionStaticX",
+              "mobaSftpActionIconX",
+              "mobaSftpActionSeparatorX"
             ]
           }
         },
@@ -1882,14 +1886,6 @@
               "moba_sftp_toolbar_action_route.signal_property",
               "mobaSftpToolbarRouteLiveAction"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "show_moba_sftp_toolbar_action",
-              "mobaSftpToolbarRouteKey",
-              "mobaSftpToolbarRouteHandler",
-              "mobaSftpToolbarRouteActionGroups",
-              "mobaSftpToolbarRouteCapturedAction",
-              "mobaSftpToolbarRouteLiveAction"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SFTP_TOOLBAR_ACTION_ROUTE",
               "sftp-toolbar-action-route",
@@ -1899,6 +1895,14 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SFTP toolbar action route"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "show_moba_sftp_toolbar_action",
+              "mobaSftpToolbarRouteKey",
+              "mobaSftpToolbarRouteHandler",
+              "mobaSftpToolbarRouteActionGroups",
+              "mobaSftpToolbarRouteCapturedAction",
+              "mobaSftpToolbarRouteLiveAction"
             ]
           }
         },
@@ -1911,13 +1915,13 @@
               "moba_monitoring_metric_text",
               "gui_design_moba_monitoring_metrics"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaRemoteMonitoring",
-              "mobaMonitoringMetric"
-            ],
             "src/remote_ops_workspace/moba_connected.py": [
               "build_remote_monitoring_plan",
               "RemoteMonitoringSnapshot"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaRemoteMonitoring",
+              "mobaMonitoringMetric"
             ]
           }
         },
@@ -1938,14 +1942,6 @@
               "visible_metric_keys",
               "telemetry_surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaRemoteMonitoringCompact",
-              "mobaRemoteMonitoringTelemetrySurface",
-              "mobaRemoteMonitoringCommand",
-              "mobaRemoteMonitoringFollowPlan",
-              "mobaMonitoringControlGeometryKeys",
-              "mobaMonitoringControlStaticX"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME",
               "EXPECTED_MOBA_MONITORING_CONTROL_GEOMETRY",
@@ -1955,6 +1951,14 @@
             ],
             "docs/GUI_DESIGN.md": [
               "compact MobaXterm-style remote-monitoring dock"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaRemoteMonitoringCompact",
+              "mobaRemoteMonitoringTelemetrySurface",
+              "mobaRemoteMonitoringCommand",
+              "mobaRemoteMonitoringFollowPlan",
+              "mobaMonitoringControlGeometryKeys",
+              "mobaMonitoringControlStaticX"
             ]
           }
         },
@@ -1972,11 +1976,6 @@
               "telemetry_route.visible_dock_metric_keys",
               "telemetry_route.telemetry_surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaMonitoringTelemetryRouteKey",
-              "mobaMonitoringTelemetryMetricCellKeys",
-              "mobaMonitoringTelemetryRouted"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_MONITORING_TELEMETRY_ROUTE",
               "monitoring-telemetry-route",
@@ -1984,6 +1983,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style monitoring telemetry route"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaMonitoringTelemetryRouteKey",
+              "mobaMonitoringTelemetryMetricCellKeys",
+              "mobaMonitoringTelemetryRouted"
             ]
           }
         },
@@ -2001,11 +2005,6 @@
               "remote_monitoring_control_route.telemetry_route_key",
               "moba_remote_monitoring_control_route.to_dict"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "apply_remote_monitoring_control_route_properties",
-              "mobaRemoteMonitoringControlRouteKey",
-              "mobaRemoteMonitoringControlCapturedCommand"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_REMOTE_MONITORING_CONTROL_ROUTE",
               "remote-monitoring-control-route",
@@ -2013,6 +2012,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style remote monitoring control route"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "apply_remote_monitoring_control_route_properties",
+              "mobaRemoteMonitoringControlRouteKey",
+              "mobaRemoteMonitoringControlCapturedCommand"
             ]
           }
         },
@@ -2030,11 +2034,6 @@
               "follow_terminal_folder_control_route.expected_checked",
               "moba_follow_terminal_folder_control_route.to_dict"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "apply_follow_terminal_folder_control_route_properties",
-              "mobaFollowTerminalFolderControlRouteKey",
-              "mobaFollowTerminalFolderControlCapturedPlan"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE",
               "follow-terminal-folder-control-route",
@@ -2042,6 +2041,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style follow terminal folder control route"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "apply_follow_terminal_folder_control_route_properties",
+              "mobaFollowTerminalFolderControlRouteKey",
+              "mobaFollowTerminalFolderControlCapturedPlan"
             ]
           }
         },
@@ -2061,12 +2065,6 @@
               "Moba remote-monitoring control route signal",
               "Moba follow-folder control route handler"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "handle_moba_remote_monitoring_toggled",
-              "handle_moba_follow_terminal_folder_toggled",
-              "widget.toggled.connect",
-              "control_route.live_plan_property"
-            ],
             "scripts/check_real_gui_render.py": [
               "handle_moba_remote_monitoring_toggled",
               "handle_moba_follow_terminal_folder_toggled",
@@ -2075,6 +2073,12 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style monitoring live toggle route"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "handle_moba_remote_monitoring_toggled",
+              "handle_moba_follow_terminal_folder_toggled",
+              "widget.toggled.connect",
+              "control_route.live_plan_property"
             ]
           }
         },
@@ -2092,11 +2096,6 @@
               "chrome.divider_left_inset",
               "chrome.metric_row_gap"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaRemoteMonitoringStaticHeight",
-              "mobaRemoteMonitoringDividerLeftInset",
-              "mobaRemoteMonitoringLiveControlsWidth"
-            ],
             "scripts/check_real_gui_render.py": [
               "mobaRemoteMonitoringStaticHeight",
               "mobaRemoteMonitoringLiveControlsWidth",
@@ -2104,6 +2103,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style remote-monitoring footer geometry"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaRemoteMonitoringStaticHeight",
+              "mobaRemoteMonitoringDividerLeftInset",
+              "mobaRemoteMonitoringLiveControlsWidth"
             ]
           }
         },
@@ -2121,11 +2125,6 @@
               "draw_moba_monitoring_control",
               "draw_moba_monitoring_control_icon"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaMonitoringControlKey",
-              "mobaMonitoringControlIconKey",
-              "mobaFollowTerminalFolder"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_MONITORING_CONTROL_KEYS",
               "moba-monitoring-controls",
@@ -2137,6 +2136,11 @@
               "monitoring-control-icon",
               "follow-folder-control-row",
               "follow-folder-checkmark"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaMonitoringControlKey",
+              "mobaMonitoringControlIconKey",
+              "mobaFollowTerminalFolder"
             ]
           }
         },
@@ -2157,12 +2161,6 @@
               "geometry.checkmark_points",
               "geometry.label_bold"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaMonitoringControlLabelYOffset",
-              "mobaMonitoringControlCheckmarkPoints",
-              "mobaMonitoringControlLiveWidth",
-              "QFont"
-            ],
             "scripts/check_real_gui_render.py": [
               "moba-monitoring-control-geometry",
               "mobaMonitoringControlLabelFontSize",
@@ -2177,6 +2175,14 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style monitoring control geometry"
+            ],
+            "src/remote_ops_workspace/gui.py": [
+              "QFont"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaMonitoringControlLabelYOffset",
+              "mobaMonitoringControlCheckmarkPoints",
+              "mobaMonitoringControlLiveWidth"
             ]
           }
         },
@@ -2188,12 +2194,12 @@
               "gui_design_moba_monitoring_controls",
               "draw_moba_monitoring_control"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaFollowTerminalFolder",
-              "follow_folder_plan"
-            ],
             "src/remote_ops_workspace/moba_connected.py": [
               "build_follow_terminal_folder_plan"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaFollowTerminalFolder",
+              "follow_folder_plan"
             ]
           }
         },
@@ -2205,14 +2211,14 @@
               "state.banner.capability_rows()",
               "gui_design_moba_ssh_banner_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSshBanner",
-              "mobaSshBannerCapability"
-            ],
             "src/remote_ops_workspace/moba_connected.py": [
               "build_ssh_connection_banner",
               "SSH-browser",
               "X11-forwarding"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSshBanner",
+              "mobaSshBannerCapability"
             ]
           }
         },
@@ -2230,17 +2236,17 @@
               "draw_centered_text",
               "chrome.static_width"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSshBannerTitle",
-              "mobaSshBannerSubtitle",
-              "mobaBannerWidth"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SSH_BANNER_CHROME",
               "expected_moba_ssh_banner_chrome"
             ],
             "configs/gui_visual_metrics.json": [
               "ssh-banner-panel"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSshBannerTitle",
+              "mobaSshBannerSubtitle",
+              "mobaBannerWidth"
             ]
           }
         },
@@ -2264,17 +2270,17 @@
               "state.banner.capability_rows()",
               "state.banner.footer_links()"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSshBannerTargetLine",
-              "mobaSshBannerCapabilityKey",
-              "mobaSshBannerFooter"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS",
               "expected_moba_ssh_banner_capability_card"
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SSH banner capability card"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSshBannerTargetLine",
+              "mobaSshBannerCapabilityKey",
+              "mobaSshBannerFooter"
             ]
           }
         },
@@ -2292,11 +2298,6 @@
               "title_geometry.static_y",
               "footer_geometry.static_y"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaSshBannerSlot",
-              "mobaSshBannerRowY",
-              "mobaSshBannerRowGeometryKeys"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY",
               "expected_moba_ssh_banner_row_geometry"
@@ -2307,6 +2308,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SSH banner row geometry"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaSshBannerSlot",
+              "mobaSshBannerRowY",
+              "mobaSshBannerRowGeometryKeys"
             ]
           }
         },
@@ -2323,11 +2329,6 @@
               "state.terminal_transcript",
               "line.tone"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "apply_terminal_transcript_evidence",
-              "mobaTerminalTranscriptKeys",
-              "mobaTerminalTranscriptTones"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS",
               "mobaTerminalTranscriptKeys",
@@ -2335,6 +2336,11 @@
             ],
             "configs/gui_visual_metrics.json": [
               "terminal-transcript"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "apply_terminal_transcript_evidence",
+              "mobaTerminalTranscriptKeys",
+              "mobaTerminalTranscriptTones"
             ]
           }
         },
@@ -2352,11 +2358,6 @@
               "geometry.static_x",
               "geometry.font_size"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaPlainTerminalMode",
-              "mobaTerminalTranscriptGeometryKeys",
-              "mobaTerminalHeaderVisible"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY",
               "mobaTerminalTranscriptInjected",
@@ -2367,6 +2368,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style terminal transcript geometry"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaPlainTerminalMode",
+              "mobaTerminalTranscriptGeometryKeys",
+              "mobaTerminalHeaderVisible"
             ]
           }
         },
@@ -2388,13 +2394,6 @@
               "cell.icon_accent",
               "draw_moba_telemetry_icon"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaTelemetryCell",
-              "mobaTelemetryCellWidth",
-              "mobaTelemetryDisplayText",
-              "telemetry_icon_pixmap",
-              "mobaTelemetryIconRender"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TELEMETRY_CELL_KEYS",
               "expected_moba_telemetry_cells",
@@ -2405,6 +2404,13 @@
               "telemetry-cell-strip",
               "telemetry-cpu-cell",
               "telemetry-cpu-icon"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaTelemetryCell",
+              "mobaTelemetryCellWidth",
+              "mobaTelemetryDisplayText",
+              "telemetry_icon_pixmap",
+              "mobaTelemetryIconRender"
             ]
           }
         },
@@ -2422,11 +2428,6 @@
               "geometry.icon_x",
               "geometry.label_x"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaTelemetryGeometryKeys",
-              "mobaTelemetryCellStaticX",
-              "mobaTelemetryLabelX"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TELEMETRY_CELL_GEOMETRY",
               "bottom-telemetry-geometry",
@@ -2439,6 +2440,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style bottom telemetry geometry"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaTelemetryGeometryKeys",
+              "mobaTelemetryCellStaticX",
+              "mobaTelemetryLabelX"
             ]
           }
         },
@@ -2459,16 +2465,18 @@
               "moba_connected_window_title",
               "draw_moba_telemetry_icon"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "moba_connected_profile_label",
-              "moba_connected_window_title",
-              "mobaTelemetryKey",
-              "mobaTelemetryIcon",
-              "mobaTelemetryCell"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TELEMETRY_KEYS",
               "window title must be connected target label"
+            ],
+            "src/remote_ops_workspace/gui.py": [
+              "moba_connected_profile_label",
+              "moba_connected_window_title"
+            ],
+            "src/remote_ops_workspace/gui_connected.py": [
+              "mobaTelemetryKey",
+              "mobaTelemetryIcon",
+              "mobaTelemetryCell"
             ]
           }
         },

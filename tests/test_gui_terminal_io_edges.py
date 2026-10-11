@@ -1959,6 +1959,8 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
 ) -> None:
     """Real Qt ownership with controlled processes; no external process launch."""
 
+    import sys
+
     def checkpoint(phase):
         callback = getattr(request.node, "_row_ownership_checkpoint", None)
         if callable(callback):
@@ -1971,8 +1973,17 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
     from PyQt6 import sip
     from PyQt6.QtCore import QCoreApplication, QEvent, QProcess
 
-    from remote_ops_workspace import gui, gui_terminal, gui_workspace
+    from remote_ops_workspace import gui, gui_connected, gui_terminal, gui_workspace
+    from remote_ops_workspace.models import Profile
 
+    callback_errors = []
+    previous_exception_hook = sys.excepthook
+
+    def record_callback_exception(error_type, error, traceback):
+        callback_errors.append(True)
+        previous_exception_hook(error_type, error, traceback)
+
+    monkeypatch.setattr(sys, "excepthook", record_callback_exception)
     checkpoint("test-before-first-window")
     app, first = gui.create_main_window(
         ["gui-terminal-first-window"],
@@ -1984,14 +1995,21 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
     callbacks: list[str] = []
 
     class _ControlledProcess(QProcess):
-        def __init__(self, parent) -> None:
+        def __init__(self, parent, *, running=True) -> None:
             super().__init__(parent)
-            self.observed_state = QProcess.ProcessState.Running
+            self.observed_state = (
+                QProcess.ProcessState.Running if running else QProcess.ProcessState.NotRunning
+            )
+            self.start_requests = 0
             self.kill_requests = 0
             self.close_requests = 0
 
         def state(self):
             return self.observed_state
+
+        def start(self, *_args, **_kwargs) -> None:
+            self.start_requests += 1
+            self.observed_state = QProcess.ProcessState.Running
 
         def kill(self) -> None:
             self.kill_requests += 1
@@ -2004,7 +2022,11 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
     def controlled_backend(parent, _plan, _profile):
         return _ControlledProcess(parent), ""
 
+    def controlled_background_backend(parent, *, interactive_auth=False):
+        return _ControlledProcess(parent, running=False)
+
     monkeypatch.setattr(gui_terminal, "_terminal_process_backend", controlled_backend)
+    monkeypatch.setattr(gui_connected, "_background_process", controlled_background_backend)
     monkeypatch.setattr(first, "update_session_status", lambda: callbacks.append("first"))
     monkeypatch.setattr(first, "confirm_stop_processes", lambda *_args: True)
     try:
@@ -2018,6 +2040,8 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         monkeypatch.setattr(second, "update_session_status", lambda: callbacks.append("second"))
         monkeypatch.setattr(second, "confirm_stop_processes", lambda *_args: True)
         assert second_app is app
+        first.set_design_preset("mobaxterm")
+        second.set_design_preset("mobaxterm")
         # Shared workspace classes must retain distinct Qt parents and callbacks.
         first_tabs, second_tabs = first.tabs, second.tabs
         first_bar, second_bar = first.moba_tab_bar, second.moba_tab_bar
@@ -2044,15 +2068,51 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         first.show()
         second.resize(1024, 720)
         second.show()
-        panes = [
-            window.new_terminal_pane(
+        panels = [
+            window.open_moba_connected_session_tab(
+                Profile(name=title, protocol="ssh", host="ownership.invalid", username="test"),
                 TerminalPanePlan(title=title, command=[], source="test"),
-                autostart=False,
             )
             for window, title in ((first, "first-owned"), (second, "second-owned"))
         ]
-        for window, pane in zip((first, second), panes, strict=True):
-            window.tabs.addTab(pane, pane.plan.title)
+        panes = [panel.terminal_pane for panel in panels]
+        first_panel, second_panel = panels
+        first_dock, second_dock = first.moba_connected_dock, second.moba_connected_dock
+        assert first_dock is not None and second_dock is not None
+        assert type(first_panel) is not type(second_panel)
+        assert type(first_dock) is not type(second_dock)
+        assert first.isAncestorOf(first_panel) and not second.isAncestorOf(first_panel)
+        assert second.isAncestorOf(second_panel) and not first.isAncestorOf(second_panel)
+        assert first.isAncestorOf(first_dock) and not second.isAncestorOf(first_dock)
+        assert second.isAncestorOf(second_dock) and not first.isAncestorOf(second_dock)
+        assert first_dock.main_window() is first
+        assert second_dock.main_window() is second
+        # A dock created by the first factory rejects the other factory's window.
+        first_dock.setParent(second_dock.parentWidget())
+        try:
+            assert first_dock.main_window() is None
+        finally:
+            first.moba_left_stack.addWidget(first_dock)
+            first.moba_left_stack.setCurrentWidget(first_dock)
+        assert first_dock.main_window() is first
+        for process_name in ("monitoring_process", "sftp_refresh_process", "text_editor_process"):
+            first_process = getattr(first_dock, process_name)
+            second_process = getattr(second_dock, process_name)
+            assert isinstance(first_process, _ControlledProcess)
+            assert isinstance(second_process, _ControlledProcess)
+            assert first_process is not second_process
+            assert first_process.parent() is first_dock
+            assert second_process.parent() is second_dock
+        for timer_name in ("monitoring_refresh_timer", "background_state_activation_timer", "text_editor_timeout"):
+            first_timer = getattr(first_dock, timer_name)
+            second_timer = getattr(second_dock, timer_name)
+            assert first_timer is not second_timer
+            assert first_timer.parent() is first_dock
+            assert second_timer.parent() is second_dock
+        assert first_dock.monitoring_output_buffer is not second_dock.monitoring_output_buffer
+        assert first_dock.sftp_refresh_output_buffer is not second_dock.sftp_refresh_output_buffer
+        assert first_panel.moba_terminal_context_pane(panes[0].output) is panes[0]
+        assert second_panel.moba_terminal_context_pane(panes[1].output) is panes[1]
         app.processEvents()
         checkpoint("test-panes-created")
         first_pane, second_pane = panes
@@ -2094,9 +2154,47 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         first_pane._stop_timer.start(60_000)
         second_pane._stop_timer.start(60_000)
         second_output = second_pane.output.toPlainText()
+        # Exercise real Qt cleanup with active controlled helpers, without SSH.
+        process_names = ("monitoring_process", "sftp_refresh_process", "text_editor_process")
+        timer_names = (
+            "monitoring_refresh_timer",
+            "background_auth_retry_timer",
+            "background_state_activation_timer",
+            "sftp_refresh_timeout",
+            "sftp_auth_probe_timer",
+            "text_editor_timeout",
+            "text_editor_auth_probe_timer",
+        )
+        first_helpers = [getattr(first_dock, name) for name in process_names]
+        second_helpers = [getattr(second_dock, name) for name in process_names]
+        first_helper_timers = [getattr(first_dock, name) for name in timer_names]
+        second_helper_timers = [getattr(second_dock, name) for name in timer_names]
+        for process in (*first_helpers, *second_helpers):
+            assert process.start_requests == 0
+            process.observed_state = QProcess.ProcessState.Running
+            assert process.kill_requests == 0 and process.close_requests == 0
+        for timer in (*first_helper_timers, *second_helper_timers):
+            timer.start(60_000)
+            assert timer.isActive()
+        first_dock.monitoring_output_buffer.extend(b"first helper buffer")
+        second_dock.monitoring_output_buffer.extend(b"second helper buffer")
+        second_helper_buffer = bytes(second_dock.monitoring_output_buffer)
         checkpoint("test-before-first-close")
         assert first.close()
         checkpoint("test-first-window-closed")
+        assert first_dock.runtime_shutting_down is True
+        assert second_dock.runtime_shutting_down is False
+        assert not first_dock.monitoring_refresh_timer.isActive()
+        assert not first_dock.background_state_activation_timer.isActive()
+        for process in first_helpers:
+            assert process.kill_requests == 1 and process.close_requests == 1
+            assert process.state() == QProcess.ProcessState.NotRunning
+        for process in second_helpers:
+            assert process.kill_requests == 0 and process.close_requests == 0
+            assert process.state() == QProcess.ProcessState.Running
+        assert all(not timer.isActive() for timer in first_helper_timers)
+        assert all(timer.isActive() for timer in second_helper_timers)
+        assert bytes(second_dock.monitoring_output_buffer) == second_helper_buffer
         assert first_pane.process.kill_requests == 1
         assert first_pane.process.close_requests == 1
         assert not first_pane._stop_timer.isActive()
@@ -2117,6 +2215,18 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         app.processEvents()
         checkpoint("test-first-delete-events-completed")
         assert sip.isdeleted(first)
+        assert sip.isdeleted(first_panel) and sip.isdeleted(first_dock)
+        assert not sip.isdeleted(second_panel) and not sip.isdeleted(second_dock)
+        assert all(sip.isdeleted(process) for process in first_helpers)
+        assert all(not sip.isdeleted(process) for process in second_helpers)
+        assert all(sip.isdeleted(timer) for timer in first_helper_timers)
+        assert all(not sip.isdeleted(timer) for timer in second_helper_timers)
+        assert all(timer.isActive() for timer in second_helper_timers)
+        assert bytes(second_dock.monitoring_output_buffer) == second_helper_buffer
+        assert second_dock.main_window() is second
+        assert second_panel.moba_terminal_context_pane(second_pane.output) is second_pane
+        second_dock.show_sftp_status("second connected dock still usable")
+        assert "second connected dock still usable" in second.log.toPlainText()
         assert sip.isdeleted(first_tabs) and sip.isdeleted(first_bar)
         assert not sip.isdeleted(second_tabs) and not sip.isdeleted(second_bar)
         assert all(sip.isdeleted(label) for label in first_labels)
@@ -2141,6 +2251,7 @@ def test_shared_terminal_component_keeps_two_window_ownership_independent(
         app.processEvents()
         if second is not None:
             assert sip.isdeleted(second)
+        assert callback_errors == []
 
 
 @pytest.fixture

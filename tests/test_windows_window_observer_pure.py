@@ -2,7 +2,6 @@ import threading
 from types import SimpleNamespace
 
 import pytest
-
 from windows_window_observer import (
     RetainedWindowRoots,
     VisibleWindowSampler,

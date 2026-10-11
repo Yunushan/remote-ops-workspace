@@ -15,10 +15,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
+from windows_native_qt_case import run_native_qt_case
 from windows_window_observer import (
     RetainedWindowRoots,
     VisibleWindowSampler,
+)
+from windows_window_observer import (
     visible_windows as observe_visible_windows,
 )
 
@@ -1221,6 +1223,42 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
         if _REQUIRE_LOOPBACK:
             pytest.fail("required Paramiko loopback SSH server dependency is unavailable")
         pytest.skip("Paramiko loopback SSH server dependency is unavailable")
+
+    # A QApplication keeps its original platform for its entire lifetime.
+    # Other GUI tests use offscreen, so this native observer case needs a fresh
+    # process whenever the shared application cannot provide Windows surfaces.
+    try:
+        qt_widgets = importlib.import_module("PyQt6.QtWidgets")
+    except ImportError:
+        if _REQUIRE_LOOPBACK:
+            pytest.fail("required PyQt6 GUI dependency is unavailable")
+        pytest.skip("PyQt6 GUI dependency is unavailable")
+    app = qt_widgets.QApplication.instance()
+    platform = (
+        app.platformName()
+        if app is not None
+        else os.environ.get("QT_QPA_PLATFORM", "windows")
+    )
+    if platform != "windows":
+        if _REQUIRE_LOOPBACK:
+            pytest.fail(f"required native Windows Qt platform is unavailable: {platform}")
+        case_id = (
+            "moba-connected-tabs"
+            if open_via_moba_connected_session
+            else "direct-terminal-tabs"
+        )
+        run_native_qt_case(case_id, tmp_path)
+        return
+    if app is None:
+        # Match create_main_window's native application initialization so the
+        # early platform check preserves fractional per-monitor scaling.
+        qt_core = importlib.import_module("PyQt6.QtCore")
+        qt_gui = importlib.import_module("PyQt6.QtGui")
+        qt_gui.QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            qt_core.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+        app = qt_widgets.QApplication(["remote-ops-workspace-windows-ssh-tab-switch"])
+    assert app.platformName() == "windows", "native window observer requires Windows Qt"
 
     support = conpty_support()
     assert support.supported, support.reason

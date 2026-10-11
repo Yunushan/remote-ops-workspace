@@ -22,6 +22,7 @@ MAX_ACES = 64
 MAX_DESCRIPTOR = 65536
 SYSTEM_SID = bytes.fromhex("010100000000000512000000")
 ADMINISTRATORS_SID = bytes.fromhex("01020000000000052000000020020000")
+TRUSTED_INSTALLER_SID = bytes.fromhex("010600000000000550000000b589fb381984c2cb5c6c236d5700776ec0026487")
 MUTATE = 0x000D0156 | 0x50000000
 KNOWN_MASK = FILE_ALL_ACCESS | 0xF0000000
 
@@ -94,6 +95,70 @@ def require_parent(snapshot, user):
         # makes an otherwise unsafe allow acceptable to this conservative gate.
         if ace.kind == 0 and not ace.flags & 0x08 and ace.sid not in privileged:
             _require(not ace.mask & MUTATE, "untrusted-parent-write-access")
+
+
+def _candidate_parent(snapshot, user, *, volume_root):
+    """Provisional acquisition only; completion needs a held selected child.
+
+    TrustedInstaller is a root-owner trust assumption, not a trusted trustee.
+    The caller must bind an existing successor before that owner is admitted.
+    This does not qualify Windows storage or replace strict require_parent.
+    """
+    _validate(snapshot)
+    _sid(user)
+    privileged = (user, SYSTEM_SID, ADMINISTRATORS_SID)
+    owners = (*privileged, TRUSTED_INSTALLER_SID) if volume_root else privileged
+    _require(snapshot.attributes & DIRECTORY and snapshot.owner in owners,
+             "unqualified-parent-owner")
+    for ace in snapshot.aces:
+        if ace.kind == 0 and not ace.flags & 0x08 and ace.sid not in privileged:
+            _require(not ace.mask & (MUTATE & ~4), "untrusted-parent-write-access")
+
+
+def _verify_directory_chain(native, user, opened, *, tail):
+    """Complete held edges, or check a strict missing/exclusive-create tail.
+
+    Absolute paths, no-delete sharing and snapshots do not make descriptors
+    immutable or establish handle-relative namespace or asynchronous custody.
+    Genuine kernel/other-token evidence is still required before qualification.
+    """
+    _require(tail in ("private", "missing", "create") and 1 <= len(opened) <= 64,
+             "native-held-edge-refused")
+    root = opened[0][0]
+    _require(len(root) == 3 and root[0] in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+             and root[1:] == ":\\", "native-held-edge-refused")
+    _require(native.token_user() == user, "native-token-changed")
+    for index, (path, handle, original, private) in enumerate(opened):
+        expected_private = tail == "private" and index == len(opened) - 1
+        _require(handle is not None and type(original) is Snapshot
+                 and type(private) is bool and private is expected_private,
+                 "native-held-edge-refused")
+        observed = native.snapshot(handle)
+        _validate(observed)
+        if private:
+            require_private(observed, user, directory=True)
+        elif index + 1 < len(opened):
+            following = opened[index + 1]
+            _require(following[1] is not None and type(following[2]) is Snapshot
+                     and ntpath.dirname(following[0]) == path,
+                     "native-held-edge-refused")
+            _validate(following[2])
+            _require(following[2].identity[0] == observed.identity[0]
+                     and following[2].identity != observed.identity,
+                     "native-held-edge-refused")
+            _candidate_parent(observed, user, volume_root=index == 0)
+        elif tail == "create":
+            # A planned newborn cannot authenticate TrustedInstaller-root
+            # authority. A missing direct-root stage under that owner refuses.
+            _candidate_parent(observed, user, volume_root=False)
+        else:
+            # An absent name is not reserved. Keep the original raw mask,
+            # including FILE_ADD_SUBDIRECTORY, at its immediate parent.
+            require_parent(observed, user)
+        _require(observed == original, "native-private-boundary-changed")
+        _require(all(observed.identity != previous[2].identity
+                     for previous in opened[:index]), "native-held-edge-refused")
+    _require(native.token_user() == user, "native-token-changed")
 
 
 def require_private(snapshot, user, *, directory):
@@ -378,15 +443,15 @@ class PrivateDirectoryGuard:
         return self.opened[-1][0]
 
     def verify(self):
-        _require(self.native.token_user() == self.user, "native-token-changed")
-        for _path, handle, original, private in self.opened:
-            observed = self.native.snapshot(handle)
-            (require_private(observed, self.user, directory=True) if private else require_parent(observed, self.user))
-            _require(observed == original, "native-private-boundary-changed")
+        _verify_directory_chain(self.native, self.user, self.opened,
+                                tail="missing" if self.missing_path is not None else "private")
         if self.missing_path is not None:
+            _require(ntpath.dirname(self.missing_path) == self.path,
+                     "native-held-edge-refused")
             try:
                 handle = self.native.open_directory(self.missing_path)
             except PrivatePathMissing:
+                _require(self.native.token_user() == self.user, "native-token-changed")
                 return
             try:
                 raise PrivateStorageError("native-missing-boundary-changed")
@@ -511,11 +576,11 @@ def _close_directory_records(native, closing):
 
 @contextmanager
 def private_stage_guard(path, *, create=False, create_if_missing=False, _native=None):
-    """Hold non-delete-shared ancestor handles through all writes/verification.
+    """Retain selected ancestry through exclusive creation and private use.
 
-Default native provider is Windows-only. `_native` is an explicit pure mock seam;
-product callers must never accept a supplied provider from configuration/input.
-"""
+    `_native` is an explicit pure fixture seam, never accepted from product
+    configuration. Pending ancestor eligibility cannot authorize payload access.
+    """
     _require(type(create) is bool and type(create_if_missing) is bool
              and not (create and create_if_missing), "invalid-private-stage-request")
     native = _Native() if _native is None else _native
@@ -528,19 +593,21 @@ product callers must never accept a supplied provider from configuration/input.
             row = opened[index]
             row[1] = native.open_directory(ancestor)
             snapshot = native.snapshot(row[1])
-            require_parent(snapshot, user)
+            _candidate_parent(snapshot, user, volume_root=index == 0)
             row[2] = snapshot
             if index > 0:
                 _require(snapshot.identity[0] == opened[0][2].identity[0], "private-volume-mismatch")
         if create:
+            _verify_directory_chain(native, user, opened[:-1], tail="create")
             native.create_private_directory(paths[-1], user)
         row = opened[-1]
         try:
             row[1] = native.open_directory(paths[-1])
         except PrivatePathMissing:
             _require(create_if_missing and not create, "private-stage-missing")
-            # Every existing parent is still retained and already validated.
-            # A racing creator makes exclusive creation refuse; never adopt it.
+            # Recheck completed existing edges and the immediate creation
+            # parent before birth. Exclusive failure never adopts a racer.
+            _verify_directory_chain(native, user, opened[:-1], tail="create")
             native.create_private_directory(paths[-1], user)
             row[1] = native.open_directory(paths[-1])
         snapshot = native.snapshot(row[1])
@@ -557,11 +624,10 @@ product callers must never accept a supplied provider from configuration/input.
 
 @contextmanager
 def private_home_guard(path, *, _native=None):
-    """Observe ROW_HOME/default current state without creating or rewriting it.
+    """Observe selected home without creating or adopting its missing name.
 
-    An existing last component must be an exact private directory. For a first
-    use home, hold all existing conservative parents and recheck the first
-    missing component; no subsequent component is created by the updater.
+    Each permissive ancestor needs its next existing directory held. The
+    immediate parent of an absent component keeps the original strict policy.
     """
     native = _Native() if _native is None else _native
     paths, missing = _ancestors(path), None
@@ -580,12 +646,13 @@ def private_home_guard(path, *, _native=None):
                 break
             observed = native.snapshot(row[1])
             private = index == len(paths) - 1
-            (require_private(observed, user, directory=True) if private else require_parent(observed, user))
+            if private:
+                require_private(observed, user, directory=True)
+            else:
+                _candidate_parent(observed, user, volume_root=index == 0)
             _require(index == 0 or observed.identity[0] == opened[0][2].identity[0], "private-volume-mismatch")
             row[2] = observed
             count += 1
-        # Slice only validated existing rows for the guard. Any allocation
-        # failure here remains inside the finally that owns the full records.
         guard = PrivateDirectoryGuard(native, user, opened[:count], missing_path=missing)
         guard.verify()
         yield guard

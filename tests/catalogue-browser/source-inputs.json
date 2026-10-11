@@ -19,7 +19,7 @@
     "test_contract.py",
     "upload_guard.py"
   ],
-  "product_baseline_head": "cd56758dd951c0a1c51770d07dec51839e4dd6df",
+  "product_baseline_head": "120a05f41263cf5ea490aa3453b42bff2627f19b",
   "product_inputs": [
     {
       "path": "src/remote_ops_workspace/__init__.py",

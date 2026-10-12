@@ -107,6 +107,58 @@ class ConfigParserTests(unittest.TestCase):
                 self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
                 self.assertEqual(caught.exception.fixed_refusal_code, code)
 
+    def test_fixed_absence_codes_keep_missing_targets_accepted_without_other_IO(self):
+        expected = {'commondir': 'required-absent-commondir',
+                    'config.worktree': 'required-absent-worktree-config',
+                    'info-attributes': 'required-absent-info-attributes'}
+        self.assertEqual(self.module.ABSENCE_CODES, expected)
+        for code in ('required-absent', *expected.values()):
+            path = SimpleNamespace(lstat=mock.Mock(side_effect=FileNotFoundError('/PRIVATE')))
+            with self.subTest(code=code), mock.patch.object(self.module.os, 'open') as opened, \
+                 mock.patch.object(self.module.os, 'unlink') as deleted:
+                if code == 'required-absent':
+                    self.assertIsNone(self.module.absent(path))
+                else:
+                    self.assertIsNone(self.module.absent(path, code=code))
+                path.lstat.assert_called_once_with()
+                opened.assert_not_called()
+                deleted.assert_not_called()
+
+    def test_present_target_keeps_original_refusal_and_only_fixed_absence_code(self):
+        for code in ('required-absent', *self.module.ABSENCE_CODES.values()):
+            path = SimpleNamespace(lstat=mock.Mock(return_value=object()))
+            with self.subTest(code=code), mock.patch.object(self.module.os, 'open') as opened, \
+                 mock.patch.object(self.module.os, 'unlink') as deleted:
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    if code == 'required-absent':
+                        self.module.absent(path)
+                    else:
+                        self.module.absent(path, code=code)
+                self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
+                self.assertEqual(caught.exception.fixed_refusal_code, code)
+                self.assertIn(code, self.module.CONFIG_REFUSAL_CODES)
+                self.assertNotIn('PRIVATE', str(caught.exception))
+                path.lstat.assert_called_once_with()
+                opened.assert_not_called()
+                deleted.assert_not_called()
+
+    def test_access_error_identity_is_not_converted_to_target_presence(self):
+        for code in ('required-absent', *self.module.ABSENCE_CODES.values()):
+            original = PermissionError('/PRIVATE/access')
+            path = SimpleNamespace(lstat=mock.Mock(side_effect=original))
+            with self.subTest(code=code), mock.patch.object(self.module.os, 'open') as opened, \
+                 mock.patch.object(self.module.os, 'unlink') as deleted:
+                with self.assertRaises(PermissionError) as caught:
+                    if code == 'required-absent':
+                        self.module.absent(path)
+                    else:
+                        self.module.absent(path, code=code)
+                self.assertIs(caught.exception, original)
+                self.assertNotIn('fixed_refusal_code', original.__dict__)
+                path.lstat.assert_called_once_with()
+                opened.assert_not_called()
+                deleted.assert_not_called()
+
 
 @unittest.skipUnless(os.name == 'posix', 'Future POSIX raw descriptor fixture only')
 class RawDescriptorTests(unittest.TestCase):

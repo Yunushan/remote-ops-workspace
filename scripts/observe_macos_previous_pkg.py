@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -1673,62 +1674,155 @@ class RestrictedRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch(url, maximum, commands, destination=None):
-    asset = destination is not None
-    if not redirect_allowed(url, asset):
-        raise Refusal("official-network-url-refused")
-    redirects = RestrictedRedirect(asset)
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects)
-    headers = {
-        "User-Agent": "ROW-old-macos-pkg-metadata",
-        "Accept": "application/octet-stream" if asset else "application/vnd.github+json",
-        "Accept-Encoding": "identity",
+NETWORK_OPERATIONS = frozenset({
+    "unobserved", "workflow-source", "release-api", "tag-api", "asset-api", "package-download",
+})
+NETWORK_PASSES = frozenset({"unobserved", "before", "after"})
+NETWORK_FAILURE_FAMILIES = frozenset({"http-error", "transport-error", "operation-error"})
+NETWORK_DIAGNOSTIC_KEYS = (
+    "network_operation", "network_pass", "network_point", "network_failure_family",
+    "network_http_status",
+)
+
+
+def network_checkpoint(operation, pass_name, error=None):
+    # These fields describe one entered request, never a complete acquisition.
+    # The caller suppresses diagnostic failures and rethrows its original error.
+    if REFUSAL_CONTEXT is None:
+        return
+    observed = REFUSAL_CONTEXT["observed"]
+    for key in NETWORK_DIAGNOSTIC_KEYS:
+        observed.pop(key, None)
+    observed["network_operation"] = (
+        operation if type(operation) is str and operation in NETWORK_OPERATIONS else "unobserved"
+    )
+    observed["network_pass"] = (
+        pass_name if type(pass_name) is str and pass_name in NETWORK_PASSES else "unobserved"
+    )
+    observed["network_point"] = "entered" if error is None else "failed"
+    if error is not None:
+        # HTTPError is a URLError subtype. Never inspect reason, args, URL,
+        # headers, body or errno, and never stringify an exception.
+        if isinstance(error, urllib.error.HTTPError):
+            observed["network_failure_family"] = "http-error"
+            status = error.code
+            if type(status) is int and 100 <= status <= 599:
+                observed["network_http_status"] = status
+        elif isinstance(error, urllib.error.URLError):
+            observed["network_failure_family"] = "transport-error"
+        else:
+            observed["network_failure_family"] = "operation-error"
+
+
+def network_refusal_projection():
+    if SOURCE_BINDING is None or type(REFUSAL_CONTEXT) is not dict:
+        return None
+    observed = REFUSAL_CONTEXT.get("observed")
+    if type(observed) is not dict:
+        return None
+    point = observed.get("network_point")
+    if type(point) is not str or point != "failed":
+        return None
+    operation = observed.get("network_operation")
+    pass_name = observed.get("network_pass")
+    family = observed.get("network_failure_family")
+    if (
+        type(operation) is not str or operation not in NETWORK_OPERATIONS
+        or type(pass_name) is not str or pass_name not in NETWORK_PASSES
+        or type(family) is not str or family not in NETWORK_FAILURE_FAMILIES
+    ):
+        return None
+    status = observed.get("network_http_status")
+    return {
+        "schema": "row.macos-previous-network.v1",
+        "network_operation": operation,
+        "network_pass": pass_name,
+        "network_failure_family": family,
+        "http_status": status if family == "http-error" and type(status) is int
+        and 100 <= status <= 599 else None,
+        "readiness_credit": 0,
     }
-    if not asset:
-        headers["X-GitHub-Api-Version"] = "2022-11-28"
-    request = urllib.request.Request(url, headers=headers)
-    raw, total, value = bytearray(), 0, hashlib.sha256()
-    with opener.open(request, timeout=min(20, commands.remaining())) as response:
-        if (
-            response.status != 200
-            or not redirect_allowed(response.geturl(), asset)
-            or response.headers.get("Content-Encoding", "identity") != "identity"
-        ):
-            raise Refusal("official-network-response-refused")
-        length = response.headers.get("Content-Length")
-        if length is not None and (
-            re.fullmatch(r"[0-9]{1,12}", length) is None
-            or int(length) > maximum
-            or asset
-            and int(length) != maximum
-        ):
-            raise Refusal("official-network-length-refused")
-        stream = destination.open("xb") if asset else None
-        try:
-            while True:
-                commands.remaining()
-                chunk = response.read1(min(65536, maximum - total + 1))
-                commands.remaining()
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > maximum:
-                    raise Refusal("official-network-byte-bound")
-                value.update(chunk)
+
+
+def emit_network_refusal():
+    record = network_refusal_projection()
+    if record is None:
+        return
+    line = "macos-previous-pkg-network:" + json.dumps(
+        record, ensure_ascii=True, separators=(",", ":"), sort_keys=True,
+    )
+    if len(line.encode("ascii")) + 1 <= 512:
+        print(line, file=sys.stderr, flush=True)
+
+
+def fetch(url, maximum, commands, destination=None, *,
+          network_operation="unobserved", network_pass="unobserved"):
+    try:
+        network_checkpoint(network_operation, network_pass)
+    except BaseException:
+        pass
+    try:
+        asset = destination is not None
+        if not redirect_allowed(url, asset):
+            raise Refusal("official-network-url-refused")
+        redirects = RestrictedRedirect(asset)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects)
+        headers = {
+            "User-Agent": "ROW-old-macos-pkg-metadata",
+            "Accept": "application/octet-stream" if asset else "application/vnd.github+json",
+            "Accept-Encoding": "identity",
+        }
+        if not asset:
+            headers["X-GitHub-Api-Version"] = "2022-11-28"
+        request = urllib.request.Request(url, headers=headers)
+        raw, total, value = bytearray(), 0, hashlib.sha256()
+        with opener.open(request, timeout=min(20, commands.remaining())) as response:
+            if (
+                response.status != 200
+                or not redirect_allowed(response.geturl(), asset)
+                or response.headers.get("Content-Encoding", "identity") != "identity"
+            ):
+                raise Refusal("official-network-response-refused")
+            length = response.headers.get("Content-Length")
+            if length is not None and (
+                re.fullmatch(r"[0-9]{1,12}", length) is None
+                or int(length) > maximum
+                or asset
+                and int(length) != maximum
+            ):
+                raise Refusal("official-network-length-refused")
+            stream = destination.open("xb") if asset else None
+            try:
+                while True:
+                    commands.remaining()
+                    chunk = response.read1(min(65536, maximum - total + 1))
+                    commands.remaining()
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > maximum:
+                        raise Refusal("official-network-byte-bound")
+                    value.update(chunk)
+                    if stream is not None:
+                        stream.write(chunk)
+                    else:
+                        raw.extend(chunk)
+            finally:
                 if stream is not None:
-                    stream.write(chunk)
-                else:
-                    raw.extend(chunk)
-        finally:
-            if stream is not None:
-                stream.close()
-    return bytes(raw), {
-        "size": total,
-        "sha256": value.hexdigest(),
-        "redirect_count": redirects.hops,
-        "redirect_hosts": redirects.hosts,
-        "authenticated_request": False,
-    }
+                    stream.close()
+        return bytes(raw), {
+            "size": total,
+            "sha256": value.hexdigest(),
+            "redirect_count": redirects.hops,
+            "redirect_hosts": redirects.hosts,
+            "authenticated_request": False,
+        }
+    except BaseException as exc:
+        try:
+            network_checkpoint(network_operation, network_pass, exc)
+        except BaseException:
+            pass
+        raise
 
 
 def validate_previous_identity(release, tag, asset):
@@ -1791,7 +1885,15 @@ def previous_identity(commands, private, suffix):
     root = "https://api.github.com/repos/" + REPO + "/"
     values, digests = [], []
     for name in ("releases/382583184", "git/ref/tags/v1.0.24", "releases/assets/544041419"):
-        raw, facts = fetch(root + name, MAX_NETWORK_METADATA, commands)
+        raw, facts = fetch(
+            root + name, MAX_NETWORK_METADATA, commands,
+            network_operation={
+                "releases/382583184": "release-api",
+                "git/ref/tags/v1.0.24": "tag-api",
+                "releases/assets/544041419": "asset-api",
+            }[name],
+            network_pass=suffix,
+        )
         values.append(strict_json(raw))
         digests.append(facts["sha256"])
         (private / ("public-api-" + str(len(values)) + "-" + suffix + ".json")).write_bytes(raw)
@@ -1807,7 +1909,9 @@ def executed_workflow_binding(commands, source, run):
         + "/"
         + run["workflow_path"]
     )
-    workflow_raw, workflow_network = fetch(workflow_url, 256 * 1024, commands)
+    workflow_raw, workflow_network = fetch(
+        workflow_url, 256 * 1024, commands, network_operation="workflow-source",
+    )
     if sha(workflow_raw) != source["contracts"][run["workflow_path"]]:
         raise Refusal("executed-workflow-contract-mismatch")
     return workflow_network
@@ -2133,7 +2237,10 @@ def observe(root):
     print("phase=previous-public-identity-and-download", flush=True)
     identity = previous_identity(commands, private, "before")
     previous = private / PREVIOUS["asset_name"]
-    _, network = fetch(PREVIOUS["browser_download_url"], PREVIOUS["size"], commands, previous)
+    _, network = fetch(
+        PREVIOUS["browser_download_url"], PREVIOUS["size"], commands, previous,
+        network_operation="package-download", network_pass="before",
+    )
     if network["size"] != PREVIOUS["size"] or network["sha256"] != PREVIOUS["sha256"]:
         raise Refusal("previous-whole-package-bytes-mismatch")
     raw = regular(previous, MAX_PKG)
@@ -2330,6 +2437,10 @@ def main(argv=None):
         except Exception:
             # The original nonzero refusal is retained even if its public
             # diagnostic cannot be saved. Existing/unsafe outputs are refused.
+            pass
+        try:
+            emit_network_refusal()
+        except BaseException:
             pass
         print("macos-previous-pkg-metadata-refused:" + code, file=sys.stderr)
         return 1

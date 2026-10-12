@@ -326,38 +326,67 @@ def cleanup_all(leaders):
     return records
 
 
+OWNED_LISTENER_STAGES = frozenset((
+    "leader-before", "leader-identity", "fd-directory-open", "fd-enumeration",
+    "fd-readlink", "fd-directory-close", "socket-table-open", "socket-table-read",
+    "socket-table-close", "socket-table-bound", "socket-table-parse", "leader-after",
+    "listener-match",
+))
+
+
 def owned_listener(leader, port):
     """Read-only Linux leader FD/inode proof; port availability alone is insufficient."""
-    leader.live()
-    pid = leader.child.pid
-    if type(pid) is not int or pid <= 0 or type(port) is not int or not 1024 <= port <= 65535:
-        raise Refusal("owned-listener-identity-required")
-    sockets = set()
-    with os.scandir(Path("/proc") / str(pid) / "fd") as descriptors:
-        for count, descriptor in enumerate(descriptors, 1):
-            if count > 4096:
-                raise Refusal("owned-descriptor-bound")
-            target = os.readlink(descriptor.path)
-            match = re.fullmatch(r"socket:\[([1-9][0-9]{0,19})\]", target)
-            if match:
-                sockets.add(match[1])
-    with (Path("/proc") / str(pid) / "net/tcp").open("rb") as stream:
-        raw = stream.read(1024 * 1024 + 1)
-    if len(raw) > 1024 * 1024:
-        raise Refusal("owned-socket-table-bound")
-    matches = []
-    for line in raw.decode("ascii").splitlines()[1:]:
-        fields = line.split()
-        if len(fields) < 10:
-            raise Refusal("owned-socket-table-layout")
-        if fields[1] == f"0100007F:{port:04X}" and fields[3] == "0A":
-            matches.append(fields[9])
-    leader.live()
-    if not matches:
-        raise Refusal("owned-loopback-listener-missing")
-    if len(matches) != 1 or matches[0] not in sockets:
-        raise Refusal("owned-loopback-listener-unproved")
-    return True
+    listener_stage = "leader-before"
+    try:
+        leader.live()
+        listener_stage = "leader-identity"
+        pid = leader.child.pid
+        if type(pid) is not int or pid <= 0 or type(port) is not int or not 1024 <= port <= 65535:
+            raise Refusal("owned-listener-identity-required")
+        sockets = set()
+        listener_stage = "fd-directory-open"
+        with os.scandir(Path("/proc") / str(pid) / "fd") as descriptors:
+            listener_stage = "fd-enumeration"
+            for count, descriptor in enumerate(descriptors, 1):
+                if count > 4096:
+                    raise Refusal("owned-descriptor-bound")
+                listener_stage = "fd-readlink"
+                target = os.readlink(descriptor.path)
+                match = re.fullmatch(r"socket:\[([1-9][0-9]{0,19})\]", target)
+                if match:
+                    sockets.add(match[1])
+                listener_stage = "fd-enumeration"
+            listener_stage = "fd-directory-close"
+        listener_stage = "socket-table-open"
+        with (Path("/proc") / str(pid) / "net/tcp").open("rb") as stream:
+            listener_stage = "socket-table-read"
+            raw = stream.read(1024 * 1024 + 1)
+            listener_stage = "socket-table-close"
+        listener_stage = "socket-table-bound"
+        if len(raw) > 1024 * 1024:
+            raise Refusal("owned-socket-table-bound")
+        matches = []
+        listener_stage = "socket-table-parse"
+        for line in raw.decode("ascii").splitlines()[1:]:
+            fields = line.split()
+            if len(fields) < 10:
+                raise Refusal("owned-socket-table-layout")
+            if fields[1] == f"0100007F:{port:04X}" and fields[3] == "0A":
+                matches.append(fields[9])
+        listener_stage = "leader-after"
+        leader.live()
+        listener_stage = "listener-match"
+        if not matches:
+            raise Refusal("owned-loopback-listener-missing")
+        if len(matches) != 1 or matches[0] not in sockets:
+            raise Refusal("owned-loopback-listener-unproved")
+        return True
+    except BaseException as error:
+        try:
+            error.owned_listener_stage = listener_stage
+        except BaseException:
+            pass  # A diagnostic attachment cannot replace the original error.
+        raise
 
 
 class AdbSocket:

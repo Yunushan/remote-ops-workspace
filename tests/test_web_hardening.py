@@ -963,6 +963,23 @@ def _web_policy_stream_diagnostics(path: Path) -> dict:
     }
 
 
+def _web_policy_temporary_progress_diagnostics(progress_path: Path) -> dict:
+    """Sample unpublished progress after cleanup; never a completion/birth proof."""
+    try:
+        records = _web_policy_milestones(Path(str(progress_path) + ".tmp"))
+    except BaseException as exc:
+        return {
+            "milestones": [],
+            "milestone_timings": [],
+            "read_error_type": _public_web_policy_milestone_error_type(type(exc).__name__),
+        }
+    return {
+        "milestones": [record["stage"] for record in records],
+        "milestone_timings": records,
+        "read_error_type": "none",
+    }
+
+
 def _run_web_policy_harness(
     command: list[str],
     result_path: Path,
@@ -1072,6 +1089,10 @@ def _run_web_policy_harness(
             report["stderr_diagnostics"] = _web_policy_stream_diagnostics(
                 result_path.with_suffix(".stderr.log")
             )
+            try:
+                report["temporary_progress_diagnostics"] = _web_policy_temporary_progress_diagnostics(progress)
+            except BaseException:
+                pass  # Optional diagnostics cannot replace the original failure.
             result_path.with_suffix(".runner.json").write_text(json.dumps(report, indent=2) + "\n")
             if isinstance(failure, TimeoutError):
                 failure.args = (
@@ -1085,6 +1106,7 @@ def _run_web_policy_harness(
                     f"milestone_timings={report['milestone_timings']}; "
                     "milestone_error_type="
                     f"{_public_web_policy_milestone_error_type(report.get('milestone_error_type', 'none'))}; "
+                    f"temporary_progress_diagnostics={report.get('temporary_progress_diagnostics')}; "
                     f"pre_cleanup_returncode={report['pre_cleanup_returncode']}; "
                     f"cleanup_requested={report['cleanup_requested']}; "
                     f"child_reaped={report['child_reaped']}; "
@@ -1598,6 +1620,145 @@ if (scenario === 'pending') {
     assert report["cleanup_requested"] is False
     assert report["pre_cleanup_returncode"] == report["final_returncode"] == 0
     assert report["milestones"][-2:] == ["exit-requested", "exit-event"]
+
+
+def test_web_policy_temporary_progress_uses_same_bounded_parser_without_completion(tmp_path, monkeypatch):
+    progress = tmp_path / "progress.json"
+    records = [{"stage": "harness-start", "elapsed_ms": 0},
+               {"stage": "require-enter", "elapsed_ms": 2}]
+    calls = []
+
+    class BoundedStream(io.BytesIO):
+        def read(self, count):
+            assert count == 4097
+            calls.append(count)
+            return super().read(count)
+
+    stream = BoundedStream(json.dumps(records).encode())
+
+    def open_temporary(path, *args, **kwargs):
+        assert path == Path(str(progress) + ".tmp")
+        assert args == ("rb",) and kwargs == {}
+        return stream
+
+    monkeypatch.setattr(Path, "open", open_temporary)
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: pytest.fail("child birth"))
+    report = _web_policy_temporary_progress_diagnostics(progress)
+    assert report == {"milestones": ["harness-start", "require-enter"],
+                      "milestone_timings": records, "read_error_type": "none"}
+    assert calls == [4097] and stream.closed
+    assert "complete" not in report and "nonce" not in report and "scenario" not in report
+
+
+def test_web_policy_temporary_progress_read_failures_are_fixed_private_free_and_not_retried(tmp_path, monkeypatch):
+    for error_type in (FileNotFoundError, PermissionError, OSError, KeyboardInterrupt, SystemExit):
+        calls = []
+
+        def fail(path, *args, calls=calls, error_type=error_type, **kwargs):
+            calls.append((path, args, kwargs))
+            raise error_type("PRIVATE/path PRIVATE_TOKEN")
+
+        monkeypatch.setattr(Path, "open", fail)
+        progress = tmp_path / "PRIVATE.progress.json"
+        report = _web_policy_temporary_progress_diagnostics(progress)
+        assert report == {"milestones": [], "milestone_timings": [],
+                          "read_error_type": error_type.__name__ if error_type in
+                          (FileNotFoundError, PermissionError, OSError) else "other"}
+        assert len(calls) == 1
+        assert "PRIVATE" not in json.dumps(report)
+
+
+def test_web_policy_temporary_progress_keeps_malformed_and_oversized_records_diagnostic_only(tmp_path, monkeypatch):
+    rows = (
+        [{"stage": "PRIVATE", "elapsed_ms": 0}],
+        [{"stage": "harness-start", "elapsed_ms": True}],
+        [{"stage": "harness-start", "elapsed_ms": -1}],
+        [{"stage": "harness-start", "elapsed_ms": 86_400_001}],
+        [{"stage": "harness-start", "elapsed_ms": 0, "PRIVATE": "PRIVATE"}],
+        [{"stage": "require-enter", "elapsed_ms": 0}, {"stage": "harness-start", "elapsed_ms": 1}],
+        [{"stage": "harness-start", "elapsed_ms": 0}] * 10,
+    )
+    raw_cases = [json.dumps(value).encode() for value in rows] + [b"PRIVATE" * 600]
+    for raw in raw_cases:
+        monkeypatch.setattr(Path, "open", lambda *_args, raw=raw, **_kwargs: io.BytesIO(raw))
+        report = _web_policy_temporary_progress_diagnostics(tmp_path / "progress.json")
+        assert report == {"milestones": [], "milestone_timings": [], "read_error_type": "ValueError"}
+        assert "PRIVATE" not in json.dumps(report)
+
+
+def test_web_policy_temporary_progress_maximum_stages_remain_bounded_and_unbound(tmp_path, monkeypatch):
+    stages = ("harness-start", "require-enter", "require-return", "submit-enter", "submit-return",
+              "result-write-enter", "result-published", "exit-requested", "exit-event")
+    records = [{"stage": stage, "elapsed_ms": 86_400_000} for stage in stages]
+    monkeypatch.setattr(Path, "open", lambda *_args, **_kwargs: io.BytesIO(json.dumps(records).encode()))
+    report = _web_policy_temporary_progress_diagnostics(tmp_path / "progress.json")
+    assert report["milestones"] == list(stages) and report["milestone_timings"] == records
+    assert report["read_error_type"] == "none"
+    assert len(json.dumps(report, ensure_ascii=True)) <= 1024
+    assert "complete" not in report and "child_reaped" not in report
+
+
+def test_web_policy_temporary_progress_attachment_failure_preserves_original_timeout_and_cleanup(tmp_path, monkeypatch):
+    for diagnostic_error in (RuntimeError, KeyboardInterrupt, SystemExit):
+        original = TimeoutError("fixed-original-timeout")
+        child = SimpleNamespace(returncode=None)
+        child.poll = lambda child=child: child.returncode
+        child.wait = lambda timeout, child=child: child.returncode
+        cleanup = []
+
+        def finish(actual, *, timeout_seconds, child=child, cleanup=cleanup):
+            assert actual is child and timeout_seconds == 5
+            cleanup.append(actual)
+            actual.returncode = 1
+
+        def no_result(*_args, original=original):
+            raise original
+
+        def diagnostic_failure(*_args, error_type=diagnostic_error):
+            raise error_type("PRIVATE")
+
+        monkeypatch.setattr(subprocess, "Popen", lambda *_args, child=child, **_kwargs: child)
+        monkeypatch.setitem(_run_web_policy_harness.__globals__, "terminate_owned_process", finish)
+        monkeypatch.setitem(_run_web_policy_harness.__globals__, "_completed_web_policy_result", no_result)
+        monkeypatch.setitem(_run_web_policy_harness.__globals__, "_web_policy_temporary_progress_diagnostics", diagnostic_failure)
+        result_path = tmp_path / (diagnostic_error.__name__ + ".json")
+        with pytest.raises(TimeoutError) as caught:
+            _run_web_policy_harness(["fixed-mocked-child"], result_path, "pending", "this-run", timeout=30)
+        assert caught.value is original
+        assert len(cleanup) == 1
+        report = json.loads(result_path.with_suffix(".runner.json").read_text())
+        assert report["failure_type"] == "TimeoutError" and report["child_reaped"] is True
+        assert report["cleanup_requested"] is True and report["timeout_seconds"] == 30
+        assert report["complete_result"] is False and "temporary_progress_diagnostics" not in report
+        assert "PRIVATE" not in str(caught.value)
+
+
+def test_web_policy_valid_temporary_progress_cannot_override_timeout_or_missing_result(tmp_path, monkeypatch):
+    records = [{"stage": "result-published", "elapsed_ms": 0}]
+    diagnostic = {"milestones": ["result-published"], "milestone_timings": records, "read_error_type": "none"}
+    child = SimpleNamespace(returncode=None)
+    child.poll = lambda: child.returncode
+    child.wait = lambda timeout: child.returncode
+    clocks = iter((0, 0, 2, 3))
+    cleanup = []
+
+    def finish(actual, *, timeout_seconds):
+        assert actual is child and timeout_seconds == 5
+        cleanup.append(actual)
+        actual.returncode = 1
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: child)
+    monkeypatch.setitem(_run_web_policy_harness.__globals__, "time", SimpleNamespace(monotonic=lambda: next(clocks)))
+    monkeypatch.setitem(_run_web_policy_harness.__globals__, "terminate_owned_process", finish)
+    monkeypatch.setitem(_run_web_policy_harness.__globals__, "_web_policy_temporary_progress_diagnostics", lambda *_args: diagnostic)
+    result_path = tmp_path / "result.json"
+    with pytest.raises(TimeoutError, match="complete_result=False"):
+        _run_web_policy_harness(["fixed-mocked-child"], result_path, "pending", "this-run", timeout=1)
+    report = json.loads(result_path.with_suffix(".runner.json").read_text())
+    assert report["temporary_progress_diagnostics"] == diagnostic
+    assert report["timed_out"] is True and report["complete_result"] is False
+    assert report["result_exists"] is False and report["child_reaped"] is True
+    assert len(cleanup) == 1
 
 
 def test_service_worker_cache_is_same_origin_get_only() -> None:

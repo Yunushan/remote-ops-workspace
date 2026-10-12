@@ -1133,5 +1133,190 @@ class OwnedProcessDiagnosticTests(unittest.TestCase):
                 self.assertNotIn("private", stream.getvalue())
 
 
+class OwnedListenerOperationDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def providers():
+        leader = SimpleNamespace(live=mock.Mock(), child=SimpleNamespace(pid=123))
+        directory = mock.MagicMock()
+        directory.__enter__.return_value = [SimpleNamespace(path="/PRIVATE/fd")]
+        table = mock.MagicMock()
+        stream = table.__enter__.return_value
+        stream.read.return_value = b"header\n0: 0100007F:13AF 00000000:0000 0A x x x x x 123\n"
+        return leader, directory, table, stream
+
+    def test_missing_and_access_errors_keep_entered_operation_and_same_exception(self):
+        class BrokenEntries:
+            def __init__(self, error):
+                self.error = error
+
+            def __iter__(self):
+                raise self.error
+
+        stages = ("leader-before", "fd-directory-open", "fd-enumeration", "fd-readlink",
+                  "socket-table-open", "socket-table-read", "leader-after")
+        for error_type in (FileNotFoundError, PermissionError):
+            for stage in stages:
+                leader, directory, table, stream = self.providers()
+                original = error_type("/PRIVATE/source")
+                if stage == "leader-before":
+                    leader.live.side_effect = original
+                elif stage == "leader-after":
+                    leader.live.side_effect = [None, original]
+                elif stage == "fd-enumeration":
+                    directory.__enter__.return_value = BrokenEntries(original)
+                elif stage == "socket-table-read":
+                    stream.read.side_effect = original
+                with self.subTest(error=error_type.__name__, stage=stage), \
+                     mock.patch.object(H.os, "scandir", side_effect=original if stage == "fd-directory-open" else None, return_value=directory) as scanned, \
+                     mock.patch.object(H.os, "readlink", side_effect=original if stage == "fd-readlink" else None, return_value="socket:[123]") as linked, \
+                     mock.patch.object(Path, "open", side_effect=original if stage == "socket-table-open" else None, return_value=table) as opened, \
+                     mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+                    with self.assertRaises(error_type) as caught:
+                        H.owned_listener(leader, H.ADB_PORT)
+                    self.assertIs(caught.exception, original)
+                    self.assertEqual(original.owned_listener_stage, stage)
+                    self.assertEqual(leader.live.call_count, 2 if stage == "leader-after" else 1)
+                    if stage == "leader-before":
+                        scanned.assert_not_called()
+                    else:
+                        scanned.assert_called_once_with(Path("/proc") / "123" / "fd")
+                    self.assertLessEqual(linked.call_count, 1)
+                    self.assertLessEqual(opened.call_count, 1)
+                    self.assertLessEqual(stream.read.call_count, 1)
+                    native.assert_not_called()
+
+    def test_context_close_failure_remains_original_and_is_not_retried(self):
+        for stage in ("fd-directory-close", "socket-table-close"):
+            leader, directory, table, stream = self.providers()
+            original = FileNotFoundError("/PRIVATE/close")
+            (directory if stage == "fd-directory-close" else table).__exit__.side_effect = original
+            with self.subTest(stage=stage), mock.patch.object(H.os, "scandir", return_value=directory), \
+                 mock.patch.object(H.os, "readlink", return_value="socket:[123]"), \
+                 mock.patch.object(Path, "open", return_value=table), \
+                 mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+                with self.assertRaises(FileNotFoundError) as caught:
+                    H.owned_listener(leader, H.ADB_PORT)
+                self.assertIs(caught.exception, original)
+                self.assertEqual(original.owned_listener_stage, stage)
+                directory.__exit__.assert_called_once()
+                if stage == "socket-table-close":
+                    table.__exit__.assert_called_once()
+                self.assertEqual(leader.live.call_count, 1)
+                native.assert_not_called()
+
+    def test_success_keeps_calls_and_exact_owned_listener_requirement(self):
+        leader, directory, table, stream = self.providers()
+        with mock.patch.object(H.os, "scandir", return_value=directory) as scanned, \
+             mock.patch.object(H.os, "readlink", return_value="socket:[123]") as linked, \
+             mock.patch.object(Path, "open", return_value=table) as opened, \
+             mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+            self.assertTrue(H.owned_listener(leader, H.ADB_PORT))
+            self.assertEqual(leader.live.call_count, 2)
+            scanned.assert_called_once_with(Path("/proc") / "123" / "fd")
+            linked.assert_called_once_with("/PRIVATE/fd")
+            opened.assert_called_once_with("rb")
+            stream.read.assert_called_once_with(1024 * 1024 + 1)
+            directory.__exit__.assert_called_once()
+            table.__exit__.assert_called_once()
+            native.assert_not_called()
+
+    def test_missing_foreign_and_malformed_listener_remain_refusals(self):
+        for case, code, stage in (("missing", "owned-loopback-listener-missing", "listener-match"),
+                                  ("foreign", "owned-loopback-listener-unproved", "listener-match"),
+                                  ("layout", "owned-socket-table-layout", "socket-table-parse"),
+                                  ("bound", "owned-socket-table-bound", "socket-table-bound")):
+            leader, directory, table, stream = self.providers()
+            if case == "missing":
+                stream.read.return_value = b"header\n"
+            elif case == "layout":
+                stream.read.return_value = b"header\nmalformed\n"
+            elif case == "bound":
+                stream.read.return_value = b"x" * (1024 * 1024 + 1)
+            with self.subTest(case=case), mock.patch.object(H.os, "scandir", return_value=directory), \
+                 mock.patch.object(H.os, "readlink", return_value="socket:[321]" if case == "foreign" else "socket:[123]"), \
+                 mock.patch.object(Path, "open", return_value=table), \
+                 mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+                with self.assertRaises(H.Refusal) as caught:
+                    H.owned_listener(leader, H.ADB_PORT)
+                self.assertEqual(caught.exception.args, (code,))
+                self.assertEqual(caught.exception.owned_listener_stage, stage)
+                self.assertEqual(leader.live.call_count, 2 if case in ("missing", "foreign") else 1)
+                stream.read.assert_called_once_with(1024 * 1024 + 1)
+                native.assert_not_called()
+
+    def test_attachment_failure_cannot_replace_body_error(self):
+        class Unattachable(FileNotFoundError):
+            def __setattr__(self, name, value):
+                if name == "owned_listener_stage":
+                    raise KeyboardInterrupt("/PRIVATE/attachment")
+                return super().__setattr__(name, value)
+
+        leader, directory, table, stream = self.providers()
+        original = Unattachable("/PRIVATE/readlink")
+        with mock.patch.object(H.os, "scandir", return_value=directory), \
+             mock.patch.object(H.os, "readlink", side_effect=original), \
+             mock.patch.object(Path, "open", return_value=table) as opened, \
+             mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+            with self.assertRaises(Unattachable) as caught:
+                H.owned_listener(leader, H.ADB_PORT)
+            self.assertIs(caught.exception, original)
+            self.assertNotIn("owned_listener_stage", original.__dict__)
+            self.assertEqual(leader.live.call_count, 1)
+            opened.assert_not_called()
+            native.assert_not_called()
+
+    def test_fixed_operation_projection_is_private_typed_and_bounded(self):
+        for stage in H.OWNED_LISTENER_STAGES:
+            for kind in ("missing", "access", "leader"):
+                error = (FileNotFoundError("/PRIVATE/path") if kind == "missing" else
+                         PermissionError("/PRIVATE/path") if kind == "access" else
+                         H.Refusal("owned-leader-or-pipe-unavailable"))
+                error.owned_listener_stage = stage
+                if kind == "leader":
+                    error.owned_process_observation = OwnedProcessDiagnosticTests.observation("emulator", status=-(2 ** 31))
+                with self.subTest(stage=stage, kind=kind):
+                    record = Q.capture_refusal_diagnostic(error, "owned-api36-emulator", "port-reservation")
+                    self.assertEqual(record["owned_listener_stage"], stage)
+                    self.assertEqual(record["refusal_code"], "missing-input" if kind == "missing" else
+                                     "input-access-refused" if kind == "access" else "owned-leader-or-pipe-unavailable")
+                    self.assertFalse(record["approval"])
+                    self.assertEqual(record["readiness_credit"], 0)
+                    raw = json.dumps(record, ensure_ascii=True, separators=(",", ":"))
+                    self.assertTrue(raw.isascii())
+                    self.assertLessEqual(len(raw), 512)
+                    self.assertNotIn("PRIVATE", raw)
+                    if kind != "leader":
+                        self.assertNotIn("owned_process", record)
+
+    def test_unknown_hostile_stage_family_and_phase_are_omitted(self):
+        class Hostile(str):
+            def __str__(self):
+                raise AssertionError("private text")
+
+            def __hash__(self):
+                raise AssertionError("private hash")
+
+        class OtherMissing(FileNotFoundError):
+            pass
+
+        for value in (None, True, b"fd-readlink", "/PRIVATE/operation", Hostile("fd-readlink")):
+            error = FileNotFoundError("/PRIVATE/path")
+            error.owned_listener_stage = value
+            with self.subTest(value=type(value).__name__):
+                record = Q.capture_refusal_diagnostic(error, "owned-api36-emulator", "adb-listener")
+                self.assertNotIn("owned_listener_stage", record)
+                self.assertNotIn("PRIVATE", json.dumps(record))
+        for phase, error in (("sdk-observation", FileNotFoundError("PRIVATE")),
+                             ("owned-api36-emulator", OtherMissing("PRIVATE")),
+                             ("owned-api36-emulator", RuntimeError("PRIVATE")),
+                             ("owned-api36-emulator", H.Refusal("tree-hardlink")),
+                             ("owned-api36-emulator", H.Refusal("PRIVATE"))):
+            error.owned_listener_stage = "fd-readlink"
+            with self.subTest(phase=phase, kind=type(error).__name__):
+                record = Q.capture_refusal_diagnostic(error, phase, "adb-listener")
+                self.assertNotIn("owned_listener_stage", record)
+                self.assertNotIn("PRIVATE", json.dumps(record))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

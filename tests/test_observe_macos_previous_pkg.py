@@ -2333,5 +2333,178 @@ class MemberNamePredicateDiagnosticTests(unittest.TestCase):
                 self.assertFalse(stream.finished)
 
 
+class NetworkFailureDiagnosticTests(unittest.TestCase):
+    def context(self):
+        return {"source": {}, "run": {}, "phase": "previous-public-identity-and-download", "observed": {}}
+
+    def test_http_error_precedes_transport_and_keeps_exact_exception_and_one_request(self):
+        api = "https://api.github.com/repos/" + M.REPO + "/releases/382583184"
+        for status in (100, 403, 599):
+            error = M.urllib.error.HTTPError("PRIVATE-url", status, "PRIVATE-message", None, None)
+            opener = unittest.mock.Mock()
+            opener.open.side_effect = error
+            context = self.context()
+            with (
+                self.subTest(status=status),
+                patch.object(M, "SOURCE_BINDING", {}),
+                patch.object(M, "REFUSAL_CONTEXT", context),
+                patch.object(M.urllib.request, "build_opener", return_value=opener),
+            ):
+                with self.assertRaises(M.urllib.error.HTTPError) as caught:
+                    M.fetch(api, 7, FakeBudget(), network_operation="release-api", network_pass="before")
+                self.assertIs(caught.exception, error)
+                record = M.network_refusal_projection()
+            self.assertEqual(opener.open.call_count, 1)
+            self.assertEqual(record["network_operation"], "release-api")
+            self.assertEqual(record["network_pass"], "before")
+            self.assertEqual(record["network_failure_family"], "http-error")
+            self.assertEqual(record["http_status"], status)
+            self.assertNotIn("PRIVATE", json.dumps(record))
+            self.assertEqual(record["readiness_credit"], 0)
+
+    def test_status_exact_type_bounds_and_transport_privacy(self):
+        class PrivateValue:
+            def __str__(self):
+                raise AssertionError("private value must not be stringified")
+
+        for status in (False, 99, 600, "PRIVATE-" * 1000, PrivateValue()):
+            error = M.urllib.error.HTTPError("PRIVATE-url", 500, "PRIVATE-message", None, None)
+            error.code = status
+            with (
+                self.subTest(status_type=type(status).__name__),
+                patch.object(M, "SOURCE_BINDING", {}),
+                patch.object(M, "REFUSAL_CONTEXT", self.context()),
+            ):
+                M.network_checkpoint("asset-api", "after", error)
+                record = M.network_refusal_projection()
+            self.assertEqual(record["network_failure_family"], "http-error")
+            self.assertIsNone(record["http_status"])
+            self.assertNotIn("PRIVATE", json.dumps(record))
+        error = M.urllib.error.URLError(PrivateValue())
+        with (
+            patch.object(M, "SOURCE_BINDING", {}),
+            patch.object(M, "REFUSAL_CONTEXT", self.context()),
+        ):
+            M.network_checkpoint("package-download", "before", error)
+            record = M.network_refusal_projection()
+        self.assertEqual(record["network_failure_family"], "transport-error")
+        self.assertIsNone(record["http_status"])
+
+    def test_new_request_clears_all_previous_failure_fields(self):
+        context = self.context()
+        with (
+            patch.object(M, "SOURCE_BINDING", {}),
+            patch.object(M, "REFUSAL_CONTEXT", context),
+        ):
+            M.network_checkpoint(
+                "release-api", "before",
+                M.urllib.error.HTTPError("PRIVATE", 403, "PRIVATE", None, None),
+            )
+            self.assertIsNotNone(M.network_refusal_projection())
+            M.network_checkpoint("tag-api", "after")
+            self.assertEqual(context["observed"], {
+                "network_operation": "tag-api", "network_pass": "after", "network_point": "entered",
+            })
+            self.assertIsNone(M.network_refusal_projection())
+
+    def test_diagnostic_failure_never_replaces_original_refusal(self):
+        api = "https://api.github.com/repos/" + M.REPO + "/releases/382583184"
+        original = M.Refusal("metadata-overall-deadline")
+        opener = unittest.mock.Mock()
+        opener.open.side_effect = original
+        with (
+            patch.object(M, "network_checkpoint", side_effect=RuntimeError("PRIVATE")),
+            patch.object(M.urllib.request, "build_opener", return_value=opener),
+        ):
+            with self.assertRaises(M.Refusal) as caught:
+                M.fetch(api, 7, FakeBudget())
+        self.assertIs(caught.exception, original)
+        self.assertEqual(opener.open.call_count, 1)
+
+    def test_previous_identity_labels_both_passes_with_same_three_requests(self):
+        release, tag, asset = publication_fixture()
+        values = [json.dumps(value).encode("ascii") for value in (release, tag, asset)]
+        with owned_fixture() as private:
+            for pass_name in ("before", "after"):
+                with (
+                    self.subTest(pass_name=pass_name),
+                    patch.object(M, "fetch", side_effect=[
+                        (raw, {"sha256": M.sha(raw)}) for raw in values
+                    ]) as fetch,
+                ):
+                    record = M.previous_identity(FakeBudget(), private, pass_name)
+                self.assertEqual(record["sha256"], M.PREVIOUS["sha256"])
+                self.assertEqual(fetch.call_count, 3)
+                self.assertEqual([call.kwargs for call in fetch.call_args_list], [
+                    {"network_operation": operation, "network_pass": pass_name}
+                    for operation in ("release-api", "tag-api", "asset-api")
+                ])
+                self.assertEqual([call.args[0] for call in fetch.call_args_list], [
+                    "https://api.github.com/repos/" + M.REPO + "/" + name
+                    for name in ("releases/382583184", "git/ref/tags/v1.0.24", "releases/assets/544041419")
+                ])
+
+    def test_projection_rejects_private_enum_values_and_logs_only_fixed_bounded_record(self):
+        context = self.context()
+        with (
+            patch.object(M, "SOURCE_BINDING", {}),
+            patch.object(M, "REFUSAL_CONTEXT", context),
+            contextlib.redirect_stderr(io.StringIO()) as stderr,
+        ):
+            M.network_checkpoint("PRIVATE-url", "PRIVATE-pass", ValueError("PRIVATE-message"))
+            M.emit_network_refusal()
+            line = stderr.getvalue()
+            context["observed"]["network_operation"] = "PRIVATE-" * 1000
+            self.assertIsNone(M.network_refusal_projection())
+        self.assertLessEqual(len(line.encode("ascii")), 512)
+        self.assertEqual(len(line.splitlines()), 1)
+        self.assertNotIn("PRIVATE", line)
+        record = json.loads(line.split(":", 1)[1])
+        self.assertEqual(record["network_operation"], "unobserved")
+        self.assertEqual(record["network_pass"], "unobserved")
+        self.assertEqual(record["network_failure_family"], "operation-error")
+
+    def test_publication_and_print_failure_keep_original_nonzero_reason(self):
+        for publication_fails in (False, True):
+            context = self.context()
+            with (
+                self.subTest(publication_fails=publication_fails),
+                patch.object(M, "SOURCE_BINDING", {}),
+                patch.object(M, "REFUSAL_CONTEXT", context),
+                patch.object(M, "observe", side_effect=M.Refusal("official-network-byte-bound")),
+                patch.object(M, "public_refusal", side_effect=RuntimeError("PRIVATE") if publication_fails else None) as save,
+                patch.object(M, "emit_network_refusal", side_effect=RuntimeError("PRIVATE")) as emit,
+                contextlib.redirect_stderr(io.StringIO()) as stderr,
+            ):
+                self.assertEqual(M.main(["capture"]), 1)
+            save.assert_called_once_with("official-network-byte-bound")
+            emit.assert_called_once_with()
+            self.assertEqual(stderr.getvalue().strip(),
+                             "macos-previous-pkg-metadata-refused:official-network-byte-bound")
+
+    def test_diagnostic_interruptions_keep_selected_refusal_and_original_nonzero(self):
+        for publication_fails in (False, True):
+            for error_type in (KeyboardInterrupt, SystemExit):
+                with (
+                    self.subTest(publication_fails=publication_fails, error=error_type.__name__),
+                    patch.object(M, "SOURCE_BINDING", {}),
+                    patch.object(M, "REFUSAL_CONTEXT", self.context()),
+                    patch.object(M, "observe", side_effect=M.Refusal("official-network-byte-bound")),
+                    patch.object(
+                        M, "public_refusal",
+                        side_effect=RuntimeError("PRIVATE") if publication_fails else None,
+                    ) as save,
+                    patch.object(M, "emit_network_refusal", side_effect=error_type("PRIVATE")) as emit,
+                    contextlib.redirect_stderr(io.StringIO()) as stderr,
+                ):
+                    self.assertEqual(M.main(["capture"]), 1)
+                save.assert_called_once_with("official-network-byte-bound")
+                emit.assert_called_once_with()
+                self.assertEqual(
+                    stderr.getvalue().strip(),
+                    "macos-previous-pkg-metadata-refused:official-network-byte-bound",
+                )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

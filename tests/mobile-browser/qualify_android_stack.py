@@ -463,6 +463,15 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     if phase == "owned-api36-emulator":
         if type(owned_substage) is str and owned_substage in OWNED_PROCESS_SUBSTAGES:
             record["owned_substage"] = owned_substage
+        if (type(exc) in (H.Refusal, FileNotFoundError, PermissionError)
+                and code in ("missing-input", "input-access-refused",
+                             "owned-leader-or-pipe-unavailable", "owned-listener-identity-required",
+                             "owned-descriptor-bound", "owned-socket-table-bound",
+                             "owned-socket-table-layout", "owned-loopback-listener-missing",
+                             "owned-loopback-listener-unproved")):
+            entered = exc.__dict__.get("owned_listener_stage")
+            if type(entered) is str and len(entered) <= 32 and entered in H.OWNED_LISTENER_STAGES:
+                record["owned_listener_stage"] = entered
         if code == "owned-leader-or-pipe-unavailable":
             observed = owned_process_diagnostic(exc)
             if observed is not None:

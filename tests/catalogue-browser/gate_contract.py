@@ -4,7 +4,23 @@ import json
 import re
 
 MAX_PUBLIC = 65536
-RUNTIME_STAGES = ('chrome-version-command', 'driver-version-command', 'version-equality')
+RUNTIME_STAGES = (
+    'chrome-version-command',
+    'driver-version-command',
+    'version-equality',
+    'session-setup',
+    'initial-fixture-startup',
+    'initial-fixture-inventory',
+    'driver-service-birth',
+    'driver-port-wait',
+    'driver-port-validation',
+    'driver-listener',
+    'browser-client',
+    'browser-session-start',
+    'browser-capabilities',
+    'loaded-runtime-inventory',
+    'loaded-runtime-tools',
+)
 CASES = {
     'api-read': {'status': 200, 'dom_seed': True, 'input_cleared': True, 'no_store': True, 'public_only': True},
     'api-create-refresh': {'post_status': 201, 'get_status': 200, 'replace_false': True, 'disk_count': 2, 'disk_dom_agree': True},

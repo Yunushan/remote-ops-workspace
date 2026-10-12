@@ -4,6 +4,7 @@ import io
 import json
 import sys
 import unittest
+from contextlib import ExitStack
 from pathlib import PurePosixPath
 from unittest.mock import Mock, patch
 
@@ -682,6 +683,278 @@ class ChromeFileDiagnosticTests(unittest.TestCase):
                 self.assertEqual(record['chrome_file_stage'], stage)
                 raw = json.dumps(record).encode()
                 self.assertEqual(contract.public_bytes(raw), raw)
+
+
+class RuntimeStartupDiagnosticTests(unittest.TestCase):
+    STAGES = (
+        'session-setup', 'initial-fixture-startup', 'initial-fixture-inventory',
+        'driver-service-birth', 'driver-port-wait', 'driver-port-validation',
+        'driver-listener', 'browser-client', 'browser-session-start',
+        'browser-capabilities', 'loaded-runtime-inventory', 'loaded-runtime-tools',
+    )
+
+    def run_mock_main(self, failure_stage, *, note_failure=None, emission_failure=None,
+                      write_failure=False):
+        files, owners, labels, operations = {}, [], [], []
+        error = contract.GateRefusal('synthetic-private-operation-refused')
+        case = self
+
+        class Sink:
+            def __init__(self, path):
+                self.path = path
+
+            def __enter__(self):
+                return self
+
+            def write(self, raw):
+                files[str(self.path)] = raw
+                return len(raw)
+
+            def __exit__(self, _kind, _error, _traceback):
+                return False
+
+        class MemoryPath(PurePosixPath):
+            def resolve(self, strict=False):
+                return self
+
+            def exists(self):
+                return str(self) in files
+
+            def mkdir(self, mode=0o777, parents=False):
+                pass
+
+            def open(self, mode):
+                case.assertEqual(mode, 'wb')
+                return Sink(self)
+
+            def replace(self, target):
+                files[str(target)] = files.pop(str(self))
+                return target
+
+            def write_bytes(self, raw):
+                files[str(self)] = raw
+                return len(raw)
+
+        def entered(stage):
+            operations.append(stage)
+            if failure_stage == stage:
+                raise error
+
+        def owned(registry, argv, cwd, env, deadline, *, frames=False):
+            owner = Mock(finished=False, reaped=False, output=bytearray(), errors=bytearray())
+            owner.overflow.is_set.return_value = False
+            owner.cleanup_observed.return_value = True
+            owner.process.poll.return_value = None
+            owner.process.returncode = None
+            registry.append(owner)
+            owners.append(owner)
+            entered('initial-fixture-startup' if frames else 'driver-service-birth')
+            if frames:
+                count = 0 if failure_stage == 'initial-fixture-inventory' else 1
+                owner.receive.return_value = {'ready': True, 'nonce': 'a' * 64, 'port': 12345,
+                    'inventory': {'count': count, 'profiles': [{}] * count, 'digest': '1' * 64}}
+            else:
+                port = 0 if failure_stage == 'driver-port-validation' else 12346
+                owner.output.extend(('ChromeDriver was started successfully on port ' + str(port)).encode())
+                owner.process.poll.side_effect = lambda: entered('driver-port-wait')
+            return owner
+
+        def listener(owner, port):
+            if owner is owners[-1] and len(owners) == 2:
+                entered('driver-listener')
+
+        driver = Mock()
+        def start(binary, profile):
+            entered('browser-session-start')
+            return {'browserVersion': '9.9.9.9' if failure_stage == 'browser-capabilities' else '1.2.3.4',
+                'chrome': {'chromedriverVersion': '1.2.3.4 synthetic', 'userDataDir': str(profile)}}
+        driver.start.side_effect = start
+        driver.command.side_effect = error
+
+        def make_driver(port, deadline):
+            entered('browser-client')
+            return driver
+
+        def loaded(owner):
+            entered('loaded-runtime-inventory')
+            return {} if failure_stage == 'loaded-runtime-tools' else {
+                '/synthetic/chrome': {}, '/synthetic/driver': {}}
+
+        tokens = iter(('a' * 64, 'b' * 64, 'c' * 64))
+        def token(size):
+            case.assertEqual(size, 32)
+            entered('session-setup')
+            return next(tokens)
+
+        original_note = host_controller.runtime_note
+        original_inert = host_controller.inert_runtime_note
+        original_packed = host_controller.packed
+        def note(public, stage, versions=None):
+            if note_failure is not None and stage in self.STAGES:
+                raise note_failure
+            return original_note(public, stage, versions)
+
+        def inert(public, stage):
+            labels.append(stage)
+            return original_inert(public, stage)
+
+        def packed(value):
+            if emission_failure is not None and not write_failure and value.get('schema') == 'row.catalogue-runtime-refusal.v1':
+                raise emission_failure
+            return original_packed(value)
+
+        stream = io.StringIO()
+        if write_failure:
+            stream = Mock()
+            stream.write.side_effect = emission_failure
+        timer = Mock()
+        patches = {
+            'context': patch.object(host_controller, 'host_context', return_value={'source': 'a' * 40, 'event': 'b' * 40, 'image_version': '1.2'}),
+            'paths': patch.object(host_controller, 'Path', MemoryPath),
+            'directory': patch.object(host_controller, 'DIRECTORY', MemoryPath('/synthetic-repo/tests/catalogue-browser')),
+            'temp': patch.object(host_controller.tempfile, 'TemporaryDirectory'),
+            'chmod': patch.object(host_controller.os, 'chmod'),
+            'env': patch.dict(host_controller.os.environ, {'GITHUB_WORKSPACE': '/synthetic-repo', 'RUNNER_TEMP': '/synthetic-temp'}),
+            'clock': patch.object(host_controller.time, 'monotonic', return_value=100),
+            'timer': patch.object(host_controller.threading, 'Timer', return_value=timer),
+            'source': patch.object(host_controller, 'source_guard', return_value={'head': 'a' * 40, 'tree': 'b' * 40, 'bytes': 'c' * 64, 'workflow': 'd' * 64}),
+            'selection': patch.object(host_controller, 'selected_runtime', return_value=(MemoryPath('/synthetic/chrome'), MemoryPath('/synthetic/driver'), {'provider': 'pinned-cft', 'installed': {'version': '1.2.3.4'}})),
+            'pins': patch.object(host_controller, 'file_pin', return_value={'uid': 0}),
+            'version_argv': patch.object(host_controller, 'chrome_version_argv', return_value=['/synthetic/chrome', '--product-version']),
+            'version_match': patch.object(host_controller, 'chrome_version_match', return_value=(b'1.2.3.4', b'1.2.3.4')),
+            'commands': patch.object(host_controller, 'command', side_effect=[b'1.2.3.4\n', b'ChromeDriver 1.2.3.4\n']),
+            'owned': patch.object(host_controller, 'Owned', side_effect=owned),
+            'listener': patch.object(host_controller, 'owned_listener', side_effect=listener),
+            'driver': patch.object(host_controller, 'Driver', side_effect=make_driver),
+            'loaded': patch.object(host_controller, 'loaded_runtime', side_effect=loaded),
+            'tokens': patch.object(host_controller.secrets, 'token_hex', side_effect=token),
+            'note': patch.object(host_controller, 'runtime_note', side_effect=note),
+            'inert': patch.object(host_controller, 'inert_runtime_note', side_effect=inert),
+            'packed': patch.object(host_controller, 'packed', side_effect=packed),
+            'stderr': patch.object(host_controller.sys, 'stderr', stream),
+            'birth': patch.object(host_controller.subprocess, 'Popen'),
+            'transport': patch.object(host_controller.http.client, 'HTTPConnection'),
+            'thread': patch.object(host_controller.threading, 'Thread'),
+        }
+        with ExitStack() as stack:
+            mocks = {name: stack.enter_context(context) for name, context in patches.items()}
+            mocks['temp'].return_value.__enter__.return_value = '/synthetic-private'
+            code = host_controller.main()
+            version_calls = [call.args[1] for call in mocks['note'].call_args_list if call.args[1] in contract.RUNTIME_STAGES[:3]]
+            for name in ('birth', 'transport', 'thread'):
+                mocks[name].assert_not_called()
+        timer.start.assert_called_once()
+        timer.cancel.assert_called_once()
+        for owner in owners:
+            owner.refuse_cleanup.assert_called_once()
+            owner.cleanup_observed.assert_called_once()
+        record = json.loads(files['/synthetic-repo/.tmp/catalogue-browser-public/result.json'])
+        return code, record, labels, operations, driver, owners, version_calls
+
+    def test_all_new_stages_are_bounded_fixed_refusal_projection(self):
+        for stage in self.STAGES:
+            with self.subTest(stage=stage):
+                record = RuntimeDiagnosticTests.refused_record()
+                host_controller.runtime_note(record, 'version-equality', {'chrome': '1.2.3.4', 'driver': '1.2.3.4'})
+                host_controller.inert_runtime_note(record, stage)
+                self.assertEqual(record['runtime_stage'], stage)
+                self.assertNotIn('runtime_versions', record)
+                raw = json.dumps(record).encode()
+                self.assertEqual(contract.public_bytes(raw), raw)
+                stream = io.StringIO()
+                with patch.object(host_controller.sys, 'stderr', stream):
+                    host_controller.emit_runtime_refusal(record)
+                line = stream.getvalue()
+                self.assertTrue(line.isascii())
+                self.assertLessEqual(len(line.encode('ascii')), 512)
+                self.assertEqual(set(json.loads(line)), {'schema', 'status', 'phase', 'readiness_credit', 'runtime_stage'})
+                self.assertFalse(record['complete'])
+                self.assertEqual(record['readiness_credit'], 0)
+
+    def test_new_stages_cannot_carry_versions_or_cross_case_phase(self):
+        for stage in self.STAGES:
+            with self.subTest(stage=stage):
+                record = RuntimeDiagnosticTests.refused_record()
+                record.update(runtime_stage=stage, runtime_versions={'chrome': '1.2.3.4', 'driver': '1.2.3.4'})
+                with self.assertRaises(contract.GateRefusal):
+                    contract.public_bytes(json.dumps(record).encode())
+                record.pop('runtime_versions')
+                record['phase'] = 'api-read'
+                with self.assertRaises(contract.GateRefusal):
+                    contract.public_bytes(json.dumps(record).encode())
+
+    def test_note_failures_are_inert_but_original_helper_remains_strict(self):
+        for error in (RuntimeError('synthetic-private'), KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(kind=type(error).__name__):
+                record = RuntimeDiagnosticTests.refused_record()
+                original = copy.deepcopy(record)
+                with patch.object(host_controller, 'runtime_note', side_effect=error) as reporter:
+                    self.assertIsNone(host_controller.inert_runtime_note(record, 'session-setup'))
+                    reporter.assert_called_once_with(record, 'session-setup')
+                self.assertEqual(record, original)
+        with self.assertRaises(contract.GateRefusal):
+            host_controller.runtime_note(RuntimeDiagnosticTests.refused_record(), '/synthetic-private')
+
+    def test_each_initial_failure_keeps_entered_stage_and_original_cleanup(self):
+        for stage in self.STAGES:
+            with self.subTest(stage=stage):
+                code, record, labels, _, driver, owners, version_calls = self.run_mock_main(stage)
+                self.assertEqual(code, 1)
+                self.assertEqual(record['runtime_stage'], stage)
+                self.assertEqual(labels, list(self.STAGES[:self.STAGES.index(stage) + 1]))
+                self.assertEqual(record['phase'], 'host-runtime-observation')
+                self.assertFalse(record['complete'])
+                self.assertTrue(record['cleanup_complete'])
+                self.assertEqual(record['forced_cleanup_attempted'], bool(owners))
+                self.assertEqual(len(record['private_streams']), len(owners))
+                self.assertNotIn('runtime_versions', record)
+                self.assertEqual(record['readiness_credit'], 0)
+                raw = json.dumps(record).encode()
+                self.assertEqual(contract.public_bytes(raw), raw)
+                self.assertNotIn(b'synthetic-private-operation-refused', raw)
+                driver.command.assert_not_called()
+                self.assertEqual(version_calls, ['chrome-version-command', 'driver-version-command', 'version-equality', 'version-equality'])
+
+    def test_api_read_transition_clears_both_fields_and_retains_four_version_calls(self):
+        code, record, labels, _, driver, owners, version_calls = self.run_mock_main('after-api')
+        self.assertEqual(code, 1)
+        self.assertEqual(record['phase'], 'api-read')
+        self.assertNotIn('runtime_stage', record)
+        self.assertNotIn('runtime_versions', record)
+        self.assertEqual(labels, list(self.STAGES))
+        self.assertEqual(len(owners), 2)
+        driver.command.assert_called_once_with('/url', {'url': 'http://127.0.0.1:12345/index.html'})
+        self.assertEqual(version_calls, ['chrome-version-command', 'driver-version-command', 'version-equality', 'version-equality'])
+        raw = json.dumps(record).encode()
+        self.assertEqual(contract.public_bytes(raw), raw)
+
+    def test_interrupted_new_notes_do_not_replace_actual_operation_refusal(self):
+        for error in (RuntimeError('synthetic-private'), KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(kind=type(error).__name__):
+                code, record, labels, operations, driver, owners, _ = self.run_mock_main('browser-session-start', note_failure=error)
+                self.assertEqual(code, 1)
+                self.assertEqual(operations[-1], 'browser-session-start')
+                self.assertEqual(labels[-1], 'browser-session-start')
+                self.assertEqual(record['runtime_stage'], 'version-equality')
+                self.assertEqual(len(owners), 2)
+                self.assertTrue(record['cleanup_complete'])
+                driver.command.assert_not_called()
+                self.assertEqual(contract.public_bytes(json.dumps(record).encode()), json.dumps(record).encode())
+
+    def test_emitter_interruptions_keep_main_refusal_cleanup_and_result_write(self):
+        for error in (RuntimeError('synthetic-private'), KeyboardInterrupt(), SystemExit(9)):
+            for write in (False, True):
+                with self.subTest(kind=type(error).__name__, write=write):
+                    code, record, _, operations, driver, _, _ = self.run_mock_main('browser-session-start', emission_failure=error, write_failure=write)
+                    self.assertEqual(code, 1)
+                    self.assertEqual(operations[-1], 'browser-session-start')
+                    self.assertEqual(record['runtime_stage'], 'browser-session-start')
+                    self.assertTrue(record['cleanup_complete'])
+                    self.assertFalse(record['complete'])
+                    self.assertEqual(record['readiness_credit'], 0)
+                    driver.command.assert_not_called()
+                    raw = json.dumps(record).encode()
+                    self.assertEqual(contract.public_bytes(raw), raw)
 
 
 if __name__ == '__main__':

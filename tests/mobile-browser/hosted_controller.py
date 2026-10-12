@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -377,7 +378,14 @@ def owned_listener(leader, port):
                 if count > 4096:
                     raise Refusal("owned-descriptor-bound")
                 listener_stage = "fd-readlink"
-                target = os.readlink(descriptor.path)
+                try:
+                    target = os.readlink(descriptor.path)
+                except FileNotFoundError as error:
+                    if (type(error) is not FileNotFoundError or type(error.errno) is not int
+                            or error.errno != errno.ENOENT):
+                        raise
+                    listener_stage = "fd-enumeration"
+                    continue
                 match = re.fullmatch(r"socket:\[([1-9][0-9]{0,19})\]", target)
                 if match:
                     sockets.add(match[1])

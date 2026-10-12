@@ -427,6 +427,13 @@ def runtime_note(public, stage, versions=None):
     public.update(fields)
 
 
+def inert_runtime_note(public, stage):
+    try:
+        runtime_note(public, stage)
+    except BaseException:
+        pass
+
+
 def emit_runtime_refusal(public):
     try:
         need(public['status'] == 'refused' and public['complete'] is False
@@ -437,7 +444,7 @@ def emit_runtime_refusal(public):
         raw = packed(diagnostic)
         need(len(raw) <= 512)
         sys.stderr.write(raw.decode('ascii') + '\n')
-    except Exception:
+    except BaseException:
         pass
 
 
@@ -523,8 +530,7 @@ def main():
                 runtime_note(public, 'version-equality', {'chrome': chrome_match[1].decode('ascii'), 'driver': driver_match[1].decode('ascii')})
             need(chrome_match is not None and driver_match is not None and chrome_match[1] == driver_match[1]
                 and chrome_match[1].decode('ascii') == runtime_state['installed']['version'])
-            public.pop('runtime_stage', None)
-            public.pop('runtime_versions', None)
+            inert_runtime_note(public, 'session-setup')
             version = chrome_match[1].decode('ascii')
             nonce = secrets.token_hex(32)
             tokens = [secrets.token_hex(32), secrets.token_hex(32)]
@@ -541,10 +547,12 @@ def main():
                 owned_listener(child, ready['port'])
                 retained_ports.append(ready['port'])
                 return child, ready
+            inert_runtime_note(public, 'initial-fixture-startup')
             fixture, ready = launch(1, 0)
             first_fixture = fixture
             port = ready['port']
             origin = 'http://127.0.0.1:' + str(port)
+            inert_runtime_note(public, 'initial-fixture-inventory')
             inventories.append(inventories_row('seed', ready['inventory']))
             need(ready['inventory']['count'] == 1)
             def frame(op, case):
@@ -559,7 +567,9 @@ def main():
                 check_case(case, facts)
                 checks.append({'id': case, 'facts': facts})
             # ChromeDriver itself chooses a private ephemeral port and reports it on its private log.
+            inert_runtime_note(public, 'driver-service-birth')
             controller = Owned(registry, [str(chrome_driver), '--port=0', '--allowed-ips=127.0.0.1'], repo, env, deadline)
+            inert_runtime_note(public, 'driver-port-wait')
             launch_limit = min(deadline, time.monotonic() + 20)
             driver_port = None
             while time.monotonic() < launch_limit:
@@ -569,17 +579,26 @@ def main():
                     driver_port = int(match[1])
                     break
                 time.sleep(0.05)
+            inert_runtime_note(public, 'driver-port-validation')
             need(driver_port is not None and 1 <= driver_port <= 65535)
+            inert_runtime_note(public, 'driver-listener')
             owned_listener(controller, driver_port)
             retained_ports.append(driver_port)
+            inert_runtime_note(public, 'browser-client')
             driver = Driver(driver_port, min(deadline - 10, time.monotonic() + 180))
             driver.origin = origin
+            inert_runtime_note(public, 'browser-session-start')
             capabilities = driver.start(chrome, private / 'browser')
+            inert_runtime_note(public, 'browser-capabilities')
             need(capabilities['browserVersion'] == version
                  and capabilities['chrome']['chromedriverVersion'].split(' ', 1)[0] == version
                  and capabilities['chrome']['userDataDir'] == str(private / 'browser'))
+            inert_runtime_note(public, 'loaded-runtime-inventory')
             runtime_before = loaded_runtime(controller)
+            inert_runtime_note(public, 'loaded-runtime-tools')
             need(str(chrome) in runtime_before and str(chrome_driver) in runtime_before)
+            public.pop('runtime_stage', None)
+            public.pop('runtime_versions', None)
             checkpoint('api-read')
             driver.command('/url', {'url': origin + '/index.html'})
             snapshot = driver.connect(tokens[0], 1)

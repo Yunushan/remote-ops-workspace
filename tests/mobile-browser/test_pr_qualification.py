@@ -2030,5 +2030,187 @@ class InventoryQueryDiagnosticTests(unittest.TestCase):
                 self.assertNotIn("sdk_tree_limit", record)
 
 
+class VanishedDescriptorTests(unittest.TestCase):
+    TABLE = b"header\n0: 0100007F:13AF 00000000:0000 0A x x x x x 123\n"
+
+    @staticmethod
+    def entries(count):
+        return [SimpleNamespace(path=f"/PRIVATE/fd/{index}") for index in range(count)]
+
+    @staticmethod
+    def vanished():
+        return FileNotFoundError(H.errno.ENOENT, "/PRIVATE/vanished")
+
+    def invoke(self, entries, outcomes, *, table_raw=TABLE, live=None, expected=None,
+               directory_error=None, directory_close=None, table_error=None, table_close=None):
+        leader, directory, table, stream = OwnedListenerOperationDiagnosticTests.providers()
+        directory.__enter__.return_value = entries
+        directory.__exit__.side_effect = directory_close
+        table.__exit__.side_effect = table_close
+        stream.read.return_value = table_raw
+        leader.live.side_effect = live
+        with mock.patch.object(H.os, "scandir", return_value=directory,
+                               side_effect=directory_error) as scanned, \
+             mock.patch.object(H.os, "readlink", side_effect=outcomes) as linked, \
+             mock.patch.object(Path, "open", return_value=table, side_effect=table_error) as opened, \
+             mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+            if expected is None:
+                result = H.owned_listener(leader, H.ADB_PORT)
+                self.assertIs(result, True)
+            else:
+                with self.assertRaises(expected) as caught:
+                    H.owned_listener(leader, H.ADB_PORT)
+                result = caught.exception
+            native.assert_not_called()
+        return result, leader, directory, table, stream, scanned, linked, opened
+
+    def test_unrelated_vanished_entry_requires_the_same_remaining_positive_proof(self):
+        result, leader, directory, table, stream, scanned, linked, opened = self.invoke(
+            self.entries(3), [self.vanished(), "pipe:[456]", "socket:[123]"])
+        self.assertIs(result, True)
+        self.assertEqual(leader.live.call_count, 2)
+        scanned.assert_called_once_with(Path("/proc") / "123" / "fd")
+        self.assertEqual(linked.call_args_list, [mock.call(f"/PRIVATE/fd/{index}") for index in range(3)])
+        opened.assert_called_once_with("rb")
+        stream.read.assert_called_once_with(1024 * 1024 + 1)
+        directory.__exit__.assert_called_once()
+        table.__exit__.assert_called_once()
+
+    def test_no_disappearance_normal_calls_remain_exact(self):
+        _result, leader, directory, table, stream, scanned, linked, opened = self.invoke(
+            self.entries(1), ["socket:[123]"])
+        self.assertEqual(leader.live.call_count, 2)
+        scanned.assert_called_once_with(Path("/proc") / "123" / "fd")
+        linked.assert_called_once_with("/PRIVATE/fd/0")
+        opened.assert_called_once_with("rb")
+        stream.read.assert_called_once_with(1024 * 1024 + 1)
+        directory.__exit__.assert_called_once()
+        table.__exit__.assert_called_once()
+
+    def test_vanished_sole_all_missing_foreign_and_duplicate_listeners_refuse(self):
+        cases = (
+            ([self.vanished()], self.TABLE, "owned-loopback-listener-unproved"),
+            ([self.vanished()], b"header\n", "owned-loopback-listener-missing"),
+            ([self.vanished(), self.vanished()], self.TABLE, "owned-loopback-listener-unproved"),
+            ([self.vanished(), "socket:[321]"], self.TABLE, "owned-loopback-listener-unproved"),
+            ([self.vanished(), "socket:[123]"], self.TABLE + self.TABLE.splitlines(keepends=True)[1],
+             "owned-loopback-listener-unproved"),
+        )
+        for outcomes, table_raw, code in cases:
+            with self.subTest(code=code, count=len(outcomes)):
+                result, leader, directory, table, stream, _scanned, linked, opened = self.invoke(
+                    self.entries(len(outcomes)), outcomes, table_raw=table_raw, expected=H.Refusal)
+                self.assertEqual(result.args, (code,))
+                self.assertEqual(result.owned_listener_stage, "listener-match")
+                self.assertEqual(leader.live.call_count, 2)
+                self.assertEqual(linked.call_count, len(outcomes))
+                opened.assert_called_once_with("rb")
+                stream.read.assert_called_once_with(1024 * 1024 + 1)
+                directory.__exit__.assert_called_once()
+                table.__exit__.assert_called_once()
+
+    def test_final_dead_or_pipe_failed_leader_remains_original_refusal(self):
+        for code in ("owned-leader-or-pipe-unavailable", "original-leader-refusal"):
+            original = H.Refusal(code)
+            with self.subTest(code=code):
+                result, leader, directory, table, _stream, _scanned, linked, _opened = self.invoke(
+                    self.entries(2), [self.vanished(), "socket:[123]"], live=[None, original], expected=H.Refusal)
+                self.assertIs(result, original)
+                self.assertEqual(result.owned_listener_stage, "leader-after")
+                self.assertEqual(leader.live.call_count, 2)
+                self.assertEqual(linked.call_count, 2)
+                directory.__exit__.assert_called_once()
+                table.__exit__.assert_called_once()
+
+    def test_nonexact_errno_types_and_errors_preserve_original_identity(self):
+        class MissingAlias(FileNotFoundError):
+            pass
+
+        errors = [FileNotFoundError("/PRIVATE/errno-none"),
+                  FileNotFoundError(H.errno.EIO, "/PRIVATE/wrong-errno"),
+                  MissingAlias(H.errno.ENOENT, "/PRIVATE/subclass"),
+                  PermissionError(H.errno.EACCES, "/PRIVATE/access"),
+                  OSError(getattr(H.errno, "ESTALE", 116), "/PRIVATE/stale"),
+                  OSError(H.errno.EIO, "/PRIVATE/io"), KeyboardInterrupt("/PRIVATE"), SystemExit("/PRIVATE")]
+        for value in (None, True, False, 2.0):
+            original = FileNotFoundError(H.errno.ENOENT, "/PRIVATE/type")
+            original.errno = value
+            errors.append(original)
+        other = OSError("/PRIVATE/exact-oserror")
+        other.errno = H.errno.ENOENT
+        errors.append(other)
+        for original in errors:
+            with self.subTest(kind=type(original).__name__, errno_type=type(getattr(original, "errno", None)).__name__):
+                result, leader, directory, _table, _stream, _scanned, linked, opened = self.invoke(
+                    self.entries(1), [original], expected=type(original))
+                self.assertIs(result, original)
+                self.assertEqual(result.owned_listener_stage, "fd-readlink")
+                self.assertEqual(leader.live.call_count, 1)
+                linked.assert_called_once_with("/PRIVATE/fd/0")
+                opened.assert_not_called()
+                directory.__exit__.assert_called_once()
+
+    def test_ENOENT_outside_readlink_is_not_handled_or_retried(self):
+        for stage in ("fd-directory-open", "fd-directory-close", "socket-table-open", "socket-table-close"):
+            original = self.vanished()
+            options = {"directory_error": original} if stage == "fd-directory-open" else (
+                {"directory_close": original} if stage == "fd-directory-close" else (
+                {"table_error": original} if stage == "socket-table-open" else {"table_close": original}))
+            with self.subTest(stage=stage):
+                result, leader, directory, table, stream, scanned, linked, opened = self.invoke(
+                    self.entries(1), [self.vanished()], expected=FileNotFoundError, **options)
+                self.assertIs(result, original)
+                self.assertEqual(result.owned_listener_stage, stage)
+                self.assertEqual(leader.live.call_count, 1)
+                scanned.assert_called_once()
+                self.assertEqual(linked.call_count, 0 if stage == "fd-directory-open" else 1)
+                self.assertEqual(opened.call_count, 1 if stage.startswith("socket-") else 0)
+                self.assertEqual(stream.read.call_count, 1 if stage == "socket-table-close" else 0)
+                self.assertEqual(directory.__exit__.call_count, 0 if stage == "fd-directory-open" else 1)
+                self.assertEqual(table.__exit__.call_count, 1 if stage == "socket-table-close" else 0)
+
+    def test_iterator_after_skip_retains_enumeration_stage_and_original_error(self):
+        original = self.vanished()
+
+        class Entries:
+            def __iter__(self):
+                yield SimpleNamespace(path="/PRIVATE/fd/0")
+                raise original
+
+        result, leader, directory, _table, _stream, _scanned, linked, opened = self.invoke(
+            Entries(), [self.vanished()], expected=FileNotFoundError)
+        self.assertIs(result, original)
+        self.assertEqual(result.owned_listener_stage, "fd-enumeration")
+        self.assertEqual(leader.live.call_count, 1)
+        linked.assert_called_once_with("/PRIVATE/fd/0")
+        opened.assert_not_called()
+        directory.__exit__.assert_called_once()
+
+    def test_skipped_entries_still_consume_4096_and_stop_before_next_readlink(self):
+        result, leader, directory, _table, _stream, _scanned, linked, opened = self.invoke(
+            self.entries(4097), [self.vanished() for _ in range(4096)], expected=H.Refusal)
+        self.assertEqual(result.args, ("owned-descriptor-bound",))
+        self.assertEqual(result.owned_listener_stage, "fd-enumeration")
+        self.assertEqual(leader.live.call_count, 1)
+        self.assertEqual(linked.call_count, 4096)
+        self.assertEqual(linked.call_args_list[-1], mock.call("/PRIVATE/fd/4095"))
+        opened.assert_not_called()
+        directory.__exit__.assert_called_once()
+
+    def test_table_bound_and_layout_refusals_still_follow_a_skip(self):
+        for table_raw, code, stage in ((b"x" * (1024 * 1024 + 1), "owned-socket-table-bound", "socket-table-bound"),
+                                       (b"header\nmalformed\n", "owned-socket-table-layout", "socket-table-parse")):
+            with self.subTest(code=code):
+                result, leader, directory, table, stream, _scanned, linked, _opened = self.invoke(
+                    self.entries(1), [self.vanished()], table_raw=table_raw, expected=H.Refusal)
+                self.assertEqual(result.args, (code,))
+                self.assertEqual(result.owned_listener_stage, stage)
+                self.assertEqual(leader.live.call_count, 1)
+                linked.assert_called_once_with("/PRIVATE/fd/0")
+                stream.read.assert_called_once_with(1024 * 1024 + 1)
+                directory.__exit__.assert_called_once()
+                table.__exit__.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

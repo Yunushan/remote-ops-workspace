@@ -16,6 +16,9 @@ import time
 from pathlib import Path
 
 import cft_bundle as bundle
+from cft_git_config import CONFIG_REFUSAL_CODES, ConfigRefusal
+from cft_git_owner import GIT_REFUSAL_CODES, GitObservationRefusal
+from gate_contract import CHROME_FILE_STAGES, GateRefusal
 
 WORKFLOW = '.github/workflows/ubuntu-catalogue-browser.yml'
 PUBLIC_REPO = 'Yunushan/remote-ops-workspace'
@@ -24,6 +27,46 @@ STAGE_FILES = ('browser_probe.py', 'cft_bundle.py', 'cft_git_config.py', 'cft_gi
     'cft_runtime.py', 'gate_contract.py', 'host_controller.py', POLICY_NAME)
 MAX_POINTER = 4096
 PHASES = ('context', 'source-checks', 'acquisition', 'installation', 'source-readback', 'publication')
+
+
+SOURCE_STEPS = ('unobserved', 'contract', 'git-file-pin', 'git-head', 'git-tree', 'head-tree-match',
+    'git-diff', 'manifest-decode', 'product-path', 'product-file-pin', 'product-bytes',
+    'gate-membership', 'gate-file-pin', 'gate-row-membership', 'workflow-file-pin',
+    'workflow-context', 'workflow-command', 'workflow-bytes', 'source-summary') + tuple(
+    'git-file-' + name for name in CHROME_FILE_STAGES)
+
+
+def preparation_diagnostic(error, phase, source_step):
+    family, code = 'operation-exception', 'unobserved'
+    if type(error) is ConfigRefusal:
+        family, allowed = 'git-config', CONFIG_REFUSAL_CODES
+    elif type(error) is GitObservationRefusal:
+        family, allowed = 'git-owner', GIT_REFUSAL_CODES
+    else:
+        allowed = ()
+        if type(error) is bundle.BundleRefusal:
+            family = 'bundle'
+        elif type(error) is GateRefusal:
+            family = 'source-contract'
+        elif type(error) is FileNotFoundError:
+            family = 'missing-input'
+        elif type(error) is PermissionError:
+            family = 'input-access'
+    if allowed:
+        value = error.__dict__.get('fixed_refusal_code')
+        if type(value) is str and value in allowed:
+            code = value
+    if type(phase) is not str or phase not in PHASES:
+        phase = 'context'
+    if type(source_step) is not str or source_step not in SOURCE_STEPS:
+        source_step = 'unobserved'
+    if phase not in ('source-checks', 'source-readback'):
+        source_step = 'unobserved'
+    raw = bundle.packed({'schema': 'row.cft-preparation.v2', 'status': 'refused', 'phase': phase,
+        'source_step': source_step, 'refusal_family': family, 'refusal_code': code, 'readiness_credit': 0})
+    if len(raw) > 512:
+        return b'{"schema":"row.cft-preparation.v2","status":"refused","phase":"context","source_step":"unobserved","refusal_family":"operation-exception","refusal_code":"unobserved","readiness_credit":0}'
+    return raw
 
 
 def require(value):
@@ -207,6 +250,10 @@ def main():
     watchdog.start()
     registry = []
     phase = 'context'
+    source_step = 'unobserved'
+    def source_note(value):
+        nonlocal source_step
+        source_step = value
     success_eligible = False
     try:
         repo, uid, gid, context = root_context(deadline)
@@ -218,7 +265,7 @@ def main():
             return RunnerGit(registry, argv, repo, deadline, uid=uid, gid=gid).finish()
         phase = 'source-checks'
         before = source_guard(repo, context, registry, {}, deadline, workflow_path=WORKFLOW,
-            source_directory=repo / 'tests' / 'catalogue-browser', git_command=observed_git)
+            source_directory=repo / 'tests' / 'catalogue-browser', git_command=observed_git, source_diagnostic=source_note)
         binding = operation_binding(before, context, os.environ)
         pointer = pointer_path(binding)
         require(not pointer.exists() and not pointer.is_symlink())
@@ -235,7 +282,7 @@ def main():
         require(not private.exists())
         phase = 'source-readback'
         after = source_guard(repo, context, registry, {}, deadline, workflow_path=WORKFLOW,
-            source_directory=repo / 'tests' / 'catalogue-browser', git_command=observed_git)
+            source_directory=repo / 'tests' / 'catalogue-browser', git_command=observed_git, source_diagnostic=source_note)
         require(before == after and stage_before == stage_readback(repo, deadline))
         require(all(owner.finished and owner.reaped and not owner.failed and not owner.forced_cleanup
             and owner.closed_pipes == {0, 1} and owner.process.returncode == 0 for owner in registry))
@@ -249,12 +296,11 @@ def main():
         # This bounded line is provisional; CLI success follows finalization and the final clock.
         print('{"schema":"row.cft-preparation.v1","status":"prepared-unqualified-pending-finalization","provisional":true,"readiness_credit":0}', flush=True)
         success_eligible = True
-    except BaseException:
+    except BaseException as error:
         success_eligible = False
-        # Fixed phase only; no error, path, output, descriptor or private data.
+        # Fixed phase/substage/family/predicate only; no error, path, output, descriptor or private data.
         try:
-            print(bundle.packed({'schema': 'row.cft-preparation.v1', 'status': 'refused',
-                'phase': phase if phase in PHASES else 'context', 'readiness_credit': 0}).decode('ascii'), file=sys.stderr)
+            print(preparation_diagnostic(error, phase, source_step).decode('ascii'), file=sys.stderr)
         except BaseException:
             pass
     finally:

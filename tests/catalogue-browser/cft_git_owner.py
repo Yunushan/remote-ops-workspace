@@ -19,13 +19,18 @@ WORKFLOW = '.github/workflows/chrome-for-testing-provisioning.yml'
 WORKFLOWS = (WORKFLOW, '.github/workflows/ubuntu-catalogue-browser.yml')
 
 
+GIT_REFUSAL_CODES = ('members-1', 'checked-argv-1', 'checked-argv-2', 'checked-argv-3', 'runner-git-init-1', 'runner-git-init-2', 'runner-git-init-3', 'runner-git-init-4', 'runner-git-init-5', 'runner-git-init-6', 'remaining-1', 'close-pipes-1', 'finish-1', 'finish-2', 'finish-3', 'finish-4', 'finish-5', 'signal-owned-1', 'signal-owned-2', 'check-refused')
+
+
 class GitObservationRefusal(ValueError):
     pass
 
 
-def require(value):
+def require(value, code='check-refused'):
     if not value:
-        raise GitObservationRefusal('cft-git-observation-refused')
+        error = GitObservationRefusal('cft-git-observation-refused')
+        error.fixed_refusal_code = code
+        raise error
 
 
 def identity(pid):
@@ -43,20 +48,20 @@ def members(group):
                 continue
             if observed['group'] == group:
                 result.append(observed)
-                require(len(result) <= 256)
+                require(len(result) <= 256, 'members-1')
     return result
 
 
 def checked_argv(argv):
-    require(type(argv) is list and all(type(value) is str for value in argv))
-    require(argv[:3] == ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null'])
+    require(type(argv) is list and all(type(value) is str for value in argv), 'checked-argv-1')
+    require(argv[:3] == ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null'], 'checked-argv-2')
     tail = argv[3:]
     accepted = tail in (['rev-parse', 'HEAD'], ['rev-parse', 'HEAD^{tree}'],
         ['diff', '--no-ext-diff', '--exit-code', 'HEAD'])
     if len(tail) == 2 and tail[0] == 'show':
         accepted = any(re.fullmatch(r'[0-9a-f]{40}:' + re.escape(workflow), tail[1]) is not None
             for workflow in WORKFLOWS)
-    require(accepted)
+    require(accepted, 'checked-argv-3')
     if tail[0] == 'diff':
         tail = [tail[0], '--no-textconv', *tail[1:]]
     # Suppress mutable configuration behaviors for these read-only observations.
@@ -79,11 +84,11 @@ class RunnerGit:
     Failure retains uncertainty for disposable-host destruction; it never passes.
     """
     def __init__(self, registry, argv, repo, deadline, *, uid, gid):
-        require(type(registry) is list)
-        require(os.getuid() == os.geteuid() == 0)
-        require(type(uid) is int and type(gid) is int and uid > 0 and gid > 0)
-        require(type(deadline) in (int, float) and math.isfinite(deadline))
-        require(time.monotonic() < deadline)
+        require(type(registry) is list, 'runner-git-init-1')
+        require(os.getuid() == os.geteuid() == 0, 'runner-git-init-2')
+        require(type(uid) is int and type(gid) is int and uid > 0 and gid > 0, 'runner-git-init-3')
+        require(type(deadline) in (int, float) and math.isfinite(deadline), 'runner-git-init-4')
+        require(time.monotonic() < deadline, 'runner-git-init-5')
         self.deadline = deadline
         self.identity = None
         self.reaped = False
@@ -102,12 +107,12 @@ class RunnerGit:
         registry.append(self)
         candidate = identity(self.process.pid)
         require(candidate['pid'] == candidate['group'] == candidate['session'] == self.process.pid
-            and candidate['start'] > 0)
+            and candidate['start'] > 0, 'runner-git-init-6')
         self.identity = candidate
 
     def remaining(self, maximum):
         result = self.deadline - time.monotonic()
-        require(result > 0)
+        require(result > 0, 'remaining-1')
         return min(result, maximum)
 
     def close_pipes(self):
@@ -118,7 +123,7 @@ class RunnerGit:
             self.close_attempted.add(number)
             try:
                 stream.close()
-                require(stream.closed is True)
+                require(stream.closed is True, 'close-pipes-1')
                 self.closed_pipes.add(number)
             except BaseException as error:
                 self.failed = True
@@ -131,7 +136,7 @@ class RunnerGit:
         try:
             stdout = self.process.stdout.fileno()
             stderr = self.process.stderr.fileno()
-            require(stdout != stderr)
+            require(stdout != stderr, 'finish-1')
             output = {stdout: bytearray(), stderr: bytearray()}
             active = set(output)
             while active:
@@ -141,11 +146,11 @@ class RunnerGit:
                     if not chunk:
                         active.remove(descriptor)
                     else:
-                        require(len(output[descriptor]) + len(chunk) <= MAX_OUTPUT)
+                        require(len(output[descriptor]) + len(chunk) <= MAX_OUTPUT, 'finish-2')
                         output[descriptor].extend(chunk)
             result = self.process.wait(timeout=self.remaining(2))
             self.reaped = True
-            require(result == 0 and self.identity is not None and members(self.identity['group']) == [])
+            require(result == 0 and self.identity is not None and members(self.identity['group']) == [], 'finish-3')
         except BaseException:
             self.failed = True
             raise
@@ -153,9 +158,9 @@ class RunnerGit:
             self.close_pipes()
         try:
             result_bytes = bytes(output[stdout])
-            require(snapshot(self.repo, self.uid, self.gid, self.deadline) == self.config_before)
+            require(snapshot(self.repo, self.uid, self.gid, self.deadline) == self.config_before, 'finish-4')
             self.remaining(1)
-            require(not self.failed and not self.forced_cleanup and self.closed_pipes == {0, 1})
+            require(not self.failed and not self.forced_cleanup and self.closed_pipes == {0, 1}, 'finish-5')
         except BaseException:
             self.failed = True
             raise
@@ -164,14 +169,14 @@ class RunnerGit:
 
     def signal_owned(self, requested):
         # Never signal a group after the direct leader was reaped or lost birth binding.
-        require(not self.reaped and self.process.poll() is None)
+        require(not self.reaped and self.process.poll() is None, 'signal-owned-1')
         if self.identity is None:
             if requested == signal.SIGTERM:
                 self.process.terminate()
             else:
                 self.process.kill()
         else:
-            require(identity(self.process.pid) == self.identity)
+            require(identity(self.process.pid) == self.identity, 'signal-owned-2')
             os.killpg(self.identity['group'], requested)
 
     def refuse_cleanup(self):

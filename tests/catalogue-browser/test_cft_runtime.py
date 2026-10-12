@@ -202,7 +202,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         stage.assert_not_called()
         timer.return_value.cancel.assert_called_once_with()
 
-    def main_fixture(self, state, *, late_print=False, late_cancel=False, late_flush=False, print_failure=False):
+    def main_fixture(self, state, *, late_print=False, late_cancel=False, late_flush=False, print_failure=False, source_failure=None):
         clock = [10.0]
         events = []
         state['events'] = events
@@ -270,13 +270,18 @@ class RuntimeSelectionTests(unittest.TestCase):
             else:
                 patch(runtime, 'print', side_effect=emit, create=True)
             git = mock.Mock(side_effect=AssertionError('unmocked-Git-birth'))
-            source_guard = mock.Mock(return_value=source)
+            def source_result(*args, **kwargs):
+                if source_failure is not None:
+                    kwargs['source_diagnostic']('git-head')
+                    raise source_failure
+                return source
+            source_guard = mock.Mock(side_effect=source_result)
             stack.enter_context(mock.patch.dict(runtime.sys.modules, {
                 'cft_git_owner': SimpleNamespace(RunnerGit=git),
                 'host_controller': SimpleNamespace(source_guard=source_guard)}))
             result = runtime.main()
             git.assert_not_called()
-            self.assertEqual(source_guard.call_count, 2)
+            self.assertEqual(source_guard.call_count, 2 if source_failure is None else 1)
         return result
 
     def test_success_is_decided_after_fixed_stdout_and_finalization(self):
@@ -466,6 +471,128 @@ class BootstrapDiagnosticTests(unittest.TestCase):
                     stream.flush.assert_not_called()
                 else:
                     stream.write.assert_called_once()
+
+
+class SourceRefusalDiagnosticTests(unittest.TestCase):
+    def test_exact_families_and_fixed_predicates_never_disclose_exception_text(self):
+        families = ((runtime.ConfigRefusal, 'git-config', runtime.CONFIG_REFUSAL_CODES),
+            (runtime.GitObservationRefusal, 'git-owner', runtime.GIT_REFUSAL_CODES))
+        for error_type, family, codes in families:
+            for code in codes:
+                error = error_type('/PRIVATE/config-or-stderr')
+                error.fixed_refusal_code = code
+                with self.subTest(family=family, code=code):
+                    raw = runtime.preparation_diagnostic(error, 'source-checks', 'git-head')
+                    value = bundle.decode(raw, 512)
+                    self.assertEqual(value['refusal_family'], family)
+                    self.assertEqual(value['refusal_code'], code)
+                    self.assertEqual(value['source_step'], 'git-head')
+                    self.assertEqual(value['readiness_credit'], 0)
+                    self.assertEqual(value['status'], 'refused')
+                    self.assertNotIn(b'PRIVATE', raw)
+                    self.assertTrue(raw.isascii())
+                    self.assertLessEqual(len(raw), 512)
+
+    def test_unknown_or_hostile_code_and_substage_are_not_stringified(self):
+        class Hostile(str):
+            def __hash__(self):
+                raise AssertionError('private hash')
+            def __str__(self):
+                raise AssertionError('private text')
+        for value in ('/PRIVATE/' * 10000, Hostile('config-values-1'), None, True, {}, b'PRIVATE'):
+            error = runtime.ConfigRefusal('PRIVATE')
+            error.fixed_refusal_code = value
+            raw = runtime.preparation_diagnostic(error, value, value)
+            record = bundle.decode(raw, 512)
+            self.assertEqual(record['refusal_code'], 'unobserved')
+            self.assertEqual(record['source_step'], 'unobserved')
+            self.assertEqual(record['phase'], 'context')
+            self.assertNotIn(b'PRIVATE', raw)
+
+    def test_subclasses_and_standard_failures_remain_fixed_unqualified_families(self):
+        class OtherConfig(runtime.ConfigRefusal):
+            pass
+        for error, family in ((OtherConfig('PRIVATE'), 'operation-exception'),
+            (RuntimeError('PRIVATE'), 'operation-exception'), (KeyboardInterrupt('PRIVATE'), 'operation-exception'),
+            (FileNotFoundError('/PRIVATE'), 'missing-input'), (PermissionError('/PRIVATE'), 'input-access'),
+            (runtime.GateRefusal('PRIVATE'), 'source-contract'), (bundle.BundleRefusal('PRIVATE'), 'bundle')):
+            error.fixed_refusal_code = runtime.CONFIG_REFUSAL_CODES[0]
+            raw = runtime.preparation_diagnostic(error, 'installation', 'git-head')
+            record = bundle.decode(raw, 512)
+            self.assertEqual(record['refusal_family'], family)
+            self.assertEqual(record['refusal_code'], 'unobserved')
+            self.assertEqual(record['source_step'], 'unobserved')
+            self.assertNotIn(b'PRIVATE', raw)
+
+    def test_source_failure_stays_nonzero_without_acquisition_and_finalizes(self):
+        for error in (runtime.ConfigRefusal('PRIVATE'), runtime.GitObservationRefusal('PRIVATE'),
+                      runtime.GateRefusal('PRIVATE')):
+            state = {}
+            error.fixed_refusal_code = 'snapshot-4'
+            helper = RuntimeSelectionTests()
+            with mock.patch.object(runtime, 'Path', FixturePath):
+                self.assertEqual(helper.main_fixture(state, source_failure=error), 1)
+            state['acquire'].assert_not_called()
+            state['install'].assert_not_called()
+            state['publish'].assert_not_called()
+            state['cancel'].assert_called_once_with()
+            record = bundle.decode(state['printed'][0][0].encode(), 512)
+            self.assertEqual(record['phase'], 'source-checks')
+            self.assertEqual(record['source_step'], 'git-head')
+            self.assertEqual(record['status'], 'refused')
+            self.assertNotIn('PRIVATE', state['printed'][0][0])
+
+    def test_optional_source_reporter_preserves_exact_guards_and_command_order(self):
+        import host_controller as host
+        repo = FixturePath('/mock-repo')
+        directory = repo / 'tests/catalogue-browser'
+        workflow = b'synthetic-workflow'
+        product = 'src/remote_ops_workspace/state_lock.py'
+        manifest = {'product_inputs': [{'path': product, 'size': 4, 'sha256': 'a' * 64}],
+            'gate_inputs': ['host_controller.py', 'source-inputs.json']}
+        for mismatch in (False, True):
+            calls, steps = [], []
+
+            def git(argv, calls=calls):
+                calls.append(argv[3:])
+                return {'rev-parse': ('e' * 40 if argv[-1] == 'HEAD' else 'f' * 40).encode(),
+                    'diff': b'', 'show': workflow}[argv[3]]
+
+            def pin(path, mismatch=mismatch, **kwargs):
+                if kwargs.get('diagnostic') is not None:
+                    kwargs['diagnostic']('write-mode')
+                if path == repo / product:
+                    return {'size': 4, 'sha256': ('b' if mismatch else 'a') * 64}
+                return {'size': len(workflow), 'sha256': host.hashed(workflow)}
+
+            with mock.patch.object(host, 'Path', FixturePath), \
+                 mock.patch.object(host, 'file_pin', side_effect=pin), \
+                 mock.patch.object(FixturePath, 'read_bytes', return_value=bundle.packed(manifest), create=True), \
+                 mock.patch.object(FixturePath, 'iterdir', return_value=[directory / name for name in manifest['gate_inputs']]), \
+                 mock.patch.object(host.os, 'getuid', return_value=0, create=True), \
+                 mock.patch.object(host.os, 'geteuid', return_value=0, create=True), \
+                 mock.patch.dict(host.os.environ, {'GITHUB_WORKFLOW_SHA': 'd' * 40,
+                    'GITHUB_WORKFLOW_REF': 'Yunushan/remote-ops-workspace/' + host.WORKFLOW + '@fixed'}, clear=True), \
+                 mock.patch.object(host.subprocess, 'Popen', side_effect=AssertionError('native')) as native:
+                if mismatch:
+                    with self.assertRaises(runtime.GateRefusal):
+                        host.source_guard(repo, {'source': 'e' * 40}, [], {}, 30,
+                            source_directory=directory, git_command=git, source_diagnostic=steps.append)
+                    self.assertEqual(steps[-1], 'product-bytes')
+                    self.assertEqual(len(calls), 3)
+                else:
+                    result = host.source_guard(repo, {'source': 'e' * 40}, [], {}, 30,
+                        source_directory=directory, git_command=git, source_diagnostic=steps.append)
+                    self.assertEqual(result['head'], 'e' * 40)
+                    self.assertEqual(result['tree'], 'f' * 40)
+                    self.assertEqual(result['workflow'], host.hashed(workflow))
+                    self.assertEqual(steps[-1], 'source-summary')
+                    self.assertEqual(calls, [['rev-parse', 'HEAD'], ['rev-parse', 'HEAD^{tree}'],
+                        ['diff', '--no-ext-diff', '--exit-code', 'HEAD'],
+                        ['show', 'd' * 40 + ':' + host.WORKFLOW]])
+                native.assert_not_called()
+            self.assertIn('git-file-write-mode', steps)
+            self.assertTrue(all(step in runtime.SOURCE_STEPS for step in steps))
 
 
 if __name__ == '__main__':

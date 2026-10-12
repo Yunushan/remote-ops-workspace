@@ -82,6 +82,29 @@ class RunnerGitFaultCases(unittest.TestCase):
                 'core.hooksPath=/dev/null', 'rev-parse', 'HEAD'], '/mock-repo', 100,
                 uid=1001, gid=1001)
 
+    def test_command_and_identity_refusals_keep_message_and_exact_fixed_predicates(self):
+        for argv, code in (((), 'checked-argv-1'), (['PRIVATE'], 'checked-argv-2'),
+            (['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', 'unknown'], 'checked-argv-3')):
+            with self.subTest(code=code):
+                with self.assertRaises(self.module.GitObservationRefusal) as caught:
+                    self.module.checked_argv(argv)
+                self.assertEqual(caught.exception.args, ('cft-git-observation-refused',))
+                self.assertEqual(caught.exception.fixed_refusal_code, code)
+                self.assertNotIn('PRIVATE', str(caught.exception))
+        process = FakeProcess()
+        with self.assertRaises(self.module.GitObservationRefusal) as caught:
+            self.make_owner([], process, identity_override={'pid': 123, 'group': 999, 'session': 123, 'start': 1})
+        self.assertEqual(caught.exception.fixed_refusal_code, 'runner-git-init-6')
+
+    def test_every_declared_git_predicate_retains_fixed_refusal_and_default_code(self):
+        for code in self.module.GIT_REFUSAL_CODES:
+            with self.subTest(code=code):
+                self.assertIsNone(self.module.require(True, code))
+                with self.assertRaises(self.module.GitObservationRefusal) as caught:
+                    self.module.require(False, code)
+                self.assertEqual(caught.exception.args, ('cft-git-observation-refused',))
+                self.assertEqual(caught.exception.fixed_refusal_code, code)
+
     def test_close_failure_attempts_other_pipe_but_cannot_claim_closure(self):
         for failed_pipe in (0, 1):
             with self.subTest(failed_pipe=failed_pipe):

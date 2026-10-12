@@ -79,6 +79,34 @@ class ConfigParserTests(unittest.TestCase):
                 with self.assertRaises(self.module.ConfigRefusal):
                     self.module.config_values(raw)
 
+    def test_parser_refusal_attributes_identify_fixed_predicate_with_original_message(self):
+        cases = ((BASE.decode(), 'config-values-1'), (b'\xff', 'config-encoding'),
+            (BASE.replace(b'\n', b'\r\n'), 'config-values-2'),
+            (BASE + b'[include]\n\tpath = /PRIVATE\n', 'config-values-3'),
+            (BASE + b'not a key line\n', 'config-values-4'),
+            (BASE.replace(b'bare = false', b'bare = true'), 'config-values-5'),
+            (BASE.replace(b'bare = false', b'bare = false\n\tbare = false'), 'config-values-6'),
+            (BASE.replace(b'\tbare = false\n', b''), 'config-values-7'))
+        for raw, code in cases:
+            with self.subTest(code=code):
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    self.module.config_values(raw)
+                self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
+                self.assertEqual(caught.exception.fixed_refusal_code, code)
+                self.assertIn(code, self.module.CONFIG_REFUSAL_CODES)
+                self.assertNotIn('PRIVATE', str(caught.exception))
+
+    def test_every_declared_config_predicate_has_fixed_diagnostic_without_admission(self):
+        for code in self.module.CONFIG_REFUSAL_CODES:
+            if code in ('config-encoding', 'raw-close-unproved', 'required-absent'):
+                continue
+            with self.subTest(code=code):
+                self.assertIsNone(self.module.need(True, code))
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    self.module.need(False, code)
+                self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
+                self.assertEqual(caught.exception.fixed_refusal_code, code)
+
 
 @unittest.skipUnless(os.name == 'posix', 'Future POSIX raw descriptor fixture only')
 class RawDescriptorTests(unittest.TestCase):

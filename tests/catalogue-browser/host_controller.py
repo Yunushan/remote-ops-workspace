@@ -333,51 +333,73 @@ def chrome_file_note(public, stage):
 
 
 def source_guard(repo, context, registry, env, deadline, *, preparation=None, workflow_path=WORKFLOW,
-        source_directory=None, git_command=None):
+        source_directory=None, git_command=None, source_diagnostic=None):
+    def source_stage(value):
+        if source_diagnostic is not None:
+            source_diagnostic(value)
+    source_stage('contract')
     need(workflow_path in (WORKFLOW, '.github/workflows/chrome-for-testing-acquisition.yml'))
     directory = DIRECTORY if source_directory is None else Path(source_directory)
     need(directory == repo / 'tests' / 'catalogue-browser')
     if git_command is not None:
         need(os.getuid() == os.geteuid() == 0 and source_directory is not None and callable(git_command))
     git = Path('/usr/bin/git')
-    file_pin(git, root_owned=True, elf=True)
+    source_stage('git-file-pin')
+    file_pin(git, root_owned=True, elf=True,
+        diagnostic=(lambda value: source_stage('git-file-' + value)) if source_diagnostic is not None else None)
     def git_output(*args):
         argv = [str(git), '-c', 'core.hooksPath=/dev/null', *args]
         if git_command is not None:
             return git_command(argv)
         return command(registry, argv, repo, env, deadline)
+    source_stage('git-head')
     head = git_output('rev-parse', 'HEAD').decode('ascii').strip()
+    source_stage('git-tree')
     tree = git_output('rev-parse', 'HEAD^{tree}').decode('ascii').strip()
+    source_stage('head-tree-match')
     need(head == context['source'] and re.fullmatch(r'[0-9a-f]{40}', tree))
+    source_stage('git-diff')
     need(git_output('diff', '--no-ext-diff', '--exit-code', 'HEAD') == b'')
+    source_stage('manifest-decode')
     manifest = decode((directory / 'source-inputs.json').read_bytes(), 65536)
     rows = []
     for entry in manifest['product_inputs']:
         path = repo / entry['path']
+        source_stage('product-path')
         need(path.is_relative_to(repo))
+        source_stage('product-file-pin')
         pin = file_pin(path, maximum=1048576)
+        source_stage('product-bytes')
         need(pin['sha256'] == entry['sha256'] and pin['size'] == entry['size'])
         rows.append({'path': entry['path'], 'sha256': pin['sha256'], 'size': pin['size']})
+    source_stage('gate-membership')
     need({path.name for path in directory.iterdir()} == set(manifest['gate_inputs']))
     for path in sorted(directory.iterdir()):
         if path.name in manifest['gate_inputs']:
+            source_stage('gate-file-pin')
             pin = file_pin(path, maximum=1048576)
             rows.append({'path': path.relative_to(repo).as_posix(), 'sha256': pin['sha256'], 'size': pin['size']})
+    source_stage('gate-row-membership')
     need(set(manifest['gate_inputs']) == {row['path'].split('/')[-1] for row in rows if row['path'].startswith('tests/catalogue-browser/')})
+    source_stage('workflow-file-pin')
     workflow = file_pin(repo / workflow_path, maximum=65536)
+    source_stage('workflow-context')
     workflow_sha = os.environ.get('GITHUB_WORKFLOW_SHA', '')
     need(re.fullmatch(r'[0-9a-f]{40}', workflow_sha))
     workflow_ref = os.environ.get('GITHUB_WORKFLOW_REF', '')
     need(workflow_ref.startswith(PUBLIC_REPO + '/' + workflow_path + '@'))
     if preparation is not None:
         preparation('workflow-command')
+    source_stage('workflow-command')
     observed_workflow = git_output('show', workflow_sha + ':' + workflow_path)
     if preparation is not None:
         preparation('workflow-bytes')
+    source_stage('workflow-bytes')
     need(hashed(observed_workflow) == workflow['sha256'])
     rows.append({'path': workflow_path, 'sha256': workflow['sha256'], 'size': workflow['size']})
     if preparation is not None:
         preparation('source-summary')
+    source_stage('source-summary')
     return {'head': head, 'tree': tree, 'bytes': hashed(packed(rows)), 'workflow': workflow['sha256']}
 
 

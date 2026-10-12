@@ -415,7 +415,38 @@ def sdk_tree_limit_diagnostic(exc):
     return {key: value[key] for key in keys}
 
 
-def capture_refusal_diagnostic(exc, phase):
+OWNED_PROCESS_SUBSTAGES = frozenset((
+    "avd-create", "port-reservation", "adb-birth", "adb-listener",
+    "emulator-birth", "device-connect", "emulator-boot", "device-identity",
+))
+
+
+def owned_process_diagnostic(exc):
+    value = exc.__dict__.get("owned_process_observation")
+    keys = ("role", "reason", "pipe_failed", "poll_observed", "exit_status",
+            "stdout_retained_bytes", "stderr_retained_bytes", "counts_partial")
+    if (type(value) is not dict or len(value) != len(keys)
+            or any(type(key) is not str for key in value) or set(value) != set(keys)):
+        return None
+    if (type(value["role"]) is not str or value["role"] not in ("adb", "emulator")
+            or type(value["reason"]) is not str or value["reason"] not in ("pipe-failed", "leader-exited")
+            or type(value["pipe_failed"]) is not bool or type(value["poll_observed"]) is not bool
+            or value["counts_partial"] is not True):
+        return None
+    for key, maximum in (("stdout_retained_bytes", 4 * 1024 * 1024),
+                         ("stderr_retained_bytes", 1024 * 1024)):
+        if type(value[key]) is not int or not 0 <= value[key] <= maximum:
+            return None
+    if value["pipe_failed"]:
+        if value["reason"] != "pipe-failed" or value["poll_observed"] or value["exit_status"] is not None:
+            return None
+    elif (value["reason"] != "leader-exited" or not value["poll_observed"]
+          or type(value["exit_status"]) is not int or not -(2 ** 31) <= value["exit_status"] < 2 ** 31):
+        return None
+    return {key: value[key] for key in keys}
+
+
+def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
         value = exc.args[0]
@@ -429,6 +460,13 @@ def capture_refusal_diagnostic(exc, phase):
         phase = "unobserved"
     record = {"schema": "row.android-capture-refusal.v1", "status": "refused",
               "phase": phase, "refusal_code": code, "approval": False, "readiness_credit": 0}
+    if phase == "owned-api36-emulator":
+        if type(owned_substage) is str and owned_substage in OWNED_PROCESS_SUBSTAGES:
+            record["owned_substage"] = owned_substage
+        if code == "owned-leader-or-pipe-unavailable":
+            observed = owned_process_diagnostic(exc)
+            if observed is not None:
+                record["owned_process"] = observed
     if code == "tree-total-byte-bound" and phase == "sdk-observation":
         observed = sdk_tree_limit_diagnostic(exc)
         if observed is not None:
@@ -485,6 +523,7 @@ def public_receipt(root, record):
 def capture(root):
     event_guard(root)
     leaders, context = [], None
+    owned_substage = None
     try:
         short, started = commands(root, leaders)
         binding = source_binding(root, short)
@@ -523,13 +562,18 @@ def capture(root):
             return bytes(child.buffers[0])
 
         context["phase"] = "owned-api36-emulator"
+        owned_substage = "avd-create"
         avd = "row-qualification-36-" + secrets.token_hex(8)
         native([str(sdk / "cmdline-tools/latest/bin/avdmanager"), "create", "avd", "-n", avd, "-k", "system-images;android-36;google_apis;x86_64", "--device", "pixel_6"], stdin=b"no\n", timeout=180)
+        owned_substage = "port-reservation"
         for port in (H.ADB_PORT, 5556, 5557):
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", port))
+        owned_substage = "adb-birth"
         adb_leader = H.Managed([str(sdk / "platform-tools/adb"), "-L", "tcp:127.0.0.1:5039", "nodaemon", "server"], env, root)
         leaders.append(adb_leader)
+        adb_leader._public_caller_role = "adb"
+        owned_substage = "adb-listener"
         ready = time.monotonic() + 10
         while time.monotonic() < ready:
             try:
@@ -543,9 +587,12 @@ def capture(root):
             time.sleep(0.1)
         else:
             raise H.Refusal("qualification-adb-listener-deadline")
+        owned_substage = "emulator-birth"
         emulator = H.Managed([str(sdk / "emulator/emulator"), "-avd", avd, "-port", "5556", "-no-window", "-gpu", "swiftshader_indirect", "-no-snapshot", "-no-snapshot-load", "-no-snapshot-save", "-noaudio", "-no-boot-anim", "-camera-back", "none", "-no-metrics"], env, root)
         leaders.append(emulator)
+        emulator._public_caller_role = "emulator"
         adb = H.AdbSocket(adb_leader)
+        owned_substage = "device-connect"
         connected = time.monotonic() + 180
         while time.monotonic() < connected:
             emulator.live()
@@ -559,6 +606,7 @@ def capture(root):
             time.sleep(0.1)
         else:
             raise H.Refusal("qualification-device-deadline")
+        owned_substage = "emulator-boot"
         boot = time.monotonic() + 180
         while time.monotonic() < boot:
             emulator.live()
@@ -570,6 +618,7 @@ def capture(root):
             time.sleep(0.1)
         else:
             raise H.Refusal("qualification-boot-deadline")
+        owned_substage = "device-identity"
         if adb.shell("getprop ro.build.version.sdk").strip() != b"36" or adb.shell("getprop ro.product.cpu.abi").strip() != b"x86_64":
             raise H.Refusal("qualification-api-or-abi-mismatch")
         context["phase"] = "chrome-static-device-inventory"
@@ -595,7 +644,7 @@ def capture(root):
         return {"status": record["status"], "output_sha256": H.sha(H.read_plain(root / REPORT, 131072)), "readiness_credit": 0}
     except Exception as exc:
         try:
-            diagnostic = capture_refusal_diagnostic(exc, context["phase"] if context is not None else None)
+            diagnostic = capture_refusal_diagnostic(exc, context["phase"] if context is not None else None, owned_substage)
             line = json.dumps(diagnostic, ensure_ascii=True, separators=(",", ":"))
             if len(line) <= 512:
                 print(line, file=sys.stderr)

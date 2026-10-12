@@ -159,6 +159,32 @@ def tree_digest(root, maximum_files=12000, maximum_bytes=256 * 1024 * 1024):
     return sha(json.dumps(sorted(rows, key=lambda r: r["path"]), sort_keys=True, separators=(",", ":")).encode())
 
 
+def _owned_live_observation(leader, pipe_failed, poll_observed, exit_status):
+    """Primitive partial snapshot only; never reads or publishes pipe content."""
+    role = leader.__dict__.get("_public_caller_role")
+    buffers = leader.__dict__.get("buffers")
+    if (type(role) is not str or role not in ("adb", "emulator")
+            or type(buffers) is not list or len(buffers) != 2
+            or any(type(value) is not bytearray for value in buffers)
+            or type(pipe_failed) is not bool or type(poll_observed) is not bool):
+        return None
+    if pipe_failed:
+        if poll_observed or exit_status is not None:
+            return None
+        reason = "pipe-failed"
+    else:
+        if not poll_observed or type(exit_status) is not int or not -(2 ** 31) <= exit_status < 2 ** 31:
+            return None
+        reason = "leader-exited"
+    stdout_bytes, stderr_bytes = len(buffers[0]), len(buffers[1])
+    if stdout_bytes > 4 * 1024 * 1024 or stderr_bytes > 1024 * 1024:
+        return None
+    return {"role": role, "reason": reason, "pipe_failed": pipe_failed,
+            "poll_observed": poll_observed, "exit_status": exit_status,
+            "stdout_retained_bytes": stdout_bytes, "stderr_retained_bytes": stderr_bytes,
+            "counts_partial": True}
+
+
 class Managed:
     """Retained owned Popen leader with bounded pipes and original deadlines."""
     def __init__(self, argv, env, cwd, *, popen=subprocess.Popen, clock=time.monotonic, protocol=False):
@@ -197,8 +223,20 @@ class Managed:
             self.failed.set()
 
     def live(self):
-        if self.failed.is_set() or self.child.poll() is not None:
-            raise Refusal("owned-leader-or-pipe-unavailable")
+        pipe_failed = self.failed.is_set()
+        poll_observed, exit_status = False, None
+        if not pipe_failed:
+            exit_status = self.child.poll()
+            poll_observed = True
+        if pipe_failed or exit_status is not None:
+            refusal = Refusal("owned-leader-or-pipe-unavailable")
+            try:
+                observed = _owned_live_observation(self, pipe_failed, poll_observed, exit_status)
+                if observed is not None:
+                    refusal.owned_process_observation = observed
+            except BaseException:
+                pass  # Diagnostic failure cannot replace the original refusal.
+            raise refusal
 
     def send(self, value):
         self.live()

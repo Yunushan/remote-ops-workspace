@@ -944,5 +944,194 @@ class SdkTreeLimitDiagnosticTests(unittest.TestCase):
         self.assertFalse(stale_record["approval"])
 
 
+class OwnedProcessDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def leader(role="adb", failed=False, status=1):
+        leader = object.__new__(H.Managed)
+        leader.failed = mock.Mock()
+        leader.failed.is_set.return_value = failed
+        leader.child = SimpleNamespace(poll=mock.Mock(return_value=status))
+        leader.buffers = [bytearray(b"private stdout"), bytearray(b"private stderr")]
+        leader._public_caller_role = role
+        return leader
+
+    @staticmethod
+    def observation(role="adb", failed=False, status=1):
+        return {"role": role, "reason": "pipe-failed" if failed else "leader-exited",
+                "pipe_failed": failed, "poll_observed": not failed,
+                "exit_status": None if failed else status,
+                "stdout_retained_bytes": 4194304, "stderr_retained_bytes": 1048576,
+                "counts_partial": True}
+
+    def test_pipe_failure_short_circuit_never_polls(self):
+        for role in ("adb", "emulator"):
+            leader = self.leader(role, failed=True)
+            with self.subTest(role=role), self.assertRaises(H.Refusal) as error:
+                leader.live()
+            self.assertEqual(error.exception.args, ("owned-leader-or-pipe-unavailable",))
+            leader.failed.is_set.assert_called_once_with()
+            leader.child.poll.assert_not_called()
+            value = error.exception.owned_process_observation
+            self.assertTrue(value["pipe_failed"])
+            self.assertFalse(value["poll_observed"])
+            self.assertIsNone(value["exit_status"])
+            self.assertEqual(value["role"], role)
+            self.assertEqual(value["stdout_retained_bytes"], len(b"private stdout"))
+            self.assertEqual(value["stderr_retained_bytes"], len(b"private stderr"))
+            self.assertTrue(value["counts_partial"])
+            self.assertNotIn("private", json.dumps(value))
+
+    def test_exited_leader_samples_existing_poll_once(self):
+        for role in ("adb", "emulator"):
+            for status in (0, 1, -9):
+                leader = self.leader(role, status=status)
+                with self.subTest(role=role, status=status), self.assertRaises(H.Refusal) as error:
+                    leader.live()
+                leader.failed.is_set.assert_called_once_with()
+                leader.child.poll.assert_called_once_with()
+                value = error.exception.owned_process_observation
+                self.assertEqual(value["reason"], "leader-exited")
+                self.assertEqual(value["exit_status"], status)
+                self.assertTrue(value["poll_observed"])
+                self.assertFalse(value["pipe_failed"])
+                self.assertTrue(value["counts_partial"])
+
+    def test_running_leader_retains_existing_acceptance(self):
+        leader = self.leader(status=None)
+        self.assertIsNone(leader.live())
+        leader.failed.is_set.assert_called_once_with()
+        leader.child.poll.assert_called_once_with()
+
+    def test_diagnostic_failure_cannot_replace_liveness_refusal(self):
+        for failure in (RuntimeError("/private/diagnostic"), KeyboardInterrupt("/private/interrupt")):
+            leader = self.leader()
+            with self.subTest(kind=type(failure).__name__), mock.patch.object(H, "_owned_live_observation", side_effect=failure), self.assertRaises(H.Refusal) as error:
+                leader.live()
+            self.assertEqual(error.exception.args, ("owned-leader-or-pipe-unavailable",))
+            self.assertNotIn("owned_process_observation", error.exception.__dict__)
+            leader.child.poll.assert_called_once_with()
+
+    def test_unclassified_caller_or_malformed_private_snapshot_is_omitted(self):
+        class HostileString(str):
+            def __hash__(self):
+                raise AssertionError("hash")
+            def __str__(self):
+                raise AssertionError("stringification")
+        cases = ({"role": "/private/role"}, {"role": HostileString("adb")},
+                 {"status": True}, {"status": 2 ** 31}, {"status": -(2 ** 31) - 1})
+        for case in cases:
+            leader = self.leader(**case)
+            with self.subTest(case=list(case)), self.assertRaises(H.Refusal) as error:
+                leader.live()
+            self.assertEqual(error.exception.args, ("owned-leader-or-pipe-unavailable",))
+            self.assertNotIn("owned_process_observation", error.exception.__dict__)
+
+    def test_fixed_phase_role_stage_exit_and_partial_counts_project_within_bound(self):
+        for role in ("adb", "emulator"):
+            for failed, status in ((True, None), (False, -(2 ** 31)), (False, 2 ** 31 - 1)):
+                value = self.observation(role, failed, status)
+                error = H.Refusal("owned-leader-or-pipe-unavailable")
+                error.owned_process_observation = value
+                for stage in Q.OWNED_PROCESS_SUBSTAGES:
+                    with self.subTest(role=role, failed=failed, status=status, stage=stage):
+                        record = Q.capture_refusal_diagnostic(error, "owned-api36-emulator", stage)
+                        self.assertEqual(record["owned_process"], value)
+                        self.assertEqual(record["owned_substage"], stage)
+                        self.assertFalse(record["approval"])
+                        self.assertEqual(record["readiness_credit"], 0)
+                        raw = json.dumps(record, ensure_ascii=True, separators=(",", ":"))
+                        self.assertTrue(raw.isascii())
+                        self.assertLessEqual(len(raw), 512)
+                        self.assertNotIn("private", raw)
+
+    def test_malformed_or_private_projection_fields_are_never_published(self):
+        class HostileString(str):
+            def __hash__(self):
+                raise AssertionError("hash")
+            def __str__(self):
+                raise AssertionError("stringification")
+        base = self.observation()
+        cases = (None, [], {**base, "path": "/private/path"},
+                 {k: v for k, v in base.items() if k != "role"},
+                 {(1 if k == "role" else k): v for k, v in base.items()},
+                 {**base, "role": "/private/role"}, {**base, "role": HostileString("adb")},
+                 {**base, "reason": HostileString("leader-exited")},
+                 {**base, "reason": "pipe-failed"}, {**base, "pipe_failed": 0},
+                 {**base, "poll_observed": False}, {**base, "exit_status": None},
+                 {**base, "exit_status": True}, {**base, "exit_status": 2 ** 31},
+                 {**base, "stdout_retained_bytes": True}, {**base, "stdout_retained_bytes": -1},
+                 {**base, "stdout_retained_bytes": 4194305}, {**base, "stderr_retained_bytes": 1048577},
+                 {**base, "counts_partial": False},
+                 {**self.observation(failed=True), "poll_observed": True},
+                 {**self.observation(failed=True), "exit_status": 0})
+        for index, value in enumerate(cases):
+            error = H.Refusal("owned-leader-or-pipe-unavailable")
+            error.owned_process_observation = value
+            with self.subTest(index=index):
+                record = Q.capture_refusal_diagnostic(error, "owned-api36-emulator", HostileString("adb-listener"))
+                self.assertNotIn("owned_process", record)
+                self.assertNotIn("owned_substage", record)
+                self.assertNotIn("private", json.dumps(record))
+
+    def test_other_phase_code_and_exception_subclass_omit_process_snapshot(self):
+        class RefusalSubclass(H.Refusal):
+            pass
+        for phase, error in (("sdk-observation", H.Refusal("owned-leader-or-pipe-unavailable")),
+                             ("owned-api36-emulator", H.Refusal("tree-hardlink")),
+                             ("owned-api36-emulator", RefusalSubclass("owned-leader-or-pipe-unavailable"))):
+            error.owned_process_observation = self.observation()
+            with self.subTest(phase=phase, kind=type(error).__name__):
+                record = Q.capture_refusal_diagnostic(error, phase, "adb-listener")
+                self.assertNotIn("owned_process", record)
+                self.assertFalse(record["approval"])
+
+    def test_capture_trusted_role_substage_original_refusal_and_cleanup_are_preserved(self):
+        for failed_role in ("adb", "emulator"):
+            with self.subTest(failed_role=failed_role), fixture() as root:
+                (root / ".tmp").mkdir()
+                sdk = root / "owned-sdk"
+                avd = SimpleNamespace(child=SimpleNamespace(stdin=mock.Mock()), zero=mock.Mock(),
+                                      buffers=[bytearray(), bytearray()])
+                adb, emulator = self.leader("adb", status=None), self.leader("emulator")
+                if failed_role == "adb":
+                    adb.child.poll.return_value = 1
+                born, originals = [], []
+                managed_type = H.Managed
+
+                def managed(argv, env, cwd, born=born, avd=avd, adb=adb, emulator=emulator):
+                    leader = (avd, adb, emulator)[len(born)]
+                    born.append(leader)
+                    return leader
+
+                def live(leader, managed_type=managed_type, originals=originals):
+                    try:
+                        managed_type.live(leader)
+                    except H.Refusal as error:
+                        originals.append(error)
+                        raise
+
+                def listener(leader, port, adb=adb, live=live):
+                    self.assertIs(leader, adb)
+                    self.assertEqual(leader._public_caller_role, "adb")
+                    live(leader)
+                    return True
+
+                emulator.live = lambda emulator=emulator, live=live: live(emulator)
+                stream = io.StringIO()
+                with mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True), mock.patch.object(Q, "event_guard", return_value={}), mock.patch.object(Q, "commands", return_value=(object(), 0)), mock.patch.object(Q, "source_binding", return_value={}), mock.patch.object(Q, "clone_guard", return_value=({}, {})), mock.patch.object(Q, "owned_sdk", return_value=sdk), mock.patch.object(Q, "sdk_inventory", return_value={"tree_sha256": "e" * 64}), mock.patch.object(Q.time, "monotonic", return_value=0), mock.patch.object(Q.socket, "socket", return_value=mock.MagicMock()), mock.patch.object(H, "Managed", side_effect=managed) as provider, mock.patch.object(H, "owned_listener", side_effect=listener), mock.patch.object(H, "AdbSocket", return_value=object()), mock.patch.object(Q, "public_receipt", side_effect=RuntimeError("/private/publisher")), mock.patch.object(H, "cleanup_all", return_value=[]) as cleanup, mock.patch.object(sys, "stderr", stream):
+                    with self.assertRaises(H.Refusal) as error:
+                        Q.capture(root)
+                    self.assertIs(error.exception, originals[0])
+                    self.assertEqual(provider.call_count, 2 if failed_role == "adb" else 3)
+                    cleanup.assert_called_once_with(born)
+                record = json.loads(stream.getvalue())
+                self.assertEqual(record["owned_process"]["role"], failed_role)
+                self.assertEqual(record["owned_process"]["exit_status"], 1)
+                self.assertEqual(record["owned_substage"], "adb-listener" if failed_role == "adb" else "device-connect")
+                self.assertFalse(record["approval"])
+                self.assertEqual(record["readiness_credit"], 0)
+                self.assertNotIn("private", stream.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

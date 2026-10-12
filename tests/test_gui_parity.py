@@ -1252,7 +1252,7 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     )
     assert (
         "mobaSftpActionStaticX"
-        in toolbar_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in toolbar_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     )
     assert (
         "GuiMobaSftpToolbarActionRoute"
@@ -1260,11 +1260,11 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     )
     assert (
         "show_moba_sftp_toolbar_action"
-        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     )
     assert (
         "mobaSftpToolbarRouteLiveAction"
-        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in toolbar_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     )
     assert (
         "check_live_moba_sftp_toolbar_action_route"
@@ -1272,15 +1272,15 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     )
     assert (
         "mobaSftpPathTextX"
-        in browser_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in browser_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     )
     assert (
         "mobaSftpFollowRouteKey"
-        in follow_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in follow_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     )
     assert (
         "mobaSftpTerminalFolderRouteKey"
-        in terminal_folder_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in terminal_folder_route_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     )
     assert (
         "MobaSftpTerminalFolderRoute"
@@ -1288,7 +1288,7 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     )
     assert (
         "mobaSftpRoutedRowsKey"
-        in routed_rows_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in routed_rows_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     )
 
 
@@ -1434,38 +1434,38 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "moba-monitoring-control-geometry" in checker_source
     assert "mobaMonitoringControlCheckmarkPoints" in checker_source
     assert "mobaRemoteMonitoringStaticHeight" in checker_source
-    assert "mobaRemoteMonitoringCompact" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
-    assert "mobaMonitoringControlStaticX" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
-    assert "mobaRemoteMonitoringStaticHeight" in geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "mobaRemoteMonitoringCompact" in requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
+    assert "mobaMonitoringControlStaticX" in requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
+    assert "mobaRemoteMonitoringStaticHeight" in geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     assert "chrome.divider_left_inset" in geometry_requirement["source_tokens"]["scripts/render_gui_design_previews.py"]
-    assert "mobaMonitoringControlLiveWidth" in control_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "mobaMonitoringControlLiveWidth" in control_geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui_connected.py"]
     assert "geometry.checkmark_points" in control_geometry_requirement["source_tokens"]["scripts/render_gui_design_previews.py"]
     assert "mobaMonitoringTelemetryRouteKey" in telemetry_route_requirement["source_tokens"][
-        "src/remote_ops_workspace/gui.py"
+        "src/remote_ops_workspace/gui_connected.py"
     ]
     assert "expected_moba_monitoring_telemetry_route" in telemetry_route_requirement["source_tokens"][
         "scripts/check_real_gui_render.py"
     ]
     assert "mobaRemoteMonitoringControlRouteKey" in remote_control_route_requirement["source_tokens"][
-        "src/remote_ops_workspace/gui.py"
+        "src/remote_ops_workspace/gui_connected.py"
     ]
     assert "expected_moba_remote_monitoring_control_route" in remote_control_route_requirement["source_tokens"][
         "scripts/check_real_gui_render.py"
     ]
     assert "mobaFollowTerminalFolderControlRouteKey" in follow_control_route_requirement["source_tokens"][
-        "src/remote_ops_workspace/gui.py"
+        "src/remote_ops_workspace/gui_connected.py"
     ]
     assert "expected_moba_follow_terminal_folder_control_route" in follow_control_route_requirement["source_tokens"][
         "scripts/check_real_gui_render.py"
     ]
     assert "handle_moba_remote_monitoring_toggled" in live_toggle_route_requirement["source_tokens"][
-        "src/remote_ops_workspace/gui.py"
+        "src/remote_ops_workspace/gui_connected.py"
     ]
     assert "widget.toggled.connect" in live_toggle_route_requirement["source_tokens"][
-        "src/remote_ops_workspace/gui.py"
+        "src/remote_ops_workspace/gui_connected.py"
     ]
     assert "control_route.live_plan_property" in live_toggle_route_requirement["source_tokens"][
-        "src/remote_ops_workspace/gui.py"
+        "src/remote_ops_workspace/gui_connected.py"
     ]
     assert "toggled state did not update" in live_toggle_route_requirement["source_tokens"][
         "scripts/check_real_gui_render.py"

@@ -127,7 +127,6 @@ from .terminal import (
     ssh_command_with_control_path,
 )
 
-
 if TYPE_CHECKING:
     class ConnectedSftpDock(QFrame):
         state: MobaConnectedSessionState

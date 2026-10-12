@@ -43,6 +43,27 @@ jobs:
         with:
           python-version: '3.14.7'
           architecture: x64
+      - name: Remove group and world write access from hosted browser tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tool in /opt/google/chrome/chrome /usr/local/share/chromedriver-linux64/chromedriver; do
+            test -f "$tool"
+            test ! -L "$tool"
+            test "$(stat -c '%u:%h' "$tool")" = '0:1'
+            test "$(stat -c '%s' "$tool")" -gt 0
+            test "$(stat -c '%s' "$tool")" -le 536870912
+            original_identity="$(stat -c '%d:%i:%u:%g:%h:%s:%Y' "$tool")"
+            original_mode="$(stat -c '%a' "$tool")"
+            expected_mode="$(printf '%o' "$((8#$original_mode & ~8#22))")"
+            original_bytes="$(sha256sum -- "$tool")"
+            sudo --non-interactive chmod go-w -- "$tool"
+            test -f "$tool"
+            test ! -L "$tool"
+            test "$(stat -c '%d:%i:%u:%g:%h:%s:%Y' "$tool")" = "$original_identity"
+            test "$(stat -c '%a' "$tool")" = "$expected_mode"
+            test "$(sha256sum -- "$tool")" = "$original_bytes"
+          done
       - name: Observe actual browser and catalogue cases
         shell: bash
         run: python -I -S -B tests/catalogue-browser/entry.py run

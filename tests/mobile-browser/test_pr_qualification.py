@@ -519,9 +519,37 @@ class KvmFocusedTests(unittest.TestCase):
         self.assertLess(raw.index("if ! test -r /dev/kvm; then"), raw.index("if ! test -w /dev/kvm; then"))
         self.assertIn("android-kvm-read-access-refused", raw)
         self.assertIn("android-kvm-write-access-refused", raw)
-        self.assertNotIn("sudo", raw)
-        self.assertNotIn("setfacl", raw)
-        self.assertNotIn("chmod", raw)
+        setup_marker = "      - name: Enable KVM only for this disposable runner user\n"
+        collector_marker = "      - name: Observe actual KVM access before emulator capture\n"
+        self.assertEqual(raw.count(setup_marker), 1)
+        self.assertEqual(raw.count(collector_marker), 1)
+        prefix, _, remainder = raw.partition(setup_marker)
+        setup, _, collector = remainder.partition(collector_marker)
+        self.assertLess(raw.index("phase=isolated-sdkmanager-zero-exit"), raw.index(setup_marker))
+        self.assertIn(command, collector)
+        for forbidden in ("sudo", "setfacl", "chmod", "chown"):
+            self.assertNotIn(forbidden, prefix + collector)
+        mutation = 'sudo --non-interactive setfacl --no-mask --modify "u:$runner_uid:rw" -- /dev/kvm'
+        self.assertEqual(setup.count(mutation), 1)
+        self.assertEqual(setup.count("sudo"), 1)
+        self.assertEqual(setup.count("setfacl"), 1)
+        self.assertNotIn("chmod", setup)
+        self.assertNotIn("chown", setup)
+        for guard in (
+            "test -c /dev/kvm",
+            "test ! -L /dev/kvm",
+            "test \"$(stat -c '%u:%h:%t:%T' /dev/kvm)\" = '0:1:a:e8'",
+            "test \"$(stat -c '%a' /dev/kvm)\" = '660'",
+            'runner_uid="$(id -u)"',
+            'test "$runner_uid" -gt 0',
+            'device_identity="$(stat -c \'%d:%i:%u:%g:%h:%f:%r\' /dev/kvm)"',
+            'test "$(stat -c \'%d:%i:%u:%g:%h:%f:%r\' /dev/kvm)" = "$device_identity"',
+            'test "$other_acl_after" = "$other_acl_before"',
+        ):
+            self.assertIn(guard, setup)
+        self.assertLess(setup.index('test "$runner_uid" -gt 0'), setup.index(mutation))
+        self.assertLess(setup.index('test "${#acl_before}" -le 8192'), setup.index(mutation))
+        self.assertGreater(setup.index('test "$other_acl_after" = "$other_acl_before"'), setup.index(mutation))
 
 
 if __name__ == "__main__":

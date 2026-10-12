@@ -1,6 +1,8 @@
 """Pure synthetic contracts/mocks only: no host or browser evidence."""
 import copy
+import io
 import json
+import sys
 import unittest
 from pathlib import PurePosixPath
 from unittest.mock import Mock, patch
@@ -358,6 +360,103 @@ class QualificationMismatchTests(unittest.TestCase):
                     self.assertTrue(owner.reaped)
                     self.assertFalse(owner.finished)
                     self.assertFalse(owner.cleanup_observed())
+
+
+class RuntimeDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def refused_record():
+        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused',
+            'complete': False, 'phase': 'host-runtime-observation', 'readiness_credit': 0,
+            'limits': contract.LIMITS}
+
+    def test_fixed_stages_and_mismatched_versions_are_only_refusal_metadata(self):
+        for stage in contract.RUNTIME_STAGES:
+            record = self.refused_record()
+            host_controller.runtime_note(record, stage)
+            raw = json.dumps(record).encode()
+            self.assertEqual(contract.public_bytes(raw), raw)
+            self.assertFalse(record['complete'])
+            self.assertEqual(record['readiness_credit'], 0)
+        record = self.refused_record()
+        pair = {'chrome': '142.0.7444.175', 'driver': '142.0.7444.176'}
+        host_controller.runtime_note(record, 'version-equality', pair)
+        pair['chrome'] = '0.0.0.0'
+        self.assertEqual(record['runtime_versions']['chrome'], '142.0.7444.175')
+        raw = json.dumps(record).encode()
+        self.assertEqual(contract.public_bytes(raw), raw)
+        # The existing complete-result same-patch predicate is still strict.
+        complete, expected = sample()
+        complete['runtime']['driver_version'] = '142.0.7444.176'
+        with self.assertRaises(contract.GateRefusal):
+            contract.validate(json.dumps(complete).encode(), expected)
+
+    def test_unknown_private_types_bounds_and_wrong_phase_refuse(self):
+        for stage in ('/private/example', '', True, None, ['version-equality']):
+            record = self.refused_record()
+            record['runtime_stage'] = stage
+            with self.subTest(stage=stage), self.assertRaises(contract.GateRefusal):
+                contract.public_bytes(json.dumps(record).encode())
+        for pair in ({'chrome': '/private/example', 'driver': '1.2.3.4'},
+                     {'chrome': '1' * 65 + '.2.3.4', 'driver': '1.2.3.4'},
+                     {'chrome': '1.2.3.4\n', 'driver': '1.2.3.4'},
+                     {'chrome': True, 'driver': '1.2.3.4'},
+                     {'chrome': '1.2.3.4', 'driver': '1.2.3.4', 'token': 'private'},
+                     None):
+            record = self.refused_record()
+            record.update(runtime_stage='version-equality', runtime_versions=pair)
+            with self.subTest(pair=pair), self.assertRaises(contract.GateRefusal):
+                contract.public_bytes(json.dumps(record).encode())
+        for phase in ('preparation', 'api-read', 'cleanup'):
+            record = self.refused_record()
+            record.update(phase=phase, runtime_stage='chrome-version-command')
+            with self.subTest(phase=phase), self.assertRaises(contract.GateRefusal):
+                contract.public_bytes(json.dumps(record).encode())
+        record = self.refused_record()
+        record.update(runtime_versions={'chrome': '1.2.3.4', 'driver': '1.2.3.4'})
+        with self.assertRaises(contract.GateRefusal):
+            contract.public_bytes(json.dumps(record).encode())
+        record['runtime_stage'] = 'driver-version-command'
+        with self.assertRaises(contract.GateRefusal):
+            contract.public_bytes(json.dumps(record).encode())
+
+    def test_marker_refuses_without_mutating_and_clears_stale_pair(self):
+        record = self.refused_record()
+        original = copy.deepcopy(record)
+        with self.assertRaises(contract.GateRefusal):
+            host_controller.runtime_note(record, '/private/example')
+        self.assertEqual(record, original)
+        record['phase'] = 'api-read'
+        original = copy.deepcopy(record)
+        with self.assertRaises(contract.GateRefusal):
+            host_controller.runtime_note(record, 'chrome-version-command')
+        self.assertEqual(record, original)
+        record = self.refused_record()
+        host_controller.runtime_note(record, 'version-equality', {'chrome': '1.2.3.4', 'driver': '1.2.3.4'})
+        host_controller.runtime_note(record, 'chrome-version-command')
+        self.assertNotIn('runtime_versions', record)
+
+    def test_log_is_bounded_and_writer_failure_is_inert(self):
+        record = self.refused_record()
+        host_controller.runtime_note(record, 'version-equality', {'chrome': '1.2.3.4', 'driver': '1.2.3.5'})
+        stream = io.StringIO()
+        with patch.object(sys, 'stderr', stream):
+            host_controller.emit_runtime_refusal(record)
+        raw = stream.getvalue()
+        self.assertTrue(raw.isascii())
+        self.assertLessEqual(len(raw), 513)
+        diagnostic = json.loads(raw)
+        self.assertEqual(diagnostic['readiness_credit'], 0)
+        self.assertEqual(diagnostic['runtime_versions'], record['runtime_versions'])
+        class BrokenStream:
+            def write(self, value):
+                raise RuntimeError('/private/example')
+        with patch.object(sys, 'stderr', BrokenStream()):
+            self.assertIsNone(host_controller.emit_runtime_refusal(record))
+        record['complete'] = True
+        stream = io.StringIO()
+        with patch.object(sys, 'stderr', stream):
+            host_controller.emit_runtime_refusal(record)
+        self.assertEqual(stream.getvalue(), '')
 
 
 class PreparationDiagnosticTests(unittest.TestCase):

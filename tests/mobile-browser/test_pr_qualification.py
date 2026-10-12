@@ -272,6 +272,81 @@ class FocusedTests(unittest.TestCase):
             self.assertNotIn(text, raw)
 
 
+class CaptureDiagnosticTests(unittest.TestCase):
+    def test_known_refusal_is_bounded_and_never_grants_credit(self):
+        for code in Q.PUBLIC_CAPTURE_REFUSALS:
+            record = Q.capture_refusal_diagnostic(H.Refusal(code), "sdk-observation")
+            self.assertEqual(record["refusal_code"], code)
+            self.assertFalse(record["approval"])
+            self.assertEqual(record["readiness_credit"], 0)
+            raw = json.dumps(record, ensure_ascii=True, separators=(",", ":"))
+            self.assertTrue(raw.isascii())
+            self.assertLessEqual(len(raw), 512)
+
+    def test_unknown_private_and_hostile_values_are_never_stringified(self):
+        class HostileString(str):
+            def __str__(self):
+                raise AssertionError("stringification")
+            def __hash__(self):
+                raise AssertionError("hash")
+        class HostileRefusal(H.Refusal):
+            def __str__(self):
+                raise AssertionError("stringification")
+        values = (H.Refusal(), H.Refusal("one", "two"), H.Refusal("/private/example"),
+                  H.Refusal("x" * 10000), H.Refusal(HostileString("tree-hardlink")),
+                  H.Refusal(object()), HostileRefusal("tree-hardlink"), RuntimeError("/private/example"))
+        for exc in values:
+            with self.subTest(kind=type(exc).__name__):
+                record = Q.capture_refusal_diagnostic(exc, HostileString("sdk-observation"))
+                self.assertEqual(record["refusal_code"], "unclassified")
+                self.assertEqual(record["phase"], "unobserved")
+                self.assertNotIn("private", json.dumps(record))
+        for exc, code in ((FileNotFoundError("/private/example"), "missing-input"),
+                          (PermissionError("/private/example"), "input-access-refused")):
+            self.assertEqual(Q.capture_refusal_diagnostic(exc, None)["refusal_code"], code)
+
+    def test_every_fixed_missing_metadata_path_remains_a_refusal(self):
+        sdk = Path("/owned-sdk")
+        for (component, name), code in Q.SDK_METADATA_REFUSALS.items():
+            missing = sdk / component / name
+            def read(path, maximum, missing=missing):
+                if path == missing:
+                    raise FileNotFoundError("/private/example")
+                return b"Pkg.Revision=1\n"
+            with self.subTest(component=component, name=name), mock.patch.object(H, "read_plain", side_effect=read), mock.patch.object(H, "tree_digest", side_effect=AssertionError("tree")), mock.patch.object(H, "Managed", side_effect=AssertionError("native")):
+                with self.assertRaises(H.Refusal) as error:
+                    Q.sdk_inventory(sdk)
+                self.assertEqual(error.exception.args, (code,))
+
+    def test_publisher_or_stderr_failure_preserves_original_refusal_and_cleanup(self):
+        class BrokenStream:
+            def write(self, value):
+                raise RuntimeError("/private/printing")
+        for broken in (False, True):
+            original = H.Refusal("plain-bounded-input-required")
+            stream = BrokenStream() if broken else io.StringIO()
+            with self.subTest(broken=broken), mock.patch.object(Q, "event_guard", return_value={}), mock.patch.object(Q, "commands", return_value=(object(), 0)), mock.patch.object(Q, "source_binding", return_value={}), mock.patch.object(Q, "clone_guard", side_effect=original), mock.patch.object(Q, "public_receipt", side_effect=RuntimeError("/private/publisher")), mock.patch.object(H, "cleanup_all", return_value=[]) as cleanup, mock.patch.object(H, "Managed", side_effect=AssertionError("native")), mock.patch.object(sys, "stderr", stream):
+                with self.assertRaises(H.Refusal) as error:
+                    Q.capture(HERE)
+                self.assertIs(error.exception, original)
+                cleanup.assert_called_once_with([])
+            if not broken:
+                record = json.loads(stream.getvalue())
+                self.assertEqual(record["phase"], "bootstrap-and-cloned-sdk")
+                self.assertEqual(record["refusal_code"], original.args[0])
+                self.assertNotIn("private", stream.getvalue())
+
+    def test_pre_context_failure_uses_only_unobserved_phase(self):
+        original = H.Refusal("qualification-command-original-budget")
+        stream = io.StringIO()
+        with mock.patch.object(Q, "event_guard", return_value={}), mock.patch.object(Q, "commands", side_effect=original), mock.patch.object(Q, "public_receipt", side_effect=AssertionError("publisher")), mock.patch.object(H, "cleanup_all", return_value=[]) as cleanup, redirect_stderr(stream):
+            with self.assertRaises(H.Refusal) as error:
+                Q.capture(HERE)
+            self.assertIs(error.exception, original)
+            cleanup.assert_called_once_with([])
+        self.assertEqual(json.loads(stream.getvalue())["phase"], "unobserved")
+
+
 def _kvm_snapshot(**changes):
     value = {"path": "/dev/kvm", "present": True, "mode": stat.S_IFCHR | 0o660,
              "uid": 0, "gid": 108, "dev": 23, "ino": 45, "nlink": 1,

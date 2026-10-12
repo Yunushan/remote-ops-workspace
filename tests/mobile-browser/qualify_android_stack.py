@@ -217,12 +217,192 @@ def clone_guard(root, short, binding=None):
     return binding, observation
 
 
+SDK_METADATA_REFUSALS = {
+    ('cmdline-tools/latest', 'package.xml'): 'qualification-sdk-metadata-cmdline-package-xml-missing',
+    ('cmdline-tools/latest', 'source.properties'): 'qualification-sdk-metadata-cmdline-source-properties-missing',
+    ('platform-tools', 'package.xml'): 'qualification-sdk-metadata-platform-tools-package-xml-missing',
+    ('platform-tools', 'source.properties'): 'qualification-sdk-metadata-platform-tools-source-properties-missing',
+    ('emulator', 'package.xml'): 'qualification-sdk-metadata-emulator-package-xml-missing',
+    ('emulator', 'source.properties'): 'qualification-sdk-metadata-emulator-source-properties-missing',
+    ('platforms/android-36', 'package.xml'): 'qualification-sdk-metadata-platform-package-xml-missing',
+    ('platforms/android-36', 'source.properties'): 'qualification-sdk-metadata-platform-source-properties-missing',
+    ('system-images/android-36/google_apis/x86_64', 'package.xml'): 'qualification-sdk-metadata-system-image-package-xml-missing',
+    ('system-images/android-36/google_apis/x86_64', 'source.properties'): 'qualification-sdk-metadata-system-image-source-properties-missing',
+}
+
+PUBLIC_CAPTURE_REFUSALS = frozenset((
+    'actual-api-or-abi-mismatch',
+    'actual-apk-digest-layout',
+    'actual-apk-path-inventory-unobserved',
+    'actual-apk-size-layout',
+    'actual-browser-or-library-bytes-changed',
+    'actual-cloned-tool-bytes-required',
+    'actual-current-tree-unobserved',
+    'actual-git-fixture-bytes-mismatch',
+    'actual-hosted-source-sdk-layout-required',
+    'actual-isolated-sdk-environment-required',
+    'actual-official-host-source-run-required',
+    'actual-package-version-unobserved',
+    'actual-pinned-npm-tree-required',
+    'actual-public-current-qualification-workflow-required',
+    'actual-qualified-sdk-tree-required',
+    'actual-supported-chrome-required',
+    'actual-synthetic-screenshot-binding',
+    'actual-tracked-controller-byte-mismatch',
+    'adb-fixed-service-bound',
+    'adb-forward-exact-port-layout',
+    'adb-forward-status-required',
+    'adb-framed-unaccounted-tail',
+    'adb-late-completed-command',
+    'adb-original-command-deadline',
+    'adb-output-bound',
+    'adb-response-bound',
+    'adb-service-refused',
+    'adb-shell-v2-nonzero-stderr-or-type',
+    'adb-shell-v2-packet-layout',
+    'adb-shell-v2-payload-bound',
+    'adb-shell-v2-total-bound',
+    'adb-shell-v2-zero-exit-unproved',
+    'adb-truncated-service',
+    'apk-path-bound',
+    'apk-path-layout',
+    'browser-control-sequence-or-nonce',
+    'clean-exact-source-required',
+    'clean-owned-forward-namespace-required',
+    'complete-nonce-source-browser-result-required',
+    'control-bound',
+    'current-source-binding-changed',
+    'exact-current-bootstrap-observation-required',
+    'exact-known-asset-row-required',
+    'fixture-listener-remains-after-owned-exit',
+    'foreign-device-namespace',
+    'fresh-isolated-sdk-required',
+    'input-identity-changed',
+    'late-device-connect',
+    'late-emulator-boot',
+    'late-nonzero-or-unbounded-completion',
+    'late-owned-adb-listener',
+    'original-device-connect-deadline',
+    'original-emulator-boot-deadline',
+    'original-owned-adb-listener-deadline',
+    'owned-cleanup-error',
+    'owned-cleanup-unproved',
+    'owned-descriptor-bound',
+    'owned-event-deadline',
+    'owned-event-deadline-or-bound',
+    'owned-event-late-or-unbounded',
+    'owned-event-missing-before-exit',
+    'owned-final-cleanup-unproved',
+    'owned-fixture-readiness-mismatch',
+    'owned-host-character-kvm-identity-required',
+    'owned-host-kvm-stable-identity-required',
+    'owned-leader-or-pipe-unavailable',
+    'owned-listener-identity-required',
+    'owned-loopback-listener-missing',
+    'owned-loopback-listener-unproved',
+    'owned-pending-release-ack',
+    'owned-pipe-lifetime-unproved',
+    'owned-private-parent-required',
+    'owned-reap-unproved',
+    'owned-socket-table-bound',
+    'owned-socket-table-layout',
+    'owned-zero-exit-timeout',
+    'plain-bounded-input-required',
+    'public-output-parent-containment',
+    'public-result-bound',
+    'public-same-repository-qualification-required',
+    'qualification-actual-executed-workflow-mismatch-or-late',
+    'qualification-actual-workflow-ref-required',
+    'qualification-adb-listener-deadline',
+    'qualification-api-or-abi-mismatch',
+    'qualification-boot-deadline',
+    'qualification-clean-exact-source-required',
+    'qualification-command-original-budget',
+    'qualification-command-stderr',
+    'qualification-current-branch-dispatch-required',
+    'qualification-current-source-changed',
+    'qualification-current-source-tool-or-device-changed',
+    'qualification-current-tree-required',
+    'qualification-device-deadline',
+    'qualification-duplicate-event-field',
+    'qualification-event-refused',
+    'qualification-executed-workflow-bytes-required',
+    'qualification-foreign-device',
+    'qualification-late-adb-listener',
+    'qualification-late-boot',
+    'qualification-late-device',
+    'qualification-owned-cleanup-unproved',
+    'qualification-private-parent-required',
+    'qualification-public-receipt-bound',
+    'qualification-runner-output-changed',
+    'qualification-runner-output-required',
+    'qualification-same-repository-pr-required',
+    'qualification-sdk-metadata-cmdline-package-xml-missing',
+    'qualification-sdk-metadata-cmdline-source-properties-missing',
+    'qualification-sdk-metadata-emulator-package-xml-missing',
+    'qualification-sdk-metadata-emulator-source-properties-missing',
+    'qualification-sdk-metadata-platform-package-xml-missing',
+    'qualification-sdk-metadata-platform-source-properties-missing',
+    'qualification-sdk-metadata-platform-tools-package-xml-missing',
+    'qualification-sdk-metadata-platform-tools-source-properties-missing',
+    'qualification-sdk-metadata-system-image-package-xml-missing',
+    'qualification-sdk-metadata-system-image-source-properties-missing',
+    'qualification-tracked-helper-bytes-required',
+    'qualification-workflow-byte-or-time-bound',
+    'qualification-workflow-content-bound',
+    'qualification-workflow-input-required',
+    'qualification-workflow-original-budget',
+    'qualification-workflow-redirect-refused',
+    'qualification-workflow-response-layout',
+    'qualified-owned-runner-temp-required',
+    'qualified-owned-sdk-path-required',
+    'qualified-tool-bytes-mismatch',
+    'qualified-tool-identity-required',
+    'qualified-tool-inventory-required',
+    'source-manifest-mismatch',
+    'source-or-pins-changed-after-browser',
+    'stack-source-or-version-mismatch',
+    'tree-file-identity-changed',
+    'tree-file-size-changed',
+    'tree-hardlink',
+    'tree-node-bound',
+    'tree-node-bound-or-link',
+    'tree-root-alias',
+    'tree-total-byte-bound',
+    'tree-unsupported-type',
+    'unexpected-private-command-stderr',
+    'unobserved-exact-digest',
+    'unowned-package-probe',
+    'unqualified-stack-schema',
+))
+CAPTURE_PHASES = frozenset(('bootstrap-and-cloned-sdk', 'sdk-observation', 'owned-api36-emulator', 'chrome-static-device-inventory'))
+
+
+def capture_refusal_diagnostic(exc, phase):
+    code = "unclassified"
+    if type(exc) is H.Refusal and len(exc.args) == 1:
+        value = exc.args[0]
+        if type(value) is str and len(value) <= 128 and value in PUBLIC_CAPTURE_REFUSALS:
+            code = value
+    elif type(exc) is FileNotFoundError:
+        code = "missing-input"
+    elif type(exc) is PermissionError:
+        code = "input-access-refused"
+    if type(phase) is not str or phase not in CAPTURE_PHASES:
+        phase = "unobserved"
+    return {"schema": "row.android-capture-refusal.v1", "status": "refused",
+            "phase": phase, "refusal_code": code, "approval": False, "readiness_credit": 0}
+
+
 def sdk_inventory(sdk):
     metadata = []
     prefixes = ("cmdline-tools/latest", "platform-tools", "emulator", "platforms/android-36", "system-images/android-36/google_apis/x86_64")
     for prefix in prefixes:
         for name in ("package.xml", "source.properties"):
-            raw = H.read_plain(sdk / prefix / name, 512 * 1024)
+            try:
+                raw = H.read_plain(sdk / prefix / name, 512 * 1024)
+            except FileNotFoundError:
+                raise H.Refusal(SDK_METADATA_REFUSALS[(prefix, name)]) from None
             row = {"component": prefix, "file": name, "bytes": len(raw), "sha256": H.sha(raw)}
             if name == "source.properties":
                 values = re.findall(rb"^Pkg\.Revision\s*=\s*([0-9]+(?:\.[0-9]+){0,3}(?:[- ](?:beta|rc)[0-9]*)?)\s*$", raw, re.MULTILINE)
@@ -371,7 +551,14 @@ def capture(root):
                   "process_descendants": "disposable-host-destruction-required", "approval": False, "readiness_credit": 0}
         public_receipt(root, record)
         return {"status": record["status"], "output_sha256": H.sha(H.read_plain(root / REPORT, 131072)), "readiness_credit": 0}
-    except Exception:
+    except Exception as exc:
+        try:
+            diagnostic = capture_refusal_diagnostic(exc, context["phase"] if context is not None else None)
+            line = json.dumps(diagnostic, ensure_ascii=True, separators=(",", ":"))
+            if len(line) <= 512:
+                print(line, file=sys.stderr)
+        except Exception:
+            pass
         if context is not None:
             record = {"schema": "row.android-toolchain-qualification.v1", "status": "refused", **context,
                       "native_product_or_browser_launch": False, "CDP_availability": "unproved", "source_unchanged": "not-established", "approval": False, "readiness_credit": 0}

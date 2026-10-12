@@ -4,6 +4,7 @@ import json
 import re
 
 MAX_PUBLIC = 65536
+RUNTIME_STAGES = ('chrome-version-command', 'driver-version-command', 'version-equality')
 CASES = {
     'api-read': {'status': 200, 'dom_seed': True, 'input_cleared': True, 'no_store': True, 'public_only': True},
     'api-create-refresh': {'post_status': 201, 'get_status': 200, 'replace_false': True, 'disk_count': 2, 'disk_dom_agree': True},
@@ -149,6 +150,18 @@ CHROME_FILE_STAGES = ('lstat-before', 'regular-file', 'single-link', 'size-bound
     'elf-header', 'executable-mode', 'lstat-after', 'stable-identity')
 
 
+def runtime_diagnostic(stage, versions=None):
+    need(type(stage) is str and stage in RUNTIME_STAGES)
+    result = {'runtime_stage': stage}
+    if versions is not None:
+        need(stage == 'version-equality')
+        exact(versions, {'chrome', 'driver'})
+        for value in versions.values():
+            need(type(value) is str and len(value) <= 64 and re.fullmatch(r'[0-9]+(?:\.[0-9]+){3}', value) is not None)
+        result['runtime_versions'] = versions.copy()
+    return result
+
+
 def public_bytes(raw):
     """Privacy reader, not an authenticity/adoption or genuine-host decision."""
     record = decode(raw)
@@ -158,12 +171,17 @@ def public_bytes(raw):
         validate(raw, {'binding': record['binding'], 'runtime': record['runtime']})
         return raw
     required = {'schema', 'status', 'complete', 'phase', 'readiness_credit', 'limits'}
-    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step', 'chrome_file_stage'}
+    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step', 'chrome_file_stage', 'runtime_stage', 'runtime_versions'}
     need(required.issubset(record) and set(record).issubset(required | optional))
     need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v1' and record['status'] == 'refused'
          and record['complete'] is False and type(record['readiness_credit']) is int and record['readiness_credit'] == 0
          and record['limits'] == LIMITS)
     need(type(record['phase']) is str and record['phase'] in ('preparation', 'host-runtime-observation', *CASES, 'cleanup'))
+    if 'runtime_versions' in record:
+        need('runtime_stage' in record and record['runtime_versions'] is not None)
+    if 'runtime_stage' in record:
+        need(record['phase'] == 'host-runtime-observation')
+        runtime_diagnostic(record['runtime_stage'], record.get('runtime_versions'))
     if 'preparation_step' in record:
         step = record['preparation_step']
         need(type(step) is str and step in PREPARATION_STEPS)

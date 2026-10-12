@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 from browser_probe import SW_PROBE, Driver
-from gate_contract import CHROME_FILE_STAGES, LIMITS, PREPARATION_STEPS, decode, need, validate
+from gate_contract import CHROME_FILE_STAGES, LIMITS, PREPARATION_STEPS, decode, need, runtime_diagnostic, validate
 
 DIRECTORY = Path(__file__).resolve().parent
 WORKFLOW = '.github/workflows/ubuntu-catalogue-browser.yml'
@@ -376,6 +376,27 @@ def loaded_runtime(owner):
     return files
 
 
+def runtime_note(public, stage, versions=None):
+    need(public['phase'] == 'host-runtime-observation')
+    fields = runtime_diagnostic(stage, versions)
+    public.pop('runtime_versions', None)
+    public.update(fields)
+
+
+def emit_runtime_refusal(public):
+    try:
+        need(public['status'] == 'refused' and public['complete'] is False
+             and public['phase'] == 'host-runtime-observation')
+        fields = runtime_diagnostic(public['runtime_stage'], public.get('runtime_versions'))
+        diagnostic = {'schema': 'row.catalogue-runtime-refusal.v1', 'status': 'refused',
+            'phase': 'host-runtime-observation', 'readiness_credit': 0, **fields}
+        raw = packed(diagnostic)
+        need(len(raw) <= 512)
+        sys.stderr.write(raw.decode('ascii') + '\n')
+    except Exception:
+        pass
+
+
 def inventories_row(phase, inventory):
     need(type(inventory['count']) is int and inventory['count'] == len(inventory['profiles']))
     return {'phase': phase, 'count': inventory['count'], 'digest': inventory['digest']}
@@ -448,11 +469,18 @@ def main():
             preparation('runtime-checkpoint')
             checkpoint('host-runtime-observation')
             public.pop('preparation_step', None)
+            runtime_note(public, 'chrome-version-command')
             chrome_raw = command(registry, [str(chrome), '--version'], repo, env, deadline)
+            runtime_note(public, 'driver-version-command')
             driver_raw = command(registry, [str(chrome_driver), '--version'], repo, env, deadline)
             chrome_match = re.fullmatch(rb'Google Chrome ([0-9]+(?:\.[0-9]+){3})\s*', chrome_raw)
             driver_match = re.fullmatch(rb'ChromeDriver ([0-9]+(?:\.[0-9]+){3})(?: [^\r\n]{1,512})?\s*', driver_raw)
+            runtime_note(public, 'version-equality')
+            if chrome_match is not None and driver_match is not None and len(chrome_match[1]) <= 64 and len(driver_match[1]) <= 64:
+                runtime_note(public, 'version-equality', {'chrome': chrome_match[1].decode('ascii'), 'driver': driver_match[1].decode('ascii')})
             need(chrome_match is not None and driver_match is not None and chrome_match[1] == driver_match[1])
+            public.pop('runtime_stage', None)
+            public.pop('runtime_versions', None)
             version = chrome_match[1].decode('ascii')
             nonce = secrets.token_hex(32)
             tokens = [secrets.token_hex(32), secrets.token_hex(32)]
@@ -675,6 +703,7 @@ def main():
                     public['cleanup_complete'] = all(owner.cleanup_observed() for owner in registry)
                 except Exception:
                     public['cleanup_complete'] = False
+                emit_runtime_refusal(public)
                 (output / 'result.json').write_bytes(packed(public))
             watchdog.cancel()
 

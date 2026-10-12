@@ -57,15 +57,18 @@ jobs:
           set -euo pipefail
           python tests/mobile-browser/qualify_android_stack.py guard
           owned_sdk="$RUNNER_TEMP/row-browser-api36-sdk"
+          bootstrap_sdk="$RUNNER_TEMP/row-browser-api36-bootstrap"
           test ! -e "$owned_sdk"
+          test ! -e "$bootstrap_sdk"
           mkdir -m 700 "$owned_sdk"
-          mkdir -m 700 "$owned_sdk/cmdline-tools"
-          cp -R "$ANDROID_HOME/cmdline-tools/latest" "$owned_sdk/cmdline-tools/latest"
+          mkdir -m 700 "$bootstrap_sdk"
+          mkdir -m 700 "$bootstrap_sdk/cmdline-tools"
+          cp -R "$ANDROID_HOME/cmdline-tools/latest" "$bootstrap_sdk/cmdline-tools/latest"
           cp -R "$ANDROID_HOME/licenses" "$owned_sdk/licenses"
           python tests/mobile-browser/qualify_android_stack.py guard-clone
           env -i PATH="$PATH" JAVA_HOME="$JAVA_HOME" HOME="$RUNNER_TEMP" LANG=C.UTF-8 \
-            "$owned_sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$owned_sdk" --install \
-            'platform-tools' 'emulator' 'platforms;android-36' 'system-images;android-36;google_apis;x86_64'
+            "$bootstrap_sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$owned_sdk" --install \
+            'cmdline-tools;latest' 'platform-tools' 'emulator' 'platforms;android-36' 'system-images;android-36;google_apis;x86_64'
           printf '%s\n' 'phase=isolated-sdkmanager-zero-exit'
           echo "ANDROID_HOME=$owned_sdk" >> "$GITHUB_ENV"
       - name: Enable KVM only for this disposable runner user

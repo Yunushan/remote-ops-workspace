@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import stat
 import sys
 import tarfile
@@ -270,6 +271,111 @@ class FocusedTests(unittest.TestCase):
             self.assertIn(text, raw)
         for text in ("pull_request_target", "\n      false &&", "android_browser_probe.mjs", "fixture_server.py", "hosted_controller.py run", "am start", "npm ci", "connectOverCDP"):
             self.assertNotIn(text, raw)
+
+
+class SiblingBootstrapTests(unittest.TestCase):
+    def test_fixed_sibling_paths_do_not_create_any_tree(self):
+        with fixture() as root, mock.patch.dict(os.environ, {"RUNNER_TEMP": str(root)}, clear=True):
+            sdk, bootstrap_sdk = Q.owned_sdk(), Q.owned_bootstrap()
+            self.assertEqual(sdk, root / "row-browser-api36-sdk")
+            self.assertEqual(bootstrap_sdk, root / "row-browser-api36-bootstrap")
+            self.assertEqual(sdk.parent, bootstrap_sdk.parent)
+            self.assertNotEqual(sdk, bootstrap_sdk)
+            self.assertFalse(sdk.exists())
+            self.assertFalse(bootstrap_sdk.exists())
+
+    def test_unqualified_temp_or_bootstrap_alias_refuses(self):
+        for temp in ("", "/", "relative"):
+            with self.subTest(temp=temp), mock.patch.dict(os.environ, {"RUNNER_TEMP": temp}, clear=True):
+                with self.assertRaisesRegex(H.Refusal, "qualified-owned-runner-temp-required"):
+                    Q.owned_bootstrap()
+        for resolved, linked in ((False, False), (True, True)):
+            path = mock.Mock()
+            path.resolve.return_value = path if resolved else object()
+            path.is_symlink.return_value = linked
+            parent = mock.MagicMock()
+            parent.__truediv__.return_value = path
+            sdk = SimpleNamespace(parent=parent)
+            with self.subTest(resolved=resolved, linked=linked), mock.patch.object(Q, "owned_sdk", return_value=sdk):
+                with self.assertRaisesRegex(H.Refusal, "qualified-owned-bootstrap-path-required"):
+                    Q.owned_bootstrap()
+
+    def test_preexisting_sdk_or_bootstrap_refuses_before_snapshot_or_write(self):
+        with fixture() as root:
+            source = root / "source-sdk"
+            source.mkdir()
+            for name, code in (("row-browser-api36-sdk", "fresh-isolated-sdk-required"),
+                               ("row-browser-api36-bootstrap", "fresh-isolated-bootstrap-required")):
+                existing = root / name
+                existing.mkdir()
+                with self.subTest(name=name), mock.patch.dict(os.environ, {"RUNNER_TEMP": str(root), "ANDROID_HOME": str(source)}, clear=True), mock.patch.object(Q, "FIXED_SOURCE_SDK", source), mock.patch.object(Q, "event_guard", return_value={}), mock.patch.object(Q, "commands", return_value=(mock.Mock(), 0)), mock.patch.object(Q, "source_binding", return_value={}), mock.patch.object(H, "tree_digest", side_effect=AssertionError("snapshot")) as snapshot, mock.patch.object(O, "save", side_effect=AssertionError("write")) as save, mock.patch.object(H, "cleanup_all", return_value=[]) as cleanup:
+                    with self.assertRaises(H.Refusal) as error:
+                        Q.bootstrap(root)
+                    self.assertEqual(error.exception.args, (code,))
+                    snapshot.assert_not_called()
+                    save.assert_not_called()
+                    cleanup.assert_called_once_with([])
+                existing.rmdir()
+
+    def test_clone_guard_checks_bootstrap_and_original_licenses_not_installed_tools(self):
+        with fixture() as root, mock.patch.dict(os.environ, {"RUNNER_TEMP": str(root)}, clear=True):
+            binding = {"source_sha": SOURCE}
+            observation = {"schema": "row.android-sdk-bootstrap-observation.v1", "binding": binding,
+                           "cmdline_tree_sha256": "a" * 64, "already_present_license_tree_sha256": "b" * 64,
+                           "signing_or_license_approval": False, "readiness_credit": 0}
+            raw = json.dumps(observation).encode()
+            for hashes, accepted in ((("a" * 64, "b" * 64), True),
+                                     (("c" * 64,), False), (("a" * 64, "c" * 64), False)):
+                with self.subTest(hashes=hashes), mock.patch.object(H, "read_plain", return_value=raw), mock.patch.object(H, "tree_digest", side_effect=hashes) as trees, mock.patch.object(Q, "source_binding", side_effect=AssertionError("unbound source")), mock.patch.object(H, "Managed", side_effect=AssertionError("native")):
+                    if accepted:
+                        actual_binding, actual_observation = Q.clone_guard(root, mock.Mock(), binding)
+                        self.assertIs(actual_binding, binding)
+                        self.assertEqual(actual_observation, observation)
+                    else:
+                        with self.assertRaisesRegex(H.Refusal, "actual-cloned-tool-bytes-required"):
+                            Q.clone_guard(root, mock.Mock(), binding)
+                    expected = [root / "row-browser-api36-bootstrap/cmdline-tools/latest",
+                                root / "row-browser-api36-sdk/licenses"][:len(hashes)]
+                    self.assertEqual([call.args[0] for call in trees.call_args_list], expected)
+
+    def test_unbound_bootstrap_observation_refuses_before_any_tree_access(self):
+        binding = {"source_sha": SOURCE}
+        observation = {"schema": "row.android-sdk-bootstrap-observation.v1", "binding": binding,
+                       "cmdline_tree_sha256": "a" * 64, "already_present_license_tree_sha256": "b" * 64,
+                       "signing_or_license_approval": False, "readiness_credit": 0}
+        for key, value in (("binding", {"source_sha": EVENT}), ("schema", "unbound"),
+                           ("signing_or_license_approval", True), ("readiness_credit", 1)):
+            changed = json.loads(json.dumps(observation))
+            changed[key] = value
+            with self.subTest(key=key), mock.patch.object(H, "read_plain", return_value=json.dumps(changed).encode()), mock.patch.object(H, "tree_digest", side_effect=AssertionError("tree")) as trees, mock.patch.object(Q, "owned_sdk", side_effect=AssertionError("path")):
+                with self.assertRaisesRegex(H.Refusal, "exact-current-bootstrap-observation-required"):
+                    Q.clone_guard(HERE, mock.Mock(), binding)
+                trees.assert_not_called()
+
+    def test_installer_uses_bootstrap_and_target_is_separate_installed_sdk(self):
+        raw = (HERE.parents[1] / Q.WORKFLOW).read_text(encoding="utf-8")
+        setup = raw.partition("- name: Provision only the fresh isolated official API36 SDK")[2]
+        self.assertTrue(setup)
+        setup = setup.partition("\n      - name:")[0]
+        lines = [line.strip() for line in setup.replace("\\\n", " ").splitlines()]
+        commands = [shlex.split(line) for line in lines if line]
+        installer = [tokens for tokens in commands if tokens[:2] == ["env", "-i"]]
+        self.assertEqual(len(installer), 1)
+        tokens = installer[0]
+        self.assertIn("$bootstrap_sdk/cmdline-tools/latest/bin/sdkmanager", tokens)
+        self.assertNotIn("$owned_sdk/cmdline-tools/latest/bin/sdkmanager", tokens)
+        self.assertIn("--sdk_root=$owned_sdk", tokens)
+        self.assertEqual(tokens[tokens.index("--install") + 1:],
+                         ["cmdline-tools;latest", "platform-tools", "emulator",
+                          "platforms;android-36", "system-images;android-36;google_apis;x86_64"])
+        for name in ("owned_sdk", "bootstrap_sdk"):
+            self.assertIn(["test", "!", "-e", "$" + name], commands)
+        clone = ["cp", "-R", "$ANDROID_HOME/cmdline-tools/latest", "$bootstrap_sdk/cmdline-tools/latest"]
+        self.assertIn(clone, commands)
+        self.assertIn(["cp", "-R", "$ANDROID_HOME/licenses", "$owned_sdk/licenses"], commands)
+        guard = ["python", "tests/mobile-browser/qualify_android_stack.py", "guard-clone"]
+        self.assertLess(commands.index(clone), commands.index(guard))
+        self.assertLess(commands.index(guard), commands.index(tokens))
 
 
 class CaptureDiagnosticTests(unittest.TestCase):

@@ -16,6 +16,7 @@ from cft_git_config import snapshot
 
 MAX_OUTPUT = 65536
 WORKFLOW = '.github/workflows/chrome-for-testing-provisioning.yml'
+WORKFLOWS = (WORKFLOW, '.github/workflows/ubuntu-catalogue-browser.yml')
 
 
 class GitObservationRefusal(ValueError):
@@ -53,7 +54,8 @@ def checked_argv(argv):
     accepted = tail in (['rev-parse', 'HEAD'], ['rev-parse', 'HEAD^{tree}'],
         ['diff', '--no-ext-diff', '--exit-code', 'HEAD'])
     if len(tail) == 2 and tail[0] == 'show':
-        accepted = re.fullmatch(r'[0-9a-f]{40}:' + re.escape(WORKFLOW), tail[1]) is not None
+        accepted = any(re.fullmatch(r'[0-9a-f]{40}:' + re.escape(workflow), tail[1]) is not None
+            for workflow in WORKFLOWS)
     require(accepted)
     if tail[0] == 'diff':
         tail = [tail[0], '--no-textconv', *tail[1:]]

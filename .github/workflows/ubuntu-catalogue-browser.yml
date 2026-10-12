@@ -43,27 +43,224 @@ jobs:
         with:
           python-version: '3.14.7'
           architecture: x64
-      - name: Remove group and world write access from hosted browser tools
+      - name: Prepare exact pinned browser pair on this disposable host
         shell: bash
         run: |
           set -euo pipefail
-          for tool in /opt/google/chrome/chrome /usr/local/share/chromedriver-linux64/chromedriver; do
-            test -f "$tool"
-            test ! -L "$tool"
-            test "$(stat -c '%u:%h' "$tool")" = '0:1'
-            test "$(stat -c '%s' "$tool")" -gt 0
-            test "$(stat -c '%s' "$tool")" -le 536870912
-            original_identity="$(stat -c '%d:%i:%u:%g:%h:%s:%Y' "$tool")"
-            original_mode="$(stat -c '%a' "$tool")"
-            expected_mode="$(printf '%o' "$((8#$original_mode & ~8#22))")"
-            original_bytes="$(sha256sum -- "$tool")"
-            sudo --non-interactive chmod go-w -- "$tool"
-            test -f "$tool"
-            test ! -L "$tool"
-            test "$(stat -c '%d:%i:%u:%g:%h:%s:%Y' "$tool")" = "$original_identity"
-            test "$(stat -c '%a' "$tool")" = "$expected_mode"
-            test "$(sha256sum -- "$tool")" = "$original_bytes"
-          done
+          sudo --non-interactive -- /usr/bin/env -i \
+            PATH=/usr/bin:/bin LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+            GITHUB_ACTIONS="$GITHUB_ACTIONS" \
+            RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            ImageOS="$ImageOS" \
+            ImageVersion="$ImageVersion" \
+            GITHUB_WORKSPACE="$GITHUB_WORKSPACE" \
+            GITHUB_EVENT_PATH="$GITHUB_EVENT_PATH" \
+            GITHUB_EVENT_NAME="$GITHUB_EVENT_NAME" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            QUALIFICATION_SOURCE_SHA="$QUALIFICATION_SOURCE_SHA" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            GITHUB_WORKFLOW_SHA="$GITHUB_WORKFLOW_SHA" \
+            GITHUB_WORKFLOW_REF="$GITHUB_WORKFLOW_REF" \
+            /usr/bin/python3 -I -S -B - <<'ROW_CFT_ROOT_PY'
+          import hashlib
+          import json
+          import os
+          import platform
+          import pwd
+          import re
+          import secrets
+          import stat
+          import sys
+          import time
+          from pathlib import Path
+
+          PINS = {'browser_probe.py': {'bytes': 13483, 'sha256': 'c713476aa3489164995c7412ed781979f401980b7324ce43c23b2b774103c617'}, 'cft_bundle.py': {'bytes': 53890, 'sha256': '7fa3ec5f8f17b9568a64dfec01c2e5a13bb104f0d8727096eab3e98dbd317918'}, 'cft_git_config.py': {'bytes': 8724, 'sha256': '82a8f71227f4ed45dd42a9d2142edc2f8ec90d58615639ec35caafa1d032fe5e'}, 'cft_git_owner.py': {'bytes': 7969, 'sha256': '6bfe1a3b5a298ec54eeba814ab9e4512b54e2e40c5e7c63335763cc5a0323878'}, 'cft_runtime.py': {'bytes': 14067, 'sha256': 'cfa1cf98a276ebec53bf6d263fdcde0e162f14b13438ba4cf517146856d28fea'}, 'gate_contract.py': {'bytes': 12172, 'sha256': '87346af7bfdaa4cb4fc03d463f35a452e6baa4417aaf1f7e28b2e29e19958cc5'}, 'host_controller.py': {'bytes': 39113, 'sha256': 'e58eb4c654a01d7583c8440130c6c7ff326faf555385ee6c028b0d1721448626'}, 'cft-runtime-policy.json': {'bytes': 1400, 'sha256': '1ca6ac144a8b45673cb1630e782a60ec7e396122db2c2c63a82118952cb0108f'}}
+          started = time.monotonic()
+          deadline = started + 150
+
+
+          def need(value):
+              if not value:
+                  raise RuntimeError('cft-root-bootstrap-refused')
+
+
+          def clock():
+              need(time.monotonic() < deadline)
+
+
+          def identity(info):
+              return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+                  info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+          def raw_read(path, maximum, owners):
+              clock()
+              before = path.lstat()
+              need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                  and before.st_uid in owners and not before.st_mode & 0o022
+                  and 0 < before.st_size <= maximum)
+              fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+              try:
+                  need(identity(os.fstat(fd)) == identity(before))
+                  data = bytearray()
+                  while True:
+                      clock()
+                      chunk = os.read(fd, min(65536, maximum + 1 - len(data)))
+                      if not chunk:
+                          break
+                      need(len(data) + len(chunk) <= maximum)
+                      data.extend(chunk)
+                  need(len(data) == before.st_size and identity(os.fstat(fd)) == identity(before))
+                  answer = bytes(data)
+              finally:
+                  os.close(fd)
+              need(identity(path.lstat()) == identity(before))
+              clock()
+              return answer
+
+
+          def unique(rows):
+              answer = {}
+              for key, value in rows:
+                  need(key not in answer)
+                  answer[key] = value
+              return answer
+
+
+          def nonfinite(_value):
+              raise RuntimeError('cft-root-bootstrap-refused')
+
+
+          def json_data(raw):
+              return json.loads(raw.decode('utf-8'), object_pairs_hook=unique, parse_constant=nonfinite)
+
+
+          def validate_context():
+              need(sys.platform == 'linux' and platform.machine() == 'x86_64'
+                  and platform.python_version_tuple()[:2] == ('3', '12'))
+              need(os.getuid() == os.geteuid() == 0 and os.getgid() == os.getegid() == 0 and sys.flags.isolated == 1
+                  and sys.flags.no_site == 1 and sys.dont_write_bytecode)
+              python = Path(sys.executable).resolve(strict=True)
+              need(python == Path('/usr/bin/python3.12'))
+              need(raw_read(python, 536870912, {0})[:4] == b'\x7fELF')
+              account = pwd.getpwnam('runner')
+              need(account.pw_name == 'runner' and account.pw_uid > 0 and account.pw_gid > 0
+                  and account.pw_dir == '/home/runner')
+              env = os.environ
+              need(env.get('GITHUB_ACTIONS') == 'true' and env.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+                  and env.get('GITHUB_REPOSITORY') == 'Yunushan/remote-ops-workspace'
+                  and env.get('ImageOS') == 'ubuntu24' and re.fullmatch(r'[0-9.]{1,64}', env.get('ImageVersion', '')))
+              release = raw_read(Path('/etc/os-release').resolve(strict=True), 4096, {0})
+              need(re.search(rb'^ID=ubuntu$', release, re.MULTILINE)
+                  and re.search(rb'^VERSION_ID="24\.04"$', release, re.MULTILINE))
+              repo = Path(env['GITHUB_WORKSPACE'])
+              need(str(repo) == '/home/runner/work/remote-ops-workspace/remote-ops-workspace')
+              for directory in (repo, repo / 'tests', repo / 'tests' / 'catalogue-browser'):
+                  info = directory.lstat()
+                  need(stat.S_ISDIR(info.st_mode) and info.st_uid == account.pw_uid
+                      and info.st_gid == account.pw_gid and not info.st_mode & 0o022)
+              for directory in repo.parents:
+                  need(stat.S_ISDIR(directory.lstat().st_mode))
+              source, event_sha = env.get('QUALIFICATION_SOURCE_SHA', ''), env.get('GITHUB_SHA', '')
+              need(re.fullmatch(r'[0-9a-f]{40}', source) and re.fullmatch(r'[0-9a-f]{40}', event_sha))
+              event = json_data(raw_read(Path(env['GITHUB_EVENT_PATH']), 1048576, {0, account.pw_uid}))
+              need(event['repository']['full_name'] == 'Yunushan/remote-ops-workspace'
+                  and event['repository']['private'] is False)
+              if env.get('GITHUB_EVENT_NAME') == 'pull_request':
+                  pr = event['pull_request']
+                  need(pr['head']['repo']['full_name'] == 'Yunushan/remote-ops-workspace'
+                      and pr['head']['sha'] == source and pr['base']['ref'] == 'main'
+                      and event['action'] in ('opened', 'reopened', 'synchronize'))
+              else:
+                  need(env.get('GITHUB_EVENT_NAME') == 'push' and event['ref'] == 'refs/heads/main'
+                      and event['after'] == source == event_sha)
+              for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT'):
+                  need(re.fullmatch(r'[1-9][0-9]{0,19}', env.get(key, '')))
+              workflow = '.github/workflows/ubuntu-catalogue-browser.yml'
+              need(re.fullmatch(r'[0-9a-f]{40}', env.get('GITHUB_WORKFLOW_SHA', ''))
+                  and env.get('GITHUB_WORKFLOW_REF', '').startswith('Yunushan/remote-ops-workspace/' + workflow + '@'))
+              for directory in (Path('/'), Path('/opt')):
+                  info = directory.lstat()
+                  need(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022)
+              return repo, account.pw_uid
+
+
+          def write_source(path, raw):
+              clock()
+              fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+              try:
+                  remaining = memoryview(raw)
+                  while remaining:
+                      clock()
+                      count = os.write(fd, remaining)
+                      need(count > 0)
+                      remaining = remaining[count:]
+                  os.fsync(fd)
+                  os.fchmod(fd, 0o444)
+              finally:
+                  os.close(fd)
+              need(raw_read(path, 1048576, {0}) == raw)
+
+
+          def main():
+              repo, uid = validate_context()
+              directory = repo / 'tests' / 'catalogue-browser'
+              source = {}
+              for name, pin in PINS.items():
+                  need(re.fullmatch(r'[a-z_-]+\.(?:py|json)', name) and set(pin) == {'bytes', 'sha256'})
+                  data = raw_read(directory / name, 1048576, {uid})
+                  need(len(data) == pin['bytes'] and hashlib.sha256(data).hexdigest() == pin['sha256'])
+                  source[name] = data
+              root = Path('/opt') / ('row-cft-source-' + secrets.token_hex(16))
+              parent_fd = None
+              stage_fd = None
+              try:
+                  parent_fd = os.open('/opt', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                  parent_before = Path('/opt').lstat()
+                  need(identity(os.fstat(parent_fd)) == identity(parent_before))
+                  os.mkdir(root.name, mode=0o700, dir_fd=parent_fd)
+                  stage_fd = os.open(root.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+                  need(identity(os.fstat(stage_fd)) == identity(root.lstat()))
+                  for name, data in source.items():
+                      write_source(root / name, data)
+                  capsule = json.dumps({'source_directory': str(directory), 'pins': PINS},
+                      sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('ascii')
+                  write_source(root / 'stage.json', capsule)
+                  os.fchmod(stage_fd, 0o555)
+                  need(identity(os.fstat(stage_fd)) == identity(root.lstat()))
+                  current_parent = Path('/opt').lstat()
+                  need(current_parent.st_uid == 0 and not current_parent.st_mode & 0o022
+                      and (current_parent.st_dev, current_parent.st_ino) == (parent_before.st_dev, parent_before.st_ino))
+              finally:
+                  first = None
+                  for fd in (stage_fd, parent_fd):
+                      if fd is not None:
+                          try:
+                              os.close(fd)
+                          except BaseException as error:
+                              if first is None:
+                                  first = error
+                  if first is not None:
+                      raise first
+              clock()
+              env = dict(os.environ)
+              env['ROW_CFT_PREP_DEADLINE'] = repr(deadline)
+              # The only inserted import directory is the exact root-staged pinned tree.
+              loader = 'import runpy,sys;sys.path.insert(0,' + repr(str(root)) + ');runpy.run_path(' + repr(str(root / 'cft_runtime.py')) + ',run_name="__main__")'
+              os.execve('/usr/bin/python3.12', ['/usr/bin/python3.12', '-I', '-S', '-B', '-c', loader], env)
+
+
+          try:
+              main()
+          except BaseException:
+              try:
+                  sys.stderr.write('cft-root-bootstrap-refused\n')
+              except BaseException:
+                  pass
+              raise SystemExit(1) from None
+          ROW_CFT_ROOT_PY
       - name: Observe actual browser and catalogue cases
         shell: bash
         run: python -I -S -B tests/catalogue-browser/entry.py run

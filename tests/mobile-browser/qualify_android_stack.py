@@ -180,6 +180,14 @@ def owned_sdk():
     return sdk
 
 
+def owned_bootstrap():
+    # The immutable copied executable SDK is distinct from its install target.
+    bootstrap_sdk = owned_sdk().parent / "row-browser-api36-bootstrap"
+    if bootstrap_sdk.resolve() != bootstrap_sdk or bootstrap_sdk.is_symlink():
+        raise H.Refusal("qualified-owned-bootstrap-path-required")
+    return bootstrap_sdk
+
+
 def bootstrap(root):
     event_guard(root)
     leaders = []
@@ -190,6 +198,8 @@ def bootstrap(root):
             raise H.Refusal("actual-hosted-source-sdk-layout-required")
         if owned_sdk().exists():
             raise H.Refusal("fresh-isolated-sdk-required")
+        if owned_bootstrap().exists():
+            raise H.Refusal("fresh-isolated-bootstrap-required")
         value = {"schema": "row.android-sdk-bootstrap-observation.v1", "binding": binding,
                  "cmdline_tree_sha256": H.tree_digest(FIXED_SOURCE_SDK / "cmdline-tools/latest", maximum_bytes=512 * 1024 * 1024),
                  "already_present_license_tree_sha256": H.tree_digest(FIXED_SOURCE_SDK / "licenses", maximum_files=128, maximum_bytes=2 * 1024 * 1024),
@@ -211,7 +221,7 @@ def clone_guard(root, short, binding=None):
             or observation["signing_or_license_approval"] is not False or observation["readiness_credit"] != 0):
         raise H.Refusal("exact-current-bootstrap-observation-required")
     sdk = owned_sdk()
-    if (H.tree_digest(sdk / "cmdline-tools/latest", maximum_bytes=512 * 1024 * 1024) != H.digest(observation["cmdline_tree_sha256"])
+    if (H.tree_digest(owned_bootstrap() / "cmdline-tools/latest", maximum_bytes=512 * 1024 * 1024) != H.digest(observation["cmdline_tree_sha256"])
             or H.tree_digest(sdk / "licenses", maximum_files=128, maximum_bytes=2 * 1024 * 1024) != H.digest(observation["already_present_license_tree_sha256"])):
         raise H.Refusal("actual-cloned-tool-bytes-required")
     return binding, observation
@@ -276,6 +286,7 @@ PUBLIC_CAPTURE_REFUSALS = frozenset((
     'exact-known-asset-row-required',
     'fixture-listener-remains-after-owned-exit',
     'foreign-device-namespace',
+    'fresh-isolated-bootstrap-required',
     'fresh-isolated-sdk-required',
     'input-identity-changed',
     'late-device-connect',
@@ -354,6 +365,7 @@ PUBLIC_CAPTURE_REFUSALS = frozenset((
     'qualification-workflow-original-budget',
     'qualification-workflow-redirect-refused',
     'qualification-workflow-response-layout',
+    'qualified-owned-bootstrap-path-required',
     'qualified-owned-runner-temp-required',
     'qualified-owned-sdk-path-required',
     'qualified-tool-bytes-mismatch',

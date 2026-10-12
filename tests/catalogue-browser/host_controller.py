@@ -18,7 +18,21 @@ import time
 from pathlib import Path
 
 from browser_probe import SW_PROBE, Driver
-from gate_contract import CHROME_FILE_STAGES, LIMITS, PREPARATION_STEPS, decode, need, runtime_diagnostic, validate
+from cft_runtime import (
+    chrome_version_argv,
+    chrome_version_match,
+    runtime_readback,
+    selected_runtime,
+)
+from gate_contract import (
+    CHROME_FILE_STAGES,
+    LIMITS,
+    PREPARATION_STEPS,
+    decode,
+    need,
+    runtime_diagnostic,
+    validate,
+)
 
 DIRECTORY = Path(__file__).resolve().parent
 WORKFLOW = '.github/workflows/ubuntu-catalogue-browser.yml'
@@ -318,17 +332,25 @@ def chrome_file_note(public, stage):
     public['chrome_file_stage'] = stage
 
 
-def source_guard(repo, context, registry, env, deadline, *, preparation=None, workflow_path=WORKFLOW):
+def source_guard(repo, context, registry, env, deadline, *, preparation=None, workflow_path=WORKFLOW,
+        source_directory=None, git_command=None):
     need(workflow_path in (WORKFLOW, '.github/workflows/chrome-for-testing-acquisition.yml'))
+    directory = DIRECTORY if source_directory is None else Path(source_directory)
+    need(directory == repo / 'tests' / 'catalogue-browser')
+    if git_command is not None:
+        need(os.getuid() == os.geteuid() == 0 and source_directory is not None and callable(git_command))
     git = Path('/usr/bin/git')
     file_pin(git, root_owned=True, elf=True)
     def git_output(*args):
-        return command(registry, [str(git), '-c', 'core.hooksPath=/dev/null', *args], repo, env, deadline)
+        argv = [str(git), '-c', 'core.hooksPath=/dev/null', *args]
+        if git_command is not None:
+            return git_command(argv)
+        return command(registry, argv, repo, env, deadline)
     head = git_output('rev-parse', 'HEAD').decode('ascii').strip()
     tree = git_output('rev-parse', 'HEAD^{tree}').decode('ascii').strip()
     need(head == context['source'] and re.fullmatch(r'[0-9a-f]{40}', tree))
     need(git_output('diff', '--no-ext-diff', '--exit-code', 'HEAD') == b'')
-    manifest = decode((DIRECTORY / 'source-inputs.json').read_bytes(), 65536)
+    manifest = decode((directory / 'source-inputs.json').read_bytes(), 65536)
     rows = []
     for entry in manifest['product_inputs']:
         path = repo / entry['path']
@@ -336,8 +358,8 @@ def source_guard(repo, context, registry, env, deadline, *, preparation=None, wo
         pin = file_pin(path, maximum=1048576)
         need(pin['sha256'] == entry['sha256'] and pin['size'] == entry['size'])
         rows.append({'path': entry['path'], 'sha256': pin['sha256'], 'size': pin['size']})
-    need({path.name for path in DIRECTORY.iterdir()} == set(manifest['gate_inputs']))
-    for path in sorted(DIRECTORY.iterdir()):
+    need({path.name for path in directory.iterdir()} == set(manifest['gate_inputs']))
+    for path in sorted(directory.iterdir()):
         if path.name in manifest['gate_inputs']:
             pin = file_pin(path, maximum=1048576)
             rows.append({'path': path.relative_to(repo).as_posix(), 'sha256': pin['sha256'], 'size': pin['size']})
@@ -453,8 +475,7 @@ def main():
                 preparation_note(public, step)
             preparation('source-checks')
             source_before = source_guard(repo, context, registry, env, deadline, preparation=preparation)
-            chrome = Path('/opt/google/chrome/chrome')
-            chrome_driver = Path('/usr/local/share/chromedriver-linux64/chromedriver')
+            chrome, chrome_driver, runtime_state = selected_runtime(DIRECTORY, source_before, context, deadline)
             preparation('python-path')
             python = Path(sys.executable).resolve(strict=True)
             tools_before = {}
@@ -470,15 +491,16 @@ def main():
             checkpoint('host-runtime-observation')
             public.pop('preparation_step', None)
             runtime_note(public, 'chrome-version-command')
-            chrome_raw = command(registry, [str(chrome), '--version'], repo, env, deadline)
+            chrome_raw = command(registry, chrome_version_argv(chrome, runtime_state['provider']), repo, env, deadline)
             runtime_note(public, 'driver-version-command')
             driver_raw = command(registry, [str(chrome_driver), '--version'], repo, env, deadline)
-            chrome_match = re.fullmatch(rb'Google Chrome ([0-9]+(?:\.[0-9]+){3})\s*', chrome_raw)
+            chrome_match = chrome_version_match(chrome_raw, runtime_state['provider'])
             driver_match = re.fullmatch(rb'ChromeDriver ([0-9]+(?:\.[0-9]+){3})(?: [^\r\n]{1,512})?\s*', driver_raw)
             runtime_note(public, 'version-equality')
             if chrome_match is not None and driver_match is not None and len(chrome_match[1]) <= 64 and len(driver_match[1]) <= 64:
                 runtime_note(public, 'version-equality', {'chrome': chrome_match[1].decode('ascii'), 'driver': driver_match[1].decode('ascii')})
-            need(chrome_match is not None and driver_match is not None and chrome_match[1] == driver_match[1])
+            need(chrome_match is not None and driver_match is not None and chrome_match[1] == driver_match[1]
+                and chrome_match[1].decode('ascii') == runtime_state['installed']['version'])
             public.pop('runtime_stage', None)
             public.pop('runtime_versions', None)
             version = chrome_match[1].decode('ascii')
@@ -655,6 +677,7 @@ def main():
             need(all(not listener_inodes(number) for number in retained_ports))
             source_after = source_guard(repo, context, registry, env, deadline)
             need(source_before == source_after)
+            runtime_readback(runtime_state, deadline)
             tools_after = {path: file_pin(path, trusted_owner=True, elf=True) for path in tools_before}
             need(tools_before == tools_after)
             for path, pin in runtime_after.items():

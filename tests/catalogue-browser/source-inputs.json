@@ -2,11 +2,13 @@
   "gate_inputs": [
     "browser_probe.py",
     "cft-provider-policy.json",
+    "cft-runtime-policy.json",
     "cft_bundle.py",
     "cft_git_config.py",
     "cft_git_owner.py",
     "cft_host.py",
     "cft_publish.py",
+    "cft_runtime.py",
     "entry.py",
     "fixture_server.py",
     "gate_contract.py",
@@ -16,6 +18,7 @@
     "test_cft_bundle.py",
     "test_cft_git_config.py",
     "test_cft_git_owner.py",
+    "test_cft_runtime.py",
     "test_contract.py",
     "upload_guard.py"
   ],

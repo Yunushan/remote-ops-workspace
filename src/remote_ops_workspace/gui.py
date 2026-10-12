@@ -759,7 +759,7 @@ def create_main_window(
             self.run_button.clicked.connect(self.run_queue)
             self.cancel_queue_button.clicked.connect(self.cancel_queue)
             self._process_factory = process_factory or _background_process
-            self.active_queue_plan = None
+            self.active_queue_plan: SftpQueuePlan | None = None
             self.active_queue_index = 0
             self.active_queue_process: QProcess | None = None
             self.queue_cancel_requested = False

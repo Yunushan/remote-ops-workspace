@@ -390,6 +390,30 @@ PUBLIC_CAPTURE_REFUSALS = frozenset((
 CAPTURE_PHASES = frozenset(('bootstrap-and-cloned-sdk', 'sdk-observation', 'owned-api36-emulator', 'chrome-static-device-inventory'))
 
 
+def sdk_tree_limit_diagnostic(exc):
+    value = exc.__dict__.get("tree_limit_observation")
+    keys = ("component", "sampled_stat_bytes", "maximum_bytes", "file_stat_bytes",
+            "sampled_nodes", "maximum_nodes", "complete", "file_digest_observed")
+    if (type(value) is not dict or len(value) != len(keys)
+            or any(type(key) is not str for key in value) or set(value) != set(keys)):
+        return None
+    component = value["component"]
+    if (type(component) is not str or component not in
+            ("cmdline-tools", "platform-tools", "emulator", "platform-api36",
+             "system-image-api36-x86-64", "licenses", "other")):
+        return None
+    for key in ("sampled_stat_bytes", "maximum_bytes", "file_stat_bytes", "sampled_nodes", "maximum_nodes"):
+        if type(value[key]) is not int or not 0 <= value[key] <= 2 ** 64 - 1:
+            return None
+    total, maximum, size = value["sampled_stat_bytes"], value["maximum_bytes"], value["file_stat_bytes"]
+    if (maximum != 4 * 1024 * 1024 * 1024 or value["maximum_nodes"] != 30000
+            or not 1 <= value["sampled_nodes"] <= 30000 or not 0 < size <= total
+            or total <= maximum or total - size > maximum
+            or value["complete"] is not False or value["file_digest_observed"] is not False):
+        return None
+    return {key: value[key] for key in keys}
+
+
 def capture_refusal_diagnostic(exc, phase):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
@@ -402,8 +426,13 @@ def capture_refusal_diagnostic(exc, phase):
         code = "input-access-refused"
     if type(phase) is not str or phase not in CAPTURE_PHASES:
         phase = "unobserved"
-    return {"schema": "row.android-capture-refusal.v1", "status": "refused",
-            "phase": phase, "refusal_code": code, "approval": False, "readiness_credit": 0}
+    record = {"schema": "row.android-capture-refusal.v1", "status": "refused",
+              "phase": phase, "refusal_code": code, "approval": False, "readiness_credit": 0}
+    if code == "tree-total-byte-bound" and phase == "sdk-observation":
+        observed = sdk_tree_limit_diagnostic(exc)
+        if observed is not None:
+            record["sdk_tree_limit"] = observed
+    return record
 
 
 def sdk_inventory(sdk):

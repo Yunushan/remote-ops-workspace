@@ -94,6 +94,25 @@ def validate_pins(record):
     return record
 
 
+def _tree_byte_bound_refusal(root, path, total, file_bytes, sampled_nodes, maximum_files, maximum_bytes):
+    refusal = Refusal("tree-total-byte-bound")
+    try:
+        parts = path.relative_to(root).parts
+        components = ((("cmdline-tools", "latest"), "cmdline-tools"),
+                      (("platform-tools",), "platform-tools"), (("emulator",), "emulator"),
+                      (("platforms", "android-36"), "platform-api36"),
+                      (("system-images", "android-36", "google_apis", "x86_64"), "system-image-api36-x86-64"),
+                      (("licenses",), "licenses"))
+        component = next((label for prefix, label in components if parts[:len(prefix)] == prefix), "other")
+        refusal.tree_limit_observation = {"component": component, "sampled_stat_bytes": total,
+                                          "maximum_bytes": maximum_bytes, "file_stat_bytes": file_bytes,
+                                          "sampled_nodes": sampled_nodes, "maximum_nodes": maximum_files,
+                                          "complete": False, "file_digest_observed": False}
+    except BaseException:
+        pass  # A diagnostic failure cannot replace the existing byte-budget refusal.
+    return refusal
+
+
 def tree_digest(root, maximum_files=12000, maximum_bytes=256 * 1024 * 1024):
     if root.is_symlink() or root.resolve() != root:
         raise Refusal("tree-root-alias")
@@ -113,7 +132,7 @@ def tree_digest(root, maximum_files=12000, maximum_bytes=256 * 1024 * 1024):
         elif stat.S_ISREG(info.st_mode):
             total += info.st_size
             if total > maximum_bytes:
-                raise Refusal("tree-total-byte-bound")
+                raise _tree_byte_bound_refusal(root, path, total, info.st_size, len(rows) + 1, maximum_files, maximum_bytes)
             if info.st_nlink != 1:
                 raise Refusal("tree-hardlink")
             state = hashlib.sha256()

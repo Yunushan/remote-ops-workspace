@@ -1,8 +1,10 @@
 """Synthetic pinned-runtime selection/preparation guards; no vendor operation."""
+import ast
 import io
+import json
 import unittest
 from contextlib import ExitStack
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from unittest import mock
 
@@ -328,6 +330,125 @@ class RuntimeSelectionTests(unittest.TestCase):
         self.assertEqual(diagnostic['status'], 'refused')
         self.assertEqual(diagnostic['phase'], 'publication')
         self.assertNotIn('PRIVATE', state['printed'][1][0])
+
+
+def bootstrap_diagnostic_units():
+    workflow = (Path(__file__).resolve().parents[2] / runtime.WORKFLOW).read_text(encoding='utf-8')
+    marker = "/usr/bin/python3 -I -S -B - <<'ROW_CFT_ROOT_PY'\n"
+    source = workflow.partition(marker)[2].partition('          ROW_CFT_ROOT_PY\n')[0]
+    assert source and len(source.encode()) <= 32768
+    source = '\n'.join(line[10:] if line else '' for line in source.splitlines())
+    tree = ast.parse(source)
+    names = {'BOOTSTRAP_CODES', 'BOOTSTRAP_PHASES', 'BootstrapRefusal', 'need',
+        'bootstrap_diagnostic', 'emit_bootstrap_diagnostic'}
+    units = []
+    found = set()
+    for node in tree.body:
+        name = None
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+            name = node.name
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            name = node.targets[0].id
+        if name in names:
+            assert name not in found
+            found.add(name)
+            units.append(node)
+    assert found == names
+    # Only the actual pure serializer/refusal units are loaded, never the bootstrap body or native providers.
+    assert not any(isinstance(node, (ast.Import, ast.ImportFrom)) for unit in units for node in ast.walk(unit))
+    assert not any(isinstance(node, ast.Name) and node.id in
+        {'os', 'sys', 'Path', 'pwd', 'platform', 'main', 'raw_read', 'write_source'}
+        for unit in units for node in ast.walk(unit))
+    namespace = {'json': json}
+    exec(compile(ast.Module(body=units, type_ignores=[]), '<pure-bootstrap-diagnostics>', 'exec'), namespace)
+    return namespace
+
+
+class BootstrapDiagnosticTests(unittest.TestCase):
+    def test_each_fixed_reason_and_stage_is_bounded_and_refused(self):
+        units = bootstrap_diagnostic_units()
+        refusal = units['BootstrapRefusal']
+        for code in units['BOOTSTRAP_CODES']:
+            with self.subTest(code=code):
+                with self.assertRaises(refusal) as caught:
+                    units['need'](False, code)
+                self.assertEqual(caught.exception.args, (code,))
+                raw = units['bootstrap_diagnostic'](caught.exception, 'source-checks')
+                self.assertLessEqual(len(raw), 512)
+                raw.decode('ascii')
+                value = json.loads(raw)
+                self.assertEqual(value, {'schema': 'row.cft-root-bootstrap-diagnostic.v1', 'status': 'refused',
+                    'phase': 'source-checks', 'code': code, 'readiness_credit': 0})
+        for phase in units['BOOTSTRAP_PHASES']:
+            with self.subTest(phase=phase):
+                self.assertEqual(json.loads(units['bootstrap_diagnostic'](refusal('check-refused'), phase))['phase'], phase)
+        self.assertIsNone(units['need'](True, 'PRIVATE'))
+
+    def test_unknown_errors_values_and_string_subclasses_never_disclose(self):
+        units = bootstrap_diagnostic_units()
+        refusal = units['BootstrapRefusal']
+
+        class PrivateText(str):
+            def __str__(self):
+                raise AssertionError('private stringification')
+
+            def __eq__(self, _other):
+                raise AssertionError('private comparison')
+
+        class PrivateValue:
+            def __str__(self):
+                raise AssertionError('private object stringification')
+
+        errors = [RuntimeError('PRIVATE /secret\n' + 'x' * 65536), KeyboardInterrupt('PRIVATE'),
+            refusal('PRIVATE'), refusal(PrivateText('check-refused')), refusal(PrivateValue()),
+            refusal('check-refused', 'PRIVATE')]
+        for error in errors:
+            with self.subTest(error_type=type(error).__name__):
+                raw = units['bootstrap_diagnostic'](error, PrivateValue())
+                value = json.loads(raw)
+                self.assertEqual(value['code'], 'operation-exception')
+                self.assertEqual(value['phase'], 'bootstrap')
+                self.assertNotIn(b'PRIVATE', raw)
+                self.assertNotIn(b'/secret', raw)
+        raw = units['bootstrap_diagnostic'](refusal('check-refused'), PrivateText('source-checks'))
+        self.assertEqual(json.loads(raw)['phase'], 'bootstrap')
+        with mock.patch.object(json, 'dumps', return_value='x' * 513):
+            raw = units['bootstrap_diagnostic'](refusal('check-refused'), 'source-checks')
+        self.assertLessEqual(len(raw), 512)
+        self.assertEqual(json.loads(raw)['code'], 'diagnostic-bound')
+
+    def test_public_emission_is_ascii_one_line_and_flushed(self):
+        units = bootstrap_diagnostic_units()
+        stream = mock.Mock()
+        self.assertIsNone(units['emit_bootstrap_diagnostic'](units['BootstrapRefusal']('source-bytes-pin'),
+            'source-checks', stream))
+        stream.write.assert_called_once()
+        stream.flush.assert_called_once_with()
+        raw = stream.write.call_args.args[0]
+        self.assertLessEqual(len(raw.encode('ascii')), 512 + len('cft-root-bootstrap-diagnostic \n'))
+        self.assertEqual(raw.count('\n'), 1)
+        prefix, value = raw.rstrip('\n').split(' ', 1)
+        self.assertEqual(prefix, 'cft-root-bootstrap-diagnostic')
+        self.assertEqual(json.loads(value)['code'], 'source-bytes-pin')
+
+    def test_write_flush_and_serializer_failures_are_suppressed(self):
+        units = bootstrap_diagnostic_units()
+        for point in ('write', 'flush', 'serialize'):
+            stream = mock.Mock()
+            with self.subTest(point=point), ExitStack() as stack:
+                if point == 'serialize':
+                    stack.enter_context(mock.patch.object(json, 'dumps', side_effect=RuntimeError('PRIVATE')))
+                else:
+                    getattr(stream, point).side_effect = RuntimeError('PRIVATE')
+                self.assertIsNone(units['emit_bootstrap_diagnostic'](units['BootstrapRefusal']('check-refused'),
+                    'bootstrap', stream))
+                if point == 'serialize':
+                    stream.write.assert_not_called()
+                    stream.flush.assert_not_called()
+                elif point == 'write':
+                    stream.flush.assert_not_called()
+                else:
+                    stream.write.assert_called_once()
 
 
 if __name__ == '__main__':

@@ -733,5 +733,143 @@ class KvmFocusedTests(unittest.TestCase):
         self.assertGreater(setup.index('test "$other_acl_after" = "$other_acl_before"'), setup.index(mutation))
 
 
+class SdkTreeLimitDiagnosticTests(unittest.TestCase):
+    @staticmethod
+    def observation():
+        return {"component": "system-image-api36-x86-64", "sampled_stat_bytes": 4 * 1024 ** 3 + 1,
+                "maximum_bytes": 4 * 1024 ** 3, "file_stat_bytes": 6, "sampled_nodes": 7,
+                "maximum_nodes": 30000, "complete": False, "file_digest_observed": False}
+
+    def test_tree_budget_refuses_before_rejected_file_read(self):
+        for relative, component in (("system-images/android-36/google_apis/x86_64/private.img", "system-image-api36-x86-64"),
+                                    ("private-name/private.img", "other"), ("private.img", "other")):
+            with self.subTest(component=component), fixture() as root:
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(b"sample")
+                with mock.patch.object(Path, "open", side_effect=AssertionError("file read")) as opened:
+                    with self.assertRaises(H.Refusal) as error:
+                        H.tree_digest(root, maximum_files=30000, maximum_bytes=5)
+                opened.assert_not_called()
+                self.assertEqual(error.exception.args, ("tree-total-byte-bound",))
+                value = error.exception.tree_limit_observation
+                self.assertEqual(value["component"], component)
+                self.assertEqual(value["sampled_stat_bytes"], 6)
+                self.assertEqual(value["maximum_bytes"], 5)
+                self.assertEqual(value["file_stat_bytes"], 6)
+                self.assertGreaterEqual(value["sampled_nodes"], 2)
+                self.assertFalse(value["complete"])
+                self.assertFalse(value["file_digest_observed"])
+                self.assertNotIn("private", json.dumps(value))
+
+    def test_component_classification_is_fixed_and_prefix_exact(self):
+        root = Path("/owned-sdk")
+        for relative, component in (("cmdline-tools/latest/private", "cmdline-tools"),
+                                    ("platform-tools/private", "platform-tools"), ("emulator/private", "emulator"),
+                                    ("platforms/android-36/private", "platform-api36"),
+                                    ("system-images/android-36/google_apis/x86_64/private", "system-image-api36-x86-64"),
+                                    ("licenses/private", "licenses"), ("private", "other"),
+                                    ("cmdline-tools/latest-extra/private", "other"),
+                                    ("platforms/android-360/private", "other"),
+                                    ("system-images/android-36/google_apis/x86_64-extra/private", "other")):
+            with self.subTest(component=component):
+                error = H._tree_byte_bound_refusal(root, root / relative, 6, 6, 2, 30000, 5)
+                self.assertEqual(error.args, ("tree-total-byte-bound",))
+                self.assertEqual(error.tree_limit_observation["component"], component)
+                self.assertNotIn("private", json.dumps(error.tree_limit_observation))
+
+    def test_diagnostic_construction_failure_preserves_budget_refusal(self):
+        with mock.patch.object(Path, "relative_to", side_effect=KeyboardInterrupt("/private/example")):
+            error = H._tree_byte_bound_refusal(Path("/owned-sdk"), Path("/owned-sdk/private"), 6, 6, 2, 30000, 5)
+        self.assertEqual(error.args, ("tree-total-byte-bound",))
+        self.assertNotIn("tree_limit_observation", error.__dict__)
+
+    def test_bounded_partial_projection_never_claims_complete_size(self):
+        for component in ("cmdline-tools", "platform-tools", "emulator", "platform-api36",
+                          "system-image-api36-x86-64", "licenses", "other"):
+            for large in (False, True):
+                value = self.observation()
+                value["component"] = component
+                if large:
+                    value["sampled_stat_bytes"] = 2 ** 64 - 1
+                    value["file_stat_bytes"] = value["sampled_stat_bytes"] - value["maximum_bytes"]
+                    value["sampled_nodes"] = 30000
+                error = H.Refusal("tree-total-byte-bound")
+                error.tree_limit_observation = value
+                with self.subTest(component=component, large=large):
+                    record = Q.capture_refusal_diagnostic(error, "sdk-observation")
+                    self.assertEqual(record["sdk_tree_limit"], value)
+                    self.assertFalse(record["sdk_tree_limit"]["complete"])
+                    self.assertFalse(record["sdk_tree_limit"]["file_digest_observed"])
+                    self.assertFalse(record["approval"])
+                    self.assertEqual(record["readiness_credit"], 0)
+                    raw = json.dumps(record, ensure_ascii=True, separators=(",", ":"))
+                    self.assertTrue(raw.isascii())
+                    self.assertLessEqual(len(raw), 512)
+
+    def test_malformed_private_or_inconsistent_metrics_are_omitted(self):
+        class HostileString(str):
+            def __hash__(self):
+                raise AssertionError("hash")
+            def __str__(self):
+                raise AssertionError("stringification")
+        base = self.observation()
+        values = (None, [], {**base, "path": "/private/example"},
+                  {key: value for key, value in base.items() if key != "component"},
+                  {(1 if key == "component" else key): value for key, value in base.items()},
+                  {("path" if key == "component" else key): value for key, value in base.items()},
+                  {**base, "component": "/private/example"}, {**base, "component": HostileString("emulator")},
+                  {**base, "sampled_stat_bytes": True}, {**base, "file_stat_bytes": "6"},
+                  {**base, "sampled_stat_bytes": 2 ** 64}, {**base, "file_stat_bytes": -1},
+                  {**base, "maximum_bytes": 5}, {**base, "maximum_nodes": 12000},
+                  {**base, "sampled_nodes": 0}, {**base, "sampled_nodes": 30001},
+                  {**base, "file_stat_bytes": 0}, {**base, "file_stat_bytes": base["sampled_stat_bytes"] + 1},
+                  {**base, "sampled_stat_bytes": base["maximum_bytes"]},
+                  {**base, "sampled_stat_bytes": base["maximum_bytes"] + 7},
+                  {**base, "complete": True}, {**base, "file_digest_observed": True})
+        expected = Q.capture_refusal_diagnostic(H.Refusal("tree-total-byte-bound"), "sdk-observation")
+        for index, value in enumerate(values):
+            error = H.Refusal("tree-total-byte-bound")
+            error.tree_limit_observation = value
+            with self.subTest(index=index):
+                record = Q.capture_refusal_diagnostic(error, "sdk-observation")
+                self.assertEqual(record, expected)
+                self.assertNotIn("private", json.dumps(record))
+
+    def test_other_phase_or_reason_does_not_publish_metrics(self):
+        class RefusalSubclass(H.Refusal):
+            pass
+        for phase, error in ((None, H.Refusal("tree-total-byte-bound")),
+                             ("bootstrap-and-cloned-sdk", H.Refusal("tree-total-byte-bound")),
+                             ("sdk-observation", H.Refusal("tree-hardlink")),
+                             ("sdk-observation", RefusalSubclass("tree-total-byte-bound"))):
+            error.tree_limit_observation = self.observation()
+            with self.subTest(phase=phase, kind=type(error).__name__):
+                record = Q.capture_refusal_diagnostic(error, phase)
+                self.assertNotIn("sdk_tree_limit", record)
+                self.assertFalse(record["approval"])
+
+    def test_capture_preserves_original_refusal_and_cleanup_with_metrics(self):
+        class BrokenStream:
+            def write(self, value):
+                raise RuntimeError("/private/printing")
+        sdk = HERE / "unobserved-sdk"
+        for broken in (False, True):
+            original = H.Refusal("tree-total-byte-bound")
+            original.tree_limit_observation = self.observation()
+            stream = BrokenStream() if broken else io.StringIO()
+            with self.subTest(broken=broken), mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True), mock.patch.object(Q, "event_guard", return_value={}), mock.patch.object(Q, "commands", return_value=(object(), 0)), mock.patch.object(Q, "source_binding", return_value={}), mock.patch.object(Q, "clone_guard", return_value=({}, {})), mock.patch.object(Q, "owned_sdk", return_value=sdk), mock.patch.object(Q, "sdk_inventory", side_effect=original), mock.patch.object(Q, "public_receipt", side_effect=RuntimeError("/private/publisher")), mock.patch.object(H, "cleanup_all", return_value=[]) as cleanup, mock.patch.object(H, "Managed", side_effect=AssertionError("native")) as managed, mock.patch.object(sys, "stderr", stream):
+                with self.assertRaises(H.Refusal) as error:
+                    Q.capture(HERE)
+                self.assertIs(error.exception, original)
+                cleanup.assert_called_once_with([])
+                managed.assert_not_called()
+            if not broken:
+                record = json.loads(stream.getvalue())
+                self.assertEqual(record["sdk_tree_limit"], self.observation())
+                self.assertEqual(record["refusal_code"], "tree-total-byte-bound")
+                self.assertNotIn("private", stream.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

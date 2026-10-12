@@ -979,6 +979,8 @@ def _run_web_policy_harness(
         "child_reaped": False,
         "cleanup_requested": False,
         "pre_cleanup_returncode": None,
+        "popen_return_elapsed_seconds": None,
+        "timeout_seconds": timeout,
     }
     process = None
     result = None
@@ -998,7 +1000,9 @@ def _run_web_policy_harness(
             process = subprocess.Popen(
                 command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, **options
             )
-            deadline = time.monotonic() + timeout
+            launched_at = time.monotonic()
+            report["popen_return_elapsed_seconds"] = launched_at - started
+            deadline = launched_at + timeout
             while True:
                 report["result_exists"] = result_path.exists()
                 returncode = process.poll()
@@ -1072,6 +1076,11 @@ def _run_web_policy_harness(
             if isinstance(failure, TimeoutError):
                 failure.args = (
                     f"{failure.args[0]}; result_exists={report['result_exists']}; "
+                    f"timeout_seconds={report['timeout_seconds']}; "
+                    f"popen_return_elapsed_seconds={report['popen_return_elapsed_seconds']}; "
+                    f"elapsed_seconds={report['elapsed_seconds']}; "
+                    "last_observation_elapsed_seconds="
+                    f"{report.get('last_observation_elapsed_seconds')}; "
                     f"milestones={','.join(report['milestones']) or 'none'}; "
                     f"milestone_timings={report['milestone_timings']}; "
                     "milestone_error_type="

@@ -79,15 +79,49 @@ jobs:
           PINS = {'browser_probe.py': {'bytes': 13483, 'sha256': 'c713476aa3489164995c7412ed781979f401980b7324ce43c23b2b774103c617'}, 'cft_bundle.py': {'bytes': 53890, 'sha256': '7fa3ec5f8f17b9568a64dfec01c2e5a13bb104f0d8727096eab3e98dbd317918'}, 'cft_git_config.py': {'bytes': 8724, 'sha256': '82a8f71227f4ed45dd42a9d2142edc2f8ec90d58615639ec35caafa1d032fe5e'}, 'cft_git_owner.py': {'bytes': 7969, 'sha256': '6bfe1a3b5a298ec54eeba814ab9e4512b54e2e40c5e7c63335763cc5a0323878'}, 'cft_runtime.py': {'bytes': 14067, 'sha256': 'cfa1cf98a276ebec53bf6d263fdcde0e162f14b13438ba4cf517146856d28fea'}, 'gate_contract.py': {'bytes': 12172, 'sha256': '87346af7bfdaa4cb4fc03d463f35a452e6baa4417aaf1f7e28b2e29e19958cc5'}, 'host_controller.py': {'bytes': 39113, 'sha256': 'e58eb4c654a01d7583c8440130c6c7ff326faf555385ee6c028b0d1721448626'}, 'cft-runtime-policy.json': {'bytes': 1400, 'sha256': '1ca6ac144a8b45673cb1630e782a60ec7e396122db2c2c63a82118952cb0108f'}}
           started = time.monotonic()
           deadline = started + 150
+          phase = 'bootstrap'
 
 
-          def need(value):
+          BOOTSTRAP_CODES = ('check-refused', 'operation-exception', 'json-nonfinite', 'diagnostic-bound', 'deadline', 'input-file-policy', 'descriptor-before', 'input-overflow', 'descriptor-after-length', 'input-path-readback', 'json-duplicate-key', 'system-platform', 'root-isolated-startup', 'system-interpreter-path', 'system-interpreter-elf', 'runner-account', 'host-image-context', 'os-release-context', 'workspace-path', 'workspace-directory-policy', 'workspace-ancestor-directory', 'source-head-format', 'event-repository', 'event-pull-request', 'event-push', 'run-identifiers', 'workflow-context', 'root-base-policy', 'write-progress', 'stage-byte-readback', 'source-recipe-shape', 'source-bytes-pin', 'stage-parent-descriptor', 'stage-child-descriptor', 'stage-seal-identity', 'stage-parent-readback')
+          BOOTSTRAP_PHASES = ('bootstrap', 'system-context', 'interpreter', 'runner-account', 'host-context', 'os-release', 'workspace', 'event', 'run-context', 'root-bases', 'source-checks', 'stage-birth', 'stage-write', 'stage-seal', 'stage-readback', 'stage-cleanup', 'exec')
+
+
+          class BootstrapRefusal(RuntimeError):
+              pass
+
+
+          def need(value, code='check-refused'):
               if not value:
-                  raise RuntimeError('cft-root-bootstrap-refused')
+                  raise BootstrapRefusal(code)
+
+
+          def bootstrap_diagnostic(error, phase):
+              code = 'operation-exception'
+              if type(error) is BootstrapRefusal:
+                  args = error.args
+                  if type(args) is tuple and len(args) == 1 and type(args[0]) is str and args[0] in BOOTSTRAP_CODES:
+                      code = args[0]
+              if type(phase) is not str or phase not in BOOTSTRAP_PHASES:
+                  phase = 'bootstrap'
+              raw = json.dumps({'schema': 'row.cft-root-bootstrap-diagnostic.v1', 'status': 'refused',
+                  'phase': phase, 'code': code, 'readiness_credit': 0}, sort_keys=True,
+                  separators=(',', ':'), ensure_ascii=True).encode('ascii')
+              if len(raw) > 512:
+                  return b'{"schema":"row.cft-root-bootstrap-diagnostic.v1","status":"refused","phase":"bootstrap","code":"diagnostic-bound","readiness_credit":0}'
+              return raw
+
+
+          def emit_bootstrap_diagnostic(error, phase, stream):
+              try:
+                  raw = bootstrap_diagnostic(error, phase)
+                  stream.write('cft-root-bootstrap-diagnostic ' + raw.decode('ascii') + '\n')
+                  stream.flush()
+              except BaseException:
+                  pass
 
 
           def clock():
-              need(time.monotonic() < deadline)
+              need(time.monotonic() < deadline, 'deadline')
 
 
           def identity(info):
@@ -100,23 +134,23 @@ jobs:
               before = path.lstat()
               need(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
                   and before.st_uid in owners and not before.st_mode & 0o022
-                  and 0 < before.st_size <= maximum)
+                  and 0 < before.st_size <= maximum, 'input-file-policy')
               fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
               try:
-                  need(identity(os.fstat(fd)) == identity(before))
+                  need(identity(os.fstat(fd)) == identity(before), 'descriptor-before')
                   data = bytearray()
                   while True:
                       clock()
                       chunk = os.read(fd, min(65536, maximum + 1 - len(data)))
                       if not chunk:
                           break
-                      need(len(data) + len(chunk) <= maximum)
+                      need(len(data) + len(chunk) <= maximum, 'input-overflow')
                       data.extend(chunk)
-                  need(len(data) == before.st_size and identity(os.fstat(fd)) == identity(before))
+                  need(len(data) == before.st_size and identity(os.fstat(fd)) == identity(before), 'descriptor-after-length')
                   answer = bytes(data)
               finally:
                   os.close(fd)
-              need(identity(path.lstat()) == identity(before))
+              need(identity(path.lstat()) == identity(before), 'input-path-readback')
               clock()
               return answer
 
@@ -124,13 +158,13 @@ jobs:
           def unique(rows):
               answer = {}
               for key, value in rows:
-                  need(key not in answer)
+                  need(key not in answer, 'json-duplicate-key')
                   answer[key] = value
               return answer
 
 
           def nonfinite(_value):
-              raise RuntimeError('cft-root-bootstrap-refused')
+              raise BootstrapRefusal('json-nonfinite')
 
 
           def json_data(raw):
@@ -138,52 +172,62 @@ jobs:
 
 
           def validate_context():
+              global phase
+              phase = 'system-context'
               need(sys.platform == 'linux' and platform.machine() == 'x86_64'
-                  and platform.python_version_tuple()[:2] == ('3', '12'))
+                  and platform.python_version_tuple()[:2] == ('3', '12'), 'system-platform')
               need(os.getuid() == os.geteuid() == 0 and os.getgid() == os.getegid() == 0 and sys.flags.isolated == 1
-                  and sys.flags.no_site == 1 and sys.dont_write_bytecode)
+                  and sys.flags.no_site == 1 and sys.dont_write_bytecode, 'root-isolated-startup')
+              phase = 'interpreter'
               python = Path(sys.executable).resolve(strict=True)
-              need(python == Path('/usr/bin/python3.12'))
-              need(raw_read(python, 536870912, {0})[:4] == b'\x7fELF')
+              need(python == Path('/usr/bin/python3.12'), 'system-interpreter-path')
+              need(raw_read(python, 536870912, {0})[:4] == b'\x7fELF', 'system-interpreter-elf')
+              phase = 'runner-account'
               account = pwd.getpwnam('runner')
               need(account.pw_name == 'runner' and account.pw_uid > 0 and account.pw_gid > 0
-                  and account.pw_dir == '/home/runner')
+                  and account.pw_dir == '/home/runner', 'runner-account')
+              phase = 'host-context'
               env = os.environ
               need(env.get('GITHUB_ACTIONS') == 'true' and env.get('RUNNER_ENVIRONMENT') == 'github-hosted'
                   and env.get('GITHUB_REPOSITORY') == 'Yunushan/remote-ops-workspace'
-                  and env.get('ImageOS') == 'ubuntu24' and re.fullmatch(r'[0-9.]{1,64}', env.get('ImageVersion', '')))
+                  and env.get('ImageOS') == 'ubuntu24' and re.fullmatch(r'[0-9.]{1,64}', env.get('ImageVersion', '')), 'host-image-context')
+              phase = 'os-release'
               release = raw_read(Path('/etc/os-release').resolve(strict=True), 4096, {0})
               need(re.search(rb'^ID=ubuntu$', release, re.MULTILINE)
-                  and re.search(rb'^VERSION_ID="24\.04"$', release, re.MULTILINE))
+                  and re.search(rb'^VERSION_ID="24\.04"$', release, re.MULTILINE), 'os-release-context')
+              phase = 'workspace'
               repo = Path(env['GITHUB_WORKSPACE'])
-              need(str(repo) == '/home/runner/work/remote-ops-workspace/remote-ops-workspace')
+              need(str(repo) == '/home/runner/work/remote-ops-workspace/remote-ops-workspace', 'workspace-path')
               for directory in (repo, repo / 'tests', repo / 'tests' / 'catalogue-browser'):
                   info = directory.lstat()
                   need(stat.S_ISDIR(info.st_mode) and info.st_uid == account.pw_uid
-                      and info.st_gid == account.pw_gid and not info.st_mode & 0o022)
+                      and info.st_gid == account.pw_gid and not info.st_mode & 0o022, 'workspace-directory-policy')
               for directory in repo.parents:
-                  need(stat.S_ISDIR(directory.lstat().st_mode))
+                  need(stat.S_ISDIR(directory.lstat().st_mode), 'workspace-ancestor-directory')
               source, event_sha = env.get('QUALIFICATION_SOURCE_SHA', ''), env.get('GITHUB_SHA', '')
-              need(re.fullmatch(r'[0-9a-f]{40}', source) and re.fullmatch(r'[0-9a-f]{40}', event_sha))
+              need(re.fullmatch(r'[0-9a-f]{40}', source) and re.fullmatch(r'[0-9a-f]{40}', event_sha), 'source-head-format')
+              phase = 'event'
               event = json_data(raw_read(Path(env['GITHUB_EVENT_PATH']), 1048576, {0, account.pw_uid}))
               need(event['repository']['full_name'] == 'Yunushan/remote-ops-workspace'
-                  and event['repository']['private'] is False)
+                  and event['repository']['private'] is False, 'event-repository')
               if env.get('GITHUB_EVENT_NAME') == 'pull_request':
                   pr = event['pull_request']
                   need(pr['head']['repo']['full_name'] == 'Yunushan/remote-ops-workspace'
                       and pr['head']['sha'] == source and pr['base']['ref'] == 'main'
-                      and event['action'] in ('opened', 'reopened', 'synchronize'))
+                      and event['action'] in ('opened', 'reopened', 'synchronize'), 'event-pull-request')
               else:
                   need(env.get('GITHUB_EVENT_NAME') == 'push' and event['ref'] == 'refs/heads/main'
-                      and event['after'] == source == event_sha)
+                      and event['after'] == source == event_sha, 'event-push')
+              phase = 'run-context'
               for key in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT'):
-                  need(re.fullmatch(r'[1-9][0-9]{0,19}', env.get(key, '')))
+                  need(re.fullmatch(r'[1-9][0-9]{0,19}', env.get(key, '')), 'run-identifiers')
               workflow = '.github/workflows/ubuntu-catalogue-browser.yml'
               need(re.fullmatch(r'[0-9a-f]{40}', env.get('GITHUB_WORKFLOW_SHA', ''))
-                  and env.get('GITHUB_WORKFLOW_REF', '').startswith('Yunushan/remote-ops-workspace/' + workflow + '@'))
+                  and env.get('GITHUB_WORKFLOW_REF', '').startswith('Yunushan/remote-ops-workspace/' + workflow + '@'), 'workflow-context')
+              phase = 'root-bases'
               for directory in (Path('/'), Path('/opt')):
                   info = directory.lstat()
-                  need(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022)
+                  need(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022, 'root-base-policy')
               return repo, account.pw_uid
 
 
@@ -195,44 +239,50 @@ jobs:
                   while remaining:
                       clock()
                       count = os.write(fd, remaining)
-                      need(count > 0)
+                      need(count > 0, 'write-progress')
                       remaining = remaining[count:]
                   os.fsync(fd)
                   os.fchmod(fd, 0o444)
               finally:
                   os.close(fd)
-              need(raw_read(path, 1048576, {0}) == raw)
+              need(raw_read(path, 1048576, {0}) == raw, 'stage-byte-readback')
 
 
           def main():
+              global phase
               repo, uid = validate_context()
               directory = repo / 'tests' / 'catalogue-browser'
+              phase = 'source-checks'
               source = {}
               for name, pin in PINS.items():
-                  need(re.fullmatch(r'[a-z_-]+\.(?:py|json)', name) and set(pin) == {'bytes', 'sha256'})
+                  need(re.fullmatch(r'[a-z_-]+\.(?:py|json)', name) and set(pin) == {'bytes', 'sha256'}, 'source-recipe-shape')
                   data = raw_read(directory / name, 1048576, {uid})
-                  need(len(data) == pin['bytes'] and hashlib.sha256(data).hexdigest() == pin['sha256'])
+                  need(len(data) == pin['bytes'] and hashlib.sha256(data).hexdigest() == pin['sha256'], 'source-bytes-pin')
                   source[name] = data
               root = Path('/opt') / ('row-cft-source-' + secrets.token_hex(16))
+              phase = 'stage-birth'
               parent_fd = None
               stage_fd = None
               try:
                   parent_fd = os.open('/opt', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
                   parent_before = Path('/opt').lstat()
-                  need(identity(os.fstat(parent_fd)) == identity(parent_before))
+                  need(identity(os.fstat(parent_fd)) == identity(parent_before), 'stage-parent-descriptor')
                   os.mkdir(root.name, mode=0o700, dir_fd=parent_fd)
                   stage_fd = os.open(root.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
-                  need(identity(os.fstat(stage_fd)) == identity(root.lstat()))
+                  need(identity(os.fstat(stage_fd)) == identity(root.lstat()), 'stage-child-descriptor')
+                  phase = 'stage-write'
                   for name, data in source.items():
                       write_source(root / name, data)
                   capsule = json.dumps({'source_directory': str(directory), 'pins': PINS},
                       sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode('ascii')
                   write_source(root / 'stage.json', capsule)
+                  phase = 'stage-seal'
                   os.fchmod(stage_fd, 0o555)
-                  need(identity(os.fstat(stage_fd)) == identity(root.lstat()))
+                  need(identity(os.fstat(stage_fd)) == identity(root.lstat()), 'stage-seal-identity')
+                  phase = 'stage-readback'
                   current_parent = Path('/opt').lstat()
                   need(current_parent.st_uid == 0 and not current_parent.st_mode & 0o022
-                      and (current_parent.st_dev, current_parent.st_ino) == (parent_before.st_dev, parent_before.st_ino))
+                      and (current_parent.st_dev, current_parent.st_ino) == (parent_before.st_dev, parent_before.st_ino), 'stage-parent-readback')
               finally:
                   first = None
                   for fd in (stage_fd, parent_fd):
@@ -241,6 +291,7 @@ jobs:
                               os.close(fd)
                           except BaseException as error:
                               if first is None:
+                                  phase = 'stage-cleanup'
                                   first = error
                   if first is not None:
                       raise first
@@ -249,12 +300,14 @@ jobs:
               env['ROW_CFT_PREP_DEADLINE'] = repr(deadline)
               # The only inserted import directory is the exact root-staged pinned tree.
               loader = 'import runpy,sys;sys.path.insert(0,' + repr(str(root)) + ');runpy.run_path(' + repr(str(root / 'cft_runtime.py')) + ',run_name="__main__")'
+              phase = 'exec'
               os.execve('/usr/bin/python3.12', ['/usr/bin/python3.12', '-I', '-S', '-B', '-c', loader], env)
 
 
           try:
               main()
-          except BaseException:
+          except BaseException as error:
+              emit_bootstrap_diagnostic(error, phase, sys.stderr)
               try:
                   sys.stderr.write('cft-root-bootstrap-refused\n')
               except BaseException:

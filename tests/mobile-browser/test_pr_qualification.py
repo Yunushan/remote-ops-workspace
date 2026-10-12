@@ -1607,7 +1607,7 @@ class AdbServerListenContractTests(unittest.TestCase):
                 self.assertEqual(env["ANDROID_ADB_SERVER_PORT"], "5039")
                 if len(births) == 5:
                     self.assertEqual(argv, [tools["adb"]["path"], "-L", "tcp:localhost:5039", "nodaemon", "server"])
-                    for reservation, port in zip(reservations, (5039, 5556, 5557)):
+                    for reservation, port in zip(reservations, (5039, 5556, 5557), strict=True):
                         reservation.bind.assert_called_once_with(("127.0.0.1", port))
                         reservation.__exit__.assert_called_once()
                 self.assertLess(len(births), 6)
@@ -1675,7 +1675,7 @@ class AdbServerListenContractTests(unittest.TestCase):
                 self.assertEqual(env["ANDROID_ADB_SERVER_PORT"], "5039")
                 if len(births) == 1:
                     self.assertEqual(argv, [str(sdk / "platform-tools/adb"), "-L", "tcp:localhost:5039", "nodaemon", "server"])
-                    for reservation, port in zip(reservations, (5039, 5556, 5557)):
+                    for reservation, port in zip(reservations, (5039, 5556, 5557), strict=True):
                         reservation.bind.assert_called_once_with(("127.0.0.1", port))
                         reservation.__exit__.assert_called_once()
                 self.assertLess(len(births), 2)
@@ -1748,6 +1748,286 @@ class AdbServerListenContractTests(unittest.TestCase):
             connection.__exit__.assert_called_once()
             provider.assert_not_called()
             process.assert_not_called()
+
+
+class InventoryQueryDiagnosticTests(unittest.TestCase):
+    TAGS = ("chrome-package-dump", "chrome-package-paths", "chrome-apk-sha256",
+            "chrome-apk-stat", "device-unix-sockets")
+    APK = "/product/app/PRIVATE/Chrome.apk"
+    COMMANDS = ("dumpsys package com.android.chrome", "pm path com.android.chrome",
+                "sha256sum " + APK, "stat -c %s " + APK)
+    RESPONSES = (b"versionName=123.0 versionCode=456\n",
+                 ("package:" + APK + "\n").encode(),
+                 ("a" * 64 + "  " + APK + "\n").encode(), b"123\n")
+
+    def test_wrapper_success_preserves_one_positional_call_and_return_identity(self):
+        for tag in self.TAGS:
+            result = object()
+            adb = SimpleNamespace(shell=mock.Mock(return_value=result))
+            with self.subTest(tag=tag):
+                self.assertIs(H.inventory_shell(adb, "fixed-original-command", tag), result)
+                adb.shell.assert_called_once_with("fixed-original-command")
+
+    def test_wrapper_only_annotates_the_exact_original_overflow(self):
+        class OtherRefusal(H.Refusal):
+            pass
+
+        cases = (H.Refusal("adb-output-bound"), H.Refusal("adb-service-refused"),
+                 H.Refusal("adb-output-bound", "PRIVATE"), OtherRefusal("adb-output-bound"),
+                 PermissionError("/PRIVATE"))
+        for original in cases:
+            adb = SimpleNamespace(shell=mock.Mock(side_effect=original))
+            args = original.args
+            with self.subTest(kind=type(original).__name__, argc=len(args)):
+                with self.assertRaises(type(original)) as caught:
+                    H.inventory_shell(adb, "fixed-original-command", "chrome-package-dump")
+                self.assertIs(caught.exception, original)
+                self.assertEqual(original.args, args)
+                adb.shell.assert_called_once_with("fixed-original-command")
+                if type(original) is H.Refusal and args == ("adb-output-bound",):
+                    self.assertEqual(original.adb_query_tag, "chrome-package-dump")
+                else:
+                    self.assertNotIn("adb_query_tag", original.__dict__)
+
+    def test_attachment_interruptions_preserve_original_object_and_args(self):
+        class InterruptibleRefusal(ValueError):
+            interrupt = None
+
+            def __setattr__(self, name, value):
+                raise self.interrupt
+
+        for interrupt_type in (KeyboardInterrupt, SystemExit):
+            InterruptibleRefusal.interrupt = interrupt_type("/PRIVATE")
+            original = InterruptibleRefusal("adb-output-bound")
+            adb = SimpleNamespace(shell=mock.Mock(side_effect=original))
+            with self.subTest(interrupt=interrupt_type.__name__), mock.patch.object(H, "Refusal", InterruptibleRefusal):
+                with self.assertRaises(InterruptibleRefusal) as caught:
+                    H.inventory_shell(adb, "fixed-original-command", "chrome-package-dump")
+                self.assertIs(caught.exception, original)
+                self.assertEqual(original.args, ("adb-output-bound",))
+                self.assertNotIn("adb_query_tag", original.__dict__)
+                adb.shell.assert_called_once_with("fixed-original-command")
+
+    def test_projection_is_closed_by_tag_type_phase_code_and_refusal_type(self):
+        for tag in self.TAGS:
+            original = H.Refusal("adb-output-bound")
+            original.adb_query_tag = tag
+            with self.subTest(tag=tag):
+                record = Q.capture_refusal_diagnostic(original, "chrome-static-device-inventory")
+                self.assertEqual(record["adb_query_tag"], tag)
+                self.assertEqual(set(record), {"schema", "status", "phase", "refusal_code", "approval", "readiness_credit", "adb_query_tag"})
+                self.assertFalse(record["approval"])
+                self.assertEqual(record["readiness_credit"], 0)
+
+        class StringAlias(str):
+            pass
+
+        for tag in (None, False, 1, {}, [], "PRIVATE", "x" * 33, StringAlias("chrome-package-dump")):
+            original = H.Refusal("adb-output-bound")
+            original.adb_query_tag = tag
+            with self.subTest(kind=type(tag).__name__):
+                record = Q.capture_refusal_diagnostic(original, "chrome-static-device-inventory")
+                self.assertNotIn("adb_query_tag", record)
+                self.assertNotIn("PRIVATE", json.dumps(record))
+                self.assertEqual(original.args, ("adb-output-bound",))
+
+        class RefusalAlias(H.Refusal):
+            pass
+
+        for original, phase in ((H.Refusal("adb-service-refused"), "chrome-static-device-inventory"),
+                                (H.Refusal("adb-output-bound"), "owned-api36-emulator"),
+                                (RefusalAlias("adb-output-bound"), "chrome-static-device-inventory"),
+                                (H.Refusal("adb-output-bound", "PRIVATE"), "chrome-static-device-inventory")):
+            original.adb_query_tag = "chrome-package-dump"
+            with self.subTest(kind=type(original).__name__, phase=phase):
+                self.assertNotIn("adb_query_tag", Q.capture_refusal_diagnostic(original, phase))
+
+    def test_projection_bad_attribute_access_is_diagnostic_only(self):
+        class BadAccessRefusal(ValueError):
+            interrupt = None
+
+            def __getattribute__(self, name):
+                if name == "__dict__":
+                    raise type(self).interrupt
+                return super().__getattribute__(name)
+
+        for interrupt_type in (KeyboardInterrupt, SystemExit):
+            BadAccessRefusal.interrupt = interrupt_type("/PRIVATE")
+            original = BadAccessRefusal("adb-output-bound")
+            with self.subTest(interrupt=interrupt_type.__name__), mock.patch.object(H, "Refusal", BadAccessRefusal):
+                record = Q.capture_refusal_diagnostic(original, "chrome-static-device-inventory")
+                self.assertNotIn("adb_query_tag", record)
+                self.assertEqual(record["refusal_code"], "adb-output-bound")
+                self.assertEqual(original.args, ("adb-output-bound",))
+                self.assertNotIn("PRIVATE", json.dumps(record))
+
+    def test_package_queries_stop_at_each_original_failure_with_fixed_tag(self):
+        for index in range(4):
+            original = H.Refusal("adb-output-bound")
+            adb = SimpleNamespace(shell=mock.Mock(side_effect=[*self.RESPONSES[:index], original]))
+            with self.subTest(index=index):
+                with self.assertRaises(H.Refusal) as caught:
+                    H.package_inventory(adb, "com.android.chrome")
+                self.assertIs(caught.exception, original)
+                self.assertEqual(original.args, ("adb-output-bound",))
+                self.assertEqual(original.adb_query_tag, self.TAGS[index])
+                self.assertEqual(adb.shell.call_args_list, [mock.call(value) for value in self.COMMANDS[:index + 1]])
+                record = Q.capture_refusal_diagnostic(original, "chrome-static-device-inventory")
+                self.assertEqual(record["adb_query_tag"], self.TAGS[index])
+                self.assertNotIn("PRIVATE", json.dumps(record))
+
+    def test_package_success_keeps_inventory_and_unowned_package_precedes_provider(self):
+        adb = SimpleNamespace(shell=mock.Mock(side_effect=self.RESPONSES))
+        observed = H.package_inventory(adb, "com.android.chrome")
+        self.assertEqual(observed, {"package": "com.android.chrome", "version": "123.0", "version_code": "456",
+                                   "apks": [{"path": self.APK, "sha256": "a" * 64, "bytes": 123}],
+                                   "publisher_signing_trust": "not-approved-by-this-test"})
+        self.assertEqual(adb.shell.call_args_list, [mock.call(value) for value in self.COMMANDS])
+        unused = SimpleNamespace(shell=mock.Mock())
+        with self.assertRaisesRegex(H.Refusal, "unowned-package-probe") as caught:
+            H.package_inventory(unused, "PRIVATE")
+        unused.shell.assert_not_called()
+        self.assertNotIn("adb_query_tag", caught.exception.__dict__)
+
+    @staticmethod
+    def shell_frame(payload):
+        return b"\x01" + len(payload).to_bytes(4, "little") + payload + b"\x03\x01\x00\x00\x00\x00"
+
+    def capture_unix_failure(self, *, publication=None, interrupt_type=None, real_wire=False):
+        with fixture() as root:
+            (root / ".tmp").mkdir()
+            sdk = root / "owned-sdk"
+            leaders = [SimpleNamespace(child=SimpleNamespace(stdin=mock.Mock()), zero=mock.Mock(),
+                                       live=mock.Mock(), buffers=[bytearray(), bytearray()]) for _ in range(3)]
+            born = []
+
+            def managed(argv, env, cwd):
+                self.assertLess(len(born), 3)
+                self.assertIs(cwd, root)
+                self.assertEqual(env["ADB_SERVER_SOCKET"], "tcp:127.0.0.1:5039")
+                leader = leaders[len(born)]
+                born.append(leader)
+                return leader
+
+            original = H.Refusal("adb-output-bound")
+            adb = SimpleNamespace(command=mock.Mock(side_effect=[(H.SERIAL + "\tdevice\n").encode(), self.shell_frame(b"1\n")]),
+                                  shell=mock.Mock(side_effect=[b"36\n", b"x86_64\n", original]))
+            listener = mock.Mock()
+            client_type = H.AdbSocket
+            connections = []
+            if real_wire:
+                devices = (H.SERIAL + "\tdevice\n").encode()
+                wire_responses = ([b"OKAY", f"{len(devices):04x}".encode(), devices, b""],
+                                  [b"OKAY", b"OKAY", self.shell_frame(b"1\n"), b""],
+                                  [b"OKAY", b"OKAY", self.shell_frame(b"36\n"), b""],
+                                  [b"OKAY", b"OKAY", self.shell_frame(b"x86_64\n"), b""],
+                                  [b"OKAY", b"OKAY", b"x" * 65536, b"x"])
+                for values in wire_responses:
+                    connection = mock.MagicMock()
+                    connection.__enter__.return_value = connection
+                    connection.recv.side_effect = values
+                    connections.append(connection)
+                adb = client_type(leaders[1], clock=lambda: 0, listener=listener)
+
+            class BrokenStream(io.StringIO):
+                def write(self, value):
+                    raise interrupt_type("/PRIVATE")
+
+            stream = BrokenStream() if publication == "diagnostic" else io.StringIO()
+            with ExitStack() as patches:
+                patches.enter_context(mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True))
+                patches.enter_context(mock.patch.object(Q, "event_guard", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "commands", return_value=(object(), 0)))
+                patches.enter_context(mock.patch.object(Q, "source_binding", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=({}, {})))
+                patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
+                patches.enter_context(mock.patch.object(Q, "sdk_inventory", return_value={"tree_sha256": "e" * 64}))
+                patches.enter_context(mock.patch.object(Q.time, "monotonic", return_value=0))
+                reservations = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=[mock.MagicMock() for _ in range(3)]))
+                provider = patches.enter_context(mock.patch.object(H, "Managed", side_effect=managed))
+                ready = patches.enter_context(mock.patch.object(H, "owned_listener", return_value=None))
+                patches.enter_context(mock.patch.object(H, "AdbSocket", return_value=adb))
+                inventory = patches.enter_context(mock.patch.object(H, "package_inventory", return_value={"apks": [{}]}))
+                cleanup = patches.enter_context(mock.patch.object(H, "cleanup_all", return_value=[]))
+                receipt = patches.enter_context(mock.patch.object(Q, "public_receipt",
+                    side_effect=interrupt_type("/PRIVATE") if publication == "receipt" else None))
+                patches.enter_context(mock.patch.object(sys, "stderr", stream))
+                process = patches.enter_context(mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native birth")))
+                connect = patches.enter_context(mock.patch.object(H.socket, "create_connection", side_effect=connections))
+                decoder = patches.enter_context(mock.patch.object(H, "shell_v2", wraps=H.shell_v2))
+                with self.assertRaises(H.Refusal) as caught:
+                    Q.capture(root)
+                if not real_wire:
+                    self.assertIs(caught.exception, original)
+                    self.assertEqual(adb.shell.call_args_list, [mock.call("getprop ro.build.version.sdk"),
+                        mock.call("getprop ro.product.cpu.abi"), mock.call("cat /proc/net/unix")])
+                    self.assertEqual(adb.command.call_args_list, [mock.call("host:devices", framed=True, timeout=30),
+                        mock.call("shell,v2,raw:getprop sys.boot_completed", transport=True, timeout=30)])
+                    connect.assert_not_called()
+                else:
+                    self.assertEqual(connect.call_count, 5)
+                    self.assertEqual(decoder.call_count, 3)
+                self.assertEqual(caught.exception.args, ("adb-output-bound",))
+                self.assertEqual(caught.exception.adb_query_tag, "device-unix-sockets")
+                self.assertEqual(provider.call_count, 3)
+                self.assertEqual(reservations.call_count, 3)
+                ready.assert_called_once_with(leaders[1], 5039)
+                inventory.assert_called_once_with(adb, "com.android.chrome")
+                cleanup.assert_called_once_with(born)
+                receipt.assert_called_once()
+                process.assert_not_called()
+                record = receipt.call_args.args[1]
+                self.assertEqual(record["status"], "refused")
+                self.assertFalse(record["approval"])
+                self.assertEqual(record["readiness_credit"], 0)
+            return caught.exception, stream.getvalue(), connections, leaders, listener
+
+    def test_capture_fixed_unix_tag_has_original_failure_and_cleanup(self):
+        original, line, connections, _leaders, _listener = self.capture_unix_failure()
+        self.assertEqual(original.args, ("adb-output-bound",))
+        self.assertEqual(connections, [])
+        record = json.loads(line)
+        self.assertEqual(record["phase"], "chrome-static-device-inventory")
+        self.assertEqual(record["adb_query_tag"], "device-unix-sockets")
+        self.assertFalse(record["approval"])
+        self.assertEqual(record["readiness_credit"], 0)
+
+    def test_capture_publication_interruptions_keep_original_failure_and_cleanup(self):
+        for publication in ("diagnostic", "receipt"):
+            for interrupt_type in (KeyboardInterrupt, SystemExit):
+                with self.subTest(publication=publication, interrupt=interrupt_type.__name__):
+                    original, _line, _connections, _leaders, _listener = self.capture_unix_failure(
+                        publication=publication, interrupt_type=interrupt_type)
+                    self.assertEqual(original.args, ("adb-output-bound",))
+                    self.assertEqual(original.adb_query_tag, "device-unix-sockets")
+
+    def test_real_mocked_wire_overflow_closes_sockets_and_cleans_retained_leaders(self):
+        original, line, connections, leaders, listener = self.capture_unix_failure(real_wire=True)
+        self.assertEqual(original.args, ("adb-output-bound",))
+        self.assertEqual(len(connections), 5)
+        for connection in connections:
+            connection.__exit__.assert_called_once()
+        self.assertEqual(connections[-1].recv.call_args_list,
+                         [mock.call(4), mock.call(4), mock.call(65536), mock.call(1)])
+        self.assertEqual(connections[-1].sendall.call_count, 2)
+        self.assertEqual(connections[-1].sendall.call_args_list[1].args[0][4:], b"shell,v2,raw:cat /proc/net/unix")
+        self.assertEqual(leaders[1].live.call_count, 9)
+        self.assertEqual(listener.call_count, 5)
+        self.assertEqual(json.loads(line)["adb_query_tag"], "device-unix-sockets")
+
+    def test_closed_tag_records_fit_existing_ascii_publication_cap(self):
+        self.assertEqual(H.ADB_INVENTORY_QUERY_TAGS, self.TAGS)
+        self.assertEqual(Q.INVENTORY_QUERY_TAGS, self.TAGS)
+        for tag in self.TAGS:
+            original = H.Refusal("adb-output-bound")
+            original.adb_query_tag = tag
+            with self.subTest(tag=tag):
+                record = Q.capture_refusal_diagnostic(original, "chrome-static-device-inventory")
+                raw = (json.dumps(record, ensure_ascii=True, separators=(",", ":")) + "\n").encode("ascii")
+                self.assertLessEqual(len(raw), 512)
+                self.assertNotIn(b"PRIVATE", raw)
+                self.assertNotIn("owned_process", record)
+                self.assertNotIn("sdk_tree_limit", record)
 
 
 if __name__ == "__main__":

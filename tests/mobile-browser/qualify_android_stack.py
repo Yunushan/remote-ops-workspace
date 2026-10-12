@@ -456,6 +456,25 @@ def owned_process_diagnostic(exc):
     return observed
 
 
+INVENTORY_QUERY_TAGS = (
+    "chrome-package-dump", "chrome-package-paths", "chrome-apk-sha256",
+    "chrome-apk-stat", "device-unix-sockets",
+)
+
+
+def inventory_query_tag_diagnostic(exc):
+    """Independent closed optional tag; never a raw query, path or output."""
+    try:
+        if (type(exc) is H.Refusal and type(exc.args) is tuple
+                and exc.args == ("adb-output-bound",)):
+            value = exc.__dict__.get("adb_query_tag")
+            if type(value) is str and len(value) <= 32 and value in INVENTORY_QUERY_TAGS:
+                return value
+    except BaseException:
+        pass
+    return None
+
+
 def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
@@ -486,6 +505,10 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
             observed = owned_process_diagnostic(exc)
             if observed is not None:
                 record["owned_process"] = observed
+    if code == "adb-output-bound" and phase == "chrome-static-device-inventory":
+        observed = inventory_query_tag_diagnostic(exc)
+        if observed is not None:
+            record["adb_query_tag"] = observed
     if code == "tree-total-byte-bound" and phase == "sdk-observation":
         observed = sdk_tree_limit_diagnostic(exc)
         if observed is not None:
@@ -642,7 +665,7 @@ def capture(root):
             raise H.Refusal("qualification-api-or-abi-mismatch")
         context["phase"] = "chrome-static-device-inventory"
         chrome = H.package_inventory(adb, "com.android.chrome")
-        sockets = adb.shell("cat /proc/net/unix")
+        sockets = H.inventory_shell(adb, "cat /proc/net/unix", "device-unix-sockets")
         socket_rows = sockets.decode("ascii").splitlines()
         # No am start, UI command, Playwright require or DevTools connection.
         socket_seen = any(row.split()[-1:] == ["@chrome_devtools_remote"] for row in socket_rows)
@@ -667,14 +690,14 @@ def capture(root):
             line = json.dumps(diagnostic, ensure_ascii=True, separators=(",", ":"))
             if len(line) <= 512:
                 print(line, file=sys.stderr)
-        except Exception:
+        except BaseException:
             pass
         if context is not None:
             record = {"schema": "row.android-toolchain-qualification.v1", "status": "refused", **context,
                       "native_product_or_browser_launch": False, "CDP_availability": "unproved", "source_unchanged": "not-established", "approval": False, "readiness_credit": 0}
             try:
                 public_receipt(root, record)
-            except Exception:
+            except BaseException:
                 pass
         raise
     finally:

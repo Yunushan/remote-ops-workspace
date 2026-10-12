@@ -547,6 +547,148 @@ class InactiveWorktreeConfigTests(unittest.TestCase):
                 optional.assert_called_once()
                 birth.assert_not_called()
 
+    def test_common_gc_zero_and_mixed_section_positions_keep_existing_values(self):
+        gc = b'[gc]\n auto=0\n'
+        original = self.module.config_values(BASE)
+        cases = (
+            gc + BASE,
+            BASE + gc,
+            BASE.replace(b'[remote "origin"]\n', gc + b'[remote "origin"]\n'),
+            BASE + b' \t[gc]\t\n\t auto\t=\t0\t\n',
+            BASE + gc + b'[branch "main"]\n remote=origin\n merge=refs/heads/main\n',
+        )
+        for index, raw in enumerate(cases):
+            expected = {**original, ('gc', 'auto'): '0'}
+            if index == 4:
+                expected.update({('branch "main"', 'remote'): 'origin',
+                                 ('branch "main"', 'merge'): 'refs/heads/main'})
+            with self.subTest(index=index):
+                self.assertEqual(self.module.config_values(raw), expected)
+        self.assertEqual(self.module.config_values(BASE), original)
+        self.assertNotIn(('gc', 'auto'), original)
+
+    def test_common_gc_empty_aliases_controls_other_keys_and_values_refuse(self):
+        cases = (
+            (b'[gc]\n', 'config-values-5'),
+            (b'[gc]\n \t\n', 'config-values-5'),
+            (b'[gc]\n auto=0\n[gc]\n auto=0\n', 'config-values-3'),
+            (b'[GC]\n auto=0\n', 'config-values-3'),
+            (b'[gc "PRIVATE"]\n auto=0\n', 'config-values-3'),
+            (b'[gc]\n auto=0\n Auto=0\n', 'config-values-4'),
+            (b'[gc]\n auto=0\n auto=0\n', 'config-values-6'),
+            (b'[gc]\n autoDetach=0\n', 'config-values-4'),
+            (b'[gc]\n pruneExpire=0\n', 'config-values-4'),
+            (b'[gc]\n AUTO=0\n', 'config-values-4'),
+            (b'[gc]\n auto=1\n', 'config-values-4'),
+            (b'[gc]\n auto=-1\n', 'config-values-4'),
+            (b'[gc]\n auto=00\n', 'config-values-4'),
+            (b'[gc]\n auto=+0\n', 'config-values-4'),
+            (b'[gc]\n auto=false\n', 'config-values-4'),
+            (b'[gc]\n auto="0"\n', 'config-values-4'),
+            (b'[gc]\n auto=0 # PRIVATE\n', 'config-values-4'),
+            (b'[gc]\n auto=0;PRIVATE\n', 'config-values-4'),
+            (b'[gc]\n auto\n', 'config-values-4'),
+            (b'[gc]\n auto=\n', 'config-values-4'),
+            (b'[gc]\n auto\v=0\n', 'config-values-4'),
+            (b'[gc]\n auto=\v0\n', 'config-values-4'),
+            (b'[gc]\n auto\f=0\n', 'config-values-4'),
+            (b'[gc]\n auto=0\x1f\n', 'config-values-4'),
+            (b'[gc]\n auto=0\x7f\n', 'config-values-4'),
+            (b'[gc]\n auto=\\0\n', 'config-values-2'),
+            (b'[gc]\r\n auto=0\n', 'config-values-2'),
+            (b'[gc]\n auto=0\x00\n', 'config-values-1'),
+            (b'[gc]\n auto=\xff\n', 'config-encoding'),
+            (b'[gc]\n # PRIVATE\n', 'config-values-4'),
+        )
+        for raw, code in cases:
+            with self.subTest(code=code, size=len(raw)):
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    self.module.config_values(BASE + raw)
+                self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
+                self.assertEqual(caught.exception.fixed_refusal_code, code)
+                self.assertIn(code, self.module.CONFIG_REFUSAL_CODES)
+                self.assertNotIn('PRIVATE', str(caught.exception))
+
+    def test_common_gc_bytes_and_identity_stay_bound_by_original_snapshot(self):
+        common = BASE + b'[gc]\n auto=0\n'
+        original_identity = (1, 3, stat.S_IFREG | 0o644, 3, 4, 1, len(common), 5, 6)
+        cases = (
+            (common, original_identity),
+            (common + b'\n', (*original_identity[:6], len(common) + 1, 5, 6)),
+            (common, (1, 9, *original_identity[2:])),
+            (common, (*original_identity[:7], 7, 6)),
+        )
+        for last in cases:
+            path, root, stable, scan = self.snapshot_fixture(common)
+            seen = []
+
+            def readback(node, uid, gid, maximum, deadline,
+                         stable=stable, last=last, seen=seen):
+                result = stable(node, uid, gid, maximum, deadline)
+                if node.value == '/fixture/checkout/.git/config':
+                    seen.append(True)
+                    if len(seen) == 2:
+                        return last
+                return result
+
+            with self.subTest(same=last == (common, original_identity)), \
+                 mock.patch.object(self.module, 'Path', side_effect=path), \
+                 mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes', side_effect=readback), \
+                 mock.patch.object(self.module, 'optional_worktree_config', return_value=(None, None)), \
+                 mock.patch.object(self.module.os, 'scandir', return_value=scan):
+                if last == (common, original_identity):
+                    result = self.module.snapshot(root, 3, 4, 10)
+                    self.assertEqual(result['config_sha256'], self.module.hashlib.sha256(common).hexdigest())
+                    self.assertEqual(result['config_identity'], original_identity)
+                    self.assertIs(result['worktree_config_present'], False)
+                else:
+                    with self.assertRaises(self.module.ConfigRefusal) as caught:
+                        self.module.snapshot(root, 3, 4, 10)
+                    self.assertEqual(caught.exception.fixed_refusal_code, 'snapshot-15')
+                self.assertEqual(len(seen), 2)
+
+    def test_valid_common_gc_still_refuses_activation_before_actual_git_birth(self):
+        import sys
+
+        common = BASE + b'[gc]\n auto=0\n'
+        self.assertEqual(self.module.config_values(common)[('gc', 'auto')], '0')
+        spec = importlib.util.spec_from_file_location('reviewed_common_gc_owner',
+            Path(__file__).with_name('cft_git_owner.py'))
+        owner = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {'cft_git_config': self.module}):
+            spec.loader.exec_module(owner)
+        cases = (
+            (common + b'[extensions]\n worktreeConfig=true\n', 'config-values-3'),
+            (common + b'[extensions]\n', 'config-values-3'),
+            (common + b'[include]\n path=/PRIVATE\n', 'config-values-3'),
+            (common + b'[filter "PRIVATE"]\n clean=PRIVATE\n', 'config-values-3'),
+            (common + b'[credential]\n helper=PRIVATE\n', 'config-values-3'),
+            (common.replace(b'bare = false\n', b'bare = false\n fsmonitor=PRIVATE\n'),
+             'config-values-5'),
+        )
+        for raw, code in cases:
+            path, root, stable, scan = self.snapshot_fixture(raw)
+            registry = []
+            with self.subTest(code=code, size=len(raw)), \
+                 mock.patch.object(self.module, 'Path', side_effect=path), \
+                 mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes', side_effect=stable), \
+                 mock.patch.object(self.module, 'optional_worktree_config', return_value=(None, None)), \
+                 mock.patch.object(self.module.os, 'scandir', return_value=scan), \
+                 mock.patch.object(owner.os, 'getuid', return_value=0, create=True), \
+                 mock.patch.object(owner.os, 'geteuid', return_value=0, create=True), \
+                 mock.patch.object(owner.time, 'monotonic', return_value=0), \
+                 mock.patch.object(owner.subprocess, 'Popen') as birth:
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    owner.RunnerGit(registry, ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+                        'rev-parse', 'HEAD'], root, 10, uid=3, gid=4)
+                self.assertEqual(caught.exception.fixed_refusal_code, code)
+                self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
+                self.assertNotIn('PRIVATE', str(caught.exception))
+                self.assertEqual(registry, [])
+                birth.assert_not_called()
+
 
 @unittest.skipUnless(os.name == 'posix', 'POSIX no-follow raw descriptor fixture only')
 class InactiveWorktreeRawTests(unittest.TestCase):

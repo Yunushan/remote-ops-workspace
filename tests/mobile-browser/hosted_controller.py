@@ -522,15 +522,36 @@ def shell_v2(raw):
     return bytes(output)
 
 
+ADB_INVENTORY_QUERY_TAGS = (
+    "chrome-package-dump", "chrome-package-paths", "chrome-apk-sha256",
+    "chrome-apk-stat", "device-unix-sockets",
+)
+
+
+def inventory_shell(adb, fixed, query_tag):
+    """One unchanged shell query; only a fixed diagnostic on original overflow."""
+    try:
+        return adb.shell(fixed)
+    except Refusal as error:
+        try:
+            if (type(error) is Refusal and type(error.args) is tuple
+                    and error.args == ("adb-output-bound",)
+                    and type(query_tag) is str and query_tag in ADB_INVENTORY_QUERY_TAGS):
+                error.adb_query_tag = query_tag
+        except BaseException:
+            pass  # A diagnostic attachment cannot replace the original error.
+        raise
+
+
 def package_inventory(adb, package):
     if package != "com.android.chrome":
         raise Refusal("unowned-package-probe")
-    dump = adb.shell("dumpsys package " + package).decode("ascii")
+    dump = inventory_shell(adb, "dumpsys package " + package, "chrome-package-dump").decode("ascii")
     names = re.findall(r"\bversionName=([0-9]+(?:\.[0-9]+){0,3})\b", dump)
     codes = re.findall(r"\bversionCode=([0-9]{1,12})\b", dump)
     if len(names) != 1 or len(codes) != 1:
         raise Refusal("actual-package-version-unobserved")
-    lines = adb.shell("pm path " + package).decode("ascii").splitlines()
+    lines = inventory_shell(adb, "pm path " + package, "chrome-package-paths").decode("ascii").splitlines()
     if not 1 <= len(lines) <= 16 or len(set(lines)) != len(lines):
         raise Refusal("actual-apk-path-inventory-unobserved")
     rows = []
@@ -540,10 +561,10 @@ def package_inventory(adb, package):
         path = line[8:]
         if re.fullmatch(r"/(?:system|product|system_ext|data)/[A-Za-z0-9_./+=-]{1,240}\.apk", path) is None or ".." in path.split("/"):
             raise Refusal("apk-path-bound")
-        fields = adb.shell("sha256sum " + path).decode("ascii").split()
+        fields = inventory_shell(adb, "sha256sum " + path, "chrome-apk-sha256").decode("ascii").split()
         if len(fields) != 2 or fields[1] != path:
             raise Refusal("actual-apk-digest-layout")
-        size = adb.shell("stat -c %s " + path).decode("ascii").strip()
+        size = inventory_shell(adb, "stat -c %s " + path, "chrome-apk-stat").decode("ascii").strip()
         if re.fullmatch(r"[1-9][0-9]{0,11}", size) is None:
             raise Refusal("actual-apk-size-layout")
         rows.append({"path": path, "sha256": digest(fields[0]), "bytes": int(size)})

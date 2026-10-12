@@ -22,6 +22,7 @@ ATTRIBUTES = (
     'redistribution-evidence/*.txt text eol=lf', '*.png binary',
 )
 ALLOWED = {
+    'gc': {'auto': {'0'}},
     'core': {
         'repositoryformatversion': {'0'}, 'filemode': {'true'},
         'bare': {'false'}, 'logallrefupdates': {'true'},
@@ -90,7 +91,10 @@ def config_values(raw):
             need(section in ALLOWED and section not in sections, 'config-values-3')
             sections.add(section)
             continue
-        match = re.fullmatch(r'([a-z]+)\s*=\s*([^\r\n]+)', line)
+        if section == 'gc':
+            match = re.fullmatch(r'(auto)[ \t]*=[ \t]*(0)', line)
+        else:
+            match = re.fullmatch(r'([a-z]+)\s*=\s*([^\r\n]+)', line)
         need(section is not None and match is not None, 'config-values-4')
         key, value = match.groups()
         value = value.strip(' \t')
@@ -101,6 +105,8 @@ def config_values(raw):
     need(values.get(('core', 'repositoryformatversion')) == '0'
          and values.get(('core', 'bare')) == 'false'
          and values.get(('remote "origin"', 'url')) in ALLOWED['remote "origin"']['url'], 'config-values-7')
+    if 'gc' in sections:
+        need(values.get(('gc', 'auto')) == '0', 'config-values-5')
     return values
 
 

@@ -51,17 +51,17 @@ def operation_binding(source, context, env):
 
 def pointer_path(binding):
     bundle.binding_contract(binding)
-    return Path('/opt') / ('row-cft-operation-' + binding['run_id'] + '-' + binding['run_attempt'] + '.json')
+    return Path('/var/lib') / ('row-cft-operation-' + binding['run_id'] + '-' + binding['run_attempt'] + '.json')
 
 
 def root_bases():
-    for path in (Path('/'), Path('/opt')):
+    for path in (Path('/'), Path('/var'), Path('/var/lib')):
         info = path.lstat()
         require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022)
 
 
 def root_path(value):
-    require(type(value) is str and re.fullmatch(r'/opt/row-cft-[0-9a-f]{32}', value) is not None)
+    require(type(value) is str and re.fullmatch(r'/var/lib/row-cft-[0-9a-f]{32}', value) is not None)
     return Path(value)
 
 
@@ -165,7 +165,7 @@ def root_context(deadline):
 
 def stage_readback(repo, deadline):
     stage = Path(__file__).resolve(strict=True).parent
-    require(re.fullmatch(r'/opt/row-cft-source-[0-9a-f]{32}', str(stage)) is not None)
+    require(re.fullmatch(r'/var/lib/row-cft-source-[0-9a-f]{32}', str(stage)) is not None)
     info = stage.lstat()
     require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o555)
     stage_pin, raw = bundle.stable_file(stage / 'stage.json', bundle.MAX_METADATA,
@@ -225,8 +225,8 @@ def main():
         policy_raw = bundle.stable_file(Path(__file__).parent / POLICY_NAME,
             bundle.MAX_METADATA, deadline, root_owned=True, raw=True)[1]
         bundle.policy(policy_raw, enabled=True)
-        destination = Path('/opt') / ('row-cft-' + secrets.token_hex(16))
-        with tempfile.TemporaryDirectory(prefix='row-cft-private-', dir='/opt') as temp:
+        destination = Path('/var/lib') / ('row-cft-' + secrets.token_hex(16))
+        with tempfile.TemporaryDirectory(prefix='row-cft-private-', dir='/var/lib') as temp:
             private = Path(temp)
             phase = 'acquisition'
             bundle.acquire(policy_raw, private, deadline, require_pins=True)

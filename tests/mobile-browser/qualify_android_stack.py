@@ -227,6 +227,7 @@ def clone_guard(root, short, binding=None):
     return binding, observation
 
 
+SDK_TREE_MAXIMUM_BYTES = 8 * 1024 ** 3  # API36 inventory logical-byte resource budget.
 SDK_METADATA_REFUSALS = {
     ('cmdline-tools/latest', 'package.xml'): 'qualification-sdk-metadata-cmdline-package-xml-missing',
     ('cmdline-tools/latest', 'source.properties'): 'qualification-sdk-metadata-cmdline-source-properties-missing',
@@ -406,7 +407,7 @@ def sdk_tree_limit_diagnostic(exc):
         if type(value[key]) is not int or not 0 <= value[key] <= 2 ** 64 - 1:
             return None
     total, maximum, size = value["sampled_stat_bytes"], value["maximum_bytes"], value["file_stat_bytes"]
-    if (maximum != 4 * 1024 * 1024 * 1024 or value["maximum_nodes"] != 30000
+    if (maximum != SDK_TREE_MAXIMUM_BYTES or value["maximum_nodes"] != 30000
             or not 1 <= value["sampled_nodes"] <= 30000 or not 0 < size <= total
             or total <= maximum or total - size > maximum
             or value["complete"] is not False or value["file_digest_observed"] is not False):
@@ -453,7 +454,7 @@ def sdk_inventory(sdk):
     for name, relative in (("adb", "platform-tools/adb"), ("emulator", "emulator/emulator"), ("avdmanager", "cmdline-tools/latest/bin/avdmanager"), ("sdkmanager", "cmdline-tools/latest/bin/sdkmanager")):
         raw = H.read_plain(sdk / relative, 128 * 1024 * 1024)
         tools.append({"tool": name, "bytes": len(raw), "sha256": H.sha(raw)})
-    return {"tree_sha256": H.tree_digest(sdk, maximum_files=30000, maximum_bytes=4 * 1024 * 1024 * 1024), "metadata": metadata, "tools": tools,
+    return {"tree_sha256": H.tree_digest(sdk, maximum_files=30000, maximum_bytes=SDK_TREE_MAXIMUM_BYTES), "metadata": metadata, "tools": tools,
             "catalog_approval": False, "license_approval": False, "whole_image_semantic_closure": "not-established"}
 
 

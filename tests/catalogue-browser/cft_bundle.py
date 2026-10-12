@@ -30,7 +30,7 @@ MAX_CENTRAL = 2097152
 MAX_NAME = 512
 MAX_PUBLIC = 2097152
 CHUNK = 65536
-ROOT_PARENT = Path('/opt')
+ROOT_PARENT = Path('/var/lib')
 EXECUTABLES = {'chrome': 'chrome-linux64/chrome', 'chromedriver': 'chromedriver-linux64/chromedriver'}
 
 
@@ -523,7 +523,7 @@ def root_ancestors(path):
     path = Path(path)
     need(path.is_absolute() and path.parent == ROOT_PARENT
          and re.fullmatch(r'row-cft-[0-9a-f]{32}', path.name), 'cft-root-location-refused')
-    for parent in (Path('/'), ROOT_PARENT):
+    for parent in (Path('/'), Path('/var'), ROOT_PARENT):
         info = parent.lstat()
         need(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022,
              'cft-root-ancestor-refused')
@@ -534,7 +534,7 @@ def root_ancestors(path):
 def root_directory_lease(destination, *, create):
     """Hold no-follow ancestor/root fds and check observed directory identity.
 
-    Creation is relative to the held /opt descriptor. Subsequent trusted-host
+    Creation is relative to the held /var/lib descriptor. Subsequent trusted-host
     writes stay beneath a root-owned non-writable tree; this does not claim an
     atomic defense against another hostile root process or kernel compromise.
     """
@@ -542,7 +542,7 @@ def root_directory_lease(destination, *, create):
     held = []
     directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     try:
-        for parent in (Path('/'), ROOT_PARENT):
+        for parent in (Path('/'), Path('/var'), ROOT_PARENT):
             before = parent.lstat()
             descriptor = os.open(parent, directory_flags)
             held.append((parent, descriptor, before))
@@ -649,7 +649,7 @@ def install_pinned(policy_raw, private, destination, deadline, binding):
     """Later root-only preparation; never starts a vendor executable.
 
     Inputs must have been acquired by this root operation after independently
-    reviewed source pins were enabled. Only a fresh root-owned /opt subtree is
+    reviewed source pins were enabled. Only a fresh root-owned /var/lib subtree is
     written. Refusal retains it for disposable-host destruction; no broad delete.
     """
     selected = policy(policy_raw, enabled=True)

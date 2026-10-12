@@ -736,8 +736,8 @@ class KvmFocusedTests(unittest.TestCase):
 class SdkTreeLimitDiagnosticTests(unittest.TestCase):
     @staticmethod
     def observation():
-        return {"component": "system-image-api36-x86-64", "sampled_stat_bytes": 4 * 1024 ** 3 + 1,
-                "maximum_bytes": 4 * 1024 ** 3, "file_stat_bytes": 6, "sampled_nodes": 7,
+        return {"component": "system-image-api36-x86-64", "sampled_stat_bytes": Q.SDK_TREE_MAXIMUM_BYTES + 1,
+                "maximum_bytes": Q.SDK_TREE_MAXIMUM_BYTES, "file_stat_bytes": 6, "sampled_nodes": 7,
                 "maximum_nodes": 30000, "complete": False, "file_digest_observed": False}
 
     def test_tree_budget_refuses_before_rejected_file_read(self):
@@ -869,6 +869,79 @@ class SdkTreeLimitDiagnosticTests(unittest.TestCase):
                 self.assertEqual(record["sdk_tree_limit"], self.observation())
                 self.assertEqual(record["refusal_code"], "tree-total-byte-bound")
                 self.assertNotIn("private", stream.getvalue())
+
+    def test_sdk_inventory_forwards_scoped_budget_after_all_metadata_and_tools(self):
+        sdk = Path("/owned-sdk")
+        prefixes = ("cmdline-tools/latest", "platform-tools", "emulator", "platforms/android-36",
+                    "system-images/android-36/google_apis/x86_64")
+        raw_by_path, expected_reads, expected_metadata = {}, [], []
+        for prefix in prefixes:
+            for name in ("package.xml", "source.properties"):
+                raw = b"<repository/>" if name == "package.xml" else b"Pkg.Revision=17.0.1\n"
+                path = sdk / prefix / name
+                raw_by_path[path] = raw
+                expected_reads.append(mock.call(path, 512 * 1024))
+                row = {"component": prefix, "file": name, "bytes": len(raw), "sha256": H.sha(raw)}
+                if name == "source.properties":
+                    row["revision"] = "17.0.1"
+                expected_metadata.append(row)
+        expected_tools = []
+        for name, relative in (("adb", "platform-tools/adb"), ("emulator", "emulator/emulator"),
+                               ("avdmanager", "cmdline-tools/latest/bin/avdmanager"),
+                               ("sdkmanager", "cmdline-tools/latest/bin/sdkmanager")):
+            raw = ("synthetic-" + name).encode("ascii")
+            path = sdk / relative
+            raw_by_path[path] = raw
+            expected_reads.append(mock.call(path, 128 * 1024 * 1024))
+            expected_tools.append({"tool": name, "bytes": len(raw), "sha256": H.sha(raw)})
+        reads = []
+
+        def read(path, maximum):
+            reads.append(mock.call(path, maximum))
+            return raw_by_path[path]
+
+        def tree(path, *, maximum_files, maximum_bytes):
+            self.assertEqual(reads, expected_reads)
+            self.assertEqual(path, sdk)
+            self.assertEqual(maximum_files, 30000)
+            self.assertEqual(maximum_bytes, 8 * 1024 ** 3)
+            return "c" * 64
+
+        self.assertEqual(Q.SDK_TREE_MAXIMUM_BYTES, 8 * 1024 ** 3)
+        with mock.patch.object(H, "read_plain", side_effect=read) as files, mock.patch.object(H, "tree_digest", side_effect=tree) as digest, mock.patch.object(H, "Managed", side_effect=AssertionError("native")) as managed:
+            observed = Q.sdk_inventory(sdk)
+        self.assertEqual(files.call_args_list, expected_reads)
+        digest.assert_called_once_with(sdk, maximum_files=30000, maximum_bytes=8 * 1024 ** 3)
+        managed.assert_not_called()
+        self.assertEqual(observed, {"tree_sha256": "c" * 64, "metadata": expected_metadata,
+                                   "tools": expected_tools, "catalog_approval": False,
+                                   "license_approval": False, "whole_image_semantic_closure": "not-established"})
+
+    def test_scoped_overflow_still_refuses_and_old_budget_metrics_are_omitted(self):
+        sdk = Path("/owned-sdk")
+        original = H.Refusal("tree-total-byte-bound")
+        original.tree_limit_observation = self.observation()
+        with mock.patch.object(H, "read_plain", return_value=b"Pkg.Revision=1\n") as files, mock.patch.object(H, "tree_digest", side_effect=original) as digest, mock.patch.object(H, "Managed", side_effect=AssertionError("native")) as managed:
+            with self.assertRaises(H.Refusal) as caught:
+                Q.sdk_inventory(sdk)
+        self.assertIs(caught.exception, original)
+        self.assertEqual(files.call_count, 14)
+        digest.assert_called_once_with(sdk, maximum_files=30000, maximum_bytes=8 * 1024 ** 3)
+        managed.assert_not_called()
+        record = Q.capture_refusal_diagnostic(original, "sdk-observation")
+        self.assertEqual(record["refusal_code"], "tree-total-byte-bound")
+        self.assertEqual(record["sdk_tree_limit"]["maximum_bytes"], 8 * 1024 ** 3)
+        self.assertFalse(record["sdk_tree_limit"]["complete"])
+        self.assertFalse(record["sdk_tree_limit"]["file_digest_observed"])
+        self.assertFalse(record["approval"])
+        self.assertEqual(record["readiness_credit"], 0)
+        stale = H.Refusal("tree-total-byte-bound")
+        stale.tree_limit_observation = {**self.observation(), "maximum_bytes": 4 * 1024 ** 3,
+                                       "sampled_stat_bytes": 4 * 1024 ** 3 + 1}
+        stale_record = Q.capture_refusal_diagnostic(stale, "sdk-observation")
+        self.assertEqual(stale_record["refusal_code"], "tree-total-byte-bound")
+        self.assertNotIn("sdk_tree_limit", stale_record)
+        self.assertFalse(stale_record["approval"])
 
 
 if __name__ == "__main__":

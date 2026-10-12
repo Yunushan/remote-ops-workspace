@@ -2,6 +2,7 @@
 import ast
 import io
 import json
+import stat
 import unittest
 from contextlib import ExitStack
 from pathlib import Path, PurePosixPath
@@ -41,7 +42,7 @@ def policy_raw():
 
 
 def pointer():
-    return {'schema': 'row.cft-runtime-operation.v1', 'root': '/opt/row-cft-' + 'f' * 32,
+    return {'schema': 'row.cft-runtime-operation.v1', 'root': '/var/lib/row-cft-' + 'f' * 32,
         'binding': binding(), 'version': bundle.VERSION, 'policy_sha256': bundle.hashed(policy_raw()),
         'manifest_sha256': '2' * 64, 'complete': True, 'vendor_binary_executed': False,
         'sandbox_policy': 'unchanged-default-no-fallback', 'readiness_credit': 0}
@@ -58,7 +59,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         version = b'154.0.8037.92'
         image = b'Google Chrome ' + version + b'\n'
         cft = version + b'\n'
-        binary = FixturePath('/opt/row-cft-' + 'f' * 32 + '/chrome-linux64/chrome')
+        binary = FixturePath('/var/lib/row-cft-' + 'f' * 32 + '/chrome-linux64/chrome')
         self.assertEqual(runtime.chrome_version_argv(binary, 'image'), [str(binary), '--version'])
         self.assertEqual(runtime.chrome_version_argv(binary, 'pinned-cft'), [str(binary), '--product-version'])
         self.assertEqual(runtime.chrome_version_match(image, 'image')[1], version)
@@ -83,7 +84,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         context = {'source': expected['source_head'], 'event': expected['event_sha']}
         env = {'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1'}
         self.assertEqual(runtime.operation_binding(source, context, env), expected)
-        self.assertEqual(runtime.pointer_path(expected), FixturePath('/opt/row-cft-operation-123-1.json'))
+        self.assertEqual(runtime.pointer_path(expected), FixturePath('/var/lib/row-cft-operation-123-1.json'))
         source['head'] = '0' * 40
         with self.assertRaises(bundle.BundleRefusal):
             runtime.operation_binding(source, context, env)
@@ -98,7 +99,8 @@ class RuntimeSelectionTests(unittest.TestCase):
             ('version', '154.0.8037.97'), ('complete', False), ('complete', 1),
             ('vendor_binary_executed', True), ('readiness_credit', True),
             ('sandbox_policy', 'no-sandbox'), ('root', '/opt/google/chrome'),
-            ('root', '/opt/row-cft-' + 'f' * 32 + '/..'), ('manifest_sha256', '/PRIVATE')]
+            ('root', '/var/lib/row-cft-' + 'f' * 32 + '/..'),
+            ('root', '/opt/row-cft-' + 'f' * 32), ('manifest_sha256', '/PRIVATE')]
         for key, value in changes:
             with self.subTest(key=key, value=value):
                 record = {**pointer(), key: value}
@@ -126,7 +128,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         self.assertEqual(state['installed'], installed)
         self.assertEqual(state['provider'], 'pinned-cft')
         self.assertEqual(state['binding'], binding())
-        self.assertEqual(state['pointer'], FixturePath('/opt/row-cft-operation-123-1.json'))
+        self.assertEqual(state['pointer'], FixturePath('/var/lib/row-cft-operation-123-1.json'))
         bases.assert_called_once_with()
         reads.assert_has_calls([
             mock.call(FixturePath('/frozen/cft-runtime-policy.json'), bundle.MAX_METADATA, 30, raw=True),
@@ -210,7 +212,7 @@ class RuntimeSelectionTests(unittest.TestCase):
         repo = FixturePath('/home/runner/work/remote-ops-workspace/remote-ops-workspace')
         policy = policy_raw()
         installed = {'manifest_sha256': '2' * 64}
-        stage_file = '/opt/row-cft-source-' + 'e' * 32 + '/cft_runtime.py'
+        stage_file = '/var/lib/row-cft-source-' + 'e' * 32 + '/cft_runtime.py'
 
         def observe_clock():
             events.append('clock')
@@ -246,7 +248,7 @@ class RuntimeSelectionTests(unittest.TestCase):
             patch(FixturePath, 'exists', return_value=False)
             patch(FixturePath, 'is_symlink', return_value=False)
             private = patch(runtime.tempfile, 'TemporaryDirectory')
-            private.return_value.__enter__.return_value = '/opt/row-cft-private-fixture'
+            private.return_value.__enter__.return_value = '/var/lib/row-cft-private-fixture'
             patch(runtime.secrets, 'token_hex', return_value='f' * 32)
             patch(bundle, 'stable_file', return_value=({'bytes': len(policy)}, policy))
             state['acquire'] = patch(bundle, 'acquire')
@@ -286,9 +288,9 @@ class RuntimeSelectionTests(unittest.TestCase):
         self.assertEqual(diagnostic, {'schema': 'row.cft-preparation.v1',
             'status': 'prepared-unqualified-pending-finalization', 'provisional': True, 'readiness_credit': 0})
         self.assertEqual(state['printed'][0][1], {'flush': True})
-        state['acquire'].assert_called_once_with(policy_raw(), FixturePath('/opt/row-cft-private-fixture'),
+        state['acquire'].assert_called_once_with(policy_raw(), FixturePath('/var/lib/row-cft-private-fixture'),
             160.0, require_pins=True)
-        state['install'].assert_called_once_with(policy_raw(), FixturePath('/opt/row-cft-private-fixture'),
+        state['install'].assert_called_once_with(policy_raw(), FixturePath('/var/lib/row-cft-private-fixture'),
             FixturePath(pointer()['root']), 160.0, binding())
         state['publish'].assert_called_once()
 
@@ -330,6 +332,21 @@ class RuntimeSelectionTests(unittest.TestCase):
         self.assertEqual(diagnostic['status'], 'refused')
         self.assertEqual(diagnostic['phase'], 'publication')
         self.assertNotIn('PRIVATE', state['printed'][1][0])
+
+    def test_all_three_runtime_bases_remain_strict_root_nonwritable_directories(self):
+        good = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        with mock.patch.object(FixturePath, 'lstat', return_value=good) as sampled:
+            runtime.root_bases()
+        self.assertEqual(sampled.call_count, 3)
+        for ancestor_index in range(3):
+            for mode, uid in ((stat.S_IFDIR | 0o777, 0), (stat.S_IFLNK | 0o755, 0),
+                              (stat.S_IFDIR | 0o755, 1000)):
+                rows = [good] * ancestor_index + [SimpleNamespace(st_mode=mode, st_uid=uid)]
+                with self.subTest(ancestor_index=ancestor_index, mode=mode, uid=uid), \
+                     mock.patch.object(FixturePath, 'lstat', side_effect=rows) as sampled:
+                    with self.assertRaises(bundle.BundleRefusal):
+                        runtime.root_bases()
+                self.assertEqual(sampled.call_count, ancestor_index + 1)
 
 
 def bootstrap_diagnostic_units():

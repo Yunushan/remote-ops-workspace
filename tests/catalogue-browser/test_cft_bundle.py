@@ -148,7 +148,7 @@ class CFTPureFixtureCase(unittest.TestCase):
         self.addCleanup(lease.close)
         lease.enter_context(mock.patch.dict(globals(), {'Path': UbuntuFixturePath}))
         lease.enter_context(mock.patch.object(bundle, 'Path', UbuntuFixturePath))
-        lease.enter_context(mock.patch.object(bundle, 'ROOT_PARENT', UbuntuFixturePath('/opt')))
+        lease.enter_context(mock.patch.object(bundle, 'ROOT_PARENT', UbuntuFixturePath('/var/lib')))
 
 
 class FixtureBootstrapTests(unittest.TestCase):
@@ -163,16 +163,16 @@ class FixtureBootstrapTests(unittest.TestCase):
         original = (Path, bundle.Path, bundle.ROOT_PARENT)
         with mock.patch.dict(globals(), {'Path': PureWindowsPath}), \
              mock.patch.object(bundle, 'Path', PureWindowsPath), \
-             mock.patch.object(bundle, 'ROOT_PARENT', PureWindowsPath('/opt')):
+             mock.patch.object(bundle, 'ROOT_PARENT', PureWindowsPath('/var/lib')):
             simulated = (Path, bundle.Path, bundle.ROOT_PARENT)
             case = self.bootstrap_case()
             try:
                 case.setUp()
                 self.assertIs(Path, UbuntuFixturePath)
                 self.assertIs(bundle.Path, UbuntuFixturePath)
-                self.assertEqual(bundle.ROOT_PARENT, UbuntuFixturePath('/opt'))
-                self.assertTrue(Path('/opt/row-cft-' + 'a' * 32).is_absolute())
-                self.assertFalse(PureWindowsPath('/opt/row-cft-' + 'a' * 32).is_absolute())
+                self.assertEqual(bundle.ROOT_PARENT, UbuntuFixturePath('/var/lib'))
+                self.assertTrue(Path('/var/lib/row-cft-' + 'a' * 32).is_absolute())
+                self.assertFalse(PureWindowsPath('/var/lib/row-cft-' + 'a' * 32).is_absolute())
                 with self.assertRaisesRegex(AssertionError, '^cft-fixture-unmocked-path-IO$'):
                     Path('/synthetic-never-opened').open('rb')
                 with mock.patch.object(bundle.Path, 'lstat', return_value='mock-only'):
@@ -440,9 +440,9 @@ class WriterBoundaryTests(CFTPureFixtureCase):
     def test_root_lease_holds_no_follow_fds_and_creates_only_relative_name(self):
         info = SimpleNamespace(st_dev=1, st_ino=2, st_size=4096, st_mtime_ns=3,
             st_ctime_ns=4, st_nlink=2, st_mode=stat.S_IFDIR | 0o755, st_uid=0)
-        root = Path('/opt/row-cft-' + 'a' * 32)
+        root = Path('/var/lib/row-cft-' + 'a' * 32)
         with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
-             mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73]) as opened, \
+             mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73, 74]) as opened, \
              mock.patch.object(bundle.os, 'fstat', return_value=info), \
              mock.patch.object(bundle.os, 'O_DIRECTORY', 0x10000, create=True), \
              mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
@@ -451,9 +451,13 @@ class WriterBoundaryTests(CFTPureFixtureCase):
             with bundle.root_directory_lease(root, create=True) as observed:
                 self.assertEqual(observed, root)
                 closed.assert_not_called()
-            created.assert_called_once_with(root.name, mode=0o755, dir_fd=72)
+            created.assert_called_once_with(root.name, mode=0o755, dir_fd=73)
+            self.assertEqual([call.args[0] for call in opened.call_args_list[:3]],
+                [Path('/'), Path('/var'), Path('/var/lib')])
+            self.assertEqual(opened.call_args_list[-1].args[0], root.name)
+            self.assertEqual(opened.call_args_list[-1].kwargs['dir_fd'], 73)
             self.assertTrue(all(call.args[1] & 0x30000 == 0x30000 for call in opened.call_args_list))
-            self.assertEqual(closed.call_args_list, [mock.call(73), mock.call(72), mock.call(71)])
+            self.assertEqual(closed.call_args_list, [mock.call(74), mock.call(73), mock.call(72), mock.call(71)])
 
     def test_root_lease_identity_refusal_still_closes_every_acquired_fd(self):
         info = SimpleNamespace(st_dev=1, st_ino=2, st_size=4096, st_mtime_ns=3,
@@ -466,24 +470,24 @@ class WriterBoundaryTests(CFTPureFixtureCase):
              mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
              mock.patch.object(bundle.os, 'close') as closed:
             with self.assertRaises(bundle.BundleRefusal):
-                with bundle.root_directory_lease(Path('/opt/row-cft-' + 'a' * 32), create=False):
+                with bundle.root_directory_lease(Path('/var/lib/row-cft-' + 'a' * 32), create=False):
                     self.fail('identity mismatch reached root operation')
             closed.assert_called_once_with(71)
 
     def test_root_lease_close_failure_attempts_all_fds_and_preserves_first_error(self):
         info = SimpleNamespace(st_dev=1, st_ino=2, st_size=4096, st_mtime_ns=3,
             st_ctime_ns=4, st_nlink=2, st_mode=stat.S_IFDIR | 0o755, st_uid=0)
-        root = Path('/opt/row-cft-' + 'a' * 32)
+        root = Path('/var/lib/row-cft-' + 'a' * 32)
         for error_type in (OSError, RuntimeError, KeyboardInterrupt, SystemExit):
-            for failing in ((73,), (72,), (71,), (73, 71)):
+            for failing in ((74,), (73,), (72,), (71,), (73, 71), (74, 71)):
                 with self.subTest(error_type=error_type.__name__, failing=failing):
                     errors = {descriptor: error_type('fixture-close-refused') for descriptor in failing}
-                    first = next(errors[descriptor] for descriptor in (73, 72, 71) if descriptor in errors)
+                    first = next(errors[descriptor] for descriptor in (74, 73, 72, 71) if descriptor in errors)
                     def close(descriptor, errors=errors):
                         if descriptor in errors:
                             raise errors[descriptor]
                     with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
-                         mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73]), \
+                         mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73, 74]), \
                          mock.patch.object(bundle.os, 'fstat', return_value=info), \
                          mock.patch.object(bundle.os, 'O_DIRECTORY', 0x10000, create=True), \
                          mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
@@ -492,22 +496,22 @@ class WriterBoundaryTests(CFTPureFixtureCase):
                             with bundle.root_directory_lease(root, create=False):
                                 closed.assert_not_called()
                         self.assertIs(caught.exception, first)
-                        self.assertEqual(closed.call_args_list, [mock.call(73), mock.call(72), mock.call(71)])
+                        self.assertEqual(closed.call_args_list, [mock.call(74), mock.call(73), mock.call(72), mock.call(71)])
 
     def test_root_lease_body_refusal_still_attempts_all_closes(self):
         info = SimpleNamespace(st_dev=1, st_ino=2, st_size=4096, st_mtime_ns=3,
             st_ctime_ns=4, st_nlink=2, st_mode=stat.S_IFDIR | 0o755, st_uid=0)
-        root = Path('/opt/row-cft-' + 'a' * 32)
-        for failing in ((), (73,), (72,), (71,), (73, 71)):
+        root = Path('/var/lib/row-cft-' + 'a' * 32)
+        for failing in ((), (74,), (73,), (72,), (71,), (73, 71), (74, 71)):
             with self.subTest(failing=failing):
                 body_error = bundle.BundleRefusal('fixture-body-refused')
                 errors = {descriptor: OSError('fixture-close-refused') for descriptor in failing}
-                expected = next((errors[descriptor] for descriptor in (73, 72, 71) if descriptor in errors), body_error)
+                expected = next((errors[descriptor] for descriptor in (74, 73, 72, 71) if descriptor in errors), body_error)
                 def close(descriptor, errors=errors):
                     if descriptor in errors:
                         raise errors[descriptor]
                 with mock.patch.object(bundle.Path, 'lstat', return_value=info), \
-                     mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73]), \
+                     mock.patch.object(bundle.os, 'open', side_effect=[71, 72, 73, 74]), \
                      mock.patch.object(bundle.os, 'fstat', return_value=info), \
                      mock.patch.object(bundle.os, 'O_DIRECTORY', 0x10000, create=True), \
                      mock.patch.object(bundle.os, 'O_NOFOLLOW', 0x20000, create=True), \
@@ -516,7 +520,7 @@ class WriterBoundaryTests(CFTPureFixtureCase):
                         with bundle.root_directory_lease(root, create=False):
                             raise body_error
                     self.assertIs(caught.exception, expected)
-                    self.assertEqual(closed.call_args_list, [mock.call(73), mock.call(72), mock.call(71)])
+                    self.assertEqual(closed.call_args_list, [mock.call(74), mock.call(73), mock.call(72), mock.call(71)])
 
     def test_nonroot_install_refuses_before_new_root_write(self):
         with mock.patch.object(bundle, 'policy', return_value={}), \
@@ -525,16 +529,17 @@ class WriterBoundaryTests(CFTPureFixtureCase):
              mock.patch.object(bundle.os, 'geteuid', return_value=1000, create=True), \
              mock.patch.object(bundle.Path, 'mkdir') as create:
             with self.assertRaises(bundle.BundleRefusal):
-                bundle.install_pinned(b'fixture no authority', Path('/unused'), Path('/opt/row-cft-' + 'a' * 32), 30, {})
+                bundle.install_pinned(b'fixture no authority', Path('/unused'), Path('/var/lib/row-cft-' + 'a' * 32), 30, {})
             create.assert_not_called()
 
     def test_root_destination_and_ancestor_writer_contract(self):
         directory = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
         with mock.patch.object(bundle.Path, 'lstat', return_value=directory):
-            expected = Path('/opt/row-cft-' + 'a' * 32)
+            expected = Path('/var/lib/row-cft-' + 'a' * 32)
             self.assertEqual(bundle.root_ancestors(expected), expected)
-            for path in (Path('/tmp/row-cft-' + 'a' * 32), Path('/opt/google/chrome'),
-                         Path('/opt/row-cft-' + 'a' * 32 + '/child')):
+            for path in (Path('/tmp/row-cft-' + 'a' * 32), Path('/opt/row-cft-' + 'a' * 32),
+                         Path('/var/row-cft-' + 'a' * 32), Path('/opt/google/chrome'),
+                         Path('/var/lib/row-cft-' + 'a' * 32 + '/child')):
                 with self.subTest(path_hash=bundle.hashed(str(path).encode())):
                     with self.assertRaises(bundle.BundleRefusal):
                         bundle.root_ancestors(path)
@@ -542,7 +547,25 @@ class WriterBoundaryTests(CFTPureFixtureCase):
             with self.subTest(mode=mode, uid=uid):
                 with mock.patch.object(bundle.Path, 'lstat', return_value=SimpleNamespace(st_mode=mode, st_uid=uid)):
                     with self.assertRaises(bundle.BundleRefusal):
-                        bundle.root_ancestors(Path('/opt/row-cft-' + 'a' * 32))
+                        bundle.root_ancestors(Path('/var/lib/row-cft-' + 'a' * 32))
+
+    def test_every_fixed_ancestor_refuses_before_open_or_directory_birth(self):
+        good = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        root = Path('/var/lib/row-cft-' + 'a' * 32)
+        for ancestor_index in range(3):
+            for mode, uid in ((stat.S_IFDIR | 0o777, 0), (stat.S_IFLNK | 0o755, 0),
+                              (stat.S_IFDIR | 0o755, 1000)):
+                rows = [good] * ancestor_index + [SimpleNamespace(st_mode=mode, st_uid=uid)]
+                with self.subTest(ancestor_index=ancestor_index, mode=mode, uid=uid), \
+                     mock.patch.object(bundle.Path, 'lstat', side_effect=rows) as sampled, \
+                     mock.patch.object(bundle.os, 'open', side_effect=AssertionError('root birth before guard')) as opened, \
+                     mock.patch.object(bundle.os, 'mkdir', side_effect=AssertionError('directory birth before guard')) as created:
+                    with self.assertRaisesRegex(bundle.BundleRefusal, 'cft-root-ancestor-refused'):
+                        with bundle.root_directory_lease(root, create=True):
+                            self.fail('unqualified ancestor reached root operation')
+                self.assertEqual(sampled.call_count, ancestor_index + 1)
+                opened.assert_not_called()
+                created.assert_not_called()
 
     def test_complete_layout_keeps_implicit_directories_and_zero_resource(self):
         rows = [{'path': 'chrome-linux64/locales/empty', 'kind': 'file', 'size': 0},

@@ -589,7 +589,7 @@ def capture(root):
             with socket.socket() as reservation:
                 reservation.bind(("127.0.0.1", port))
         owned_substage = "adb-birth"
-        adb_leader = H.Managed([str(sdk / "platform-tools/adb"), "-L", "tcp:127.0.0.1:5039", "nodaemon", "server"], env, root)
+        adb_leader = H.Managed([str(sdk / "platform-tools/adb"), "-L", "tcp:localhost:5039", "nodaemon", "server"], env, root)
         leaders.append(adb_leader)
         adb_leader._public_caller_role = "adb"
         owned_substage = "adb-listener"

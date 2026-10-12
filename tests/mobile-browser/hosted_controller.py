@@ -660,7 +660,7 @@ def run(root, pin_path):
         for port in (ADB_PORT, 5556, 5557):
             with socket.socket() as check:
                 check.bind(("127.0.0.1", port))
-        adb_server = Managed([pins["tools"]["adb"]["path"], "-L", "tcp:127.0.0.1:5039", "nodaemon", "server"], env, root)
+        adb_server = Managed([pins["tools"]["adb"]["path"], "-L", "tcp:localhost:5039", "nodaemon", "server"], env, root)
         leaders.append(adb_server)
         adb_ready_deadline = time.monotonic() + 10
         while time.monotonic() < adb_ready_deadline:

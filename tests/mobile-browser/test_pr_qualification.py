@@ -1572,5 +1572,183 @@ class AdbFixedMessageMarkerTests(unittest.TestCase):
             leader.child.poll.assert_called_once_with()
 
 
+class AdbServerListenContractTests(unittest.TestCase):
+    @staticmethod
+    def leader(output=b"{}"):
+        return SimpleNamespace(child=SimpleNamespace(stdin=mock.Mock()), zero=mock.Mock(),
+                               buffers=[bytearray(output), bytearray()])
+
+    @staticmethod
+    def reservations():
+        values = [mock.MagicMock() for _ in range(3)]
+        for value in values:
+            value.__enter__.return_value = value
+        return values
+
+    def test_hosted_run_uses_localhost_server_and_numeric_client_before_early_refusal(self):
+        with fixture() as root:
+            (root / ".tmp").mkdir()
+            source = root / "tests/mobile-browser"
+            source.mkdir(parents=True)
+            sdk = root / "owned-sdk"
+            digest, raw = "f" * 64, b"{}"
+            tools = {name: {"path": str(sdk / name), "sha256": digest}
+                     for name in ("adb", "avdmanager", "emulator")}
+            pins = {"npm_lock_sha256": digest, "npm_tree_sha256": digest,
+                    "sdk_tree_sha256": digest, "tools": tools}
+            leaders = [self.leader(raw) for _ in range(6)]
+            reservations = self.reservations()
+            births = []
+            original = H.Refusal("owned-leader-or-pipe-unavailable")
+
+            def managed(argv, env, cwd):
+                self.assertIs(cwd, root)
+                self.assertEqual(env["ADB_SERVER_SOCKET"], "tcp:127.0.0.1:5039")
+                self.assertEqual(env["ANDROID_ADB_SERVER_PORT"], "5039")
+                if len(births) == 5:
+                    self.assertEqual(argv, [tools["adb"]["path"], "-L", "tcp:localhost:5039", "nodaemon", "server"])
+                    for reservation, port in zip(reservations, (5039, 5556, 5557)):
+                        reservation.bind.assert_called_once_with(("127.0.0.1", port))
+                        reservation.__exit__.assert_called_once()
+                self.assertLess(len(births), 6)
+                leader = leaders[len(births)]
+                births.append((argv, env.copy(), leader))
+                return leader
+
+            environment = env_data(root, root / "event.json")
+            environment["ANDROID_HOME"] = str(sdk)
+            with ExitStack() as patches:
+                patches.enter_context(mock.patch.dict(os.environ, environment, clear=True))
+                patches.enter_context(mock.patch.object(H, "HERE", source))
+                host = patches.enter_context(mock.patch.object(H, "host_guard"))
+                patches.enter_context(mock.patch.object(H, "validate_pins", return_value=pins))
+                patches.enter_context(mock.patch.object(H, "read_plain", return_value=raw))
+                patches.enter_context(mock.patch.object(H, "sha", return_value=digest))
+                patches.enter_context(mock.patch.object(H, "tree_digest", return_value=digest))
+                guard = patches.enter_context(mock.patch.object(H, "source_guard", return_value={"live_manifest": {}}))
+                patches.enter_context(mock.patch.object(H.time, "monotonic", return_value=0))
+                sockets = patches.enter_context(mock.patch.object(H.socket, "socket", side_effect=reservations))
+                provider = patches.enter_context(mock.patch.object(H, "Managed", side_effect=managed))
+                listener = patches.enter_context(mock.patch.object(H, "owned_listener", side_effect=original))
+                client = patches.enter_context(mock.patch.object(H, "AdbSocket"))
+                cleanup = patches.enter_context(mock.patch.object(H, "cleanup_all", return_value=[{"complete": True}] * 6))
+                process = patches.enter_context(mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native birth")))
+                with self.assertRaises(H.Refusal) as error:
+                    H.run(root, root / "pins.json")
+                self.assertIs(error.exception, original)
+                host.assert_called_once_with(root)
+                guard.assert_called_once_with(root, mock.ANY)
+                self.assertEqual(provider.call_count, 6)
+                self.assertEqual(sockets.call_count, 3)
+                listener.assert_called_once_with(leaders[5], 5039)
+                client.assert_not_called()
+                process.assert_not_called()
+                cleanup.assert_called_once_with(leaders)
+            self.assertEqual({row[0][2] for row in births[:4]},
+                             {H.SOURCE + ":tests/mobile-browser/" + name for name in
+                              ("hosted_controller.py", "android_browser_probe.mjs", "fixture_server.py", "source-manifest.json")})
+            for argv, _env, leader in births[:4]:
+                self.assertEqual(argv[:2], ["git", "show"])
+                leader.child.stdin.write.assert_not_called()
+                leader.child.stdin.close.assert_called_once_with()
+                leader.zero.assert_called_once_with(30)
+            self.assertEqual(births[4][0][0], tools["avdmanager"]["path"])
+            leaders[4].child.stdin.write.assert_called_once_with(b"no\n")
+            leaders[4].child.stdin.flush.assert_called_once_with()
+            leaders[4].child.stdin.close.assert_called_once_with()
+            leaders[4].zero.assert_called_once_with(180)
+            leaders[5].zero.assert_not_called()
+            self.assertNotIn(tools["emulator"]["path"], [row[0][0] for row in births])
+
+    def test_qualification_capture_keeps_order_cleanup_and_refused_receipt(self):
+        with fixture() as root:
+            (root / ".tmp").mkdir()
+            sdk = root / "owned-sdk"
+            avd, adb = self.leader(b""), self.leader(b"")
+            leaders, births = [avd, adb], []
+            reservations = self.reservations()
+            original = H.Refusal("owned-leader-or-pipe-unavailable")
+
+            def managed(argv, env, cwd):
+                self.assertIs(cwd, root)
+                self.assertEqual(env["ADB_SERVER_SOCKET"], "tcp:127.0.0.1:5039")
+                self.assertEqual(env["ANDROID_ADB_SERVER_PORT"], "5039")
+                if len(births) == 1:
+                    self.assertEqual(argv, [str(sdk / "platform-tools/adb"), "-L", "tcp:localhost:5039", "nodaemon", "server"])
+                    for reservation, port in zip(reservations, (5039, 5556, 5557)):
+                        reservation.bind.assert_called_once_with(("127.0.0.1", port))
+                        reservation.__exit__.assert_called_once()
+                self.assertLess(len(births), 2)
+                leader = leaders[len(births)]
+                births.append((argv, env.copy(), leader))
+                return leader
+
+            stream = io.StringIO()
+            with ExitStack() as patches:
+                patches.enter_context(mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True))
+                patches.enter_context(mock.patch.object(Q, "event_guard", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "commands", return_value=(object(), 0)))
+                patches.enter_context(mock.patch.object(Q, "source_binding", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=({}, {})))
+                patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
+                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", return_value={"tree_sha256": "e" * 64}))
+                patches.enter_context(mock.patch.object(Q.time, "monotonic", return_value=0))
+                sockets = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=reservations))
+                provider = patches.enter_context(mock.patch.object(H, "Managed", side_effect=managed))
+                listener = patches.enter_context(mock.patch.object(H, "owned_listener", side_effect=original))
+                client = patches.enter_context(mock.patch.object(H, "AdbSocket"))
+                receipt = patches.enter_context(mock.patch.object(Q, "public_receipt"))
+                cleanup = patches.enter_context(mock.patch.object(H, "cleanup_all", return_value=[{"complete": True}] * 2))
+                process = patches.enter_context(mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native birth")))
+                patches.enter_context(mock.patch.object(sys, "stderr", stream))
+                with self.assertRaises(H.Refusal) as error:
+                    Q.capture(root)
+                self.assertIs(error.exception, original)
+                inventory.assert_called_once_with(sdk)
+                self.assertEqual(provider.call_count, 2)
+                self.assertEqual(sockets.call_count, 3)
+                listener.assert_called_once_with(adb, 5039)
+                self.assertEqual(adb._public_caller_role, "adb")
+                client.assert_not_called()
+                process.assert_not_called()
+                cleanup.assert_called_once_with(leaders)
+                receipt.assert_called_once()
+                saved_root, saved = receipt.call_args.args
+                self.assertIs(saved_root, root)
+                self.assertEqual(saved["status"], "refused")
+                self.assertFalse(saved["native_product_or_browser_launch"])
+                self.assertFalse(saved["approval"])
+                self.assertEqual(saved["readiness_credit"], 0)
+            self.assertEqual(births[0][0][0], str(sdk / "cmdline-tools/latest/bin/avdmanager"))
+            avd.child.stdin.write.assert_called_once_with(b"no\n")
+            avd.child.stdin.flush.assert_called_once_with()
+            avd.child.stdin.close.assert_called_once_with()
+            avd.zero.assert_called_once_with(180)
+            adb.zero.assert_not_called()
+            self.assertNotIn(str(sdk / "emulator/emulator"), [row[0][0] for row in births])
+            diagnostic = json.loads(stream.getvalue())
+            self.assertEqual(diagnostic["owned_substage"], "adb-listener")
+            self.assertFalse(diagnostic["approval"])
+            self.assertEqual(diagnostic["readiness_credit"], 0)
+
+    def test_direct_client_stays_numeric_without_cli_or_auto_start(self):
+        server = SimpleNamespace(live=mock.Mock())
+        listener = mock.Mock()
+        connection = mock.MagicMock()
+        connection.__enter__.return_value = connection
+        connection.recv.side_effect = [b"OKAY", b"device-response", b""]
+        with mock.patch.object(H.socket, "create_connection", return_value=connection) as connect, mock.patch.object(H, "Managed") as provider, mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native birth")) as process:
+            result = H.AdbSocket(server, clock=lambda: 0, listener=listener).command("host:devices", timeout=30)
+            self.assertEqual(result, b"device-response")
+            connect.assert_called_once_with(("127.0.0.1", 5039), timeout=30)
+            listener.assert_called_once_with(server, 5039)
+            self.assertEqual(server.live.call_count, 2)
+            connection.sendall.assert_called_once_with(b"000chost:devices")
+            self.assertEqual(connection.recv.call_count, 3)
+            connection.__exit__.assert_called_once()
+            provider.assert_not_called()
+            process.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

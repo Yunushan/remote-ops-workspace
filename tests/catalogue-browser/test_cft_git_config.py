@@ -411,6 +411,142 @@ class InactiveWorktreeConfigTests(unittest.TestCase):
             self.assertEqual(caught.exception.fixed_refusal_code, 'config-values-3')
             birth.assert_not_called()
 
+    def test_index_false_and_mixed_sections_keep_closed_return_values(self):
+        cases = (
+            (b'[index]\n sparse=false\n', {'sparse': 'false'}),
+            (b' \t[index]\n\tSPARSE\t=\tfalse\n', {'sparse': 'false'}),
+            (b'[core]\n sparseCheckout=false\n sparseCheckoutCone=false\n'
+             b'[index]\n sparse=false\n',
+             {'sparsecheckout': 'false', 'sparsecheckoutcone': 'false', 'sparse': 'false'}),
+            (b'[index]\n sparse=false\n[core]\n sparseCheckout=false\n',
+             {'sparse': 'false', 'sparsecheckout': 'false'}),
+            (b'[core]\n[index]\n sparse=false\n', {'sparse': 'false'}),
+        )
+        for raw, expected in cases:
+            with self.subTest(size=len(raw)):
+                self.assertEqual(self.module.inactive_worktree_config_values(raw), expected)
+
+    def test_index_wrong_sections_values_duplicates_and_executable_syntax_refuse(self):
+        cases = (
+            (b'[index]\n', 'worktree-values-5'),
+            (b'[index]\n sparse=true\n', 'worktree-values-5'),
+            (b'[index]\n sparse=0\n', 'worktree-values-5'),
+            (b'[index]\n sparse=1\n', 'worktree-values-5'),
+            (b'[index]\n sparse=FALSE\n', 'worktree-values-5'),
+            (b'[index]\n sparse="false"\n', 'worktree-values-5'),
+            (b'[index]\n sparse=false # PRIVATE\n', 'worktree-values-5'),
+            (b'[index]\n sparse=PRIVATE-command\n', 'worktree-values-5'),
+            (b'[index]\n sparseCheckout=false\n', 'worktree-values-5'),
+            (b'[index]\n sparseCheckoutCone=false\n', 'worktree-values-5'),
+            (b'[core]\n sparse=false\n', 'worktree-values-5'),
+            (b'[index]\n sparse=false\n SPARSE=false\n', 'worktree-values-6'),
+            (b'[index]\n sparse=false\n[index]\n sparse=false\n', 'worktree-values-3'),
+            (b'[core]\n[index]\n sparse=false\n[core]\n', 'worktree-values-3'),
+            (b'[Index]\n sparse=false\n', 'worktree-values-3'),
+            (b'[index "PRIVATE"]\n sparse=false\n', 'worktree-values-3'),
+            (b'[index]\n sparse=false\n[include]\n path=/PRIVATE\n', 'worktree-values-3'),
+            (b'[index]\n sparse=false\n[includeIf "gitdir:*"]\n path=/PRIVATE\n', 'worktree-values-3'),
+            (b'[index]\n sparse=false\n[extensions]\n worktreeConfig=true\n', 'worktree-values-3'),
+            (b'[index]\n sparse=false\n[filter "PRIVATE"]\n clean=PRIVATE\n', 'worktree-values-3'),
+            (b'[index]\n sparse=false\n[credential]\n helper=PRIVATE\n', 'worktree-values-3'),
+            (b'sparse=false\n', 'worktree-values-4'),
+            (b'[index]\n # PRIVATE\n', 'worktree-values-4'),
+            (b'[index]\n sparse=\n', 'worktree-values-4'),
+            (b'[index]\r\n sparse=false\n', 'worktree-values-2'),
+            (b'[index]\n sparse=fal\\se\n', 'worktree-values-2'),
+            (b'[index]\n sparse\v=false\n', 'worktree-values-2'),
+            (b'[index]\n sparse=false\x7f\n', 'worktree-values-2'),
+        )
+        for raw, code in cases:
+            with self.subTest(code=code, size=len(raw)):
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    self.module.inactive_worktree_config_values(raw)
+                self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
+                self.assertEqual(caught.exception.fixed_refusal_code, code)
+                self.assertIn(code, self.module.CONFIG_REFUSAL_CODES)
+                self.assertNotIn('PRIVATE', str(caught.exception))
+
+    def test_optional_reader_applies_index_parser_without_other_operations(self):
+        cases = (b'[index]\n sparse=false\n',
+                 b'[core]\n sparseCheckout=false\n[index]\n sparse=false\n',
+                 b'[index]\n sparse=true\n', b'[index]\n sparse=false\n[include]\n path=/PRIVATE\n')
+        for raw in cases:
+            identity = (1, 8, stat.S_IFREG | 0o644, 3, 4, 1, len(raw), 5, 6)
+            path = SimpleNamespace(lstat=mock.Mock(return_value=object()))
+            with self.subTest(size=len(raw)), mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes', return_value=(raw, identity)) as read, \
+                 mock.patch.object(self.module.os, 'unlink') as deleted, \
+                 mock.patch.object(self.module.os, 'chmod') as changed:
+                if b'true' in raw or b'PRIVATE' in raw:
+                    with self.assertRaises(self.module.ConfigRefusal):
+                        self.module.optional_worktree_config(path, 3, 4, 10)
+                else:
+                    self.assertEqual(self.module.optional_worktree_config(path, 3, 4, 10), (raw, identity))
+                read.assert_called_once_with(path, 3, 4, self.module.MAX_CONFIG, 10)
+                path.lstat.assert_called_once_with()
+                deleted.assert_not_called()
+                changed.assert_not_called()
+
+    def test_index_state_is_bound_by_full_snapshot_and_drift_refuses(self):
+        raw = b'[index]\n sparse=false\n'
+        self.assertEqual(self.module.inactive_worktree_config_values(raw), {'sparse': 'false'})
+        identity = (1, 8, stat.S_IFREG | 0o644, 3, 4, 1, len(raw), 5, 6)
+        first = (raw, identity)
+        cases = (first, (None, None), (raw + b'\n', (*identity[:6], len(raw) + 1, 5, 6)),
+                 (raw, (1, 9, *identity[2:])))
+        for last in cases:
+            path, root, stable, scan = self.snapshot_fixture()
+            with self.subTest(same=last == first), \
+                 mock.patch.object(self.module, 'Path', side_effect=path), \
+                 mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes', side_effect=stable), \
+                 mock.patch.object(self.module, 'optional_worktree_config', side_effect=[first, last]) as optional, \
+                 mock.patch.object(self.module.os, 'scandir', return_value=scan):
+                if last == first:
+                    result = self.module.snapshot(root, 3, 4, 10)
+                    self.assertIs(result['worktree_config_present'], True)
+                    self.assertEqual(result['worktree_config_sha256'], self.module.hashlib.sha256(raw).hexdigest())
+                    self.assertEqual(result['worktree_config_identity'], identity)
+                else:
+                    with self.assertRaises(self.module.ConfigRefusal) as caught:
+                        self.module.snapshot(root, 3, 4, 10)
+                    self.assertEqual(caught.exception.fixed_refusal_code, 'snapshot-17')
+                self.assertEqual(optional.call_count, 2)
+
+    def test_valid_index_still_refuses_harmful_common_config_before_active_birth(self):
+        import sys
+
+        raw = b'[core]\n sparseCheckout=false\n[index]\n sparse=false\n'
+        self.assertEqual(self.module.inactive_worktree_config_values(raw),
+                         {'sparsecheckout': 'false', 'sparse': 'false'})
+        spec = importlib.util.spec_from_file_location('reviewed_inactive_index_owner',
+            Path(__file__).with_name('cft_git_owner.py'))
+        owner = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {'cft_git_config': self.module}):
+            spec.loader.exec_module(owner)
+        extras = (b'[extensions]\n worktreeConfig=true\n', b'[include]\n path=/PRIVATE\n',
+                  b'[filter "PRIVATE"]\n clean=PRIVATE\n', b'[credential]\n helper=PRIVATE\n')
+        for extra in extras:
+            path, root, stable, scan = self.snapshot_fixture(BASE + extra)
+            identity = (1, 8, stat.S_IFREG | 0o644, 3, 4, 1, len(raw), 5, 6)
+            with self.subTest(size=len(extra)), mock.patch.object(self.module, 'Path', side_effect=path), \
+                 mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes', side_effect=stable), \
+                 mock.patch.object(self.module, 'optional_worktree_config', return_value=(raw, identity)) as optional, \
+                 mock.patch.object(self.module.os, 'scandir', return_value=scan), \
+                 mock.patch.object(owner.os, 'getuid', return_value=0, create=True), \
+                 mock.patch.object(owner.os, 'geteuid', return_value=0, create=True), \
+                 mock.patch.object(owner.time, 'monotonic', return_value=0), \
+                 mock.patch.object(owner.subprocess, 'Popen') as birth:
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    owner.RunnerGit([], ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', 'rev-parse', 'HEAD'],
+                                    root, 10, uid=3, gid=4)
+                self.assertEqual(caught.exception.fixed_refusal_code, 'config-values-3')
+                self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
+                self.assertNotIn('PRIVATE', str(caught.exception))
+                optional.assert_called_once()
+                birth.assert_not_called()
+
 
 @unittest.skipUnless(os.name == 'posix', 'POSIX no-follow raw descriptor fixture only')
 class InactiveWorktreeRawTests(unittest.TestCase):

@@ -154,7 +154,7 @@ def inactive_worktree_config_values(raw):
 
     No metadata or setting is applied. Horizontal space is the only permitted
     separator; case aliases count as duplicate keys. Empty bytes are a present
-    file, not absence. Other valid Git syntax deliberately remains refused.
+    file, not absence. The optional index section contains only sparse=false. Other valid Git syntax deliberately remains refused.
     """
     need(type(raw) is bytes and len(raw) <= MAX_CONFIG and b'\x00' not in raw, 'worktree-values-1')
     try:
@@ -167,24 +167,28 @@ def inactive_worktree_config_values(raw):
          and all(ord(value) >= 32 or value in '\n\t' for value in text)
          and '\x7f' not in text, 'worktree-values-2')
     section = None
+    sections = set()
     values = {}
+    allowed = {'core': ('sparsecheckout', 'sparsecheckoutcone'), 'index': ('sparse',)}
     for line in text.split('\n'):
         line = line.strip(' \t')
         if not line:
             continue
         match = re.fullmatch(r'\[([^\[\]]+)\]', line)
         if match is not None:
-            need(match.group(1) == 'core' and section is None, 'worktree-values-3')
-            section = 'core'
+            section = match.group(1)
+            need(section in allowed and section not in sections, 'worktree-values-3')
+            sections.add(section)
             continue
         match = re.fullmatch(r'([A-Za-z]+)[ \t]*=[ \t]*([^\r\n]+)', line)
-        need(section == 'core' and match is not None, 'worktree-values-4')
+        need(section in allowed and match is not None, 'worktree-values-4')
         key, value = match.groups()
         key = key.lower()
         value = value.strip(' \t')
-        need(key in ('sparsecheckout', 'sparsecheckoutcone') and value == 'false', 'worktree-values-5')
+        need(key in allowed[section] and value == 'false', 'worktree-values-5')
         need(key not in values, 'worktree-values-6')
         values[key] = value
+    need('index' not in sections or 'sparse' in values, 'worktree-values-5')
     return values
 
 

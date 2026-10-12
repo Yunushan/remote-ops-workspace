@@ -425,8 +425,9 @@ def owned_process_diagnostic(exc):
     value = exc.__dict__.get("owned_process_observation")
     keys = ("role", "reason", "pipe_failed", "poll_observed", "exit_status",
             "stdout_retained_bytes", "stderr_retained_bytes", "counts_partial")
-    if (type(value) is not dict or len(value) != len(keys)
-            or any(type(key) is not str for key in value) or set(value) != set(keys)):
+    if (type(value) is not dict or len(value) not in (len(keys), len(keys) + 1)
+            or any(type(key) is not str for key in value)
+            or set(value) not in (set(keys), set(keys) | {"adb_message_bits"})):
         return None
     if (type(value["role"]) is not str or value["role"] not in ("adb", "emulator")
             or type(value["reason"]) is not str or value["reason"] not in ("pipe-failed", "leader-exited")
@@ -443,7 +444,16 @@ def owned_process_diagnostic(exc):
     elif (value["reason"] != "leader-exited" or not value["poll_observed"]
           or type(value["exit_status"]) is not int or not -(2 ** 31) <= value["exit_status"] < 2 ** 31):
         return None
-    return {key: value[key] for key in keys}
+    observed = {key: value[key] for key in keys}
+    if "adb_message_bits" in value:
+        bits = value["adb_message_bits"]
+        if (type(bits) is not int or not 0 <= bits <= 31
+                or value["role"] != "adb" or value["reason"] != "leader-exited"
+                or value["pipe_failed"] or not value["poll_observed"]
+                or type(value["exit_status"]) is not int or value["exit_status"] != -6):
+            return None
+        observed["adb_message_bits"] = bits
+    return observed
 
 
 def capture_refusal_diagnostic(exc, phase, owned_substage=None):

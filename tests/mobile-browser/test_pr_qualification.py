@@ -1318,5 +1318,259 @@ class OwnedListenerOperationDiagnosticTests(unittest.TestCase):
                 self.assertNotIn("PRIVATE", json.dumps(record))
 
 
+class AdbFixedMessageMarkerTests(unittest.TestCase):
+    @staticmethod
+    def leader(raw=b"", role="adb", failed=False, status=-6):
+        leader = OwnedProcessDiagnosticTests.leader(role, failed=failed, status=status)
+        leader.buffers = [bytearray(), bytearray(raw)]
+        return leader
+
+    def refused(self, leader):
+        with mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+            with self.assertRaises(H.Refusal) as caught:
+                leader.live()
+            native.assert_not_called()
+        self.assertEqual(caught.exception.args, ("owned-leader-or-pipe-unavailable",))
+        leader.failed.is_set.assert_called_once_with()
+        if leader.failed.is_set.return_value:
+            leader.child.poll.assert_not_called()
+        else:
+            leader.child.poll.assert_called_once_with()
+        return caught.exception
+
+    def test_each_public_literal_projects_its_bit_without_private_suffix(self):
+        for bit, literal in H.ADB_MESSAGE_MARKERS:
+            raw = b"PRIVATE/path PID errno " + literal + b"PRIVATE/dynamic-suffix"
+            leader = self.leader(raw)
+            with self.subTest(bit=bit):
+                error = self.refused(leader)
+                observed = error.owned_process_observation
+                self.assertEqual(observed["adb_message_bits"], bit)
+                self.assertEqual(observed["stderr_retained_bytes"], len(raw))
+                self.assertTrue(observed["counts_partial"])
+                record = Q.capture_refusal_diagnostic(error, "owned-api36-emulator", "adb-listener")
+                self.assertEqual(record["owned_process"], observed)
+                self.assertFalse(record["approval"])
+                self.assertEqual(record["readiness_credit"], 0)
+                self.assertNotIn("PRIVATE", json.dumps(record))
+
+    def test_unknown_empty_case_changed_and_incomplete_literals_are_zero(self):
+        cases = [b"", b"PRIVATE unknown fatal", b"\x00\xff\x80"]
+        for _, literal in H.ADB_MESSAGE_MARKERS:
+            cases.extend((literal[:-1], literal.upper()))
+        for index, raw in enumerate(cases):
+            with self.subTest(index=index):
+                observed = self.refused(self.leader(raw)).owned_process_observation
+                self.assertEqual(observed["adb_message_bits"], 0)
+                self.assertTrue(observed["counts_partial"])
+
+    def test_multiple_and_repeated_markers_preserve_all_bits_without_order_claim(self):
+        literals = [literal for _, literal in H.ADB_MESSAGE_MARKERS]
+        cases = (b"\n".join(literals), b"\n".join(reversed(literals)), b"\n".join(literals * 2))
+        for index, raw in enumerate(cases):
+            with self.subTest(index=index):
+                observed = self.refused(self.leader(raw)).owned_process_observation
+                self.assertEqual(observed["adb_message_bits"], 31)
+                self.assertTrue(observed["counts_partial"])
+
+    def test_prefix_boundary_requires_the_complete_literal_inside_the_snapshot(self):
+        bit, literal = H.ADB_MESSAGE_MARKERS[0]
+        cases = ((b"x" * (4096 - len(literal)) + literal, bit),
+                 (b"x" * 4096 + literal, 0),
+                 (b"x" * (4097 - len(literal)) + literal, 0),
+                 (literal + b"x" * (4096 - len(literal)) + H.ADB_MESSAGE_MARKERS[1][1], bit))
+        for index, (raw, expected) in enumerate(cases):
+            leader = self.leader(raw)
+            with self.subTest(index=index):
+                observed = self.refused(leader).owned_process_observation
+                self.assertEqual(observed["adb_message_bits"], expected)
+                self.assertEqual(observed["stderr_retained_bytes"], len(raw))
+
+    def test_classifier_rejects_wrong_types_and_oversized_inputs(self):
+        class HostileBytes(bytes):
+            def __len__(self):
+                raise AssertionError("private length")
+
+        cases = (None, True, bytearray(b"unknown"), "PRIVATE", b"x" * 4097, HostileBytes(b"unknown"))
+        for index, prefix in enumerate(cases):
+            with self.subTest(index=index):
+                self.assertIsNone(H._adb_message_bits(prefix))
+        leader = self.leader(b"x" * (1024 * 1024 + 1))
+        with mock.patch.object(H, "_adb_message_bits", side_effect=AssertionError("classifier")) as classified:
+            error = self.refused(leader)
+            self.assertNotIn("owned_process_observation", error.__dict__)
+            classified.assert_not_called()
+
+    def test_classifier_observes_one_immutable_partial_snapshot(self):
+        bit, literal = H.ADB_MESSAGE_MARKERS[0]
+        leader = self.leader(literal)
+        original_classifier = H._adb_message_bits
+        received = []
+
+        def classify(prefix):
+            received.append(prefix)
+            leader.buffers[1][:] = b"PRIVATE replacement after snapshot"
+            return original_classifier(prefix)
+
+        with mock.patch.object(H, "_adb_message_bits", side_effect=classify) as classified:
+            observed = self.refused(leader).owned_process_observation
+            classified.assert_called_once_with(literal)
+        self.assertEqual(len(received), 1)
+        self.assertIs(type(received[0]), bytes)
+        self.assertEqual(received[0], literal)
+        self.assertEqual(observed["adb_message_bits"], bit)
+        self.assertEqual(observed["stderr_retained_bytes"], len(literal))
+        self.assertTrue(observed["counts_partial"])
+
+    def test_wrong_context_retains_original_short_circuit_without_classifying(self):
+        cases = (("emulator", False, -6), ("adb", True, -6), ("adb", False, -9),
+                 ("adb", False, 0), ("adb", False, True), ("PRIVATE", False, -6),
+                 ("adb", False, 2 ** 31))
+        for role, failed, status in cases:
+            leader = self.leader(H.ADB_MESSAGE_MARKERS[0][1], role, failed, status)
+            with self.subTest(role=role, failed=failed, status=status), \
+                 mock.patch.object(H, "_adb_message_bits", side_effect=AssertionError("classifier")) as classified:
+                error = self.refused(leader)
+                observed = error.__dict__.get("owned_process_observation")
+                if observed is not None:
+                    self.assertNotIn("adb_message_bits", observed)
+                classified.assert_not_called()
+        leader = self.leader(H.ADB_MESSAGE_MARKERS[0][1])
+        for failed, polled in ((0, True), (False, 1)):
+            with self.subTest(failed=failed, polled=polled):
+                self.assertIsNone(H._owned_live_observation(leader, failed, polled, -6))
+
+    def test_classifier_and_snapshot_interruptions_keep_original_error_and_eight_fields(self):
+        refusal_type = H.Refusal
+        failures = (RuntimeError("PRIVATE classifier"), KeyboardInterrupt("PRIVATE interrupt"),
+                    SystemExit("PRIVATE exit"))
+        for failure in failures:
+            leader = self.leader(H.ADB_MESSAGE_MARKERS[0][1])
+            original = refusal_type("owned-leader-or-pipe-unavailable")
+            with self.subTest(failure=type(failure).__name__), \
+                 mock.patch.object(H, "Refusal", return_value=original), \
+                 mock.patch.object(H, "_adb_message_bits", side_effect=failure) as classified, \
+                 mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+                with self.assertRaises(refusal_type) as caught:
+                    leader.live()
+                self.assertIs(caught.exception, original)
+                self.assertEqual(len(original.owned_process_observation), 8)
+                self.assertNotIn("adb_message_bits", original.owned_process_observation)
+                self.assertNotIn("PRIVATE", json.dumps(original.owned_process_observation))
+                classified.assert_called_once()
+                leader.failed.is_set.assert_called_once_with()
+                leader.child.poll.assert_called_once_with()
+                native.assert_not_called()
+        leader = self.leader(H.ADB_MESSAGE_MARKERS[0][1])
+        original = refusal_type("owned-leader-or-pipe-unavailable")
+        with mock.patch.object(H, "Refusal", return_value=original), \
+             mock.patch.object(H, "bytes", side_effect=KeyboardInterrupt("PRIVATE snapshot"), create=True), \
+             mock.patch.object(H, "_adb_message_bits", side_effect=AssertionError("classifier")) as classified:
+            with self.assertRaises(refusal_type) as caught:
+                leader.live()
+            self.assertIs(caught.exception, original)
+            self.assertEqual(len(original.owned_process_observation), 8)
+            classified.assert_not_called()
+            leader.child.poll.assert_called_once_with()
+
+    def test_malformed_classifier_results_preserve_old_observation(self):
+        class Hostile:
+            def __str__(self):
+                raise AssertionError("private stringify")
+
+        for result in (None, True, -1, 32, "PRIVATE", Hostile()):
+            leader = self.leader(H.ADB_MESSAGE_MARKERS[0][1])
+            with self.subTest(kind=type(result).__name__), \
+                 mock.patch.object(H, "_adb_message_bits", return_value=result) as classified:
+                observed = self.refused(leader).owned_process_observation
+                self.assertEqual(len(observed), 8)
+                self.assertNotIn("adb_message_bits", observed)
+                classified.assert_called_once()
+                self.assertNotIn("PRIVATE", json.dumps(observed))
+
+    def test_every_allowed_bit_combination_has_the_closed_typed_projection(self):
+        for bits in range(32):
+            value = {**OwnedProcessDiagnosticTests.observation(status=-6), "adb_message_bits": bits}
+            error = H.Refusal("owned-leader-or-pipe-unavailable")
+            error.owned_process_observation = value
+            with self.subTest(bits=bits):
+                record = Q.capture_refusal_diagnostic(error, "owned-api36-emulator", "adb-listener")
+                self.assertEqual(record["owned_process"], value)
+                self.assertEqual(set(record["owned_process"]), set(value))
+                self.assertFalse(record["approval"])
+                self.assertEqual(record["readiness_credit"], 0)
+
+    def test_optional_key_rejects_malformed_types_private_keys_and_wrong_context(self):
+        class HostileInt(int):
+            def __str__(self):
+                raise AssertionError("private stringify")
+
+        base = {**OwnedProcessDiagnosticTests.observation(status=-6), "adb_message_bits": 1}
+        cases = [{**base, "adb_message_bits": value}
+                 for value in (None, True, False, -1, 32, "PRIVATE", HostileInt(1))]
+        cases.extend(({**base, "pid": 123}, {key: value for key, value in base.items() if key != "role"},
+                      {**base, "role": "emulator"}, {**base, "exit_status": 0},
+                      {**base, "exit_status": True}, {**base, "poll_observed": False},
+                      {**base, "reason": "pipe-failed"}, {**base, "counts_partial": False},
+                      {**base, "pipe_failed": True, "poll_observed": False,
+                       "reason": "pipe-failed", "exit_status": None},
+                      {**base, "stdout_retained_bytes": 4194305}))
+        for index, value in enumerate(cases):
+            error = H.Refusal("owned-leader-or-pipe-unavailable")
+            error.owned_process_observation = value
+            with self.subTest(index=index):
+                record = Q.capture_refusal_diagnostic(error, "owned-api36-emulator", "adb-listener")
+                self.assertNotIn("owned_process", record)
+                self.assertNotIn("PRIVATE", json.dumps(record))
+
+    def test_all_existing_substage_listener_combinations_stay_within_ascii_cap(self):
+        value = {**OwnedProcessDiagnosticTests.observation(status=-6), "adb_message_bits": 31}
+        maximum = 0
+        for substage in Q.OWNED_PROCESS_SUBSTAGES:
+            for entered in H.OWNED_LISTENER_STAGES:
+                error = H.Refusal("owned-leader-or-pipe-unavailable")
+                error.owned_process_observation = value
+                error.owned_listener_stage = entered
+                with self.subTest(substage=substage, entered=entered):
+                    record = Q.capture_refusal_diagnostic(error, "owned-api36-emulator", substage)
+                    self.assertEqual(record["owned_process"], value)
+                    self.assertEqual(record["owned_listener_stage"], entered)
+                    self.assertEqual(record["owned_substage"], substage)
+                    raw = json.dumps(record, ensure_ascii=True, separators=(",", ":"))
+                    maximum = max(maximum, len(raw))
+                    self.assertTrue(raw.isascii())
+                    self.assertLessEqual(len(raw), 512)
+                    self.assertLessEqual(len(raw + "\n"), 512)
+                    self.assertFalse(record["approval"])
+                    self.assertEqual(record["readiness_credit"], 0)
+        self.assertEqual(maximum, 483)
+
+    def test_listener_start_refusal_keeps_marker_without_proc_or_native_calls(self):
+        leader = self.leader(H.ADB_MESSAGE_MARKERS[0][1])
+        with mock.patch.object(H.os, "scandir", side_effect=AssertionError("proc")) as scanned, \
+             mock.patch.object(H.os, "readlink", side_effect=AssertionError("readlink")) as linked, \
+             mock.patch.object(Path, "open", side_effect=AssertionError("open")) as opened, \
+             mock.patch.object(H.subprocess, "Popen", side_effect=AssertionError("native")) as native:
+            with self.assertRaises(H.Refusal) as caught:
+                H.owned_listener(leader, H.ADB_PORT)
+            self.assertEqual(caught.exception.args, ("owned-leader-or-pipe-unavailable",))
+            self.assertEqual(caught.exception.owned_listener_stage, "leader-before")
+            self.assertEqual(caught.exception.owned_process_observation["adb_message_bits"], 1)
+            leader.failed.is_set.assert_called_once_with()
+            leader.child.poll.assert_called_once_with()
+            scanned.assert_not_called()
+            linked.assert_not_called()
+            opened.assert_not_called()
+            native.assert_not_called()
+
+    def test_running_leader_keeps_acceptance_without_classifier(self):
+        leader = self.leader(H.ADB_MESSAGE_MARKERS[0][1], status=None)
+        with mock.patch.object(H, "_adb_message_bits", side_effect=AssertionError("classifier")) as classified:
+            self.assertIsNone(leader.live())
+            classified.assert_not_called()
+            leader.failed.is_set.assert_called_once_with()
+            leader.child.poll.assert_called_once_with()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

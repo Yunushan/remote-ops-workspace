@@ -159,8 +159,25 @@ def tree_digest(root, maximum_files=12000, maximum_bytes=256 * 1024 * 1024):
     return sha(json.dumps(sorted(rows, key=lambda r: r["path"]), sort_keys=True, separators=(",", ":")).encode())
 
 
+ADB_MESSAGE_PREFIX_BYTES = 4096
+ADB_MESSAGE_MARKERS = (
+    (1, b'could not install *smartsocket* listener: '),
+    (2, b'failed to initialize libusb: '),
+    (4, b'failed to register libusb hotplug callback'),
+    (8, b'read of inotify event failed'),
+    (16, b'observed inotify event for unmonitored path, wd = '),
+)
+
+
+def _adb_message_bits(prefix):
+    """Fixed literal presence in a partial prefix; no absence or cause inference."""
+    if type(prefix) is not bytes or len(prefix) > ADB_MESSAGE_PREFIX_BYTES:
+        return None
+    return sum(bit for bit, literal in ADB_MESSAGE_MARKERS if literal in prefix)
+
+
 def _owned_live_observation(leader, pipe_failed, poll_observed, exit_status):
-    """Primitive partial snapshot only; never reads or publishes pipe content."""
+    """No pipe read; inspect only a bounded retained prefix and publish fixed primitives."""
     role = leader.__dict__.get("_public_caller_role")
     buffers = leader.__dict__.get("buffers")
     if (type(role) is not str or role not in ("adb", "emulator")
@@ -179,10 +196,19 @@ def _owned_live_observation(leader, pipe_failed, poll_observed, exit_status):
     stdout_bytes, stderr_bytes = len(buffers[0]), len(buffers[1])
     if stdout_bytes > 4 * 1024 * 1024 or stderr_bytes > 1024 * 1024:
         return None
-    return {"role": role, "reason": reason, "pipe_failed": pipe_failed,
-            "poll_observed": poll_observed, "exit_status": exit_status,
-            "stdout_retained_bytes": stdout_bytes, "stderr_retained_bytes": stderr_bytes,
-            "counts_partial": True}
+    observed = {"role": role, "reason": reason, "pipe_failed": pipe_failed,
+                "poll_observed": poll_observed, "exit_status": exit_status,
+                "stdout_retained_bytes": stdout_bytes, "stderr_retained_bytes": stderr_bytes,
+                "counts_partial": True}
+    if role == "adb" and not pipe_failed and poll_observed and exit_status == -6:
+        try:
+            prefix = bytes(buffers[1][:ADB_MESSAGE_PREFIX_BYTES])
+            bits = _adb_message_bits(prefix)
+            if type(bits) is int and 0 <= bits <= 31:
+                observed["adb_message_bits"] = bits
+        except BaseException:
+            pass  # Optional classification cannot discard the original primitive snapshot.
+    return observed
 
 
 class Managed:

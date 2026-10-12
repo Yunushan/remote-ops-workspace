@@ -210,5 +210,248 @@ class RawDescriptorTests(unittest.TestCase):
                     wrapped.assert_not_called()
 
 
+class InactiveWorktreeConfigTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location('reviewed_inactive_worktree_config',
+            Path(__file__).with_name('cft_git_config.py'))
+        cls.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.module)
+
+    def test_closed_sparse_false_literals_and_present_empty_are_harmless(self):
+        cases = (
+            (b'', {}),
+            (b' \t\n\n', {}),
+            (b'[core]\n', {}),
+            (b'[core]\n\tsparseCheckout = false\n', {'sparsecheckout': 'false'}),
+            (b'[core]\n SPARSECHECKOUTCONE\t=\tfalse\n sparseCheckout=false\n',
+             {'sparsecheckoutcone': 'false', 'sparsecheckout': 'false'}),
+        )
+        for raw, expected in cases:
+            with self.subTest(raw_size=len(raw)):
+                self.assertEqual(self.module.inactive_worktree_config_values(raw), expected)
+
+    def test_harmful_or_ambiguous_worktree_syntax_keeps_fixed_refusal(self):
+        raw_cases = (
+            '[core]\n', bytearray(b'[core]\n'), b' ' * 16385, b'\x00', b'\xff',
+            b'[core]\r\n', b'[core]\n\tsparseCheckout = fal\\se\n',
+            b'[core]\n\tsparseCheckout\v= false\n', b'[core]\n\tsparseCheckout = false\x1f\n',
+            b'[core]\n\tsparseCheckout = false\x7f\n',
+            b'[include]\n path = /PRIVATE\n',
+            b'[includeIf "gitdir:*"]\n path = /PRIVATE\n',
+            b'[extensions]\n worktreeConfig = true\n',
+            b'[credential]\n helper = PRIVATE\n', b'[filter "PRIVATE"]\n clean = PRIVATE\n',
+            b'[core "PRIVATE"]\n sparseCheckout = false\n', b'[Core]\n',
+            b'[core]\n[core]\n', b'sparseCheckout = false\n',
+            b'[core]\n sparseCheckout = false\n SPARSECHECKOUT = false\n',
+            b'[core]\n sparseCheckout = true\n', b'[core]\n sparseCheckoutCone = 0\n',
+            b'[core]\n sparseCheckout = "false"\n',
+            b'[core]\n sparseCheckout = false # PRIVATE\n', b'# PRIVATE\n',
+            b'[core]\n bare = false\n', b'[core]\n fsmonitor = PRIVATE\n',
+        )
+        for index, raw in enumerate(raw_cases):
+            with self.subTest(index=index):
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    self.module.inactive_worktree_config_values(raw)
+                self.assertEqual(caught.exception.args, ('cft-git-config-refused',))
+                self.assertIn(caught.exception.fixed_refusal_code, self.module.CONFIG_REFUSAL_CODES)
+                self.assertNotIn('PRIVATE', str(caught.exception))
+
+    def test_absent_and_access_refusal_never_read_or_mutate(self):
+        for error_type in (FileNotFoundError, PermissionError):
+            original = error_type('/PRIVATE')
+            path = SimpleNamespace(lstat=mock.Mock(side_effect=original))
+            with self.subTest(error=error_type.__name__), \
+                 mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes') as read, \
+                 mock.patch.object(self.module.os, 'unlink') as deleted, \
+                 mock.patch.object(self.module.os, 'chmod') as changed:
+                if error_type is FileNotFoundError:
+                    self.assertEqual(self.module.optional_worktree_config(path, 3, 4, 10), (None, None))
+                else:
+                    with self.assertRaises(PermissionError) as caught:
+                        self.module.optional_worktree_config(path, 3, 4, 10)
+                    self.assertIs(caught.exception, original)
+                path.lstat.assert_called_once_with()
+                read.assert_not_called()
+                deleted.assert_not_called()
+                changed.assert_not_called()
+
+    def test_present_reader_validates_closed_grammar_before_return(self):
+        identity = (1, 8, stat.S_IFREG | 0o644, 3, 4, 1, 0, 5, 6)
+        for raw in (b'', b'[core]\n sparseCheckout = false\n', b'[include]\n path = /PRIVATE\n'):
+            path = SimpleNamespace(lstat=mock.Mock(return_value=object()))
+            with self.subTest(size=len(raw)), mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes', return_value=(raw, identity)) as read:
+                if b'PRIVATE' in raw:
+                    with self.assertRaises(self.module.ConfigRefusal) as caught:
+                        self.module.optional_worktree_config(path, 3, 4, 10)
+                    self.assertEqual(caught.exception.fixed_refusal_code, 'worktree-values-3')
+                else:
+                    self.assertEqual(self.module.optional_worktree_config(path, 3, 4, 10), (raw, identity))
+                read.assert_called_once_with(path, 3, 4, self.module.MAX_CONFIG, 10)
+
+    def snapshot_fixture(self, common=BASE):
+        directory = SimpleNamespace(st_dev=1, st_ino=2, st_mode=stat.S_IFDIR | 0o755,
+            st_uid=3, st_gid=4, st_nlink=2, st_size=0, st_mtime_ns=5, st_ctime_ns=6)
+        config = SimpleNamespace(**{**directory.__dict__, 'st_ino': 3,
+            'st_mode': stat.S_IFREG | 0o644, 'st_nlink': 1, 'st_size': len(common)})
+        attributes = ('\n'.join(self.module.ATTRIBUTES) + '\n').encode('ascii')
+        attrs = SimpleNamespace(**{**config.__dict__, 'st_ino': 4, 'st_size': len(attributes)})
+        ordinary = SimpleNamespace(**{**config.__dict__, 'st_ino': 5, 'st_size': 1})
+        states = {'/fixture/checkout': directory, '/fixture/checkout/.git': directory,
+            '/fixture/checkout/.git/info': directory, '/fixture/checkout/.git/config': config,
+            '/fixture/checkout/.gitattributes': attrs, '/fixture/checkout/source.py': ordinary}
+        nodes = {}
+
+        class Node:
+            def __init__(self, name):
+                self.value = name
+                self.parts = tuple(name.split('/'))
+
+            def is_absolute(self):
+                return self.value.startswith('/')
+
+            def __truediv__(self, name):
+                return path(self.value + '/' + name)
+
+            def lstat(self):
+                if self.value not in states:
+                    raise FileNotFoundError('/PRIVATE')
+                return states[self.value]
+
+            def relative_to(self, root):
+                relative = self.value[len(root.value) + 1:]
+                return SimpleNamespace(as_posix=lambda: relative)
+
+        def path(value):
+            if isinstance(value, Node):
+                return value
+            if value not in nodes:
+                nodes[value] = Node(value)
+            return nodes[value]
+
+        entries = []
+        for value in ('/fixture/checkout/.git', '/fixture/checkout/.gitattributes', '/fixture/checkout/source.py'):
+            info = states[value]
+            entries.append(SimpleNamespace(path=value, name=value.rsplit('/', 1)[1],
+                stat=lambda *, follow_symlinks, info=info: info))
+        scan = mock.MagicMock()
+        scan.__enter__.return_value = entries
+
+        def stable(node, uid, gid, maximum, deadline):
+            self.assertEqual((uid, gid, deadline), (3, 4, 10))
+            if node.value == '/fixture/checkout/.git/config':
+                self.assertEqual(maximum, self.module.MAX_CONFIG)
+                return common, self.module.identity(config)
+            self.assertEqual(node.value, '/fixture/checkout/.gitattributes')
+            self.assertEqual(maximum, 4096)
+            return attributes, self.module.identity(attrs)
+
+        return path, path('/fixture/checkout'), stable, scan
+
+    def test_snapshot_absent_and_present_empty_states_are_distinct(self):
+        observed_states = []
+        for state in ((None, None), (b'', (1, 8, stat.S_IFREG | 0o644, 3, 4, 1, 0, 5, 6))):
+            path, root, stable, scan = self.snapshot_fixture()
+            with self.subTest(present=state[0] is not None), \
+                 mock.patch.object(self.module, 'Path', side_effect=path), \
+                 mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes', side_effect=stable), \
+                 mock.patch.object(self.module, 'optional_worktree_config', side_effect=[state, state]) as optional, \
+                 mock.patch.object(self.module.os, 'scandir', return_value=scan):
+                result = self.module.snapshot(root, 3, 4, 10)
+            self.assertEqual(optional.call_count, 2)
+            self.assertEqual(result['worktree_config_present'], state[0] is not None)
+            self.assertEqual(result['worktree_config_identity'], state[1])
+            self.assertEqual(result['worktree_config_sha256'],
+                             None if state[0] is None else self.module.hashlib.sha256(state[0]).hexdigest())
+            observed_states.append(result)
+        self.assertNotEqual(observed_states[0], observed_states[1])
+
+    def test_snapshot_refuses_presence_byte_and_identity_drift(self):
+        absent_state = (None, None)
+        empty = (b'', (1, 8, stat.S_IFREG | 0o644, 3, 4, 1, 0, 5, 6))
+        changed = (b'[core]\n', (1, 8, stat.S_IFREG | 0o644, 3, 4, 1, 7, 5, 6))
+        replacement = (b'', (1, 9, stat.S_IFREG | 0o644, 3, 4, 1, 0, 5, 6))
+        for first, last in ((absent_state, empty), (empty, absent_state),
+                            (empty, changed), (empty, replacement)):
+            path, root, stable, scan = self.snapshot_fixture()
+            with self.subTest(first_present=first[0] is not None, last_present=last[0] is not None), \
+                 mock.patch.object(self.module, 'Path', side_effect=path), \
+                 mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module, 'stable_bytes', side_effect=stable), \
+                 mock.patch.object(self.module, 'optional_worktree_config', side_effect=[first, last]), \
+                 mock.patch.object(self.module.os, 'scandir', return_value=scan):
+                with self.assertRaises(self.module.ConfigRefusal) as caught:
+                    self.module.snapshot(root, 3, 4, 10)
+            self.assertEqual(caught.exception.fixed_refusal_code, 'snapshot-17')
+
+    def test_common_activation_still_refuses_before_active_git_birth_mock(self):
+        import sys
+
+        spec = importlib.util.spec_from_file_location('reviewed_inactive_config_owner',
+            Path(__file__).with_name('cft_git_owner.py'))
+        owner = importlib.util.module_from_spec(spec)
+        with mock.patch.dict(sys.modules, {'cft_git_config': self.module}):
+            spec.loader.exec_module(owner)
+        path, root, stable, scan = self.snapshot_fixture(BASE + b'[extensions]\n worktreeConfig = true\n')
+        with mock.patch.object(self.module, 'Path', side_effect=path), \
+             mock.patch.object(self.module, 'clock'), \
+             mock.patch.object(self.module, 'stable_bytes', side_effect=stable), \
+             mock.patch.object(self.module, 'optional_worktree_config', return_value=(b'', (1,))), \
+             mock.patch.object(self.module.os, 'scandir', return_value=scan), \
+             mock.patch.object(owner.os, 'getuid', return_value=0, create=True), \
+             mock.patch.object(owner.os, 'geteuid', return_value=0, create=True), \
+             mock.patch.object(owner.time, 'monotonic', return_value=0), \
+             mock.patch.object(owner.subprocess, 'Popen') as birth:
+            with self.assertRaises(self.module.ConfigRefusal) as caught:
+                owner.RunnerGit([], ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', 'rev-parse', 'HEAD'],
+                                root, 10, uid=3, gid=4)
+            self.assertEqual(caught.exception.fixed_refusal_code, 'config-values-3')
+            birth.assert_not_called()
+
+
+@unittest.skipUnless(os.name == 'posix', 'POSIX no-follow raw descriptor fixture only')
+class InactiveWorktreeRawTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location('reviewed_inactive_worktree_raw',
+            Path(__file__).with_name('cft_git_config.py'))
+        cls.module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.module)
+
+    def test_present_file_uses_original_raw_owner_and_refuses_unsafe_shape_before_open(self):
+        raw = b'[core]\n sparseCheckout = false\n'
+        base = dict(st_dev=1, st_ino=2, st_mode=stat.S_IFREG | 0o644,
+            st_uid=3, st_gid=4, st_nlink=1, st_size=len(raw), st_mtime_ns=5, st_ctime_ns=6)
+        changes = ({}, {'st_mode': stat.S_IFLNK | 0o644}, {'st_mode': stat.S_IFDIR | 0o755},
+                   {'st_uid': 9}, {'st_gid': 9}, {'st_mode': stat.S_IFREG | 0o666},
+                   {'st_nlink': 2}, {'st_size': self.module.MAX_CONFIG + 1})
+        for index, changed in enumerate(changes):
+            info = SimpleNamespace(**{**base, **changed})
+            path = SimpleNamespace(lstat=mock.Mock(return_value=info))
+            with self.subTest(index=index), mock.patch.object(self.module, 'clock'), \
+                 mock.patch.object(self.module.os, 'open', return_value=37) as opened, \
+                 mock.patch.object(self.module.os, 'fstat', return_value=info), \
+                 mock.patch.object(self.module.os, 'read', side_effect=[raw, b'']) as read, \
+                 mock.patch.object(self.module.os, 'close') as closed, \
+                 mock.patch.object(self.module.os, 'fdopen') as wrapped:
+                if index == 0:
+                    self.assertEqual(self.module.optional_worktree_config(path, 3, 4, 10),
+                                     (raw, self.module.identity(info)))
+                    opened.assert_called_once_with(path, os.O_RDONLY | os.O_NOFOLLOW)
+                    closed.assert_called_once_with(37)
+                    self.assertEqual(read.call_count, 2)
+                else:
+                    with self.assertRaises(self.module.ConfigRefusal) as caught:
+                        self.module.optional_worktree_config(path, 3, 4, 10)
+                    self.assertEqual(caught.exception.fixed_refusal_code, 'stable-bytes-1')
+                    opened.assert_not_called()
+                    closed.assert_not_called()
+                    read.assert_not_called()
+                wrapped.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

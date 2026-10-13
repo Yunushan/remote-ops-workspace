@@ -754,6 +754,7 @@ class RuntimeStartupDiagnosticTests(unittest.TestCase):
                 owner.receive.return_value = {'ready': True, 'nonce': 'a' * 64, 'port': 12345,
                     'inventory': {'count': count, 'profiles': [{}] * count, 'digest': '1' * 64}}
             else:
+                case.assertEqual(argv, ['/synthetic/driver', '--port=0'])
                 port = 0 if failure_stage == 'driver-port-validation' else 12346
                 owner.output.extend(('ChromeDriver was started successfully on port ' + str(port)).encode())
                 owner.process.poll.side_effect = lambda: entered('driver-port-wait')

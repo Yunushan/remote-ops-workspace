@@ -568,7 +568,7 @@ def main():
                 checks.append({'id': case, 'facts': facts})
             # ChromeDriver itself chooses a private ephemeral port and reports it on its private log.
             inert_runtime_note(public, 'driver-service-birth')
-            controller = Owned(registry, [str(chrome_driver), '--port=0', '--allowed-ips=127.0.0.1'], repo, env, deadline)
+            controller = Owned(registry, [str(chrome_driver), '--port=0'], repo, env, deadline)
             inert_runtime_note(public, 'driver-port-wait')
             launch_limit = min(deadline, time.monotonic() + 20)
             driver_port = None

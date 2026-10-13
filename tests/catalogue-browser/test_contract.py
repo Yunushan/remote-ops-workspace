@@ -1253,5 +1253,255 @@ class DriverStartDiagnosticTests(unittest.TestCase):
             owner.cleanup_observed.assert_called_once()
 
 
+class DriverMessageMarkerTests(unittest.TestCase):
+    def invoke_message(self, message, *, status=500, token='session not created', timeouts=False, close_error=None):
+        raw = json.dumps({'value': {'error': token, 'message': message,
+                                   'stacktrace': '/PRIVATE/stack', 'data': {'token': '/PRIVATE/token'}}}).encode()
+        fixture = DriverStartDiagnosticTests('test_success_retains_exact_two_requests_clock_and_close')
+        responses = [(status, raw)]
+        if timeouts:
+            responses.insert(0, (200, fixture.GOOD))
+        result = fixture.invoke(responses, close_error=close_error)
+        return result, raw
+
+    def test_each_fixed_marker_is_partial_positive_only(self):
+        for bit, literals in browser_probe.DRIVER_MESSAGE_MARKERS:
+            with self.subTest(bit=bit):
+                (value, error, _driver, context, connections, provider, clock), _raw = self.invoke_message('\n'.join(literals))
+                self.assertIsNone(value)
+                self.assertIs(type(error), contract.GateRefusal)
+                self.assertEqual(error.args, ('catalogue-gate-contract-refused',))
+                fields = browser_probe.driver_start_fields(context, error)
+                self.assertEqual(fields['message_bits'], bit)
+                self.assertEqual(fields['http_status'], 500)
+                self.assertEqual(fields['webdriver_error'], 'session not created')
+                self.assertEqual(clock.call_count, 1)
+                provider.assert_called_once()
+                connections[0].close.assert_called_once()
+
+    def test_multiple_markers_and_private_suffix_never_leave_bits(self):
+        message = '\n'.join(literal for _bit, literals in browser_probe.DRIVER_MESSAGE_MARKERS for literal in literals)
+        message += '\n/PRIVATE/profile TOKEN-VALUE PRIVATE-stack-data'
+        (_value, error, _driver, context, _connections, _provider, _clock), _raw = self.invoke_message(message)
+        fields = browser_probe.driver_start_fields(context, error)
+        self.assertEqual(fields['message_bits'], 31)
+        self.assertEqual(set(fields), {'operation', 'step', 'exception', 'http_status', 'webdriver_error', 'message_bits'})
+        self.assertNotIn('PRIVATE', json.dumps(fields))
+        for _bit, literals in browser_probe.DRIVER_MESSAGE_MARKERS:
+            for literal in literals:
+                self.assertNotIn(literal, json.dumps(fields))
+
+    def test_unicode_codepoint_prefix_edge_and_partial_marker(self):
+        literal = browser_probe.DRIVER_MESSAGE_MARKERS[0][1][0]
+        at_edge = '\u2603' * (4096 - len(literal)) + literal
+        self.assertGreater(len(at_edge.encode()), 4096)
+        self.assertEqual(browser_probe._driver_message_bits(at_edge + '/PRIVATE/suffix'), 1)
+        self.assertIsNone(browser_probe._driver_message_bits('\u2603' + at_edge))
+        self.assertIsNone(browser_probe._driver_message_bits('x' * 4096 + literal))
+        self.assertIsNone(browser_probe._driver_message_bits(literal[:-1]))
+        (_value, error, _driver, context, _connections, _provider, _clock), _raw = self.invoke_message(at_edge)
+        self.assertEqual(browser_probe.driver_start_fields(context, error)['message_bits'], 1)
+
+    def test_unknown_missing_nonstring_and_subclass_omit_new_key(self):
+        class Text(str):
+            pass
+
+        for message in (None, False, 1, [], {}, '', '/PRIVATE/unknown', Text(browser_probe.DRIVER_MESSAGE_MARKERS[0][1][0])):
+            with self.subTest(message_type=type(message).__name__):
+                self.assertIsNone(browser_probe._driver_message_bits(message))
+        for value in ({'error': 'session not created'}, {'error': 'session not created', 'message': 7},
+                      {'error': 'session not created', 'message': '/PRIVATE/unknown'}):
+            raw = json.dumps({'value': value}).encode()
+            fixture = DriverStartDiagnosticTests('test_success_retains_exact_two_requests_clock_and_close')
+            _value, error, _driver, context, connections, _provider, _clock = fixture.invoke([(500, raw)])
+            self.assertNotIn('message_bits', browser_probe.driver_start_fields(context, error))
+            connections[0].close.assert_called_once()
+
+    def test_old_token_return_seam_and_one_strict_decode_are_retained(self):
+        literal = browser_probe.DRIVER_MESSAGE_MARKERS[0][1][0]
+        raw = json.dumps({'value': {'error': 'session not created', 'message': literal}}).encode()
+        with patch.object(browser_probe, 'decode', wraps=browser_probe.decode) as decoded:
+            self.assertEqual(browser_probe._driver_error_token(raw), 'session not created')
+            decoded.assert_called_once_with(raw, 262144)
+        observation = {'message_bits': 31}
+        with patch.object(browser_probe, 'decode', wraps=browser_probe.decode) as decoded:
+            self.assertEqual(browser_probe._driver_error_token(raw, message_observation=observation), 'session not created')
+            self.assertEqual(observation, {'message_bits': 1})
+            decoded.assert_called_once_with(raw, 262144)
+        with patch.object(browser_probe, '_driver_error_token', wraps=browser_probe._driver_error_token) as seam, \
+             patch.object(browser_probe, 'decode', wraps=browser_probe.decode) as decoded:
+            (_value, error, _driver, context, _connections, _provider, _clock), _raw = self.invoke_message(literal)
+        self.assertEqual(seam.call_count, 1)
+        self.assertEqual(decoded.call_count, 1)
+        self.assertEqual(browser_probe.driver_start_fields(context, error)['message_bits'], 1)
+        self.assertEqual(seam.call_args.args, (_raw,))
+
+    def test_classifier_faults_and_malformed_returns_retain_five_fields(self):
+        literal = browser_probe.DRIVER_MESSAGE_MARKERS[0][1][0]
+        expected = {'operation': 'session-create', 'step': 'response-guard', 'exception': 'gate-refusal',
+                    'http_status': 500, 'webdriver_error': 'session not created'}
+        for interruption in (KeyboardInterrupt('/PRIVATE'), SystemExit(9), MemoryError('/PRIVATE'), RuntimeError('/PRIVATE')):
+            with self.subTest(error_type=type(interruption).__name__), \
+                 patch.object(browser_probe, '_driver_message_bits', side_effect=interruption):
+                (_value, selected, _driver, context, connections, _provider, _clock), _raw = self.invoke_message(literal)
+            self.assertIs(type(selected), contract.GateRefusal)
+            self.assertEqual(selected.args, ('catalogue-gate-contract-refused',))
+            self.assertEqual(browser_probe.driver_start_fields(context, selected), expected)
+            connections[0].close.assert_called_once()
+        class Integer(int):
+            pass
+        for bits in (None, False, True, 0, 32, 1.0, Integer(1), '/PRIVATE'):
+            with self.subTest(bits_type=type(bits).__name__), patch.object(browser_probe, '_driver_message_bits', return_value=bits):
+                (_value, selected, _driver, context, _connections, _provider, _clock), _raw = self.invoke_message(literal)
+            self.assertEqual(browser_probe.driver_start_fields(context, selected), expected)
+
+    def test_wrong_operation_status_and_error_token_drop_only_bits(self):
+        literal = browser_probe.DRIVER_MESSAGE_MARKERS[0][1][0]
+        with patch.object(browser_probe, '_driver_message_bits', wraps=browser_probe._driver_message_bits) as classifier:
+            self.invoke_message(literal, status=501)
+        classifier.assert_not_called()
+        for status, token, timeouts in ((501, 'session not created', False),
+                                       (500, 'unknown error', False), (500, 'session not created', True)):
+            with self.subTest(status=status, token=token, timeouts=timeouts):
+                (_value, error, _driver, context, _connections, provider, _clock), _raw = self.invoke_message(
+                    literal, status=status, token=token, timeouts=timeouts)
+                fields = browser_probe.driver_start_fields(context, error)
+                self.assertNotIn('message_bits', fields)
+                self.assertEqual(fields['http_status'], status)
+                self.assertEqual(fields['webdriver_error'], token)
+                self.assertEqual(fields['operation'], 'session-timeouts' if timeouts else 'session-create')
+                self.assertEqual(provider.call_count, 2 if timeouts else 1)
+        error = contract.GateRefusal('catalogue-gate-contract-refused')
+        context = browser_probe.prepare_driver_start(Mock())
+        context['call'] = (error, {'step': 'response-guard', 'exception': 'other', 'http_status': 500,
+                                 'webdriver_error': 'session not created', 'message_bits': 31})
+        browser_probe._note_driver_start_failure(context, error, 'session-create')
+        fields = browser_probe.driver_start_fields(context, error)
+        self.assertNotIn('message_bits', fields)
+        self.assertEqual(fields['exception'], 'other')
+
+    def test_close_winner_never_inspects_message_or_retains_response_bits(self):
+        selected = RuntimeError('/PRIVATE/close')
+        literal = browser_probe.DRIVER_MESSAGE_MARKERS[0][1][0]
+        with patch.object(browser_probe, '_driver_message_bits', wraps=browser_probe._driver_message_bits) as classifier, \
+             patch.object(browser_probe, 'decode', wraps=browser_probe.decode) as decoded:
+            (_value, error, _driver, context, connections, _provider, _clock), _raw = self.invoke_message(
+                literal, close_error=selected)
+        self.assertIs(error, selected)
+        self.assertEqual(error.args, ('/PRIVATE/close',))
+        self.assertIs(type(error.__context__), contract.GateRefusal)
+        fields = browser_probe.driver_start_fields(context, error)
+        self.assertEqual(fields['step'], 'connection-close')
+        self.assertIsNone(fields['http_status'])
+        self.assertIsNone(fields['webdriver_error'])
+        self.assertNotIn('message_bits', fields)
+        classifier.assert_not_called()
+        decoded.assert_not_called()
+        connections[0].close.assert_called_once()
+
+    def test_validator_closed_positive_types_and_eligible_context(self):
+        fields = {'operation': 'session-create', 'step': 'response-guard', 'exception': 'gate-refusal',
+                  'http_status': 500, 'webdriver_error': 'session not created'}
+        self.assertEqual(contract.driver_start_diagnostic(fields), fields)
+        for bits in range(1, 32):
+            value = {**fields, 'message_bits': bits}
+            self.assertEqual(contract.driver_start_diagnostic(value), value)
+        class Integer(int):
+            pass
+        for bits in (False, True, 0, 32, -1, 1.0, None, Integer(1), '/PRIVATE'):
+            with self.subTest(bits_type=type(bits).__name__), self.assertRaises(contract.GateRefusal):
+                contract.driver_start_diagnostic({**fields, 'message_bits': bits})
+        for key, value in (('operation', 'session-timeouts'), ('step', 'connection-close'),
+                           ('exception', 'other'), ('http_status', 501), ('webdriver_error', 'unknown error')):
+            wrong = {**fields, 'message_bits': 1, key: value}
+            with self.subTest(key=key), self.assertRaises(contract.GateRefusal):
+                contract.driver_start_diagnostic(wrong)
+        with self.assertRaises(contract.GateRefusal):
+            contract.driver_start_diagnostic({**fields, 'message_bits': 1, 'PRIVATE': 1})
+
+    def test_fresh_attachment_roundtrip_reuse_and_poisoned_getter(self):
+        class Poison(ValueError):
+            armed = False
+            partial = False
+            unreadable = False
+            def __setattr__(self, name, value):
+                if name == '_row_driver_start_diagnostic' and self.armed:
+                    if self.partial:
+                        super().__setattr__(name, value)
+                    raise KeyboardInterrupt('/PRIVATE')
+                super().__setattr__(name, value)
+            def __getattribute__(self, name):
+                if name == '_row_driver_start_diagnostic' and self.unreadable:
+                    raise SystemExit(9)
+                return super().__getattribute__(name)
+        fields = {'step': 'response-guard', 'exception': 'gate-refusal', 'http_status': 500,
+                  'webdriver_error': 'session not created', 'message_bits': 31}
+        for partial in (False, True):
+            original = Poison('/PRIVATE-original')
+            old = browser_probe.prepare_driver_start(Mock())
+            old['call'] = (original, fields)
+            browser_probe._note_driver_start_failure(old, original, 'session-create')
+            self.assertEqual(browser_probe.driver_start_fields(old, original)['message_bits'], 31)
+            current = browser_probe.prepare_driver_start(Mock())
+            current['call'] = (original, fields)
+            original.armed, original.partial = True, partial
+            browser_probe._note_driver_start_failure(current, original, 'session-create')
+            self.assertIsNone(current['attached'])
+            self.assertIsNone(browser_probe.driver_start_fields(current, original))
+            self.assertEqual(original.args, ('/PRIVATE-original',))
+        original = Poison('/PRIVATE-original')
+        current = browser_probe.prepare_driver_start(Mock())
+        current['call'] = (original, fields)
+        browser_probe._note_driver_start_failure(current, original, 'session-create')
+        original.unreadable = True
+        self.assertIsNone(browser_probe.driver_start_fields(current, original))
+
+    def test_public_projection_bound_and_publication_interruptions(self):
+        fields = {'operation': 'session-create', 'step': 'response-guard', 'exception': 'gate-refusal',
+                  'http_status': 500, 'webdriver_error': 'session not created', 'message_bits': 31}
+        record = RuntimeDiagnosticTests.refused_record()
+        record['runtime_stage'], record['driver_start'] = 'browser-session-start', fields
+        raw = json.dumps(record).encode()
+        self.assertEqual(contract.public_bytes(raw), raw)
+        output = io.StringIO()
+        with patch.object(host_controller.sys, 'stderr', output):
+            host_controller.emit_runtime_refusal(record)
+        self.assertTrue(output.getvalue().isascii())
+        self.assertLessEqual(len(output.getvalue().encode()), 351)
+        self.assertEqual(json.loads(output.getvalue())['driver_start']['message_bits'], 31)
+        for phase in ('preparation', 'api-read'):
+            wrong = copy.deepcopy(record)
+            wrong['phase'] = phase
+            with self.assertRaises(contract.GateRefusal):
+                contract.public_bytes(json.dumps(wrong).encode())
+        for interruption in (KeyboardInterrupt(), SystemExit(9)):
+            with patch.object(host_controller, 'packed', side_effect=interruption):
+                host_controller.emit_runtime_refusal(record)
+            stream = Mock()
+            stream.write.side_effect = interruption
+            with patch.object(host_controller.sys, 'stderr', stream):
+                host_controller.emit_runtime_refusal(record)
+
+    def test_malformed_decode_and_old_sink_reset_never_expose_stale_bits(self):
+        for raw in (b'{', b'{"value":NaN}', b'{"value":{"error":"session not created","error":"PRIVATE"}}',
+                    b'x' * 262145, b'\xff'):
+            sink = {'message_bits': 31}
+            self.assertIsNone(browser_probe._driver_error_token(raw, message_observation=sink))
+            self.assertNotIn('message_bits', sink)
+        class Sink(dict):
+            def __setitem__(self, _key, _value):
+                raise KeyboardInterrupt('/PRIVATE')
+        literal = browser_probe.DRIVER_MESSAGE_MARKERS[0][1][0]
+        raw = json.dumps({'value': {'error': 'session not created', 'message': literal}}).encode()
+        with patch.object(browser_probe, 'decode', wraps=browser_probe.decode) as decoded:
+            self.assertEqual(browser_probe._driver_error_token(raw, message_observation=Sink()), 'session not created')
+            decoded.assert_called_once_with(raw, 262144)
+        for interruption in (KeyboardInterrupt(), SystemExit(9)):
+            sink = {'message_bits': 31}
+            with patch.object(browser_probe, 'decode', side_effect=interruption):
+                self.assertIsNone(browser_probe._driver_error_token(raw, message_observation=sink))
+            self.assertNotIn('message_bits', sink)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

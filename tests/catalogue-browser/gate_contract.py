@@ -223,7 +223,8 @@ DRIVER_START_ERRORS = (
 
 
 def driver_start_diagnostic(value):
-    exact(value, {'operation', 'step', 'exception', 'http_status', 'webdriver_error'})
+    required = {'operation', 'step', 'exception', 'http_status', 'webdriver_error'}
+    exact(value, required | {'message_bits'} if type(value) is dict and 'message_bits' in value else required)
     for key, allowed in (('operation', DRIVER_START_OPERATIONS), ('step', DRIVER_START_STEPS),
                          ('exception', DRIVER_START_EXCEPTIONS)):
         need(type(value[key]) is str and value[key] in allowed)
@@ -237,6 +238,12 @@ def driver_start_diagnostic(value):
         need(value['step'] == 'start-control')
     if token is not None:
         need(status is not None and status != 200 and value['step'] == 'response-guard')
+    if 'message_bits' in value:
+        bits = value['message_bits']
+        need(type(bits) is int and 1 <= bits <= 31)
+        need(value['operation'] == 'session-create' and value['step'] == 'response-guard'
+             and value['exception'] == 'gate-refusal' and type(status) is int and status == 500
+             and token == 'session not created')
     return value.copy()
 
 

@@ -569,6 +569,26 @@ def inventory_shell(adb, fixed, query_tag):
         raise
 
 
+def _note_chrome_version_shape(error, dump, names, codes):
+    """Fixed lexical counts only; never package/section ownership or cause proof."""
+    try:
+        if (type(error) is not Refusal or type(error.args) is not tuple
+                or error.args != ("actual-package-version-unobserved",)
+                or type(dump) is not str or len(dump) > CHROME_PACKAGE_DUMP_WIRE_LIMIT
+                or type(names) is not list or type(codes) is not list):
+            return
+        observed = {"name_matches": min(len(names), 2), "code_matches": min(len(codes), 2),
+                    "name_labels": min(dump.count("versionName="), 2),
+                    "code_labels": min(dump.count("versionCode="), 2)}
+        if (observed["name_matches"] > observed["name_labels"]
+                or observed["code_matches"] > observed["code_labels"]
+                or (observed["name_matches"] == 1 and observed["code_matches"] == 1)):
+            return
+        error.chrome_version_shape = observed
+    except BaseException:
+        pass  # Optional bounded lexical observation cannot replace the refusal.
+
+
 def package_inventory(adb, package):
     if package != "com.android.chrome":
         raise Refusal("unowned-package-probe")
@@ -576,7 +596,14 @@ def package_inventory(adb, package):
     names = re.findall(r"\bversionName=([0-9]+(?:\.[0-9]+){0,3})\b", dump)
     codes = re.findall(r"\bversionCode=([0-9]{1,12})\b", dump)
     if len(names) != 1 or len(codes) != 1:
-        raise Refusal("actual-package-version-unobserved")
+        try:
+            raise Refusal("actual-package-version-unobserved")
+        except Refusal as error:
+            try:
+                _note_chrome_version_shape(error, dump, names, codes)
+            except BaseException:
+                pass
+            raise
     lines = inventory_shell(adb, "pm path " + package, "chrome-package-paths").decode("ascii").splitlines()
     if not 1 <= len(lines) <= 16 or len(set(lines)) != len(lines):
         raise Refusal("actual-apk-path-inventory-unobserved")

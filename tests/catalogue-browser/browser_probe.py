@@ -181,7 +181,35 @@ def _driver_exception_token(error):
     return 'other'
 
 
-def _driver_error_token(data):
+DRIVER_MESSAGE_PREFIX_CODEPOINTS = 4096
+DRIVER_MESSAGE_MARKERS = (
+    (1, ('Chrome instance exited.',)),
+    (2, ('failed to start:',)),
+    (4, ("DevToolsActivePort file doesn't exist",)),
+    (8, ('Could not remove old devtools port file.',)),
+    (16, ('This version of', 'only supports')),
+)
+
+
+def _driver_message_bits(message):
+    """Positive literal presence in a partial message; never a causal finding."""
+    try:
+        if type(message) is not str:
+            return None
+        prefix = message[:DRIVER_MESSAGE_PREFIX_CODEPOINTS]
+        bits = sum(bit for bit, literals in DRIVER_MESSAGE_MARKERS
+                   if all(literal in prefix for literal in literals))
+        return bits if 1 <= bits <= 31 else None
+    except BaseException:
+        return None
+
+
+def _driver_error_token(data, *, message_observation=None):
+    try:
+        if type(message_observation) is dict:
+            message_observation.pop('message_bits', None)
+    except BaseException:
+        pass
     try:
         if type(data) is not bytes or len(data) > 262144:
             return None
@@ -191,6 +219,13 @@ def _driver_error_token(data):
         token = value['value'].get('error')
         if type(token) is not str:
             return None
+        try:
+            if token == 'session not created' and type(message_observation) is dict:
+                bits = _driver_message_bits(value['value'].get('message'))
+                if type(bits) is int and 1 <= bits <= 31:
+                    message_observation['message_bits'] = bits
+        except BaseException:
+            pass  # New classification faults retain the existing valid error token.
         return token if token in DRIVER_START_ERRORS[:-1] else 'other'
     except BaseException:
         return None
@@ -203,12 +238,26 @@ def _note_driver_call_failure(context, error, step, status, data):
         context['call'] = None
         observed = status if type(status) is int and 100 <= status <= 599 else None
         token = None
+        message_observation = None
         if step == 'connection-close':
             observed = None
         elif step == 'response-guard' and observed is not None and observed != 200:
-            token = _driver_error_token(data)
-        context['call'] = (error, {'step': step, 'exception': _driver_exception_token(error),
-                                   'http_status': observed, 'webdriver_error': token})
+            if observed == 500:
+                try:
+                    message_observation = {}
+                except BaseException:
+                    pass
+            token = _driver_error_token(data, message_observation=message_observation)
+        fields = {'step': step, 'exception': _driver_exception_token(error),
+                  'http_status': observed, 'webdriver_error': token}
+        try:
+            if observed == 500 and token == 'session not created' and type(message_observation) is dict:
+                bits = message_observation.get('message_bits')
+                if type(bits) is int and 1 <= bits <= 31:
+                    fields['message_bits'] = bits
+        except BaseException:
+            pass
+        context['call'] = (error, fields)
     except BaseException:
         pass
 
@@ -224,6 +273,10 @@ def _note_driver_start_failure(context, error, operation):
         if (operation in ('session-create', 'session-timeouts') and type(call) is tuple
                 and len(call) == 2 and call[0] is error and type(call[1]) is dict):
             fields.update(call[1])
+        if (fields['operation'] != 'session-create' or fields['step'] != 'response-guard'
+                or fields['exception'] != 'gate-refusal' or type(fields['http_status']) is not int
+                or fields['http_status'] != 500 or fields['webdriver_error'] != 'session not created'):
+            fields.pop('message_bits', None)
         fields = driver_start_diagnostic(fields)
         snapshot = (context['token'], fields)
         error._row_driver_start_diagnostic = snapshot

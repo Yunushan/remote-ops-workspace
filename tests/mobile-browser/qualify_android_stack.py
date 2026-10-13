@@ -475,6 +475,32 @@ def inventory_query_tag_diagnostic(exc):
     return None
 
 
+def chrome_version_shape_diagnostic(exc):
+    """Independent closed lexical buckets; no values, messages or raw dump."""
+    try:
+        if (type(exc) is not H.Refusal or type(exc.args) is not tuple
+                or exc.args != ("actual-package-version-unobserved",)):
+            return None
+        state = exc.__dict__
+        if type(state) is not dict:
+            return None
+        value = state.get("chrome_version_shape")
+        keys = ("name_matches", "code_matches", "name_labels", "code_labels")
+        if (type(value) is not dict or len(value) != len(keys)
+                or any(type(key) is not str for key in value) or set(value) != set(keys)):
+            return None
+        if any(type(value[key]) is not int or not 0 <= value[key] <= 2 for key in keys):
+            return None
+        if (value["name_matches"] > value["name_labels"]
+                or value["code_matches"] > value["code_labels"]
+                or (value["name_matches"] == 1 and value["code_matches"] == 1)):
+            return None
+        return {key: value[key] for key in keys}
+    except BaseException:
+        pass
+    return None
+
+
 def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
@@ -509,6 +535,10 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
         observed = inventory_query_tag_diagnostic(exc)
         if observed is not None:
             record["adb_query_tag"] = observed
+    if code == "actual-package-version-unobserved" and phase == "chrome-static-device-inventory":
+        observed = chrome_version_shape_diagnostic(exc)
+        if observed is not None:
+            record["chrome_version_shape"] = observed
     if code == "tree-total-byte-bound" and phase == "sdk-observation":
         observed = sdk_tree_limit_diagnostic(exc)
         if observed is not None:

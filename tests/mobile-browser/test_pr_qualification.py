@@ -2212,5 +2212,345 @@ class VanishedDescriptorTests(unittest.TestCase):
                 table.__exit__.assert_called_once()
 
 
+class ChromeDumpWireBudgetTests(unittest.TestCase):
+    FIXED = "dumpsys package com.android.chrome"
+    SERVICE = "shell,v2,raw:dumpsys package com.android.chrome"
+    APK = "/product/app/Chrome/Chrome.apk"
+
+    @staticmethod
+    def frame(kind, payload):
+        return bytes((kind,)) + len(payload).to_bytes(4, "little") + payload
+
+    @classmethod
+    def wire(cls, stdout):
+        chunks = [cls.frame(1, stdout[index:index + 65536]) for index in range(0, len(stdout), 65536)]
+        return b"".join(chunks) + cls.frame(3, b"\0")
+
+    @classmethod
+    def dump(cls, version=b"123.0", suffix=b""):
+        return b"padding=" + b"x" * 65536 + b"\nversionName=" + version + b" versionCode=456\n" + suffix
+
+    @contextmanager
+    def transport(self, wire, *, transport=True, clock=None, live_error=None, listener_error=None,
+                  provider_error=None, receive_error=None, close_error=None):
+        data = bytearray((b"OKAYOKAY" if transport else b"OKAY") + wire)
+        connection = mock.MagicMock()
+        connection.__enter__.return_value = connection
+        connection.__exit__.return_value = False
+        if close_error is not None:
+            connection.__exit__.side_effect = close_error
+        state = {"eof": False}
+
+        def receive(size):
+            self.assertIs(type(size), int)
+            self.assertGreater(size, 0)
+            self.assertLessEqual(size, 65536)
+            if receive_error is not None:
+                raise receive_error
+            result = bytes(data[:size])
+            del data[:size]
+            state["eof"] = not result
+            return result
+
+        connection.recv.side_effect = receive
+        server = SimpleNamespace(live=mock.Mock(side_effect=live_error))
+        listener = mock.Mock(side_effect=listener_error)
+        with ExitStack() as patches:
+            provider = patches.enter_context(mock.patch.object(H.socket, "create_connection",
+                side_effect=provider_error, return_value=connection))
+            process = patches.enter_context(mock.patch.object(H.subprocess, "Popen"))
+            thread = patches.enter_context(mock.patch.object(H.threading, "Thread"))
+            client = H.AdbSocket(server, clock=(lambda: 0) if clock is None else clock, listener=listener)
+            yield client, connection, provider, server, listener, state
+            process.assert_not_called()
+            thread.assert_not_called()
+
+    def test_complete_multiframe_dump_has_only_exact_query_allowance(self):
+        payload = self.dump()
+        wire = self.wire(payload)
+        self.assertGreater(len(wire), 65536)
+        with self.transport(wire) as (client, connection, provider, server, listener, _state):
+            self.assertEqual(client.shell(self.FIXED), payload)
+            provider.assert_called_once_with(("127.0.0.1", 5039), timeout=30)
+            self.assertEqual(server.live.call_count, 2)
+            listener.assert_called_once_with(server, 5039)
+            self.assertEqual([call.args[0][4:] for call in connection.sendall.call_args_list],
+                             [("host:transport:" + H.SERIAL).encode(), self.SERVICE.encode()])
+            connection.__exit__.assert_called_once()
+        self.assertEqual(H.shell_v2(wire, service=self.SERVICE), payload)
+        with self.assertRaisesRegex(H.Refusal, "adb-shell-v2-total-bound"):
+            H.shell_v2(wire)
+        for fixed in ("getprop ro.build.version.sdk", "cat /proc/net/unix", self.FIXED + " "):
+            with self.subTest(fixed=fixed), self.transport(wire) as (client, connection, _provider, _server, _listener, _state):
+                with self.assertRaisesRegex(H.Refusal, "adb-output-bound"):
+                    client.shell(fixed)
+                connection.__exit__.assert_called_once()
+
+    def test_exact_total_wire_boundary_and_one_byte_sentinel(self):
+        payload = b"x" * (1048576 - 86)  # 16 stdout headers and one six-byte zero exit.
+        wire = self.wire(payload)
+        self.assertEqual(len(wire), 1048576)
+        with self.transport(wire) as (client, connection, _provider, _server, _listener, _state):
+            self.assertEqual(client.shell(self.FIXED), payload)
+            connection.__exit__.assert_called_once()
+        with self.transport(wire + b"x") as (client, connection, _provider, _server, _listener, _state):
+            with self.assertRaisesRegex(H.Refusal, "adb-output-bound"):
+                client.shell(self.FIXED)
+            self.assertEqual(connection.recv.call_args_list[-1], mock.call(1))
+            connection.__exit__.assert_called_once()
+        with self.transport(b"x" * 65537) as (client, connection, _provider, _server, _listener, _state):
+            with self.assertRaisesRegex(H.Refusal, "adb-output-bound"):
+                client.shell("getprop ro.product.cpu.abi")
+            self.assertEqual(connection.recv.call_args_list[-1], mock.call(1))
+            connection.__exit__.assert_called_once()
+        with self.transport(b"x" * 65, transport=False) as (client, connection, _provider, _server, _listener, _state):
+            with self.assertRaisesRegex(H.Refusal, "adb-output-bound"):
+                client.command("ordinary-forward", limit=64)
+            connection.__exit__.assert_called_once()
+
+    def test_command_limit_types_refuse_before_active_owner_and_provider(self):
+        class IntegerAlias(int):
+            pass
+
+        for limit in (False, True, 0, -1, 1.0, None, "PRIVATE", IntegerAlias(1048576),
+                      65537, 1048575, 1048577):
+            with self.subTest(limit_type=type(limit).__name__), self.transport(b"") as (client, _connection, provider, server, listener, _state):
+                with self.assertRaisesRegex(H.Refusal, "adb-query-wire-budget"):
+                    client.command(self.SERVICE, transport=True, limit=limit)
+                server.live.assert_not_called()
+                listener.assert_not_called()
+                provider.assert_not_called()
+
+    def test_special_command_context_is_independent_of_parser_and_query_tag(self):
+        class StringAlias(str):
+            pass
+
+        rows = (("PRIVATE", True, False), (StringAlias(self.SERVICE), True, False),
+                (self.SERVICE + " ", True, False), (self.SERVICE, False, False),
+                (self.SERVICE, 1, False), (self.SERVICE, None, False),
+                (self.SERVICE, True, True), (self.SERVICE, True, 0), (self.SERVICE, True, None))
+        for service, transport, framed in rows:
+            with self.subTest(service_type=type(service).__name__, transport=transport, framed=framed), self.transport(b"") as (client, _connection, provider, server, listener, _state):
+                with self.assertRaisesRegex(H.Refusal, "adb-query-wire-budget"):
+                    client.command(service, transport=transport, framed=framed, limit=1048576)
+                server.live.assert_not_called()
+                listener.assert_not_called()
+                provider.assert_not_called()
+        with self.transport(b"x" * 65537) as (client, connection, _provider, _server, _listener, _state):
+            with self.assertRaises(H.Refusal) as caught:
+                H.inventory_shell(client, "cat /proc/net/unix", "chrome-package-dump")
+            self.assertEqual(caught.exception.args, ("adb-output-bound",))
+            self.assertEqual(caught.exception.adb_query_tag, "chrome-package-dump")
+            connection.__exit__.assert_called_once()
+        with self.transport(self.wire(self.dump())) as (client, connection, _provider, _server, _listener, _state):
+            with self.assertRaisesRegex(H.Refusal, "adb-output-bound"):
+                client.shell(StringAlias(self.FIXED))
+            connection.__exit__.assert_called_once()
+
+    def test_parser_context_is_closed_and_default_remains_small(self):
+        class StringAlias(str):
+            pass
+
+        for service in (False, True, 1, {}, [], "PRIVATE", self.SERVICE + "\n", StringAlias(self.SERVICE)):
+            with self.subTest(service_type=type(service).__name__):
+                with self.assertRaisesRegex(H.Refusal, "adb-shell-v2-query-context"):
+                    H.shell_v2(self.wire(b"ok"), service=service)
+        with self.assertRaisesRegex(H.Refusal, "adb-shell-v2-total-bound"):
+            H.shell_v2(self.wire(self.dump()), service=None)
+        with self.assertRaisesRegex(TypeError, "limit"):
+            H.shell_v2(self.wire(b"ok"), limit=1048576)
+
+    def test_special_total_preserves_all_frame_packet_and_exit_refusals(self):
+        cases = (
+            (self.frame(1, b"x" * 65537) + self.frame(3, b"\0"), "adb-shell-v2-payload-bound"),
+            (self.frame(1, b"") * 1025 + self.frame(3, b"\0"), "adb-shell-v2-packet-layout"),
+            (b"\x01\x00", "adb-shell-v2-packet-layout"),
+            (b"\x01\x0c\x00\x00\x00x", "adb-shell-v2-payload-bound"),
+            (self.frame(2, b"PRIVATE") + self.frame(3, b"\0"), "adb-shell-v2-nonzero-stderr-or-type"),
+            (self.frame(4, b"") + self.frame(3, b"\0"), "adb-shell-v2-nonzero-stderr-or-type"),
+            (self.frame(1, b"x"), "adb-shell-v2-zero-exit-unproved"),
+            (self.frame(3, b"\x01"), "adb-shell-v2-nonzero-stderr-or-type"),
+            (self.frame(3, b"\0") * 2, "adb-shell-v2-packet-layout"),
+            (self.frame(3, b"\0") + b"tail", "adb-shell-v2-packet-layout"),
+        )
+        for raw, code in cases:
+            with self.subTest(code=code), self.assertRaises(H.Refusal) as caught:
+                H.shell_v2(raw, service=self.SERVICE)
+            self.assertEqual(caught.exception.args, (code,))
+        valid = self.frame(2, b"") + self.wire(b"ok")
+        self.assertEqual(H.shell_v2(valid, service=self.SERVICE), b"ok")
+
+        class BytesAlias(bytes):
+            pass
+
+        self.assertEqual(H.shell_v2(BytesAlias(valid), service=self.SERVICE), b"ok")
+        for raw in (None, False, bytearray(valid)):
+            with self.subTest(raw_type=type(raw).__name__), self.assertRaisesRegex(H.Refusal, "adb-shell-v2-total-bound"):
+                H.shell_v2(raw, service=self.SERVICE)
+
+    def test_full_large_package_inventory_keeps_exact_four_positional_queries(self):
+        client = H.AdbSocket(SimpleNamespace(live=mock.Mock()), listener=mock.Mock())
+        responses = (self.wire(self.dump()), self.wire(("package:" + self.APK + "\n").encode()),
+                     self.wire(("a" * 64 + " " + self.APK + "\n").encode()), self.wire(b"123\n"))
+        with mock.patch.object(client, "command", side_effect=responses) as command, mock.patch.object(H.socket, "create_connection") as provider:
+            observed = H.package_inventory(client, "com.android.chrome")
+            self.assertEqual(observed, {"package": "com.android.chrome", "version": "123.0", "version_code": "456",
+                "apks": [{"path": self.APK, "sha256": "a" * 64, "bytes": 123}],
+                "publisher_signing_trust": "not-approved-by-this-test"})
+            self.assertEqual(command.call_args_list, [
+                mock.call(self.SERVICE, transport=True, limit=1048576),
+                mock.call("shell,v2,raw:pm path com.android.chrome", transport=True),
+                mock.call("shell,v2,raw:sha256sum " + self.APK, transport=True),
+                mock.call("shell,v2,raw:stat -c %s " + self.APK, transport=True)])
+            provider.assert_not_called()
+
+    def test_duplicate_versions_beyond_old_boundary_stop_before_later_query(self):
+        for suffix in (b"versionName=123.0\n", b"versionCode=456\n"):
+            client = H.AdbSocket(SimpleNamespace(live=mock.Mock()), listener=mock.Mock())
+            with self.subTest(suffix=suffix), mock.patch.object(client, "command", return_value=self.wire(self.dump(suffix=suffix))) as command:
+                with self.assertRaisesRegex(H.Refusal, "actual-package-version-unobserved"):
+                    H.package_inventory(client, "com.android.chrome")
+                command.assert_called_once_with(self.SERVICE, transport=True, limit=1048576)
+
+    def test_large_dump_does_not_relax_path_digest_or_size_inventory(self):
+        good = [self.wire(self.dump()), self.wire(("package:" + self.APK + "\n").encode()),
+                self.wire(("a" * 64 + " " + self.APK + "\n").encode()), self.wire(b"123\n")]
+        rows = ((1, self.wire(("package:" + self.APK + "\n").encode() * 2), "actual-apk-path-inventory-unobserved"),
+                (1, self.wire(b"package:/product/../PRIVATE.apk\n"), "apk-path-bound"),
+                (2, self.wire(b"a" * 64 + b" /wrong.apk\n"), "actual-apk-digest-layout"),
+                (2, self.wire(("invalid-digest " + self.APK + "\n").encode()), "unobserved-exact-digest"),
+                (3, self.wire(b"0\n"), "actual-apk-size-layout"))
+        for index, raw, code in rows:
+            responses = [*good[:index], raw]
+            client = H.AdbSocket(SimpleNamespace(live=mock.Mock()), listener=mock.Mock())
+            with self.subTest(code=code), mock.patch.object(client, "command", side_effect=responses) as command:
+                with self.assertRaisesRegex(H.Refusal, code):
+                    H.package_inventory(client, "com.android.chrome")
+                self.assertEqual(command.call_count, index + 1)
+        unused = SimpleNamespace(shell=mock.Mock())
+        with self.assertRaisesRegex(H.Refusal, "unowned-package-probe"):
+            H.package_inventory(unused, "PRIVATE")
+        unused.shell.assert_not_called()
+
+    def test_original_owner_listener_deadline_and_late_completion_still_refuse(self):
+        for kind in ("live", "listener"):
+            original = H.Refusal("original-owned-guard")
+            kwargs = {"live_error" if kind == "live" else "listener_error": original}
+            with self.subTest(kind=kind), self.transport(self.wire(b"ok"), **kwargs) as (client, _connection, provider, _server, _listener, _state):
+                with self.assertRaises(H.Refusal) as caught:
+                    client.shell(self.FIXED)
+                self.assertIs(caught.exception, original)
+                provider.assert_not_called()
+        clock = mock.Mock(side_effect=(0, 30))
+        with self.transport(self.wire(b"ok"), clock=clock) as (client, connection, _provider, _server, _listener, _state):
+            with self.assertRaisesRegex(H.Refusal, "adb-original-command-deadline"):
+                client.shell(self.FIXED)
+            connection.recv.assert_not_called()
+            connection.__exit__.assert_called_once()
+        with self.transport(self.wire(b"ok")) as (client, connection, _provider, server, _listener, state):
+            client.clock = lambda: 31 if state["eof"] else 0
+            with self.assertRaisesRegex(H.Refusal, "adb-late-completed-command"):
+                client.shell(self.FIXED)
+            self.assertEqual(server.live.call_count, 2)
+            connection.__exit__.assert_called_once()
+
+    def test_socket_errors_and_finally_selected_close_keep_identity(self):
+        for kind in ("provider", "read"):
+            original = OSError("/PRIVATE")
+            kwargs = {"provider_error" if kind == "provider" else "receive_error": original}
+            with self.subTest(kind=kind), self.transport(self.wire(b"ok"), **kwargs) as (client, connection, _provider, _server, _listener, _state):
+                with self.assertRaises(OSError) as caught:
+                    client.shell(self.FIXED)
+                self.assertIs(caught.exception, original)
+                if kind == "read":
+                    connection.__exit__.assert_called_once()
+                else:
+                    connection.__exit__.assert_not_called()
+        close = RuntimeError("/PRIVATE/close")
+        with self.transport(b"x" * 1048577, close_error=close) as (client, connection, _provider, _server, _listener, _state):
+            with self.assertRaises(RuntimeError) as caught:
+                client.shell(self.FIXED)
+            self.assertIs(caught.exception, close)
+            self.assertIs(type(close.__context__), H.Refusal)
+            self.assertEqual(close.__context__.args, ("adb-output-bound",))
+            connection.__exit__.assert_called_once()
+
+    def test_capture_larger_before_after_inventory_mismatch_keeps_cleanup_and_zero_credit(self):
+        with fixture() as root:
+            (root / ".tmp").mkdir()
+            sdk = root / "owned-sdk"
+            leaders = [SimpleNamespace(child=SimpleNamespace(stdin=mock.Mock()), zero=mock.Mock(),
+                live=mock.Mock(), buffers=[bytearray(), bytearray()]) for _ in range(3)]
+            born, queried, dumps = [], [], []
+
+            def managed(argv, env, cwd):
+                self.assertLess(len(born), 3)
+                self.assertIs(cwd, root)
+                self.assertEqual(env["ADB_SERVER_SOCKET"], "tcp:127.0.0.1:5039")
+                leader = leaders[len(born)]
+                born.append(leader)
+                return leader
+
+            def command(service, **kwargs):
+                queried.append((service, kwargs))
+                if service == "host:devices":
+                    return (H.SERIAL + "\tdevice\n").encode()
+                if service == "shell,v2,raw:getprop sys.boot_completed":
+                    return self.wire(b"1\n")
+                if service == "shell,v2,raw:getprop ro.build.version.sdk":
+                    return self.wire(b"36\n")
+                if service == "shell,v2,raw:getprop ro.product.cpu.abi":
+                    return self.wire(b"x86_64\n")
+                if service == self.SERVICE:
+                    self.assertEqual(kwargs, {"transport": True, "limit": 1048576})
+                    dumps.append(service)
+                    return self.wire(self.dump(version=b"123.0" if len(dumps) == 1 else b"124.0"))
+                if service == "shell,v2,raw:pm path com.android.chrome":
+                    return self.wire(("package:" + self.APK + "\n").encode())
+                if service == "shell,v2,raw:sha256sum " + self.APK:
+                    return self.wire(("a" * 64 + " " + self.APK + "\n").encode())
+                if service == "shell,v2,raw:stat -c %s " + self.APK:
+                    return self.wire(b"123\n")
+                self.assertEqual(service, "shell,v2,raw:cat /proc/net/unix")
+                return self.wire(b"header\n")
+
+            client = H.AdbSocket(leaders[1], clock=lambda: 0, listener=mock.Mock())
+            with ExitStack() as patches:
+                patches.enter_context(mock.patch.object(client, "command", side_effect=command))
+                patches.enter_context(mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True))
+                patches.enter_context(mock.patch.object(Q, "event_guard", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "commands", return_value=(object(), 0)))
+                patches.enter_context(mock.patch.object(Q, "source_binding", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=({}, {})))
+                patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
+                patches.enter_context(mock.patch.object(Q, "sdk_inventory", return_value={"tree_sha256": "e" * 64}))
+                patches.enter_context(mock.patch.object(Q.time, "monotonic", return_value=0))
+                reservations = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=[mock.MagicMock() for _ in range(3)]))
+                provider = patches.enter_context(mock.patch.object(H, "Managed", side_effect=managed))
+                patches.enter_context(mock.patch.object(H, "owned_listener", return_value=None))
+                patches.enter_context(mock.patch.object(H, "AdbSocket", return_value=client))
+                cleanup = patches.enter_context(mock.patch.object(H, "cleanup_all", return_value=[]))
+                receipt = patches.enter_context(mock.patch.object(Q, "public_receipt"))
+                process = patches.enter_context(mock.patch.object(H.subprocess, "Popen"))
+                connect = patches.enter_context(mock.patch.object(H.socket, "create_connection"))
+                stream = io.StringIO()
+                patches.enter_context(mock.patch.object(sys, "stderr", stream))
+                with self.assertRaisesRegex(H.Refusal, "qualification-current-source-tool-or-device-changed"):
+                    Q.capture(root)
+                self.assertEqual(len(queried), 13)
+                self.assertEqual(len(dumps), 2)
+                self.assertEqual(provider.call_count, 3)
+                self.assertEqual(reservations.call_count, 3)
+                cleanup.assert_called_once_with(born)
+                receipt.assert_called_once()
+                self.assertEqual(receipt.call_args.args[1]["status"], "refused")
+                self.assertFalse(receipt.call_args.args[1]["approval"])
+                self.assertEqual(receipt.call_args.args[1]["readiness_credit"], 0)
+                self.assertNotIn("padding", json.dumps(receipt.call_args.args[1]))
+                self.assertNotIn("adb_query_tag", json.loads(stream.getvalue()))
+                process.assert_not_called()
+                connect.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

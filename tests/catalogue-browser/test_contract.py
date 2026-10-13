@@ -958,5 +958,300 @@ class RuntimeStartupDiagnosticTests(unittest.TestCase):
                     self.assertEqual(contract.public_bytes(raw), raw)
 
 
+class DriverStartDiagnosticTests(unittest.TestCase):
+    GOOD = b'{"value":{"sessionId":"owned-session","capabilities":{"observed":true}}}'
+    OK = b'{"value":null}'
+    ERROR = b'{"value":{"error":"session not created","message":"PRIVATE-path-and-token","stacktrace":"PRIVATE-stack","data":{"path":"PRIVATE"}}}'
+
+    def invoke(self, responses, *, request_error=None, close_error=None, deadline=200):
+        connections = []
+        for status, raw in responses:
+            response = Mock(status=status)
+            response.read.return_value = raw
+            connection = Mock()
+            connection.getresponse.return_value = response
+            connections.append(connection)
+        if request_error is not None:
+            connections[0].request.side_effect = request_error
+        if close_error is not None:
+            connections[0].close.side_effect = close_error
+        driver = browser_probe.Driver(12345, deadline)
+        context = browser_probe.prepare_driver_start(driver)
+        with patch.object(browser_probe.time, 'monotonic', return_value=100) as clock, \
+             patch.object(browser_probe.http.client, 'HTTPConnection', side_effect=connections) as provider:
+            try:
+                value = driver.start('/fixed/chrome', '/PRIVATE/profile')
+            except BaseException as error:
+                value, selected = None, error
+            else:
+                selected = None
+        return value, selected, driver, context, connections, provider, clock
+
+    def test_success_retains_exact_two_requests_clock_and_close(self):
+        value, error, driver, context, connections, provider, clock = self.invoke([(200, self.GOOD), (200, self.OK)])
+        self.assertEqual(value, {'observed': True})
+        self.assertIsNone(error)
+        self.assertIsNone(context['attached'])
+        self.assertEqual(driver.session, 'owned-session')
+        self.assertEqual(clock.call_count, 2)
+        self.assertEqual(provider.call_args_list, [unittest.mock.call('127.0.0.1', 12345, timeout=10)] * 2)
+        first, second = (connection.request.call_args for connection in connections)
+        self.assertEqual(first.args[:2], ('POST', '/session'))
+        self.assertEqual(second.args[:2], ('POST', '/session/owned-session/timeouts'))
+        caps = json.loads(first.kwargs['body'])['capabilities']['alwaysMatch']
+        self.assertEqual(caps['goog:chromeOptions']['binary'], '/fixed/chrome')
+        self.assertFalse(caps['goog:chromeOptions']['detach'])
+        self.assertNotIn('--no-sandbox', caps['goog:chromeOptions']['args'])
+        self.assertEqual(json.loads(second.kwargs['body']), {'script': 10000, 'pageLoad': 10000, 'implicit': 0})
+        for connection in connections:
+            connection.close.assert_called_once()
+            connection.getresponse.return_value.read.assert_called_once_with(262145)
+
+    def test_non200_boundaries_preserve_original_refusal_and_private_body(self):
+        for responses, operation, count in (([(500, self.ERROR)], 'session-create', 1),
+                                           ([(200, self.GOOD), (500, self.ERROR)], 'session-timeouts', 2)):
+            with self.subTest(operation=operation):
+                _value, error, driver, context, connections, provider, clock = self.invoke(responses)
+                self.assertIs(type(error), contract.GateRefusal)
+                self.assertEqual(error.args, ('catalogue-gate-contract-refused',))
+                fields = browser_probe.driver_start_fields(context, error)
+                self.assertEqual(fields, {'operation': operation, 'step': 'response-guard', 'exception': 'gate-refusal',
+                                          'http_status': 500, 'webdriver_error': 'session not created'})
+                self.assertNotIn('PRIVATE', json.dumps(fields))
+                self.assertEqual(provider.call_count, count)
+                self.assertEqual(clock.call_count, count)
+                self.assertEqual(driver.session, None if count == 1 else 'owned-session')
+                for connection in connections:
+                    connection.close.assert_called_once()
+
+    def test_decode_envelope_result_and_capability_failures(self):
+        cases = ((b'{', 'response-decode', 'session-create'), (b'\xff', 'response-decode', 'session-create'),
+                 (b'{"value":{},"value":{}}', 'response-decode', 'session-create'),
+                 (b'{"value":NaN}', 'response-decode', 'session-create'),
+                 (b'{}', 'value-envelope', 'session-create'),
+                 (b'{"value":{"sessionId":"PRIVATE/id"}}', 'start-control', 'session-result'),
+                 (b'{"value":{"sessionId":"owned-session"}}', 'start-control', 'session-capabilities'))
+        for raw, step, operation in cases:
+            with self.subTest(step=step, operation=operation, raw=raw[:20]):
+                _value, error, _driver, context, connections, provider, _clock = self.invoke([(200, raw)])
+                self.assertIsNotNone(error)
+                fields = browser_probe.driver_start_fields(context, error)
+                self.assertEqual((fields['step'], fields['operation']), (step, operation))
+                if step == 'start-control':
+                    self.assertIsNone(fields['http_status'])
+                self.assertIsNone(fields['webdriver_error'])
+                self.assertEqual(provider.call_count, 1)
+                connections[0].close.assert_called_once()
+
+    def test_body_bound_and_exact_status_types_remain_refusal(self):
+        class Status(int):
+            pass
+
+        for status, raw in ((200, b'x' * 262145), (True, self.ERROR), (None, self.ERROR),
+                            (500.0, self.ERROR), (99, self.ERROR), (600, self.ERROR), (Status(500), self.ERROR)):
+            with self.subTest(status=status, length=len(raw)):
+                _value, error, _driver, context, connections, _provider, _clock = self.invoke([(status, raw)])
+                self.assertIs(type(error), contract.GateRefusal)
+                fields = browser_probe.driver_start_fields(context, error)
+                self.assertEqual(fields['step'], 'response-guard')
+                self.assertIsNone(fields['webdriver_error'])
+                self.assertEqual(fields['http_status'], 200 if status == 200 else None)
+                connections[0].getresponse.return_value.read.assert_called_once_with(262145)
+                connections[0].close.assert_called_once()
+
+    def test_original_status_property_is_sampled_once(self):
+        class Response:
+            reads = 0
+
+            @property
+            def status(self):
+                self.reads += 1
+                return 500
+
+            def read(self, maximum):
+                self.maximum = maximum
+                return DriverStartDiagnosticTests.ERROR
+
+        response, connection = Response(), Mock()
+        connection.getresponse.return_value = response
+        driver = browser_probe.Driver(12345, 200)
+        context = browser_probe.prepare_driver_start(driver)
+        with patch.object(browser_probe.time, 'monotonic', return_value=100), \
+             patch.object(browser_probe.http.client, 'HTTPConnection', return_value=connection):
+            with self.assertRaises(contract.GateRefusal) as caught:
+                driver.start('/fixed/chrome', '/PRIVATE/profile')
+        self.assertEqual(response.reads, 1)
+        self.assertEqual(response.maximum, 262145)
+        self.assertEqual(browser_probe.driver_start_fields(context, caught.exception)['http_status'], 500)
+        connection.close.assert_called_once()
+
+    def test_deadline_transport_and_unknown_exception_identity(self):
+        _value, error, _driver, context, connections, provider, _clock = self.invoke([(200, self.GOOD)], deadline=99)
+        self.assertIs(type(error), contract.GateRefusal)
+        self.assertEqual(browser_probe.driver_start_fields(context, error)['step'], 'call-preflight')
+        provider.assert_not_called()
+        connections[0].close.assert_not_called()
+        for original, token in ((TimeoutError('PRIVATE'), 'timeout'), (ConnectionRefusedError('PRIVATE'), 'connection-refused'),
+                                (ConnectionResetError('PRIVATE'), 'connection-reset'),
+                                (browser_probe.http.client.RemoteDisconnected('PRIVATE'), 'remote-disconnected'),
+                                (KeyboardInterrupt('PRIVATE'), 'interrupted'), (SystemExit(7), 'interrupted')):
+            with self.subTest(token=token):
+                _value, selected, _driver, context, connections, provider, _clock = self.invoke([(200, self.GOOD)], request_error=original)
+                self.assertIs(selected, original)
+                fields = browser_probe.driver_start_fields(context, selected)
+                self.assertEqual((fields['step'], fields['exception']), ('request-send', token))
+                self.assertNotIn('PRIVATE', json.dumps(fields))
+                provider.assert_called_once()
+                connections[0].close.assert_called_once()
+
+    def test_finally_selected_close_error_wins_without_body_observations(self):
+        for status, raw in ((200, self.GOOD), (500, self.ERROR)):
+            original = RuntimeError('PRIVATE-close')
+            with self.subTest(raw=raw[:20]):
+                _value, selected, _driver, context, connections, _provider, _clock = self.invoke([(status, raw)], close_error=original)
+                self.assertIs(selected, original)
+                self.assertEqual(selected.args, ('PRIVATE-close',))
+                if status == 200:
+                    self.assertIsNone(selected.__context__)
+                else:
+                    self.assertIs(type(selected.__context__), contract.GateRefusal)
+                fields = browser_probe.driver_start_fields(context, selected)
+                self.assertEqual(fields['step'], 'connection-close')
+                self.assertIsNone(fields['http_status'])
+                self.assertIsNone(fields['webdriver_error'])
+                connections[0].close.assert_called_once()
+
+    def test_unknown_malformed_and_interrupted_error_inspection_is_inert(self):
+        for raw, token in ((b'{"value":{"error":"PRIVATE-other"}}', 'other'),
+                           (b'{"value":{"error":7}}', None), (b'{', None),
+                           (b'{"value":{"error":"unknown error","error":"PRIVATE"}}', None),
+                           (b'x' * 262145, None)):
+            with self.subTest(token=token, length=len(raw)):
+                _value, error, _driver, context, _connections, _provider, _clock = self.invoke([(500, raw)])
+                self.assertIs(type(error), contract.GateRefusal)
+                self.assertEqual(browser_probe.driver_start_fields(context, error)['webdriver_error'], token)
+        for interruption in (KeyboardInterrupt(), SystemExit(9)):
+            with patch.object(browser_probe, 'decode', side_effect=interruption):
+                _value, error, _driver, context, connections, _provider, _clock = self.invoke([(500, self.ERROR)])
+            self.assertIs(type(error), contract.GateRefusal)
+            self.assertIsNone(browser_probe.driver_start_fields(context, error)['webdriver_error'])
+            connections[0].close.assert_called_once()
+
+    def test_reused_exception_failed_or_partial_annotation_never_projects_stale(self):
+        class Poison(ValueError):
+            armed = False
+            partial = False
+
+            def __setattr__(self, name, value):
+                if name == '_row_driver_start_diagnostic' and self.armed:
+                    if self.partial:
+                        super().__setattr__(name, value)
+                    raise KeyboardInterrupt('PRIVATE-poison')
+                super().__setattr__(name, value)
+
+        for partial in (False, True):
+            original = Poison('PRIVATE-original')
+            old_context = {'token': object(), 'active': True, 'call': None, 'attached': None}
+            browser_probe._note_driver_start_failure(old_context, original, 'session-create')
+            self.assertIsNotNone(browser_probe.driver_start_fields(old_context, original))
+            original.partial, original.armed = partial, True
+            _value, selected, _driver, context, connections, _provider, _clock = self.invoke([(200, self.GOOD)], request_error=original)
+            self.assertIs(selected, original)
+            self.assertEqual(selected.args, ('PRIVATE-original',))
+            self.assertIsNone(context['attached'])
+            self.assertIsNone(browser_probe.driver_start_fields(context, selected))
+            connections[0].close.assert_called_once()
+
+    def test_poisoned_read_or_context_setup_omits_diagnostic(self):
+        class Poison(ValueError):
+            armed = False
+
+            def __getattribute__(self, name):
+                if name == '_row_driver_start_diagnostic' and self.armed:
+                    raise SystemExit(9)
+                return super().__getattribute__(name)
+
+        original = Poison('PRIVATE')
+        _value, selected, _driver, context, _connections, _provider, _clock = self.invoke([(200, self.GOOD)], request_error=original)
+        self.assertIsNotNone(browser_probe.driver_start_fields(context, selected))
+        original.armed = True
+        self.assertIsNone(browser_probe.driver_start_fields(context, selected))
+
+        class BadDriver:
+            def __setattr__(self, _name, _value):
+                raise KeyboardInterrupt()
+
+        bad_context = browser_probe.prepare_driver_start(BadDriver())
+        self.assertFalse(bad_context['active'])
+        self.assertIsNone(browser_probe.driver_start_fields(bad_context, selected))
+
+    def test_new_collector_create_reset_and_annotation_faults_are_inert(self):
+        for name in ('_driver_context', '_clear_driver_capture', '_note_driver_call_failure',
+                     '_note_driver_start_failure', '_driver_error_token', '_driver_exception_token'):
+            with self.subTest(helper=name), patch.object(browser_probe, name, side_effect=KeyboardInterrupt('PRIVATE')):
+                _value, selected, _driver, context, connections, provider, _clock = self.invoke([(500, self.ERROR)])
+            self.assertIs(type(selected), contract.GateRefusal)
+            self.assertEqual(selected.args, ('catalogue-gate-contract-refused',))
+            provider.assert_called_once()
+            connections[0].close.assert_called_once()
+            fields = browser_probe.driver_start_fields(context, selected)
+            self.assertTrue(fields is None or fields['step'] == 'start-control')
+        with patch.object(browser_probe, 'object', side_effect=SystemExit(9), create=True):
+            _value, selected, _driver, context, connections, provider, _clock = self.invoke([(500, self.ERROR)])
+        self.assertIsNone(context)
+        self.assertIs(type(selected), contract.GateRefusal)
+        provider.assert_called_once()
+        connections[0].close.assert_called_once()
+
+    def test_closed_public_projection_context_and_bound(self):
+        fields = {'operation': 'session-create', 'step': 'response-guard', 'exception': 'gate-refusal',
+                  'http_status': 500, 'webdriver_error': 'session not created'}
+        record = RuntimeDiagnosticTests.refused_record()
+        record['runtime_stage'] = 'browser-session-start'
+        record['driver_start'] = fields
+        raw = json.dumps(record).encode()
+        self.assertEqual(contract.public_bytes(raw), raw)
+        stream = io.StringIO()
+        with patch.object(host_controller.sys, 'stderr', stream):
+            host_controller.emit_runtime_refusal(record)
+        self.assertTrue(stream.getvalue().isascii())
+        self.assertLessEqual(len(stream.getvalue().encode('ascii')), 512)
+        self.assertEqual(json.loads(stream.getvalue())['driver_start'], fields)
+        for key, value in (('operation', 'PRIVATE'), ('step', 'PRIVATE'), ('exception', 'PRIVATE'),
+                           ('http_status', True), ('http_status', 600), ('webdriver_error', 'PRIVATE')):
+            wrong = copy.deepcopy(record)
+            wrong['driver_start'][key] = value
+            with self.assertRaises(contract.GateRefusal):
+                contract.public_bytes(json.dumps(wrong).encode())
+        for phase in ('api-read', 'preparation'):
+            wrong = copy.deepcopy(record)
+            wrong['phase'] = phase
+            with self.assertRaises(contract.GateRefusal):
+                contract.public_bytes(json.dumps(wrong).encode())
+        for interruption in (KeyboardInterrupt(), SystemExit(9)):
+            with patch.object(host_controller, 'packed', side_effect=interruption):
+                host_controller.emit_runtime_refusal(record)
+
+    def test_actual_main_projection_keeps_original_failure_cleanup(self):
+        original_note = host_controller.driver_start_note
+
+        def annotate(public, error, context):
+            context['call'] = (error, {'step': 'response-guard', 'exception': 'gate-refusal',
+                                      'http_status': 500, 'webdriver_error': 'session not created'})
+            browser_probe._note_driver_start_failure(context, error, 'session-create')
+            original_note(public, error, context)
+
+        fixture = RuntimeStartupDiagnosticTests('test_all_new_stages_are_bounded_fixed_refusal_projection')
+        with patch.object(host_controller, 'driver_start_note', side_effect=annotate):
+            code, record, _labels, _operations, _driver, owners, _versions = fixture.run_mock_main('browser-session-start')
+        self.assertEqual(code, 1)
+        self.assertFalse(record['complete'])
+        self.assertEqual(record['driver_start']['operation'], 'session-create')
+        self.assertEqual(contract.public_bytes(json.dumps(record).encode()), json.dumps(record).encode())
+        for owner in owners:
+            owner.refuse_cleanup.assert_called_once()
+            owner.cleanup_observed.assert_called_once()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

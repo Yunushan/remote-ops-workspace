@@ -423,12 +423,22 @@ def owned_listener(leader, port):
         raise
 
 
+CHROME_PACKAGE_DUMP_COMMAND = "dumpsys package com.android.chrome"
+CHROME_PACKAGE_DUMP_SERVICE = "shell,v2,raw:" + CHROME_PACKAGE_DUMP_COMMAND
+CHROME_PACKAGE_DUMP_WIRE_LIMIT = 1024 * 1024
+
+
 class AdbSocket:
     """Direct loopback smart socket; never an adb CLI auto-start fallback."""
     def __init__(self, server, clock=time.monotonic, listener=owned_listener):
         self.server, self.clock, self.listener = server, clock, listener
 
     def command(self, service, *, transport=False, timeout=30, limit=65536, framed=False):
+        if (type(limit) is not int or not (1 <= limit <= 65536
+                or (limit == CHROME_PACKAGE_DUMP_WIRE_LIMIT and type(service) is str
+                    and service == CHROME_PACKAGE_DUMP_SERVICE
+                    and transport is True and framed is False))):
+            raise Refusal("adb-query-wire-budget")
         self.server.live()
         self.listener(self.server, ADB_PORT)  # Refuses foreign/descendant-only listeners; never auto-starts.
         deadline = self.clock() + timeout
@@ -488,6 +498,9 @@ class AdbSocket:
         return result
 
     def shell(self, fixed):
+        if type(fixed) is str and fixed == CHROME_PACKAGE_DUMP_COMMAND:
+            return shell_v2(self.command(CHROME_PACKAGE_DUMP_SERVICE, transport=True,
+                limit=CHROME_PACKAGE_DUMP_WIRE_LIMIT), service=CHROME_PACKAGE_DUMP_SERVICE)
         return shell_v2(self.command("shell,v2,raw:" + fixed, transport=True))
 
     def forward(self, service, expected_port, *, transport=False):
@@ -502,9 +515,14 @@ class AdbSocket:
         return {"status": "OKAY", "requested_port": expected_port, "returned_port": bool(extra)}
 
 
-def shell_v2(raw):
+def shell_v2(raw, *, service=None):
     """Only bounded stdout, empty stderr and one final exact zero exit packet."""
-    if not isinstance(raw, bytes) or len(raw) > 65536:
+    total_limit = 65536
+    if service is not None:
+        if type(service) is not str or service != CHROME_PACKAGE_DUMP_SERVICE:
+            raise Refusal("adb-shell-v2-query-context")
+        total_limit = CHROME_PACKAGE_DUMP_WIRE_LIMIT
+    if not isinstance(raw, bytes) or len(raw) > total_limit:
         raise Refusal("adb-shell-v2-total-bound")
     cursor, output, exit_seen, packets = 0, bytearray(), False, 0
     while cursor < len(raw):

@@ -17,7 +17,12 @@ import threading
 import time
 from pathlib import Path
 
-from browser_probe import SW_PROBE, Driver
+from browser_probe import (
+    SW_PROBE,
+    Driver,
+    driver_start_fields,
+    prepare_driver_start,
+)
 from cft_runtime import (
     chrome_version_argv,
     chrome_version_match,
@@ -29,6 +34,7 @@ from gate_contract import (
     LIMITS,
     PREPARATION_STEPS,
     decode,
+    driver_start_diagnostic,
     need,
     runtime_diagnostic,
     validate,
@@ -434,6 +440,22 @@ def inert_runtime_note(public, stage):
         pass
 
 
+def driver_start_note(public, error, context):
+    try:
+        if type(public) is not dict:
+            return
+        public.pop('driver_start', None)
+        if (public.get('status') != 'refused' or public.get('phase') != 'host-runtime-observation'
+                or public.get('runtime_stage') != 'browser-session-start'
+                or public.get('complete') is not False):
+            return
+        fields = driver_start_fields(context, error)
+        if fields is not None:
+            public['driver_start'] = driver_start_diagnostic(fields)
+    except BaseException:
+        pass
+
+
 def emit_runtime_refusal(public):
     try:
         need(public['status'] == 'refused' and public['complete'] is False
@@ -441,6 +463,9 @@ def emit_runtime_refusal(public):
         fields = runtime_diagnostic(public['runtime_stage'], public.get('runtime_versions'))
         diagnostic = {'schema': 'row.catalogue-runtime-refusal.v1', 'status': 'refused',
             'phase': 'host-runtime-observation', 'readiness_credit': 0, **fields}
+        if 'driver_start' in public:
+            need(public['runtime_stage'] == 'browser-session-start' and 'runtime_versions' not in public)
+            diagnostic['driver_start'] = driver_start_diagnostic(public['driver_start'])
         raw = packed(diagnostic)
         need(len(raw) <= 512)
         sys.stderr.write(raw.decode('ascii') + '\n')
@@ -491,6 +516,7 @@ def main():
     registry = []
     retained_ports = []
     driver = None
+    driver_start_context = None
     forced = False
     # Fresh private root; actual product/server/browser files are never public artifacts.
     with tempfile.TemporaryDirectory(prefix='catalogue-owned-', dir=os.environ['RUNNER_TEMP']) as temp:
@@ -588,6 +614,10 @@ def main():
             driver = Driver(driver_port, min(deadline - 10, time.monotonic() + 180))
             driver.origin = origin
             inert_runtime_note(public, 'browser-session-start')
+            try:
+                driver_start_context = prepare_driver_start(driver)
+            except BaseException:
+                driver_start_context = None
             capabilities = driver.start(chrome, private / 'browser')
             inert_runtime_note(public, 'browser-capabilities')
             need(capabilities['browserVersion'] == version
@@ -745,7 +775,11 @@ def main():
             validate(raw, {'binding': binding, 'runtime': runtime})
             (output / 'result.json').write_bytes(raw)
             return 0
-        except Exception:
+        except Exception as error:
+            try:
+                driver_start_note(public, error, driver_start_context)
+            except BaseException:
+                pass
             public['status'] = 'refused'
             public['complete'] = False
             # Hash/count only for private output; no path, URL, token, exception message or body.

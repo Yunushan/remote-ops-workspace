@@ -8,7 +8,13 @@ import json
 import re
 import time
 
-from gate_contract import decode, need
+from gate_contract import (
+    DRIVER_START_ERRORS,
+    GateRefusal,
+    decode,
+    driver_start_diagnostic,
+    need,
+)
 
 ELEMENT = 'element-6066-11e4-a52e-4f735466cecf'
 SNAPSHOT = """
@@ -128,6 +134,121 @@ const token = arguments[0], expected = arguments[1], callback = arguments[argume
 """
 
 
+def prepare_driver_start(driver):
+    context = None
+    try:
+        context = {'token': object(), 'active': False, 'call': None, 'attached': None}
+        driver._row_driver_start_context = context
+        if driver._row_driver_start_context is context:
+            context['active'] = True
+    except BaseException:
+        pass
+    return context
+
+
+def _driver_context(driver):
+    try:
+        context = driver._row_driver_start_context
+        if (type(context) is dict and set(context) == {'token', 'active', 'call', 'attached'}
+                and type(context['token']) is object and context['active'] is True):
+            return context
+    except BaseException:
+        pass
+    return None
+
+
+def _clear_driver_capture(context, *, start=False):
+    try:
+        if context is not None:
+            context['call'] = None
+            if start:
+                context['attached'] = None
+    except BaseException:
+        pass
+
+
+def _driver_exception_token(error):
+    for kind, token in ((GateRefusal, 'gate-refusal'), (TimeoutError, 'timeout'),
+                        (ConnectionRefusedError, 'connection-refused'),
+                        (http.client.RemoteDisconnected, 'remote-disconnected'),
+                        (ConnectionResetError, 'connection-reset'), (BrokenPipeError, 'broken-pipe'),
+                        (http.client.HTTPException, 'http-error'), (http.client.BadStatusLine, 'http-error'),
+                        (http.client.IncompleteRead, 'http-error'), (KeyError, 'key-error'),
+                        (TypeError, 'type-error'), (ValueError, 'value-error'),
+                        (KeyboardInterrupt, 'interrupted'), (SystemExit, 'interrupted')):
+        if type(error) is kind:
+            return token
+    return 'other'
+
+
+def _driver_error_token(data):
+    try:
+        if type(data) is not bytes or len(data) > 262144:
+            return None
+        value = decode(data, 262144)
+        if type(value) is not dict or type(value.get('value')) is not dict:
+            return None
+        token = value['value'].get('error')
+        if type(token) is not str:
+            return None
+        return token if token in DRIVER_START_ERRORS[:-1] else 'other'
+    except BaseException:
+        return None
+
+
+def _note_driver_call_failure(context, error, step, status, data):
+    try:
+        if context is None:
+            return
+        context['call'] = None
+        observed = status if type(status) is int and 100 <= status <= 599 else None
+        token = None
+        if step == 'connection-close':
+            observed = None
+        elif step == 'response-guard' and observed is not None and observed != 200:
+            token = _driver_error_token(data)
+        context['call'] = (error, {'step': step, 'exception': _driver_exception_token(error),
+                                   'http_status': observed, 'webdriver_error': token})
+    except BaseException:
+        pass
+
+
+def _note_driver_start_failure(context, error, operation):
+    try:
+        if context is None:
+            return
+        context['attached'] = None
+        fields = {'operation': operation, 'step': 'start-control',
+                  'exception': _driver_exception_token(error), 'http_status': None, 'webdriver_error': None}
+        call = context['call']
+        if (operation in ('session-create', 'session-timeouts') and type(call) is tuple
+                and len(call) == 2 and call[0] is error and type(call[1]) is dict):
+            fields.update(call[1])
+        fields = driver_start_diagnostic(fields)
+        snapshot = (context['token'], fields)
+        error._row_driver_start_diagnostic = snapshot
+        if error._row_driver_start_diagnostic is snapshot:
+            context['attached'] = (error, snapshot)
+    except BaseException:
+        pass
+
+
+def driver_start_fields(context, error):
+    try:
+        if type(context) is not dict or context.get('active') is not True:
+            return None
+        attached = context['attached']
+        if type(attached) is not tuple or len(attached) != 2 or attached[0] is not error:
+            return None
+        snapshot = attached[1]
+        if (type(snapshot) is not tuple or len(snapshot) != 2 or snapshot[0] is not context['token']
+                or error._row_driver_start_diagnostic is not snapshot):
+            return None
+        return driver_start_diagnostic(snapshot[1])
+    except BaseException:
+        return None
+
+
 class Driver:
     def __init__(self, port, deadline):
         need(type(port) is int and 1 <= port <= 65535)
@@ -137,22 +258,50 @@ class Driver:
         self.origin = None
 
     def call(self, method, path, body=None, timeout=10):
-        need(method in ('GET', 'POST', 'DELETE') and re.fullmatch(r'/[A-Za-z0-9/_-]*', path))
-        remaining = min(timeout, self.deadline - time.monotonic())
-        need(remaining > 0)
-        connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=remaining)
+        context = None
         try:
-            raw = None if body is None else json.dumps(body, separators=(',', ':')).encode('utf-8')
-            need(raw is None or len(raw) <= 262144)
-            connection.request(method, path, body=raw, headers={'Content-Type': 'application/json'})
-            response = connection.getresponse()
-            data = response.read(262145)
-            need(response.status == 200 and len(data) <= 262144)
-            value = decode(data, 262144)
-            need(type(value) is dict and 'value' in value)
-            return value['value']
-        finally:
-            connection.close()
+            context = _driver_context(self)
+            _clear_driver_capture(context)
+        except BaseException:
+            context = None
+        step = 'call-preflight'
+        status = None
+        data = None
+        try:
+            need(method in ('GET', 'POST', 'DELETE') and re.fullmatch(r'/[A-Za-z0-9/_-]*', path))
+            remaining = min(timeout, self.deadline - time.monotonic())
+            need(remaining > 0)
+            step = 'connection-create'
+            connection = http.client.HTTPConnection('127.0.0.1', self.port, timeout=remaining)
+            try:
+                step = 'request-encode'
+                raw = None if body is None else json.dumps(body, separators=(',', ':')).encode('utf-8')
+                need(raw is None or len(raw) <= 262144)
+                step = 'request-send'
+                connection.request(method, path, body=raw, headers={'Content-Type': 'application/json'})
+                step = 'response-open'
+                response = connection.getresponse()
+                step = 'response-read'
+                data = response.read(262145)
+                step = 'response-guard'
+                need((status := response.status) == 200 and len(data) <= 262144)
+                step = 'response-decode'
+                value = decode(data, 262144)
+                step = 'value-envelope'
+                need(type(value) is dict and 'value' in value)
+                return value['value']
+            finally:
+                try:
+                    connection.close()
+                except BaseException:
+                    step = 'connection-close'
+                    raise
+        except BaseException as error:
+            try:
+                _note_driver_call_failure(context, error, step, status, data)
+            except BaseException:
+                pass
+            raise
 
     def command(self, suffix, body=None, method='POST', timeout=10):
         need(self.session is not None)
@@ -162,18 +311,43 @@ class Driver:
         return self.call(method, '/session/' + self.session + suffix, body, timeout)
 
     def start(self, binary, profile):
-        value = self.call('POST', '/session', {'capabilities': {'alwaysMatch': {
-            'browserName': 'chrome', 'pageLoadStrategy': 'normal', 'goog:chromeOptions': {
-                'binary': str(binary), 'detach': False, 'args': ['--headless=new',
-                    '--disable-background-networking', '--disable-component-update', '--disable-sync',
-                    '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
-                    '--no-first-run', '--no-default-browser-check', '--user-data-dir=' + str(profile)]}}}})
-        need(type(value) is dict and type(value.get('sessionId')) is str
-             and re.fullmatch(r'[a-zA-Z0-9-]{1,128}', value['sessionId']))
-        self.session = value['sessionId']
-        capabilities = value['capabilities']
-        self.command('/timeouts', {'script': 10000, 'pageLoad': 10000, 'implicit': 0})
-        return capabilities
+        context = None
+        try:
+            context = _driver_context(self)
+            _clear_driver_capture(context, start=True)
+        except BaseException:
+            context = None
+        operation = 'session-create'
+        try:
+            try:
+                _clear_driver_capture(context)
+            except BaseException:
+                pass
+            value = self.call('POST', '/session', {'capabilities': {'alwaysMatch': {
+                'browserName': 'chrome', 'pageLoadStrategy': 'normal', 'goog:chromeOptions': {
+                    'binary': str(binary), 'detach': False, 'args': ['--headless=new',
+                        '--disable-background-networking', '--disable-component-update', '--disable-sync',
+                        '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1',
+                        '--no-first-run', '--no-default-browser-check', '--user-data-dir=' + str(profile)]}}}})
+            operation = 'session-result'
+            need(type(value) is dict and type(value.get('sessionId')) is str
+                 and re.fullmatch(r'[a-zA-Z0-9-]{1,128}', value['sessionId']))
+            self.session = value['sessionId']
+            operation = 'session-capabilities'
+            capabilities = value['capabilities']
+            operation = 'session-timeouts'
+            try:
+                _clear_driver_capture(context)
+            except BaseException:
+                pass
+            self.command('/timeouts', {'script': 10000, 'pageLoad': 10000, 'implicit': 0})
+            return capabilities
+        except BaseException as error:
+            try:
+                _note_driver_start_failure(context, error, operation)
+            except BaseException:
+                pass
+            raise
 
     def execute(self, script, *args, async_=False):
         return self.command('/execute/' + ('async' if async_ else 'sync'), {'script': script, 'args': list(args)})

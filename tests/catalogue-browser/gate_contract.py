@@ -178,6 +178,68 @@ def runtime_diagnostic(stage, versions=None):
     return result
 
 
+DRIVER_START_OPERATIONS = (
+    'session-create',
+    'session-result',
+    'session-capabilities',
+    'session-timeouts',
+)
+DRIVER_START_STEPS = (
+    'start-control',
+    'call-preflight',
+    'connection-create',
+    'request-encode',
+    'request-send',
+    'response-open',
+    'response-read',
+    'response-guard',
+    'response-decode',
+    'value-envelope',
+    'connection-close',
+)
+DRIVER_START_EXCEPTIONS = (
+    'gate-refusal',
+    'timeout',
+    'connection-refused',
+    'connection-reset',
+    'broken-pipe',
+    'remote-disconnected',
+    'http-error',
+    'key-error',
+    'type-error',
+    'value-error',
+    'interrupted',
+    'other',
+)
+DRIVER_START_ERRORS = (
+    'unknown error',
+    'session not created',
+    'invalid argument',
+    'invalid session id',
+    'timeout',
+    'script timeout',
+    'other',
+)
+
+
+def driver_start_diagnostic(value):
+    exact(value, {'operation', 'step', 'exception', 'http_status', 'webdriver_error'})
+    for key, allowed in (('operation', DRIVER_START_OPERATIONS), ('step', DRIVER_START_STEPS),
+                         ('exception', DRIVER_START_EXCEPTIONS)):
+        need(type(value[key]) is str and value[key] in allowed)
+    status = value['http_status']
+    need(status is None or (type(status) is int and 100 <= status <= 599))
+    token = value['webdriver_error']
+    need(token is None or (type(token) is str and token in DRIVER_START_ERRORS))
+    if value['step'] == 'connection-close' or value['operation'] in ('session-result', 'session-capabilities'):
+        need(status is None and token is None)
+    if value['operation'] in ('session-result', 'session-capabilities'):
+        need(value['step'] == 'start-control')
+    if token is not None:
+        need(status is not None and status != 200 and value['step'] == 'response-guard')
+    return value.copy()
+
+
 def public_bytes(raw):
     """Privacy reader, not an authenticity/adoption or genuine-host decision."""
     record = decode(raw)
@@ -187,7 +249,7 @@ def public_bytes(raw):
         validate(raw, {'binding': record['binding'], 'runtime': record['runtime']})
         return raw
     required = {'schema', 'status', 'complete', 'phase', 'readiness_credit', 'limits'}
-    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step', 'chrome_file_stage', 'runtime_stage', 'runtime_versions'}
+    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step', 'chrome_file_stage', 'runtime_stage', 'runtime_versions', 'driver_start'}
     need(required.issubset(record) and set(record).issubset(required | optional))
     need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v1' and record['status'] == 'refused'
          and record['complete'] is False and type(record['readiness_credit']) is int and record['readiness_credit'] == 0
@@ -198,6 +260,10 @@ def public_bytes(raw):
     if 'runtime_stage' in record:
         need(record['phase'] == 'host-runtime-observation')
         runtime_diagnostic(record['runtime_stage'], record.get('runtime_versions'))
+    if 'driver_start' in record:
+        need(record['phase'] == 'host-runtime-observation'
+             and record.get('runtime_stage') == 'browser-session-start' and 'runtime_versions' not in record)
+        driver_start_diagnostic(record['driver_start'])
     if 'preparation_step' in record:
         step = record['preparation_step']
         need(type(step) is str and step in PREPARATION_STEPS)

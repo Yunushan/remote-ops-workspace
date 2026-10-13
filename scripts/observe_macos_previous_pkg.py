@@ -1895,7 +1895,7 @@ def fetch(url, maximum, commands, destination=None, *,
                 _cleanup_metadata_api_request(request, opened_response, selected_error)
             except BaseException:
                 if selected_error is None:
-                    raise Refusal("metadata-api-credential-cleanup-failed")
+                    raise Refusal("metadata-api-credential-cleanup-failed") from None
         request = opened_response = selected_error = None
 
 

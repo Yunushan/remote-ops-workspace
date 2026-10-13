@@ -589,14 +589,71 @@ def _note_chrome_version_shape(error, dump, names, codes):
         pass  # Optional bounded lexical observation cannot replace the refusal.
 
 
-def _active_chrome_package_versions(dump):
-    """Unique active pair in a closed full-dump grammar; hidden values are separate."""
-    def require(condition):
-        if not condition:
-            raise Refusal("actual-package-version-unobserved")
+CHROME_PARSER_CHECKS = ("input-shape", "ascii-controls", "block-fields", "block-unique", "section-title",
+    "active-order", "hidden-order", "renamed-compat", "package-header", "package-position",
+    "version-position", "version-line", "version-name-unique", "version-code-unique",
+    "field-position", "active-final", "hidden-final")
+CHROME_PARSER_SCOPES = ("active", "hidden", "unobserved")
+# Diagnostic freshness only: retain an opaque token, never a dump/context/error.
+_chrome_parser_current_token = None
 
-    require(type(dump) is str and len(dump) <= CHROME_PACKAGE_DUMP_WIRE_LIMIT)
-    require(all(char in "\n\t" or " " <= char <= "~" for char in dump))
+
+def _new_chrome_parser_context(attempt_token):
+    return {"attempt_token": attempt_token}
+
+
+def _annotate_chrome_parser_context(context, error, check, scope):
+    context.update(selected_error=error, check=check, scope=scope)
+
+
+def _note_chrome_parser_check(error, context, attempt_token):
+    if (type(error) is not Refusal or type(error.args) is not tuple
+            or error.args != ("actual-package-version-unobserved",)
+            or type(attempt_token) is not object or _chrome_parser_current_token is not attempt_token
+            or type(context) is not dict or len(context) != 4
+            or any(type(key) is not str for key in context)
+            or set(context) != {"attempt_token", "selected_error", "check", "scope"}
+            or context["attempt_token"] is not attempt_token or context["selected_error"] is not error):
+        return
+    check, scope = context["check"], context["scope"]
+    if (type(check) is not str or check not in CHROME_PARSER_CHECKS
+            or type(scope) is not str or scope not in CHROME_PARSER_SCOPES):
+        return
+    error.chrome_parser_check = {"attempt_token": attempt_token, "selected_error": error,
+                                 "check": check, "scope": scope}
+
+
+def _active_chrome_package_versions(dump, *, diagnostic_context=None):
+    """Unique active pair in a closed full-dump grammar; hidden values are separate."""
+    def require(condition, check):
+        global _chrome_parser_current_token
+        if not condition:
+            try:
+                raise Refusal("actual-package-version-unobserved")
+            except Refusal as error:
+                attempt_token = None
+                try:
+                    if (type(diagnostic_context) is dict
+                            and not any(type(key) is not str for key in diagnostic_context)
+                            and set(diagnostic_context) == {"attempt_token"}
+                            and type(diagnostic_context["attempt_token"]) is object
+                            and _chrome_parser_current_token is diagnostic_context["attempt_token"]):
+                        attempt_token = diagnostic_context["attempt_token"]
+                        scope = "unobserved"
+                        try:
+                            if section in ("active", "hidden"):
+                                scope = section
+                        except NameError:
+                            pass
+                        _annotate_chrome_parser_context(diagnostic_context, error, check, scope)
+                except BaseException:
+                    # Complete mutation followed by failure is ineligible too.
+                    if _chrome_parser_current_token is attempt_token:
+                        _chrome_parser_current_token = None
+                raise
+
+    require(type(dump) is str and len(dump) <= CHROME_PACKAGE_DUMP_WIRE_LIMIT, "input-shape")
+    require(all(char in "\n\t" or " " <= char <= "~" for char in dump), "ascii-controls")
     titles = {"active": 0, "hidden": 0}
     pairs = {}
     section = None
@@ -605,8 +662,8 @@ def _active_chrome_package_versions(dump):
     def finish_block():
         nonlocal block
         if block is not None:
-            require(set(block) == {"scope", "name", "code"})
-            require(block["scope"] not in pairs)
+            require(set(block) == {"scope", "name", "code"}, "block-fields")
+            require(block["scope"] not in pairs, "block-unique")
             pairs[block["scope"]] = (block["name"], block["code"])
             block = None
 
@@ -614,62 +671,93 @@ def _active_chrome_package_versions(dump):
         stripped = line.strip(" \t")
         lower = stripped.lower()
         if "packages:" in lower or lower.startswith("packages") or "hidden system package" in lower:
-            require(line in ("Packages:", "Hidden system packages:"))
+            require(line in ("Packages:", "Hidden system packages:"), "section-title")
             finish_block()
             if line == "Packages:":
-                require(titles["active"] == 0 and titles["hidden"] == 0)
+                require(titles["active"] == 0 and titles["hidden"] == 0, "active-order")
                 section = "active"
             else:
-                require(titles["active"] == 1 and "active" in pairs and titles["hidden"] == 0)
+                require(titles["active"] == 1 and "active" in pairs and titles["hidden"] == 0, "hidden-order")
                 section = "hidden"
             titles[section] += 1
             continue
-        require("renamed packages" not in lower and "compat name" not in lower)
+        require("renamed packages" not in lower and "compat name" not in lower, "renamed-compat")
         if ("package [" in lower or lower.startswith(("package ", "package["))
                 or re.match(r"package\b", lower) is not None
                 or re.search(r"\bpackage[ \t]+\[", lower) is not None):
-            require(re.fullmatch(r"  Package \[com\.android\.chrome\] \([0-9a-f]{1,8}\):", line) is not None)
-            require(section in ("active", "hidden") and block is None and section not in pairs)
+            require(re.fullmatch(r"  Package \[com\.android\.chrome\] \([0-9a-f]{1,8}\):", line) is not None, "package-header")
+            require(section in ("active", "hidden") and block is None and section not in pairs, "package-position")
             block = {"scope": section}
             continue
         if "versionname" in lower or "versioncode" in lower:
-            require(block is not None)
+            require(block is not None, "version-position")
             name = re.fullmatch(r"    versionName=([0-9]+(?:\.[0-9]+){0,3})", line)
             code = re.fullmatch(r"    versionCode=([0-9]{1,12})(?: minSdk=[0-9]+)? targetSdk=[0-9]+", line)
-            require((name is None) != (code is None))
+            require((name is None) != (code is None), "version-line")
             if name is not None:
-                require("name" not in block)
+                require("name" not in block, "version-name-unique")
                 block["name"] = name[1]
             else:
-                require("code" not in block)
+                require("code" not in block, "version-code-unique")
                 block["code"] = code[1]
             continue
         if line and line[0] not in " \t":
             finish_block()
             section = None
         elif stripped:
-            require(section is None or block is not None)
+            require(section is None or block is not None, "field-position")
     finish_block()
-    require(titles["active"] == 1 and "active" in pairs)
+    require(titles["active"] == 1 and "active" in pairs, "active-final")
     require((titles["hidden"] == 0 and "hidden" not in pairs)
-            or (titles["hidden"] == 1 and "hidden" in pairs))
+            or (titles["hidden"] == 1 and "hidden" in pairs), "hidden-final")
     return pairs["active"]
 
 
 def package_inventory(adb, package):
+    global _chrome_parser_current_token
+    _chrome_parser_current_token = None
     if package != "com.android.chrome":
         raise Refusal("unowned-package-probe")
     dump = inventory_shell(adb, "dumpsys package " + package, "chrome-package-dump").decode("ascii")
     names = re.findall(r"\bversionName=([0-9]+(?:\.[0-9]+){0,3})\b", dump)
     codes = re.findall(r"\bversionCode=([0-9]{1,12})\b", dump)
+    diagnostic_context = None
+    attempt_token = None
     try:
-        active_name, active_code = _active_chrome_package_versions(dump)
+        attempt_token = object()
+        candidate = _new_chrome_parser_context(attempt_token)
+        if (type(attempt_token) is object and type(candidate) is dict
+                and not any(type(key) is not str for key in candidate)
+                and set(candidate) == {"attempt_token"}
+                and candidate["attempt_token"] is attempt_token):
+            diagnostic_context = candidate
+            _chrome_parser_current_token = attempt_token
+    except BaseException:
+        if _chrome_parser_current_token is attempt_token:
+            _chrome_parser_current_token = None
+        diagnostic_context = None
+    try:
+        active_name, active_code = _active_chrome_package_versions(dump, diagnostic_context=diagnostic_context)
     except Refusal as error:
+        try:
+            if "chrome_parser_check" in error.__dict__:
+                del error.chrome_parser_check
+        except BaseException:
+            if _chrome_parser_current_token is attempt_token:
+                _chrome_parser_current_token = None
+        try:
+            _note_chrome_parser_check(error, diagnostic_context, attempt_token)
+        except BaseException:
+            # A setter can store all fields and then raise; invalidate eligibility.
+            if _chrome_parser_current_token is attempt_token:
+                _chrome_parser_current_token = None
         try:
             _note_chrome_version_shape(error, dump, names, codes)
         except BaseException:
             pass
         raise
+    if _chrome_parser_current_token is attempt_token:
+        _chrome_parser_current_token = None
     lines = inventory_shell(adb, "pm path " + package, "chrome-package-paths").decode("ascii").splitlines()
     if not 1 <= len(lines) <= 16 or len(set(lines)) != len(lines):
         raise Refusal("actual-apk-path-inventory-unobserved")

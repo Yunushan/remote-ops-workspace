@@ -501,6 +501,41 @@ def chrome_version_shape_diagnostic(exc):
     return None
 
 
+CHROME_PARSER_CHECKS = ("input-shape", "ascii-controls", "block-fields", "block-unique", "section-title",
+    "active-order", "hidden-order", "renamed-compat", "package-header", "package-position",
+    "version-position", "version-line", "version-name-unique", "version-code-unique",
+    "field-position", "active-final", "hidden-final")
+CHROME_PARSER_SCOPES = ("active", "hidden", "unobserved")
+
+
+def chrome_parser_check_diagnostic(exc):
+    """Closed current-attempt check/scope only; not layout/cause/authenticity proof."""
+    try:
+        token = H._chrome_parser_current_token
+        if (type(token) is not object or type(exc) is not H.Refusal or type(exc.args) is not tuple
+                or exc.args != ("actual-package-version-unobserved",)):
+            return None
+        state = exc.__dict__
+        if type(state) is not dict:
+            return None
+        value = state.get("chrome_parser_check")
+        if (type(value) is not dict or len(value) != 4 or any(type(key) is not str for key in value)
+                or set(value) != {"attempt_token", "selected_error", "check", "scope"}
+                or value["attempt_token"] is not token or value["selected_error"] is not exc):
+            return None
+        check, scope = value["check"], value["scope"]
+        if (type(check) is not str or check not in CHROME_PARSER_CHECKS
+                or type(scope) is not str or scope not in CHROME_PARSER_SCOPES):
+            return None
+        result = {"check": check, "scope": scope}
+        if H._chrome_parser_current_token is not token:
+            return None
+        return result
+    except BaseException:
+        pass
+    return None
+
+
 def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
@@ -539,6 +574,12 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
         observed = chrome_version_shape_diagnostic(exc)
         if observed is not None:
             record["chrome_version_shape"] = observed
+        try:
+            parser_check = chrome_parser_check_diagnostic(exc)
+            if parser_check is not None:
+                record["chrome_parser_check"] = parser_check
+        except BaseException:
+            pass
     if code == "tree-total-byte-bound" and phase == "sdk-observation":
         observed = sdk_tree_limit_diagnostic(exc)
         if observed is not None:

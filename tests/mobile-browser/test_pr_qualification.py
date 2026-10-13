@@ -2898,9 +2898,9 @@ class ActiveChromePackageVersionTests(unittest.TestCase):
             result = H.package_inventory(client, "com.android.chrome")
         self.assertEqual(result["version"], "123.0")
         self.assertEqual(calls, [("shell,v2,raw:" + self.FIXED, {"transport": True, "limit": 1048576}),
-            ("shell,v2,raw:pm path com.android.chrome", {"transport": True, "limit": 65536}),
-            ("shell,v2,raw:sha256sum " + self.APK, {"transport": True, "limit": 65536}),
-            ("shell,v2,raw:stat -c %s " + self.APK, {"transport": True, "limit": 65536})])
+            ("shell,v2,raw:pm path com.android.chrome", {"transport": True}),
+            ("shell,v2,raw:sha256sum " + self.APK, {"transport": True}),
+            ("shell,v2,raw:stat -c %s " + self.APK, {"transport": True})])
         self.assertGreater(len(ChromeDumpWireBudgetTests.wire(dump)), 65536)
         with self.assertRaisesRegex(H.Refusal, "adb-shell-v2-total-bound"):
             H.shell_v2(ChromeDumpWireBudgetTests.wire(dump))
@@ -2966,6 +2966,324 @@ class ActiveChromePackageVersionTests(unittest.TestCase):
                     self.assertLessEqual(len(line.encode("ascii")), 512)
                     self.assertNotIn("PRIVATE", line)
                     self.assertEqual(json.loads(line)["readiness_credit"], 0)
+
+
+class ChromeParserCheckDiagnosticTests(unittest.TestCase):
+    PHASE = "chrome-static-device-inventory"
+    CODE = "actual-package-version-unobserved"
+
+    def setUp(self):
+        patch = mock.patch.object(H, "_chrome_parser_current_token", None)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def refused(self, raw):
+        adb = SimpleNamespace(shell=mock.Mock(return_value=raw))
+        with (mock.patch.object(H.socket, "create_connection") as socket_provider,
+                mock.patch.object(H.subprocess, "Popen") as process_provider):
+            with self.assertRaises(H.Refusal) as caught:
+                H.package_inventory(adb, "com.android.chrome")
+            adb.shell.assert_called_once_with("dumpsys package com.android.chrome")
+            socket_provider.assert_not_called()
+            process_provider.assert_not_called()
+        self.assertEqual(caught.exception.args, (self.CODE,))
+        self.assertIsNone(caught.exception.__context__)
+        return caught.exception
+
+    def test_reachable_checks_and_active_hidden_scopes_keep_strict_refusal(self):
+        active = ActiveChromePackageVersionTests.dump()
+        hidden = ActiveChromePackageVersionTests.dump(hidden=("98.0", "789"))
+        rows = ((b"PRIVATE\r", "ascii-controls", "unobserved"),
+            (active.replace(b"    versionName=123.0\n", b""), "block-fields", "active"),
+            (b" Packages:\n", "section-title", "unobserved"),
+            (active + b"Packages:\n", "active-order", "active"),
+            (b"Hidden system packages:\n", "hidden-order", "unobserved"),
+            (active + b"    compat name=PRIVATE\n", "renamed-compat", "active"),
+            (active.replace(b"com.android.chrome]", b"com.android.foreign]"), "package-header", "active"),
+            (b"  Package [com.android.chrome] (abc):\n", "package-position", "unobserved"),
+            (b"    versionName=123.0\n", "version-position", "unobserved"),
+            (active.replace(b"versionName=123.0", b"versionName=PRIVATE"), "version-line", "active"),
+            (active + b"    versionName=123.0\n", "version-name-unique", "active"),
+            (active + b"    versionCode=456 targetSdk=36\n", "version-code-unique", "active"),
+            (b"Packages:\n    PRIVATE\n", "field-position", "active"),
+            (b"PRIVATE\n", "active-final", "unobserved"),
+            (hidden.replace(b"versionName=98.0", b"versionName=PRIVATE"), "version-line", "hidden"))
+        for raw, check, scope in rows:
+            with self.subTest(check=check, scope=scope):
+                error = self.refused(raw)
+                record = Q.capture_refusal_diagnostic(error, self.PHASE)
+                self.assertEqual(record["chrome_parser_check"], {"check": check, "scope": scope})
+                self.assertEqual(record["refusal_code"], self.CODE)
+                self.assertNotIn("PRIVATE", json.dumps(record))
+        # Structurally unreachable block-unique/hidden-final are not claimed exercised.
+
+    def test_success_preserves_four_queries_apk_proof_and_clears_signal(self):
+        original_case = ActiveChromePackageVersionTests()
+        for hidden in (None, ("98.0", "789")):
+            with self.subTest(hidden=hidden):
+                adb = original_case.inventory(original_case.dump(hidden=hidden))
+                with (mock.patch.object(H.subprocess, "Popen") as process,
+                        mock.patch.object(H.socket, "create_connection") as provider):
+                    result = H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual(result["version"], "123.0")
+                self.assertEqual(result["version_code"], "456")
+                self.assertEqual(result["apks"], [{"path": original_case.APK, "sha256": "a" * 64, "bytes": 123}])
+                self.assertEqual(adb.shell.call_args_list, [mock.call(original_case.FIXED),
+                    mock.call("pm path com.android.chrome"), mock.call("sha256sum " + original_case.APK),
+                    mock.call("stat -c %s " + original_case.APK)])
+                self.assertIsNone(H._chrome_parser_current_token)
+                self.assertIsNone(Q.chrome_parser_check_diagnostic(H.Refusal(self.CODE)))
+                process.assert_not_called()
+                provider.assert_not_called()
+
+    def test_allocation_setup_faults_keep_one_original_parser_call(self):
+        parser = H._active_chrome_package_versions
+        for seam in ("object", "_new_chrome_parser_context"):
+            for fault in (MemoryError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
+                with (self.subTest(seam=seam, kind=type(fault).__name__),
+                        mock.patch.object(H, seam, side_effect=fault, create=True),
+                        mock.patch.object(H, "_active_chrome_package_versions", wraps=parser) as observed):
+                    error = self.refused(b"PRIVATE\n")
+                observed.assert_called_once_with("PRIVATE\n", diagnostic_context=None)
+                self.assertIsNone(H._chrome_parser_current_token)
+                self.assertNotIn("chrome_parser_check", Q.capture_refusal_diagnostic(error, self.PHASE))
+        stale = {"attempt_token": object()}
+        for candidate in (stale, None, [], {"PRIVATE": object()}):
+            with (self.subTest(kind=type(candidate).__name__),
+                    mock.patch.object(H, "_new_chrome_parser_context", return_value=candidate),
+                    mock.patch.object(H, "_active_chrome_package_versions", wraps=parser) as observed):
+                error = self.refused(b"PRIVATE\n")
+            observed.assert_called_once_with("PRIVATE\n", diagnostic_context=None)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+        class TextKey(str):
+            pass
+        def malformed(token):
+            return {TextKey("attempt_token"): token}
+        with (mock.patch.object(H, "_new_chrome_parser_context", side_effect=malformed),
+                mock.patch.object(H, "_active_chrome_package_versions", wraps=parser) as observed):
+            error = self.refused(b"PRIVATE\n")
+        observed.assert_called_once_with("PRIVATE\n", diagnostic_context=None)
+        self.assertIsNone(H._chrome_parser_current_token)
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        token = object()
+        H._chrome_parser_current_token = token
+        with self.assertRaises(H.Refusal) as caught:
+            parser("PRIVATE\n", diagnostic_context={TextKey("attempt_token"): token})
+        self.assertEqual(caught.exception.args, (self.CODE,))
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(caught.exception))
+
+    def test_setup_fault_with_valid_dump_keeps_original_success_and_queries(self):
+        case = ActiveChromePackageVersionTests()
+        for fault in (MemoryError(), KeyboardInterrupt(), SystemExit(9)):
+            adb = case.inventory(case.dump())
+            with (self.subTest(kind=type(fault).__name__),
+                    mock.patch.object(H, "_new_chrome_parser_context", side_effect=fault),
+                    mock.patch.object(H.subprocess, "Popen") as process,
+                    mock.patch.object(H.socket, "create_connection") as provider):
+                result = H.package_inventory(adb, "com.android.chrome")
+            self.assertEqual(result["version"], "123.0")
+            self.assertEqual(adb.shell.call_args_list, [mock.call(case.FIXED), mock.call("pm path com.android.chrome"),
+                mock.call("sha256sum " + case.APK), mock.call("stat -c %s " + case.APK)])
+            self.assertIsNone(H._chrome_parser_current_token)
+            process.assert_not_called()
+            provider.assert_not_called()
+
+    def test_annotation_complete_then_raise_invalidates_only_current_token(self):
+        annotate = H._annotate_chrome_parser_context
+        for fault in (MemoryError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
+            def failed(context, error, check, scope, fault=fault):
+                annotate(context, error, check, scope)
+                self.assertEqual(set(context), {"attempt_token", "selected_error", "check", "scope"})
+                raise fault
+            with (self.subTest(kind=type(fault).__name__),
+                    mock.patch.object(H, "_annotate_chrome_parser_context", side_effect=failed)):
+                error = self.refused(b"PRIVATE\n")
+            self.assertIsNone(H._chrome_parser_current_token)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        newer = object()
+        def replaced(context, error, check, scope):
+            annotate(context, error, check, scope)
+            H._chrome_parser_current_token = newer
+            raise KeyboardInterrupt()
+        with mock.patch.object(H, "_annotate_chrome_parser_context", side_effect=replaced):
+            error = self.refused(b"PRIVATE\n")
+        self.assertIs(H._chrome_parser_current_token, newer)
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_attachment_complete_then_raise_invalidates_only_current_token(self):
+        attach = H._note_chrome_parser_check
+        for fault in (MemoryError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
+            def failed(error, context, token, fault=fault):
+                attach(error, context, token)
+                self.assertEqual(set(error.chrome_parser_check), {"attempt_token", "selected_error", "check", "scope"})
+                raise fault
+            with (self.subTest(kind=type(fault).__name__),
+                    mock.patch.object(H, "_note_chrome_parser_check", side_effect=failed)):
+                error = self.refused(b"PRIVATE\n")
+            self.assertIsNone(H._chrome_parser_current_token)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        newer = object()
+        def replaced(error, context, token):
+            attach(error, context, token)
+            H._chrome_parser_current_token = newer
+            raise SystemExit(9)
+        with mock.patch.object(H, "_note_chrome_parser_check", side_effect=replaced):
+            error = self.refused(b"PRIVATE\n")
+        self.assertIs(H._chrome_parser_current_token, newer)
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_reused_refusal_and_failed_stale_clear_cannot_publish_old_record(self):
+        error = self.refused(b"PRIVATE\n")
+        old = error.chrome_parser_check
+        old_token = old["attempt_token"]
+        self.assertIsNotNone(Q.chrome_parser_check_diagnostic(error))
+        for fault in (MemoryError(), KeyboardInterrupt(), SystemExit(9)):
+            with (self.subTest(kind=type(fault).__name__),
+                    mock.patch.object(H.Refusal, "__delattr__", side_effect=fault),
+                    mock.patch.object(H, "_active_chrome_package_versions", side_effect=error)):
+                selected = self.refused(b"PRIVATE\n")
+            self.assertIs(selected, error)
+            self.assertIs(error.chrome_parser_check, old)
+            self.assertIsNot(H._chrome_parser_current_token, old_token)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        with (mock.patch.object(H, "_new_chrome_parser_context", side_effect=MemoryError()),
+                mock.patch.object(H.Refusal, "__delattr__", side_effect=KeyboardInterrupt()),
+                mock.patch.object(H, "_active_chrome_package_versions", side_effect=error)):
+            self.assertIs(self.refused(b"PRIVATE\n"), error)
+        self.assertIsNone(H._chrome_parser_current_token)
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_partial_annotation_and_wrong_selected_context_omit(self):
+        def partial(context, error, check, scope):
+            context["selected_error"] = error
+            raise KeyboardInterrupt()
+        with mock.patch.object(H, "_annotate_chrome_parser_context", side_effect=partial):
+            error = self.refused(b"PRIVATE\n")
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        token = object()
+        H._chrome_parser_current_token = token
+        context = {"attempt_token": token, "selected_error": H.Refusal(self.CODE),
+                   "check": "active-final", "scope": "unobserved"}
+        H._note_chrome_parser_check(error, context, token)
+        self.assertNotIn("chrome_parser_check", error.__dict__)
+        H._chrome_parser_current_token = object()
+        context["selected_error"] = error
+        H._note_chrome_parser_check(error, context, token)
+        self.assertNotIn("chrome_parser_check", error.__dict__)
+
+    def test_closed_projection_types_keys_context_and_privacy(self):
+        class Text(str):
+            pass
+        class Mapping(dict):
+            pass
+        token, other = object(), H.Refusal(self.CODE)
+        H._chrome_parser_current_token = token
+        error = H.Refusal(self.CODE)
+        good = {"attempt_token": token, "selected_error": error, "check": "active-final", "scope": "unobserved"}
+        cases = (None, [], Mapping(good), {**good, "PRIVATE": 1},
+            {key: value for key, value in good.items() if key != "scope"},
+            {**good, "attempt_token": object()}, {**good, "selected_error": other},
+            {**good, "check": Text("active-final")}, {**good, "scope": Text("unobserved")},
+            {**good, "check": True}, {**good, "scope": None}, {**good, "check": "PRIVATE"}, {**good, "scope": "PRIVATE"})
+        for value in cases:
+            with self.subTest(kind=type(value).__name__):
+                error.chrome_parser_check = value
+                self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        error.chrome_parser_check = good
+        self.assertEqual(Q.chrome_parser_check_diagnostic(error), {"check": "active-final", "scope": "unobserved"})
+        for phase in ("sdk-observation", "owned-api36-emulator", self.PHASE + " ", "PRIVATE"):
+            self.assertNotIn("chrome_parser_check", Q.capture_refusal_diagnostic(error, phase))
+        for selected in (H.Refusal("adb-output-bound"), H.Refusal(self.CODE, "PRIVATE"), RuntimeError(self.CODE)):
+            selected.chrome_parser_check = {**good, "selected_error": selected}
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(selected))
+        class Alias(H.Refusal):
+            pass
+        selected = Alias(self.CODE)
+        selected.chrome_parser_check = {**good, "selected_error": selected}
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(selected))
+
+    def test_projector_signal_change_and_poisoned_access_omit(self):
+        error = self.refused(b"PRIVATE\n")
+        first = H._chrome_parser_current_token
+        class ChangingHost:
+            Refusal = H.Refusal
+            def __init__(self):
+                self.reads = 0
+            @property
+            def _chrome_parser_current_token(self):
+                self.reads += 1
+                return first if self.reads == 1 else object()
+        host = ChangingHost()
+        with mock.patch.object(Q, "H", host):
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        self.assertEqual(host.reads, 2)
+        class Poisoned(H.Refusal):
+            def __getattribute__(self, name):
+                if name == "__dict__":
+                    raise KeyboardInterrupt()
+                return super().__getattribute__(name)
+        with mock.patch.object(H, "Refusal", Poisoned):
+            selected = Poisoned(self.CODE)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(selected))
+        for fault in (MemoryError(), KeyboardInterrupt(), SystemExit(9)):
+            with (self.subTest(kind=type(fault).__name__),
+                    mock.patch.object(Q, "chrome_parser_check_diagnostic", side_effect=fault)):
+                record = Q.capture_refusal_diagnostic(error, self.PHASE)
+            self.assertNotIn("chrome_parser_check", record)
+            self.assertEqual(record["refusal_code"], self.CODE)
+            self.assertEqual(record["chrome_version_shape"], dict.fromkeys(ChromeVersionShapeDiagnosticTests.KEYS, 0))
+
+    def test_input_scope_and_success_then_later_errors_cannot_inherit(self):
+        error = self.refused(b"PRIVATE\n")
+        self.assertIsNotNone(Q.chrome_parser_check_diagnostic(error))
+        adb = SimpleNamespace(shell=mock.Mock(return_value=b"\xff"))
+        with self.assertRaises(UnicodeDecodeError):
+            H.package_inventory(adb, "com.android.chrome")
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        with self.assertRaisesRegex(H.Refusal, "unowned-package-probe"):
+            H.package_inventory(adb, "com.android.other")
+        self.assertIsNone(H._chrome_parser_current_token)
+        case = ActiveChromePackageVersionTests()
+        later = H.Refusal(self.CODE)
+        later.chrome_parser_check = error.chrome_parser_check
+        adb = case.inventory(case.dump())
+        adb.shell.side_effect = [case.dump(), later]
+        with self.assertRaises(H.Refusal) as caught:
+            H.package_inventory(adb, "com.android.chrome")
+        self.assertIs(caught.exception, later)
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(later))
+        self.assertEqual(adb.shell.call_args_list, [mock.call(case.FIXED), mock.call("pm path com.android.chrome")])
+
+    def test_actual_capture_keeps_original_cleanup_and_publication_faults(self):
+        case = ChromeVersionShapeDiagnosticTests()
+        for fault in (None, MemoryError(), KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(kind=type(fault).__name__):
+                error, stream = case.capture_bad_dump(publication_error=fault)
+            self.assertEqual(error.args, (self.CODE,))
+            self.assertIsNone(error.__context__)
+            if fault is None:
+                line = stream.getvalue()
+                self.assertLessEqual(len(line.encode("ascii")), 512)
+                self.assertEqual(json.loads(line)["chrome_parser_check"], {"check": "active-final", "scope": "unobserved"})
+                self.assertNotIn("PRIVATE", line)
+        with mock.patch.object(H, "_new_chrome_parser_context", side_effect=KeyboardInterrupt()):
+            error, stream = case.capture_bad_dump()
+        self.assertNotIn("chrome_parser_check", json.loads(stream.getvalue()))
+        self.assertEqual(error.args, (self.CODE,))
+
+    def test_maximum_closed_combined_record_is_bounded_and_token_free(self):
+        token = object()
+        H._chrome_parser_current_token = token
+        error = H.Refusal(self.CODE)
+        error.chrome_version_shape = dict.fromkeys(ChromeVersionShapeDiagnosticTests.KEYS, 2)
+        error.chrome_parser_check = {"attempt_token": token, "selected_error": error,
+            "check": "version-code-unique", "scope": "unobserved"}
+        line = json.dumps(Q.capture_refusal_diagnostic(error, self.PHASE), ensure_ascii=True, separators=(",", ":")) + "\n"
+        self.assertEqual(len(line.encode("ascii")), 359)
+        self.assertNotIn("attempt_token", line)
+        self.assertNotIn("selected_error", line)
+        self.assertNotIn("PRIVATE", line)
 
 
 if __name__ == "__main__":

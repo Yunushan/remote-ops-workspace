@@ -1756,7 +1756,7 @@ class InventoryQueryDiagnosticTests(unittest.TestCase):
     APK = "/product/app/PRIVATE/Chrome.apk"
     COMMANDS = ("dumpsys package com.android.chrome", "pm path com.android.chrome",
                 "sha256sum " + APK, "stat -c %s " + APK)
-    RESPONSES = (b"versionName=123.0 versionCode=456\n",
+    RESPONSES = (b"Packages:\n  Package [com.android.chrome] (abc):\n    versionCode=456 minSdk=26 targetSdk=36\n    versionName=123.0\n",
                  ("package:" + APK + "\n").encode(),
                  ("a" * 64 + "  " + APK + "\n").encode(), b"123\n")
 
@@ -2228,7 +2228,8 @@ class ChromeDumpWireBudgetTests(unittest.TestCase):
 
     @classmethod
     def dump(cls, version=b"123.0", suffix=b""):
-        return b"padding=" + b"x" * 65536 + b"\nversionName=" + version + b" versionCode=456\n" + suffix
+        return (b"Packages:\n  Package [com.android.chrome] (abc):\n    padding=" + b"x" * 65536
+                + b"\n    versionCode=456 minSdk=26 targetSdk=36\n    versionName=" + version + b"\n" + suffix)
 
     @contextmanager
     def transport(self, wire, *, transport=True, clock=None, live_error=None, listener_error=None,
@@ -2594,7 +2595,7 @@ class ChromeVersionShapeDiagnosticTests(unittest.TestCase):
                 self.assertIsNone(original.__context__)
 
     def test_exact_success_keeps_full_four_queries_and_apk_proof(self):
-        adb = SimpleNamespace(shell=mock.Mock(side_effect=[b"versionName=123.0 versionCode=456\n",
+        adb = SimpleNamespace(shell=mock.Mock(side_effect=[b"Packages:\n  Package [com.android.chrome] (abc):\n    versionCode=456 minSdk=26 targetSdk=36\n    versionName=123.0\n",
             b"package:/product/app/Chrome/Chrome.apk\n", b"a" * 64 + b" /product/app/Chrome/Chrome.apk\n", b"123\n"]))
         with mock.patch.object(H, "_note_chrome_version_shape") as observer:
             actual = H.package_inventory(adb, "com.android.chrome")
@@ -2767,6 +2768,204 @@ class ChromeVersionShapeDiagnosticTests(unittest.TestCase):
             self.assertIs(type(original), H.Refusal)
             self.assertEqual(original.args, (self.CODE,))
             self.assertIsNone(original.__context__)
+
+
+class ActiveChromePackageVersionTests(unittest.TestCase):
+    FIXED = "dumpsys package com.android.chrome"
+    APK = "/product/app/Chrome/Chrome.apk"
+    CODE = "actual-package-version-unobserved"
+
+    @staticmethod
+    def dump(*, name="123.0", code="456", hidden=None, padding=0):
+        result = ("Packages:\n  Package [com.android.chrome] (abc):\n    padding=" + "x" * padding
+                  + "\n    versionCode=" + code + " minSdk=26 targetSdk=36\n    versionName=" + name + "\n")
+        if hidden is not None:
+            result += ("Hidden system packages:\n  Package [com.android.chrome] (def):\n    versionCode="
+                       + hidden[1] + " minSdk=26 targetSdk=36\n    versionName=" + hidden[0] + "\n")
+        return result.encode("ascii")
+
+    def inventory(self, dump, *, paths=None, digest=None, size=b"123\n"):
+        paths = ("package:" + self.APK + "\n").encode() if paths is None else paths
+        digest = ("a" * 64 + " " + self.APK + "\n").encode() if digest is None else digest
+        adb = SimpleNamespace(shell=mock.Mock(side_effect=[dump, paths, digest, size]))
+        return adb
+
+    def refused(self, dump):
+        adb = self.inventory(dump)
+        with self.assertRaises(H.Refusal) as caught:
+            H.package_inventory(adb, "com.android.chrome")
+        self.assertIs(type(caught.exception), H.Refusal)
+        self.assertEqual(caught.exception.args, (self.CODE,))
+        self.assertIsNone(caught.exception.__context__)
+        adb.shell.assert_called_once_with(self.FIXED)
+        return caught.exception
+
+    def test_active_and_hidden_are_separate_and_full_queries_are_preserved(self):
+        for hidden in (None, ("98.0", "789"), ("123.0", "456")):
+            with self.subTest(hidden=hidden):
+                adb = self.inventory(self.dump(hidden=hidden))
+                with mock.patch.object(H.subprocess, "Popen") as process, mock.patch.object(H.socket, "create_connection") as provider:
+                    result = H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual(result["version"], "123.0")
+                self.assertEqual(result["version_code"], "456")
+                self.assertEqual(result["apks"], [{"path": self.APK, "sha256": "a" * 64, "bytes": 123}])
+                self.assertEqual(result["publisher_signing_trust"], "not-approved-by-this-test")
+                self.assertEqual(adb.shell.call_args_list, [mock.call(self.FIXED), mock.call("pm path com.android.chrome"),
+                    mock.call("sha256sum " + self.APK), mock.call("stat -c %s " + self.APK)])
+                process.assert_not_called()
+                provider.assert_not_called()
+
+    def test_duplicate_active_fields_even_beyond_old_boundary_refuse(self):
+        for duplicate in (b"    versionName=123.0\n", b"    versionCode=456 minSdk=26 targetSdk=36\n",
+                          b"    versionName=123.0\n    versionCode=456 minSdk=26 targetSdk=36\n"):
+            raw = self.dump(padding=65536) + duplicate
+            self.assertGreater(raw.index(duplicate), 65536)
+            original = self.refused(raw)
+            self.assertEqual(Q.capture_refusal_diagnostic(original, "chrome-static-device-inventory")["refusal_code"], self.CODE)
+
+    def test_missing_repeated_reversed_or_foreign_critical_structure_refuses(self):
+        active = self.dump()
+        hidden = self.dump(hidden=("98.0", "789"))[len(active):]
+        cases = (b"", active.replace(b"Packages:\n", b""), active.replace(b"  Package [com.android.chrome] (abc):\n", b""),
+            active + active, hidden + active, active + hidden + hidden,
+            active.replace(b"com.android.chrome]", b"com.android.foreign]"),
+            active.replace(b"(abc):", b"(ABC):"), active.replace(b"(abc):", b"(123456789):"),
+            active.replace(b"Packages:", b" Packages:"), active.replace(b"Packages:", b"Packages:PRIVATE"),
+            active + b"  Package [com.android.chrome] (abc):\n",
+            active + b"Renamed packages:\n  PRIVATE\n", active + b"    compat name=PRIVATE\n",
+            active + b"Hidden system packages:\n",
+            active + b'  Package\t[com.android.chrome] (abc):\n',
+            active + b'  Package\t[com.android.foreign] (abc):\n',
+            active + b'    field=Package\t[com.android.chrome] (abc):\n',
+            active + b'    field=Package\t[com.android.foreign] (abc):\n',
+            active + b'  Package\tcom.android.chrome (abc):\n',
+            active + b'  Package\tcom.android.foreign (abc):\n',
+            active + b'  Package\n',
+            active + b'  Package: com.android.chrome (abc):\n',
+            active + b'  Package(com.android.foreign) (abc):\n',
+            active + hidden + b'  Package\t[com.android.chrome] (abc):\n',
+            active + hidden + b'  Package\t[com.android.foreign] (abc):\n',
+            active + hidden + b'    field=Package\t[com.android.chrome] (abc):\n',
+            active + hidden + b'    field=Package\t[com.android.foreign] (abc):\n',
+            active + hidden + b'  Package\tcom.android.chrome (abc):\n',
+            active + hidden + b'  Package\tcom.android.foreign (abc):\n',
+            active + hidden + b'  Package\n',
+            active + hidden + b'  Package: com.android.chrome (abc):\n',
+            active + hidden + b'  Package(com.android.foreign) (abc):\n')
+        for raw in cases:
+            with self.subTest(case=len(raw)):
+                self.refused(raw)
+
+    def test_closed_labels_values_and_controls_refuse_before_paths(self):
+        active = self.dump()
+        cases = (self.dump(name="123.0-private"), self.dump(name="1.2.3.4.5"), self.dump(code="1234567890123"),
+            active.replace(b"    versionName=123.0\n", b""), active.replace(b"    versionCode=456 minSdk=26 targetSdk=36\n", b""),
+            active.replace(b" minSdk=26 targetSdk=36", b""), active.replace(b"    versionName=", b"   versionName="),
+            active.replace(b"versionName=", b"versionname="), active.replace(b"versionCode=", b"versionCodeMajor="),
+            b"versionName=123.0\n" + active, active + b"Other:\n    versionCode=456 targetSdk=36\n",
+            active + b"    PRIVATE versionName=999.0\n", active + b"Other:\n    PRIVATE Packages:\n",
+            active + b"\r", active + b"\v", active + b"\f", active + b"\0")
+        for raw in cases:
+            with self.subTest(case=len(raw)):
+                self.refused(raw)
+
+    def test_hidden_pair_is_validated_independently_never_used_as_fallback(self):
+        active = self.dump()
+        complete = self.dump(hidden=("98.0", "789"))
+        cases = (complete.replace(b"    versionName=98.0\n", b""), complete.replace(b"versionName=98.0", b"versionName=PRIVATE"),
+            complete + b"    versionName=98.0\n", complete.replace(b"(def):", b"(DEF):"),
+            complete.replace(b"    versionName=123.0\n", b""), complete.replace(b"com.android.chrome] (def)", b"com.android.foreign] (def)"))
+        self.assertLess(len(active), len(complete))
+        for raw in cases:
+            with self.subTest(case=len(raw)):
+                self.refused(raw)
+
+    def test_actual_shell_v2_path_accepts_only_existing_dump_budget(self):
+        dump = self.dump(padding=65536, hidden=("98.0", "789"))
+        responses = {"shell,v2,raw:" + self.FIXED: dump, "shell,v2,raw:pm path com.android.chrome": ("package:" + self.APK + "\n").encode(),
+                     "shell,v2,raw:sha256sum " + self.APK: ("a" * 64 + " " + self.APK + "\n").encode(),
+                     "shell,v2,raw:stat -c %s " + self.APK: b"123\n"}
+        calls = []
+
+        def command(service, **kwargs):
+            calls.append((service, kwargs))
+            self.assertIn(service, responses)
+            return ChromeDumpWireBudgetTests.wire(responses[service])
+
+        client = H.AdbSocket(None)
+        with (mock.patch.object(client, "command", side_effect=command), mock.patch.object(H.subprocess, "Popen") as process,
+                mock.patch.object(H.socket, "create_connection") as provider):
+            result = H.package_inventory(client, "com.android.chrome")
+        self.assertEqual(result["version"], "123.0")
+        self.assertEqual(calls, [("shell,v2,raw:" + self.FIXED, {"transport": True, "limit": 1048576}),
+            ("shell,v2,raw:pm path com.android.chrome", {"transport": True, "limit": 65536}),
+            ("shell,v2,raw:sha256sum " + self.APK, {"transport": True, "limit": 65536}),
+            ("shell,v2,raw:stat -c %s " + self.APK, {"transport": True, "limit": 65536})])
+        self.assertGreater(len(ChromeDumpWireBudgetTests.wire(dump)), 65536)
+        with self.assertRaisesRegex(H.Refusal, "adb-shell-v2-total-bound"):
+            H.shell_v2(ChromeDumpWireBudgetTests.wire(dump))
+        process.assert_not_called()
+        provider.assert_not_called()
+
+    def test_strict_apk_path_digest_and_size_checks_remain_in_order(self):
+        cases = ((b"package:/unowned/PRIVATE.apk\n", None, b"123\n", "apk-path-bound", 2),
+            (None, b"PRIVATE " + self.APK.encode() + b"\n", b"123\n", "unobserved-exact-digest", 4),
+            (None, None, b"0\n", "actual-apk-size-layout", 4))
+        for paths, digest, size, code, count in cases:
+            with self.subTest(code=code):
+                adb = self.inventory(self.dump(hidden=("98.0", "789")), paths=paths, digest=digest, size=size)
+                with self.assertRaises(H.Refusal) as caught:
+                    H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual(caught.exception.args, (code,))
+                self.assertEqual(adb.shell.call_count, count)
+                self.assertEqual(adb.shell.call_args_list[:2], [mock.call(self.FIXED), mock.call("pm path com.android.chrome")])
+                if count == 4:
+                    self.assertEqual(adb.shell.call_args_list[-2:], [mock.call("sha256sum " + self.APK), mock.call("stat -c %s " + self.APK)])
+
+    def test_selected_parser_errors_and_diagnostic_interruptions_keep_identity(self):
+        for original in (H.Refusal(self.CODE), RuntimeError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
+            adb = self.inventory(self.dump())
+            with (mock.patch.object(H, "_active_chrome_package_versions", side_effect=original),
+                    mock.patch.object(H, "_note_chrome_version_shape", side_effect=KeyboardInterrupt()) as diagnostic):
+                with self.assertRaises(type(original)) as caught:
+                    H.package_inventory(adb, "com.android.chrome")
+            self.assertIs(caught.exception, original)
+            adb.shell.assert_called_once_with(self.FIXED)
+            if type(original) is H.Refusal:
+                self.assertIs(diagnostic.call_args.args[0], original)
+                self.assertEqual(diagnostic.call_args.args[2:], (["123.0"], ["456"]))
+            else:
+                diagnostic.assert_not_called()
+
+    def test_unowned_ascii_and_parser_type_bounds_remain_fail_closed(self):
+        adb = SimpleNamespace(shell=mock.Mock(return_value=b"\xff"))
+        with self.assertRaises(UnicodeDecodeError):
+            H.package_inventory(adb, "com.android.chrome")
+        adb.shell.assert_called_once_with(self.FIXED)
+        adb.shell.reset_mock()
+        with self.assertRaisesRegex(H.Refusal, "unowned-package-probe"):
+            H.package_inventory(adb, "com.android.other")
+        adb.shell.assert_not_called()
+        class Text(str):
+            pass
+        for value in (b"PRIVATE", Text(self.dump().decode()), "x" * 1048577):
+            with self.subTest(kind=type(value).__name__):
+                with self.assertRaisesRegex(H.Refusal, self.CODE):
+                    H._active_chrome_package_versions(value)
+
+    def test_actual_capture_cleanup_and_publication_failure_contract_is_retained(self):
+        case = ChromeVersionShapeDiagnosticTests()
+        for interruption in (None, KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(interruption=type(interruption).__name__):
+                original, stream = case.capture_bad_dump(publication_error=interruption)
+                self.assertIs(type(original), H.Refusal)
+                self.assertEqual(original.args, (self.CODE,))
+                self.assertIsNone(original.__context__)
+                if interruption is None:
+                    line = stream.getvalue()
+                    self.assertLessEqual(len(line.encode("ascii")), 512)
+                    self.assertNotIn("PRIVATE", line)
+                    self.assertEqual(json.loads(line)["readiness_credit"], 0)
 
 
 if __name__ == "__main__":

@@ -456,6 +456,65 @@ def driver_start_note(public, error, context):
         pass
 
 
+DRIVER_STDERR_PREFIX_BYTES = 65536
+DRIVER_STDERR_MARKERS = (
+    (1, (b'Running as root without --', b' is not supported. See https://crbug.com/638180.')),
+    (2, (b'No usable sandbox!',)),
+    (4, (b'The SUID sandbox helper binary was found, but is not configured correctly.',)),
+    (8, (b'Socket path too long:',)),
+    (16, (b'Failed to create socket directory.',)),
+    (32, (b'Failed to create symlinks.',)),
+)
+
+
+def _driver_stderr_bits(controller, registry):
+    """Partial positive private-stream literals; not Chrome origin or host cause."""
+    try:
+        if (type(controller) is not Owned or type(registry) is not list
+                or not 1 <= len(registry) <= 128
+                or not any(owner is controller for owner in registry)):
+            return None
+        errors = controller.errors
+        if type(errors) is not bytearray or len(errors) > DRIVER_STDERR_PREFIX_BYTES:
+            return None
+        snapshot = bytes(errors)
+        bits = sum(bit for bit, literals in DRIVER_STDERR_MARKERS
+                   if all(literal in snapshot for literal in literals))
+        return bits if 1 <= bits <= 63 else None
+    except BaseException:
+        return None
+
+
+def driver_stderr_note(public, error, context, controller, registry):
+    try:
+        if type(public) is not dict:
+            return
+        previous = public.get('driver_start')
+        if type(previous) is dict:
+            previous.pop('stderr_bits', None)
+        if (public.get('status') != 'refused' or public.get('complete') is not False
+                or public.get('phase') != 'host-runtime-observation'
+                or public.get('runtime_stage') != 'browser-session-start'):
+            return
+        fields = driver_start_fields(context, error)
+        if (type(fields) is not dict or type(previous) is not dict or previous != fields
+                or fields.get('operation') != 'session-create'
+                or fields.get('step') != 'response-guard'
+                or fields.get('exception') != 'gate-refusal'
+                or type(fields.get('http_status')) is not int or fields['http_status'] != 500
+                or fields.get('webdriver_error') != 'session not created'):
+            return
+        bits = _driver_stderr_bits(controller, registry)
+        if type(bits) is not int or not 1 <= bits <= 63:
+            return
+        candidate = {**fields, 'stderr_bits': bits}
+        validated = driver_start_diagnostic(candidate)
+        if type(validated) is dict and validated == candidate:
+            public['driver_start'] = validated
+    except BaseException:
+        pass
+
+
 def emit_runtime_refusal(public):
     try:
         need(public['status'] == 'refused' and public['complete'] is False
@@ -594,7 +653,7 @@ def main():
                 checks.append({'id': case, 'facts': facts})
             # ChromeDriver itself chooses a private ephemeral port and reports it on its private log.
             inert_runtime_note(public, 'driver-service-birth')
-            controller = Owned(registry, [str(chrome_driver), '--port=0'], repo, env, deadline)
+            controller = Owned(registry, [str(chrome_driver), '--port=0', '--enable-chrome-logs'], repo, env, deadline)
             inert_runtime_note(public, 'driver-port-wait')
             launch_limit = min(deadline, time.monotonic() + 20)
             driver_port = None
@@ -778,6 +837,10 @@ def main():
         except Exception as error:
             try:
                 driver_start_note(public, error, driver_start_context)
+            except BaseException:
+                pass
+            try:
+                driver_stderr_note(public, error, driver_start_context, controller, registry)
             except BaseException:
                 pass
             public['status'] = 'refused'

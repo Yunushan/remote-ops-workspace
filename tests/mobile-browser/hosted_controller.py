@@ -589,21 +589,87 @@ def _note_chrome_version_shape(error, dump, names, codes):
         pass  # Optional bounded lexical observation cannot replace the refusal.
 
 
+def _active_chrome_package_versions(dump):
+    """Unique active pair in a closed full-dump grammar; hidden values are separate."""
+    def require(condition):
+        if not condition:
+            raise Refusal("actual-package-version-unobserved")
+
+    require(type(dump) is str and len(dump) <= CHROME_PACKAGE_DUMP_WIRE_LIMIT)
+    require(all(char in "\n\t" or " " <= char <= "~" for char in dump))
+    titles = {"active": 0, "hidden": 0}
+    pairs = {}
+    section = None
+    block = None
+
+    def finish_block():
+        nonlocal block
+        if block is not None:
+            require(set(block) == {"scope", "name", "code"})
+            require(block["scope"] not in pairs)
+            pairs[block["scope"]] = (block["name"], block["code"])
+            block = None
+
+    for line in dump.split("\n"):
+        stripped = line.strip(" \t")
+        lower = stripped.lower()
+        if "packages:" in lower or lower.startswith("packages") or "hidden system package" in lower:
+            require(line in ("Packages:", "Hidden system packages:"))
+            finish_block()
+            if line == "Packages:":
+                require(titles["active"] == 0 and titles["hidden"] == 0)
+                section = "active"
+            else:
+                require(titles["active"] == 1 and "active" in pairs and titles["hidden"] == 0)
+                section = "hidden"
+            titles[section] += 1
+            continue
+        require("renamed packages" not in lower and "compat name" not in lower)
+        if ("package [" in lower or lower.startswith(("package ", "package["))
+                or re.match(r"package\b", lower) is not None
+                or re.search(r"\bpackage[ \t]+\[", lower) is not None):
+            require(re.fullmatch(r"  Package \[com\.android\.chrome\] \([0-9a-f]{1,8}\):", line) is not None)
+            require(section in ("active", "hidden") and block is None and section not in pairs)
+            block = {"scope": section}
+            continue
+        if "versionname" in lower or "versioncode" in lower:
+            require(block is not None)
+            name = re.fullmatch(r"    versionName=([0-9]+(?:\.[0-9]+){0,3})", line)
+            code = re.fullmatch(r"    versionCode=([0-9]{1,12})(?: minSdk=[0-9]+)? targetSdk=[0-9]+", line)
+            require((name is None) != (code is None))
+            if name is not None:
+                require("name" not in block)
+                block["name"] = name[1]
+            else:
+                require("code" not in block)
+                block["code"] = code[1]
+            continue
+        if line and line[0] not in " \t":
+            finish_block()
+            section = None
+        elif stripped:
+            require(section is None or block is not None)
+    finish_block()
+    require(titles["active"] == 1 and "active" in pairs)
+    require((titles["hidden"] == 0 and "hidden" not in pairs)
+            or (titles["hidden"] == 1 and "hidden" in pairs))
+    return pairs["active"]
+
+
 def package_inventory(adb, package):
     if package != "com.android.chrome":
         raise Refusal("unowned-package-probe")
     dump = inventory_shell(adb, "dumpsys package " + package, "chrome-package-dump").decode("ascii")
     names = re.findall(r"\bversionName=([0-9]+(?:\.[0-9]+){0,3})\b", dump)
     codes = re.findall(r"\bversionCode=([0-9]{1,12})\b", dump)
-    if len(names) != 1 or len(codes) != 1:
+    try:
+        active_name, active_code = _active_chrome_package_versions(dump)
+    except Refusal as error:
         try:
-            raise Refusal("actual-package-version-unobserved")
-        except Refusal as error:
-            try:
-                _note_chrome_version_shape(error, dump, names, codes)
-            except BaseException:
-                pass
-            raise
+            _note_chrome_version_shape(error, dump, names, codes)
+        except BaseException:
+            pass
+        raise
     lines = inventory_shell(adb, "pm path " + package, "chrome-package-paths").decode("ascii").splitlines()
     if not 1 <= len(lines) <= 16 or len(set(lines)) != len(lines):
         raise Refusal("actual-apk-path-inventory-unobserved")
@@ -621,7 +687,7 @@ def package_inventory(adb, package):
         if re.fullmatch(r"[1-9][0-9]{0,11}", size) is None:
             raise Refusal("actual-apk-size-layout")
         rows.append({"path": path, "sha256": digest(fields[0]), "bytes": int(size)})
-    return {"package": package, "version": names[0], "version_code": codes[0], "apks": rows,
+    return {"package": package, "version": active_name, "version_code": active_code, "apks": rows,
             "publisher_signing_trust": "not-approved-by-this-test"}
 
 

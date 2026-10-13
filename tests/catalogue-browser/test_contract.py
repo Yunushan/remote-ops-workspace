@@ -754,7 +754,7 @@ class RuntimeStartupDiagnosticTests(unittest.TestCase):
                 owner.receive.return_value = {'ready': True, 'nonce': 'a' * 64, 'port': 12345,
                     'inventory': {'count': count, 'profiles': [{}] * count, 'digest': '1' * 64}}
             else:
-                case.assertEqual(argv, ['/synthetic/driver', '--port=0'])
+                case.assertEqual(argv, ['/synthetic/driver', '--port=0', '--enable-chrome-logs'])
                 port = 0 if failure_stage == 'driver-port-validation' else 12346
                 owner.output.extend(('ChromeDriver was started successfully on port ' + str(port)).encode())
                 owner.process.poll.side_effect = lambda: entered('driver-port-wait')
@@ -1501,6 +1501,204 @@ class DriverMessageMarkerTests(unittest.TestCase):
             with patch.object(browser_probe, 'decode', side_effect=interruption):
                 self.assertIsNone(browser_probe._driver_error_token(raw, message_observation=sink))
             self.assertNotIn('message_bits', sink)
+
+
+class DriverPrivateStderrTests(unittest.TestCase):
+    def captured(self, *, close_error=None, timeouts=False):
+        fixture = DriverStartDiagnosticTests('test_success_retains_exact_two_requests_clock_and_close')
+        responses = [(500, fixture.ERROR)]
+        if timeouts:
+            responses.insert(0, (200, fixture.GOOD))
+        value, error, driver, context, connections, provider, clock = fixture.invoke(responses, close_error=close_error)
+        record = RuntimeDiagnosticTests.refused_record()
+        record['runtime_stage'] = 'browser-session-start'
+        host_controller.driver_start_note(record, error, context)
+        owner = object.__new__(host_controller.Owned)
+        owner.errors = bytearray()
+        return record, error, driver, context, owner, [owner], connections, provider, clock, value
+
+    def test_each_fixed_literal_uses_current_owner_and_same_error(self):
+        for bit, literals in host_controller.DRIVER_STDERR_MARKERS:
+            with self.subTest(bit=bit):
+                record, error, _driver, context, owner, registry, connections, provider, clock, value = self.captured()
+                owner.errors.extend(b'\xff /PRIVATE/path TOKEN\n' + b'\n'.join(literals))
+                old = copy.deepcopy(record['driver_start'])
+                host_controller.driver_stderr_note(record, error, context, owner, registry)
+                self.assertEqual(record['driver_start'], {**old, 'stderr_bits': bit})
+                self.assertIsNone(value)
+                self.assertEqual(error.args, ('catalogue-gate-contract-refused',))
+                self.assertEqual(clock.call_count, 1)
+                provider.assert_called_once()
+                connections[0].close.assert_called_once()
+                self.assertNotIn('PRIVATE', json.dumps(record))
+
+    def test_combined_bits_bounded_public_projection_and_private_canaries(self):
+        record, error, _driver, context, owner, registry, _connections, _provider, _clock, _value = self.captured()
+        owner.errors.extend(b'\n'.join(literal for _bit, fragments in host_controller.DRIVER_STDERR_MARKERS for literal in fragments))
+        owner.errors.extend(b'\n/PRIVATE/secret credential=TOKEN-VALUE')
+        host_controller.driver_stderr_note(record, error, context, owner, registry)
+        self.assertEqual(record['driver_start']['stderr_bits'], 63)
+        raw = json.dumps(record).encode()
+        self.assertEqual(contract.public_bytes(raw), raw)
+        stream = io.StringIO()
+        with patch.object(host_controller.sys, 'stderr', stream):
+            host_controller.emit_runtime_refusal(record)
+        line = stream.getvalue()
+        self.assertTrue(line.isascii())
+        self.assertLessEqual(len(line.encode('ascii')), 512)
+        self.assertEqual(json.loads(line)['driver_start']['stderr_bits'], 63)
+        self.assertNotIn('PRIVATE', line)
+        self.assertNotIn('TOKEN-VALUE', line)
+        for _bit, fragments in host_controller.DRIVER_STDERR_MARKERS:
+            for literal in fragments:
+                self.assertNotIn(literal.decode('ascii'), line)
+
+    def test_single_immutable_prefix_boundary_and_exact_buffer_types(self):
+        owner = object.__new__(host_controller.Owned)
+        literal = host_controller.DRIVER_STDERR_MARKERS[1][1][0]
+        owner.errors = bytearray(b'x' * (65536 - len(literal)) + literal)
+        self.assertEqual(host_controller._driver_stderr_bits(owner, [owner]), 2)
+        owner.errors = bytearray(b'x' + owner.errors)
+        self.assertIsNone(host_controller._driver_stderr_bits(owner, [owner]))
+        class Buffer(bytearray):
+            pass
+        for raw in (b'', b'No usable sandbox!', None, [], Buffer(literal), bytearray(), bytearray(literal[:-1])):
+            owner.errors = raw
+            self.assertIsNone(host_controller._driver_stderr_bits(owner, [owner]))
+        original_bytes = bytes
+        def copied(raw):
+            snapshot = original_bytes(raw)
+            owner.errors.clear()
+            return snapshot
+        owner.errors = bytearray(literal)
+        with patch.object(host_controller, 'bytes', side_effect=copied, create=True) as snapshot:
+            self.assertEqual(host_controller._driver_stderr_bits(owner, [owner]), 2)
+            snapshot.assert_called_once()
+        self.assertEqual(owner.errors, bytearray())
+
+    def test_identity_membership_bounds_and_poisoned_owner_are_inert(self):
+        owner = object.__new__(host_controller.Owned)
+        owner.errors = bytearray(b'No usable sandbox!')
+        class Wrong(host_controller.Owned):
+            pass
+        class Registry(list):
+            pass
+        class Equality:
+            def __eq__(self, _other):
+                raise AssertionError('equality-must-not-be-called')
+        for candidate, registry in ((None, [owner]), (Mock(), [owner]), (object.__new__(Wrong), [owner]),
+                                    (owner, []), (owner, [object()]), (owner, Registry([owner])),
+                                    (owner, [owner] * 129)):
+            self.assertIsNone(host_controller._driver_stderr_bits(candidate, registry))
+        self.assertEqual(host_controller._driver_stderr_bits(owner, [Equality(), owner]), 2)
+        original = host_controller.Owned.__getattribute__
+        def poisoned(current, name):
+            if name == 'errors':
+                raise KeyboardInterrupt('/PRIVATE')
+            return original(current, name)
+        with patch.object(host_controller.Owned, '__getattribute__', poisoned):
+            self.assertIsNone(host_controller._driver_stderr_bits(owner, [owner]))
+
+    def test_new_faults_and_bad_returns_keep_old_fields_and_clear_stale_bits(self):
+        for failure in (ValueError('/PRIVATE'), KeyboardInterrupt('/PRIVATE'), SystemExit('/PRIVATE')):
+            record, error, _driver, context, owner, registry, _connections, _provider, _clock, _value = self.captured()
+            old = copy.deepcopy(record['driver_start'])
+            record['driver_start']['stderr_bits'] = 63
+            with patch.object(host_controller, '_driver_stderr_bits', side_effect=failure):
+                host_controller.driver_stderr_note(record, error, context, owner, registry)
+            self.assertEqual(record['driver_start'], old)
+            self.assertEqual(error.args, ('catalogue-gate-contract-refused',))
+        for bits in (None, False, True, 0, 64, -1, 1.0, '1', {}, []):
+            record, error, _driver, context, owner, registry, _connections, _provider, _clock, _value = self.captured()
+            old = copy.deepcopy(record['driver_start'])
+            with patch.object(host_controller, '_driver_stderr_bits', return_value=bits):
+                host_controller.driver_stderr_note(record, error, context, owner, registry)
+            self.assertEqual(record['driver_start'], old)
+        record, error, _driver, context, owner, registry, _connections, _provider, _clock, _value = self.captured()
+        old = copy.deepcopy(record['driver_start'])
+        owner.errors.extend(b'No usable sandbox!')
+        with patch.object(host_controller, 'driver_start_diagnostic', return_value={'PRIVATE': 'path'}):
+            host_controller.driver_stderr_note(record, error, context, owner, registry)
+        self.assertEqual(record['driver_start'], old)
+
+    def test_reuse_wrong_context_and_poisoned_capture_do_not_use_old_bits(self):
+        record, error, _driver, context, owner, registry, _connections, _provider, _clock, _value = self.captured()
+        owner.errors.extend(b'No usable sandbox!')
+        host_controller.driver_stderr_note(record, error, context, owner, registry)
+        self.assertEqual(record['driver_start']['stderr_bits'], 2)
+        context['attached'] = None
+        host_controller.driver_stderr_note(record, error, context, owner, registry)
+        self.assertNotIn('stderr_bits', record['driver_start'])
+        for phase, stage in (('preparation', 'browser-session-start'), ('host-runtime-observation', 'driver-listener')):
+            record, error, _driver, context, owner, registry, _connections, _provider, _clock, _value = self.captured()
+            record.update(phase=phase, runtime_stage=stage)
+            record['driver_start']['stderr_bits'] = 63
+            host_controller.driver_stderr_note(record, error, context, owner, registry)
+            self.assertNotIn('stderr_bits', record['driver_start'])
+        record, error, _driver, context, owner, registry, _connections, _provider, _clock, _value = self.captured()
+        record['driver_start']['stderr_bits'] = 63
+        with patch.object(host_controller, 'driver_start_fields', side_effect=SystemExit('/PRIVATE')):
+            host_controller.driver_stderr_note(record, error, context, owner, registry)
+        self.assertNotIn('stderr_bits', record['driver_start'])
+
+    def test_close_winner_and_timeouts_are_not_startup_stderr_context(self):
+        winner = RuntimeError('/PRIVATE-close')
+        for close_error, timeouts in ((winner, False), (None, True)):
+            record, error, _driver, context, owner, registry, connections, provider, clock, _value = self.captured(close_error=close_error, timeouts=timeouts)
+            owner.errors.extend(b'No usable sandbox!')
+            host_controller.driver_stderr_note(record, error, context, owner, registry)
+            self.assertNotIn('stderr_bits', record['driver_start'])
+            if close_error is not None:
+                self.assertIs(error, winner)
+                self.assertEqual(record['driver_start']['step'], 'connection-close')
+                self.assertIsNone(record['driver_start']['http_status'])
+                self.assertIsNone(record['driver_start']['webdriver_error'])
+                self.assertEqual(error.args, ('/PRIVATE-close',))
+            self.assertEqual(provider.call_count, 2 if timeouts else 1)
+            self.assertEqual(clock.call_count, provider.call_count)
+            for connection in connections:
+                connection.close.assert_called_once()
+
+    def test_independent_validator_closes_types_ranges_keys_and_context(self):
+        record, _error, _driver, _context, _owner, _registry, _connections, _provider, _clock, _value = self.captured()
+        good = {**record['driver_start'], 'stderr_bits': 63}
+        self.assertEqual(contract.driver_start_diagnostic(good), good)
+        self.assertEqual(contract.driver_start_diagnostic({**good, 'message_bits': 31}), {**good, 'message_bits': 31})
+        for key, value in (('stderr_bits', 0), ('stderr_bits', 64), ('stderr_bits', True), ('stderr_bits', 1.0),
+                           ('stderr_bits', '2'), ('operation', 'session-timeouts'), ('http_status', 200),
+                           ('http_status', True), ('webdriver_error', 'other'), ('step', 'response-decode'),
+                           ('exception', 'other')):
+            with self.subTest(key=key, value=value):
+                with self.assertRaises(contract.GateRefusal):
+                    contract.driver_start_diagnostic({**good, key: value})
+        with self.assertRaises(contract.GateRefusal):
+            contract.driver_start_diagnostic({**good, 'PRIVATE': 'path'})
+
+    def test_actual_main_call_faults_preserve_original_refusal_and_cleanup(self):
+        fixture = RuntimeStartupDiagnosticTests('test_all_new_stages_are_bounded_fixed_refusal_projection')
+        for failure in (KeyboardInterrupt('/PRIVATE'), SystemExit('/PRIVATE')):
+            with patch.object(host_controller, 'driver_stderr_note', side_effect=failure) as note:
+                code, record, _labels, _operations, _driver, owners, _versions = fixture.run_mock_main('browser-session-start')
+            self.assertEqual(code, 1)
+            self.assertFalse(record['complete'])
+            self.assertTrue(record['cleanup_complete'])
+            self.assertTrue(record['forced_cleanup_attempted'])
+            self.assertNotIn('PRIVATE', json.dumps(record))
+            note.assert_called_once()
+            self.assertEqual(len(owners), 2)
+
+    def test_publication_interruptions_retain_selected_record(self):
+        record, error, _driver, context, owner, registry, _connections, _provider, _clock, _value = self.captured()
+        owner.errors.extend(b'No usable sandbox!')
+        host_controller.driver_stderr_note(record, error, context, owner, registry)
+        retained = copy.deepcopy(record)
+        for failure in (KeyboardInterrupt('/PRIVATE'), SystemExit('/PRIVATE')):
+            stream = Mock()
+            stream.write.side_effect = failure
+            with patch.object(host_controller.sys, 'stderr', stream):
+                host_controller.emit_runtime_refusal(record)
+            self.assertEqual(record, retained)
+            self.assertEqual(error.args, ('catalogue-gate-contract-refused',))
 
 
 if __name__ == '__main__':

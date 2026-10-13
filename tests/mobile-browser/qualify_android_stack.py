@@ -506,10 +506,12 @@ CHROME_PARSER_CHECKS = ("input-shape", "ascii-controls", "block-fields", "block-
     "version-position", "version-line", "version-name-unique", "version-code-unique",
     "field-position", "active-final", "hidden-final")
 CHROME_PARSER_SCOPES = ("active", "hidden", "unobserved")
+CHROME_HEADER_KINDS = ("target-spacing", "target-identity", "target-suffix", "foreign-header",
+    "keyword-title", "keyword-prefix", "embedded-header", "over-bound", "other-candidate")
 
 
 def chrome_parser_check_diagnostic(exc):
-    """Closed current-attempt check/scope only; not layout/cause/authenticity proof."""
+    """Closed current-attempt check/scope/category; never header data or cause proof."""
     try:
         token = H._chrome_parser_current_token
         if (type(token) is not object or type(exc) is not H.Refusal or type(exc.args) is not tuple
@@ -519,8 +521,9 @@ def chrome_parser_check_diagnostic(exc):
         if type(state) is not dict:
             return None
         value = state.get("chrome_parser_check")
-        if (type(value) is not dict or len(value) != 4 or any(type(key) is not str for key in value)
-                or set(value) != {"attempt_token", "selected_error", "check", "scope"}
+        if (type(value) is not dict or len(value) not in (4, 5) or any(type(key) is not str for key in value)
+                or set(value) not in ({"attempt_token", "selected_error", "check", "scope"},
+                                     {"attempt_token", "selected_error", "check", "scope", "header_kind"})
                 or value["attempt_token"] is not token or value["selected_error"] is not exc):
             return None
         check, scope = value["check"], value["scope"]
@@ -528,6 +531,11 @@ def chrome_parser_check_diagnostic(exc):
                 or type(scope) is not str or scope not in CHROME_PARSER_SCOPES):
             return None
         result = {"check": check, "scope": scope}
+        if "header_kind" in value:
+            kind = value["header_kind"]
+            if check != "package-header" or type(kind) is not str or kind not in CHROME_HEADER_KINDS:
+                return None
+            result["header_kind"] = kind
         if H._chrome_parser_current_token is not token:
             return None
         return result

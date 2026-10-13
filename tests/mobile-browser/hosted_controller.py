@@ -594,6 +594,8 @@ CHROME_PARSER_CHECKS = ("input-shape", "ascii-controls", "block-fields", "block-
     "version-position", "version-line", "version-name-unique", "version-code-unique",
     "field-position", "active-final", "hidden-final")
 CHROME_PARSER_SCOPES = ("active", "hidden", "unobserved")
+CHROME_HEADER_KINDS = ("target-spacing", "target-identity", "target-suffix", "foreign-header",
+    "keyword-title", "keyword-prefix", "embedded-header", "over-bound", "other-candidate")
 # Diagnostic freshness only: retain an opaque token, never a dump/context/error.
 _chrome_parser_current_token = None
 
@@ -606,21 +608,53 @@ def _annotate_chrome_parser_context(context, error, check, scope):
     context.update(selected_error=error, check=check, scope=scope)
 
 
+def _chrome_package_header_kind(line):
+    """Bounded structure of an already-rejected header; never acceptance or raw text."""
+    if type(line) is not str:
+        return None
+    if len(line) > 256:
+        return "over-bound"
+    if re.fullmatch(r"[ \t]*Package[ \t]+\[com\.android\.chrome\][ \t]+\([0-9a-f]{1,8}\):", line) is not None:
+        return "target-spacing"
+    if re.fullmatch(r"  Package \[com\.android\.chrome\] \([^()\n]{0,32}\):", line) is not None:
+        return "target-identity"
+    if re.match(r"  Package \[com\.android\.chrome\] \([0-9a-f]{1,8}\)", line) is not None:
+        return "target-suffix"
+    other = re.fullmatch(r"  Package \[([A-Za-z_][A-Za-z0-9_.]{0,159})\] \([0-9a-f]{1,8}\):", line)
+    if other is not None and other[1] != "com.android.chrome":
+        return "foreign-header"
+    if re.fullmatch(r"[ \t]*Package[ \t]+[A-Za-z][A-Za-z \t]{0,63}:", line) is not None:
+        return "keyword-title"
+    lower = line.strip(" \t").lower()
+    if re.match(r"package\b", lower) is not None:
+        return "keyword-prefix"
+    if "package [" in lower or re.search(r"\bpackage[ \t]+\[", lower) is not None:
+        return "embedded-header"
+    return "other-candidate"
+
+
 def _note_chrome_parser_check(error, context, attempt_token):
     if (type(error) is not Refusal or type(error.args) is not tuple
             or error.args != ("actual-package-version-unobserved",)
             or type(attempt_token) is not object or _chrome_parser_current_token is not attempt_token
-            or type(context) is not dict or len(context) != 4
+            or type(context) is not dict or len(context) not in (4, 5)
             or any(type(key) is not str for key in context)
-            or set(context) != {"attempt_token", "selected_error", "check", "scope"}
+            or set(context) not in ({"attempt_token", "selected_error", "check", "scope"},
+                                   {"attempt_token", "selected_error", "check", "scope", "header_kind"})
             or context["attempt_token"] is not attempt_token or context["selected_error"] is not error):
         return
     check, scope = context["check"], context["scope"]
     if (type(check) is not str or check not in CHROME_PARSER_CHECKS
             or type(scope) is not str or scope not in CHROME_PARSER_SCOPES):
         return
-    error.chrome_parser_check = {"attempt_token": attempt_token, "selected_error": error,
-                                 "check": check, "scope": scope}
+    observed = {"attempt_token": attempt_token, "selected_error": error,
+                "check": check, "scope": scope}
+    if "header_kind" in context:
+        kind = context["header_kind"]
+        if check != "package-header" or type(kind) is not str or kind not in CHROME_HEADER_KINDS:
+            return
+        observed["header_kind"] = kind
+    error.chrome_parser_check = observed
 
 
 def _active_chrome_package_versions(dump, *, diagnostic_context=None):
@@ -645,7 +679,15 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
                                 scope = section
                         except NameError:
                             pass
+                        header_kind = None
+                        if check == "package-header":
+                            try:
+                                header_kind = _chrome_package_header_kind(line)
+                            except BaseException:
+                                pass
                         _annotate_chrome_parser_context(diagnostic_context, error, check, scope)
+                        if type(header_kind) is str and header_kind in CHROME_HEADER_KINDS:
+                            diagnostic_context["header_kind"] = header_kind
                 except BaseException:
                     # Complete mutation followed by failure is ineligible too.
                     if _chrome_parser_current_token is attempt_token:

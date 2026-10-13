@@ -44,6 +44,8 @@ jobs:
           python-version: "3.14.7"
       - name: Observe pinned old PKG and installed metadata readers
         id: capture
+        env:
+          ROW_MACOS_METADATA_TOKEN: ${{ github.token }}
         run: python scripts/observe_macos_previous_pkg.py capture
       - name: Retain bounded public observations only
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

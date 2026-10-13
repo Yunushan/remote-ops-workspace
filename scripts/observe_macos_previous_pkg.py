@@ -145,6 +145,9 @@ REFUSAL_CODES = frozenset(
         "installed-manual-field-ambiguity",
         "json-byte-bound",
         "json-layout-unobserved",
+        "metadata-api-credential-unavailable",
+        "metadata-api-credential-scope-refused",
+        "metadata-api-credential-cleanup-failed",
         "metadata-command-or-aggregate-bound",
         "metadata-component-checksum-mismatch",
         "metadata-component-expanded-bound",
@@ -1674,6 +1677,55 @@ class RestrictedRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+
+_MACOS_METADATA_TOKEN_ENV = "ROW_MACOS_METADATA_TOKEN"
+_MACOS_METADATA_API_URLS = (
+    "https://api.github.com/repos/Yunushan/remote-ops-workspace/releases/382583184",
+    "https://api.github.com/repos/Yunushan/remote-ops-workspace/git/ref/tags/v1.0.24",
+    "https://api.github.com/repos/Yunushan/remote-ops-workspace/releases/assets/544041419",
+)
+
+
+def _metadata_api_credential_valid(value):
+    return (type(value) is str and 1 <= len(value) <= 4096
+            and all(33 <= ord(char) <= 126 for char in value))
+
+
+def _metadata_api_credential_scope(url, destination, value):
+    if not _metadata_api_credential_valid(value):
+        raise Refusal("metadata-api-credential-unavailable")
+    if type(url) is not str or url not in _MACOS_METADATA_API_URLS or destination is not None:
+        raise Refusal("metadata-api-credential-scope-refused")
+
+
+def _cleanup_metadata_api_request(request, response, selected_error):
+    # This is after the original response/file-finally selected its outcome.
+    # Secondary cleanup faults never replace that original selected error.
+    failed = False
+    if request is not None:
+        try:
+            request.remove_header("Authorization")
+            if request.has_header("Authorization") is not False:
+                failed = True
+        except BaseException:
+            failed = True
+    streams = []
+    if response is not None:
+        streams.append(response)
+    if isinstance(selected_error, urllib.error.HTTPError) and selected_error is not response:
+        streams.append(selected_error)
+    for stream in streams:
+        try:
+            if stream.closed is not True:
+                stream.close()
+            if stream.closed is not True:
+                failed = True
+        except BaseException:
+            failed = True
+    if failed and selected_error is None:
+        raise Refusal("metadata-api-credential-cleanup-failed")
+
+
 NETWORK_OPERATIONS = frozenset({
     "unobserved", "workflow-source", "release-api", "tag-api", "asset-api", "package-download",
 })
@@ -1756,7 +1808,9 @@ def emit_network_refusal():
 
 
 def fetch(url, maximum, commands, destination=None, *,
-          network_operation="unobserved", network_pass="unobserved"):
+          network_operation="unobserved", network_pass="unobserved", api_credential=None):
+    request = opened_response = selected_error = None
+    api_requested = api_credential is not None
     try:
         network_checkpoint(network_operation, network_pass)
     except BaseException:
@@ -1765,8 +1819,11 @@ def fetch(url, maximum, commands, destination=None, *,
         asset = destination is not None
         if not redirect_allowed(url, asset):
             raise Refusal("official-network-url-refused")
+        if api_requested:
+            _metadata_api_credential_scope(url, destination, api_credential)
         redirects = RestrictedRedirect(asset)
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects)
+        if not api_requested:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects)
         headers = {
             "User-Agent": "ROW-old-macos-pkg-metadata",
             "Accept": "application/octet-stream" if asset else "application/vnd.github+json",
@@ -1775,8 +1832,15 @@ def fetch(url, maximum, commands, destination=None, *,
         if not asset:
             headers["X-GitHub-Api-Version"] = "2022-11-28"
         request = urllib.request.Request(url, headers=headers)
+        if api_requested:
+            method = request.get_method()
+            if type(method) is not str or method != "GET":
+                raise Refusal("metadata-api-credential-scope-refused")
+            request.add_unredirected_header("Authorization", "Bearer " + api_credential)
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), redirects)
         raw, total, value = bytearray(), 0, hashlib.sha256()
-        with opener.open(request, timeout=min(20, commands.remaining())) as response:
+        opened_response = opener.open(request, timeout=min(20, commands.remaining()))
+        with opened_response as response:
             if (
                 response.status != 200
                 or not redirect_allowed(response.geturl(), asset)
@@ -1815,14 +1879,24 @@ def fetch(url, maximum, commands, destination=None, *,
             "sha256": value.hexdigest(),
             "redirect_count": redirects.hops,
             "redirect_hosts": redirects.hosts,
-            "authenticated_request": False,
+            "authenticated_request": api_requested,
         }
     except BaseException as exc:
+        selected_error = exc
         try:
             network_checkpoint(network_operation, network_pass, exc)
         except BaseException:
             pass
         raise
+    finally:
+        api_credential = None
+        if api_requested:
+            try:
+                _cleanup_metadata_api_request(request, opened_response, selected_error)
+            except BaseException:
+                if selected_error is None:
+                    raise Refusal("metadata-api-credential-cleanup-failed")
+        request = opened_response = selected_error = None
 
 
 def validate_previous_identity(release, tag, asset):
@@ -1881,23 +1955,29 @@ def validate_previous_identity(release, tag, asset):
     }
 
 
-def previous_identity(commands, private, suffix):
-    root = "https://api.github.com/repos/" + REPO + "/"
-    values, digests = [], []
-    for name in ("releases/382583184", "git/ref/tags/v1.0.24", "releases/assets/544041419"):
-        raw, facts = fetch(
-            root + name, MAX_NETWORK_METADATA, commands,
-            network_operation={
-                "releases/382583184": "release-api",
-                "git/ref/tags/v1.0.24": "tag-api",
-                "releases/assets/544041419": "asset-api",
-            }[name],
-            network_pass=suffix,
-        )
-        values.append(strict_json(raw))
-        digests.append(facts["sha256"])
-        (private / ("public-api-" + str(len(values)) + "-" + suffix + ".json")).write_bytes(raw)
-    return {**validate_previous_identity(*values), "metadata_sha256": digests}
+def previous_identity(commands, private, suffix, *, api_credential=None):
+    credential_kwargs = None
+    try:
+        credential_kwargs = {} if api_credential is None else {"api_credential": api_credential}
+        root = "https://api.github.com/repos/" + REPO + "/"
+        values, digests = [], []
+        for name in ("releases/382583184", "git/ref/tags/v1.0.24", "releases/assets/544041419"):
+            raw, facts = fetch(
+                root + name, MAX_NETWORK_METADATA, commands,
+                network_operation={
+                    "releases/382583184": "release-api",
+                    "git/ref/tags/v1.0.24": "tag-api",
+                    "releases/assets/544041419": "asset-api",
+                }[name],
+                network_pass=suffix,
+                **credential_kwargs,
+            )
+            values.append(strict_json(raw))
+            digests.append(facts["sha256"])
+            (private / ("public-api-" + str(len(values)) + "-" + suffix + ".json")).write_bytes(raw)
+        return {**validate_previous_identity(*values), "metadata_sha256": digests}
+    finally:
+        api_credential = credential_kwargs = None
 
 
 def executed_workflow_binding(commands, source, run):
@@ -2210,195 +2290,202 @@ def emit_receipt_marker():
 def observe(root):
     global ROOT, SOURCE_BINDING, REFUSAL_CONTEXT
     SOURCE_BINDING, REFUSAL_CONTEXT = None, None
-    run = hosted_gate(root)
-    ROOT = root
-    commands = MetadataCommands()
-    # No helper module imports: only already reviewed pure parser code is defined.
-    before = source_binding(root, commands, run["source_sha"])
-    SOURCE_BINDING = before
-    REFUSAL_CONTEXT = {
-        "source": before,
-        "run": run,
-        "phase": "executed-workflow-bind",
-        "observed": {},
-    }
-    parent = root / ".tmp"
-    safe_directory(parent, root)
-    private = parent / ("macos-previous-pkg-metadata-" + uuid.uuid4().hex)
-    private.mkdir(mode=0o700)
-    if stat.S_IMODE(private.stat().st_mode) != 0o700 or private.resolve() != private:
-        raise Refusal("private-metadata-directory-shape")
-    commands.private = private
-    # GitHub's workflow commit is distinct from the checked-out PR head. Observe
-    # its actual public bytes and require equality to the bound source contract;
-    # never infer workflow-byte identity from a head/merge SHA relationship.
-    workflow_network = executed_workflow_binding(commands, before, run)
-    diagnostic_phase("previous-public-identity-and-download")
-    print("phase=previous-public-identity-and-download", flush=True)
-    identity = previous_identity(commands, private, "before")
-    previous = private / PREVIOUS["asset_name"]
-    _, network = fetch(
-        PREVIOUS["browser_download_url"], PREVIOUS["size"], commands, previous,
-        network_operation="package-download", network_pass="before",
-    )
-    if network["size"] != PREVIOUS["size"] or network["sha256"] != PREVIOUS["sha256"]:
-        raise Refusal("previous-whole-package-bytes-mismatch")
-    raw = regular(previous, MAX_PKG)
-    if len(raw) != PREVIOUS["size"] or sha(raw) != PREVIOUS["sha256"]:
-        raise Refusal("previous-whole-package-bytes-mismatch")
-    print("phase=previous-toc-and-readonly-system-metadata", flush=True)
-    diagnostic_phase("previous-toc", whole_pkg_sha256=sha(raw))
-    parser = sys.modules[__name__]
-    package, material = package_projection(raw, parser)
-    diagnostic_phase(
-        "previous-toc", toc_sha256=package["toc_sha256"], component_count=len(package["components"])
-    )
-    record = {
-        "schema": "row.macos-previous-pkg-metadata.v1",
-        "status": "observations-with-unresolved-gates",
-        "source": before,
-        "run": run,
-        "executed_workflow": workflow_network,
-        "previous_identity": identity,
-        "previous_download": network,
-        "previous": package,
-        "candidate_package": "not-captured",
-        "readiness_credit": 0,
-        "approval": False,
-        "signing_trust": False,
-        "installer_execution": False,
-        "app_execution": False,
-        "encryption_execution": False,
-        "physical_ownership_proof": False,
-        "process_tree_cleanup": "not-proven",
-    }
-    record["system_tool_sha256"] = readonly_system_tool_hashes()
-    if "PackageInfo" in material:
-        diagnostic_phase("package-info")
-        record["package_info"] = package_info_projection(material["PackageInfo"], parser)
-    if "Bom" in material:
-        if not material["Bom"].startswith(b"BOMStore"):
-            raise Refusal("bom-magic-unobserved")
-        with (private / "Bom").open("xb") as stream:
-            stream.write(material["Bom"])
-        diagnostic_phase("installed-lsbom-manual")
-        record["lsbom_manual"] = manual_projection(
-            commands.capture(
-                ["/usr/bin/man", "-P", "/bin/cat", "8", "lsbom"], timeout=30, limit=512 * 1024
-            )
-        )
-        diagnostic_phase("installed-bom-reader")
-        bom_raw = commands.capture(
-            ["/usr/bin/lsbom", "-p", "fmugs", str(private / "Bom")], timeout=180
-        )
-        diagnostic_phase("installed-bom-reader", bom_output_sha256=sha(bom_raw))
-        record["bom"] = bom_projection(bom_raw, parser)
-    diagnostic_phase("receipt-namespace")
-    namespace = commands.capture(["/usr/sbin/pkgutil", "--pkgs"], timeout=30, limit=65536)
+    api_credential = os.environ.pop(_MACOS_METADATA_TOKEN_ENV, None)
     try:
-        identifiers = namespace.decode("ascii").splitlines()
-    except UnicodeError as exc:
-        raise Refusal("receipt-namespace-encoding") from exc
-    if (
-        len(identifiers) > 2000
-        or len({alias(item) for item in identifiers}) != len(identifiers)
-        or any(
-            re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}", item) is None for item in identifiers
+        run = hosted_gate(root)
+        if not _metadata_api_credential_valid(api_credential):
+            raise Refusal("metadata-api-credential-unavailable")
+        ROOT = root
+        commands = MetadataCommands()
+        # No helper module imports: only already reviewed pure parser code is defined.
+        before = source_binding(root, commands, run["source_sha"])
+        SOURCE_BINDING = before
+        REFUSAL_CONTEXT = {
+            "source": before,
+            "run": run,
+            "phase": "executed-workflow-bind",
+            "observed": {},
+        }
+        parent = root / ".tmp"
+        safe_directory(parent, root)
+        private = parent / ("macos-previous-pkg-metadata-" + uuid.uuid4().hex)
+        private.mkdir(mode=0o700)
+        if stat.S_IMODE(private.stat().st_mode) != 0o700 or private.resolve() != private:
+            raise Refusal("private-metadata-directory-shape")
+        commands.private = private
+        # GitHub's workflow commit is distinct from the checked-out PR head. Observe
+        # its actual public bytes and require equality to the bound source contract;
+        # never infer workflow-byte identity from a head/merge SHA relationship.
+        workflow_network = executed_workflow_binding(commands, before, run)
+        diagnostic_phase("previous-public-identity-and-download")
+        print("phase=previous-public-identity-and-download", flush=True)
+        identity = previous_identity(commands, private, "before", api_credential=api_credential)
+        previous = private / PREVIOUS["asset_name"]
+        _, network = fetch(
+            PREVIOUS["browser_download_url"], PREVIOUS["size"], commands, previous,
+            network_operation="package-download", network_pass="before",
         )
-    ):
-        raise Refusal("receipt-namespace-bound-or-alias")
-    receipts, hashes = [], []
-    diagnostic_phase(
-        "receipt-info-and-files", receipt_namespace_count=len(identifiers), receipts_queried=0
-    )
-    for query_index, identifier in enumerate(identifiers, 1):
-        diagnostic_phase("receipt-info-and-files", receipt_query_index=query_index, receipt_operation="info")
-        info = commands.capture(
-            ["/usr/sbin/pkgutil", "--pkg-info-plist", identifier], timeout=30, limit=65536
-        )
-        diagnostic_phase("receipt-info-and-files", receipt_operation="files")
-        row = commands.receipt_files(identifier, info, parser)
-        diagnostic_phase("receipt-info-and-files", receipt_operation="projection")
+        if network["size"] != PREVIOUS["size"] or network["sha256"] != PREVIOUS["sha256"]:
+            raise Refusal("previous-whole-package-bytes-mismatch")
+        raw = regular(previous, MAX_PKG)
+        if len(raw) != PREVIOUS["size"] or sha(raw) != PREVIOUS["sha256"]:
+            raise Refusal("previous-whole-package-bytes-mismatch")
+        print("phase=previous-toc-and-readonly-system-metadata", flush=True)
+        diagnostic_phase("previous-toc", whole_pkg_sha256=sha(raw))
+        parser = sys.modules[__name__]
+        package, material = package_projection(raw, parser)
         diagnostic_phase(
-            "receipt-info-and-files", receipt_info_sha256=row["info_sha256"], receipt_files_sha256=row["files_sha256"]
+            "previous-toc", toc_sha256=package["toc_sha256"], component_count=len(package["components"])
         )
-        hashes.append(
-            {
-                "identifier_sha256": sha(identifier.encode()),
-                "info_sha256": row["info_sha256"],
-                "files_sha256": row["files_sha256"],
-            }
-        )
-        diagnostic_phase("receipt-info-and-files", receipts_queried=len(hashes))
-        diagnostic_phase("receipt-info-and-files", receipt_operation="relevance")
+        record = {
+            "schema": "row.macos-previous-pkg-metadata.v1",
+            "status": "observations-with-unresolved-gates",
+            "source": before,
+            "run": run,
+            "executed_workflow": workflow_network,
+            "previous_identity": identity,
+            "previous_download": network,
+            "previous": package,
+            "candidate_package": "not-captured",
+            "readiness_credit": 0,
+            "approval": False,
+            "signing_trust": False,
+            "installer_execution": False,
+            "app_execution": False,
+            "encryption_execution": False,
+            "physical_ownership_proof": False,
+            "process_tree_cleanup": "not-proven",
+        }
+        record["system_tool_sha256"] = readonly_system_tool_hashes()
+        if "PackageInfo" in material:
+            diagnostic_phase("package-info")
+            record["package_info"] = package_info_projection(material["PackageInfo"], parser)
+        if "Bom" in material:
+            if not material["Bom"].startswith(b"BOMStore"):
+                raise Refusal("bom-magic-unobserved")
+            with (private / "Bom").open("xb") as stream:
+                stream.write(material["Bom"])
+            diagnostic_phase("installed-lsbom-manual")
+            record["lsbom_manual"] = manual_projection(
+                commands.capture(
+                    ["/usr/bin/man", "-P", "/bin/cat", "8", "lsbom"], timeout=30, limit=512 * 1024
+                )
+            )
+            diagnostic_phase("installed-bom-reader")
+            bom_raw = commands.capture(
+                ["/usr/bin/lsbom", "-p", "fmugs", str(private / "Bom")], timeout=180
+            )
+            diagnostic_phase("installed-bom-reader", bom_output_sha256=sha(bom_raw))
+            record["bom"] = bom_projection(bom_raw, parser)
+        diagnostic_phase("receipt-namespace")
+        namespace = commands.capture(["/usr/sbin/pkgutil", "--pkgs"], timeout=30, limit=65536)
+        try:
+            identifiers = namespace.decode("ascii").splitlines()
+        except UnicodeError as exc:
+            raise Refusal("receipt-namespace-encoding") from exc
         if (
-            alias(identifier) == alias(APP_ID)
-            or row["lexical_app_claim_count"]
-            or row["data_namespace_claim_count"]
+            len(identifiers) > 2000
+            or len({alias(item) for item in identifiers}) != len(identifiers)
+            or any(
+                re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}", item) is None for item in identifiers
+            )
         ):
-            if len(receipts) >= 64:
-                raise Refusal("relevant-receipt-projection-bound")
-            receipts.append(
+            raise Refusal("receipt-namespace-bound-or-alias")
+        receipts, hashes = [], []
+        diagnostic_phase(
+            "receipt-info-and-files", receipt_namespace_count=len(identifiers), receipts_queried=0
+        )
+        for query_index, identifier in enumerate(identifiers, 1):
+            diagnostic_phase("receipt-info-and-files", receipt_query_index=query_index, receipt_operation="info")
+            info = commands.capture(
+                ["/usr/sbin/pkgutil", "--pkg-info-plist", identifier], timeout=30, limit=65536
+            )
+            diagnostic_phase("receipt-info-and-files", receipt_operation="files")
+            row = commands.receipt_files(identifier, info, parser)
+            diagnostic_phase("receipt-info-and-files", receipt_operation="projection")
+            diagnostic_phase(
+                "receipt-info-and-files", receipt_info_sha256=row["info_sha256"], receipt_files_sha256=row["files_sha256"]
+            )
+            hashes.append(
                 {
-                    "is_exact_own_identifier": identifier == APP_ID,
-                    "identifier_is_own_alias": alias(identifier) == alias(APP_ID)
-                    and identifier != APP_ID,
                     "identifier_sha256": sha(identifier.encode()),
-                    **row,
+                    "info_sha256": row["info_sha256"],
+                    "files_sha256": row["files_sha256"],
                 }
             )
-    record["receipts"] = {
-        "namespace_sha256": sha(namespace),
-        "namespace_count": len(identifiers),
-        "all_listed_receipts_queried": True,
-        "query_digest": sha(json.dumps(hashes, sort_keys=True).encode()),
-        "relevant": receipts,
-        "physical_namespace_complete": False,
-    }
-    diagnostic_phase("declared-filesystem-capabilities")
-    record["filesystem"] = {
-        "applications": observe_capabilities(Path("/Applications")),
-        "private_parent": observe_capabilities(parent),
-        "same_device_observed": Path("/Applications").stat().st_dev == parent.stat().st_dev,
-        "installed_sdk_header_qualification": "not-observed",
-        "unicode_empirical_probe": "not-enabled",
-    }
-    print("phase=source-publication-and-input-readback", flush=True)
-    diagnostic_phase("source-publication-and-input-readback")
-    readback = publication_recheck(identity, previous_identity(commands, private, "after"))
-    if (
-        sha(regular(previous, MAX_PKG)) != PREVIOUS["sha256"]
-        or commands.capture(["/usr/sbin/pkgutil", "--pkgs"], timeout=30, limit=65536) != namespace
-        or source_binding(root, commands, run["source_sha"]) != before
-        or commands.uncertain
-    ):
-        raise Refusal("metadata-input-source-or-command-uncertain")
-    record["source_unchanged"] = True
-    record["previous_publication_rechecked"] = True
-    record["publication_readback"] = readback
-    record["command_leader_records"] = commands.calls
-    record["unresolved"] = [
-        "current-candidate-package-and-native-transition",
-        "payload-cpio-and-all-script-content-inventory",
-        "bom-column-semantics-and-payload-agreement",
-        "installed-sdk-header-qualification",
-        "empirical-unicode-and-physical-firmlink-ownership",
-        "receipt-content-concurrency",
-        "process-descendant-cleanup",
-    ]
-    destination = root / REPORT
-    diagnostic_phase("public-output")
-    safe_directory(destination.parent, root)
-    commands.remaining()
-    public_save(destination, record)
-    commands.remaining()
-    emit_receipt_marker()
-    return {
-        "status": record["status"],
-        "output_sha256": sha(regular(destination, MAX_PUBLIC)),
-        "actual_native_transition": False,
-        "readiness_credit": 0,
-    }
+            diagnostic_phase("receipt-info-and-files", receipts_queried=len(hashes))
+            diagnostic_phase("receipt-info-and-files", receipt_operation="relevance")
+            if (
+                alias(identifier) == alias(APP_ID)
+                or row["lexical_app_claim_count"]
+                or row["data_namespace_claim_count"]
+            ):
+                if len(receipts) >= 64:
+                    raise Refusal("relevant-receipt-projection-bound")
+                receipts.append(
+                    {
+                        "is_exact_own_identifier": identifier == APP_ID,
+                        "identifier_is_own_alias": alias(identifier) == alias(APP_ID)
+                        and identifier != APP_ID,
+                        "identifier_sha256": sha(identifier.encode()),
+                        **row,
+                    }
+                )
+        record["receipts"] = {
+            "namespace_sha256": sha(namespace),
+            "namespace_count": len(identifiers),
+            "all_listed_receipts_queried": True,
+            "query_digest": sha(json.dumps(hashes, sort_keys=True).encode()),
+            "relevant": receipts,
+            "physical_namespace_complete": False,
+        }
+        diagnostic_phase("declared-filesystem-capabilities")
+        record["filesystem"] = {
+            "applications": observe_capabilities(Path("/Applications")),
+            "private_parent": observe_capabilities(parent),
+            "same_device_observed": Path("/Applications").stat().st_dev == parent.stat().st_dev,
+            "installed_sdk_header_qualification": "not-observed",
+            "unicode_empirical_probe": "not-enabled",
+        }
+        print("phase=source-publication-and-input-readback", flush=True)
+        diagnostic_phase("source-publication-and-input-readback")
+        readback = publication_recheck(identity, previous_identity(commands, private, "after", api_credential=api_credential))
+        api_credential = None
+        if (
+            sha(regular(previous, MAX_PKG)) != PREVIOUS["sha256"]
+            or commands.capture(["/usr/sbin/pkgutil", "--pkgs"], timeout=30, limit=65536) != namespace
+            or source_binding(root, commands, run["source_sha"]) != before
+            or commands.uncertain
+        ):
+            raise Refusal("metadata-input-source-or-command-uncertain")
+        record["source_unchanged"] = True
+        record["previous_publication_rechecked"] = True
+        record["publication_readback"] = readback
+        record["command_leader_records"] = commands.calls
+        record["unresolved"] = [
+            "current-candidate-package-and-native-transition",
+            "payload-cpio-and-all-script-content-inventory",
+            "bom-column-semantics-and-payload-agreement",
+            "installed-sdk-header-qualification",
+            "empirical-unicode-and-physical-firmlink-ownership",
+            "receipt-content-concurrency",
+            "process-descendant-cleanup",
+        ]
+        destination = root / REPORT
+        diagnostic_phase("public-output")
+        safe_directory(destination.parent, root)
+        commands.remaining()
+        public_save(destination, record)
+        commands.remaining()
+        emit_receipt_marker()
+        return {
+            "status": record["status"],
+            "output_sha256": sha(regular(destination, MAX_PUBLIC)),
+            "actual_native_transition": False,
+            "readiness_credit": 0,
+        }
+    finally:
+        api_credential = None
 
 
 def main(argv=None):

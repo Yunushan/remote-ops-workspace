@@ -2508,3 +2508,441 @@ class NetworkFailureDiagnosticTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+
+class MetadataApiCredentialTests(unittest.TestCase):
+    """Credential capabilities and cleanup through real seams, fully mocked I/O."""
+
+    TOKEN = "synthetic_MACOS_metadata_capability_" + "A" * 24
+    ENV = "ROW_MACOS_METADATA_TOKEN"
+
+    class Response(FakeResponse):
+        def __init__(self, raw, url):
+            super().__init__(raw, url)
+            self.close_error = None
+            self.read_error = None
+            self.close_calls = 0
+
+        @property
+        def closed(self):
+            return self.raw.closed
+
+        def close(self):
+            self.close_calls += 1
+            self.raw.close()
+            if self.close_error is not None:
+                raise self.close_error
+
+        def __exit__(self, *_args):
+            self.close()
+            return False
+
+        def read1(self, size):
+            if self.read_error is not None:
+                raise self.read_error
+            return super().read1(size)
+
+    def test_six_exact_requests_have_only_unredirected_bearer_and_clean_return(self):
+        release, tag, asset = publication_fixture()
+        calls = []
+        requests = []
+        responses = []
+
+        def opened(request, timeout):
+            calls.append((request.full_url, request.get_method(), timeout))
+            requests.append(request)
+            self.assertNotIn("Authorization", request.headers)
+            self.assertEqual(request.unredirected_hdrs["Authorization"], "Bearer " + self.TOKEN)
+            self.assertEqual(request.headers["Accept"], "application/vnd.github+json")
+            payload = (release, tag, asset)[(len(calls) - 1) % 3]
+            response = self.Response(json.dumps(payload).encode("ascii"), request.full_url)
+            responses.append(response)
+            return response
+
+        with owned_fixture() as private, patch.object(
+            M.urllib.request, "build_opener", return_value=SimpleNamespace(open=opened),
+        ):
+            before = M.previous_identity(FakeBudget(), private, "before", api_credential=self.TOKEN)
+            after = M.previous_identity(FakeBudget(), private, "after", api_credential=self.TOKEN)
+            M.publication_recheck(before, after)
+            persisted = b"".join(path.read_bytes() for path in private.iterdir())
+        self.assertEqual([row[0] for row in calls], list(M._MACOS_METADATA_API_URLS) * 2)
+        self.assertEqual([row[1:] for row in calls], [("GET", 20)] * 6)
+        self.assertTrue(all(not request.has_header("Authorization") for request in requests))
+        self.assertTrue(all(response.closed and response.close_calls == 1 for response in responses))
+        self.assertNotIn(self.TOKEN.encode(), persisted)
+
+    def test_diagnostic_labels_do_not_decide_authentication(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        response = self.Response(b"fixture", api)
+        seen = []
+
+        def opened(request, timeout):
+            seen.append(request.get_header("Authorization"))
+            return response
+
+        with patch.object(M.urllib.request, "build_opener", return_value=SimpleNamespace(open=opened)):
+            raw, facts = M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN,
+                                 network_operation="PRIVATE", network_pass="PRIVATE")
+        self.assertEqual(raw, b"fixture")
+        self.assertEqual(seen, ["Bearer " + self.TOKEN])
+        self.assertTrue(facts["authenticated_request"])
+        self.assertNotIn(self.TOKEN, json.dumps(facts))
+
+    def test_off_scope_or_unsafe_credential_never_reaches_provider(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        cases = [(api, None, value) for value in ("", "x\n", "x y", "\u00e9", "x" * 4097, object())]
+        cases += [(url, None, self.TOKEN) for url in (
+            api + "?x=1", api + "#x", api.replace("https:", "http:"),
+            api.replace("api.github.com", "api.github.com:443"),
+            api.replace("api.github.com", "other.example"),
+            api.replace("/releases/382583184", "/releases/1"),
+            "https://raw.githubusercontent.com/" + M.REPO + "/" + "a" * 40 + "/x.yml",
+            M.PREVIOUS["browser_download_url"],
+        )]
+        cases.append((api, Path("not-an-api-destination"), self.TOKEN))
+        with patch.object(M.urllib.request, "build_opener", side_effect=AssertionError("no provider")) as provider:
+            for url, destination, credential in cases:
+                with self.subTest(case=len(url)):
+                    with self.assertRaises(M.Refusal):
+                        M.fetch(url, 7, FakeBudget(), destination, api_credential=credential)
+        provider.assert_not_called()
+
+    def test_non_get_refuses_before_bearer_or_provider(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        request = M.urllib.request.Request(api, method="POST")
+        with patch.object(M.urllib.request, "Request", return_value=request), patch.object(
+            M.urllib.request, "build_opener", side_effect=AssertionError("no provider"),
+        ) as provider:
+            with self.assertRaises(M.Refusal):
+                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertFalse(request.has_header("Authorization"))
+        provider.assert_not_called()
+
+    def test_metadata_redirect_refuses_and_drops_bearer_without_second_request(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        requests = []
+
+        def opened(request, timeout):
+            requests.append(request)
+            M.RestrictedRedirect(False).redirect_request(
+                request, None, 302, "", {}, M.PREVIOUS["browser_download_url"],
+            )
+
+        with patch.object(M.urllib.request, "build_opener", return_value=SimpleNamespace(open=opened)):
+            with self.assertRaises(M.Refusal) as caught:
+                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertEqual(caught.exception.args, ("official-download-redirect-refused",))
+        self.assertEqual(len(requests), 1)
+        self.assertFalse(requests[0].has_header("Authorization"))
+
+    def test_anonymous_workflow_and_package_never_acquire_bearer(self):
+        workflow = "https://raw.githubusercontent.com/" + M.REPO + "/" + "a" * 40 + "/.github/workflows/macos-previous-pkg-metadata.yml"
+        seen = []
+
+        def opened(request, timeout):
+            seen.append(request)
+            self.assertFalse(request.has_header("Authorization"))
+            return FakeResponse(b"fixture", request.full_url)
+
+        with owned_fixture() as private, patch.object(
+            M.urllib.request, "build_opener", return_value=SimpleNamespace(open=opened),
+        ):
+            _, workflow_facts = M.fetch(workflow, 7, FakeBudget())
+            _, package_facts = M.fetch(M.PREVIOUS["browser_download_url"], 7,
+                                      FakeBudget(), private / "fixture.pkg")
+        self.assertEqual(len(seen), 2)
+        self.assertFalse(workflow_facts["authenticated_request"])
+        self.assertFalse(package_facts["authenticated_request"])
+
+    def test_remove_header_mutation_then_failure_cannot_return_success(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        response = self.Response(b"fixture", api)
+        request = M.urllib.request.Request(api)
+        remove = request.remove_header
+
+        def cleanup(header):
+            remove(header)
+            raise RuntimeError("PRIVATE cleanup")
+
+        with patch.object(M.urllib.request, "Request", return_value=request), patch.object(
+            M.urllib.request, "build_opener", return_value=SimpleNamespace(open=lambda *_args, **_kwargs: response),
+        ), patch.object(request, "remove_header", side_effect=cleanup):
+            with self.assertRaises(M.Refusal) as caught:
+                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertEqual(caught.exception.args, ("metadata-api-credential-cleanup-failed",))
+        self.assertFalse(request.has_header("Authorization"))
+
+    def test_cleanup_removes_both_header_stores(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        request = M.urllib.request.Request(api)
+        response = self.Response(b"fixture", api)
+
+        def opened(current, timeout):
+            current.add_header("Authorization", "Bearer " + self.TOKEN)
+            return response
+
+        with patch.object(M.urllib.request, "Request", return_value=request), patch.object(
+            M.urllib.request, "build_opener", return_value=SimpleNamespace(open=opened),
+        ):
+            M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertNotIn("Authorization", request.headers)
+        self.assertNotIn("Authorization", request.unredirected_hdrs)
+
+    def test_header_attachment_mutation_then_failure_preserves_original(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        request = M.urllib.request.Request(api)
+        add = request.add_unredirected_header
+        original = RuntimeError("PRIVATE attachment")
+
+        def attach(header, value):
+            add(header, value)
+            raise original
+
+        with patch.object(M.urllib.request, "Request", return_value=request), patch.object(
+            request, "add_unredirected_header", side_effect=attach,
+        ), patch.object(M.urllib.request, "build_opener", side_effect=AssertionError("no provider")) as provider:
+            with self.assertRaises(RuntimeError) as caught:
+                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertIs(caught.exception, original)
+        self.assertFalse(request.has_header("Authorization"))
+        provider.assert_not_called()
+
+    def test_body_failure_survives_secondary_header_cleanup_fault(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        response = self.Response(b"fixture", api)
+        original = M.Refusal("official-network-byte-bound")
+        response.read_error = original
+        request = M.urllib.request.Request(api)
+        remove = request.remove_header
+
+        def cleanup(header):
+            remove(header)
+            raise SystemExit("PRIVATE cleanup")
+
+        with patch.object(M.urllib.request, "Request", return_value=request), patch.object(
+            M.urllib.request, "build_opener", return_value=SimpleNamespace(open=lambda *_args, **_kwargs: response),
+        ), patch.object(request, "remove_header", side_effect=cleanup):
+            with self.assertRaises(M.Refusal) as caught:
+                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertIs(caught.exception, original)
+        self.assertEqual(original.args, ("official-network-byte-bound",))
+        self.assertTrue(response.closed)
+        self.assertFalse(request.has_header("Authorization"))
+
+    def test_unclosed_response_cleanup_failure_prevents_positive_return(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        response = self.Response(b"fixture", api)
+        with patch.object(self.Response, "__exit__", return_value=False), patch.object(
+            response, "close", side_effect=KeyboardInterrupt("PRIVATE cleanup"),
+        ), patch.object(M.urllib.request, "build_opener", return_value=SimpleNamespace(open=lambda *_args, **_kwargs: response)):
+            with self.assertRaises(M.Refusal) as caught:
+                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertEqual(caught.exception.args, ("metadata-api-credential-cleanup-failed",))
+        response.raw.close()
+
+    def test_whole_cleanup_faults_preserve_primary_and_refuse_success(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        for error_type in (KeyboardInterrupt, SystemExit, MemoryError):
+            for failed_request in (False, True):
+                original = M.urllib.error.HTTPError(api, 403, "PRIVATE", {}, io.BytesIO(b"PRIVATE"))
+                request = M.urllib.request.Request(api)
+                response = self.Response(b"fixture", api)
+                opened = unittest.mock.Mock(side_effect=original) if failed_request else unittest.mock.Mock(return_value=response)
+                try:
+                    with self.subTest(kind=error_type.__name__, failed_request=failed_request), patch.object(
+                        M.urllib.request, "Request", return_value=request,
+                    ), patch.object(M.urllib.request, "build_opener", return_value=SimpleNamespace(open=opened)), patch.object(
+                        M, "_cleanup_metadata_api_request", side_effect=error_type("PRIVATE cleanup"),
+                    ):
+                        if failed_request:
+                            with self.assertRaises(M.urllib.error.HTTPError) as caught:
+                                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+                            self.assertIs(caught.exception, original)
+                        else:
+                            with self.assertRaises(M.Refusal) as caught:
+                                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+                            self.assertEqual(caught.exception.args, ("metadata-api-credential-cleanup-failed",))
+                    self.assertEqual(opened.call_count, 1)
+                finally:
+                    # Synthetic fault deliberately prevented producer cleanup.
+                    request.remove_header("Authorization")
+                    original.close()
+                    response.raw.close()
+
+    def test_original_http_error_survives_cleanup_fault_and_stream_is_closed(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        original = M.urllib.error.HTTPError(api, 403, "PRIVATE", {}, io.BytesIO(b"PRIVATE"))
+        request = M.urllib.request.Request(api)
+        close = original.close
+
+        def bad_close():
+            close()
+            raise KeyboardInterrupt("PRIVATE cleanup")
+
+        with patch.object(M.urllib.request, "Request", return_value=request), patch.object(
+            M.urllib.request, "build_opener", return_value=SimpleNamespace(open=unittest.mock.Mock(side_effect=original)),
+        ), patch.object(original, "close", side_effect=bad_close):
+            with self.assertRaises(M.urllib.error.HTTPError) as caught:
+                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertIs(caught.exception, original)
+        self.assertEqual(original.code, 403)
+        self.assertTrue(original.closed)
+        self.assertFalse(request.has_header("Authorization"))
+
+    def test_original_response_close_failure_retains_precedence(self):
+        api = M._MACOS_METADATA_API_URLS[0]
+        response = self.Response(b"fixture", api)
+        body = M.Refusal("official-network-byte-bound")
+        close = RuntimeError("PRIVATE original close")
+        response.read_error, response.close_error = body, close
+        with patch.object(M.urllib.request, "build_opener", return_value=SimpleNamespace(open=lambda *_args, **_kwargs: response)):
+            with self.assertRaises(RuntimeError) as caught:
+                M.fetch(api, 7, FakeBudget(), api_credential=self.TOKEN)
+        self.assertIs(caught.exception, close)
+        self.assertIs(close.__context__, body)
+        self.assertTrue(response.closed)
+
+    def test_token_is_removed_before_host_gate_and_old_failure_wins(self):
+        original = M.Refusal("official-public-hosted-event-required")
+        environment = {self.ENV: "malformed\n"}
+
+        def host_gate(_root):
+            self.assertNotIn(self.ENV, environment)
+            raise original
+
+        with owned_fixture() as root, patch.object(M.os, "environ", environment), patch.object(
+            M, "hosted_gate", side_effect=host_gate,
+        ), patch.object(M, "MetadataCommands", side_effect=AssertionError("no native birth")) as commands:
+            with self.assertRaises(M.Refusal) as caught:
+                M.observe(root)
+        self.assertIs(caught.exception, original)
+        commands.assert_not_called()
+
+    def test_missing_or_malformed_after_valid_gate_refuses_before_native_birth(self):
+        for value in (None, "", "x\r\n", "x y", "\u00e9", "x" * 4097, object()):
+            environment = {} if value is None else {self.ENV: value}
+            with owned_fixture() as root, self.subTest(shape=type(value).__name__), patch.object(
+                M.os, "environ", environment,
+            ), patch.object(M, "hosted_gate", return_value={}), patch.object(
+                M, "MetadataCommands", side_effect=AssertionError("no native birth"),
+            ) as commands:
+                with self.assertRaises(M.Refusal) as caught:
+                    M.observe(root)
+            self.assertEqual(caught.exception.args, ("metadata-api-credential-unavailable",))
+            self.assertNotIn(self.ENV, environment)
+            commands.assert_not_called()
+
+    def test_main_credential_failure_is_fixed_and_contains_no_canary(self):
+        output, error = io.StringIO(), io.StringIO()
+        environment = {self.ENV: self.TOKEN + "\n"}
+        with patch.object(M.os, "environ", environment), patch.object(M, "hosted_gate", return_value={}), patch.object(
+            M, "MetadataCommands", side_effect=AssertionError("no native birth"),
+        ), patch.object(M, "public_refusal") as refusal, patch.object(M, "emit_network_refusal"), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            result = M.main(["capture"])
+        self.assertEqual(result, 1)
+        refusal.assert_called_once_with("metadata-api-credential-unavailable")
+        self.assertNotIn(self.TOKEN, output.getvalue() + error.getvalue())
+
+    def test_capture_clears_credential_before_save_and_marker_without_native_execution(self):
+        environment = {self.ENV: self.TOKEN}
+        saved, marked = [], []
+        payload = b"fixture"
+        before = {"head": "a" * 40, "contracts": {}}
+        commands = SimpleNamespace(private=None, uncertain=False, calls=[], remaining=lambda: 100)
+
+        def capture(argv, **_kwargs):
+            self.assertEqual(argv, ["/usr/sbin/pkgutil", "--pkgs"])
+            self.assertNotIn(self.ENV, environment)
+            return b""
+
+        commands.capture = capture
+
+        def previous(_commands, _private, pass_name, *, api_credential):
+            self.assertEqual(api_credential, self.TOKEN)
+            self.assertIn(pass_name, ("before", "after"))
+            return {"release_id": M.PREVIOUS["release_id"], "prerelease": True,
+                    "tag": M.PREVIOUS["tag"], "tag_commit": M.PREVIOUS["tag_commit"],
+                    "asset_id": M.PREVIOUS["asset_id"], "size": len(payload),
+                    "sha256": M.sha(payload), "metadata_sha256": ["d" * 64] * 3}
+
+        def download(_url, _maximum, _commands, destination, **kwargs):
+            self.assertNotIn("api_credential", kwargs)
+            destination.write_bytes(payload)
+            return b"", {"size": len(payload), "sha256": M.sha(payload), "authenticated_request": False}
+
+        def cleared():
+            frame = sys._getframe(1)
+            try:
+                while frame is not None and not (frame.f_globals is M.__dict__ and frame.f_code.co_name == "observe"):
+                    frame = frame.f_back
+                self.assertIsNotNone(frame)
+                self.assertIsNone(frame.f_locals["api_credential"])
+                self.assertNotIn(self.ENV, environment)
+            finally:
+                del frame
+
+        def save(path, record):
+            cleared()
+            raw = json.dumps(record).encode()
+            self.assertNotIn(self.TOKEN.encode(), raw)
+            path.write_bytes(raw)
+            saved.append(record)
+
+        def marker():
+            cleared()
+            marked.append(True)
+
+        actual_stat = M.Path.stat
+        with owned_fixture() as root:
+            device = root.stat().st_dev
+
+            def synthetic_stat(path, *args, **kwargs):
+                if path == M.Path("/Applications"):
+                    return SimpleNamespace(st_dev=device)
+                value = actual_stat(path, *args, **kwargs)
+                if path.name.startswith("macos-previous-pkg-metadata-"):
+                    return SimpleNamespace(st_mode=0o40700, st_dev=value.st_dev,
+                                           st_ino=value.st_ino, st_nlink=value.st_nlink,
+                                           st_size=value.st_size, st_mtime_ns=value.st_mtime_ns,
+                                           st_ctime_ns=value.st_ctime_ns)
+                return value
+
+            with patch.object(M.os, "environ", environment), patch.object(
+                M, "hosted_gate", return_value={"source_sha": "a" * 40},
+            ), patch.object(M, "MetadataCommands", return_value=commands), patch.object(
+                M, "source_binding", return_value=before,
+            ), patch.object(M, "executed_workflow_binding", return_value={"authenticated_request": False}), patch.object(
+                M, "previous_identity", side_effect=previous,
+            ) as identity, patch.object(M, "fetch", side_effect=download), patch.dict(
+                M.PREVIOUS, {"size": len(payload), "sha256": M.sha(payload)},
+            ), patch.object(M, "package_projection", return_value=({"toc_sha256": "d" * 64, "components": []}, {})), patch.object(
+                M, "readonly_system_tool_hashes", return_value={},
+            ), patch.object(M, "observe_capabilities", return_value={"status": "synthetic"}), patch.object(
+                M.Path, "stat", synthetic_stat,
+            ), patch.object(M, "public_save", side_effect=save), patch.object(M, "emit_receipt_marker", side_effect=marker), patch.object(
+                M.subprocess, "Popen", side_effect=AssertionError("no native child"),
+            ) as child, contextlib.redirect_stdout(io.StringIO()):
+                result = M.observe(root)
+            child.assert_not_called()
+        self.assertEqual(result["readiness_credit"], 0)
+        self.assertEqual(identity.call_count, 2)
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(marked, [True])
+
+    def test_identity_drift_still_refuses_after_credentialed_requests(self):
+        release, tag, asset = publication_fixture()
+        asset["digest"] = "sha256:" + "0" * 64
+        payloads = iter(json.dumps(value).encode("ascii") for value in (release, tag, asset))
+        calls = []
+
+        def opened(request, timeout):
+            calls.append(request.full_url)
+            return self.Response(next(payloads), request.full_url)
+
+        with owned_fixture() as private, patch.object(M.urllib.request, "build_opener", return_value=SimpleNamespace(open=opened)):
+            with self.assertRaises(M.Refusal) as caught:
+                M.previous_identity(FakeBudget(), private, "before", api_credential=self.TOKEN)
+        self.assertEqual(caught.exception.args, ("previous-asset-identity-changed",))
+        self.assertEqual(calls, list(M._MACOS_METADATA_API_URLS))

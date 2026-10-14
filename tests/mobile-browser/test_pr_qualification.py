@@ -3817,12 +3817,12 @@ class ChromeKeywordContextDiagnosticTests(unittest.TestCase):
         attach = H._note_chrome_parser_check
         for stage in ("annotation", "attachment"):
             newer = object()
-            def annotation(context, error, check, scope):
+            def annotation(context, error, check, scope, *, newer=newer):
                 annotate(context, error, check, scope)
                 context.update(header_kind="keyword-prefix", keyword_context="before-active-horizontal-word")
                 H._chrome_parser_current_token = newer
                 raise KeyboardInterrupt()
-            def attachment(error, context, token):
+            def attachment(error, context, token, *, newer=newer):
                 attach(error, context, token)
                 H._chrome_parser_current_token = newer
                 raise SystemExit(9)

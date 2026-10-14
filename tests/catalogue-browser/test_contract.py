@@ -2030,9 +2030,11 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
         import hashlib
         import stat
         import threading
+
         import cft_bundle as bundle
         import cft_runtime as policy_runtime
-        from test_cft_runtime import PolicyMemory, FixturePath, binding, policy_raw
+        from test_cft_runtime import FixturePath, PolicyMemory, binding, policy_raw
+
         case = self
         memory = PolicyMemory()
         memory.case = self
@@ -2070,15 +2072,23 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
         class Sink:
             def __init__(self, path): self.path = path
             def __enter__(self): return self
-            def write(self, raw): files[str(self.path)] = raw; return len(raw)
+            def write(self, raw):
+                files[str(self.path)] = raw
+                return len(raw)
             def __exit__(self, *_args): return False
         class MemoryPath(PurePosixPath):
             def resolve(self, strict=False): return self
             def exists(self): return str(self) in files
             def mkdir(self, mode=0o777, parents=False): pass
-            def open(self, mode): case.assertEqual(mode, 'wb'); return Sink(self)
-            def replace(self, target): files[str(target)] = files.pop(str(self)); return target
-            def write_bytes(self, raw): files[str(self)] = raw; return len(raw)
+            def open(self, mode):
+                case.assertEqual(mode, 'wb')
+                return Sink(self)
+            def replace(self, target):
+                files[str(target)] = files.pop(str(self))
+                return target
+            def write_bytes(self, raw):
+                files[str(self)] = raw
+                return len(raw)
             def read_bytes(self): return ('synthetic-asset-' + self.name).encode()
         class FakeOwner:
             def __init__(self, registry, argv, cwd, env, deadline, *, frames=False):
@@ -2090,7 +2100,8 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
                 self.identity = {'pid': self.pid, 'group': self.pid, 'session': self.pid, 'start': 99, 'state': 'S'}
                 self.process = Mock(pid=self.pid, returncode=None)
                 self.process.poll.side_effect = lambda: self.process.returncode
-                registry.append(self); owners.append(self)
+                registry.append(self)
+                owners.append(self)
                 if not frames:
                     case.assertEqual(argv, [str(chrome_driver), '--port=0', '--enable-chrome-logs'])
                     self.output.extend(b'ChromeDriver was started successfully on port 12346')
@@ -2102,17 +2113,22 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
                     state['pending'] = {'ready': True, 'nonce': 'a' * 64, 'port': 12345, 'inventory': inventory()}
                 else:
                     state['case'] = value['case']
-                    if value['op'] == 'stop': state['alive'] = False
+                    if value['op'] == 'stop':
+                        state['alive'] = False
                     state['pending'] = {'nonce': 'a' * 64, 'inventory': inventory()}
             def receive(self): return state['pending']
             def finish(self, timeout=10):
-                self.finished = self.reaped = True; self.process.returncode = 0; return bytes(self.output)
+                self.finished = self.reaped = True
+                self.process.returncode = 0
+                return bytes(self.output)
             def refuse_cleanup(self):
-                self.finished = self.reaped = True; self.process.returncode = 0
+                self.finished = self.reaped = True
+                self.process.returncode = 0
             def cleanup_observed(self): return self.reaped
         class FakeDriver:
             def __init__(self, port, deadline):
-                native_calls.append(('driver', port, deadline)); self.origin = None
+                native_calls.append(('driver', port, deadline))
+                self.origin = None
             def start(self, binary, profile):
                 case.assertEqual(binary, chrome)
                 return {'browserVersion': bundle.VERSION, 'chrome': {
@@ -2121,40 +2137,57 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
                 case.assertEqual(route, '/url')
                 case.assertEqual(payload, {'url': 'http://127.0.0.1:12345/index.html'})
             def connect(self, token, count):
-                case.assertIn(token, ('b' * 64, 'c' * 64)); case.assertEqual(count, len(profiles))
-                state.update(connected=True, old_rejected=False, down=False); event('GET', 200); return snapshot()
+                case.assertIn(token, ('b' * 64, 'c' * 64))
+                case.assertEqual(count, len(profiles))
+                state.update(connected=True, old_rejected=False, down=False)
+                event('GET', 200)
+                return snapshot()
             def create(self, name, address, count):
                 host, port = address.rsplit(':', 1)
                 profiles.append({'protocol': 'ssh', 'name': name, 'host': host, 'port': int(port)})
-                case.assertEqual(count, len(profiles)); replace_false.append(True); event('POST', 201)
+                case.assertEqual(count, len(profiles))
+                replace_false.append(True)
+                event('POST', 201)
             def refresh(self, count):
-                case.assertEqual(count, len(profiles)); event('GET', 200); return snapshot()
+                case.assertEqual(count, len(profiles))
+                event('GET', 200)
+                return snapshot()
             def click(self, selector):
-                if selector == '#catalogue-disconnect': state['connected'] = False
+                if selector == '#catalogue-disconnect':
+                    state['connected'] = False
                 elif selector == '#catalogue-refresh' and not state['alive']:
                     state.update(connected=False, down=True)
                 elif selector == '#catalogue-refresh' and state['launch'] == 2 and state['case'] == 'restart-persistence-auth-rotation':
-                    state.update(connected=False, old_rejected=True); event('GET', 401)
-                else: case.assertIn(selector, ('#catalogue-refresh', '#profile-submit'))
+                    state.update(connected=False, old_rejected=True)
+                    event('GET', 401)
+                else:
+                    case.assertIn(selector, ('#catalogue-refresh', '#profile-submit'))
             def wait(self, predicate, timeout=None):
-                answer = snapshot(); case.assertTrue(predicate(answer)); return answer
+                answer = snapshot()
+                case.assertTrue(predicate(answer))
+                return answer
             def private_storage_absent(self, tokens, names): return True
             def lifecycle(self, origin, token, nonce):
-                case.assertEqual(nonce, 'a' * 64); return copy.deepcopy(contract.CASES['pagehide-new-document'])
+                case.assertEqual(nonce, 'a' * 64)
+                return copy.deepcopy(contract.CASES['pagehide-new-document'])
             def controlled(self): pass
             def execute(self, script, token, assets, action, *, async_):
                 case.assertIs(async_, True)
-                if action == 'seed-api': return {'controlled': True, 'seeded': True}
+                if action == 'seed-api':
+                    return {'controlled': True, 'seeded': True}
                 case.assertEqual(action, 'finish')
-                for _ in range(3): event('GET', 200, route='static')
+                for _ in range(3):
+                    event('GET', 200, route='static')
                 return {'controlled': True, 'healthPolicyAbsent': True, 'authBypass': True,
                     'noStoreBypass': True, 'removed': True, 'exact': True}
             def close(self): pass
         def proc(pid):
-            if pid in (400, 401): return {'pid': pid, 'group': 400, 'session': 400, 'start': 99, 'state': 'S'}
+            if pid in (400, 401):
+                return {'pid': pid, 'group': 400, 'session': 400, 'start': 99, 'state': 'S'}
             return {'pid': pid, 'group': pid, 'session': pid, 'start': 99, 'state': 'S'}
         def groups(group):
-            if group == 400 and owners[1].process.returncode is None: return [proc(400), proc(401)]
+            if group == 400 and owners[1].process.returncode is None:
+                return [proc(400), proc(401)]
             return []
         original_raw = memory.raw
         def raw(name):
@@ -2165,7 +2198,8 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
             return original_raw(name)
         original_observe = policy_runtime.observe_policy_tasks
         def tasks(selected, owner, deadline, *, checkpoint):
-            case.assertIs(selected, holder); case.assertIs(owner, owners[1])
+            case.assertIs(selected, holder)
+            case.assertIs(owner, owners[1])
             task_calls.append(checkpoint)
             return original_observe(selected, owner, deadline, checkpoint=checkpoint)
         with memory:

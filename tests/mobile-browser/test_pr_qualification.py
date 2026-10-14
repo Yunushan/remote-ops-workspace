@@ -3326,9 +3326,13 @@ class ChromeHeaderKindDiagnosticTests(unittest.TestCase):
                     expected_scope = scope if scope in ("active", "hidden") else "unobserved"
                     record = Q.capture_refusal_diagnostic(error, self.PHASE)
                     self.assertEqual(record["chrome_parser_check"],
-                        {"check": "package-header", "scope": expected_scope, "header_kind": kind})
+                        {"check": "package-header", "scope": expected_scope, "header_kind": kind,
+                         **({"keyword_context": ("before-active-horizontal-word" if scope == "before"
+                                                  else "after-active-horizontal-word")}
+                            if kind == "keyword-prefix" else {})})
                     self.assertEqual(set(error.chrome_parser_check),
-                        {"attempt_token", "selected_error", "check", "scope", "header_kind"})
+                        {"attempt_token", "selected_error", "check", "scope", "header_kind"}
+                        | ({"keyword_context"} if kind == "keyword-prefix" else set()))
                     self.assertIs(error.chrome_parser_check["selected_error"], error)
                     self.assertNotIn("PRIVATE", json.dumps(record))
                     self.assertNotIn("com.android.foreign", json.dumps(record))
@@ -3450,7 +3454,7 @@ class ChromeHeaderKindDiagnosticTests(unittest.TestCase):
         for fault in (MemoryError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
             def failed(error, context, token, fault=fault):
                 attach(error, context, token)
-                self.assertEqual(len(error.chrome_parser_check), 5)
+                self.assertEqual(len(error.chrome_parser_check), 6)
                 raise fault
             with (self.subTest(kind=type(fault).__name__),
                     mock.patch.object(H, "_note_chrome_parser_check", side_effect=failed)):
@@ -3474,7 +3478,7 @@ class ChromeHeaderKindDiagnosticTests(unittest.TestCase):
             pass
         error = self.refused(b"Package\tPRIVATE\n")
         token = H._chrome_parser_current_token
-        good = dict(error.chrome_parser_check)
+        good = {key: value for key, value in error.chrome_parser_check.items() if key != "keyword_context"}
         bad_key = {Text("attempt_token"): token, **{key: value for key, value in good.items() if key != "attempt_token"}}
         cases = (None, [], Mapping(good), {**good, "PRIVATE": 1}, bad_key,
             {**good, "header_kind": None}, {**good, "header_kind": True},
@@ -3571,7 +3575,385 @@ class ChromeHeaderKindDiagnosticTests(unittest.TestCase):
                 line = stream.getvalue()
                 self.assertLessEqual(len(line.encode("ascii")), 512)
                 self.assertEqual(json.loads(line)["chrome_parser_check"],
-                    {"check": "package-header", "scope": "unobserved", "header_kind": "keyword-prefix"})
+                    {"check": "package-header", "scope": "unobserved", "header_kind": "keyword-prefix",
+                     "keyword_context": "before-active-horizontal-word"})
+                self.assertNotIn("PRIVATE", line)
+
+
+class ChromeKeywordContextDiagnosticTests(unittest.TestCase):
+    PHASE = "chrome-static-device-inventory"
+    CODE = "actual-package-version-unobserved"
+    FORMS = ((b"Package", "bare"), (b"Package [PRIVATE]", "horizontal-bracket"),
+             (b"Package PRIVATE", "horizontal-word"), (b"Package (PRIVATE)", "horizontal-other"),
+             (b"Package: PRIVATE", "colon"), (b"Package=PRIVATE", "equals"),
+             (b"Package[PRIVATE]", "bracket"), (b"Package{PRIVATE}", "other-punctuation"))
+
+    def setUp(self):
+        ChromeParserCheckDiagnosticTests.setUp(self)
+
+    def refused(self, raw):
+        return ChromeParserCheckDiagnosticTests.refused(self, raw)
+
+    def projected(self, error):
+        return Q.capture_refusal_diagnostic(error, self.PHASE)["chrome_parser_check"]
+
+    def test_all_sixteen_genuine_selected_refusal_contexts_keep_original_query(self):
+        case = ActiveChromePackageVersionTests()
+        for header, form in self.FORMS:
+            for scope, place in (("before", "before-active"), ("after", "after-active")):
+                raw = ChromeHeaderKindDiagnosticTests.raw_for(header, scope)
+                adb = case.inventory(raw)
+                with (self.subTest(form=form, scope=scope),
+                        mock.patch.object(H.subprocess, "Popen") as native,
+                        mock.patch.object(H.socket, "create_connection") as provider):
+                    with self.assertRaises(H.Refusal) as caught:
+                        H.package_inventory(adb, "com.android.chrome")
+                error = caught.exception
+                self.assertIs(type(error), H.Refusal)
+                self.assertEqual(error.args, (self.CODE,))
+                self.assertIsNone(error.__cause__)
+                self.assertIsNone(error.__context__)
+                self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved",
+                    "header_kind": "keyword-prefix", "keyword_context": place + "-" + form})
+                self.assertEqual(set(error.chrome_parser_check),
+                    {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"})
+                self.assertIs(error.chrome_parser_check["selected_error"], error)
+                self.assertIs(error.chrome_parser_check["attempt_token"], H._chrome_parser_current_token)
+                adb.shell.assert_called_once_with(case.FIXED)
+                native.assert_not_called()
+                provider.assert_not_called()
+
+    def test_both_end_horizontal_strip_and_internal_tab_have_distinct_contexts(self):
+        for raw, form in ((b"Package \t", "bare"), (b" \tPackage\tPRIVATE \t", "horizontal-word"),
+                          (b"Package\t(PRIVATE)", "horizontal-other")):
+            with self.subTest(form=form):
+                error = self.refused(raw + b"\n")
+            self.assertEqual(self.projected(error)["keyword_context"], "before-active-" + form)
+        self.assertEqual(H._chrome_keyword_context("Package \t", 0), "before-active-bare")
+        self.assertEqual(H._chrome_keyword_context("Package\tPRIVATE", 0), "before-active-horizontal-word")
+
+    def test_active_and_hidden_scope_can_only_report_after_active(self):
+        for scope in ("active", "hidden"):
+            with self.subTest(scope=scope):
+                error = self.refused(ChromeHeaderKindDiagnosticTests.raw_for(b"Package\tPRIVATE", scope))
+            self.assertEqual(self.projected(error), {"check": "package-header", "scope": scope,
+                "header_kind": "keyword-prefix", "keyword_context": "after-active-horizontal-word"})
+
+    def test_context_classifier_runs_after_same_original_selected_refusal(self):
+        selected = []
+        original = H._chrome_keyword_context
+        def classify(line, count):
+            error = sys.exc_info()[1]
+            self.assertIs(type(error), H.Refusal)
+            self.assertEqual(error.args, (self.CODE,))
+            self.assertEqual((line, count), ("Package\tPRIVATE", 0))
+            selected.append(error)
+            return original(line, count)
+        with mock.patch.object(H, "_chrome_keyword_context", side_effect=classify) as classifier:
+            error = self.refused(b"Package\tPRIVATE\n")
+        classifier.assert_called_once_with("Package\tPRIVATE", 0)
+        self.assertEqual(selected, [error])
+        self.assertIs(error, selected[0])
+
+    def test_256_boundary_and_257_never_enter_optional_classifier(self):
+        original = H._chrome_keyword_context
+        for size in (256, 257):
+            header = b"Package " + b"P" * (size - 8)
+            with self.subTest(size=size), mock.patch.object(H, "_chrome_keyword_context", side_effect=original) as classifier:
+                error = self.refused(header + b"\n")
+            if size == 256:
+                classifier.assert_called_once_with(header.decode("ascii"), 0)
+                self.assertEqual(self.projected(error)["keyword_context"], "before-active-horizontal-word")
+            else:
+                classifier.assert_not_called()
+                self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved", "header_kind": "over-bound"})
+        self.assertIsNone(H._chrome_keyword_context("Package " + "P" * 249, 0))
+
+    def test_exact_line_and_exact_integer_count_reject_before_faulting_methods(self):
+        class Text(str):
+            def __len__(self):
+                raise AssertionError("length")
+            def strip(self, *args):
+                raise AssertionError("strip")
+        class Integer(int):
+            def __eq__(self, other):
+                raise AssertionError("equality")
+        for value in (None, True, [], b"Package PRIVATE", Text("Package PRIVATE")):
+            with self.subTest(kind=type(value).__name__):
+                self.assertIsNone(H._chrome_keyword_context(value, 0))
+        for count in (None, False, True, -1, 2, 0.0, "0", Integer(0)):
+            with self.subTest(kind=type(count).__name__):
+                self.assertIsNone(H._chrome_keyword_context("Package PRIVATE", count))
+        self.assertEqual(H._chrome_keyword_context("Package PRIVATE", 0), "before-active-horizontal-word")
+        self.assertEqual(H._chrome_keyword_context("Package PRIVATE", 1), "after-active-horizontal-word")
+
+    def test_invalid_state_and_classifier_faults_keep_eligible_five_fields(self):
+        original = H._chrome_keyword_context
+        for count in (None, True, False, -1, 2, "0"):
+            with self.subTest(count=count), mock.patch.object(H, "_chrome_keyword_context", side_effect=lambda line, _count, count=count: original(line, count)):
+                error = self.refused(b"Package\tPRIVATE\n")
+            self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved", "header_kind": "keyword-prefix"})
+            self.assertEqual(len(error.chrome_parser_check), 5)
+        class Text(str):
+            pass
+        for fault in (MemoryError(), KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(setup=type(fault).__name__), mock.patch.object(H, "_new_chrome_parser_context", side_effect=fault):
+                error = self.refused(b"Package\tPRIVATE\n")
+            self.assertEqual(error.args, (self.CODE,))
+            self.assertIsNone(H._chrome_parser_current_token)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        def malformed(token):
+            return {Text("attempt_token"): token}
+        with mock.patch.object(H, "_new_chrome_parser_context", side_effect=malformed):
+            error = self.refused(b"Package\tPRIVATE\n")
+        self.assertEqual(error.args, (self.CODE,))
+        self.assertIsNone(H._chrome_parser_current_token)
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        for fault in (MemoryError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(kind=type(fault).__name__), mock.patch.object(H, "_chrome_keyword_context", side_effect=fault):
+                error = self.refused(b"Package\tPRIVATE\n")
+            self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved", "header_kind": "keyword-prefix"})
+            self.assertEqual(len(error.chrome_parser_check), 5)
+
+    def test_invalid_optional_returns_keep_eligible_five_fields(self):
+        class Text(str):
+            pass
+        for value in (None, True, [], "PRIVATE", Text("before-active-horizontal-word")):
+            with self.subTest(kind=type(value).__name__), mock.patch.object(H, "_chrome_keyword_context", return_value=value):
+                error = self.refused(b"Package\tPRIVATE\n")
+            self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved", "header_kind": "keyword-prefix"})
+            self.assertEqual(len(error.chrome_parser_check), 5)
+        with mock.patch.object(H, "_chrome_keyword_context", return_value="before-active-horizontal-word"):
+            error = self.refused(ChromeHeaderKindDiagnosticTests.raw_for(b"Package\tPRIVATE", "active"))
+        self.assertEqual(self.projected(error), {"check": "package-header", "scope": "active", "header_kind": "keyword-prefix"})
+
+    def test_independent_H_Q_all_four_five_six_key_grammars(self):
+        class Text(str):
+            pass
+        class Mapping(dict):
+            pass
+        error = self.refused(b"Package\tPRIVATE\n")
+        token = H._chrome_parser_current_token
+        six = dict(error.chrome_parser_check)
+        five = {key: value for key, value in six.items() if key != "keyword_context"}
+        four = {key: value for key, value in five.items() if key != "header_kind"}
+        for context, expected in ((four, {"check": "package-header", "scope": "unobserved"}),
+                                  (five, {"check": "package-header", "scope": "unobserved", "header_kind": "keyword-prefix"}),
+                                  (six, {"check": "package-header", "scope": "unobserved", "header_kind": "keyword-prefix", "keyword_context": "before-active-horizontal-word"})):
+            error.__dict__.pop("chrome_parser_check", None)
+            H._note_chrome_parser_check(error, context, token)
+            self.assertEqual(Q.chrome_parser_check_diagnostic(error), expected)
+        bad_key = {Text("keyword_context"): six["keyword_context"], **{key: value for key, value in six.items() if key != "keyword_context"}}
+        cases = (None, [], Mapping(six), {**six, "PRIVATE": 1}, bad_key,
+            {**six, "keyword_context": None}, {**six, "keyword_context": True},
+            {**six, "keyword_context": Text("before-active-horizontal-word")}, {**six, "keyword_context": "PRIVATE"},
+            {key: value for key, value in six.items() if key != "header_kind"},
+            {**six, "header_kind": "target-spacing"}, {**six, "check": "active-final"},
+            {**six, "scope": "active"}, {**six, "scope": "hidden"},
+            {**six, "attempt_token": object()}, {**six, "selected_error": H.Refusal(self.CODE)})
+        for context in cases:
+            with self.subTest(kind=type(context).__name__):
+                error.__dict__.pop("chrome_parser_check", None)
+                H._note_chrome_parser_check(error, context, token)
+                self.assertNotIn("chrome_parser_check", error.__dict__)
+                error.chrome_parser_check = context
+                self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        for key in six:
+            context = {Text(current) if current == key else current: value for current, value in six.items()}
+            with self.subTest(subclass_key=key):
+                error.__dict__.pop("chrome_parser_check", None)
+                H._note_chrome_parser_check(error, context, token)
+                self.assertNotIn("chrome_parser_check", error.__dict__)
+                error.chrome_parser_check = context
+                self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_all_contexts_and_scope_relations_independently_checked(self):
+        error = self.refused(b"Package\tPRIVATE\n")
+        token = H._chrome_parser_current_token
+        good = dict(error.chrome_parser_check)
+        self.assertEqual(tuple(H.CHROME_KEYWORD_CONTEXTS), tuple(Q.CHROME_KEYWORD_CONTEXTS))
+        self.assertEqual(len(set(H.CHROME_KEYWORD_CONTEXTS)), 16)
+        for value in H.CHROME_KEYWORD_CONTEXTS:
+            for scope in ("unobserved", "active", "hidden"):
+                context = {**good, "scope": scope, "keyword_context": value}
+                error.__dict__.pop("chrome_parser_check", None)
+                H._note_chrome_parser_check(error, context, token)
+                eligible = scope == "unobserved" or value.startswith("after-active-")
+                if eligible:
+                    self.assertEqual(Q.chrome_parser_check_diagnostic(error), {"check": "package-header", "scope": scope,
+                        "header_kind": "keyword-prefix", "keyword_context": value})
+                else:
+                    self.assertNotIn("chrome_parser_check", error.__dict__)
+                    error.chrome_parser_check = context
+                    self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_complete_six_field_annotation_fault_invalidates_only_current_token(self):
+        annotate = H._annotate_chrome_parser_context
+        for fault in (MemoryError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
+            def failed(context, error, check, scope, fault=fault):
+                annotate(context, error, check, scope)
+                context.update(header_kind="keyword-prefix", keyword_context="before-active-horizontal-word")
+                self.assertEqual(len(context), 6)
+                raise fault
+            with self.subTest(kind=type(fault).__name__), mock.patch.object(H, "_annotate_chrome_parser_context", side_effect=failed):
+                error = self.refused(b"Package\tPRIVATE\n")
+            self.assertIsNone(H._chrome_parser_current_token)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_complete_six_field_attachment_fault_invalidates_only_current_token(self):
+        attach = H._note_chrome_parser_check
+        for fault in (MemoryError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
+            def failed(error, context, token, fault=fault):
+                attach(error, context, token)
+                self.assertEqual(len(error.chrome_parser_check), 6)
+                raise fault
+            with self.subTest(kind=type(fault).__name__), mock.patch.object(H, "_note_chrome_parser_check", side_effect=failed):
+                error = self.refused(b"Package\tPRIVATE\n")
+            self.assertIsNone(H._chrome_parser_current_token)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_annotation_and_attachment_fault_never_invalidate_newer_token(self):
+        annotate = H._annotate_chrome_parser_context
+        attach = H._note_chrome_parser_check
+        for stage in ("annotation", "attachment"):
+            newer = object()
+            def annotation(context, error, check, scope):
+                annotate(context, error, check, scope)
+                context.update(header_kind="keyword-prefix", keyword_context="before-active-horizontal-word")
+                H._chrome_parser_current_token = newer
+                raise KeyboardInterrupt()
+            def attachment(error, context, token):
+                attach(error, context, token)
+                H._chrome_parser_current_token = newer
+                raise SystemExit(9)
+            name = "_annotate_chrome_parser_context" if stage == "annotation" else "_note_chrome_parser_check"
+            callback = annotation if stage == "annotation" else attachment
+            with self.subTest(stage=stage), mock.patch.object(H, name, side_effect=callback):
+                error = self.refused(b"Package\tPRIVATE\n")
+            self.assertIs(H._chrome_parser_current_token, newer)
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        error = self.refused(b"Package\tPRIVATE\n")
+        context = dict(error.chrome_parser_check)
+        local = H._chrome_parser_current_token
+        newer = object()
+        def replaced(selected, name, value):
+            object.__setattr__(selected, name, value)
+            if name == "chrome_parser_check":
+                H._chrome_parser_current_token = newer
+        with mock.patch.object(H.Refusal, "__setattr__", replaced):
+            H._note_chrome_parser_check(error, context, local)
+        self.assertIs(error.chrome_parser_check["attempt_token"], local)
+        self.assertIs(H._chrome_parser_current_token, newer)
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_reused_error_stale_clear_and_failed_new_attachment_cannot_publish(self):
+        for stage in ("clear", "attachment"):
+            old_error = self.refused(b"Package\tPRIVATE\n")
+            old = old_error.chrome_parser_check
+            old_token = old["attempt_token"]
+            for fault in (MemoryError(), KeyboardInterrupt(), SystemExit(9)):
+                with ExitStack() as stack:
+                    stack.enter_context(mock.patch.object(H, "_active_chrome_package_versions", side_effect=old_error))
+                    if stage == "clear":
+                        stack.enter_context(mock.patch.object(H.Refusal, "__delattr__", side_effect=fault))
+                    else:
+                        stack.enter_context(mock.patch.object(H, "_note_chrome_parser_check", side_effect=fault))
+                    error = self.refused(b"Package\tPRIVATE\n")
+                self.assertIs(error, old_error)
+                self.assertIsNot(H._chrome_parser_current_token, old_token)
+                self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+                if stage == "clear":
+                    self.assertIs(error.chrome_parser_check, old)
+
+    def test_projector_fault_and_mid_projection_token_replacement_omit(self):
+        error = self.refused(b"Package\tPRIVATE\n")
+        token = H._chrome_parser_current_token
+        class ChangingHost:
+            Refusal = H.Refusal
+            def __init__(self):
+                self.reads = 0
+            @property
+            def _chrome_parser_current_token(self):
+                self.reads += 1
+                return token if self.reads == 1 else object()
+        host = ChangingHost()
+        with mock.patch.object(Q, "H", host):
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        self.assertEqual(host.reads, 2)
+        for fault in (MemoryError(), KeyboardInterrupt(), SystemExit(9)):
+            with mock.patch.object(Q, "chrome_parser_check_diagnostic", side_effect=fault):
+                record = Q.capture_refusal_diagnostic(error, self.PHASE)
+            self.assertEqual(record["refusal_code"], self.CODE)
+            self.assertNotIn("chrome_parser_check", record)
+
+    def test_nonkeyword_and_valid_inventory_never_call_context_classifier(self):
+        case = ActiveChromePackageVersionTests()
+        with mock.patch.object(H, "_chrome_keyword_context", side_effect=AssertionError("context")) as classifier:
+            for header, kind in ChromeHeaderKindDiagnosticTests.ROWS:
+                if kind == "keyword-prefix":
+                    continue
+                error = self.refused(header + b"\n")
+                self.assertNotIn("keyword_context", self.projected(error))
+            adb = case.inventory(case.dump(hidden=("98.0", "789")))
+            with mock.patch.object(H.subprocess, "Popen") as native, mock.patch.object(H.socket, "create_connection") as provider:
+                result = H.package_inventory(adb, "com.android.chrome")
+            self.assertEqual(result["version"], "123.0")
+            self.assertEqual(result["version_code"], "456")
+            self.assertEqual(adb.shell.call_args_list, [mock.call(case.FIXED), mock.call("pm path com.android.chrome"),
+                mock.call("sha256sum " + case.APK), mock.call("stat -c %s " + case.APK)])
+            native.assert_not_called()
+            provider.assert_not_called()
+        classifier.assert_not_called()
+
+    def test_wrong_phase_type_args_and_error_identity_never_project_context(self):
+        error = self.refused(b"Package\tPRIVATE\n")
+        good = dict(error.chrome_parser_check)
+        for phase in ("sdk-observation", "owned-api36-emulator", "PRIVATE"):
+            self.assertNotIn("chrome_parser_check", Q.capture_refusal_diagnostic(error, phase))
+        for selected in (H.Refusal("adb-output-bound"), H.Refusal(self.CODE, "PRIVATE"), RuntimeError(self.CODE)):
+            selected.chrome_parser_check = {**good, "selected_error": selected}
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(selected))
+
+    def test_closed_serialization_bound_and_private_data_never_published(self):
+        error = self.refused(b"Package\tPRIVATE\n")
+        token = H._chrome_parser_current_token
+        error.chrome_version_shape = dict.fromkeys(ChromeVersionShapeDiagnosticTests.KEYS, 2)
+        good = dict(error.chrome_parser_check)
+        maximum = 0
+        for context in H.CHROME_KEYWORD_CONTEXTS:
+            for scope in ("unobserved", "active", "hidden"):
+                if scope != "unobserved" and context.startswith("before-active-"):
+                    continue
+                error.chrome_parser_check = {**good, "scope": scope, "keyword_context": context}
+                self.assertIs(error.chrome_parser_check["attempt_token"], token)
+                line = json.dumps(Q.capture_refusal_diagnostic(error, self.PHASE), ensure_ascii=True, separators=(",", ":")) + "\n"
+                maximum = max(maximum, len(line.encode("ascii")))
+                self.assertLessEqual(len(line.encode("ascii")), 439)
+                for secret in ("attempt_token", "selected_error", "PRIVATE", "com.android.chrome", "Package"):
+                    self.assertNotIn(secret, line)
+        self.assertGreater(maximum, 386)
+        self.assertLessEqual(maximum, 439)
+        for header, _form in self.FORMS:
+            selected = self.refused(header + b"\n")
+            line = json.dumps(Q.capture_refusal_diagnostic(selected, self.PHASE))
+            self.assertNotIn("PRIVATE", line)
+
+    def test_actual_capture_keeps_primary_cleanup_and_publication_faults(self):
+        case = ChromeVersionShapeDiagnosticTests()
+        original_wire = ChromeDumpWireBudgetTests.wire
+        def wire(raw):
+            return original_wire(b"Package\tPRIVATE\n" if raw == b"PRIVATE\n" else raw)
+        for fault in (None, MemoryError(), KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(kind=type(fault).__name__), mock.patch.object(ChromeDumpWireBudgetTests, "wire", side_effect=wire):
+                error, stream = case.capture_bad_dump(publication_error=fault)
+            self.assertIs(type(error), H.Refusal)
+            self.assertEqual(error.args, (self.CODE,))
+            self.assertIsNone(error.__context__)
+            if fault is None:
+                line = stream.getvalue()
+                self.assertLessEqual(len(line.encode("ascii")), 512)
+                self.assertEqual(json.loads(line)["chrome_parser_check"], {"check": "package-header", "scope": "unobserved",
+                    "header_kind": "keyword-prefix", "keyword_context": "before-active-horizontal-word"})
                 self.assertNotIn("PRIVATE", line)
 
 

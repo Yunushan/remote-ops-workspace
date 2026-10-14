@@ -84,11 +84,11 @@ def check_case(name, facts):
         else:
             need(type(facts[key]) is int and facts[key] == expected)
 
-def validate(raw, expected):
+def validate(raw, expected, *, policy_cleanup_pending=False):
     record = decode(raw)
     exact(record, {'schema', 'status', 'complete', 'binding', 'runtime', 'checks', 'inventories', 'events',
-        'cleanup', 'elapsed_ms', 'server_down_ms', 'source_unchanged', 'runtime_unchanged', 'limits', 'readiness_credit'})
-    need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v1')
+        'cleanup', 'host_policy', 'host_policy_cleanup', 'elapsed_ms', 'server_down_ms', 'source_unchanged', 'runtime_unchanged', 'limits', 'readiness_credit'})
+    need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v2')
     need(record['status'] == 'observations-complete-with-limits' and record['complete'] is True)
     exact(record['binding'], {'nonce', 'source_head', 'source_tree', 'source_bytes_sha256', 'workflow_sha256',
         'run_id', 'run_attempt', 'event_sha', 'image_version', 'image_os'})
@@ -152,6 +152,12 @@ def validate(raw, expected):
     integer(record['server_down_ms'], 5500)
     need(record['source_unchanged'] is True and record['runtime_unchanged'] is True)
     need(record['limits'] == LIMITS and type(record['readiness_credit']) is int and record['readiness_credit'] == 0)
+    host_policy_evidence(record['host_policy'], complete=True)
+    need(type(policy_cleanup_pending) is bool)
+    if policy_cleanup_pending:
+        need(record['host_policy_cleanup'] == {'status': 'pending'})
+    else:
+        host_policy_cleanup(record['host_policy_cleanup'], record['host_policy'], complete=True)
     return {'status': 'result-contract-valid-only', 'record_sha256': hashlib.sha256(raw).hexdigest(),
         'genuine_host_authority': False, 'readiness_credit': 0}
 
@@ -254,6 +260,61 @@ def driver_start_diagnostic(value):
     return value.copy()
 
 
+
+HOST_POLICY_DIGESTS = ('profile_sha256', 'abi_sha256', 'tool_sha256', 'features_sha256', 'intent_sha256')
+
+
+def host_policy_evidence(value, *, complete=False):
+    exact(value, {'scope', 'host_policy_changed', 'default_browser_sandbox_requested',
+        'profile_loaded_preparation_observed', 'task_label_initial_observed',
+        'initial_observed_chrome_tasks', 'task_label_final_observed',
+        'final_observed_chrome_tasks', *HOST_POLICY_DIGESTS})
+    need(type(complete) is bool and type(value['scope']) is str
+        and value['scope'] == 'exact-pinned-chrome-userns' and value['host_policy_changed'] is True
+        and value['default_browser_sandbox_requested'] is True
+        and value['profile_loaded_preparation_observed'] is True)
+    for checkpoint in ('initial', 'final'):
+        flag = value['task_label_' + checkpoint + '_observed']
+        count = value[checkpoint + '_observed_chrome_tasks']
+        need(type(flag) is bool)
+        integer(count, 256)
+        need(count >= 1 if flag else count == 0)
+    need(not value['task_label_final_observed'] or value['task_label_initial_observed'])
+    if complete:
+        need(value['task_label_initial_observed'] is True and value['task_label_final_observed'] is True)
+    for key in HOST_POLICY_DIGESTS:
+        digest(value[key])
+    return value.copy()
+
+
+def host_policy_cleanup(value, policy=None, *, complete=False):
+    need(type(complete) is bool and type(value) is dict and type(value.get('status')) is str)
+    status = value['status']
+    need(status in ('removed', 'already-absent', 'not-needed'))
+    if status == 'not-needed':
+        exact(value, {'status', 'intent_absent_observed', 'host_disposal_required', 'descendants_complete'})
+        need(not complete and policy is None and value['intent_absent_observed'] is True)
+    else:
+        exact(value, {'status', 'profile_present_pre_remove_observed', 'remove_attempted',
+            'profile_absent_observed', 'scalar_state_unchanged', 'host_disposal_required',
+            'descendants_complete', *HOST_POLICY_DIGESTS})
+        need(type(value['profile_present_pre_remove_observed']) is bool
+            and type(value['remove_attempted']) is bool)
+        present = status == 'removed'
+        need(value['profile_present_pre_remove_observed'] is present
+            and value['remove_attempted'] is present and value['profile_absent_observed'] is True
+            and value['scalar_state_unchanged'] is True)
+        need(not complete or present)
+        for key in HOST_POLICY_DIGESTS:
+            digest(value[key])
+        if policy is not None:
+            host_policy_evidence(policy, complete=complete)
+            need(all(value[key] == policy[key] for key in HOST_POLICY_DIGESTS))
+        need(not complete or policy is not None)
+    need(value['host_disposal_required'] is True and value['descendants_complete'] is False)
+    return value.copy()
+
+
 def public_bytes(raw):
     """Privacy reader, not an authenticity/adoption or genuine-host decision."""
     record = decode(raw)
@@ -263,12 +324,16 @@ def public_bytes(raw):
         validate(raw, {'binding': record['binding'], 'runtime': record['runtime']})
         return raw
     required = {'schema', 'status', 'complete', 'phase', 'readiness_credit', 'limits'}
-    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step', 'chrome_file_stage', 'runtime_stage', 'runtime_versions', 'driver_start'}
+    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step', 'chrome_file_stage', 'runtime_stage', 'runtime_versions', 'driver_start', 'host_policy', 'host_policy_cleanup'}
     need(required.issubset(record) and set(record).issubset(required | optional))
-    need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v1' and record['status'] == 'refused'
+    need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v2' and record['status'] == 'refused'
          and record['complete'] is False and type(record['readiness_credit']) is int and record['readiness_credit'] == 0
          and record['limits'] == LIMITS)
     need(type(record['phase']) is str and record['phase'] in ('preparation', 'host-runtime-observation', *CASES, 'cleanup'))
+    if 'host_policy' in record:
+        host_policy_evidence(record['host_policy'])
+    if 'host_policy_cleanup' in record:
+        host_policy_cleanup(record['host_policy_cleanup'], record.get('host_policy'))
     if 'runtime_versions' in record:
         need('runtime_stage' in record and record['runtime_versions'] is not None)
     if 'runtime_stage' in record:

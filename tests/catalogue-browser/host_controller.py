@@ -26,6 +26,8 @@ from browser_probe import (
 from cft_runtime import (
     chrome_version_argv,
     chrome_version_match,
+    observe_policy_tasks,
+    policy_evidence,
     runtime_readback,
     selected_runtime,
 )
@@ -549,6 +551,115 @@ def disk_dom(snapshot, inventory):
     return True
 
 
+
+def bind_host_policy_cleanup():
+    from cft_runtime import (
+        MAX_POINTER,
+        POLICY_MAX,
+        POLICY_NAME,
+        bundle,
+        pointer_contract,
+        pointer_path,
+        policy_digests,
+        policy_readback,
+        policy_record_path,
+        policy_state_contract,
+    )
+    from gate_contract import host_policy_cleanup, host_policy_evidence, public_bytes
+    context = host_context()
+    need(os.getuid() == os.geteuid() and os.getuid() > 0
+        and os.getgid() == os.getegid() and os.getgid() > 0)
+    need(os.environ.get('ROW_CFT_CLEANUP_OUTCOME') == 'success')
+    deadline = time.monotonic() + 20
+    repo = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
+    directory = repo / '.tmp/catalogue-browser-public'
+    info = directory.lstat()
+    need(stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) == 0o700)
+    source = directory / 'result.json'
+    info = source.lstat()
+    need(stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and info.st_uid == os.getuid())
+    source_pin, raw = bundle.stable_file(source, 65536, deadline, raw=True)
+    record = decode(raw)
+    partial = {'source_head': context['source'], 'source_tree': '0' * 40,
+        'source_bytes_sha256': '0' * 64, 'workflow_sha256': '0' * 64,
+        'event_sha': context['event'], 'run_id': os.environ['GITHUB_RUN_ID'],
+        'run_attempt': os.environ['GITHUB_RUN_ATTEMPT']}
+    cleanup_path = policy_record_path(partial, 'cleanup')
+    cleanup_pin, cleanup_raw = bundle.stable_file(cleanup_path, POLICY_MAX, deadline, root_owned=True, raw=True)
+    cleanup = decode(cleanup_raw)
+    need(type(cleanup) is dict and set(cleanup) == {'schema', 'binding', 'observation', 'readiness_credit'})
+    need(cleanup['schema'] == 'row.cft-userns-cleanup.v1' and type(cleanup['readiness_credit']) is int
+        and cleanup['readiness_credit'] == 0)
+    binding = bundle.binding_contract(cleanup['binding'])
+    need(binding['source_head'] == context['source'] and binding['event_sha'] == context['event']
+        and binding['run_id'] == partial['run_id'] and binding['run_attempt'] == partial['run_attempt'])
+    workflow_pin = file_pin(repo / WORKFLOW, maximum=65536)
+    need(binding['workflow_sha256'] == workflow_pin['sha256'])
+    complete = record.get('complete') is True
+    if complete:
+        need({key: record['binding'][key] for key in binding} == binding)
+        validate(raw, {'binding': record['binding'], 'runtime': record['runtime']}, policy_cleanup_pending=True)
+    else:
+        public_bytes(raw)
+    observation = host_policy_cleanup(cleanup['observation'], record.get('host_policy'), complete=complete)
+    intent_path = policy_record_path(binding, 'intent')
+    pointer = pointer_path(binding)
+    holder = None
+    intent_pin = None
+    pointer_pin = None
+    policy_pin = None
+    if observation['status'] in ('removed', 'already-absent'):
+        intent_pin, intent_raw = bundle.stable_file(intent_path, POLICY_MAX, deadline, root_owned=True, raw=True)
+        intent = policy_state_contract(intent_raw, binding)
+        holder = {'state': intent, 'intent_pin': intent_pin}
+        policy_readback(holder, deadline)
+        expected = policy_digests(holder)
+        need(all(observation[key] == value for key, value in expected.items()))
+        if 'host_policy' in record:
+            host_policy_evidence(record['host_policy'], complete=complete)
+            need(all(record['host_policy'][key] == value for key, value in expected.items()))
+        if complete or pointer.exists():
+            policy_pin, policy_raw = bundle.stable_file(DIRECTORY / POLICY_NAME,
+                bundle.MAX_METADATA, deadline, raw=True)
+            bundle.policy(policy_raw, enabled=True)
+            pointer_pin, pointer_raw = bundle.stable_file(pointer, MAX_POINTER, deadline, root_owned=True, raw=True)
+            prepared = pointer_contract(pointer_raw, binding, policy_raw)
+            need(prepared['root'] == intent['root']
+                and all(prepared['host_policy'][key] == value for key, value in expected.items()))
+        else:
+            need(not pointer.is_symlink())
+    else:
+        need(not complete and 'host_policy' not in record and not intent_path.exists()
+            and not intent_path.is_symlink() and not pointer.exists() and not pointer.is_symlink())
+    record['host_policy_cleanup'] = observation
+    merged = packed(record)
+    public_bytes(merged)
+    need(bundle.stable_file(source, 65536, deadline) == source_pin
+        and bundle.stable_file(cleanup_path, POLICY_MAX, deadline, root_owned=True) == cleanup_pin
+        and file_pin(repo / WORKFLOW, maximum=65536) == workflow_pin)
+    if holder is not None:
+        policy_readback(holder, deadline)
+        need(bundle.stable_file(intent_path, POLICY_MAX, deadline, root_owned=True) == intent_pin)
+    if pointer_pin is not None:
+        need(bundle.stable_file(pointer, MAX_POINTER, deadline, root_owned=True) == pointer_pin
+            and bundle.stable_file(DIRECTORY / POLICY_NAME, bundle.MAX_METADATA, deadline) == policy_pin)
+    elif not complete:
+        need(not pointer.exists() and not pointer.is_symlink())
+    if observation['status'] == 'not-needed':
+        need(not intent_path.exists() and not intent_path.is_symlink())
+    bundle.remaining(deadline)
+    temporary = directory / 'host-policy-result.tmp'
+    with bundle.owned_binary(temporary, 'wb', os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+            deadline, mode=0o600) as stream:
+        need(stream.write(merged) == len(merged))
+        stream.flush()
+        os.fsync(stream.fileno())
+    bundle.remaining(deadline)
+    temporary.replace(source)
+    need(bundle.stable_file(source, 65536, deadline, raw=True)[1] == merged)
+    bundle.remaining(deadline)
+
+
 def main():
     started = time.monotonic()
     deadline = started + 295
@@ -561,7 +672,7 @@ def main():
     output = repo / '.tmp' / 'catalogue-browser-public'
     need(not output.exists())
     output.mkdir(mode=0o700, parents=True)
-    public = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused',
+    public = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'refused',
         'complete': False, 'phase': 'preparation', 'readiness_credit': 0, 'limits': LIMITS}
     def checkpoint(phase):
         public['phase'] = phase
@@ -590,6 +701,7 @@ def main():
             preparation('source-checks')
             source_before = source_guard(repo, context, registry, env, deadline, preparation=preparation)
             chrome, chrome_driver, runtime_state = selected_runtime(DIRECTORY, source_before, context, deadline)
+            public['host_policy'] = policy_evidence(runtime_state['host_policy'])
             preparation('python-path')
             python = Path(sys.executable).resolve(strict=True)
             tools_before = {}
@@ -683,6 +795,7 @@ def main():
                  and capabilities['chrome']['chromedriverVersion'].split(' ', 1)[0] == version
                  and capabilities['chrome']['userDataDir'] == str(private / 'browser'))
             inert_runtime_note(public, 'loaded-runtime-inventory')
+            public['host_policy'] = observe_policy_tasks(runtime_state['host_policy'], controller, deadline, checkpoint='initial')
             runtime_before = loaded_runtime(controller)
             inert_runtime_note(public, 'loaded-runtime-tools')
             need(str(chrome) in runtime_before and str(chrome_driver) in runtime_before)
@@ -790,6 +903,7 @@ def main():
                 'token_rows_cleared': snapshot['tokenEmpty'] and snapshot['rows'] == [] and snapshot['inputEmpty'],
                 'api_mode_retained': snapshot['mode'] == 'api', 'stale_or_demo_returned': snapshot['texts'] != []})
             checkpoint('cleanup')
+            public['host_policy'] = observe_policy_tasks(runtime_state['host_policy'], controller, deadline, checkpoint='final')
             runtime_after = loaded_runtime(controller)
             need(set(runtime_before).issubset(runtime_after))
             for path, pin in runtime_before.items():
@@ -820,7 +934,7 @@ def main():
                 'source_bytes_sha256': source_before['bytes'], 'workflow_sha256': source_before['workflow'],
                 'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
                 'event_sha': context['event'], 'image_version': context['image_version'], 'image_os': 'ubuntu24'}
-            public = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'observations-complete-with-limits',
+            public = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'observations-complete-with-limits',
                 'complete': True, 'binding': binding, 'runtime': runtime, 'checks': checks, 'inventories': inventories, 'events': events,
                 'cleanup': {'all_retained_zero': all(owner.process.returncode == 0 for owner in registry),
                     'all_reaped': all(owner.reaped for owner in registry),
@@ -829,9 +943,10 @@ def main():
                     'forced_cleanup': False, 'descendants_complete': False},
                 'elapsed_ms': int((time.monotonic() - started) * 1000), 'server_down_ms': down_ms,
                 'source_unchanged': source_before == source_after, 'runtime_unchanged': tools_before == tools_after,
-                'limits': LIMITS, 'readiness_credit': 0}
+                'limits': LIMITS, 'readiness_credit': 0, 'host_policy': public['host_policy'],
+                'host_policy_cleanup': {'status': 'pending'}}
             raw = packed(public)
-            validate(raw, {'binding': binding, 'runtime': runtime})
+            validate(raw, {'binding': binding, 'runtime': runtime}, policy_cleanup_pending=True)
             (output / 'result.json').write_bytes(raw)
             return 0
         except Exception as error:

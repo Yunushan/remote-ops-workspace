@@ -30,7 +30,7 @@ def sample():
             'route': 'catalogue', 'status': status, 'no_store': True, 'authorization_present': True})
     events.append({'launch': 2, 'ordinal': 8, 'case': 'service-worker-api-cache-boundary',
         'method': 'GET', 'route': 'policy', 'status': 200, 'no_store': True, 'authorization_present': True})
-    record = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'observations-complete-with-limits',
+    record = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'observations-complete-with-limits',
         'complete': True, 'binding': binding, 'runtime': runtime,
         'checks': [{'id': name, 'facts': copy.deepcopy(facts)} for name, facts in contract.CASES.items()],
         'inventories': [{'phase': phase, 'count': count, 'digest': digest * 64}
@@ -39,6 +39,8 @@ def sample():
             'listeners_gone': True, 'forced_cleanup': False, 'descendants_complete': False},
         'elapsed_ms': 150000, 'server_down_ms': 100, 'source_unchanged': True, 'runtime_unchanged': True,
         'limits': list(contract.LIMITS), 'readiness_credit': 0}
+    record['host_policy'] = synthetic_policy_evidence()
+    record['host_policy_cleanup'] = synthetic_policy_cleanup()
     return record, {'binding': copy.deepcopy(binding), 'runtime': copy.deepcopy(runtime)}
 
 
@@ -135,7 +137,7 @@ class ContractTests(unittest.TestCase):
         self.refused(lambda row: row['events'][0].__setitem__('method', ['GET']))
 
     def test_public_refusal_accepts_only_digest_count_enum_facts(self):
-        record = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused', 'complete': False,
+        record = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'refused', 'complete': False,
             'phase': 'api-read', 'readiness_credit': 0, 'limits': contract.LIMITS,
             'private_streams': [{'stdout_bytes': 5, 'stdout_sha256': '1' * 64,
                 'stderr_bytes': 9, 'stderr_sha256': '2' * 64, 'overflow': False}],
@@ -147,7 +149,7 @@ class ContractTests(unittest.TestCase):
             contract.public_bytes(json.dumps(record).encode())
 
     def test_public_refusal_rejects_arbitrary_exception_or_path_phase(self):
-        record = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused', 'complete': False,
+        record = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'refused', 'complete': False,
             'phase': '/private/path/error', 'readiness_credit': 0, 'limits': contract.LIMITS}
         with self.assertRaises(contract.GateRefusal):
             contract.public_bytes(json.dumps(record).encode())
@@ -366,7 +368,7 @@ class QualificationMismatchTests(unittest.TestCase):
 class RuntimeDiagnosticTests(unittest.TestCase):
     @staticmethod
     def refused_record():
-        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused',
+        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'refused',
             'complete': False, 'phase': 'host-runtime-observation', 'readiness_credit': 0,
             'limits': contract.LIMITS}
 
@@ -463,7 +465,7 @@ class RuntimeDiagnosticTests(unittest.TestCase):
 class PreparationDiagnosticTests(unittest.TestCase):
     @staticmethod
     def refused_record():
-        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused',
+        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'refused',
             'complete': False, 'phase': 'preparation', 'readiness_credit': 0, 'limits': contract.LIMITS}
 
     def test_each_literal_preparation_step_is_privacy_valid(self):
@@ -535,7 +537,7 @@ class PreparationDiagnosticTests(unittest.TestCase):
 class ChromeFileDiagnosticTests(unittest.TestCase):
     @staticmethod
     def record():
-        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v1', 'status': 'refused',
+        return {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'refused',
             'complete': False, 'phase': 'preparation', 'preparation_step': 'chrome-file-pin',
             'readiness_credit': 0, 'limits': contract.LIMITS}
 
@@ -819,7 +821,9 @@ class RuntimeStartupDiagnosticTests(unittest.TestCase):
             'clock': patch.object(host_controller.time, 'monotonic', return_value=100),
             'timer': patch.object(host_controller.threading, 'Timer', return_value=timer),
             'source': patch.object(host_controller, 'source_guard', return_value={'head': 'a' * 40, 'tree': 'b' * 40, 'bytes': 'c' * 64, 'workflow': 'd' * 64}),
-            'selection': patch.object(host_controller, 'selected_runtime', return_value=(MemoryPath('/synthetic/chrome'), MemoryPath('/synthetic/driver'), {'provider': 'pinned-cft', 'installed': {'version': '1.2.3.4'}})),
+            'selection': patch.object(host_controller, 'selected_runtime', return_value=(MemoryPath('/synthetic/chrome'), MemoryPath('/synthetic/driver'), {'provider': 'pinned-cft', 'installed': {'version': '1.2.3.4'}, 'host_policy': {}})),
+            'policy_evidence': patch.object(host_controller, 'policy_evidence', return_value=synthetic_policy_evidence(observed=False)),
+            'policy_tasks': patch.object(host_controller, 'observe_policy_tasks', side_effect=lambda holder, owner, deadline, *, checkpoint: synthetic_policy_evidence(initial_only=checkpoint == 'initial')),
             'pins': patch.object(host_controller, 'file_pin', return_value={'uid': 0}),
             'version_argv': patch.object(host_controller, 'chrome_version_argv', return_value=['/synthetic/chrome', '--product-version']),
             'version_match': patch.object(host_controller, 'chrome_version_match', return_value=(b'1.2.3.4', b'1.2.3.4')),
@@ -842,6 +846,14 @@ class RuntimeStartupDiagnosticTests(unittest.TestCase):
             mocks['temp'].return_value.__enter__.return_value = '/synthetic-private'
             code = host_controller.main()
             version_calls = [call.args[1] for call in mocks['note'].call_args_list if call.args[1] in contract.RUNTIME_STAGES[:3]]
+            policy_calls = mocks['policy_tasks'].call_args_list
+            expected_checkpoints = ['initial'] if 'loaded-runtime-inventory' in operations else []
+            case.assertEqual([call.kwargs['checkpoint'] for call in policy_calls], expected_checkpoints)
+            for call in policy_calls:
+                case.assertIs(call.args[0], mocks['selection'].return_value[2]['host_policy'])
+                case.assertIs(call.args[1], owners[1])
+                case.assertEqual(len(call.args), 3)
+                case.assertEqual(set(call.kwargs), {'checkpoint'})
             for name in ('birth', 'transport', 'thread'):
                 mocks[name].assert_not_called()
         timer.start.assert_called_once()
@@ -1699,6 +1711,539 @@ class DriverPrivateStderrTests(unittest.TestCase):
                 host_controller.emit_runtime_refusal(record)
             self.assertEqual(record, retained)
             self.assertEqual(error.args, ('catalogue-gate-contract-refused',))
+
+
+
+
+
+def synthetic_policy_evidence(*, observed=True, initial_only=False):
+    return {'scope': 'exact-pinned-chrome-userns', 'host_policy_changed': True,
+        'default_browser_sandbox_requested': True, 'profile_loaded_preparation_observed': True,
+        'task_label_initial_observed': observed, 'initial_observed_chrome_tasks': 2 if observed else 0,
+        'task_label_final_observed': observed and not initial_only, 'final_observed_chrome_tasks': 2 if observed and not initial_only else 0,
+        'profile_sha256': '3' * 64, 'abi_sha256': '4' * 64, 'tool_sha256': '5' * 64,
+        'features_sha256': '6' * 64, 'intent_sha256': '7' * 64}
+
+
+def synthetic_policy_cleanup(*, present=True):
+    return {'status': 'removed' if present else 'already-absent',
+        'profile_present_pre_remove_observed': present, 'remove_attempted': present,
+        'profile_absent_observed': True, 'scalar_state_unchanged': True,
+        'host_disposal_required': True, 'descendants_complete': False,
+        **{key: synthetic_policy_evidence()[key] for key in contract.HOST_POLICY_DIGESTS}}
+
+
+class HostPolicyContractTests(unittest.TestCase):
+    def test_complete_publication_requires_present_removed_matching_cleanup(self):
+        record, expected = sample()
+        self.assertEqual(contract.validate(json.dumps(record).encode(), expected)['readiness_credit'], 0)
+        for value in (None, {}, {'status': 'pending'}, synthetic_policy_cleanup(present=False),
+                      {**synthetic_policy_cleanup(), 'profile_present_pre_remove_observed': False},
+                      {**synthetic_policy_cleanup(), 'remove_attempted': 1},
+                      {**synthetic_policy_cleanup(), 'profile_absent_observed': False},
+                      {**synthetic_policy_cleanup(), 'intent_sha256': '0' * 64}):
+            changed = copy.deepcopy(record)
+            changed['host_policy_cleanup'] = value
+            with self.subTest(value=value), self.assertRaises(contract.GateRefusal):
+                contract.public_bytes(json.dumps(changed).encode())
+
+    def test_pending_is_only_internal_and_never_public(self):
+        record, expected = sample()
+        record['host_policy_cleanup'] = {'status': 'pending'}
+        self.assertEqual(contract.validate(json.dumps(record).encode(), expected,
+            policy_cleanup_pending=True)['readiness_credit'], 0)
+        with self.assertRaises(contract.GateRefusal):
+            contract.public_bytes(json.dumps(record).encode())
+        for flag in (1, None, 'true'):
+            with self.subTest(flag=flag), self.assertRaises(contract.GateRefusal):
+                contract.validate(json.dumps(record).encode(), expected, policy_cleanup_pending=flag)
+
+    def test_both_task_samples_and_exact_count_types_required(self):
+        record, expected = sample()
+        for value in (synthetic_policy_evidence(observed=False),
+                      {**synthetic_policy_evidence(), 'task_label_final_observed': False, 'final_observed_chrome_tasks': 0},
+                      {**synthetic_policy_evidence(), 'task_label_initial_observed': False, 'initial_observed_chrome_tasks': 0},
+                      {**synthetic_policy_evidence(), 'initial_observed_chrome_tasks': True},
+                      {**synthetic_policy_evidence(), 'final_observed_chrome_tasks': 257},
+                      {**synthetic_policy_evidence(), 'effective_sandbox': True},
+                      {**synthetic_policy_evidence(), 'scope': '/PRIVATE'}):
+            record['host_policy'] = value
+            with self.subTest(keys=list(value)), self.assertRaises(contract.GateRefusal):
+                contract.validate(json.dumps(record).encode(), expected)
+
+    def test_partial_initial_only_is_private_refusal_evidence_never_complete(self):
+        value = {**synthetic_policy_evidence(), 'task_label_final_observed': False, 'final_observed_chrome_tasks': 0}
+        self.assertEqual(contract.host_policy_evidence(value), value)
+        with self.assertRaises(contract.GateRefusal):
+            contract.host_policy_evidence(value, complete=True)
+        value['task_label_initial_observed'] = False
+        value['initial_observed_chrome_tasks'] = 0
+        value['task_label_final_observed'] = True
+        value['final_observed_chrome_tasks'] = 1
+        with self.assertRaises(contract.GateRefusal):
+            contract.host_policy_evidence(value)
+
+    def test_cleanup_exact_fields_and_status_relations(self):
+        for key, value in (('tool_sha256', '/PRIVATE'), ('descendants_complete', True),
+                           ('scalar_state_unchanged', False), ('profile', 'PRIVATE'),
+                           ('host_disposal_required', False), ('profile_present_pre_remove_observed', 1)):
+            row = {**synthetic_policy_cleanup(), key: value}
+            with self.subTest(key=key), self.assertRaises(contract.GateRefusal):
+                contract.host_policy_cleanup(row, synthetic_policy_evidence())
+        row = synthetic_policy_cleanup(present=False)
+        self.assertEqual(contract.host_policy_cleanup(row), row)
+        with self.assertRaises(contract.GateRefusal):
+            contract.host_policy_cleanup(row, synthetic_policy_evidence(), complete=True)
+
+    def test_not_needed_and_already_absent_can_clean_only_refused_runs(self):
+        not_needed = {'status': 'not-needed', 'intent_absent_observed': True,
+            'host_disposal_required': True, 'descendants_complete': False}
+        for cleanup in (not_needed, synthetic_policy_cleanup(present=False), synthetic_policy_cleanup()):
+            record = {'schema': 'row.ubuntu-actual-catalogue-webdriver.v2', 'status': 'refused',
+                'complete': False, 'phase': 'preparation', 'readiness_credit': 0,
+                'limits': contract.LIMITS, 'host_policy_cleanup': cleanup}
+            raw = json.dumps(record).encode()
+            self.assertEqual(contract.public_bytes(raw), raw)
+            self.assertNotIn(b'PRIVATE', raw)
+            self.assertFalse(record['complete'])
+        with self.assertRaises(contract.GateRefusal):
+            contract.host_policy_cleanup(not_needed, synthetic_policy_evidence())
+
+    def test_closed_public_serialization_retains_caps_and_no_private_names(self):
+        record, expected = sample()
+        raw = json.dumps(record).encode()
+        self.assertLessEqual(len(raw), 65536)
+        self.assertEqual(contract.public_bytes(raw), raw)
+        self.assertEqual(contract.validate(raw, expected)['readiness_credit'], 0)
+        for secret in (b'row-cft-userns-', b'/var/lib', b'PRIVATE', b'pid', b'policy_text'):
+            self.assertNotIn(secret, raw)
+
+
+class PolicyPublisherFixture:
+    def __init__(self, case, failure='none'):
+        from types import SimpleNamespace
+
+        import cft_runtime as runtime
+        self.runtime, self.case, self.failure = runtime, case, failure
+        self.stack = ExitStack()
+        self.clock = 100.0
+        self.error = RuntimeError('PRIVATE-selected-publication-error')
+        self.events = []
+        self.record, _expected = sample()
+        self.record['host_policy_cleanup'] = {'status': 'pending'}
+        self.binding = {key: self.record['binding'][key] for key in ('source_head', 'source_tree',
+            'source_bytes_sha256', 'workflow_sha256', 'event_sha', 'run_id', 'run_attempt')}
+        root = '/var/lib/row-cft-' + 'f' * 32
+        def pin(size, value):
+            return {'bytes': size, 'sha256': value * 64, 'identity': [1, 2, 0o100444, 0, 0, 1, 0, size]}
+        self.intent = {'schema': 'row.cft-userns-intent.v1', 'root': root,
+            'directory': '/var/lib/row-cft-userns-' + 'f' * 32, 'name': 'row-cft-userns-' + 'f' * 32,
+            'binding': self.binding.copy(), 'input_pins': {'profile': pin(100, '3'), 'config': pin(0, '0'), 'abi': pin(100, '4')},
+            'tool_pin': pin(100, '5'), 'features_sha256': '6' * 64, 'profile_sha256': '3' * 64,
+            'abi_sha256': '4' * 64, 'host_policy_change_planned': True, 'readiness_credit': 0}
+        if failure == 'intent-binding':
+            self.intent['binding']['source_tree'] = '0' * 40
+        self.intent_raw = json.dumps(self.intent, sort_keys=True, separators=(',', ':')).encode()
+        intent_sha = runtime.bundle.hashed(self.intent_raw)
+        self.record['host_policy']['intent_sha256'] = intent_sha
+        cleanup_observation = {**synthetic_policy_cleanup(present=failure != 'already-absent'), 'intent_sha256': intent_sha}
+        self.cleanup = {'schema': 'row.cft-userns-cleanup.v1', 'binding': self.binding.copy(),
+            'observation': cleanup_observation, 'readiness_credit': 0}
+        if failure == 'run':
+            self.cleanup['binding']['run_attempt'] = '2'
+        if failure == 'digest':
+            self.cleanup['observation']['profile_sha256'] = '0' * 64
+        self.policy_raw = b'synthetic-enabled-policy'
+        prep_evidence = {**synthetic_policy_evidence(observed=False), 'intent_sha256': intent_sha}
+        self.pointer = {'schema': 'row.cft-runtime-operation.v2', 'root': root, 'binding': self.binding,
+            'version': runtime.bundle.VERSION, 'policy_sha256': runtime.bundle.hashed(self.policy_raw),
+            'manifest_sha256': '9' * 64, 'complete': True, 'vendor_binary_executed': False,
+            'sandbox_policy': 'default-browser-with-scoped-host-userns-profile', 'host_policy': prep_evidence,
+            'readiness_credit': 0}
+        if failure == 'pointer-root':
+            self.pointer['root'] = '/var/lib/row-cft-' + 'e' * 32
+        self.source = '/synthetic-repo/.tmp/catalogue-browser-public/result.json'
+        self.temporary = '/synthetic-repo/.tmp/catalogue-browser-public/host-policy-result.tmp'
+        self.data = {self.source: json.dumps(self.record).encode()}
+        self.counts = {}
+        fixture = self
+        class MemoryPath(PurePosixPath):
+            def resolve(self, *args, **kwargs):
+                return self
+            def lstat(self):
+                return SimpleNamespace(st_mode=(0o40700 if self.name == 'catalogue-browser-public' else 0o100600),
+                    st_uid=1001, st_nlink=1)
+            def exists(self):
+                return str(self) in fixture.data or self.name.startswith('row-cft-runtime-')
+            def is_symlink(self):
+                return False
+            def replace(self, destination):
+                if fixture.failure == 'replace':
+                    raise fixture.error
+                fixture.data[str(destination)] = fixture.data.pop(str(self))
+                fixture.events.append('replace')
+                return destination
+        self.Path = MemoryPath
+
+    def read(self, path, maximum, deadline, *, raw=False, **kwargs):
+        self.events.append(('read', path.name, raw))
+        self.counts[path.name] = self.counts.get(path.name, 0) + 1
+        if path.name == 'result.json':
+            data = self.data[self.source]
+            if self.failure == 'source-readback' and self.counts[path.name] > 1:
+                data += b' '
+            if 'replace' in self.events and self.failure == 'final-readback':
+                raise self.error
+            if 'replace' in self.events and self.failure == 'final-clock':
+                self.clock = 121.0
+        elif path.name.startswith('row-cft-policy-cleanup-'):
+            data = json.dumps(self.cleanup).encode()
+        elif path.name.startswith('row-cft-policy-intent-'):
+            data = self.intent_raw
+        elif path.name.startswith('row-cft-runtime-'):
+            data = json.dumps(self.pointer).encode()
+        elif path.name == 'cft-runtime-policy.json':
+            data = self.policy_raw
+        else:
+            self.case.fail('unmocked-publisher-file')
+        self.case.assertLessEqual(len(data), maximum)
+        result = {'bytes': len(data), 'sha256': self.runtime.bundle.hashed(data),
+            'identity': [1, 2, 0o100444, 0, 0, 1, 0, len(data)]}
+        return (result, data) if raw else result
+
+    def writer(self, path, access_mode, flags, deadline, *, mode):
+        fixture = self
+        self.case.assertEqual(str(path), self.temporary)
+        self.case.assertEqual((access_mode, mode), ('wb', 0o600))
+        self.events.append('writer')
+        class Stream(io.BytesIO):
+            def write(self, raw):
+                if fixture.failure == 'write':
+                    raise fixture.error
+                return super().write(raw)
+            def flush(self):
+                if fixture.failure == 'flush':
+                    raise fixture.error
+                if fixture.failure == 'late-flush':
+                    fixture.clock = 121.0
+                return super().flush()
+            def fileno(self):
+                return 7
+        class Writer:
+            def __enter__(self):
+                self.stream = Stream()
+                return self.stream
+            def __exit__(self, *_args):
+                fixture.data[fixture.temporary] = self.stream.getvalue()
+                self.stream.close()
+                if fixture.failure == 'close':
+                    raise fixture.error
+                return False
+        return Writer()
+
+    def __enter__(self):
+        enter = self.stack.enter_context
+        enter(patch.object(host_controller, 'Path', self.Path))
+        enter(patch.object(self.runtime, 'Path', self.Path))
+        enter(patch.object(host_controller, 'DIRECTORY', self.Path('/synthetic-repo/tests/catalogue-browser')))
+        enter(patch.object(host_controller, 'host_context', return_value={'source': self.binding['source_head'], 'event': self.binding['event_sha']}))
+        for getter in ('getuid', 'geteuid', 'getgid', 'getegid'):
+            enter(patch.object(host_controller.os, getter, return_value=1001, create=True))
+        for name, value in (('O_NOFOLLOW', 131072),):
+            enter(patch.object(host_controller.os, name, value, create=True))
+        enter(patch.dict(host_controller.os.environ, {'GITHUB_WORKSPACE': '/synthetic-repo', 'GITHUB_RUN_ID': '12',
+            'GITHUB_RUN_ATTEMPT': '1', 'ROW_CFT_CLEANUP_OUTCOME': 'success'}))
+        enter(patch.object(host_controller.time, 'monotonic', side_effect=lambda: self.clock))
+        enter(patch.object(host_controller, 'file_pin', return_value={'sha256': self.binding['workflow_sha256']}))
+        enter(patch.object(self.runtime.bundle, 'stable_file', side_effect=self.read))
+        enter(patch.object(self.runtime.bundle, 'policy', return_value={}))
+        enter(patch.object(self.runtime, 'policy_inputs'))
+        enter(patch.object(self.runtime, 'host_features', return_value='6' * 64))
+        enter(patch.object(self.runtime, 'profile_membership', side_effect=PermissionError('PRIVATE')))
+        enter(patch.object(self.runtime.bundle, 'owned_binary', side_effect=self.writer))
+        enter(patch.object(host_controller.os, 'fsync', side_effect=self.error if self.failure == 'fsync' else None))
+        self.native = enter(patch.object(host_controller.subprocess, 'Popen', side_effect=AssertionError('unexpected-native-provider')))
+        self.transport = enter(patch.object(host_controller.http.client, 'HTTPConnection', side_effect=AssertionError('unexpected-network')))
+        return self
+
+    def __exit__(self, *_args):
+        self.native.assert_not_called()
+        self.transport.assert_not_called()
+        self.stack.close()
+        return False
+
+
+class HostPolicyPublisherTests(unittest.TestCase):
+    def test_cleanup_outcome_refuses_before_any_file_IO(self):
+        import cft_runtime as runtime
+        for outcome in ('failure', 'skipped', 'cancelled', '', None):
+            env = {} if outcome is None else {'ROW_CFT_CLEANUP_OUTCOME': outcome}
+            with self.subTest(outcome=outcome), patch.object(host_controller, 'host_context', return_value={}), \
+                    patch.object(host_controller.os, 'getuid', return_value=1001, create=True), \
+                    patch.object(host_controller.os, 'geteuid', return_value=1001, create=True), \
+                    patch.object(host_controller.os, 'getgid', return_value=1001, create=True), \
+                    patch.object(host_controller.os, 'getegid', return_value=1001, create=True), \
+                    patch.dict(host_controller.os.environ, env, clear=True), \
+                    patch.object(runtime.bundle, 'stable_file') as read:
+                with self.assertRaises(contract.GateRefusal):
+                    host_controller.bind_host_policy_cleanup()
+            read.assert_not_called()
+
+    def test_actual_publisher_accepts_one_fully_bound_removed_capsule(self):
+        with PolicyPublisherFixture(self) as fixture:
+            host_controller.bind_host_policy_cleanup()
+            final = json.loads(fixture.data[fixture.source])
+            self.assertTrue(final['complete'])
+            self.assertTrue(final['host_policy_cleanup']['profile_present_pre_remove_observed'])
+            self.assertEqual(final['host_policy_cleanup']['status'], 'removed')
+            self.assertEqual(contract.public_bytes(fixture.data[fixture.source]), fixture.data[fixture.source])
+            self.assertEqual(fixture.events.count('writer'), 1)
+            self.assertEqual(fixture.events.count('replace'), 1)
+
+    def test_source_run_profile_and_absence_mismatches_never_write(self):
+        for failure in ('run', 'digest', 'intent-binding', 'pointer-root', 'already-absent', 'source-readback'):
+            with self.subTest(failure=failure), PolicyPublisherFixture(self, failure) as fixture:
+                with self.assertRaises((contract.GateRefusal, fixture.runtime.bundle.BundleRefusal)):
+                    host_controller.bind_host_policy_cleanup()
+                self.assertNotIn('writer', fixture.events)
+                self.assertEqual(json.loads(fixture.data[fixture.source])['host_policy_cleanup'], {'status': 'pending'})
+
+    def test_write_flush_close_replace_and_readback_errors_remain_refusals(self):
+        for failure in ('write', 'flush', 'close', 'fsync', 'replace', 'final-readback'):
+            with self.subTest(failure=failure), PolicyPublisherFixture(self, failure) as fixture:
+                with self.assertRaises(RuntimeError) as caught:
+                    host_controller.bind_host_policy_cleanup()
+                self.assertIs(caught.exception, fixture.error)
+                self.assertNotIn(b'PRIVATE', fixture.data[fixture.source])
+
+    def test_late_flush_and_final_clock_never_return_positive(self):
+        for failure in ('late-flush', 'final-clock'):
+            with self.subTest(failure=failure), PolicyPublisherFixture(self, failure) as fixture:
+                with self.assertRaises(fixture.runtime.bundle.BundleRefusal):
+                    host_controller.bind_host_policy_cleanup()
+                if failure == 'late-flush':
+                    self.assertNotIn('replace', fixture.events)
+
+
+class ActualPolicyCheckpointMainTests(unittest.TestCase):
+    def run_actual_main(self, *, final_label_failure):
+        import hashlib
+        import stat
+        import threading
+        import cft_bundle as bundle
+        import cft_runtime as policy_runtime
+        from test_cft_runtime import PolicyMemory, FixturePath, binding, policy_raw
+        case = self
+        memory = PolicyMemory()
+        memory.case = self
+        memory.data['/synthetic-repo/tests/catalogue-browser/cft-runtime-policy.json'] = policy_raw()
+        memory.modes['/synthetic-repo/tests/catalogue-browser/cft-runtime-policy.json'] = stat.S_IFREG | 0o444
+        holder, policy_registry, files, owners, task_calls, native_calls = {}, [], {}, [], [], []
+        source_binding = binding()
+        source = {'head': source_binding['source_head'], 'tree': source_binding['source_tree'],
+            'bytes': source_binding['source_bytes_sha256'], 'workflow': source_binding['workflow_sha256']}
+        context = {'source': source_binding['source_head'], 'event': source_binding['event_sha'],
+            'image_version': '20261006.1.0'}
+        root = FixturePath('/var/lib/row-cft-' + 'f' * 32)
+        chrome = root / bundle.EXECUTABLES['chrome']
+        chrome_driver = root / bundle.EXECUTABLES['driver']
+        profiles = [{'protocol': 'ssh', 'name': 'catalogue seed', 'host': 'seed.example.invalid', 'port': 22}]
+        events, replace_false = [], []
+        state = {'launch': 0, 'case': 'api-read', 'alive': False, 'connected': False,
+            'old_rejected': False, 'down': False, 'pending': None}
+        def event(method, status, *, route='catalogue'):
+            events.append({'launch': state['launch'], 'ordinal': len(events) + 1,
+                'case': state['case'], 'method': method, 'route': route, 'status': status,
+                'no_store': True, 'authorization_present': True})
+        def inventory():
+            digest = hashlib.sha256(json.dumps(profiles, sort_keys=True).encode()).hexdigest()
+            return {'count': len(profiles), 'profiles': copy.deepcopy(profiles), 'digest': digest,
+                'disk_digest': digest, 'events': copy.deepcopy(events), 'posts_replace_false': list(replace_false)}
+        def snapshot():
+            visible = state['connected'] and state['alive']
+            texts = [row['protocol'] + ' \u2022 ' + row['name'] + ' \u2022 ' + row['host'] + ':' + str(row['port'])
+                for row in profiles] if visible else []
+            return {'busy': False, 'texts': texts, 'rows': [dict(row) for row in profiles] if visible else [],
+                'inputEmpty': True, 'tokenEmpty': not visible, 'refreshDisabled': not visible,
+                'saveDisabled': not visible, 'authRefused': state['old_rejected'],
+                'serverRefused': state['down'], 'mode': 'api'}
+        class Sink:
+            def __init__(self, path): self.path = path
+            def __enter__(self): return self
+            def write(self, raw): files[str(self.path)] = raw; return len(raw)
+            def __exit__(self, *_args): return False
+        class MemoryPath(PurePosixPath):
+            def resolve(self, strict=False): return self
+            def exists(self): return str(self) in files
+            def mkdir(self, mode=0o777, parents=False): pass
+            def open(self, mode): case.assertEqual(mode, 'wb'); return Sink(self)
+            def replace(self, target): files[str(target)] = files.pop(str(self)); return target
+            def write_bytes(self, raw): files[str(self)] = raw; return len(raw)
+            def read_bytes(self): return ('synthetic-asset-' + self.name).encode()
+        class FakeOwner:
+            def __init__(self, registry, argv, cwd, env, deadline, *, frames=False):
+                native_calls.append(('owned', list(argv), frames))
+                self.frames, self.finished, self.reaped = frames, False, False
+                self.output, self.errors = bytearray(), bytearray()
+                self.overflow = threading.Event()
+                self.pid = 300 + len(owners) * 100
+                self.identity = {'pid': self.pid, 'group': self.pid, 'session': self.pid, 'start': 99, 'state': 'S'}
+                self.process = Mock(pid=self.pid, returncode=None)
+                self.process.poll.side_effect = lambda: self.process.returncode
+                registry.append(self); owners.append(self)
+                if not frames:
+                    case.assertEqual(argv, [str(chrome_driver), '--port=0', '--enable-chrome-logs'])
+                    self.output.extend(b'ChromeDriver was started successfully on port 12346')
+            def send(self, value):
+                if 'launch' in value:
+                    state.update(launch=value['launch'], case='api-read', alive=True, connected=False,
+                        old_rejected=False, down=False)
+                    events.clear()
+                    state['pending'] = {'ready': True, 'nonce': 'a' * 64, 'port': 12345, 'inventory': inventory()}
+                else:
+                    state['case'] = value['case']
+                    if value['op'] == 'stop': state['alive'] = False
+                    state['pending'] = {'nonce': 'a' * 64, 'inventory': inventory()}
+            def receive(self): return state['pending']
+            def finish(self, timeout=10):
+                self.finished = self.reaped = True; self.process.returncode = 0; return bytes(self.output)
+            def refuse_cleanup(self):
+                self.finished = self.reaped = True; self.process.returncode = 0
+            def cleanup_observed(self): return self.reaped
+        class FakeDriver:
+            def __init__(self, port, deadline):
+                native_calls.append(('driver', port, deadline)); self.origin = None
+            def start(self, binary, profile):
+                case.assertEqual(binary, chrome)
+                return {'browserVersion': bundle.VERSION, 'chrome': {
+                    'chromedriverVersion': bundle.VERSION + ' synthetic', 'userDataDir': str(profile)}}
+            def command(self, route, payload):
+                case.assertEqual(route, '/url')
+                case.assertEqual(payload, {'url': 'http://127.0.0.1:12345/index.html'})
+            def connect(self, token, count):
+                case.assertIn(token, ('b' * 64, 'c' * 64)); case.assertEqual(count, len(profiles))
+                state.update(connected=True, old_rejected=False, down=False); event('GET', 200); return snapshot()
+            def create(self, name, address, count):
+                host, port = address.rsplit(':', 1)
+                profiles.append({'protocol': 'ssh', 'name': name, 'host': host, 'port': int(port)})
+                case.assertEqual(count, len(profiles)); replace_false.append(True); event('POST', 201)
+            def refresh(self, count):
+                case.assertEqual(count, len(profiles)); event('GET', 200); return snapshot()
+            def click(self, selector):
+                if selector == '#catalogue-disconnect': state['connected'] = False
+                elif selector == '#catalogue-refresh' and not state['alive']:
+                    state.update(connected=False, down=True)
+                elif selector == '#catalogue-refresh' and state['launch'] == 2 and state['case'] == 'restart-persistence-auth-rotation':
+                    state.update(connected=False, old_rejected=True); event('GET', 401)
+                else: case.assertIn(selector, ('#catalogue-refresh', '#profile-submit'))
+            def wait(self, predicate, timeout=None):
+                answer = snapshot(); case.assertTrue(predicate(answer)); return answer
+            def private_storage_absent(self, tokens, names): return True
+            def lifecycle(self, origin, token, nonce):
+                case.assertEqual(nonce, 'a' * 64); return copy.deepcopy(contract.CASES['pagehide-new-document'])
+            def controlled(self): pass
+            def execute(self, script, token, assets, action, *, async_):
+                case.assertIs(async_, True)
+                if action == 'seed-api': return {'controlled': True, 'seeded': True}
+                case.assertEqual(action, 'finish')
+                for _ in range(3): event('GET', 200, route='static')
+                return {'controlled': True, 'healthPolicyAbsent': True, 'authBypass': True,
+                    'noStoreBypass': True, 'removed': True, 'exact': True}
+            def close(self): pass
+        def proc(pid):
+            if pid in (400, 401): return {'pid': pid, 'group': 400, 'session': 400, 'start': 99, 'state': 'S'}
+            return {'pid': pid, 'group': pid, 'session': pid, 'start': 99, 'state': 'S'}
+        def groups(group):
+            if group == 400 and owners[1].process.returncode is None: return [proc(400), proc(401)]
+            return []
+        original_raw = memory.raw
+        def raw(name):
+            if name == '/proc/401/attr/apparmor/current':
+                if final_label_failure and holder['samples']['initial']['observed']:
+                    return b'wrong-fixed-profile (unconfined)\n'
+                return (holder['state']['name'] + ' (unconfined)\n').encode()
+            return original_raw(name)
+        original_observe = policy_runtime.observe_policy_tasks
+        def tasks(selected, owner, deadline, *, checkpoint):
+            case.assertIs(selected, holder); case.assertIs(owner, owners[1])
+            task_calls.append(checkpoint)
+            return original_observe(selected, owner, deadline, checkpoint=checkpoint)
+        with memory:
+            memory.raw = raw
+            policy_runtime.prepare_host_policy(root, source_binding, 30, policy_registry, holder)
+            self.assertTrue(holder['preparation_loaded_observed'])
+            with ExitStack() as stack:
+                enter = stack.enter_context
+                for getter in ('getuid', 'geteuid', 'getgid', 'getegid'):
+                    enter(patch.object(policy_runtime.os, getter, return_value=1001, create=True))
+                enter(patch.object(host_controller, 'host_context', return_value=context))
+                enter(patch.object(host_controller, 'Path', MemoryPath))
+                enter(patch.object(host_controller, 'DIRECTORY', MemoryPath('/synthetic-repo/tests/catalogue-browser')))
+                temp = enter(patch.object(host_controller.tempfile, 'TemporaryDirectory'))
+                temp.return_value.__enter__.return_value = '/synthetic-private'
+                enter(patch.object(host_controller.os, 'chmod'))
+                enter(patch.dict(host_controller.os.environ, {'GITHUB_WORKSPACE': '/synthetic-repo',
+                    'RUNNER_TEMP': '/synthetic-temp', 'GITHUB_RUN_ID': '123', 'GITHUB_RUN_ATTEMPT': '1'}))
+                timer = enter(patch.object(host_controller.threading, 'Timer'))
+                enter(patch.object(host_controller, 'source_guard', return_value=source))
+                enter(patch.object(host_controller, 'selected_runtime', return_value=(chrome, chrome_driver,
+                    {'provider': 'pinned-cft', 'installed': {'version': bundle.VERSION}, 'host_policy': holder})))
+                pin = {'uid': 0}
+                enter(patch.object(host_controller, 'file_pin', return_value=pin))
+                commands = enter(patch.object(host_controller, 'command', side_effect=[
+                    bundle.VERSION.encode() + b'\n', ('ChromeDriver ' + bundle.VERSION + '\n').encode()]))
+                enter(patch.object(host_controller, 'Owned', FakeOwner))
+                enter(patch.object(host_controller, 'owned_listener'))
+                enter(patch.object(host_controller, 'listener_inodes', return_value=set()))
+                enter(patch.object(host_controller, 'Driver', FakeDriver))
+                enter(patch.object(host_controller, 'loaded_runtime', return_value={str(chrome): pin, str(chrome_driver): pin}))
+                enter(patch.object(host_controller, 'runtime_readback'))
+                enter(patch.object(host_controller, 'observe_policy_tasks', side_effect=tasks))
+                enter(patch.object(host_controller, 'proc_identity', side_effect=proc))
+                enter(patch.object(host_controller, 'group_members', side_effect=groups))
+                enter(patch.object(policy_runtime.os, 'readlink', side_effect=lambda path:
+                    str(chrome) if str(path) == '/proc/401/exe' else str(chrome_driver)))
+                enter(patch.object(host_controller.secrets, 'token_hex', side_effect=['a' * 64, 'b' * 64, 'c' * 64]))
+                enter(patch.object(host_controller.platform, 'python_version', return_value='3.14.7'))
+                connection = enter(patch.object(host_controller.http.client, 'HTTPConnection'))
+                connection.return_value.getresponse.return_value.status = 200
+                connection.return_value.getresponse.return_value.read.return_value = b''
+                enter(patch.object(host_controller.sys, 'stderr', io.StringIO()))
+                code = host_controller.main()
+                self.assertEqual(commands.call_count, 2)
+                self.assertEqual([call.args[1] for call in commands.call_args_list],
+                    [[str(chrome), '--product-version'], [str(chrome_driver), '--version']])
+                timer.return_value.start.assert_called_once()
+                timer.return_value.cancel.assert_called_once()
+        record = json.loads(files['/synthetic-repo/.tmp/catalogue-browser-public/result.json'])
+        self.assertEqual(task_calls, ['initial', 'final'])
+        self.assertEqual([row[0] for row in native_calls], ['owned', 'owned', 'driver', 'owned'])
+        self.assertTrue(holder['samples']['initial']['observed'])
+        self.assertEqual(holder['samples']['initial']['count'], 1)
+        return code, record, holder
+
+    def test_actual_H_main_normal_commits_both_samples_in_order_before_pending_result(self):
+        code, record, holder = self.run_actual_main(final_label_failure=False)
+        self.assertEqual(code, 0)
+        self.assertTrue(record['complete'])
+        self.assertTrue(holder['samples']['final']['observed'])
+        self.assertEqual(holder['samples']['final']['count'], 1)
+        self.assertEqual(record['host_policy_cleanup'], {'status': 'pending'})
+        self.assertTrue(record['host_policy']['task_label_initial_observed'])
+        self.assertTrue(record['host_policy']['task_label_final_observed'])
+        with self.assertRaises(contract.GateRefusal):
+            contract.public_bytes(json.dumps(record).encode())
+
+    def test_actual_H_main_final_label_fault_commits_initial_only_and_refuses(self):
+        code, record, holder = self.run_actual_main(final_label_failure=True)
+        self.assertEqual(code, 1)
+        self.assertFalse(record['complete'])
+        self.assertEqual(holder['samples']['final'], {'observed': False, 'count': 0})
+        self.assertTrue(record['host_policy']['task_label_initial_observed'])
+        self.assertFalse(record['host_policy']['task_label_final_observed'])
+        self.assertTrue(record['forced_cleanup_attempted'])
+        self.assertTrue(record['cleanup_complete'])
+        self.assertEqual(record['phase'], 'cleanup')
 
 
 if __name__ == '__main__':

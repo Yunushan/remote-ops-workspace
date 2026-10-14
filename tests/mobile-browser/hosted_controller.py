@@ -596,6 +596,7 @@ CHROME_PARSER_CHECKS = ("input-shape", "ascii-controls", "block-fields", "block-
 CHROME_PARSER_SCOPES = ("active", "hidden", "unobserved")
 CHROME_HEADER_KINDS = ("target-spacing", "target-identity", "target-suffix", "foreign-header",
     "keyword-title", "keyword-prefix", "embedded-header", "over-bound", "other-candidate")
+CHROME_KEYWORD_CONTEXTS = ('before-active-bare', 'before-active-horizontal-bracket', 'before-active-horizontal-word', 'before-active-horizontal-other', 'before-active-colon', 'before-active-equals', 'before-active-bracket', 'before-active-other-punctuation', 'after-active-bare', 'after-active-horizontal-bracket', 'after-active-horizontal-word', 'after-active-horizontal-other', 'after-active-colon', 'after-active-equals', 'after-active-bracket', 'after-active-other-punctuation')
 # Diagnostic freshness only: retain an opaque token, never a dump/context/error.
 _chrome_parser_current_token = None
 
@@ -633,14 +634,49 @@ def _chrome_package_header_kind(line):
     return "other-candidate"
 
 
+def _chrome_keyword_context(line, active_count):
+    """Fixed context of an already-rejected keyword; never raw text or acceptance."""
+    if (type(line) is not str or type(active_count) is not int
+            or active_count not in (0, 1)):
+        return None
+    if len(line) > 256:
+        return None
+    lower = line.strip(" \t").lower()
+    if re.match(r"package\b", lower) is None:
+        return None
+    tail = lower[7:]
+    if not tail:
+        form = "bare"
+    elif tail[0] in " \t":
+        rest = tail.lstrip(" \t")
+        if not rest:
+            return None  # Defensive only: both-end strip made this unreachable.
+        if rest[0] == "[":
+            form = "horizontal-bracket"
+        elif "a" <= rest[0] <= "z" or "0" <= rest[0] <= "9" or rest[0] == "_":
+            form = "horizontal-word"
+        else:
+            form = "horizontal-other"
+    elif tail[0] == ":":
+        form = "colon"
+    elif tail[0] == "=":
+        form = "equals"
+    elif tail[0] == "[":
+        form = "bracket"
+    else:
+        form = "other-punctuation"
+    return ("before-active" if active_count == 0 else "after-active") + "-" + form
+
+
 def _note_chrome_parser_check(error, context, attempt_token):
     if (type(error) is not Refusal or type(error.args) is not tuple
             or error.args != ("actual-package-version-unobserved",)
             or type(attempt_token) is not object or _chrome_parser_current_token is not attempt_token
-            or type(context) is not dict or len(context) not in (4, 5)
+            or type(context) is not dict or len(context) not in (4, 5, 6)
             or any(type(key) is not str for key in context)
             or set(context) not in ({"attempt_token", "selected_error", "check", "scope"},
-                                   {"attempt_token", "selected_error", "check", "scope", "header_kind"})
+                                   {"attempt_token", "selected_error", "check", "scope", "header_kind"},
+                                   {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"})
             or context["attempt_token"] is not attempt_token or context["selected_error"] is not error):
         return
     check, scope = context["check"], context["scope"]
@@ -654,7 +690,18 @@ def _note_chrome_parser_check(error, context, attempt_token):
         if check != "package-header" or type(kind) is not str or kind not in CHROME_HEADER_KINDS:
             return
         observed["header_kind"] = kind
+    if "keyword_context" in context:
+        value = context["keyword_context"]
+        if (check != "package-header" or observed.get("header_kind") != "keyword-prefix"
+                or type(value) is not str or value not in CHROME_KEYWORD_CONTEXTS
+                or (scope in ("active", "hidden") and not value.startswith("after-active-"))):
+            return
+        observed["keyword_context"] = value
+    if _chrome_parser_current_token is not attempt_token:
+        return
     error.chrome_parser_check = observed
+    if _chrome_parser_current_token is not attempt_token:
+        return
 
 
 def _active_chrome_package_versions(dump, *, diagnostic_context=None):
@@ -685,9 +732,19 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
                                 header_kind = _chrome_package_header_kind(line)
                             except BaseException:
                                 pass
+                        keyword_context = None
+                        if type(header_kind) is str and header_kind == "keyword-prefix":
+                            try:
+                                keyword_context = _chrome_keyword_context(line, titles["active"])
+                            except BaseException:
+                                pass
                         _annotate_chrome_parser_context(diagnostic_context, error, check, scope)
                         if type(header_kind) is str and header_kind in CHROME_HEADER_KINDS:
                             diagnostic_context["header_kind"] = header_kind
+                            if (header_kind == "keyword-prefix" and type(keyword_context) is str
+                                    and keyword_context in CHROME_KEYWORD_CONTEXTS
+                                    and (scope == "unobserved" or keyword_context.startswith("after-active-"))):
+                                diagnostic_context["keyword_context"] = keyword_context
                 except BaseException:
                     # Complete mutation followed by failure is ineligible too.
                     if _chrome_parser_current_token is attempt_token:

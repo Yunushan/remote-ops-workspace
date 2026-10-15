@@ -773,6 +773,119 @@ def sdk_inventory_mismatch_diagnostic(exc):
     return None
 
 
+def _new_sdk_tree_observation(sdk):
+    return {"token": object(), "root": sdk, "rows": None, "digest": None,
+            "inventory": None, "walk_complete": False, "complete": False}
+
+
+def _sdk_tree_rows(observation, inventory, sdk):
+    """Validate only after refusal; raw paths and digests stay in this private frame."""
+    if (type(observation) is not dict or len(observation) != 7 or any(type(key) is not str for key in observation)
+            or set(observation) != {"token", "root", "rows", "digest", "inventory", "walk_complete", "complete"}
+            or type(observation["token"]) is not object or observation["root"] is not sdk
+            or observation["inventory"] is not inventory or observation["walk_complete"] is not True
+            or observation["complete"] is not True or type(inventory) is not dict):
+        return None
+    digest, expected = observation["digest"], inventory.get("tree_sha256")
+    if (type(digest) is not str or type(expected) is not str or len(digest) != 64 or len(expected) != 64
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None or digest != expected):
+        return None
+    rows = observation["rows"]
+    if type(rows) is not list or not 0 < len(rows) <= 30000:
+        return None
+    result, path_bytes = {}, 0
+    for row in rows:
+        if type(row) is not dict or len(row) not in (2, 4) or any(type(key) is not str for key in row):
+            return None
+        path, kind = row.get("path"), row.get("kind")
+        if (type(path) is not str or not 0 < len(path) <= 4096 or path.startswith("/")
+                or (path != "." and any(part in ("", ".", "..") for part in path.split("/")))
+                or type(kind) is not str or kind not in ("directory", "file") or path in result):
+            return None
+        path_bytes += len(path.encode("utf-8"))
+        if path_bytes > 4 * 1024 * 1024:
+            return None
+        if kind == "directory":
+            if set(row) != {"path", "kind"}:
+                return None
+            result[path] = (kind,)
+        else:
+            size, content = row.get("bytes"), row.get("sha256")
+            if (set(row) != {"path", "kind", "bytes", "sha256"} or type(size) is not int
+                    or not 0 <= size <= SDK_TREE_MAXIMUM_BYTES or type(content) is not str or len(content) != 64
+                    or re.fullmatch(r"[0-9a-f]{64}", content) is None):
+                return None
+            result[path] = (kind, size, content)
+    return result
+
+
+def _sdk_tree_category(path):
+    if path == ".knownPackages":
+        return 0
+    parts = path.split("/")
+    for index, prefix in enumerate((("cmdline-tools", "latest"), ("platform-tools",), ("emulator",),
+            ("platforms", "android-36"), ("system-images", "android-36", "google_apis", "x86_64"), ("licenses",)), 2):
+        if tuple(parts[:len(prefix)]) == prefix:
+            return index
+    if len(parts) == 1:
+        return 1
+    return 8
+
+
+def _sdk_tree_delta(before, after, initial, current, sdk):
+    left = _sdk_tree_rows(before, initial, sdk)
+    right = _sdk_tree_rows(after, current, sdk)
+    if left is None or right is None or before is after or before["token"] is after["token"]:
+        return None
+    masks, counts = [0, 0, 0], [0, 0, 0]
+    for path, row in right.items():
+        index = 0 if path not in left else 2 if row != left[path] else None
+        if index is not None:
+            masks[index] |= 1 << _sdk_tree_category(path)
+            counts[index] = min(31, counts[index] + 1)
+    for path in left:
+        if path not in right:
+            masks[1] |= 1 << _sdk_tree_category(path)
+            counts[1] = min(31, counts[1] + 1)
+    if any(counts):
+        return {"added": masks[0], "removed": masks[1], "changed": masks[2], "counts": counts}
+    return None
+
+
+def _sdk_tree_delta_value(value):
+    if (type(value) is not dict or len(value) != 4 or any(type(key) is not str for key in value)
+            or set(value) != {"added", "removed", "changed", "counts"} or type(value["counts"]) is not list
+            or len(value["counts"]) != 3):
+        return None
+    for name, count in zip(("added", "removed", "changed"), value["counts"], strict=True):
+        mask = value[name]
+        if (type(mask) is not int or not 0 <= mask <= 511 or type(count) is not int or not 0 <= count <= 31
+                or (mask == 0) != (count == 0) or count < mask.bit_count()):
+            return None
+    if not any(value["counts"]):
+        return None
+    return {"added": value["added"], "removed": value["removed"], "changed": value["changed"], "counts": list(value["counts"])}
+
+
+def sdk_tree_delta_diagnostic(exc):
+    try:
+        earlier = sdk_inventory_mismatch_diagnostic(exc)
+        if type(earlier) is not dict or earlier.get("tree") is not True:
+            return None
+        state = exc.__dict__
+        if type(state) is not dict:
+            return None
+        observed = state.get("sdk_tree_delta")
+        if (type(observed) is not dict or len(observed) != 3 or any(type(key) is not str for key in observed)
+                or set(observed) != {"selected_error", "complete", "value"}
+                or observed["selected_error"] is not exc or observed["complete"] is not True):
+            return None
+        return _sdk_tree_delta_value(observed["value"])
+    except BaseException:
+        pass
+    return None
+
+
 def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
@@ -831,6 +944,13 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
                 record["sdk_inventory_mismatch"] = observed
         except BaseException:
             pass
+    if code == "qualification-current-source-tool-or-device-changed" and phase == "chrome-static-device-inventory":
+        try:
+            observed = sdk_tree_delta_diagnostic(exc)
+            if observed is not None:
+                record["sdk_tree_delta"] = observed
+        except BaseException:
+            pass
     if code == "apk-path-bound" and phase == "chrome-static-device-inventory":
         try:
             observed = apk_path_shape_diagnostic(exc)
@@ -845,7 +965,7 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     return record
 
 
-def sdk_inventory(sdk):
+def sdk_inventory(sdk, *, tree_observation=None):
     metadata = []
     prefixes = ("cmdline-tools/latest", "platform-tools", "emulator", "platforms/android-36", "system-images/android-36/google_apis/x86_64")
     for prefix in prefixes:
@@ -863,8 +983,22 @@ def sdk_inventory(sdk):
     for name, relative in (("adb", "platform-tools/adb"), ("emulator", "emulator/emulator"), ("avdmanager", "cmdline-tools/latest/bin/avdmanager"), ("sdkmanager", "cmdline-tools/latest/bin/sdkmanager")):
         raw = H.read_plain(sdk / relative, 128 * 1024 * 1024)
         tools.append({"tool": name, "bytes": len(raw), "sha256": H.sha(raw)})
-    return {"tree_sha256": H.tree_digest(sdk, maximum_files=30000, maximum_bytes=SDK_TREE_MAXIMUM_BYTES), "metadata": metadata, "tools": tools,
+    if tree_observation is None:
+        return {"tree_sha256": H.tree_digest(sdk, maximum_files=30000, maximum_bytes=SDK_TREE_MAXIMUM_BYTES), "metadata": metadata, "tools": tools,
+                "catalog_approval": False, "license_approval": False, "whole_image_semantic_closure": "not-established"}
+    inventory = {"tree_sha256": H.tree_digest(sdk, maximum_files=30000, maximum_bytes=SDK_TREE_MAXIMUM_BYTES, _observation=tree_observation), "metadata": metadata, "tools": tools,
             "catalog_approval": False, "license_approval": False, "whole_image_semantic_closure": "not-established"}
+    try:
+        if type(tree_observation) is dict and tree_observation.get("walk_complete") is True:
+            tree_observation["inventory"] = inventory
+            tree_observation["complete"] = True
+    except BaseException:
+        try:
+            if type(tree_observation) is dict:
+                tree_observation["complete"] = False
+        except BaseException:
+            pass
+    return inventory
 
 
 def public_receipt(root, record):
@@ -895,6 +1029,7 @@ def capture(root):
     event_guard(root)
     leaders, context = [], None
     owned_substage = None
+    sdk_tree_before = sdk_tree_after = None
     try:
         short, started = commands(root, leaders)
         binding = source_binding(root, short)
@@ -904,7 +1039,12 @@ def capture(root):
         sdk = owned_sdk()
         if Path(os.environ.get("ANDROID_HOME", "")) != sdk:
             raise H.Refusal("actual-isolated-sdk-environment-required")
-        observed = sdk_inventory(sdk)
+        sdk_tree_before = None
+        try:
+            sdk_tree_before = _new_sdk_tree_observation(sdk)
+        except BaseException:
+            pass
+        observed = sdk_inventory(sdk, tree_observation=sdk_tree_before)
         context["observed"]["sdk_tree_sha256"] = observed["tree_sha256"]
         private = root / ".tmp" / ("android-toolchain-owned-" + secrets.token_hex(16))
         if private.parent.resolve() != private.parent:
@@ -1001,8 +1141,13 @@ def capture(root):
         context["observed"]["chrome_apk_count"] = len(chrome["apks"])
         identity_source_changed = identity_sdk_changed = identity_chrome_changed = identity_deadline_elapsed = None
         identity_sdk_after = None
+        sdk_tree_after = None
+        try:
+            sdk_tree_after = _new_sdk_tree_observation(sdk)
+        except BaseException:
+            pass
         if ((identity_source_changed := source_binding(root, short) != binding)
-                or (identity_sdk_changed := (identity_sdk_after := sdk_inventory(sdk)) != observed)
+                or (identity_sdk_changed := (identity_sdk_after := sdk_inventory(sdk, tree_observation=sdk_tree_after)) != observed)
                 or (identity_chrome_changed := H.package_inventory(adb, "com.android.chrome") != chrome)
                 or (identity_deadline_elapsed := time.monotonic() >= started + 1500)):
             try:
@@ -1039,6 +1184,21 @@ def capture(root):
                             sdk_observation["complete"] = False
                     except BaseException:
                         pass
+                tree_observation = None
+                try:
+                    earlier_sdk = sdk_inventory_mismatch_diagnostic(error)
+                    if type(earlier_sdk) is dict and earlier_sdk.get("tree") is True:
+                        delta = _sdk_tree_delta(sdk_tree_before, sdk_tree_after, observed, identity_sdk_after, sdk)
+                        if _sdk_tree_delta_value(delta) is not None:
+                            tree_observation = {"selected_error": error, "complete": False, "value": delta}
+                            error.sdk_tree_delta = tree_observation
+                            tree_observation["complete"] = True
+                except BaseException:
+                    try:
+                        if type(tree_observation) is dict:
+                            tree_observation["complete"] = False
+                    except BaseException:
+                        pass
                 raise
         cleanup = H.cleanup_all(leaders)
         if any(not row["complete"] for row in cleanup):
@@ -1068,6 +1228,12 @@ def capture(root):
                 pass
         raise
     finally:
+        try:
+            for tree_observation in (sdk_tree_before, sdk_tree_after):
+                if type(tree_observation) is dict:
+                    tree_observation.clear()
+        except BaseException:
+            pass
         initial = sys.exc_info()[1]
         if any(not row["complete"] for row in H.cleanup_all(leaders)) and initial is None:
             raise H.Refusal("qualification-owned-cleanup-unproved")

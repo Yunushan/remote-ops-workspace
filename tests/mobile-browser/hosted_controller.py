@@ -114,7 +114,16 @@ def _tree_byte_bound_refusal(root, path, total, file_bytes, sampled_nodes, maxim
     return refusal
 
 
-def tree_digest(root, maximum_files=12000, maximum_bytes=256 * 1024 * 1024):
+def _tree_digest_observe(root, rows, value, observation):
+    """Private references only, after the original digest; no additional walk or hash."""
+    if type(observation) is dict:
+        observation["root"] = root
+        observation["rows"] = rows
+        observation["digest"] = value
+        observation["walk_complete"] = True
+
+
+def tree_digest(root, maximum_files=12000, maximum_bytes=256 * 1024 * 1024, *, _observation=None):
     if root.is_symlink() or root.resolve() != root:
         raise Refusal("tree-root-alias")
     pending, rows, total = [root], [], 0
@@ -157,7 +166,19 @@ def tree_digest(root, maximum_files=12000, maximum_bytes=256 * 1024 * 1024):
             rows.append({"path": path.relative_to(root).as_posix(), "kind": "file", "sha256": state.hexdigest(), "bytes": size})
         else:
             raise Refusal("tree-unsupported-type")
-    return sha(json.dumps(sorted(rows, key=lambda r: r["path"]), sort_keys=True, separators=(",", ":")).encode())
+    value = sha(json.dumps(sorted(rows, key=lambda r: r["path"]), sort_keys=True, separators=(",", ":")).encode())
+    if _observation is not None:
+        try:
+            _tree_digest_observe(root, rows, value, _observation)
+        except BaseException:
+            try:
+                if type(_observation) is dict:
+                    _observation["walk_complete"] = False
+                    _observation["complete"] = False
+                    _observation["rows"] = None
+            except BaseException:
+                pass
+    return value
 
 
 ADB_MESSAGE_PREFIX_BYTES = 4096

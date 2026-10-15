@@ -5195,7 +5195,7 @@ class QualificationCurrentIdentityDiagnosticTests(unittest.TestCase):
                 source = patches.enter_context(mock.patch.object(Q, "source_binding", side_effect=lambda *_: sample("source")))
                 patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=(initial["source"], {})))
                 patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
-                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", side_effect=lambda *_: sample("sdk")))
+                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", side_effect=lambda *_args, **_kwargs: sample("sdk")))
                 chrome = patches.enter_context(mock.patch.object(H, "package_inventory", side_effect=lambda *_: sample("chrome")))
                 patches.enter_context(mock.patch.object(Q.time, "monotonic", side_effect=clock))
                 reservations = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=[mock.MagicMock() for _ in range(3)]))
@@ -5368,7 +5368,7 @@ class QualificationSdkInventoryDifferenceTests(unittest.TestCase):
                 source = patches.enter_context(mock.patch.object(Q, "source_binding", side_effect=lambda *_: sample("source")))
                 patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=(initial["source"], {})))
                 patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
-                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", side_effect=lambda *_: sample("sdk")))
+                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", side_effect=lambda *_args, **_kwargs: sample("sdk")))
                 chrome = patches.enter_context(mock.patch.object(H, "package_inventory", side_effect=lambda *_: sample("chrome")))
                 patches.enter_context(mock.patch.object(Q.time, "monotonic", side_effect=clock))
                 reservations = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=[mock.MagicMock() for _ in range(3)]))
@@ -5574,6 +5574,304 @@ class QualificationSdkInventoryDifferenceTests(unittest.TestCase):
             for private in ("PRIVATE", "tree_sha256", "sha256", "revision", "package.xml", "source.properties",
                             "cmdline-tools", "platform-tools", "selected_error", "complete", "attempt_token"):
                 self.assertNotIn(private, line)
+
+
+class QualificationSdkTreeDeltaTests(unittest.TestCase):
+    CODE = "qualification-current-source-tool-or-device-changed"
+    PHASE = "chrome-static-device-inventory"
+
+    def run_capture(self, before, after, before_rows, after_rows, *, selected="sdk", classifier_fault=None, setter_fault=None, success=False):
+        with fixture() as root:
+            (root / ".tmp").mkdir()
+            sdk = root / "owned-sdk"
+            leaders = [SimpleNamespace(child=SimpleNamespace(stdin=mock.Mock()), zero=mock.Mock(),
+                live=mock.Mock(), buffers=[bytearray(), bytearray()]) for _ in range(3)]
+            born, seen = [], []
+            counts = dict.fromkeys(("source", "sdk", "chrome"), 0)
+            initial = {"source": {"source_sha": "a" * 40}, "sdk": before,
+                       "chrome": {"version": "123.0", "apks": [{"bytes": 123}]}}
+
+            def managed(_argv, _env, _cwd):
+                self.assertLess(len(born), 3)
+                self.assertIs(_cwd, root)
+                result = leaders[len(born)]
+                born.append(result)
+                return result
+
+            def sample(kind, tree_observation=None):
+                counts[kind] += 1
+                seen.append(kind)
+                if kind == "sdk":
+                    inventory = after if counts[kind] == 2 else before
+                    if type(tree_observation) is dict:
+                        tree_observation.update({"root": sdk, "rows": after_rows if counts[kind] == 2 else before_rows,
+                            "digest": inventory["tree_sha256"], "inventory": inventory, "walk_complete": True, "complete": True})
+                    return inventory
+                return {**initial[kind], "changed": True} if counts[kind] == 2 and selected == kind else initial[kind]
+
+            def clock():
+                return 1500 if selected == "deadline" and all(counts[key] == 2 for key in counts) else 0
+
+            def command(service, **_kwargs):
+                if service == "host:devices":
+                    return (H.SERIAL + "\tdevice\n").encode("ascii")
+                self.assertEqual(service, "shell,v2,raw:getprop sys.boot_completed")
+                return ChromeDumpWireBudgetTests.wire(b"1\n")
+
+            adb = SimpleNamespace(command=mock.Mock(side_effect=command),
+                shell=mock.Mock(side_effect=[b"36\n", b"x86_64\n", b"header\n"]))
+            with ExitStack() as patches:
+                patches.enter_context(mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True))
+                patches.enter_context(mock.patch.object(Q, "event_guard", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "commands", return_value=(object(), 0)))
+                source = patches.enter_context(mock.patch.object(Q, "source_binding", side_effect=lambda *_: sample("source")))
+                patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=(initial["source"], {})))
+                patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
+                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", side_effect=lambda _sdk, **kwargs: sample("sdk", kwargs.get("tree_observation"))))
+                chrome = patches.enter_context(mock.patch.object(H, "package_inventory", side_effect=lambda *_: sample("chrome")))
+                patches.enter_context(mock.patch.object(Q.time, "monotonic", side_effect=clock))
+                reservations = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=[mock.MagicMock() for _ in range(3)]))
+                provider = patches.enter_context(mock.patch.object(H, "Managed", side_effect=managed))
+                patches.enter_context(mock.patch.object(H, "owned_listener", return_value=None))
+                patches.enter_context(mock.patch.object(H, "AdbSocket", return_value=adb))
+                cleanup = patches.enter_context(mock.patch.object(H, "cleanup_all", return_value=[]))
+                receipt = patches.enter_context(mock.patch.object(Q, "public_receipt"))
+                process = patches.enter_context(mock.patch.object(H.subprocess, "Popen"))
+                connect = patches.enter_context(mock.patch.object(H.socket, "create_connection"))
+                stream = io.StringIO()
+                patches.enter_context(mock.patch.object(sys, "stderr", stream))
+                if classifier_fault is not None:
+                    patches.enter_context(mock.patch.object(Q, "_sdk_tree_delta", side_effect=classifier_fault))
+                if setter_fault is not None:
+                    original = H.Refusal
+                    class SetterFault(original):
+                        def __setattr__(self, name, value):
+                            super().__setattr__(name, value)
+                            if name == "sdk_tree_delta":
+                                raise setter_fault
+                    patches.enter_context(mock.patch.object(H, "Refusal", SetterFault))
+                if success:
+                    classifier = patches.enter_context(mock.patch.object(Q, "_sdk_tree_delta", side_effect=AssertionError("success")))
+                    patches.enter_context(mock.patch.object(H, "read_plain", return_value=b"saved"))
+                    result = Q.capture(root)
+                    self.assertEqual(result["status"], "observations-with-unresolved-browser")
+                    classifier.assert_not_called()
+                    error = None
+                    self.assertEqual(cleanup.call_count, 2)
+                else:
+                    with self.assertRaises(H.Refusal) as caught:
+                        Q.capture(root)
+                    error = caught.exception
+                    self.assertEqual(error.args, (self.CODE,))
+                    self.assertIsNone(error.__context__)
+                    cleanup.assert_called_once_with(born)
+                self.assertEqual(provider.call_count, 3)
+                self.assertEqual(reservations.call_count, 3)
+                self.assertEqual(adb.command.call_count, 2)
+                self.assertEqual(adb.shell.call_args_list, [mock.call("getprop ro.build.version.sdk"),
+                    mock.call("getprop ro.product.cpu.abi"), mock.call("cat /proc/net/unix")])
+                receipt.assert_called_once()
+                process.assert_not_called()
+                connect.assert_not_called()
+                return error, seen, (source.call_count, inventory.call_count, chrome.call_count), stream.getvalue()
+
+    @staticmethod
+    def snapshot():
+        metadata = []
+        for component in ("cmdline-tools/latest", "platform-tools", "emulator", "platforms/android-36",
+                          "system-images/android-36/google_apis/x86_64"):
+            for name in ("package.xml", "source.properties"):
+                row = {"component": component, "file": name, "bytes": 17, "sha256": "a" * 64}
+                if name == "source.properties":
+                    row["revision"] = "1.2.3"
+                metadata.append(row)
+        return {"tree_sha256": "e" * 64, "metadata": metadata,
+                "tools": [{"tool": name, "bytes": 23, "sha256": "b" * 64}
+                          for name in ("adb", "emulator", "avdmanager", "sdkmanager")],
+                "catalog_approval": False, "license_approval": False, "whole_image_semantic_closure": "not-established"}
+
+    @staticmethod
+    def duplicate(value):
+        return json.loads(json.dumps(value))
+
+    @staticmethod
+    def rows(paths):
+        return [{"path": ".", "kind": "directory"}] + [
+            {"path": path, "kind": "file", "bytes": 17, "sha256": "a" * 64} for path in paths]
+
+    @staticmethod
+    def state(sdk, inventory, rows):
+        value = Q._new_sdk_tree_observation(sdk)
+        H._tree_digest_observe(sdk, rows, inventory["tree_sha256"], value)
+        value["inventory"], value["complete"] = inventory, True
+        return value
+
+    def test_original_tree_walk_digest_reads_bounds_and_fault_selected_refusal_are_preserved(self):
+        with fixture() as root:
+            (root / "a").write_bytes(b"synthetic")
+            real_open, real_scandir = Path.open, os.scandir
+            reads, scans = [], []
+            def opened(path, *args, **kwargs):
+                reads.append(path)
+                return real_open(path, *args, **kwargs)
+            def scanned(path):
+                scans.append(path)
+                return real_scandir(path)
+            state = Q._new_sdk_tree_observation(root)
+            with mock.patch.object(Path, "open", new=opened), mock.patch.object(os, "scandir", side_effect=scanned):
+                expected = H.tree_digest(root)
+                first = (list(reads), list(scans))
+                reads.clear()
+                scans.clear()
+                actual = H.tree_digest(root, _observation=state)
+                self.assertEqual((reads, scans), first)
+            self.assertEqual(actual, expected)
+            self.assertIs(state["walk_complete"], True)
+            self.assertEqual(state["digest"], expected)
+            self.assertEqual(len(state["rows"]), 2)
+            for fault in (MemoryError("PRIVATE"), KeyboardInterrupt("PRIVATE"), SystemExit("PRIVATE")):
+                state = Q._new_sdk_tree_observation(root)
+                with mock.patch.object(H, "_tree_digest_observe", side_effect=fault):
+                    self.assertEqual(H.tree_digest(root, _observation=state), expected)
+                self.assertIs(state["walk_complete"], False)
+                self.assertIsNone(state["rows"])
+            with mock.patch.object(H, "_tree_digest_observe") as observe:
+                with self.assertRaises(H.Refusal) as caught:
+                    H.tree_digest(root, maximum_bytes=1, _observation=Q._new_sdk_tree_observation(root))
+                self.assertEqual(caught.exception.args, ("tree-total-byte-bound",))
+                observe.assert_not_called()
+
+    def test_same_sdk_producer_returns_six_fields_and_forwards_only_private_collector(self):
+        sdk = Path("/synthetic-sdk")
+        state = Q._new_sdk_tree_observation(sdk)
+        calls = []
+        def tree(path, *, maximum_files, maximum_bytes, _observation=None):
+            self.assertIs(path, sdk)
+            self.assertEqual((maximum_files, maximum_bytes), (30000, 8 * 1024 ** 3))
+            calls.append(_observation)
+            if _observation is not None:
+                H._tree_digest_observe(path, self.rows([".knownPackages"]), "e" * 64, _observation)
+            return "e" * 64
+        with (mock.patch.object(H, "read_plain", return_value=b"Pkg.Revision=1\n") as reads,
+              mock.patch.object(H, "tree_digest", side_effect=tree) as walk,
+              mock.patch.object(H.subprocess, "Popen") as native):
+            plain = Q.sdk_inventory(sdk)
+            observed = Q.sdk_inventory(sdk, tree_observation=state)
+        self.assertEqual(plain, observed)
+        self.assertEqual(set(observed), {"tree_sha256", "metadata", "tools", "catalog_approval", "license_approval", "whole_image_semantic_closure"})
+        self.assertEqual(calls, [None, state])
+        self.assertEqual(reads.call_count, 28)
+        self.assertEqual(walk.call_count, 2)
+        self.assertIs(state["inventory"], observed)
+        self.assertIs(state["complete"], True)
+        native.assert_not_called()
+
+    def test_exact_nine_categories_added_removed_content_and_kind_changes_and_saturation(self):
+        sdk = object()
+        before, after = self.snapshot(), self.snapshot()
+        after["tree_sha256"] = "f" * 64
+        paths = (".knownPackages", "other-root", "cmdline-tools/latest/lib/a", "platform-tools/a", "emulator/a",
+                 "platforms/android-36/a", "system-images/android-36/google_apis/x86_64/a", "licenses/a", "unknown/a")
+        for index, path in enumerate(paths):
+            empty, populated = self.rows([]), self.rows([path])
+            for left, right, expected in ((empty, populated, {"added": 1 << index, "removed": 0, "changed": 0, "counts": [1, 0, 0]}),
+                    (populated, empty, {"added": 0, "removed": 1 << index, "changed": 0, "counts": [0, 1, 0]})):
+                self.assertEqual(Q._sdk_tree_delta(self.state(sdk, before, left), self.state(sdk, after, right), before, after, sdk), expected)
+            changed = self.rows([path])
+            changed[1]["sha256"] = "b" * 64
+            self.assertEqual(Q._sdk_tree_delta(self.state(sdk, before, populated), self.state(sdk, after, changed), before, after, sdk),
+                             {"added": 0, "removed": 0, "changed": 1 << index, "counts": [0, 0, 1]})
+            changed[1] = {"path": path, "kind": "directory"}
+            self.assertEqual(Q._sdk_tree_delta(self.state(sdk, before, populated), self.state(sdk, after, changed), before, after, sdk),
+                             {"added": 0, "removed": 0, "changed": 1 << index, "counts": [0, 0, 1]})
+        populated = self.rows(["emulator/PRIVATE" + str(index) for index in range(40)])
+        self.assertEqual(Q._sdk_tree_delta(self.state(sdk, before, self.rows([])), self.state(sdk, after, populated), before, after, sdk),
+                         {"added": 16, "removed": 0, "changed": 0, "counts": [31, 0, 0]})
+
+    def test_private_row_state_must_be_fresh_bound_bounded_and_exact_primitive(self):
+        class Poison:
+            def __eq__(self, _other):
+                raise AssertionError("PRIVATE-equality")
+            def __bool__(self):
+                raise AssertionError("PRIVATE-truth")
+        sdk, inventory = object(), self.snapshot()
+        rows = self.rows([".knownPackages"])
+        good = self.state(sdk, inventory, rows)
+        self.assertIsNotNone(Q._sdk_tree_rows(good, inventory, sdk))
+        for update in ({"token": Poison()}, {"root": object()}, {"inventory": self.duplicate(inventory)},
+                {"walk_complete": 1}, {"complete": False}, {"digest": "f" * 64}, {"rows": ()}, {"raw": "PRIVATE"},
+                {"rows": rows + [rows[1]]}, {"rows": self.rows(["x" * 4097])},
+                {"rows": [{"path": ".", "kind": "directory"}, {"path": "x", "kind": "file", "bytes": True, "sha256": "a" * 64}]},
+                {"rows": [{"path": ".", "kind": "directory"}, {"path": Poison(), "kind": "directory"}]}):
+            self.assertIsNone(Q._sdk_tree_rows({**good, **update}, inventory, sdk))
+        self.assertIsNone(Q._sdk_tree_delta(good, good, inventory, inventory, sdk))
+
+    def test_actual_selected_sdk_refusal_has_closed_delta_no_more_calls_and_faults_keep_old_fields(self):
+        before, after = self.snapshot(), self.snapshot()
+        after["tree_sha256"] = "f" * 64
+        left, right = self.rows([]), self.rows([".knownPackages"])
+        error, seen, counts, line = self.run_capture(before, after, left, right)
+        expected = {"added": 1, "removed": 0, "changed": 0, "counts": [1, 0, 0]}
+        self.assertEqual((seen, counts), (["source", "sdk", "chrome", "source", "sdk"], (2, 2, 1)))
+        self.assertEqual(Q.sdk_tree_delta_diagnostic(error), expected)
+        self.assertEqual(json.loads(line)["sdk_tree_delta"], expected)
+        for mode in ("setup", "classify", "setter", "project"):
+            for fault in (MemoryError("PRIVATE"), KeyboardInterrupt("PRIVATE"), SystemExit("PRIVATE")):
+                with self.subTest(mode=mode, kind=type(fault).__name__):
+                    with ExitStack() as patches:
+                        kwargs = {}
+                        if mode in ("setup", "project"):
+                            name = "_new_sdk_tree_observation" if mode == "setup" else "sdk_tree_delta_diagnostic"
+                            patches.enter_context(mock.patch.object(Q, name, side_effect=fault))
+                        else:
+                            kwargs["classifier_fault" if mode == "classify" else "setter_fault"] = fault
+                        error, seen, counts, line = self.run_capture(before, after, left, right, **kwargs)
+                    public = json.loads(line)
+                    self.assertEqual(public["current_identity_mismatch"], "sdk-inventory")
+                    self.assertEqual(public["sdk_inventory_mismatch"], {"tree": True, "metadata": 0, "tools": 0})
+                    self.assertNotIn("sdk_tree_delta", public)
+                    self.assertEqual((seen, counts), (["source", "sdk", "chrome", "source", "sdk"], (2, 2, 1)))
+        with mock.patch.object(Q, "_sdk_tree_delta", side_effect=AssertionError("success")) as classify:
+            error, seen, counts, line = self.run_capture(before, before, left, left, selected=None, success=True)
+        self.assertIsNone(error)
+        self.assertEqual((seen, counts, line), (["source", "sdk", "chrome"] * 2, (2, 2, 2), ""))
+        classify.assert_not_called()
+
+    def test_independent_projection_masks_count_relations_identity_privacy_and_complete_wire_bound(self):
+        before, after = self.snapshot(), self.snapshot()
+        after["tree_sha256"] = "f" * 64
+        error, _seen, _counts, _line = self.run_capture(before, after, self.rows([]), self.rows([".knownPackages"]))
+        good = error.sdk_tree_delta
+        for value in (None, [], {"added": True, "removed": 0, "changed": 0, "counts": [1, 0, 0]},
+                {"added": 512, "removed": 0, "changed": 0, "counts": [1, 0, 0]},
+                {"added": 0, "removed": 0, "changed": 0, "counts": [0, 0, 0]},
+                {"added": 3, "removed": 0, "changed": 0, "counts": [1, 0, 0]},
+                {"added": 1, "removed": 0, "changed": 0, "counts": [True, 0, 0]},
+                {"added": 1, "removed": 0, "changed": 0, "counts": [32, 0, 0]},
+                {"added": 1, "removed": 0, "changed": 0, "counts": (1, 0, 0)},
+                {"added": 1, "removed": 0, "changed": 0, "counts": [1, 0, 0], "path": "PRIVATE"}):
+            error.sdk_tree_delta = {**good, "value": value}
+            self.assertIsNone(Q.sdk_tree_delta_diagnostic(error))
+        error.sdk_tree_delta = good
+        other = H.Refusal(self.CODE)
+        other.current_identity_mismatch = {"selected_error": other, "complete": True, "value": "sdk-inventory"}
+        other.sdk_inventory_mismatch = {"selected_error": other, "complete": True, "value": {"tree": True, "metadata": 0, "tools": 0}}
+        other.sdk_tree_delta = good
+        self.assertIsNone(Q.sdk_tree_delta_diagnostic(other))
+        for update in ({"complete": 1}, {"complete": False}, {"selected_error": other}, {"path": "PRIVATE"}):
+            error.sdk_tree_delta = {**good, **update}
+            self.assertIsNone(Q.sdk_tree_delta_diagnostic(error))
+        maximum = {"added": 511, "removed": 511, "changed": 511, "counts": [31, 31, 31]}
+        error.sdk_tree_delta = {**good, "value": maximum}
+        public = Q.capture_refusal_diagnostic(error, self.PHASE)
+        self.assertEqual(public["sdk_tree_delta"], maximum)
+        line = json.dumps(public, ensure_ascii=True, separators=(",", ":")) + "\n"
+        self.assertLessEqual(len(line.encode("ascii")), 450)
+        self.assertLessEqual(len(line.encode("ascii")), 512)
+        for private in ("PRIVATE", ".knownPackages", "selected_error", "complete", "tree_sha256", "sha256", "path", "token", "rows"):
+            self.assertNotIn(private, line)
+        for phase in ("sdk-observation", "owned-api36-emulator", "unobserved"):
+            self.assertNotIn("sdk_tree_delta", Q.capture_refusal_diagnostic(error, phase))
 
 
 if __name__ == "__main__":

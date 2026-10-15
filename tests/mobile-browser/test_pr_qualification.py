@@ -4214,5 +4214,152 @@ class ChromeColonContextDiagnosticTests(unittest.TestCase):
 
 
 
+
+class ChromeResolverSchemeGrammarTests(unittest.TestCase):
+    TABLES = ("Activity Resolver Table:", "Provider Resolver Table:",
+              "Receiver Resolver Table:", "Service Resolver Table:")
+
+    @staticmethod
+    def resolver(title="Activity Resolver Table:", *, key=b"      package:", between=b""):
+        return (title.encode("ascii") + b"\n"
+            b"  Full MIME Types:\n      text/plain:\n        abc com.android.chrome/.PRIVATE\n"
+            b"  Schemes:\n      http:\n        abc com.android.chrome/.PRIVATE\n"
+            + between + key + b"\n        abc com.android.chrome/.PRIVATE (1 filters)\n")
+
+    def refused(self, raw):
+        case = ActiveChromePackageVersionTests()
+        with (mock.patch.object(H.subprocess, "Popen") as process,
+                mock.patch.object(H.socket, "create_connection") as provider):
+            error = case.refused(raw)
+        process.assert_not_called()
+        provider.assert_not_called()
+        return error
+
+    def test_four_documented_tables_preserve_active_hidden_and_complete_APK_queries(self):
+        case = ActiveChromePackageVersionTests()
+        for title in self.TABLES:
+            for hidden in (None, ("98.0", "789"), ("123.0", "456")):
+                raw = self.resolver(title) + b"  Non-Data Actions:\n      PRIVATE:\n" + case.dump(hidden=hidden)
+                adb = case.inventory(raw)
+                with (self.subTest(title=title, hidden=hidden),
+                        mock.patch.object(H.subprocess, "Popen") as process,
+                        mock.patch.object(H.socket, "create_connection") as provider):
+                    result = H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual(result["package"], "com.android.chrome")
+                self.assertEqual((result["version"], result["version_code"]), ("123.0", "456"))
+                self.assertEqual(result["apks"], [{"path": case.APK, "sha256": "a" * 64, "bytes": 123}])
+                self.assertEqual(result["publisher_signing_trust"], "not-approved-by-this-test")
+                self.assertEqual(adb.shell.call_args_list, [
+                    mock.call(case.FIXED), mock.call("pm path com.android.chrome"),
+                    mock.call("sha256sum " + case.APK), mock.call("stat -c %s " + case.APK)])
+                process.assert_not_called()
+                provider.assert_not_called()
+
+    def test_multiple_tables_blank_lines_and_no_diagnostic_context_have_same_active_pair(self):
+        case = ActiveChromePackageVersionTests()
+        prefix = b"\n".join(self.resolver(title) for title in self.TABLES)
+        raw = prefix + case.dump(hidden=("98.0", "789"))
+        self.assertEqual(H._active_chrome_package_versions(raw.decode("ascii")), ("123.0", "456"))
+        adb = case.inventory(raw)
+        with (mock.patch.object(H.subprocess, "Popen") as process,
+                mock.patch.object(H.socket, "create_connection") as provider):
+            result = H.package_inventory(adb, "com.android.chrome")
+        self.assertEqual((result["version"], result["version_code"]), ("123.0", "456"))
+        self.assertEqual(len(adb.shell.call_args_list), 4)
+        process.assert_not_called()
+        provider.assert_not_called()
+
+    def test_missing_unknown_malformed_or_reset_resolver_context_never_skips_package_label(self):
+        active = ActiveChromePackageVersionTests.dump()
+        key = b"      package:\n"
+        prefixes = (
+            b"  Schemes:\n",
+            b"Unknown Resolver Table:\n  Schemes:\n",
+            b"activity Resolver Table:\n  Schemes:\n",
+            b" Activity Resolver Table:\n  Schemes:\n",
+            b"Activity Resolver Table: \n  Schemes:\n",
+            b"Activity Resolver Table:\n",
+            b"Activity Resolver Table:\n  schemes:\n",
+            b"Activity Resolver Table:\n    Schemes:\n",
+            b"Activity Resolver Table:\n\tSchemes:\n",
+            b"Activity Resolver Table:\n  Schemes: \n",
+            b"Activity Resolver Table:\n  Schemes:\nOther:\n",
+            b"Activity Resolver Table:\n  Schemes:\n  Non-Data Actions:\n",
+            b"Activity Resolver Table:\n  Schemes:\n    Nested:\n",
+            b"Activity Resolver Table:\n  Schemes:\n\tUnknown\n",
+        )
+        for prefix in prefixes:
+            with self.subTest(prefix_length=len(prefix)):
+                self.refused(prefix + key + active)
+
+    def test_wrong_key_case_indentation_tabs_trailing_space_and_payload_still_refuse(self):
+        active = ActiveChromePackageVersionTests.dump()
+        keys = (
+            b"package:", b"  package:", b"    package:", b"     package:",
+            b"       package:", b"        package:", b"     \tpackage:",
+            b"      Package:", b"      PACKAGE:", b"      package: ",
+            b"      package:\t", b"      package: com.android.chrome",
+            b"      package: com.android.foreign", b"      package:[com.android.chrome]",
+            b"      Package [com.android.foreign] (abc):",
+            b"      Package [com.android.chrome] (ABC):",
+            b"  Package [com.android.chrome] (abc):",
+        )
+        for key in keys:
+            with self.subTest(key_length=len(key)):
+                self.refused(self.resolver(key=key) + active)
+
+    def test_duplicate_scheme_key_and_any_identity_section_exit_cannot_reenable_exception(self):
+        active = ActiveChromePackageVersionTests.dump()
+        hidden = ActiveChromePackageVersionTests.dump(hidden=("98.0", "789"))
+        rows = (
+            self.resolver() + b"      package:\n" + active,
+            self.resolver() + b"  Schemes:\n      package:\n" + active,
+            active + self.resolver(),
+            hidden + self.resolver(),
+            active + b"Activity Resolver Table:\n  Schemes:\n      package:\n",
+        )
+        for raw in rows:
+            with self.subTest(raw_length=len(raw)):
+                self.refused(raw)
+
+    def test_only_empty_key_is_skipped_and_original_identity_version_rules_still_refuse(self):
+        active = ActiveChromePackageVersionTests.dump()
+        hidden = ActiveChromePackageVersionTests.dump(hidden=("98.0", "789"))[len(active):]
+        rows = (
+            self.resolver() + b"    versionName=123.0\n" + active,
+            self.resolver() + b"    versionCode=456 minSdk=26 targetSdk=36\n" + active,
+            self.resolver() + b"      Package [com.android.foreign] (abc):\n" + active,
+            self.resolver() + active.replace(b"com.android.chrome]", b"com.android.foreign]"),
+            self.resolver() + active.replace(b"(abc):", b"(ABC):"),
+            self.resolver() + active + b"    versionName=999.0\n",
+            self.resolver() + active + active,
+            self.resolver() + hidden + active,
+            self.resolver() + active + hidden + hidden,
+            self.resolver() + active + b"Renamed packages:\n  PRIVATE\n",
+        )
+        for raw in rows:
+            with self.subTest(raw_length=len(raw)):
+                self.refused(raw)
+
+    def test_optional_diagnostic_failures_or_forged_scheme_metadata_never_authorize_acceptance(self):
+        case = ActiveChromePackageVersionTests()
+        raw = self.resolver() + case.dump(hidden=("98.0", "789"))
+        for name in ("_new_chrome_parser_context", "_sample_chrome_colon_heading"):
+            adb = case.inventory(raw)
+            with (self.subTest(name=name),
+                    mock.patch.object(H, name, side_effect=MemoryError("PRIVATE")),
+                    mock.patch.object(H.subprocess, "Popen") as process,
+                    mock.patch.object(H.socket, "create_connection") as provider):
+                result = H.package_inventory(adb, "com.android.chrome")
+            self.assertEqual((result["version"], result["version_code"]), ("123.0", "456"))
+            self.assertEqual(len(adb.shell.call_args_list), 4)
+            process.assert_not_called()
+            provider.assert_not_called()
+        with (mock.patch.object(H, "_sample_chrome_colon_heading", return_value=("schemes", 2)),
+                mock.patch.object(H, "_chrome_colon_context", return_value="schemes-empty")):
+            error = self.refused(b"Unknown:\n  Schemes:\n      package:\n" + case.dump())
+        self.assertEqual(error.args, ("actual-package-version-unobserved",))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

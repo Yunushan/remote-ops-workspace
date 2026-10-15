@@ -1874,7 +1874,7 @@ class PolicyPublisherFixture:
                 return SimpleNamespace(st_mode=(0o40700 if self.name == 'catalogue-browser-public' else 0o100600),
                     st_uid=1001, st_nlink=1)
             def exists(self):
-                return str(self) in fixture.data or self.name.startswith('row-cft-runtime-')
+                return str(self) in fixture.data or self.name.startswith('row-cft-operation-')
             def is_symlink(self):
                 return False
             def replace(self, destination):
@@ -1900,7 +1900,7 @@ class PolicyPublisherFixture:
             data = json.dumps(self.cleanup).encode()
         elif path.name.startswith('row-cft-policy-intent-'):
             data = self.intent_raw
-        elif path.name.startswith('row-cft-runtime-'):
+        elif path.name.startswith('row-cft-operation-'):
             data = json.dumps(self.pointer).encode()
         elif path.name == 'cft-runtime-policy.json':
             data = self.policy_raw
@@ -2048,7 +2048,7 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
             'image_version': '20261006.1.0'}
         root = FixturePath('/var/lib/row-cft-' + 'f' * 32)
         chrome = root / bundle.EXECUTABLES['chrome']
-        chrome_driver = root / bundle.EXECUTABLES['driver']
+        chrome_driver = root / bundle.EXECUTABLES['chromedriver']
         profiles = [{'protocol': 'ssh', 'name': 'catalogue seed', 'host': 'seed.example.invalid', 'port': 22}]
         events, replace_false = [], []
         state = {'launch': 0, 'case': 'api-read', 'alive': False, 'connected': False,
@@ -2503,7 +2503,8 @@ class ApiReadDiagnosticTests(unittest.TestCase):
                 self.assertEqual(driver.connect.call_count, 0 if stage == 'navigation-command' else 1)
                 driver.create.assert_not_called()
                 self.assertEqual(len(owners), 2)
-                self.assertEqual(versions, list(contract.RUNTIME_STAGES[:3]))
+                self.assertEqual(versions, ['chrome-version-command', 'driver-version-command',
+                    'version-equality', 'version-equality'])
 
     def test_actual_main_each_fact_bit_and_combination_remain_refused(self):
         for bits in (1, 2, 4, 8, 16, 31):

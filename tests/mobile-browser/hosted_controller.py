@@ -827,6 +827,9 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
     pairs = {}
     section = None
     block = None
+    resolver_table = False
+    resolver_schemes = False
+    resolver_package_seen = False
     colon_heading = ("unobserved", 0)
     colon_observation_valid = True
 
@@ -852,6 +855,17 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
                 colon_observation_valid = False
         stripped = line.strip(" \t")
         lower = stripped.lower()
+        if line and line[0] not in " \t":
+            resolver_table = (titles["active"] == 0 and titles["hidden"] == 0
+                and section is None and block is None and not pairs
+                and line in ("Activity Resolver Table:", "Provider Resolver Table:",
+                             "Receiver Resolver Table:", "Service Resolver Table:"))
+            resolver_schemes = False
+            resolver_package_seen = False
+        elif stripped and resolver_table:
+            resolver_indent = line[:len(line) - len(line.lstrip(" \t"))]
+            if "\t" in resolver_indent or len(resolver_indent) < 6:
+                resolver_schemes = line == "  Schemes:"
         if "packages:" in lower or lower.startswith("packages") or "hidden system package" in lower:
             require(line in ("Packages:", "Hidden system packages:"), "section-title")
             finish_block()
@@ -864,6 +878,10 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
             titles[section] += 1
             continue
         require("renamed packages" not in lower and "compat name" not in lower, "renamed-compat")
+        # A registered URI key has no identity payload. Do not skip its following rows.
+        if line == "      package:" and resolver_schemes and not resolver_package_seen:
+            resolver_package_seen = True
+            continue
         if ("package [" in lower or lower.startswith(("package ", "package["))
                 or re.match(r"package\b", lower) is not None
                 or re.search(r"\bpackage[ \t]+\[", lower) is not None):

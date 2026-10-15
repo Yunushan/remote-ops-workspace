@@ -1336,6 +1336,7 @@ class RepairPolicyMemory(PolicyMemory):
             or self.fault == 'parent-close-fault' and name == '/var/lib'
             or self.fault == 'both-close-faults-first-selected-close-preserved' and (child or name == '/var/lib'))
         if fail:
+            self.hit()
             self.close_faults.append(name)
             raise self.selected if child or self.fault != 'both-close-faults-first-selected-close-preserved' else self.secondary
 
@@ -1552,7 +1553,10 @@ class RepairPolicyMemory(PolicyMemory):
                 if not self.started:
                     raise RuntimeError('synthetic-unstarted-thread')
             def is_alive(self):
-                return memory.rollback and memory.fault == 'drain-still-live'
+                if memory.rollback and memory.fault == 'drain-still-live':
+                    memory.hit()
+                    return True
+                return False
         enter(mock.patch.object(host.threading, 'Thread', Thread))
         original_read = self.read
         def read(fd, maximum):
@@ -1742,6 +1746,97 @@ class RepairedRootMainFaultTests(unittest.TestCase):
             self.assertTrue(memory.timers[-1].daemon)
             self.assertEqual(memory.timers[-1].function.__name__, '<lambda>')
             # The fixture never invokes the os._exit callback or claims its scheduling.
+
+
+class PolicyTaskIdentityTests(unittest.TestCase):
+    ROW = {'pid': 123, 'group': 123, 'session': 123, 'start': 99, 'state': 'S'}
+
+    def observe_fixture(self, scanned, before, after, *, label=None, refusal=False):
+        import host_controller as host
+        holder = policy_fixture_holder()
+        untouched = json.loads(json.dumps(holder))
+        events = []
+        leader = self.ROW.copy()
+        observations = iter((leader, before, after, leader))
+        process = SimpleNamespace(pid=123, poll=mock.Mock(side_effect=lambda: events.append('poll')))
+        owner = SimpleNamespace(identity=leader.copy(), process=process)
+        def identity(pid):
+            events.append(('identity', pid))
+            return next(observations)
+        def members(group):
+            events.append(('members', group))
+            return [scanned]
+        def executable(path):
+            events.append('exe')
+            self.assertEqual(path, Path('/proc') / str(scanned['pid']) / 'exe')
+            return holder['state']['root'] + '/chrome-linux64/chrome'
+        def read_label(path, maximum, deadline, *, uid):
+            events.append('label')
+            self.assertEqual(path, Path('/proc') / str(scanned['pid']) / 'attr/apparmor/current')
+            self.assertEqual((maximum, deadline, uid), (4096, 30, 1001))
+            return (holder['state']['name'] + ' (unconfined)\n').encode() if label is None else label
+        with mock.patch.object(runtime, 'policy_readback', side_effect=lambda *_args: events.append('readback')) as readback, \
+                mock.patch.object(host, 'proc_identity', side_effect=identity) as identities, \
+                mock.patch.object(host, 'group_members', side_effect=members) as group, \
+                mock.patch.object(runtime.os, 'readlink', side_effect=executable) as readlink, \
+                mock.patch.object(runtime.os, 'getuid', return_value=1001, create=True), \
+                mock.patch.object(runtime, 'kernel_read', side_effect=read_label) as labels, \
+                mock.patch.object(runtime, 'profile_membership', side_effect=AssertionError('global policy read')) as membership, \
+                mock.patch.object(bundle, 'remaining', side_effect=lambda deadline: events.append(('remaining', deadline))):
+            if refusal:
+                with self.assertRaises(bundle.BundleRefusal):
+                    runtime.observe_policy_tasks(holder, owner, 30, checkpoint='initial')
+                self.assertEqual(holder, untouched)
+            else:
+                observed = runtime.observe_policy_tasks(holder, owner, 30, checkpoint='initial')
+                self.assertTrue(observed['task_label_initial_observed'])
+                self.assertFalse(observed['task_label_final_observed'])
+                self.assertEqual(observed['initial_observed_chrome_tasks'], 1)
+                self.assertEqual(holder['samples']['initial'], {'observed': True, 'count': 1})
+                self.assertEqual(holder['samples']['final'], untouched['samples']['final'])
+                self.assertEqual(holder['state'], untouched['state'])
+                self.assertEqual(events, ['readback', 'poll', ('identity', 123), ('members', 123),
+                    ('identity', 123), 'exe', 'label', ('identity', 123), 'poll', ('identity', 123),
+                    'readback', ('remaining', 30)])
+                self.assertEqual(identities.call_args_list, [mock.call(123)] * 4)
+                group.assert_called_once_with(123)
+                self.assertEqual(process.poll.call_count, 2)
+                readback.assert_has_calls([mock.call(holder, 30), mock.call(holder, 30)])
+                readlink.assert_called_once()
+                labels.assert_called_once()
+            membership.assert_not_called()
+        return holder
+
+    def test_scheduling_transitions_preserve_identity_and_original_observation_order(self):
+        for scanned_state in ('R', 'S', 'D', 'T', 't', 'I'):
+            for before_state in ('R', 'S', 'D', 'T', 't', 'I'):
+                with self.subTest(scanned=scanned_state, before=before_state, after=scanned_state):
+                    self.observe_fixture({**self.ROW, 'state': scanned_state},
+                        {**self.ROW, 'state': before_state}, {**self.ROW, 'state': scanned_state})
+
+    def test_each_stable_identity_field_drift_refuses_without_mutating_holder(self):
+        for stage in ('before', 'after'):
+            for field in ('pid', 'group', 'session', 'start'):
+                rows = [self.ROW.copy() for _index in range(3)]
+                rows[1 if stage == 'before' else 2][field] += 1
+                with self.subTest(stage=stage, field=field):
+                    self.observe_fixture(*rows, refusal=True)
+
+    def test_dead_legacy_and_unknown_states_refuse_at_each_observation(self):
+        for index, stage in enumerate(('scanned', 'before', 'after')):
+            for state in ('Z', 'X', 'x', 'W', 'K', 'P', '?', '', None, True):
+                rows = [self.ROW.copy() for _index in range(3)]
+                rows[index]['state'] = state
+                with self.subTest(stage=stage, state=state):
+                    self.observe_fixture(*rows, refusal=True)
+
+    def test_correct_task_labels_remain_mandatory_during_scheduling_transitions(self):
+        rows = ({**self.ROW, 'state': 'R'}, {**self.ROW, 'state': 'S'}, {**self.ROW, 'state': 'R'})
+        name = policy_fixture_holder()['state']['name']
+        self.observe_fixture(*rows, label=(name + ' (default_allow)\n').encode())
+        for label in (b'PRIVATE', b'', (name + ' (enforce)\n').encode(), b'other (unconfined)\n'):
+            with self.subTest(label=label):
+                self.observe_fixture(*rows, label=label, refusal=True)
 
 
 if __name__ == '__main__':

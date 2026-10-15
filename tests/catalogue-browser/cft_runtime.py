@@ -575,7 +575,10 @@ def observe_policy_tasks(holder, owner, deadline, *, checkpoint):
     for row in group_members(owner.identity['group']):
         pid = row['pid']
         before = proc_identity(pid)
-        require(before == row and before['group'] == owner.identity['group'])
+        require(all(before[key] == row[key] for key in ('pid', 'group', 'session', 'start'))
+            and before['group'] == owner.identity['group']
+            and row['state'] in ('R', 'S', 'D', 'T', 't', 'I')
+            and before['state'] in ('R', 'S', 'D', 'T', 't', 'I'))
         target = os.readlink(Path('/proc') / str(pid) / 'exe')
         if target == chrome:
             label = kernel_read(Path('/proc') / str(pid) / 'attr/apparmor/current', 4096,
@@ -583,7 +586,9 @@ def observe_policy_tasks(holder, owner, deadline, *, checkpoint):
             require(label in ((state['name'] + ' (unconfined)\n').encode(),
                 (state['name'] + ' (default_allow)\n').encode()))
             count += 1
-        require(proc_identity(pid) == before)
+        after = proc_identity(pid)
+        require(all(after[key] == before[key] for key in ('pid', 'group', 'session', 'start'))
+            and after['state'] in ('R', 'S', 'D', 'T', 't', 'I'))
     require(1 <= count <= 256 and owner.process.poll() is None)
     final_leader = proc_identity(owner.process.pid)
     require(all(final_leader[key] == leader[key] for key in ('pid', 'group', 'session', 'start')))

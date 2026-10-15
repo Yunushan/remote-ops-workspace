@@ -1683,6 +1683,14 @@ class AdbServerListenContractTests(unittest.TestCase):
                 births.append((argv, env.copy(), leader))
                 return leader
 
+            tree_observations = []
+
+            def observe_inventory(sdk_path, *, tree_observation=None):
+                self.assertIs(sdk_path, sdk)
+                self.assertIs(type(tree_observation), dict)
+                tree_observations.append(tree_observation)
+                return {"tree_sha256": "e" * 64}
+
             stream = io.StringIO()
             with ExitStack() as patches:
                 patches.enter_context(mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True))
@@ -1691,7 +1699,7 @@ class AdbServerListenContractTests(unittest.TestCase):
                 patches.enter_context(mock.patch.object(Q, "source_binding", return_value={}))
                 patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=({}, {})))
                 patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
-                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", return_value={"tree_sha256": "e" * 64}))
+                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", side_effect=observe_inventory))
                 patches.enter_context(mock.patch.object(Q.time, "monotonic", return_value=0))
                 sockets = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=reservations))
                 provider = patches.enter_context(mock.patch.object(H, "Managed", side_effect=managed))
@@ -1704,7 +1712,13 @@ class AdbServerListenContractTests(unittest.TestCase):
                 with self.assertRaises(H.Refusal) as error:
                     Q.capture(root)
                 self.assertIs(error.exception, original)
-                inventory.assert_called_once_with(sdk)
+                self.assertEqual(len(tree_observations), 1)
+                inventory.assert_called_once_with(sdk, tree_observation=tree_observations[0])
+                self.assertEqual(inventory.call_args.args, (sdk,))
+                self.assertEqual(set(inventory.call_args.kwargs), {"tree_observation"})
+                self.assertIs(inventory.call_args.kwargs["tree_observation"], tree_observations[0])
+                self.assertIs(type(tree_observations[0]), dict)
+                self.assertEqual(tree_observations[0], {})
                 self.assertEqual(provider.call_count, 2)
                 self.assertEqual(sockets.call_count, 3)
                 listener.assert_called_once_with(adb, 5039)
@@ -5872,6 +5886,45 @@ class QualificationSdkTreeDeltaTests(unittest.TestCase):
             self.assertNotIn(private, line)
         for phase in ("sdk-observation", "owned-api36-emulator", "unobserved"):
             self.assertNotIn("sdk_tree_delta", Q.capture_refusal_diagnostic(error, phase))
+
+
+class QualificationSdkRepositoryInitializationTests(unittest.TestCase):
+    def test_same_installed_avdmanager_prepares_repository_before_capture_with_closed_argv_and_guards(self):
+        raw = (HERE.parents[1] / Q.WORKFLOW).read_text(encoding="utf-8")
+        start = raw.index("          # Initialize the vendor cache before capture pins the entire owned SDK.\n")
+        end = raw.index("          echo \"ANDROID_HOME=$owned_sdk\" >> \"$GITHUB_ENV\"", start)
+        block = raw[start:end]
+        command = "timeout " + block.partition("if ! timeout ")[2].partition("; then")[0]
+        tokens = shlex.split(command.replace("\\\n", " "))
+        self.assertEqual(tokens, ["timeout", "--signal=TERM", "--kill-after=5s", "120s", "env", "-i",
+            "PATH=$PATH", "JAVA_HOME=$JAVA_HOME", "HOME=$repository_home", "LANG=C.UTF-8",
+            "ANDROID_HOME=$owned_sdk", "ANDROID_SDK_ROOT=$owned_sdk", "ANDROID_USER_HOME=$repository_home",
+            "ANDROID_AVD_HOME=$repository_home/avd", "$owned_sdk/cmdline-tools/latest/bin/avdmanager",
+            "list", "target", ">/dev/null", "2>&1"])
+        for required in ('test ! -e "$repository_home"', 'test ! -L "$repository_home"',
+                'mkdir -m 700 "$repository_home"', 'test -f "$owned_sdk/.knownPackages"',
+                'test ! -L "$owned_sdk/.knownPackages"',
+                'test "$(stat -c ' + chr(39) + '%u:%h:%s' + chr(39) + ' -- "$owned_sdk/.knownPackages")" = "$(id -u):1:16"',
+                "'isolated-sdk-repository-initialization-refused' >&2", "            exit 1\n"):
+            self.assertIn(required, block)
+        self.assertLess(raw.index("'phase=isolated-sdkmanager-zero-exit'"), start)
+        self.assertLess(start, raw.index("'phase=isolated-sdk-repository-initialized'"))
+        self.assertLess(raw.index("'phase=isolated-sdk-repository-initialized'"), end)
+        self.assertLess(end, raw.index("python tests/mobile-browser/qualify_android_stack.py capture"))
+        self.assertNotIn("sdkmanager", command)
+        self.assertNotIn("create avd", block)
+        self.assertNotIn("--clear-cache", block)
+
+    def test_prepared_vendor_cache_remains_in_full_sha256_sdk_identity_and_later_mutation_refuses_equality(self):
+        with fixture() as root:
+            cache = root / ".knownPackages"
+            cache.write_bytes(b"a" * 16)
+            initial = H.tree_digest(root, maximum_files=30000, maximum_bytes=Q.SDK_TREE_MAXIMUM_BYTES)
+            self.assertEqual(H.tree_digest(root, maximum_files=30000, maximum_bytes=Q.SDK_TREE_MAXIMUM_BYTES), initial)
+            cache.write_bytes(b"b" * 16)
+            self.assertNotEqual(H.tree_digest(root, maximum_files=30000, maximum_bytes=Q.SDK_TREE_MAXIMUM_BYTES), initial)
+            cache.unlink()
+            self.assertNotEqual(H.tree_digest(root, maximum_files=30000, maximum_bytes=Q.SDK_TREE_MAXIMUM_BYTES), initial)
 
 
 if __name__ == "__main__":

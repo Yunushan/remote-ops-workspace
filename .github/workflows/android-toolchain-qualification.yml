@@ -70,6 +70,23 @@ jobs:
             "$bootstrap_sdk/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$owned_sdk" --install \
             'cmdline-tools;latest' 'platform-tools' 'emulator' 'platforms;android-36' 'system-images;android-36;google_apis;x86_64'
           printf '%s\n' 'phase=isolated-sdkmanager-zero-exit'
+          # Initialize the vendor cache before capture pins the entire owned SDK.
+          repository_home="$RUNNER_TEMP/row-browser-api36-repository-home"
+          test ! -e "$repository_home"
+          test ! -L "$repository_home"
+          mkdir -m 700 "$repository_home"
+          if ! timeout --signal=TERM --kill-after=5s 120s env -i \
+            PATH="$PATH" JAVA_HOME="$JAVA_HOME" HOME="$repository_home" LANG=C.UTF-8 \
+            ANDROID_HOME="$owned_sdk" ANDROID_SDK_ROOT="$owned_sdk" \
+            ANDROID_USER_HOME="$repository_home" ANDROID_AVD_HOME="$repository_home/avd" \
+            "$owned_sdk/cmdline-tools/latest/bin/avdmanager" list target >/dev/null 2>&1; then
+            printf '%s\n' 'isolated-sdk-repository-initialization-refused' >&2
+            exit 1
+          fi
+          test -f "$owned_sdk/.knownPackages"
+          test ! -L "$owned_sdk/.knownPackages"
+          test "$(stat -c '%u:%h:%s' -- "$owned_sdk/.knownPackages")" = "$(id -u):1:16"
+          printf '%s\n' 'phase=isolated-sdk-repository-initialized'
           echo "ANDROID_HOME=$owned_sdk" >> "$GITHUB_ENV"
       - name: Enable KVM only for this disposable runner user
         shell: bash

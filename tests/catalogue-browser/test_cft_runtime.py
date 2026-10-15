@@ -956,46 +956,53 @@ class PolicyMemory:
         return value
 
     def __enter__(self):
-        import host_controller as host
-        memory = self
-        class Thread:
-            def __init__(self, *, target, args):
-                self.target, self.args = target, args
-            def start(self):
-                self.target(*self.args)
-            def join(self, timeout):
-                memory.case.assertGreaterEqual(timeout, 0)
-            def is_alive(self):
-                return False
-        patch = self.stack.enter_context
-        patch(mock.patch.object(runtime, 'Path', FixturePath))
-        patch(mock.patch.object(runtime, 'APPARMOR_TOOL', FixturePath('/usr/sbin/apparmor_parser')))
-        patch(mock.patch.object(runtime, 'APPARMOR_ABI', FixturePath('/etc/apparmor.d/abi/4.0')))
-        for getter in ('getuid', 'geteuid', 'getgid', 'getegid'):
-            patch(mock.patch.object(runtime.os, getter, return_value=0, create=True))
-        for name, value in (('O_NOFOLLOW', 131072), ('O_CLOEXEC', 524288), ('O_DIRECTORY', 65536)):
-            patch(mock.patch.object(runtime.os, name, value, create=True))
-        patch(mock.patch.object(FixturePath, 'lstat', lambda path: memory.info(path)))
-        patch(mock.patch.object(FixturePath, 'exists', lambda path: str(path) in memory.data or str(path) in memory.modes))
-        patch(mock.patch.object(FixturePath, 'is_symlink', return_value=False))
-        patch(mock.patch.object(FixturePath, 'iterdir', lambda path: [FixturePath(name) for name in memory.data if FixturePath(name).parent == path]))
-        patch(mock.patch.object(runtime.os, 'getpid', return_value=123))
-        patch(mock.patch.object(runtime.os, 'open', side_effect=self.open))
-        patch(mock.patch.object(runtime.os, 'fstat', side_effect=lambda fd: self.info(self.fds[fd])))
-        patch(mock.patch.object(runtime.os, 'read', side_effect=self.read))
-        patch(mock.patch.object(runtime.os, 'close', side_effect=lambda fd: self.events.append(('close', fd))))
-        patch(mock.patch.object(runtime.os, 'mkdir', side_effect=self.mkdir))
-        patch(mock.patch.object(runtime.os, 'fchmod', side_effect=self.chmod))
-        patch(mock.patch.object(runtime.os, 'fsync'))
-        patch(mock.patch.object(runtime.time, 'monotonic', side_effect=lambda: self.clock))
-        patch(mock.patch.object(bundle, 'stable_file', side_effect=self.stable))
-        patch(mock.patch.object(bundle, 'owned_binary', side_effect=self.writer))
-        patch(mock.patch.object(host.subprocess, 'Popen', side_effect=self.process))
-        patch(mock.patch.object(host, 'proc_identity', return_value=self.identity))
-        patch(mock.patch.object(host, 'group_members', return_value=[]))
-        patch(mock.patch.object(host.threading, 'Thread', Thread))
-        patch(mock.patch.object(host.select, 'select', side_effect=lambda reads, _writes, _errors, _timeout: (reads, [], [])))
-        return self
+        try:
+            import host_controller as host
+            memory = self
+            class Thread:
+                def __init__(self, *, target, args):
+                    self.target, self.args = target, args
+                def start(self):
+                    self.target(*self.args)
+                def join(self, timeout):
+                    memory.case.assertGreaterEqual(timeout, 0)
+                def is_alive(self):
+                    return False
+            patch = self.stack.enter_context
+            patch(mock.patch.object(runtime, 'Path', FixturePath))
+            patch(mock.patch.object(runtime, 'APPARMOR_TOOL', FixturePath('/usr/sbin/apparmor_parser')))
+            patch(mock.patch.object(runtime, 'APPARMOR_ABI', FixturePath('/etc/apparmor.d/abi/4.0')))
+            for getter in ('getuid', 'geteuid', 'getgid', 'getegid'):
+                patch(mock.patch.object(runtime.os, getter, return_value=0, create=True))
+            for name, value in (('O_NOFOLLOW', 131072), ('O_CLOEXEC', 524288), ('O_DIRECTORY', 65536)):
+                patch(mock.patch.object(runtime.os, name, value, create=True))
+            patch(mock.patch.object(FixturePath, 'lstat', lambda path: memory.info(path)))
+            patch(mock.patch.object(FixturePath, 'exists', lambda path: str(path) in memory.data or str(path) in memory.modes))
+            patch(mock.patch.object(FixturePath, 'is_symlink', return_value=False))
+            patch(mock.patch.object(FixturePath, 'iterdir', lambda path: [FixturePath(name) for name in memory.data if FixturePath(name).parent == path]))
+            patch(mock.patch.object(runtime.os, 'getpid', return_value=123))
+            patch(mock.patch.object(runtime.os, 'open', side_effect=self.open))
+            patch(mock.patch.object(runtime.os, 'fstat', side_effect=lambda fd: self.info(self.fds[fd])))
+            patch(mock.patch.object(runtime.os, 'read', side_effect=self.read))
+            patch(mock.patch.object(runtime.os, 'close', side_effect=lambda fd: self.events.append(('close', fd))))
+            patch(mock.patch.object(runtime.os, 'mkdir', side_effect=self.mkdir))
+            patch(mock.patch.object(runtime.os, 'fchmod', side_effect=self.chmod, create=True))
+            patch(mock.patch.object(runtime.os, 'fsync'))
+            patch(mock.patch.object(runtime.time, 'monotonic', side_effect=lambda: self.clock))
+            patch(mock.patch.object(bundle, 'stable_file', side_effect=self.stable))
+            patch(mock.patch.object(bundle, 'owned_binary', side_effect=self.writer))
+            patch(mock.patch.object(host.subprocess, 'Popen', side_effect=self.process))
+            patch(mock.patch.object(host, 'proc_identity', return_value=self.identity))
+            patch(mock.patch.object(host, 'group_members', return_value=[]))
+            patch(mock.patch.object(host.threading, 'Thread', Thread))
+            patch(mock.patch.object(host.select, 'select', side_effect=lambda reads, _writes, _errors, _timeout: (reads, [], [])))
+            return self
+        except BaseException:
+            try:
+                self.stack.close()
+            except BaseException:
+                pass
+            raise
 
     def __exit__(self, *_args):
         self.stack.close()
@@ -1522,56 +1529,63 @@ class RepairPolicyMemory(PolicyMemory):
         value.returncode = -signal
 
     def __enter__(self):
-        import host_controller as host
-        super().__enter__()
-        memory = self
-        enter = self.stack.enter_context
-        enter(mock.patch.object(runtime.os, 'fstat', side_effect=self.fd_info))
-        enter(mock.patch.object(runtime.os, 'close', side_effect=self.close))
-        enter(mock.patch.object(runtime.os, 'killpg', side_effect=self.signal, create=True))
-        enter(mock.patch.object(host, 'proc_identity', side_effect=self.proc))
-        enter(mock.patch.object(host, 'group_members', side_effect=self.groups))
-        original_reversed = reversed
-        def reverse(registry):
-            if self.rollback and self.fault == 'whole-fence-allocation-fault' and registry:
-                self.hit()
-                raise MemoryError('PRIVATE-iteration-allocation')
-            return original_reversed(registry)
-        enter(mock.patch.object(runtime, 'reversed', side_effect=reverse, create=True))
-        class Thread:
-            def __init__(self, *, target, args):
-                removing = memory.rollback
-                if removing and memory.fault == 'thread-construction-fault':
-                    memory.hit()
-                    raise memory.secondary
-                self.target, self.args, self.started = target, args, False
-            def start(self):
-                if memory.rollback and memory.fault == 'thread-start-after-one-drain-fault' and self.args[0] is memory.births[-1][2].stderr:
-                    memory.hit()
-                    raise memory.secondary
-                self.started = True
-                self.target(*self.args)
-            def join(self, timeout):
-                memory.case.assertGreaterEqual(timeout, 0)
-                if memory.rollback and memory.fault == 'refuse-drain-join-fault':
-                    memory.hit()
-                    raise memory.secondary
-                if not self.started:
-                    raise RuntimeError('synthetic-unstarted-thread')
-            def is_alive(self):
-                if memory.rollback and memory.fault == 'drain-still-live':
-                    memory.hit()
-                    return True
-                return False
-        enter(mock.patch.object(host.threading, 'Thread', Thread))
-        original_read = self.read
-        def read(fd, maximum):
-            if self.rollback and self.fault == 'drain-read-fault' and self.fds[fd] == '/synthetic-pipe-error':
-                self.hit()
-                raise self.secondary
-            return original_read(fd, maximum)
-        enter(mock.patch.object(runtime.os, 'read', side_effect=read))
-        return self
+        try:
+            import host_controller as host
+            super().__enter__()
+            memory = self
+            enter = self.stack.enter_context
+            enter(mock.patch.object(runtime.os, 'fstat', side_effect=self.fd_info))
+            enter(mock.patch.object(runtime.os, 'close', side_effect=self.close))
+            enter(mock.patch.object(runtime.os, 'killpg', side_effect=self.signal, create=True))
+            enter(mock.patch.object(host, 'proc_identity', side_effect=self.proc))
+            enter(mock.patch.object(host, 'group_members', side_effect=self.groups))
+            original_reversed = reversed
+            def reverse(registry):
+                if self.rollback and self.fault == 'whole-fence-allocation-fault' and registry:
+                    self.hit()
+                    raise MemoryError('PRIVATE-iteration-allocation')
+                return original_reversed(registry)
+            enter(mock.patch.object(runtime, 'reversed', side_effect=reverse, create=True))
+            class Thread:
+                def __init__(self, *, target, args):
+                    removing = memory.rollback
+                    if removing and memory.fault == 'thread-construction-fault':
+                        memory.hit()
+                        raise memory.secondary
+                    self.target, self.args, self.started = target, args, False
+                def start(self):
+                    if memory.rollback and memory.fault == 'thread-start-after-one-drain-fault' and self.args[0] is memory.births[-1][2].stderr:
+                        memory.hit()
+                        raise memory.secondary
+                    self.started = True
+                    self.target(*self.args)
+                def join(self, timeout):
+                    memory.case.assertGreaterEqual(timeout, 0)
+                    if memory.rollback and memory.fault == 'refuse-drain-join-fault':
+                        memory.hit()
+                        raise memory.secondary
+                    if not self.started:
+                        raise RuntimeError('synthetic-unstarted-thread')
+                def is_alive(self):
+                    if memory.rollback and memory.fault == 'drain-still-live':
+                        memory.hit()
+                        return True
+                    return False
+            enter(mock.patch.object(host.threading, 'Thread', Thread))
+            original_read = self.read
+            def read(fd, maximum):
+                if self.rollback and self.fault == 'drain-read-fault' and self.fds[fd] == '/synthetic-pipe-error':
+                    self.hit()
+                    raise self.secondary
+                return original_read(fd, maximum)
+            enter(mock.patch.object(runtime.os, 'read', side_effect=read))
+            return self
+        except BaseException:
+            try:
+                self.stack.close()
+            except BaseException:
+                pass
+            raise
 
     def root_main(self, phase, primary):
         import host_controller as host
@@ -1849,6 +1863,94 @@ class PolicyTaskIdentityTests(unittest.TestCase):
         for label in (b'PRIVATE', b'', (name + ' (enforce)\n').encode(), b'other (unconfined)\n'):
             with self.subTest(label=label):
                 self.observe_fixture(*rows, label=label, refusal=True)
+
+
+class PolicyMemorySetupCleanupTests(unittest.TestCase):
+    def bindings(self):
+        import host_controller as host
+
+        missing = object()
+        targets = [(runtime, name) for name in ('Path', 'APPARMOR_TOOL', 'APPARMOR_ABI', 'reversed')]
+        targets.extend((runtime.os, name) for name in ('getuid', 'geteuid', 'getgid', 'getegid',
+            'O_NOFOLLOW', 'O_CLOEXEC', 'O_DIRECTORY', 'getpid', 'open', 'fstat', 'read', 'close',
+            'mkdir', 'fchmod', 'fsync', 'killpg'))
+        targets.extend((FixturePath, name) for name in ('lstat', 'exists', 'is_symlink', 'iterdir'))
+        targets.extend(((runtime.time, 'monotonic'), (bundle, 'stable_file'), (bundle, 'owned_binary'),
+            (host.subprocess, 'Popen'), (host, 'proc_identity'), (host, 'group_members'),
+            (host.threading, 'Thread'), (host.select, 'select')))
+        return [(target, name, getattr(target, name, missing), missing) for target, name in targets]
+
+    def assert_restored(self, bindings):
+        for target, name, before, missing in bindings:
+            with self.subTest(binding=name):
+                self.assertIs(getattr(target, name, missing), before)
+
+    def failed_setup(self, memory, target, name, selected, cleanup_fault=None):
+        before = self.bindings()
+        original = mock.patch.object
+        entries, cleanups = [], []
+        class FailedEntry:
+            def __enter__(self):
+                entries.append(name)
+                raise selected
+            def __exit__(self, *_args):
+                raise AssertionError('failed entry must not be registered')
+        def patch_object(candidate, attribute, *args, **kwargs):
+            if candidate is target and attribute == name:
+                return FailedEntry()
+            return original(candidate, attribute, *args, **kwargs)
+        def cleanup():
+            cleanups.append('last-callback')
+            if cleanup_fault is not None:
+                raise cleanup_fault
+        memory.stack.callback(cleanup)
+        selected.__cause__ = RuntimeError('synthetic-primary-cause')
+        chain = (selected.args, selected.__cause__, selected.__context__, selected.__suppress_context__)
+        with original(mock.patch, 'object', side_effect=patch_object):
+            with self.assertRaises(BaseException) as caught:
+                with memory:
+                    self.fail('failed fixture setup entered the body')
+        self.assertIs(caught.exception, selected)
+        self.assertEqual((selected.args, selected.__cause__, selected.__context__, selected.__suppress_context__), chain)
+        self.assertEqual(entries, [name])
+        self.assertEqual(cleanups, ['last-callback'])
+        self.assert_restored(before)
+        memory.stack.close()
+        self.assertEqual(cleanups, ['last-callback'])
+        self.assert_restored(before)
+
+    def test_missing_fchmod_is_a_synthetic_provider_and_removed_after_normal_context_exit(self):
+        synthetic_os = SimpleNamespace(**vars(runtime.os))
+        if hasattr(synthetic_os, 'fchmod'):
+            del synthetic_os.fchmod
+        memory = PolicyMemory()
+        memory.case = self
+        with mock.patch.object(runtime, 'os', synthetic_os):
+            before = self.bindings()
+            self.assertFalse(hasattr(synthetic_os, 'fchmod'))
+            with memory:
+                self.assertTrue(callable(synthetic_os.fchmod))
+                memory.fds[77] = '/synthetic-mode-target'
+                memory.modes['/synthetic-mode-target'] = stat.S_IFREG | 0o600
+                synthetic_os.fchmod(77, 0o444)
+                self.assertEqual(memory.modes['/synthetic-mode-target'], stat.S_IFREG | 0o444)
+                self.assertIn(('chmod', '/synthetic-mode-target', 0o444), memory.events)
+            self.assertFalse(hasattr(synthetic_os, 'fchmod'))
+            self.assert_restored(before)
+
+    def test_base_and_derived_partial_setup_interruptions_restore_every_acquired_global_patch(self):
+        for fixture, name in ((PolicyMemory, 'fchmod'), (RepairPolicyMemory, 'reversed')):
+            for kind in (MemoryError, KeyboardInterrupt, SystemExit):
+                with self.subTest(fixture=fixture.__name__, kind=kind.__name__):
+                    memory = fixture() if fixture is PolicyMemory else fixture(self)
+                    memory.case = self
+                    target = runtime.os if fixture is PolicyMemory else runtime
+                    self.failed_setup(memory, target, name, kind('synthetic-setup-failure'))
+
+    def test_rollback_callback_failure_cannot_replace_original_selected_setup_exception(self):
+        memory = RepairPolicyMemory(self)
+        self.failed_setup(memory, runtime, 'reversed', RuntimeError('synthetic-selected-setup'),
+            cleanup_fault=OSError('synthetic-secondary-cleanup'))
 
 
 if __name__ == '__main__':

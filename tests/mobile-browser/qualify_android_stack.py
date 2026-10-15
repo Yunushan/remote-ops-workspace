@@ -692,6 +692,87 @@ def current_identity_mismatch_diagnostic(exc):
     return None
 
 
+def _sdk_inventory_difference(before, after):
+    """Compare only bounded exact primitives in the two existing SDK snapshots."""
+    components = ("cmdline-tools/latest", "platform-tools", "emulator", "platforms/android-36",
+                  "system-images/android-36/google_apis/x86_64")
+    tool_names = ("adb", "emulator", "avdmanager", "sdkmanager")
+    for value in (before, after):
+        if (type(value) is not dict or len(value) != 6 or any(type(key) is not str for key in value)
+                or set(value) != {"tree_sha256", "metadata", "tools", "catalog_approval", "license_approval", "whole_image_semantic_closure"}
+                or value["catalog_approval"] is not False or value["license_approval"] is not False
+                or type(value["whole_image_semantic_closure"]) is not str
+                or value["whole_image_semantic_closure"] != "not-established"):
+            return None
+        tree = value["tree_sha256"]
+        metadata, tools = value["metadata"], value["tools"]
+        if (type(tree) is not str or len(tree) != 64 or re.fullmatch(r"[0-9a-f]{64}", tree) is None
+                or type(metadata) is not list or len(metadata) != 10 or type(tools) is not list or len(tools) != 4):
+            return None
+        for index, row in enumerate(metadata):
+            name = ("package.xml", "source.properties")[index % 2]
+            keys = {"component", "file", "bytes", "sha256"}
+            if name == "source.properties":
+                keys.add("revision")
+            if (type(row) is not dict or len(row) != len(keys) or any(type(key) is not str for key in row)
+                    or set(row) != keys or type(row["component"]) is not str or row["component"] != components[index // 2]
+                    or type(row["file"]) is not str or row["file"] != name
+                    or type(row["bytes"]) is not int or not 0 <= row["bytes"] <= 512 * 1024
+                    or type(row["sha256"]) is not str or len(row["sha256"]) != 64
+                    or re.fullmatch(r"[0-9a-f]{64}", row["sha256"]) is None):
+                return None
+            if name == "source.properties":
+                revision = row["revision"]
+                if type(revision) is not str or not 0 < len(revision) <= 64 or not revision.isascii():
+                    return None
+        for index, row in enumerate(tools):
+            if (type(row) is not dict or len(row) != 3 or any(type(key) is not str for key in row)
+                    or set(row) != {"tool", "bytes", "sha256"} or type(row["tool"]) is not str
+                    or row["tool"] != tool_names[index] or type(row["bytes"]) is not int
+                    or not 0 <= row["bytes"] <= 128 * 1024 * 1024
+                    or type(row["sha256"]) is not str or len(row["sha256"]) != 64
+                    or re.fullmatch(r"[0-9a-f]{64}", row["sha256"]) is None):
+                return None
+    metadata_bits = sum(1 << index for index in range(10) if before["metadata"][index] != after["metadata"][index])
+    tool_bits = sum(1 << index for index in range(4) if before["tools"][index] != after["tools"][index])
+    tree_changed = before["tree_sha256"] != after["tree_sha256"]
+    if tree_changed or metadata_bits or tool_bits:
+        return {"tree": tree_changed, "metadata": metadata_bits, "tools": tool_bits}
+    return None
+
+
+def _sdk_inventory_difference_value(value):
+    """Independent public grammar; no hashes, paths, names or revisions are emitted."""
+    if (type(value) is not dict or len(value) != 3 or any(type(key) is not str for key in value)
+            or set(value) != {"tree", "metadata", "tools"} or type(value["tree"]) is not bool
+            or type(value["metadata"]) is not int or not 0 <= value["metadata"] <= 1023
+            or type(value["tools"]) is not int or not 0 <= value["tools"] <= 15):
+        return None
+    if not value["tree"] and value["metadata"] == 0 and value["tools"] == 0:
+        return None
+    return {"tree": value["tree"], "metadata": value["metadata"], "tools": value["tools"]}
+
+
+def sdk_inventory_mismatch_diagnostic(exc):
+    """Only the existing selected SDK mismatch can expose a self-bound complete record."""
+    try:
+        selected = current_identity_mismatch_diagnostic(exc)
+        if type(selected) is not str or selected != "sdk-inventory":
+            return None
+        state = exc.__dict__
+        if type(state) is not dict:
+            return None
+        observed = state.get("sdk_inventory_mismatch")
+        if (type(observed) is not dict or len(observed) != 3 or any(type(key) is not str for key in observed)
+                or set(observed) != {"selected_error", "complete", "value"}
+                or observed["selected_error"] is not exc or observed["complete"] is not True):
+            return None
+        return _sdk_inventory_difference_value(observed["value"])
+    except BaseException:
+        pass
+    return None
+
+
 def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
@@ -741,6 +822,13 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
             observed = current_identity_mismatch_diagnostic(exc)
             if observed is not None:
                 record["current_identity_mismatch"] = observed
+        except BaseException:
+            pass
+    if code == "qualification-current-source-tool-or-device-changed" and phase == "chrome-static-device-inventory":
+        try:
+            observed = sdk_inventory_mismatch_diagnostic(exc)
+            if observed is not None:
+                record["sdk_inventory_mismatch"] = observed
         except BaseException:
             pass
     if code == "apk-path-bound" and phase == "chrome-static-device-inventory":
@@ -912,8 +1000,9 @@ def capture(root):
         socket_seen = any(row.split()[-1:] == ["@chrome_devtools_remote"] for row in socket_rows)
         context["observed"]["chrome_apk_count"] = len(chrome["apks"])
         identity_source_changed = identity_sdk_changed = identity_chrome_changed = identity_deadline_elapsed = None
+        identity_sdk_after = None
         if ((identity_source_changed := source_binding(root, short) != binding)
-                or (identity_sdk_changed := sdk_inventory(sdk) != observed)
+                or (identity_sdk_changed := (identity_sdk_after := sdk_inventory(sdk)) != observed)
                 or (identity_chrome_changed := H.package_inventory(adb, "com.android.chrome") != chrome)
                 or (identity_deadline_elapsed := time.monotonic() >= started + 1500)):
             try:
@@ -931,6 +1020,23 @@ def capture(root):
                     try:
                         if type(identity_observation) is dict:
                             identity_observation["complete"] = False
+                    except BaseException:
+                        pass
+                sdk_observation = None
+                try:
+                    if (type(identity_observation) is dict and identity_observation.get("complete") is True
+                            and identity_observation.get("selected_error") is error
+                            and type(identity_observation.get("value")) is str
+                            and identity_observation["value"] == "sdk-inventory"):
+                        difference = _sdk_inventory_difference(observed, identity_sdk_after)
+                        if _sdk_inventory_difference_value(difference) is not None:
+                            sdk_observation = {"selected_error": error, "complete": False, "value": difference}
+                            error.sdk_inventory_mismatch = sdk_observation
+                            sdk_observation["complete"] = True
+                except BaseException:
+                    try:
+                        if type(sdk_observation) is dict:
+                            sdk_observation["complete"] = False
                     except BaseException:
                         pass
                 raise

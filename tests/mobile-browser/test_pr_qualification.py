@@ -5321,5 +5321,260 @@ class QualificationCurrentIdentityDiagnosticTests(unittest.TestCase):
                 self.assertNotIn(private, line)
 
 
+class QualificationSdkInventoryDifferenceTests(unittest.TestCase):
+    CODE = "qualification-current-source-tool-or-device-changed"
+    PHASE = "chrome-static-device-inventory"
+
+    def run_capture(self, before, after, *, selected="sdk", classifier_fault=None, setter_fault=None, success=False):
+        with fixture() as root:
+            (root / ".tmp").mkdir()
+            sdk = root / "owned-sdk"
+            leaders = [SimpleNamespace(child=SimpleNamespace(stdin=mock.Mock()), zero=mock.Mock(),
+                live=mock.Mock(), buffers=[bytearray(), bytearray()]) for _ in range(3)]
+            born, seen = [], []
+            counts = dict.fromkeys(("source", "sdk", "chrome"), 0)
+            initial = {"source": {"source_sha": "a" * 40}, "sdk": before,
+                       "chrome": {"version": "123.0", "apks": [{"bytes": 123}]}}
+
+            def managed(_argv, _env, _cwd):
+                self.assertLess(len(born), 3)
+                self.assertIs(_cwd, root)
+                result = leaders[len(born)]
+                born.append(result)
+                return result
+
+            def sample(kind):
+                counts[kind] += 1
+                seen.append(kind)
+                if kind == "sdk" and counts[kind] == 2:
+                    return after
+                return {**initial[kind], "changed": True} if counts[kind] == 2 and selected == kind else initial[kind]
+
+            def clock():
+                return 1500 if selected == "deadline" and all(counts[key] == 2 for key in counts) else 0
+
+            def command(service, **_kwargs):
+                if service == "host:devices":
+                    return (H.SERIAL + "\tdevice\n").encode("ascii")
+                self.assertEqual(service, "shell,v2,raw:getprop sys.boot_completed")
+                return ChromeDumpWireBudgetTests.wire(b"1\n")
+
+            adb = SimpleNamespace(command=mock.Mock(side_effect=command),
+                shell=mock.Mock(side_effect=[b"36\n", b"x86_64\n", b"header\n"]))
+            with ExitStack() as patches:
+                patches.enter_context(mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True))
+                patches.enter_context(mock.patch.object(Q, "event_guard", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "commands", return_value=(object(), 0)))
+                source = patches.enter_context(mock.patch.object(Q, "source_binding", side_effect=lambda *_: sample("source")))
+                patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=(initial["source"], {})))
+                patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
+                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", side_effect=lambda *_: sample("sdk")))
+                chrome = patches.enter_context(mock.patch.object(H, "package_inventory", side_effect=lambda *_: sample("chrome")))
+                patches.enter_context(mock.patch.object(Q.time, "monotonic", side_effect=clock))
+                reservations = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=[mock.MagicMock() for _ in range(3)]))
+                provider = patches.enter_context(mock.patch.object(H, "Managed", side_effect=managed))
+                patches.enter_context(mock.patch.object(H, "owned_listener", return_value=None))
+                patches.enter_context(mock.patch.object(H, "AdbSocket", return_value=adb))
+                cleanup = patches.enter_context(mock.patch.object(H, "cleanup_all", return_value=[]))
+                receipt = patches.enter_context(mock.patch.object(Q, "public_receipt"))
+                process = patches.enter_context(mock.patch.object(H.subprocess, "Popen"))
+                connect = patches.enter_context(mock.patch.object(H.socket, "create_connection"))
+                stream = io.StringIO()
+                patches.enter_context(mock.patch.object(sys, "stderr", stream))
+                if classifier_fault is not None:
+                    patches.enter_context(mock.patch.object(Q, "_sdk_inventory_difference", side_effect=classifier_fault))
+                if setter_fault is not None:
+                    original = H.Refusal
+                    class SetterFault(original):
+                        def __setattr__(self, name, value):
+                            super().__setattr__(name, value)
+                            if name == "sdk_inventory_mismatch":
+                                raise setter_fault
+                    patches.enter_context(mock.patch.object(H, "Refusal", SetterFault))
+                if success:
+                    classifier = patches.enter_context(mock.patch.object(Q, "_sdk_inventory_difference", side_effect=AssertionError("success")))
+                    patches.enter_context(mock.patch.object(H, "read_plain", return_value=b"saved"))
+                    result = Q.capture(root)
+                    self.assertEqual(result["status"], "observations-with-unresolved-browser")
+                    classifier.assert_not_called()
+                    error = None
+                    self.assertEqual(cleanup.call_count, 2)
+                else:
+                    with self.assertRaises(H.Refusal) as caught:
+                        Q.capture(root)
+                    error = caught.exception
+                    self.assertEqual(error.args, (self.CODE,))
+                    self.assertIsNone(error.__context__)
+                    cleanup.assert_called_once_with(born)
+                self.assertEqual(provider.call_count, 3)
+                self.assertEqual(reservations.call_count, 3)
+                self.assertEqual(adb.command.call_count, 2)
+                self.assertEqual(adb.shell.call_args_list, [mock.call("getprop ro.build.version.sdk"),
+                    mock.call("getprop ro.product.cpu.abi"), mock.call("cat /proc/net/unix")])
+                receipt.assert_called_once()
+                process.assert_not_called()
+                connect.assert_not_called()
+                return error, seen, (source.call_count, inventory.call_count, chrome.call_count), stream.getvalue()
+
+    @staticmethod
+    def snapshot():
+        metadata = []
+        for component in ("cmdline-tools/latest", "platform-tools", "emulator", "platforms/android-36",
+                          "system-images/android-36/google_apis/x86_64"):
+            for name in ("package.xml", "source.properties"):
+                row = {"component": component, "file": name, "bytes": 17, "sha256": "a" * 64}
+                if name == "source.properties":
+                    row["revision"] = "1.2.3"
+                metadata.append(row)
+        return {"tree_sha256": "e" * 64, "metadata": metadata,
+                "tools": [{"tool": name, "bytes": 23, "sha256": "b" * 64}
+                          for name in ("adb", "emulator", "avdmanager", "sdkmanager")],
+                "catalog_approval": False, "license_approval": False, "whole_image_semantic_closure": "not-established"}
+
+    @staticmethod
+    def duplicate(value):
+        return json.loads(json.dumps(value))
+
+    def test_closed_row_bits_distinguish_tree_metadata_and_tools_without_re_reading(self):
+        before = self.snapshot()
+        self.assertIsNone(Q._sdk_inventory_difference(before, self.duplicate(before)))
+        after = self.duplicate(before)
+        after["tree_sha256"] = "f" * 64
+        self.assertEqual(Q._sdk_inventory_difference(before, after), {"tree": True, "metadata": 0, "tools": 0})
+        for index in range(10):
+            for key in (("bytes", "sha256", "revision") if index % 2 else ("bytes", "sha256")):
+                after = self.duplicate(before)
+                after["metadata"][index][key] = {"bytes": 19, "sha256": "c" * 64, "revision": "2.0"}[key]
+                self.assertEqual(Q._sdk_inventory_difference(before, after), {"tree": False, "metadata": 1 << index, "tools": 0})
+        for index in range(4):
+            for key, changed in (("bytes", 29), ("sha256", "d" * 64)):
+                after = self.duplicate(before)
+                after["tools"][index][key] = changed
+                self.assertEqual(Q._sdk_inventory_difference(before, after), {"tree": False, "metadata": 0, "tools": 1 << index})
+        after = self.duplicate(before)
+        after["tree_sha256"] = "f" * 64
+        for row in after["metadata"] + after["tools"]:
+            row["bytes"] += 1
+        self.assertEqual(Q._sdk_inventory_difference(before, after), {"tree": True, "metadata": 1023, "tools": 15})
+
+    def test_untrusted_shape_types_and_poisoned_values_are_not_compared(self):
+        class Text(str):
+            pass
+        class Poison:
+            def __eq__(self, _other):
+                raise AssertionError("PRIVATE-equality")
+            def __bool__(self):
+                raise AssertionError("PRIVATE-truth")
+        before = self.snapshot()
+        cases = [None, [], {**before, "extra": "PRIVATE"}, {**before, "tree_sha256": Text("e" * 64)},
+                 {**before, "tree_sha256": Poison()}, {**before, "metadata": ()}, {**before, "metadata": []},
+                 {**before, "tools": []}, {**before, "catalog_approval": 0}, {**before, "license_approval": Poison()},
+                 {**before, "whole_image_semantic_closure": Poison()}]
+        for section, index, key, value in (("metadata", 0, "component", Text("cmdline-tools/latest")),
+                ("metadata", 0, "file", "source.properties"), ("metadata", 0, "bytes", True),
+                ("metadata", 0, "bytes", 524289), ("metadata", 0, "sha256", Poison()),
+                ("metadata", 1, "revision", Poison()), ("metadata", 1, "revision", "x" * 65),
+                ("tools", 0, "tool", Poison()), ("tools", 0, "bytes", True),
+                ("tools", 0, "bytes", 134217729), ("tools", 0, "sha256", "PRIVATE")):
+            value_case = self.duplicate(before)
+            value_case[section][index][key] = value
+            cases.append(value_case)
+        for bad in cases:
+            with self.subTest(shape=type(bad).__name__):
+                self.assertIsNone(Q._sdk_inventory_difference(before, bad))
+                self.assertIsNone(Q._sdk_inventory_difference(bad, before))
+
+    def test_actual_sdk_refusal_uses_same_two_snapshots_and_preserves_short_circuit_cleanup(self):
+        before = self.snapshot()
+        after = self.duplicate(before)
+        after["tree_sha256"] = "f" * 64
+        after["metadata"][3]["revision"] = "2.0"
+        after["tools"][2]["bytes"] += 1
+        classifier = Q._sdk_inventory_difference
+        with mock.patch.object(Q, "_sdk_inventory_difference", wraps=classifier) as classify:
+            error, seen, counts, line = self.run_capture(before, after)
+        self.assertEqual(counts, (2, 2, 1))
+        self.assertEqual(seen, ["source", "sdk", "chrome", "source", "sdk"])
+        classify.assert_called_once()
+        self.assertIs(classify.call_args.args[0], before)
+        self.assertIs(classify.call_args.args[1], after)
+        expected = {"tree": True, "metadata": 8, "tools": 4}
+        self.assertEqual(Q.sdk_inventory_mismatch_diagnostic(error), expected)
+        self.assertEqual(json.loads(line)["sdk_inventory_mismatch"], expected)
+        self.assertEqual(json.loads(line)["current_identity_mismatch"], "sdk-inventory")
+        self.assertIs(error.sdk_inventory_mismatch["selected_error"], error)
+        self.assertIs(error.sdk_inventory_mismatch["complete"], True)
+        for selected, expected_counts in (("source", (2, 1, 1)), ("chrome", (2, 2, 2)), ("deadline", (2, 2, 2))):
+            with mock.patch.object(Q, "_sdk_inventory_difference", side_effect=AssertionError("not-SDK")) as classify:
+                _error, _seen, actual, line = self.run_capture(before, before, selected=selected)
+            self.assertEqual(actual, expected_counts)
+            classify.assert_not_called()
+            self.assertNotIn("sdk_inventory_mismatch", json.loads(line))
+        with mock.patch.object(Q, "_sdk_inventory_difference", side_effect=AssertionError("success")) as classify:
+            error, seen, counts, line = self.run_capture(before, before, selected=None, success=True)
+        self.assertIsNone(error)
+        self.assertEqual((seen, counts, line), (["source", "sdk", "chrome"] * 2, (2, 2, 2), ""))
+        classify.assert_not_called()
+
+    def test_new_classifier_partial_attachment_and_projection_faults_only_omit_new_field(self):
+        before = self.snapshot()
+        after = self.duplicate(before)
+        after["tree_sha256"] = "f" * 64
+        for fault in (MemoryError("PRIVATE"), KeyboardInterrupt("PRIVATE"), SystemExit("PRIVATE")):
+            for mode in ("classify", "setter", "project"):
+                with self.subTest(mode=mode, fault=type(fault).__name__):
+                    with ExitStack() as patches:
+                        kwargs = {}
+                        if mode == "project":
+                            patches.enter_context(mock.patch.object(Q, "sdk_inventory_mismatch_diagnostic", side_effect=fault))
+                        else:
+                            kwargs["classifier_fault" if mode == "classify" else "setter_fault"] = fault
+                        error, seen, counts, line = self.run_capture(before, after, **kwargs)
+                    self.assertEqual((seen, counts), (["source", "sdk", "chrome", "source", "sdk"], (2, 2, 1)))
+                    public = json.loads(line)
+                    self.assertEqual(public["refusal_code"], self.CODE)
+                    self.assertEqual(public["current_identity_mismatch"], "sdk-inventory")
+                    self.assertNotIn("sdk_inventory_mismatch", public)
+                    if mode == "setter":
+                        self.assertIs(error.sdk_inventory_mismatch["complete"], False)
+
+    def test_independent_consumer_type_relation_identity_privacy_and_512_bound(self):
+        before = self.snapshot()
+        after = self.duplicate(before)
+        after["tree_sha256"] = "f" * 64
+        error, _seen, _counts, _line = self.run_capture(before, after)
+        good = error.sdk_inventory_mismatch
+        other = H.Refusal(self.CODE)
+        other.current_identity_mismatch = {"selected_error": other, "complete": True, "value": "sdk-inventory"}
+        other.sdk_inventory_mismatch = good
+        self.assertIsNone(Q.sdk_inventory_mismatch_diagnostic(other))
+        for value in (None, [], {"tree": False, "metadata": 0, "tools": 0}, {"tree": 1, "metadata": 0, "tools": 0},
+                {"tree": True, "metadata": True, "tools": 0}, {"tree": True, "metadata": 1024, "tools": 0},
+                {"tree": True, "metadata": -1, "tools": 0}, {"tree": True, "metadata": 0, "tools": 16},
+                {"tree": True, "metadata": 0, "tools": False}, {"tree": True, "metadata": 0, "tools": 0, "raw": "PRIVATE"}):
+            error.sdk_inventory_mismatch = {**good, "value": value}
+            self.assertIsNone(Q.sdk_inventory_mismatch_diagnostic(error))
+        for update in ({"complete": 1}, {"complete": False}, {"selected_error": other}, {"raw": "PRIVATE"}):
+            error.sdk_inventory_mismatch = {**good, **update}
+            self.assertIsNone(Q.sdk_inventory_mismatch_diagnostic(error))
+        error.sdk_inventory_mismatch = good
+        for phase in ("unobserved", "sdk-observation", "owned-api36-emulator"):
+            self.assertNotIn("sdk_inventory_mismatch", Q.capture_refusal_diagnostic(error, phase))
+        error.current_identity_mismatch["value"] = "chrome-inventory"
+        self.assertIsNone(Q.sdk_inventory_mismatch_diagnostic(error))
+        error.current_identity_mismatch["value"] = "sdk-inventory"
+        for tree in (True, False):
+            value = {"tree": tree, "metadata": 1023, "tools": 15}
+            error.sdk_inventory_mismatch = {**good, "value": value}
+            public = Q.capture_refusal_diagnostic(error, self.PHASE)
+            self.assertEqual(public["sdk_inventory_mismatch"], value)
+            line = json.dumps(public, ensure_ascii=True, separators=(",", ":")) + "\n"
+            self.assertLessEqual(len(line.encode("ascii")), 330)
+            self.assertLessEqual(len(line.encode("ascii")), 512)
+            for private in ("PRIVATE", "tree_sha256", "sha256", "revision", "package.xml", "source.properties",
+                            "cmdline-tools", "platform-tools", "selected_error", "complete", "attempt_token"):
+                self.assertNotIn(private, line)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

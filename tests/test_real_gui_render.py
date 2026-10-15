@@ -4211,6 +4211,7 @@ def test_real_gui_render_prepares_mobaxterm_connected_reference() -> None:
 
 def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
 
     assert "def profile_tab_label" in source
     assert '"SSH2" if protocol == "SSH" else protocol' in source
@@ -4218,15 +4219,15 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     assert 'return f"{profile.name} [{protocol}]"' in source
     assert "moba_connected_tab_chrome_items" in source
     assert "mobaTabChromeKey" in source
-    assert "mobaRightUtilityKey" in source
-    assert "mobaSessionEdgeKey" in source
+    assert "mobaRightUtilityKey" in connected_source
+    assert "mobaSessionEdgeKey" in connected_source
     assert "mobaBottomEdgeKey" in source
     assert "activate_adjacent_tab" in source
-    assert "mobaSshBannerTitle" in source
-    assert "mobaSshBannerTargetLine" in source
-    assert "mobaSshBannerCapabilityKey" in source
-    assert "mobaSshBannerFooter" in source
-    assert "mobaBannerWidth" in source
+    assert "mobaSshBannerTitle" in connected_source
+    assert "mobaSshBannerTargetLine" in connected_source
+    assert "mobaSshBannerCapabilityKey" in connected_source
+    assert "mobaSshBannerFooter" in connected_source
+    assert "mobaBannerWidth" in connected_source
     assert "def profile_tab_status" in source
     assert "build_product_workspace_surface_evidence" in source
     assert "mobaRailRole" in source

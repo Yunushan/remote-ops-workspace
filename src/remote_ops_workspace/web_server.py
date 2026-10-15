@@ -46,6 +46,12 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
 }
 MAX_REQUEST_BODY_BYTES = 64 * 1024
+LOG_CONTROL_CHAR_TRANSLATION = str.maketrans(
+    {
+        **{codepoint: f"\\x{codepoint:02x}" for codepoint in (*range(32), *range(127, 160))},
+        ord("\\"): "\\\\",
+    }
+)
 WEB_PROFILE_FIELDS = frozenset(
     {"name", "protocol", "host", "port", "username", "group", "tags", "description", "url", "tunnels", "options"}
 )
@@ -236,7 +242,8 @@ class QuietHandler(http.server.SimpleHTTPRequestHandler):
         return super().send_head()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
-        print(f"web: {format % args}")
+        message = (format % args).translate(LOG_CONTROL_CHAR_TRANSLATION)
+        print(f"web: {message}")
 
     def end_headers(self) -> None:
         for name, value in SECURITY_HEADERS.items():

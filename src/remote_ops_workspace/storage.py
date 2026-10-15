@@ -269,6 +269,54 @@ class ProfileStore:
                 raise KeyError(name)
             self._save_data(data, remaining, surface=surface)
 
+    def add_many(
+        self,
+        profiles: Iterable[Profile],
+        *,
+        replace: bool = False,
+        skip_existing: bool = False,
+        surface: str = "cli",
+    ) -> list[Profile]:
+        """Validate and merge an import under one lock and atomic file replacement.
+
+        The GUI may skip existing names after preview; every accepted row still
+        commits together, so a policy or filesystem failure leaves the store intact.
+        """
+
+        extra_protocols = plugin_protocols()
+        incoming = [prepare_profile(profile, extra_protocols=extra_protocols) for profile in profiles]
+        names = [profile.name for profile in incoming]
+        if len(set(names)) != len(names):
+            raise ValueError("profile import contains duplicate normalized profile names")
+        with self._transaction():
+            data = self._load_data()
+            current = self._profiles_from_data(data, resolve=False)
+            existing_names = {profile.name for profile in current}
+            collisions = [name for name in names if name in existing_names]
+            if collisions and not replace and not skip_existing:
+                raise ValueError(f"profile already exists: {collisions[0]}")
+            accepted = [
+                profile for profile in incoming
+                if replace or profile.name not in existing_names
+            ]
+            if not accepted:
+                return []
+            for profile in accepted:
+                assert_profile_write_allowed(
+                    profile,
+                    surface=surface,
+                    action="replace" if profile.name in existing_names else "add",
+                    policy_path=self.policy_path,
+                )
+            merged = {profile.name: profile for profile in current}
+            merged.update({profile.name: profile for profile in accepted})
+            self._save_data(
+                data,
+                sorted(merged.values(), key=lambda profile: (profile.group, profile.name)),
+                surface=surface,
+            )
+            return accepted
+
     def get(self, name: str) -> Profile:
         for profile in self.load():
             if profile.name == name:

@@ -21,6 +21,22 @@ def test_product_readiness_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_catalog_metadata_cannot_claim_production_verification(monkeypatch) -> None:
+    checker = load_product_readiness_checker()
+    report = deepcopy(checker.coverage_report())
+    report["workflow_parity_contract"]["production_readiness_percent"] = 100.0
+    report["platform_verified_readiness"]["runtime_verified"] = True
+    feature = report["workflow_parity_evidence"][0]["feature_evidence"][0]
+    feature["release_backed"] = True
+    monkeypatch.setattr(checker, "coverage_report", lambda: report)
+
+    errors = checker.check_product_readiness()
+
+    assert "workflow coverage must not claim production readiness from catalog metadata" in errors
+    assert "platform coverage must not claim production readiness from catalog metadata" in errors
+    assert any("must not claim runtime proof from metadata" in error for error in errors)
+
+
 def test_product_readiness_rejects_invalid_platform_evidence_registry(tmp_path: Path) -> None:
     checker = load_product_readiness_checker()
     registry = json.loads(Path("configs/platform_verified_evidence.json").read_text(encoding="utf-8"))

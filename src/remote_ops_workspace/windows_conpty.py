@@ -18,11 +18,12 @@ import ctypes
 import math
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,7 @@ MINIMUM_CONPTY_BUILD = 17763
 
 _PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016
 _EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+_CREATE_UNICODE_ENVIRONMENT = 0x00000400
 _STARTF_USESTDHANDLES = 0x00000100
 _STARTF_USESHOWWINDOW = 0x00000001
 _SW_HIDE = 0
@@ -561,6 +563,24 @@ def _configure_conpty_startup_info(startup: _STARTUPINFOEXW) -> None:
     startup.StartupInfo.wShowWindow = _SW_HIDE
 
 
+def _windows_environment_block(environment: Mapping[str, str]) -> str:
+    """Build the sorted Unicode block, including Windows drive-directory entries."""
+
+    normalized: dict[str, tuple[str, str]] = {}
+    for key, value in environment.items():
+        if (
+            not isinstance(key, str)
+            or not isinstance(value, str)
+            or not key
+            or ("=" in key and re.fullmatch(r"=[A-Za-z]:", key) is None)
+            or "\0" in key
+            or "\0" in value
+        ):
+            raise ValueError("process environment keys and values must be valid strings")
+        normalized[key.casefold()] = (key, value)
+    return "\0".join(f"{key}={value}" for key, value in sorted(normalized.values(), key=lambda item: item[0].casefold())) + "\0\0"
+
+
 class WindowsConPtyProcess:
     """Run one argv-defined Windows process inside a ConPTY.
 
@@ -575,6 +595,7 @@ class WindowsConPtyProcess:
         argv: Sequence[str],
         *,
         cwd: str | os.PathLike[str] | None = None,
+        env: Mapping[str, str] | None = None,
         columns: int = 120,
         rows: int = 30,
     ) -> None:
@@ -582,6 +603,7 @@ class WindowsConPtyProcess:
         self.command_line = subprocess.list2cmdline(self.argv)
         self.application_path: str | None = None
         self.cwd = _validate_cwd(cwd)
+        self._environment_block = _windows_environment_block(env) if env is not None else None
         self.columns = _validate_dimension(columns, "columns")
         self.rows = _validate_dimension(rows, "rows")
 
@@ -755,14 +777,19 @@ class WindowsConPtyProcess:
                 _configure_conpty_startup_info(startup)
                 startup.lpAttributeList = attribute_list
                 mutable_command_line = ctypes.create_unicode_buffer(self.command_line)
+                environment = (
+                    ctypes.create_unicode_buffer(self._environment_block)
+                    if self._environment_block is not None
+                    else None
+                )
                 if not api.CreateProcessW(
                     None,
                     mutable_command_line,
                     None,
                     None,
                     False,
-                    _EXTENDED_STARTUPINFO_PRESENT,
-                    None,
+                    _EXTENDED_STARTUPINFO_PRESENT | (_CREATE_UNICODE_ENVIRONMENT if environment is not None else 0),
+                    environment,
                     self.cwd,
                     ctypes.byref(startup.StartupInfo),
                     ctypes.byref(process_info),

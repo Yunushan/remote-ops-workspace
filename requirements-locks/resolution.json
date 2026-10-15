@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "scope": "Resolved dependency inputs. Native installation, source-build toolchains, exact artifact inventory and independent approval require separate verification.",
+  "resolver": {
+    "name": "uv",
+    "version": "0.12.21",
+    "index": "https://pypi.org/simple"
+  },
+  "python_version": "3.14.7",
+  "input_sha256": {
+    "configs/release_dependency_locks.json": "70ee9fc4be3d57faa21f8db5dd8b8a09a2aceb703776ed105ebeb13754cdb260",
+    "requirements-release.txt": "ae2892c950edfc493e9cdcf931d402eb4d6c970456795c738ba15178c562f271",
+    "requirements-locks/inputs/build-backends.in": "378d614bd2d841619ecf9a962b26eb2dacb814f4b9938c9f0b547334c11e585e",
+    "requirements-locks/inputs/core.in": "173a1a223944d81fa1ed860d82327ecdfc4f41f786321ca05dd99fe80f615de2",
+    "requirements-locks/inputs/gui.in": "4e9b872aba7417237a5ddd2a37a3c5c71d6414d3a32a4e3ee1b6b92d719a72f2",
+    "requirements-locks/inputs/installer-backends.in": "31f8feeaa574268e12516e27875da873a940143e692091ded15503c8aa4c5d52",
+    "requirements-locks/inputs/release-verifier.in": "28d693f929f62b8bb135a11b7ba9987439f7a960cc969e32f8cb567c1ef79c97",
+    "requirements-locks/inputs/secure.in": "2d6bcd262a91a21b5c72f4f80d631b1ce13ebb08c6155868693a2bb6f36dd875",
+    "requirements-locks/inputs/windows-arm64.in": "af7cc8d182c70c1b885106ddee7264fe69da4c5413fd5ee8d1b3ba3252a31664"
+  },
+  "lock_sha256": {
+    "linux-aarch64-bootstrap.txt": "8517eb8a7855af439ae040270f14b526ab1208896bc0288112f62b809ecbcbf4",
+    "linux-aarch64.txt": "02fe1fd7b4c23b2efc27ee694564ee901f985d1164eb60d7b757db1b0f27879a",
+    "linux-x86_64-bootstrap.txt": "edc5a23c2a2cd1a51123dd9b94884886b328ed48075cdd2e3d478cd0878d766b",
+    "linux-x86_64.txt": "a8381d5e7829a2f46fef0f76659ea6ad76ec7e2547129295e04fa97025a1a2f2",
+    "macos-arm64-bootstrap.txt": "03447772c6fae216f873b004eefed96fe0fafccd7c12842283994fbf2b4fd867",
+    "macos-arm64.txt": "f7b33f8d7965b28a881f4e9f99aad5bb3614018e8514d31a2bee8f07c9e6dafd",
+    "macos-x64-bootstrap.txt": "e1346616ef0842de34ef31d64ce779dbde23f9766e1332c545613c7360c3c8d6",
+    "macos-x64.txt": "15986f3545cd0be840364f0221df2999c9e46bc1271140141157c4da04a18c1a",
+    "release-verifier-linux-x86_64.txt": "c287daaf31f6c8602aef0cd5fefe8d37eea94772426389deb4383364c774bd15",
+    "source-linux-x86_64-bootstrap.txt": "21b3f9bf848eee134c1d42a92e5bd8b262c11cba567f9618f00b97785ec8f8a5",
+    "source-linux-x86_64.txt": "0ba64bd5cbbc4b46d8c0e4aed888398eb146490cc1bf208aa9f21cd35ae92711",
+    "windows-arm64-bootstrap.txt": "f671ce8e95a2299c908dc0555f70104e60bbce8607f4dd92c09dcdac4f4278c5",
+    "windows-arm64.txt": "47d66129570b22da382c6b62f85670c8f857107c96dd130d4484496d285e6d65",
+    "windows-x64-bootstrap.txt": "bbf1f6cb56e93059e2cabd8cbe7684abae99a1a3afe95f1c081630b893b2b97f",
+    "windows-x64.txt": "ce00ea0904c52989496bdb885feeadfa460797bd5047225039ae2fea2dbe2ddc",
+    "windows-x86.txt": "19a60c5f328cc5c9ac1d4f1120ef54658f0b0584537feb10aa3919c2d41f80c5"
+  }
+}

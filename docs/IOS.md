@@ -13,8 +13,10 @@ screenshot artifact.
 The `apple-27-validation` job runs on the GitHub-hosted `xcode-27` preview image.
 It verifies Xcode 27 plus the macOS 27, iOS 27, and iOS simulator 27 SDKs, then
 requires an exact iOS 27 simulator runtime for the live Web/PWA smoke. The
-image uses a macOS 26 host with Xcode 27, so this is SDK and simulator-runtime
-validation rather than a claim that GitHub provides a `macos-27` host label.
+[completed validation job](https://github.com/Yunushan/remote-ops-workspace/actions/runs/37270086060/job/111635035905)
+observed macOS 27.0 with Xcode 27.0 on the `xcode-27-arm64` preview image.
+This records that job's host, SDK and simulator versions; the workflow selects
+the `xcode-27` runner label.
 
 GitHub-hosted macOS runners do not provide every historical iOS simulator
 runtime at once. Older iOS/iPadOS versions are covered by the compatibility

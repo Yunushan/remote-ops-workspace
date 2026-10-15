@@ -110,7 +110,7 @@ def test_terminal_start_restart_and_nonblocking_stop_edges(
 ) -> None:
     from PyQt6.QtCore import QProcess
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_terminal
     from remote_ops_workspace.gui_lifecycle import ProcessStopPolicy, ProcessStopResult
 
     _app, window = gui_window
@@ -143,7 +143,7 @@ def test_terminal_start_restart_and_nonblocking_stop_edges(
         username="operator",
     )
     monkeypatch.setattr(
-        gui,
+        gui_terminal,
         "assert_profile_launch_allowed",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("controlled policy")),
     )
@@ -151,7 +151,7 @@ def test_terminal_start_restart_and_nonblocking_stop_edges(
     assert pane.status.text() == "policy blocked"
     assert "controlled policy" in pane.output.toPlainText()
 
-    monkeypatch.setattr(gui, "assert_profile_launch_allowed", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(gui_terminal, "assert_profile_launch_allowed", lambda *_args, **_kwargs: None)
     process.pipe_fallback = True
     pane.setProperty(
         "terminalRuntimeCommand",
@@ -211,7 +211,7 @@ def test_terminal_start_restart_and_nonblocking_stop_edges(
             ProcessStopResult(True, True, False, True),
         ]
     )
-    monkeypatch.setattr(gui, "stop_process", lambda *_args, **_kwargs: next(outcomes))
+    monkeypatch.setattr(gui_terminal, "stop_process", lambda *_args, **_kwargs: next(outcomes))
     process.process_state = QProcess.ProcessState.Running
     first = pane.stop()
     second = pane.stop()

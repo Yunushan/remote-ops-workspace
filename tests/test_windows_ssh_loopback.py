@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ctypes
 import importlib
 import json
 import os
@@ -12,9 +11,18 @@ import threading
 import time
 from contextlib import suppress
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from windows_native_qt_case import run_native_qt_case
+from windows_window_observer import (
+    RetainedWindowRoots,
+    VisibleWindowSampler,
+)
+from windows_window_observer import (
+    visible_windows as observe_visible_windows,
+)
 
 from remote_ops_workspace.models import Profile
 from remote_ops_workspace.terminal import (
@@ -45,204 +53,13 @@ _SOCKET_REGRESSION = b"getsockname failed: not a socket"
 
 
 def _visible_top_level_windows_for_process_tree(
-    process_ids: set[int],
+    process_ids: set[int], roots: RetainedWindowRoots,
 ) -> list[dict[str, object]]:
-    """Return visible top-level windows owned by a native terminal process tree.
-
-    ConPTY normally gives the child no desktop surface.  Tracking descendants
-    as well as the OpenSSH PID catches a visible ``conhost.exe`` if a launch
-    regression allocates one while tabs are being switched.
-    """
-
-    if sys.platform != "win32" or not process_ids:
-        return []
-
-    from ctypes import wintypes
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    user32 = ctypes.WinDLL("user32", use_last_error=True)
-
-    class _PROCESSENTRY32W(ctypes.Structure):
-        _fields_ = [
-            ("dwSize", wintypes.DWORD),
-            ("cntUsage", wintypes.DWORD),
-            ("th32ProcessID", wintypes.DWORD),
-            ("th32DefaultHeapID", ctypes.c_size_t),
-            ("th32ModuleID", wintypes.DWORD),
-            ("cntThreads", wintypes.DWORD),
-            ("th32ParentProcessID", wintypes.DWORD),
-            ("pcPriClassBase", wintypes.LONG),
-            ("dwFlags", wintypes.DWORD),
-            ("szExeFile", wintypes.WCHAR * 260),
-        ]
-
-    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
-    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
-    kernel32.Process32FirstW.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(_PROCESSENTRY32W),
-    ]
-    kernel32.Process32FirstW.restype = wintypes.BOOL
-    kernel32.Process32NextW.argtypes = [
-        wintypes.HANDLE,
-        ctypes.POINTER(_PROCESSENTRY32W),
-    ]
-    kernel32.Process32NextW.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-
-    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
-    invalid_handle = ctypes.c_void_p(-1).value
-    if not snapshot or getattr(snapshot, "value", snapshot) == invalid_handle:
-        raise ctypes.WinError(ctypes.get_last_error())
-
-    try:
-        entry = _PROCESSENTRY32W()
-        entry.dwSize = ctypes.sizeof(entry)
-        parent_by_pid: dict[int, int] = {}
-        image_by_pid: dict[int, str] = {}
-        first = kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
-        while first:
-            process_id = int(entry.th32ProcessID)
-            parent_by_pid[process_id] = int(entry.th32ParentProcessID)
-            image_by_pid[process_id] = str(entry.szExeFile)
-            first = kernel32.Process32NextW(snapshot, ctypes.byref(entry))
-    finally:
-        kernel32.CloseHandle(snapshot)
-
-    tracked = {int(pid) for pid in process_ids if int(pid) > 0}
-    changed = True
-    while changed:
-        changed = False
-        for child_pid, parent_pid in parent_by_pid.items():
-            if parent_pid in tracked and child_pid not in tracked:
-                tracked.add(child_pid)
-                changed = True
-
-    get_window_pid = user32.GetWindowThreadProcessId
-    get_window_pid.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-    get_window_pid.restype = wintypes.DWORD
-    is_visible = user32.IsWindowVisible
-    is_visible.argtypes = [wintypes.HWND]
-    is_visible.restype = wintypes.BOOL
-    get_rect = user32.GetWindowRect
-    get_rect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
-    get_rect.restype = wintypes.BOOL
-    get_title_length = user32.GetWindowTextLengthW
-    get_title_length.argtypes = [wintypes.HWND]
-    get_title_length.restype = ctypes.c_int
-    get_title = user32.GetWindowTextW
-    get_title.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-    get_title.restype = ctypes.c_int
-    get_class = user32.GetClassNameW
-    get_class.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-    get_class.restype = ctypes.c_int
-
-    records: list[dict[str, object]] = []
-
-    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-    def visit(hwnd: wintypes.HWND, _lparam: wintypes.LPARAM) -> bool:
-        if not is_visible(hwnd):
-            return True
-        owner_pid = wintypes.DWORD()
-        get_window_pid(hwnd, ctypes.byref(owner_pid))
-        if int(owner_pid.value) not in tracked:
-            return True
-        rect = wintypes.RECT()
-        if not get_rect(hwnd, ctypes.byref(rect)):
-            return True
-        if rect.right <= rect.left or rect.bottom <= rect.top:
-            # ConPTY exposes a zero-sized bookkeeping window on some hosted
-            # Windows builds; it is not a visible terminal surface.
-            return True
-        title_buffer = ctypes.create_unicode_buffer(get_title_length(hwnd) + 1)
-        get_title(hwnd, title_buffer, len(title_buffer))
-        class_buffer = ctypes.create_unicode_buffer(256)
-        get_class(hwnd, class_buffer, len(class_buffer))
-        compact_window_text = "".join(
-            character.casefold()
-            for character in f"{title_buffer.value} {image_by_pid.get(int(owner_pid.value), '')}"
-            if character.isalnum()
-        )
-        if (
-            class_buffer.value.casefold() == "cascadia_hosting_window_class"
-            and "hostedcomputeagent" in compact_window_text
-        ):
-            # GitHub-hosted Windows runners expose their own outer Cascadia
-            # host through the test process tree; it is not owned by ROW.
-            return True
-        records.append(
-            {
-                "hwnd": int(getattr(hwnd, "value", hwnd) or 0),
-                "pid": int(owner_pid.value),
-                "class": class_buffer.value,
-                "title": title_buffer.value,
-                "rect": [
-                    int(rect.left),
-                    int(rect.top),
-                    int(rect.right),
-                    int(rect.bottom),
-                ],
-            }
-        )
-        return True
-
-    enum_windows = user32.EnumWindows
-    enum_windows.argtypes = [
-        ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM),
-        wintypes.LPARAM,
-    ]
-    enum_windows.restype = wintypes.BOOL
-    if not enum_windows(visit, 0):
-        raise ctypes.WinError(ctypes.get_last_error())
-    return records
+    return observe_visible_windows(process_ids, roots)
 
 
-class _VisibleWindowSampler:
-    """Sample native descendants while a Qt tab transition is in flight."""
-
-    def __init__(self, process_ids: set[int], *, interval_seconds: float = 0.004) -> None:
-        self.process_ids = set(process_ids)
-        self.interval_seconds = max(0.001, float(interval_seconds))
-        self.samples: list[dict[str, object]] = []
-        self.errors: list[str] = []
-        self._stop = threading.Event()
-        self._started_at = 0.0
-        self._thread: threading.Thread | None = None
-
-    def __enter__(self) -> _VisibleWindowSampler:
-        self._started_at = time.monotonic()
-        self._thread = threading.Thread(
-            target=self._run,
-            name="remote-ops-visible-window-sampler",
-            daemon=True,
-        )
-        self._thread.start()
-        return self
-
-    def __exit__(self, _exc_type, _exc_value, _traceback) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1.0)
-        self._thread = None
-
-    def _run(self) -> None:
-        while not self._stop.wait(self.interval_seconds):
-            try:
-                visible = _visible_top_level_windows_for_process_tree(self.process_ids)
-            except Exception as exc:  # pragma: no cover - native API failure
-                self.errors.append(str(exc))
-                return
-            self.samples.append(
-                {
-                    "elapsed_ms": round((time.monotonic() - self._started_at) * 1000, 3),
-                    "visible_child_windows": visible,
-                }
-            )
-
-    @property
-    def violations(self) -> list[dict[str, object]]:
-        return [sample for sample in self.samples if sample["visible_child_windows"]]
+class _VisibleWindowSampler(VisibleWindowSampler):
+    pass
 
 
 def _optional_paramiko() -> Any | None:
@@ -1407,6 +1224,42 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
             pytest.fail("required Paramiko loopback SSH server dependency is unavailable")
         pytest.skip("Paramiko loopback SSH server dependency is unavailable")
 
+    # A QApplication keeps its original platform for its entire lifetime.
+    # Other GUI tests use offscreen, so this native observer case needs a fresh
+    # process whenever the shared application cannot provide Windows surfaces.
+    try:
+        qt_widgets = importlib.import_module("PyQt6.QtWidgets")
+    except ImportError:
+        if _REQUIRE_LOOPBACK:
+            pytest.fail("required PyQt6 GUI dependency is unavailable")
+        pytest.skip("PyQt6 GUI dependency is unavailable")
+    app = qt_widgets.QApplication.instance()
+    platform = (
+        app.platformName()
+        if app is not None
+        else os.environ.get("QT_QPA_PLATFORM", "windows")
+    )
+    if platform != "windows":
+        if _REQUIRE_LOOPBACK:
+            pytest.fail(f"required native Windows Qt platform is unavailable: {platform}")
+        case_id = (
+            "moba-connected-tabs"
+            if open_via_moba_connected_session
+            else "direct-terminal-tabs"
+        )
+        run_native_qt_case(case_id, tmp_path)
+        return
+    if app is None:
+        # Match create_main_window's native application initialization so the
+        # early platform check preserves fractional per-monitor scaling.
+        qt_core = importlib.import_module("PyQt6.QtCore")
+        qt_gui = importlib.import_module("PyQt6.QtGui")
+        qt_gui.QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            qt_core.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+        app = qt_widgets.QApplication(["remote-ops-workspace-windows-ssh-tab-switch"])
+    assert app.platformName() == "windows", "native window observer requires Windows Qt"
+
     support = conpty_support()
     assert support.supported, support.reason
     ssh = shutil.which("ssh.exe") or shutil.which("ssh")
@@ -1445,6 +1298,7 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
     )
     panes: list[Any] = []
     tab_pages: list[Any] = []
+    window_roots: RetainedWindowRoots | None = None
     try:
         window.set_design_preset("mobaxterm")
         for server in servers:
@@ -1498,13 +1352,34 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
                 if int(pane.process.processId()) > 0
             }
 
+        window_roots = RetainedWindowRoots([pane.process._session for pane in panes])
+        # Positive native control: the same observer must detect this real Qt
+        # top-level window when its actual owning process is the retained root.
+        api = window_roots.api
+        current_source = SimpleNamespace(
+            pid=int(api.kernel.GetCurrentProcessId()),
+            _process_handle=api.kernel.GetCurrentProcess(),
+            _lifecycle_lock=threading.RLock(),
+        )
+        positive_roots = RetainedWindowRoots([current_source], _api=api)
+        try:
+            positive_windows = observe_visible_windows({current_source.pid}, positive_roots)
+            assert any(record["hwnd"] == int(window.winId()) for record in positive_windows), (
+                "native observer missed its actual visible Qt root window"
+            )
+        finally:
+            positive_roots.close()
+
         def visible_terminal_windows() -> list[dict[str, object]]:
-            return _visible_top_level_windows_for_process_tree(terminal_process_ids())
+            return _visible_top_level_windows_for_process_tree(terminal_process_ids(), window_roots)
 
         def record_continuous_window_samples(
             phase: str,
             sampler: _VisibleWindowSampler,
         ) -> None:
+            assert sampler.completed and sampler.samples and sampler.failure is None, (
+                f"native window sampler phase incomplete at {phase}"
+            )
             assert not sampler.errors, f"native window sampler failed at {phase}: {sampler.errors!r}"
             continuous_window_samples.extend(sampler.samples)
             continuous_window_violations.extend(
@@ -1606,7 +1481,7 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
             target_pane = panes[target_position]
             source_pane = panes[source_position]
             source_pane.output.setFocus(qt_core.Qt.FocusReason.OtherFocusReason)
-            with _VisibleWindowSampler(terminal_process_ids()) as sampler:
+            with _VisibleWindowSampler(terminal_process_ids(), window_roots) as sampler:
                 qt_test.QTest.keyPress(
                     source_pane.output,
                     qt_core.Qt.Key.Key_Tab,
@@ -1618,7 +1493,7 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
                 "ctrl-tab-key-press",
                 keyboard_event_boundary_windows,
             )
-            with _VisibleWindowSampler(terminal_process_ids()) as sampler:
+            with _VisibleWindowSampler(terminal_process_ids(), window_roots) as sampler:
                 qt_test.QTest.keyRelease(
                     source_pane.output,
                     qt_core.Qt.Key.Key_Tab,
@@ -1660,7 +1535,7 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
                 assert tab_index >= 0
                 target = tab_bar.tabRect(tab_index).center()
                 qt_test.QTest.mouseMove(tab_bar, target)
-                with _VisibleWindowSampler(terminal_process_ids()) as sampler:
+                with _VisibleWindowSampler(terminal_process_ids(), window_roots) as sampler:
                     qt_test.QTest.mousePress(
                         tab_bar,
                         qt_core.Qt.MouseButton.LeftButton,
@@ -1673,7 +1548,7 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
                     "mouse-press",
                     mouse_event_boundary_windows,
                 )
-                with _VisibleWindowSampler(terminal_process_ids()) as sampler:
+                with _VisibleWindowSampler(terminal_process_ids(), window_roots) as sampler:
                     qt_test.QTest.mouseRelease(
                         tab_bar,
                         qt_core.Qt.MouseButton.LeftButton,
@@ -1779,6 +1654,12 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
                     "keyboard_event_boundary_windows": keyboard_event_boundary_windows,
                     "mouse_switches": mouse_switches,
                     "mouse_event_boundary_windows": mouse_event_boundary_windows,
+                    "native_window_attribution": {
+                        "root_births": window_roots.verify(terminal_process_ids()),
+                        "rejected_impossible_chains": window_roots.rejected,
+                        "positive_qt_root_window_detected": True,
+                        "ancestry_scope": "birth-consistent numeric candidates, not historical parent proof",
+                    },
                     "continuous_window_sample_count": len(continuous_window_samples),
                     "continuous_window_violations": continuous_window_violations,
                     "switches": records,
@@ -1796,16 +1677,20 @@ def test_native_windows_ssh_live_tabs_switch_without_miniature_surface(
                 encoding="utf-8",
             )
     finally:
-        for pane in panes:
-            if pane.is_running():
-                pane.prepare_for_close()
-                pane.process.kill()
-                _process_events_until(
-                    app,
-                    lambda pane=pane: not pane.is_running(),
-                    timeout=5.0,
-                )
-        window.close()
-        app.processEvents()
-        for server in servers:
-            server.close()
+        try:
+            for pane in panes:
+                if pane.is_running():
+                    pane.prepare_for_close()
+                    pane.process.kill()
+                    _process_events_until(
+                        app,
+                        lambda pane=pane: not pane.is_running(),
+                        timeout=5.0,
+                    )
+            window.close()
+            app.processEvents()
+            for server in servers:
+                server.close()
+        finally:
+            if window_roots is not None:
+                window_roots.close()

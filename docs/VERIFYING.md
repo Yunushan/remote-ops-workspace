@@ -113,7 +113,7 @@ The full verifier runs:
 - `python scripts/check_readme_media.py` for generated README PNG/GIF media, asset hashes, dimensions and README references;
 - `python scripts/check_first_run_ux.py` for installer first-run guidance, welcome-command coverage and non-confusing public example targets;
 - `python scripts/check_feature_reality.py` for executable feature-manifest evidence, including CLI command paths, protocol launch-plan builders, implementation symbols and shipped PWA/Termux files;
-- `python scripts/check_product_readiness.py` for coverage truth checks: 100% adapter-ready coverage, 100% release-backed product workflow parity with JSON evidence, strict platform evidence registry validity, lower platform-readiness gaps and no blanket product or feature overrides;
+- `python scripts/check_product_readiness.py` for coverage truth checks: adapter-ready and implementation-backed workflow inventory with JSON references, explicit separation from runtime production readiness, strict platform evidence registry validity, visible platform gaps and no blanket product or feature overrides;
 - `python -m pytest -q`;
 - a CLI smoke test in a temporary `ROW_HOME`, including init, profile listing, example SSH dry-run, doctor JSON, and feature coverage output.
 

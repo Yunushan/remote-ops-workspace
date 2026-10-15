@@ -27,8 +27,8 @@
     "platform_locks": {}
   },
   "verifier_bootstrap": {
-    "state": "blocked-no-fully-hashed-lock",
-    "fully_hashed": false,
+    "state": "enforced",
+    "fully_hashed": true,
     "lock_file": "requirements-locks/release-verifier-linux-x86_64.txt"
   },
   "required_profiles": {
@@ -63,10 +63,9 @@
   },
   "unresolved_release_blockers": [
     "No independent redistribution/compliance approver key has been enrolled.",
-    "The per-platform resolver inputs are directly constrained but are not complete fully hashed transitive locks.",
+    "Modern platform resolver inputs are fully hashed and enforced; Linux i386/armhf and XP native targets still lack complete reviewed platform locks and realized dependency evidence.",
     "No closed-world extraction inventory currently proves every CPython, PyInstaller, Python package, Qt, OpenSSL, and other native component actually redistributed in every installer.",
     "No reviewed PyQt/Qt distribution channel and matching commercial-license evidence or open-source corresponding-source/relink evidence is recorded.",
-    "No fully hashed release-verifier bootstrap lock is available for cryptography/Ed25519 verification in the publish job.",
     "No trusted out-of-band auditor key or short-lived signed proof establishes that the exact release tag blocks updates and deletion with no bypass actors."
   ]
 }

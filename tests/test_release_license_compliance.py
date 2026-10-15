@@ -124,7 +124,7 @@ def _positive_fixture(tmp_path: Path, checker) -> list[str]:
             lock: locks/windows-x86.txt
     steps:
       - run: python -m pip install --require-hashes --requirement locks/windows-x86.txt
-      - run: python -m pip install --no-deps ".[package]"
+      - run: python -m pip install --no-deps --no-build-isolation ".[package]"
   publish:
     steps:
       - run: python -m pip install --require-hashes --requirement locks/verifier.txt

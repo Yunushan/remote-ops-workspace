@@ -36,6 +36,7 @@ class TerminalPanePlan:
     command: list[str]
     source: str = "shell"
     notes: list[str] = field(default_factory=list)
+    environment: dict[str, str] = field(default_factory=dict)
 
     def printable(self) -> str:
         return shlex.join(self.command)
@@ -101,6 +102,7 @@ def terminal_plan_for_profile(profile: Profile) -> TerminalPanePlan:
         command=command,
         source=f"profile:{profile.name}",
         notes=notes,
+        environment=dict(plan.environment),
     )
 
 

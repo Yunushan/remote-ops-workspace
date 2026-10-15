@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import tempfile
 from pathlib import Path
@@ -163,6 +164,8 @@ def _write_bytes_atomic(path: Path, payload: bytes, *, private: bool) -> None:
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp_path = Path(temp_name)
     replaced = False
+    predecessor: tuple[Path, os.stat_result] | None = None
+    keep_predecessor = False
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(payload)
@@ -173,27 +176,108 @@ def _write_bytes_atomic(path: Path, payload: bytes, *, private: bool) -> None:
             _require_no_linked_path_components(path.parent)
             if _path_is_link_or_reparse(path):
                 raise OSError(f"refusing to replace symlinked private artifact: {path}")
+            predecessor = _backup_private_predecessor(path)
         else:
             chmod_best_effort(temp_path, mode)
+        installed_status = temp_path.lstat()
         os.replace(temp_path, path)
         replaced = True
         if private:
             _chmod_required(path, mode)
         else:
             chmod_best_effort(path, mode)
-    except Exception:
+    except Exception as exc:
+        rollback_error: OSError | None = None
         if private and replaced:
             try:
-                # Do not leave a potentially non-private final artifact behind
-                # when the post-replace permission assertion failed.
-                path.unlink()
-            except OSError:
-                pass
+                _rollback_private_write(path, installed_status, predecessor)
+            except OSError as restore_exc:
+                rollback_error = restore_exc
+                keep_predecessor = predecessor is not None
         try:
             temp_path.unlink()
         except OSError:
             pass
+        if rollback_error is not None and predecessor is not None:
+            try:
+                _require_private_recovery_identity(predecessor)
+            except OSError:
+                raise OSError(
+                    f"{exc}; rollback failed without a verified recovery copy: {rollback_error}"
+                ) from exc
+            raise OSError(
+                f"{exc}; original private file preserved for recovery at "
+                f"{predecessor[0]}: {rollback_error}"
+            ) from exc
         raise
+    finally:
+        if predecessor is not None and not keep_predecessor:
+            try:
+                predecessor[0].unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _backup_private_predecessor(path: Path) -> tuple[Path, os.stat_result] | None:
+    """Secure an opened, identity-checked predecessor before replacing it."""
+
+    try:
+        source = path.open("rb")
+    except FileNotFoundError:
+        return None
+    with source:
+        _require_open_path_identity(path, source.fileno())
+        fd, backup_name = tempfile.mkstemp(prefix=f".{path.name}.rollback.", suffix=".tmp", dir=path.parent)
+        backup = Path(backup_name)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                _chmod_required(backup, PRIVATE_FILE_MODE)
+                shutil.copyfileobj(source, handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+                status = os.fstat(handle.fileno())
+            return backup, status
+        except Exception:
+            try:
+                backup.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
+
+def _rollback_private_write(
+    path: Path,
+    installed_status: os.stat_result,
+    predecessor: tuple[Path, os.stat_result] | None,
+) -> None:
+    _require_no_linked_path_components(path.parent)
+    named = path.lstat()
+    if (
+        stat.S_ISLNK(named.st_mode)
+        or _is_reparse_point(named)
+        or not stat.S_ISREG(named.st_mode)
+        or (named.st_dev, named.st_ino) != (installed_status.st_dev, installed_status.st_ino)
+    ):
+        raise OSError(f"private artifact changed before rollback: {path}")
+    if predecessor is None:
+        # There is no safe prior value; remove the failed newly-created artifact.
+        path.unlink()
+        return
+    _require_private_recovery_identity(predecessor)
+    os.replace(predecessor[0], path)
+
+
+def _require_private_recovery_identity(predecessor: tuple[Path, os.stat_result]) -> None:
+    backup, expected = predecessor
+    observed = backup.lstat()
+    if (
+        stat.S_ISLNK(observed.st_mode)
+        or _is_reparse_point(observed)
+        or not stat.S_ISREG(observed.st_mode)
+        or (observed.st_dev, observed.st_ino, observed.st_mode)
+        != (expected.st_dev, expected.st_ino, expected.st_mode)
+    ):
+        raise OSError(f"private recovery file changed before rollback: {backup}")
 
 
 def _write_bytes_shared_atomic(path: Path, payload: bytes) -> None:

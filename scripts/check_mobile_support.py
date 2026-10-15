@@ -144,7 +144,8 @@ def check_docs(docs: dict[str, str]) -> list[str]:
     errors: list[str] = []
     required = {
         "README.md": (
-            "Platform verified readiness is still separate and currently reports **100.0% overall**",
+            "**100.0% overall build-contract coverage**",
+            "`runtime_verified: false` and `production_readiness_percent: null`",
             "Android 12 through Android 16 (API 31-36)",
             "iOS/iPadOS 15 through 27.x",
         ),

@@ -75,8 +75,7 @@ def import_profiles_into_store(
 ) -> ProfileImportResult:
     result = import_profiles(path, source_format=source_format)
     target = store or ProfileStore()
-    for profile in result.profiles:
-        target.add(profile, replace=replace)
+    target.add_many(result.profiles, replace=replace)
     return result
 
 

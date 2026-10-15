@@ -200,11 +200,12 @@ EXPECTED_LEGACY_WINDOWS: dict[str, dict[str, Any]] = {
 
 REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
     "README.md": (
-        "Platform verified readiness is still separate and currently reports **100.0% overall**",
+        "**100.0% overall build-contract coverage**",
+        "`runtime_verified: false` and `production_readiness_percent: null`",
         "Windows XP/Vista/7/8 are supported as legacy remote targets, not as first-class",
         "Windows XP x86/x64 remote endpoints use isolated per-profile legacy opt-ins",
         "Linux `i386`/`i686` and `armhf` outputs for matching builders, but those are not uploaded",
-        "manual Linux i386/armhf and legacy Windows rows remain visible outside the verified-readiness denominator",
+        "Manual Linux i386/armhf and legacy Windows rows remain visible",
         "`protected_readiness_goal` metadata block",
         "`not native-host/readiness proof`",
         "`configs/platform_verified_evidence.json`",
@@ -304,8 +305,8 @@ REQUIRED_DOC_SNIPPETS: dict[str, tuple[str, ...]] = {
         "iOS/iPadOS remains Web/PWA-only until there is a real native iOS wrapper.",
     ),
     "docs/FULL_FEATURE_COVERAGE.md": (
-        "Platform verified readiness",
-        "Platform verified readiness remains separate",
+        "Platform build contract coverage",
+        "Platform build contract coverage remains separate",
         "release_asset_provenance_complete=false",
         "record_complete",
         "release_backed_complete",

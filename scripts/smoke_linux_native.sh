@@ -449,8 +449,19 @@ done
 run_row_command() {
   local row_bin="$1"
   local mode="$2"
-  shift 2
-  if [[ "$mode" == "appimage" ]]; then
+  local public_path="$3" phase="$4" probe="$5"
+  shift 5
+  if [[ -n "$BINDING_TARGET" ]]; then
+    python3 scripts/candidate_posix_byte_binding.py check --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+      --path "$row_bin" --public-path "$public_path" --stage "$phase" --probe "$probe" || return $?
+    if [[ "$mode" == "appimage" ]]; then
+      python3 scripts/candidate_posix_byte_binding.py check --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+        --path "$APPIMAGE_LAUNCHER" --public-path appimage/AppRun --stage "$phase" --probe "$probe" --package || return $?
+      "$APPIMAGE_LAUNCHER" "$@"
+    else
+      "$row_bin" "$@"
+    fi
+  elif [[ "$mode" == "appimage" ]]; then
     APPIMAGE_EXTRACT_AND_RUN=1 "$row_bin" "$@"
   else
     "$row_bin" "$@"
@@ -461,9 +472,10 @@ verify_row_runtime_resources() {
   local row_bin="$1"
   local mode="$2"
   local label="$3"
+  local public_path="$4" phase="$5"
   local probe_name="${label//[^[:alnum:]]/-}"
   local probe_file="$SMOKE_ROOT/runtime-resources-${probe_name}.json"
-  if ! run_row_command "$row_bin" "$mode" platforms --json >"$probe_file"; then
+  if ! run_row_command "$row_bin" "$mode" "$public_path" "$phase" platforms platforms --json >"$probe_file"; then
     echo "$label platforms --json failed for $row_bin" >&2
     exit 1
   fi
@@ -492,24 +504,51 @@ verify_row() {
   local row_bin="$1"
   local mode="$2"
   local label="$3"
+  local public_path="$4" phase="$5"
   if [[ ! -x "$row_bin" ]]; then
     echo "expected executable missing: $row_bin" >&2
     exit 1
   fi
-  run_row_command "$row_bin" "$mode" --version | grep -F "$VERSION" >/dev/null
-  verify_row_runtime_resources "$row_bin" "$mode" "$label"
+  run_row_command "$row_bin" "$mode" "$public_path" "$phase" version --version | grep -F "$VERSION" >/dev/null
+  verify_row_runtime_resources "$row_bin" "$mode" "$label" "$public_path" "$phase"
 }
 
 rm -rf "$SMOKE_ROOT"
 mkdir -p "$SMOKE_ROOT/appimage"
 
+# Modern candidate lanes bind every entrypoint. Existing 32-bit legacy smoke
+# retains its separate runtime method and does not claim this byte-binding proof.
+BINDING_TARGET=""
+case "$ARCH" in
+  x86_64) BINDING_TARGET="linux-x86_64" ;;
+  aarch64|arm64) BINDING_TARGET="linux-aarch64" ;;
+esac
+BINDING_REPORT="$SMOKE_ROOT/candidate-runtime-byte-binding.json"
+if [[ -n "$BINDING_TARGET" ]]; then
+  python3 scripts/candidate_posix_byte_binding.py init --target "$BINDING_TARGET" --report "$BINDING_REPORT" --root "$ROOT" --appimage "$APPIMAGE"
+fi
+
+prepare_appimage_probe() {
+  local phase="$1"
+  APPIMAGE_ROW="$STAGED_APPIMAGE"
+  if [[ -n "$BINDING_TARGET" ]]; then
+    python3 scripts/candidate_posix_byte_binding.py check --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+      --path "$STAGED_APPIMAGE" --public-path appimage/runtime.AppImage --stage "$phase" --probe extract --package || return $?
+    local extraction="$SMOKE_ROOT/appimage/$phase"
+    mkdir -p "$extraction"
+    (cd "$extraction" && "$STAGED_APPIMAGE" --appimage-extract >/dev/null) || return $?
+    APPIMAGE_ROW="$extraction/squashfs-root/usr/bin/row"
+    APPIMAGE_LAUNCHER="$extraction/squashfs-root/AppRun"
+  fi
+}
+
 echo "native installer smoke: DEB install"
 sudo -n dpkg -i "$DEB"
 echo "native installer smoke: DEB verify"
-verify_row /usr/bin/row direct "DEB verify"
+verify_row /usr/bin/row direct "DEB verify" deb/usr/bin/row install
 echo "native installer smoke: DEB upgrade"
 sudo -n dpkg -i "$DEB"
-verify_row /usr/bin/row direct "DEB upgrade"
+verify_row /usr/bin/row direct "DEB upgrade" deb/usr/bin/row reinstall
 echo "native installer smoke: DEB uninstall"
 sudo -n dpkg -r remote-ops-workspace
 if [[ -e /usr/bin/row ]]; then
@@ -520,10 +559,10 @@ fi
 echo "native installer smoke: RPM install"
 sudo -n rpm -Uvh --nodeps --replacepkgs "$RPM"
 echo "native installer smoke: RPM verify"
-verify_row /usr/bin/row direct "RPM verify"
+verify_row /usr/bin/row direct "RPM verify" rpm/usr/bin/row install
 echo "native installer smoke: RPM upgrade"
 sudo -n rpm -Uvh --nodeps --replacepkgs "$RPM"
-verify_row /usr/bin/row direct "RPM upgrade"
+verify_row /usr/bin/row direct "RPM upgrade" rpm/usr/bin/row reinstall
 echo "native installer smoke: RPM uninstall"
 sudo -n rpm -e --nodeps remote-ops-workspace
 if [[ -e /usr/bin/row ]]; then
@@ -534,15 +573,23 @@ fi
 echo "native installer smoke: AppImage install"
 install -m 755 "$APPIMAGE" "$STAGED_APPIMAGE"
 echo "native installer smoke: AppImage verify"
-verify_row "$STAGED_APPIMAGE" appimage "AppImage verify"
+prepare_appimage_probe install
+verify_row "$APPIMAGE_ROW" appimage "AppImage verify" appimage/usr/bin/row install
 echo "native installer smoke: AppImage upgrade"
 install -m 755 "$APPIMAGE" "$STAGED_APPIMAGE"
-verify_row "$STAGED_APPIMAGE" appimage "AppImage upgrade"
+prepare_appimage_probe reinstall
+verify_row "$APPIMAGE_ROW" appimage "AppImage upgrade" appimage/usr/bin/row reinstall
 echo "native installer smoke: AppImage uninstall"
 rm -f "$STAGED_APPIMAGE"
+if [[ -n "$BINDING_TARGET" ]]; then
+  rm -rf "$SMOKE_ROOT/appimage/install" "$SMOKE_ROOT/appimage/reinstall"
+fi
 if [[ -e "$STAGED_APPIMAGE" ]]; then
   echo "AppImage uninstall cleanup left staged artifact behind" >&2
   exit 1
 fi
 
+if [[ -n "$BINDING_TARGET" ]]; then
+  python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT"
+fi
 echo "native installer smoke passed for Linux $ARCH"

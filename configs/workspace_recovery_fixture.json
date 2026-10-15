@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "previous_release": {
+    "version": "1.0.24",
+    "filename": "remote_ops_workspace-1.0.24-py3-none-any.whl",
+    "url": "https://github.com/Yunushan/remote-ops-workspace/releases/download/v1.0.24/remote_ops_workspace-1.0.24-py3-none-any.whl",
+    "size": 542385,
+    "sha256": "9fe56c3b4f09365cdc7a21249a41b9b60d5944f2ce0f596f9b45443184db585e",
+    "vault_version": 2
+  },
+  "profiles": [
+    {"name": "recovery-inherited", "protocol": "ssh", "host": "inherited.invalid", "group": "recovery", "credential_ref": "recovery-secret", "options": {"compression": "true"}},
+    {"name": "recovery-explicit", "protocol": "ssh", "host": "explicit.invalid", "group": "recovery", "username": "explicit-user", "port": 2201, "tags": ["recovery"], "description": "offline synthetic recovery fixture"}
+  ],
+  "group_defaults": {"recovery": {"username": "inherited-user", "options": {"x11": "false"}}},
+  "layouts": [
+    {"name": "recovery-layout", "orientation": "horizontal", "description": "offline saved splitter fixture", "panes": [{"profile": "recovery-inherited", "title": "inherited"}, {"profile": "recovery-explicit", "title": "explicit"}], "splitter_sizes": [[300, 700], [125, 375]]}
+  ],
+  "snippets": [
+    {"name": "recovery-snippet", "command": "printf recovery", "description": "saved only; never executed", "tags": ["recovery"]}
+  ],
+  "macros": [
+    {"name": "recovery-macro", "description": "saved only; never replayed", "tags": ["recovery"], "source": "typed-text", "events": [{"index": 1, "text": "printf saved", "enter": true, "delay_ms": 25}, {"index": 2, "text": "exit", "enter": false, "delay_ms": 75}]}
+  ],
+  "browser_preferences": {"location": "below-terminal", "column_widths": {"name": 247, "size": 96, "modified": 134}, "overwrite_confirmation": true, "updated_at": "2026-09-04T00:00:00+00:00"},
+  "opaque_files": {"plugins/unrecognized/state.json": "{\"plugin_schema\":9,\"opaque\":[\"retained\",17]}\n", "plugins/unrecognized/cache.dat": "opaque-plugin-state\u0000\u00ff", "plugins/unrecognized/.plugin.lock": "persistent-opaque-plugin-lock\u0000", "plugins/unrecognized/.profiles.json.lock": "nested-known-basename-is-plugin-state\u0000"},
+  "empty_directories": ["plugins/unrecognized/empty"]
+}

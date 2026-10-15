@@ -8,7 +8,6 @@ import os
 import platform
 import re
 import shutil
-import signal
 import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -19,7 +18,15 @@ from typing import Any
 from . import command_safety as safe
 from .file_safety import write_json_atomic
 from .paths import ensure_data_dir
-from .process_launch import popen_hidden, run_hidden
+from .process_launch import popen_hidden
+from .process_status import (
+    process_is_running,
+    recorded_process_is_running,
+    register_process,
+    terminate_owned_process,
+    terminate_recorded_process,
+)
+from .state_lock import DEFAULT_LOCK_TIMEOUT_SECONDS, exclusive_file_lock
 
 WhichResolver = Callable[[str], str | None]
 PidProbe = Callable[[int], bool]
@@ -354,6 +361,7 @@ class MobaEmbeddedServerLifecycleRecord:
     dry_run: bool = False
     state_path: str = ""
     running: bool = False
+    process_identity: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(
@@ -378,6 +386,7 @@ class MobaEmbeddedServerLifecycleRecord:
             dry_run=bool(data.get("dry_run", False)),
             state_path=str(state_path or data.get("state_path") or ""),
             running=bool(running) if running is not None else bool(data.get("running", False)),
+            process_identity=_record_process_identity(data),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -394,6 +403,7 @@ class MobaEmbeddedServerLifecycleRecord:
             "dry_run": self.dry_run,
             "state_path": self.state_path,
             "running": self.running,
+            "process_identity": self.process_identity,
         }
 
 
@@ -678,12 +688,19 @@ def build_moba_server_plan(
     system: str | None = None,
     which: WhichResolver = shutil.which,
     packaged_roots: Iterable[Path] | None = None,
+    require_tls: bool = False,
+    hardening_profile: str = "loopback-private",
 ) -> MobaEmbeddedServerPlan:
     service_key = _service_key(service)
     system_key = safe.option_value(system or platform.system(), "system").lower()
     host = validate_server_bind(host, allow_public_bind=allow_public_bind)
     resolved_port = safe.port(port or SERVER_DEFAULT_PORTS[service_key], "server port")
     resolved_root = _resolve_root(service_key, root)
+    config = build_moba_server_config_plan(
+        service_key, host=host, port=resolved_port, root=resolved_root,
+        hardening_profile=hardening_profile, require_tls=require_tls,
+        allow_public_bind=allow_public_bind,
+    )
     runtimes = discover_moba_server_runtimes(
         service_key,
         system=system_key,
@@ -693,6 +710,14 @@ def build_moba_server_plan(
     runtime = _select_runtime(runtimes)
     command = _runtime_command(runtime, host, resolved_port, resolved_root)
     notes = _plan_notes(service_key, runtime, host, resolved_root)
+    environment = {"ROW_SERVER_SERVICE": service_key}
+    environment["ROW_SERVER_AUTH_REQUIRED"] = "1" if config.auth_required else "0"
+    environment["ROW_SERVER_TLS_REQUIRED"] = "1" if config.tls_required else "0"
+    if service_key == "ftp":
+        environment["ROW_FTP_TLS_REQUIRED"] = "1" if config.tls_required or not _is_loopback_host(host.lower()) else "0"
+        notes.append("FTP requires ROW_FTP_USERNAME and ROW_FTP_PASSWORD; no anonymous account is created. Public binds require TLS certificate/key files.")
+    if runtime.key in {"ftpd", "telnetd", "nfsd"}:
+        notes.append("This daemon cannot enforce the selected bind/authentication policy through its portable adapter; managed start is refused. Use the generated host-managed configuration and verify its listeners before use.")
     return MobaEmbeddedServerPlan(
         service=service_key,
         label=_service_label(service_key),
@@ -701,7 +726,7 @@ def build_moba_server_plan(
         root=str(resolved_root) if resolved_root else "",
         command=command,
         runtime=runtime,
-        environment={"ROW_SERVER_SERVICE": service_key},
+        environment=environment,
         public_bind=not _is_loopback_host(host.lower()),
         notes=notes,
     )
@@ -750,9 +775,26 @@ def build_moba_server_config_plan(
     if public_bind:
         notes.append("Public bind is active; use only on trusted networks and pair with authentication.")
     if profile == "strict-private":
+        if public_bind:
+            raise ValueError("strict-private hardening requires a loopback bind host")
         settings["network"]["public_bind_allowed"] = False
         settings["auth"]["required"] = True
         notes.append("Strict-private hardening forces authentication and loopback-only network exposure.")
+    if service_key == "ftp":
+        settings["auth"] = {
+            "required": True, "source": "ROW_FTP_USERNAME/ROW_FTP_PASSWORD environment",
+            "passwords_in_config": False, "anonymous": False,
+        }
+        settings["transport"]["tls_required"] = bool(require_tls or public_bind)
+        settings["transport"]["certificate_env"] = "ROW_FTP_TLS_CERT"
+        settings["transport"]["private_key_env"] = "ROW_FTP_TLS_KEY"
+    if service_key in {"telnet", "nfs"}:
+        settings["execution"] = {
+            "mode": "host-managed", "managed_start_supported": False,
+            "reason": "portable daemon adapter cannot enforce listener binding and system authentication",
+        }
+        settings["host_config"] = _host_managed_config(service_key, bind_host, resolved_port)
+        notes.append("Generated host-managed settings require an administrator to apply them and verify all auxiliary listeners; ROW does not claim managed lifecycle control.")
     return MobaEmbeddedServerConfigPlan(
         schema=SERVER_POLICY_SCHEMA,
         service=service_key,
@@ -761,7 +803,7 @@ def build_moba_server_config_plan(
         root=str(resolved_root) if resolved_root else "",
         hardening_profile=profile,
         auth_required=bool(settings["auth"]["required"]),
-        tls_required=bool(require_tls),
+        tls_required=bool(settings["transport"]["tls_required"]),
         public_bind_allowed=bool(allow_public_bind),
         settings=settings,
         notes=notes,
@@ -930,7 +972,11 @@ def start_moba_server(
     dry_run: bool = False,
     state_dir: Path | None = None,
     popen_factory: Callable[..., Any] | None = None,
+    identity_factory: Callable[[Any], dict[str, Any]] | None = None,
+    lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
 ) -> MobaEmbeddedServerLifecycleRecord:
+    if plan.runtime.key in {"ftpd", "telnetd", "nfsd"}:
+        raise ValueError("managed start refused: this daemon cannot enforce the configured bind/authentication policy; use servers config-plan for host-managed settings")
     safe.argv_list(plan.command, "embedded server command")
     target_state_path = moba_server_state_path(plan.service, state_dir=state_dir)
     if dry_run:
@@ -946,21 +992,56 @@ def start_moba_server(
         )
     if not plan.runtime.available:
         raise ValueError(f"embedded server runtime is not available: {plan.runtime.label}")
+    if plan.service == "ftp":
+        from .embedded_ftp import validate_ftp_environment
+
+        validate_ftp_environment({**os.environ, **plan.environment})
+        if importlib.util.find_spec("pyftpdlib") is None:
+            raise ValueError("authenticated FTP requires pyftpdlib in the ROW Python runtime; an external anonymous CLI is not sufficient")
+        if plan.environment.get("ROW_FTP_TLS_REQUIRED") == "1" and importlib.util.find_spec("OpenSSL") is None:
+            raise ValueError("FTPS requires pyOpenSSL in the ROW Python runtime")
+    if plan.environment.get("ROW_SERVER_TLS_REQUIRED") == "1" and plan.service != "ftp":
+        raise ValueError("the selected server adapter cannot enforce the required TLS transport; use a host-managed TLS service")
+    if plan.environment.get("ROW_SERVER_AUTH_REQUIRED") == "1" and plan.service in {"http", "tftp"}:
+        raise ValueError("the selected server adapter cannot enforce required authentication; use a host-managed authenticated service")
+    if plan.service == "vnc":
+        password_file = plan.command[-1] if "-rfbauth" in plan.command else ""
+        if plan.runtime.key != "x11vnc" or not password_file or not Path(password_file).is_file():
+            raise ValueError("managed VNC requires x11vnc and an existing ROW_VNC_PASSWORD_FILE (created with x11vnc -storepasswd)")
+    with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
+        _require_replaceable_server_record(plan.service, state_dir)
+        return _start_moba_server_locked(plan, target_state_path, popen_factory, identity_factory)
+
+
+def _start_moba_server_locked(
+    plan: MobaEmbeddedServerPlan,
+    target_state_path: Path,
+    popen_factory: Callable[..., Any] | None,
+    identity_factory: Callable[[Any], dict[str, Any]] | None,
+) -> MobaEmbeddedServerLifecycleRecord:
     factory = popen_hidden if popen_factory is None else popen_factory
     process = factory(plan.command, env={**os.environ, **plan.environment})
-    record = MobaEmbeddedServerLifecycleRecord(
-        service=plan.service,
-        host=plan.host,
-        port=plan.port,
-        runtime_key=plan.runtime.key,
-        command=plan.command,
-        state="started",
-        pid=int(process.pid),
-        started_at=_now(),
-        state_path=str(target_state_path),
-        running=True,
-    )
-    write_json_atomic(target_state_path, record.to_dict(), private=True)
+    try:
+        identity = (identity_factory or register_process)(process)
+        if process.poll() is not None:
+            raise ProcessLookupError("managed embedded server exited before its lifecycle state could be saved")
+        record = MobaEmbeddedServerLifecycleRecord(
+            service=plan.service,
+            host=plan.host,
+            port=plan.port,
+            runtime_key=plan.runtime.key,
+            command=plan.command,
+            state="started",
+            pid=int(process.pid),
+            started_at=_now(),
+            state_path=str(target_state_path),
+            running=True,
+            process_identity=identity,
+        )
+        write_json_atomic(target_state_path, record.to_dict(), private=True)
+    except BaseException:
+        terminate_owned_process(process)
+        raise
     return record
 
 
@@ -970,14 +1051,31 @@ def stop_moba_server(
     state_dir: Path | None = None,
     pid_probe: PidProbe | None = None,
     terminator: ProcessTerminator | None = None,
+    lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
 ) -> MobaEmbeddedServerLifecycleRecord:
     service_key = _service_key(service)
     target_state_path = moba_server_state_path(service_key, state_dir=state_dir)
+    with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
+        return _stop_moba_server_locked(service_key, target_state_path, state_dir, pid_probe, terminator)
+
+
+def _stop_moba_server_locked(
+    service_key: str,
+    target_state_path: Path,
+    state_dir: Path | None,
+    pid_probe: PidProbe | None,
+    terminator: ProcessTerminator | None,
+) -> MobaEmbeddedServerLifecycleRecord:
     record = load_moba_server_record(service_key, state_dir=state_dir, pid_probe=pid_probe)
     if record is None:
         raise ValueError(f"no managed embedded server state found at {target_state_path}")
-    if record.pid and record.running:
-        (terminator or _terminate_pid)(record.pid)
+    if terminator is not None:
+        if record.pid is not None and record.running:
+            terminator(record.pid)
+    elif record.pid is not None:
+        terminate_recorded_process(record.pid, record.process_identity)
+    elif record.state != "stopped":
+        raise ValueError("managed embedded server state has no verifiable process; inspect the host process and recover its lifecycle state")
     stopped = MobaEmbeddedServerLifecycleRecord(
         service=record.service,
         host=record.host,
@@ -985,14 +1083,31 @@ def stop_moba_server(
         runtime_key=record.runtime_key,
         command=record.command,
         state="stopped",
-        pid=record.pid,
+        pid=None,
         started_at=record.started_at,
         stopped_at=_now(),
         state_path=str(target_state_path),
         running=False,
+        process_identity=record.process_identity,
     )
     write_json_atomic(target_state_path, stopped.to_dict(), private=True)
     return stopped
+
+
+def _require_replaceable_server_record(service: str, state_dir: Path | None) -> None:
+    record = load_moba_server_record(service, state_dir=state_dir)
+    if record is None:
+        return
+    stored = json.loads(Path(record.state_path).read_text(encoding="utf-8"))
+    if record.state not in {"started", "stopped"} or record.dry_run:
+        raise ValueError("managed embedded server state is active or ambiguous; stop or recover it before starting again")
+    if record.pid is None:
+        if record.state == "stopped" and stored.get("running", False) is False:
+            return
+        raise ValueError("managed embedded server state is active or ambiguous; stop or recover it before starting again")
+    if recorded_process_is_running(record.pid, record.process_identity):
+        raise ValueError("managed embedded server is already running; stop it before starting again")
+    terminate_recorded_process(record.pid, record.process_identity)
 
 
 def load_moba_server_record(
@@ -1008,9 +1123,11 @@ def load_moba_server_record(
     data = json.loads(target_state_path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"embedded server state must be a JSON object: {target_state_path}")
-    probe = pid_probe or _pid_running
     pid_value = data.get("pid")
-    running = pid_value not in (None, "") and probe(int(str(pid_value)))
+    running = False
+    if pid_value not in (None, "") and str(data.get("state", "")) == "started":
+        pid = int(str(pid_value))
+        running = pid_probe(pid) if pid_probe is not None else recorded_process_is_running(pid, _record_process_identity(data))
     return MobaEmbeddedServerLifecycleRecord.from_dict(data, state_path=target_state_path, running=running)
 
 
@@ -1052,12 +1169,18 @@ def _service_status(
     notes = list(runtime.notes)
     if not runtime.available:
         notes.append("Install or bundle a compatible daemon before starting this service.")
+    startable = runtime.available and runtime.key not in {"ftpd", "telnetd", "nfsd"}
+    if service == "vnc":
+        password_file = os.environ.get("ROW_VNC_PASSWORD_FILE") or ""
+        startable = startable and runtime.key == "x11vnc" and bool(password_file) and Path(password_file).is_file()
+        if not startable:
+            notes.append("Managed VNC requires x11vnc and an existing ROW_VNC_PASSWORD_FILE created with x11vnc -storepasswd.")
     return MobaEmbeddedServerServiceStatus(
         key=service,
         label=_service_label(service),
         default_port=SERVER_DEFAULT_PORTS[service],
         available=runtime.available,
-        startable=runtime.available,
+        startable=startable,
         selected_runtime=runtime.key,
         runtimes=runtimes,
         lifecycle=lifecycle,
@@ -1263,9 +1386,9 @@ def _runtime_command(
     if runtime.key == "pyftpdlib":
         if root is None:
             raise ValueError("ftp server requires a root directory")
-        if Path(executable).name.lower().startswith("python"):
-            return [executable, "-m", "pyftpdlib", "-i", host, "-p", str(port), "-d", str(root)]
-        return [executable, "-i", host, "-p", str(port), "-d", str(root)]
+        # The upstream CLI defaults to anonymous access and accepts passwords
+        # in argv. Our runner requires credentials from the child environment.
+        return [*_ftp_runner_command(), "--host", host, "--port", str(port), "--root", str(root)]
     if runtime.key == "ftpd":
         if root is None:
             raise ValueError("ftp server requires a root directory")
@@ -1275,18 +1398,56 @@ def _runtime_command(
             raise ValueError("tftp server requires a root directory")
         return [executable, "--foreground", "--address", f"{host}:{port}", str(root)]
     if runtime.key == "sshd":
-        return [executable, "-D", "-p", str(port), "-o", f"ListenAddress={host}"]
+        return [executable, "-D", "-p", str(port), "-o", f"ListenAddress={host}", "-o", "PermitEmptyPasswords=no", "-o", "PermitRootLogin=no"]
     if runtime.key == "sshd-sftp":
-        return [executable, "-D", "-p", str(port), "-o", f"ListenAddress={host}", "-o", "Subsystem=sftp internal-sftp"]
+        return [executable, "-D", "-p", str(port), "-o", f"ListenAddress={host}", "-o", "Subsystem=sftp internal-sftp", "-o", "PermitEmptyPasswords=no", "-o", "PermitRootLogin=no"]
     if runtime.key == "telnetd":
-        return [executable, "-debug", str(port)]
+        return []
     if runtime.key == "x11vnc":
-        return [executable, "-listen", host, "-rfbport", str(port), "-forever"]
+        password_file = os.environ.get("ROW_VNC_PASSWORD_FILE") or "<ROW_VNC_PASSWORD_FILE>"
+        return [executable, "-listen", host, "-rfbport", str(port), "-forever", "-rfbauth", password_file]
     if runtime.key == "vncserver":
         return [executable, "-rfbport", str(port), "-localhost", "yes" if _is_loopback_host(host.lower()) else "no"]
     if runtime.key == "nfsd":
-        return [executable, "-F"]
+        return []
     raise ValueError(f"unsupported embedded server runtime: {runtime.key}")
+
+
+def _ftp_runner_command() -> list[str]:
+    if not getattr(sys, "frozen", False):
+        return [sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]
+    executable = Path(sys.executable)
+    # The macOS app launcher already delegates all supplied arguments to the
+    # CLI, whereas Windows has separate GUI and console entry points.
+    if platform.system().lower() == "darwin" and executable.is_file():
+        return [str(executable), "servers", "_ftp-runtime"]
+    name = "row.exe" if os.name == "nt" else "row"
+    candidates = (executable.with_name(name), executable.parent / "bin" / name)
+    for candidate in candidates:
+        if candidate.is_file():
+            return [str(candidate), "servers", "_ftp-runtime"]
+    raise ValueError("native authenticated FTP requires the packaged row CLI helper alongside the GUI")
+
+
+def _host_managed_config(service: str, host: str, port: int) -> dict[str, Any]:
+    """Concrete administrator settings, separate from managed process claims."""
+    if service == "telnet":
+        return {
+            "implementation": "xinetd", "service": {
+                "type": "UNLISTED", "socket_type": "stream", "protocol": "tcp",
+                "wait": "no", "user": "root", "server": "/usr/sbin/in.telnetd",
+                "bind": host, "port": port,
+                "only_from": "127.0.0.0/8 ::1" if _is_loopback_host(host.lower()) else "ADMINISTRATOR_CLIENT_ALLOWLIST_REQUIRED",
+                "disable": "yes",
+            },
+            "requirements": ["administrator-approved patched telnetd", "system PAM/login authentication", "explicit insecure-protocol approval", "verify effective listener and client allowlist before enabling"],
+        }
+    return {
+        "implementation": "Linux nfs-utils", "nfs.conf": {
+            "nfsd": {"host": host, "port": port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y", "rdma": "n"},
+        },
+        "requirements": ["administrator-approved exports with explicit client and sec=krb5p policy", "stop existing nfsd before applying listener changes", "verify mountd/rpcbind/lockd auxiliary listeners and firewall", "verify effective server configuration after restart"],
+    }
 
 
 def _hardening_profile(value: str) -> str:
@@ -1494,18 +1655,14 @@ def _is_loopback_host(host: str) -> bool:
 def _pid_running(pid: int) -> bool:
     if pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
+    return process_is_running(pid)
 
 
-def _terminate_pid(pid: int) -> None:
-    if platform.system().lower() == "windows":
-        run_hidden(["taskkill", "/PID", str(pid), "/T"], check=False, capture_output=True, text=True)
-        return
-    os.kill(pid, signal.SIGTERM)
+def _record_process_identity(data: dict[str, Any]) -> dict[str, Any] | None:
+    identity = data.get("process_identity")
+    if identity is not None and not isinstance(identity, dict):
+        raise ValueError("managed embedded server process_identity must be a JSON object")
+    return identity
 
 
 def _now() -> str:

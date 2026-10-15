@@ -391,6 +391,12 @@ def check_policy(
                 target,
                 raw_path,
                 allow_matrix_lock=matrix_arch is not None,
+                bootstrap_lock_path=(
+                    matrix_row_lock(job_block, matrix_arch, "bootstrap_lock")
+                    if matrix_arch is not None
+                    else None
+                ),
+                lock_root=policy_root,
             )
         )
     verifier = policy.get("verifier_bootstrap")
@@ -1326,6 +1332,15 @@ def read_fully_hashed_lock(
     record: dict[str, Any],
     label: str,
 ) -> tuple[dict[str, str], list[str]]:
+    entries, errors = read_hashed_lock_entries(evidence_root, record, label)
+    return {name: version for name, (version, _) in entries.items()}, errors
+
+
+def read_hashed_lock_entries(
+    evidence_root: Path,
+    record: dict[str, Any],
+    label: str,
+) -> tuple[dict[str, tuple[str, set[str]]], list[str]]:
     raw_file = record.get("file")
     assert isinstance(raw_file, str)
     path, path_error = secure_regular_file(evidence_root, raw_file, label)
@@ -1350,25 +1365,46 @@ def read_fully_hashed_lock(
         current = ""
     if current:
         logical.append(current)
-    versions: dict[str, str] = {}
+    entries: dict[str, tuple[str, set[str]]] = {}
     errors: list[str] = []
     for index, line in enumerate(logical):
         if line.startswith("--"):
+            errors.append(f"{label} contains a resolver directive rather than a locked requirement")
             continue
-        match = re.match(r"^([A-Za-z0-9_.-]+)==([^\s;]+)", line)
+        match = re.fullmatch(
+            r"([A-Za-z0-9_.-]+)==([^\s;]+)(?:\s+--hash=sha256:[0-9a-f]{64})+", line
+        )
         hashes = re.findall(r"--hash=sha256:([0-9a-f]{64})(?:\s|$)", line)
         if match is None or not hashes:
             errors.append(f"{label} requirement {index} is not exact and SHA-256 hashed")
             continue
         name = normalize_component_name(match.group(1))
         version = match.group(2)
-        if name in versions:
+        if name in entries:
             errors.append(f"{label} contains duplicate distribution {match.group(1)!r}")
             continue
-        versions[name] = version
-    if not versions:
+        entries[name] = (version, set(hashes))
+    if not entries:
         errors.append(f"{label} contains no exact hashed requirements")
-    return versions, errors
+    return entries, errors
+
+
+def check_bootstrap_lock_subset(root: Path, final_lock: str, bootstrap_lock: str) -> list[str]:
+    errors: list[str] = []
+    for path in (final_lock, bootstrap_lock):
+        if not safe_relative_path(path):
+            return ["release bootstrap lock has an unsafe path"]
+    final, final_errors = read_hashed_lock_entries(root, {"file": final_lock}, "release final lock")
+    bootstrap, bootstrap_errors = read_hashed_lock_entries(
+        root, {"file": bootstrap_lock}, "release bootstrap lock"
+    )
+    errors.extend(final_errors)
+    errors.extend(bootstrap_errors)
+    for name, (version, hashes) in bootstrap.items():
+        pinned = final.get(name)
+        if pinned is None or pinned[0] != version or not hashes <= pinned[1]:
+            errors.append(f"release bootstrap dependency {name} is not an exact version/hash subset of {final_lock}")
+    return errors
 
 
 def license_record_key(record: dict[str, Any]) -> tuple[Any, Any, Any]:
@@ -1427,17 +1463,22 @@ def producer_for_target(
 
 
 def matrix_row_binds_lock(job_block: str, arch: str, lock_path: str) -> bool:
+    return matrix_row_lock(job_block, arch, "lock") == lock_path
+
+
+def matrix_row_lock(job_block: str, arch: str, key: str) -> str | None:
     rows = re.findall(
         rf"(?ms)^\s{{10}}-\s+arch:\s*['\"]?{re.escape(arch)}['\"]?\s*$"
         rf"(.*?)(?=^\s{{10}}-\s+arch:|^\s{{4}}[A-Za-z0-9_-]+:|\Z)",
         job_block,
     )
     if len(rows) != 1:
-        return False
-    return re.search(
-        rf"(?m)^\s+lock:\s*['\"]?{re.escape(lock_path)}['\"]?\s*$",
+        return None
+    match = re.search(
+        rf"(?m)^\s+{re.escape(key)}:\s*['\"]?([^\s'\"]+)['\"]?\s*$",
         rows[0],
-    ) is not None
+    )
+    return match.group(1) if match is not None else None
 
 
 def xp_target_step_binds_lock(job_block: str, target: str, lock_path: str) -> bool:
@@ -1462,6 +1503,8 @@ def check_native_job_lock_usage(
     lock_path: str,
     *,
     allow_matrix_lock: bool = False,
+    bootstrap_lock_path: str | None = None,
+    lock_root: Path = ROOT,
 ) -> list[str]:
     errors: list[str] = []
     commands = executable_run_commands(job_block)
@@ -1471,6 +1514,16 @@ def check_native_job_lock_usage(
         if re.match(r"^(?:python|python3)\s+-m\s+pip\s+install(?:\s|$)", command)
     ]
     lock_tokens = (lock_path, "${{ matrix.lock }}") if allow_matrix_lock else (lock_path,)
+    bootstrap_tokens: tuple[str, ...] = ()
+    if bootstrap_lock_path is not None:
+        bootstrap_errors = check_bootstrap_lock_subset(lock_root, lock_path, bootstrap_lock_path)
+        errors.extend(bootstrap_errors)
+        if not bootstrap_errors:
+            bootstrap_tokens = (
+                (bootstrap_lock_path, "${{ matrix.bootstrap_lock }}")
+                if allow_matrix_lock
+                else (bootstrap_lock_path,)
+            )
     lock_indexes = [
         index
         for index, command in pip_commands
@@ -1494,7 +1547,7 @@ def check_native_job_lock_usage(
     for _, command in pip_commands:
         uses_lock = (
             "--require-hashes" in command
-            and any(token in command for token in lock_tokens)
+            and any(token in command for token in (*lock_tokens, *bootstrap_tokens))
             and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
         )
         if "--no-deps" not in command and not uses_lock:
@@ -1515,6 +1568,8 @@ def check_native_job_lock_usage(
                 f"release workflow {job} project/extras install must use --no-deps after "
                 f"the {target} lock"
             )
+        if "--no-build-isolation" not in command:
+            errors.append(f"release workflow {job} project install must disable isolated backend resolution")
         if not lock_indexes or index <= max(lock_indexes):
             errors.append(
                 f"release workflow {job} project/extras install must occur after the "

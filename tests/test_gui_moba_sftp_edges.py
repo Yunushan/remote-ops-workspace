@@ -154,7 +154,7 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
     from PyQt6.QtGui import QMouseEvent
     from PyQt6.QtWidgets import QLabel
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_connected
 
     _app, window, _panel, dock, _profile = connected_workspace
     runtime_calls: list[tuple[bool, bool]] = []
@@ -175,7 +175,7 @@ def test_monitoring_stale_completion_and_absent_sftp_status_widgets(
 
     snapshot = object()
     monkeypatch.setattr(dock, "remote_monitoring_request_is_current", lambda: True)
-    monkeypatch.setattr(gui, "parse_remote_monitoring_output", lambda _output: snapshot)
+    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: snapshot)
     monkeypatch.setattr(dock, "apply_live_remote_monitoring_snapshot", lambda value: value is snapshot)
     original_last_refresh_label = dock.monitoring_last_refresh_label
     dock.monitoring_last_refresh_label = None
@@ -681,7 +681,7 @@ def test_sftp_navigation_widget_contract_and_reconnect_guards(
 ) -> None:
     from PyQt6.QtWidgets import QWidget
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_connected
 
     app, window, _panel, dock, profile = connected_workspace
     original_browser = dock.browser
@@ -689,7 +689,7 @@ def test_sftp_navigation_widget_contract_and_reconnect_guards(
     original_queue = dock.sftp_transfer_queue
     _set_checked(dock.monitoring_control_widgets["follow-terminal-folder"], False)
 
-    monkeypatch.setattr(gui, "normalise_remote_path", lambda _path: "relative/path")
+    monkeypatch.setattr(gui_connected, "normalise_remote_path", lambda _path: "relative/path")
     dock.browser = None
     assert dock.navigate_moba_sftp_path("relative/path") is True
     assert dock.active_remote_path == "/relative/path"
@@ -742,7 +742,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
 ) -> None:
     from PyQt6.QtCore import QProcess
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_connected
 
     _app, window, panel, dock, _profile = connected_workspace
     control = dock.monitoring_control_widgets["remote-monitoring"]
@@ -797,7 +797,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
 
     retries: list[str] = []
     dock.schedule_background_auth_retry = lambda: retries.append("retry")
-    monkeypatch.setattr(gui, "parse_remote_monitoring_output", lambda _output: None)
+    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: None)
     dock.shared_ssh_control_path = lambda: ""
     process.output = b"Permission denied (password).\n"
     dock.monitoring_output_buffer.clear()
@@ -812,7 +812,7 @@ def test_monitoring_refresh_generation_and_snapshot_edges(
     assert retries == ["retry", "retry"]
 
     snapshot = dock.state.monitoring
-    monkeypatch.setattr(gui, "parse_remote_monitoring_output", lambda _output: snapshot)
+    monkeypatch.setattr(gui_connected, "parse_remote_monitoring_output", lambda _output: snapshot)
     dock.apply_live_remote_monitoring_snapshot = lambda _snapshot: False
     process.output = b"valid"
     dock.monitoring_output_buffer.clear()
@@ -953,7 +953,7 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
     from PyQt6.QtCore import QPoint, QProcess
     from PyQt6.QtWidgets import QTreeWidgetItem
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui, gui_connected
     from remote_ops_workspace.gui_designs import (
         gui_design_moba_monitoring_metrics,
         gui_design_moba_sftp_routed_file_rows,
@@ -1064,7 +1064,7 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
         display_text="missing",
         label="Missing",
     )
-    monkeypatch.setattr(gui, "moba_telemetry_cells", lambda _state: [missing_cell])
+    monkeypatch.setattr(gui_connected, "moba_telemetry_cells", lambda _state: [missing_cell])
     window.tabs.setCurrentWidget(panel)
     assert dock.apply_live_remote_monitoring_snapshot(dock.state.monitoring) is True
 
@@ -1151,7 +1151,7 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
     dock.sftp_action_buttons = {}
     operational = next(
         action.key
-        for action in gui.gui_design_moba_sftp_dock_actions()
+        for action in gui_connected.gui_design_moba_sftp_dock_actions()
         if action.key in dock.OPERATIONAL_ACTIONS
     )
     monkeypatch.setattr(dock, "dispatch_moba_sftp_toolbar_action", lambda _key: False)
@@ -1171,7 +1171,7 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     from PyQt6.QtCore import QProcess
     from PyQt6.QtWidgets import QDialog, QFileDialog
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_connected
 
     app, window, _panel, dock, profile = connected_workspace
     process = _FakeProcess()
@@ -1196,15 +1196,15 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     assert "profile was not found" in window.statusBar().currentMessage()
 
     dock.profile_for_sftp_action = lambda: profile
-    real_builder = gui.build_sftp_list_plan
+    real_builder = gui_connected.build_sftp_list_plan
     monkeypatch.setattr(
-        gui,
+        gui_connected,
         "build_sftp_list_plan",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad listing")),
     )
     dock.request_sftp_refresh()
     assert "bad listing" in window.statusBar().currentMessage()
-    monkeypatch.setattr(gui, "build_sftp_list_plan", real_builder)
+    monkeypatch.setattr(gui_connected, "build_sftp_list_plan", real_builder)
 
     dock.shared_ssh_control_path = lambda: ""
     dock.request_sftp_refresh(reason="manual")
@@ -1257,7 +1257,7 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     assert "Waiting for terminal SSH authentication" in window.statusBar().currentMessage()
 
     applied: list[tuple[list[object], str]] = []
-    monkeypatch.setattr(gui, "parse_sftp_ls_output", lambda _output: [])
+    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", lambda _output: [])
     dock.filtered_sftp_entries = lambda entries: list(entries)
     dock.apply_live_sftp_entries = (
         lambda entries, *, request_path, plan: applied.append(
@@ -1417,7 +1417,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QMessageBox, QTreeWidgetItem
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_connected
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
     _app, _window, _panel, dock, profile = connected_workspace
@@ -1428,7 +1428,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
         local_path=cache_path,
     )
     monkeypatch.setattr(
-        gui,
+        gui_connected,
         "build_moba_text_editor_tab_plan",
         lambda *_args, **_kwargs: plan,
     )
@@ -2293,7 +2293,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     from PyQt6.QtGui import QKeyEvent
     from PyQt6.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_connected
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
     app, window, panel, dock, profile = connected_workspace
@@ -2376,11 +2376,11 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     def reject_plan(*_args, **_kwargs):
         raise ValueError("invalid editor plan")
 
-    monkeypatch.setattr(gui, "build_moba_text_editor_tab_plan", reject_plan)
+    monkeypatch.setattr(gui_connected, "build_moba_text_editor_tab_plan", reject_plan)
     dock.handle_moba_text_editor_open_from_item(item, 0)
     assert "invalid editor plan" in window.statusBar().currentMessage()
 
-    monkeypatch.setattr(gui, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(gui_connected, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: plan)
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
     started: list[str] = []
     monkeypatch.setattr(
@@ -2421,7 +2421,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: False)
     dock.handle_moba_text_editor_save()
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
-    monkeypatch.setattr(gui, "build_sftp_get_plan", reject_plan)
+    monkeypatch.setattr(gui_connected, "build_sftp_get_plan", reject_plan)
     dock.handle_moba_text_editor_save()
     editor.setProperty("mobaTextEditorContentLoaded", False)
     dock.handle_moba_text_editor_diff()
@@ -2439,7 +2439,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     from PyQt6.QtCore import QProcess
     from PyQt6.QtWidgets import QMessageBox
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_connected
     from remote_ops_workspace.file_transfer import build_sftp_get_plan
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
@@ -2671,7 +2671,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
         lambda _self: QMessageBox.StandardButton.Yes,
     )
     monkeypatch.setattr(
-        gui,
+        gui_connected,
         "write_text_document",
         lambda *_args, **_kwargs: SimpleNamespace(new_sha256="new-cache-digest"),
     )
@@ -2694,7 +2694,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     def reject_cache(*_args, **_kwargs):
         raise OSError("cache unavailable")
 
-    monkeypatch.setattr(gui, "write_text_document", reject_cache)
+    monkeypatch.setattr(gui_connected, "write_text_document", reject_cache)
     real_finish_text_editor_save_check(dock)
     assert dock.text_editor.property("mobaTextEditorStatus") == "error"
 
@@ -2703,7 +2703,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     dock.text_editor_probe_path = str(no_plan_probe)
     dock.text_editor_original_remote_sha256 = digest
     monkeypatch.setattr(
-        gui,
+        gui_connected,
         "write_text_document",
         lambda *_args, **_kwargs: SimpleNamespace(new_sha256="updated-cache-digest"),
     )

@@ -1,0 +1,22 @@
+{
+  "schema": "row.update-trust-policy.v1",
+  "enabled": false,
+  "manifest_url": "",
+  "public_key": "",
+  "organization": "",
+  "channel": "",
+  "selected_target": "",
+  "approved_targets": [],
+  "allowed_origins": [],
+  "limits": {
+    "manifest_bytes": 1048576,
+    "asset_bytes": 268435456,
+    "total_asset_bytes": 536870912,
+    "asset_count": 64,
+    "http_timeout_seconds": 20,
+    "operation_timeout_seconds": 900,
+    "redirects": 0,
+    "maximum_age_seconds": 604800,
+    "future_skew_seconds": 300
+  }
+}

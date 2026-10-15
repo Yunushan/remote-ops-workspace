@@ -21,14 +21,27 @@
   <main class="layout">
     <section class="card">
       <h2>Profiles</h2>
+      <p id="catalogue-status" role="status" aria-live="polite">Demo mode: profiles stay in this tab.</p>
+      <form id="catalogue-form" method="post" autocomplete="off">
+        <label for="catalogue-token">Local catalogue API token</label>
+        <input id="catalogue-token" type="password" autocomplete="off" spellcheck="false" maxlength="256" aria-describedby="catalogue-help" required>
+        <button type="submit">Connect local catalogue</button>
+      </form>
+      <p id="catalogue-help" class="helper">Optional loopback catalogue. The token stays in page memory and is cleared on disconnect or leaving this page. Profiles are metadata; this page does not open remote sessions.</p>
+      <div class="toolbar">
+        <button id="catalogue-refresh" type="button" disabled>Refresh catalogue</button>
+        <button id="catalogue-disconnect" type="button" disabled>Disconnect catalogue</button>
+        <button id="catalogue-demo" type="button">Use demo mode</button>
+      </div>
       <form id="profile-form">
         <input name="name" placeholder="name" required>
         <select name="protocol">
           <option>ssh</option><option>rdp</option><option>vnc</option><option>sftp</option><option>mosh</option><option>telnet</option><option>https</option><option>serial</option>
         </select>
         <input name="target" placeholder="host, URL or device path" required>
-        <button type="submit">Add demo profile</button>
+        <button id="profile-submit" type="submit">Add demo profile</button>
       </form>
+      <p id="profile-status" role="status" aria-live="polite"></p>
       <ul id="profiles"></ul>
     </section>
 

@@ -1,0 +1,13 @@
+{
+  "schema": "row.cft-provider-policy.v1",
+  "enabled": false,
+  "version": "154.0.8037.92",
+  "platform": "linux64",
+  "metadata_url": "https://googlechromelabs.github.io/chrome-for-testing/154.0.8037.92.json",
+  "metadata": null,
+  "archives": {"chrome": null, "chromedriver": null},
+  "origin_evidence": "certificate-and-hostname-verified-official-HTTPS",
+  "independent_vendor_signature": false,
+  "publisher_license_approval": false,
+  "sandbox_policy": "unchanged-default-no-fallback"
+}

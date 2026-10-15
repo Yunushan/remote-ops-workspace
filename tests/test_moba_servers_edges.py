@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 from dataclasses import replace
 from pathlib import Path
 
@@ -255,7 +254,8 @@ def test_public_server_config_and_gui_actions(tmp_path: Path) -> None:
     assert "--require-tls" in http_row.config_action
 
 
-def test_server_plan_reports_unavailable_runtime_and_rejects_start(tmp_path: Path) -> None:
+def test_server_plan_reports_unavailable_runtime_and_rejects_start(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(servers.importlib.util, "find_spec", lambda _name: None)
     plan = servers.build_moba_server_plan(
         "ftp",
         root=tmp_path,
@@ -391,17 +391,15 @@ def test_release_asset_validation_rejects_bad_paths_and_hashes(tmp_path: Path) -
 @pytest.mark.parametrize(
     ("key", "service", "executable", "root", "host", "expected"),
     [
-        ("pyftpdlib", "ftp", "python.exe", "root", "127.0.0.1", ["python.exe", "-m", "pyftpdlib"]),
-        ("pyftpdlib", "ftp", "pyftpdlib", "root", "127.0.0.1", ["pyftpdlib", "-i"]),
+        ("pyftpdlib", "ftp", "python.exe", "root", "127.0.0.1", [servers.sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]),
+        ("pyftpdlib", "ftp", "pyftpdlib", "root", "127.0.0.1", [servers.sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]),
         ("ftpd", "ftp", "ftpd", "root", "127.0.0.1", ["ftpd", "-D"]),
         ("tftpd", "tftp", "tftpd", "root", "127.0.0.1", ["tftpd", "--foreground"]),
         ("atftpd", "tftp", "atftpd", "root", "127.0.0.1", ["atftpd", "--foreground"]),
         ("sshd-sftp", "sftp", "sshd", None, "127.0.0.1", ["sshd", "-D"]),
-        ("telnetd", "telnet", "telnetd", None, "127.0.0.1", ["telnetd", "-debug"]),
         ("x11vnc", "vnc", "x11vnc", None, "127.0.0.1", ["x11vnc", "-listen"]),
         ("vncserver", "vnc", "vncserver", None, "127.0.0.1", ["vncserver", "-rfbport"]),
         ("vncserver", "vnc", "vncserver", None, "192.0.2.1", ["vncserver", "-rfbport"]),
-        ("nfsd", "nfs", "nfsd", None, "127.0.0.1", ["nfsd", "-F"]),
     ],
 )
 def test_runtime_commands_cover_daemon_adapters(
@@ -465,29 +463,11 @@ def test_root_service_and_loopback_validation(tmp_path: Path) -> None:
     assert servers._is_loopback_host("not-an-ip") is False
 
 
-def test_pid_probe_and_termination_platform_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pid_probe_uses_read_only_process_status(monkeypatch: pytest.MonkeyPatch) -> None:
     assert servers._pid_running(0) is False
-
-    with monkeypatch.context() as patch:
-        patch.setattr(servers.os, "kill", lambda _pid, _sig: None)
-        assert servers._pid_running(42) is True
-    with monkeypatch.context() as patch:
-        patch.setattr(servers.os, "kill", lambda _pid, _sig: _raise(OSError("missing")))
-        assert servers._pid_running(42) is False
-
-    windows_calls: list[list[str]] = []
-    with monkeypatch.context() as patch:
-        patch.setattr(servers.platform, "system", lambda: "Windows")
-        patch.setattr(servers, "run_hidden", lambda command, **_kwargs: windows_calls.append(command))
-        servers._terminate_pid(50)
-    assert windows_calls == [["taskkill", "/PID", "50", "/T"]]
-
-    posix_calls: list[tuple[int, int]] = []
-    with monkeypatch.context() as patch:
-        patch.setattr(servers.platform, "system", lambda: "Linux")
-        patch.setattr(servers.os, "kill", lambda pid, sig: posix_calls.append((pid, sig)))
-        servers._terminate_pid(51)
-    assert posix_calls == [(51, signal.SIGTERM)]
+    monkeypatch.setattr(servers, "process_is_running", lambda pid: pid == 42)
+    assert servers._pid_running(42) is True
+    assert servers._pid_running(41) is False
 
 
 def _raise(error: BaseException) -> None:

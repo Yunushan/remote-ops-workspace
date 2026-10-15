@@ -37,29 +37,23 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     },
     "moba.ssh-browser": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_moba_connected_session_state"],
-        "source_tokens": {
-            "src/remote_ops_workspace/gui.py": ["MobaConnectedSessionPanel", "mobaSftpBrowser", "mobaSftpFileTable"]
-        },
+        "source_tokens": {"src/remote_ops_workspace/gui.py": ["MobaConnectedSessionPanel"], "src/remote_ops_workspace/gui_connected.py": ["mobaSftpBrowser", "mobaSftpFileTable"]},
     },
     "moba.follow-terminal-folder": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_follow_terminal_folder_plan"],
-        "source_tokens": {
-            "src/remote_ops_workspace/gui.py": ["mobaFollowTerminalFolder", "follow_folder_plan"]
-        },
+        "source_tokens": {"src/remote_ops_workspace/gui_connected.py": ["mobaFollowTerminalFolder", "follow_folder_plan"]},
     },
     "moba.remote-monitoring": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_remote_monitoring_plan"],
-        "source_tokens": {
-            "src/remote_ops_workspace/gui.py": ["mobaRemoteMonitoring", "mobaMonitoringMetric"]
-        },
+        "source_tokens": {"src/remote_ops_workspace/gui_connected.py": ["mobaRemoteMonitoring", "mobaMonitoringMetric"]},
     },
     "moba.telemetry-status-bar": {
         "module_attrs": ["remote_ops_workspace.moba_connected:RemoteMonitoringSnapshot"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["mobaTelemetryBar", "mobaTelemetryItem"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_connected.py": ["mobaTelemetryBar", "mobaTelemetryItem"]},
     },
     "moba.ssh-connection-banner": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_ssh_connection_banner"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["mobaSshBanner", "mobaSshBannerCapability"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_connected.py": ["mobaSshBanner", "mobaSshBannerCapability"]},
     },
     "moba.open-sftp-same-parameters": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_same_parameters_sftp_plan"],
@@ -475,41 +469,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_connected:build_moba_connected_text_editor_state",
             "remote_ops_workspace.moba_connected:moba_connected_text_editor_route",
         ],
-        "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
-                "cmd_text_open_remote",
-                "cmd_text_save_review",
-                "cmd_text_evidence_bundle",
-                "evidence-bundle",
-                "cmd_text_evidence_verify",
-            ],
-            "src/remote_ops_workspace/moba_text.py": [
-                "row.moba-text.editor-tab.v1",
-                "row.moba-text.remote-edit-evidence-bundle.v1",
-                "row.moba-text.remote-edit-evidence.v1",
-                "opened_from_sftp_browser",
-                "conflict_checked",
-                "real_connected_session",
-                "connected-session",
-                "Production parity requires the supplied evidence files",
-            ],
-            "src/remote_ops_workspace/moba_connected.py": [
-                "connected-sftp-browser-text-editor",
-                "mobaTextEditor",
-                "itemDoubleClicked",
-            ],
-            "src/remote_ops_workspace/gui.py": [
-                "QPlainTextEdit",
-                "MobaTextEditorHighlighter",
-                "mobaTextEditor",
-                "handle_moba_text_editor_open_from_item",
-                "mobaTextEditorSaveAction",
-            ],
-            "scripts/check_moba_text_remote_edit_evidence.py": [
-                "validate_moba_text_release_evidence",
-                "--assets-dir",
-            ],
-        },
+        "source_tokens": {"src/remote_ops_workspace/gui.py": ["QPlainTextEdit"], "src/remote_ops_workspace/gui_connected.py": ["MobaTextEditorHighlighter", "mobaTextEditor", "handle_moba_text_editor_open_from_item", "mobaTextEditorSaveAction"]},
     },
     "moba.ssh-browser-26-4-state": {
         "cli": [
@@ -613,7 +573,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "cancel_prompt_verified",
                 "Production parity requires the supplied evidence files",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_terminal.py": [
                 "macro_record_button",
                 "mobaMacroCaptureActive",
                 "capture_terminal_macro_input",
@@ -656,14 +616,31 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.x11:stop_moba_x_server",
             "remote_ops_workspace.x11:load_moba_x_server_record",
             "remote_ops_workspace.x11:moba_x_server_state_path",
+            "remote_ops_workspace.process_status:register_process",
+            "remote_ops_workspace.process_status:process_is_running",
+            "remote_ops_workspace.process_status:recorded_process_is_running",
+            "remote_ops_workspace.process_status:terminate_recorded_process",
         ],
         "source_tokens": {
             "src/remote_ops_workspace/x11.py": [
                 "XServerLifecycleRecord",
                 "xserver-state.json",
                 "pid_probe",
-                "taskkill",
-                "SIGTERM",
+                "process_identity",
+                "register_process",
+                "terminate_recorded_process(record.pid, record.process_identity)",
+                "terminate_owned_process(process)",
+                "pid=None",
+            ],
+            "src/remote_ops_workspace/process_status.py": [
+                "creation_time",
+                "start_ticks",
+                "boot_id",
+                "_match_identity",
+                "pidfd_open",
+                "pidfd_send_signal",
+                "WaitForSingleObject",
+                "process identity changed; refusing to use a reused PID",
             ],
             "src/remote_ops_workspace/cli.py": ["x11_stop", "cmd_x11_stop", "managed lifecycle"],
         },
@@ -740,7 +717,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     "protocol.serial": {"protocols": ["serial"]},
     "terminal.tabs": {
         "module_attrs": ["remote_ops_workspace.terminal:TerminalPanePlan"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["class TerminalPane"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_terminal.py": ["class TerminalPane"]},
     },
     "terminal.local-shell": {
         "protocols": ["local-shell"],
@@ -771,7 +748,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.terminal_highlighting:terminal_highlight_fragments",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_terminal.py": [
                 "terminalSyntaxHighlightingEnabled",
                 "terminalAnsiSgrColorEnabled",
                 "terminalLinkActivation",
@@ -795,7 +772,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     "session.profiles": {
         "cli": ["profile add", "profile list", "profile show"],
         "module_attrs": ["remote_ops_workspace.storage:ProfileStore"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["class ProfileDialog"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_dialogs.py": ["class ProfileDialog"]},
     },
     "session.inheritance": {
         "cli": ["profile defaults"],

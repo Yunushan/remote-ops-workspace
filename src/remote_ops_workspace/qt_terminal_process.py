@@ -10,7 +10,7 @@ import time
 from collections.abc import Sequence
 from typing import Any, Final
 
-from PyQt6.QtCore import QObject, QProcess, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, pyqtSignal
 
 from .process_launch import hidden_process_options
 from .windows_conpty import (
@@ -64,6 +64,7 @@ class QtConPtyProcess(QObject):
         super().__init__(parent)
         self._program = ""
         self._arguments: list[str] = []
+        self._environment: dict[str, str] | None = None
         self._state = QProcess.ProcessState.NotRunning
         self._session: WindowsConPtyProcess | None = None
         self._stdout = bytearray()
@@ -116,6 +117,9 @@ class QtConPtyProcess(QObject):
     def setArguments(self, arguments: Sequence[str]) -> None:  # noqa: N802
         self._arguments = [str(argument) for argument in arguments]
 
+    def setProcessEnvironment(self, environment: QProcessEnvironment) -> None:  # noqa: N802
+        self._environment = {key: environment.value(key) for key in environment.keys()}
+
     def program(self) -> str:
         return self._program
 
@@ -164,7 +168,7 @@ class QtConPtyProcess(QObject):
         rows = self._rows
         self._start_thread = threading.Thread(
             target=self._start_session_worker,
-            args=(generation, argv, columns, rows),
+            args=(generation, argv, columns, rows, self._environment),
             name="remote-ops-conpty-starter",
             daemon=True,
         )
@@ -177,15 +181,15 @@ class QtConPtyProcess(QObject):
         argv: Sequence[str],
         columns: int,
         rows: int,
+        environment: dict[str, str] | None = None,
     ) -> None:
         session: WindowsConPtyProcess | None = None
         error: BaseException | None = None
         try:
-            session = WindowsConPtyProcess(
-                argv,
-                columns=columns,
-                rows=rows,
-            )
+            if environment is None:
+                session = WindowsConPtyProcess(argv, columns=columns, rows=rows)
+            else:
+                session = WindowsConPtyProcess(argv, columns=columns, rows=rows, env=environment)
             session.start()
         except Exception as exc:  # pragma: no cover - platform-specific failure
             error = exc
@@ -706,6 +710,7 @@ class QtHiddenProcess(QObject):
         super().__init__(parent)
         self._program = ""
         self._arguments: list[str] = []
+        self._environment: dict[str, str] | None = None
         self._state = QProcess.ProcessState.NotRunning
         self._process: subprocess.Popen[bytes] | None = None
         self._stdout = bytearray()
@@ -773,6 +778,9 @@ class QtHiddenProcess(QObject):
     def setArguments(self, arguments: Sequence[str]) -> None:  # noqa: N802
         self._arguments = [str(argument) for argument in arguments]
 
+    def setProcessEnvironment(self, environment: QProcessEnvironment) -> None:  # noqa: N802
+        self._environment = {key: environment.value(key) for key in environment.keys()}
+
     def program(self) -> str:
         return self._program
 
@@ -824,6 +832,8 @@ class QtHiddenProcess(QObject):
             "bufsize": 0,
         }
         options.update(hidden_process_options())
+        if self._environment is not None:
+            options["env"] = dict(self._environment)
         argv = (self._program, *self._arguments)
         self._start_thread = threading.Thread(
             target=self._start_process_worker,

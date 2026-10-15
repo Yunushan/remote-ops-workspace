@@ -146,9 +146,35 @@ def check_scripts_exist(config: dict[str, Any]) -> list[str]:
             if step not in text.lower():
                 errors.append(f"{repo_path(script)} must mention {step} smoke lifecycle")
         errors.extend(check_runtime_resource_script(str(platform), script, text))
+        if str(platform) in {"windows", "macos"}:
+            errors.extend(check_gui_runtime_script(str(platform), text))
         if str(platform) == "linux":
             errors.extend(check_linux_smoke_source_binding(script, text))
     return errors
+
+
+def check_gui_runtime_script(platform: str, text: str) -> list[str]:
+    shared = {"--smoke-json": "packaged GUI invocation", "screenshot_sha256": "paint digest verification"}
+    if platform == "windows":
+        required = {
+            **shared, "Test-PackagedGui $GuiPath": "installed GUI execution",
+            "Test-PackagedGui $RootGuiPath": "portable GUI execution",
+            "-WindowStyle Hidden": "hidden GUI launch", "WaitForExit(25000)": "bounded GUI execution",
+            '$Result.frozen -ne $true': "frozen runtime proof",
+            '$Result.qt_platform -ne "windows"': "native Qt platform proof",
+            "Get-FileHash -LiteralPath $Image": "paint byte verification",
+            '$Result.profile_selected -ne $true': "real profile selection proof",
+        }
+    else:
+        required = {
+            **shared, 'verify_app_gui "$DMG_APP"': "installed DMG GUI execution",
+            'verify_app_gui "$PKG_APP"': "installed PKG GUI execution",
+            "timeout=25": "bounded GUI execution", 'payload.get("frozen") is not True': "frozen runtime proof",
+            'payload.get("qt_platform") != "cocoa"': "native Qt platform proof",
+            "hashlib.sha256(image.read_bytes())": "paint byte verification",
+            '"profile_selected"': "real profile selection proof",
+        }
+    return [f"{platform} native GUI smoke missing {label}" for snippet, label in required.items() if snippet not in text]
 
 
 def check_runtime_resource_script(platform: str, script: Path, text: str) -> list[str]:

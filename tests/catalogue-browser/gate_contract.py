@@ -1,0 +1,392 @@
+"""Pure result/frame contracts. Validation itself is never host evidence."""
+import hashlib
+import json
+import re
+
+MAX_PUBLIC = 65536
+RUNTIME_STAGES = (
+    'chrome-version-command',
+    'driver-version-command',
+    'version-equality',
+    'session-setup',
+    'initial-fixture-startup',
+    'initial-fixture-inventory',
+    'driver-service-birth',
+    'driver-port-wait',
+    'driver-port-validation',
+    'driver-listener',
+    'browser-client',
+    'browser-session-start',
+    'browser-capabilities',
+    'loaded-runtime-inventory',
+    'loaded-runtime-tools',
+)
+CASES = {
+    'api-read': {'status': 200, 'dom_seed': True, 'input_cleared': True, 'no_store': True, 'public_only': True},
+    'api-create-refresh': {'post_status': 201, 'get_status': 200, 'replace_false': True, 'disk_count': 2, 'disk_dom_agree': True},
+    'restart-persistence-auth-rotation': {'first_zero_reaped': True, 'listener_gone': True, 'old_status': 401,
+        'old_auth_cleared': True, 'new_status': 200, 'persisted_digest_equal': True, 'second_post_status': 201,
+        'disk_count': 3, 'disk_dom_agree': True, 'token_digests_distinct': True},
+    'disconnect-token-state': {'token_empty': True, 'rows_empty': True, 'input_empty': True, 'controls_disabled': True,
+        'no_authenticated_request_after_disconnect': True, 'storage_private_absent': True},
+    'pagehide-new-document': {'real_pagehide_clear_observed': True, 'new_document_requires_auth': True,
+        'new_noopener_requires_auth': True, 'synthetic_lifecycle_event_used': False},
+    'service-worker-api-cache-boundary': {'controlled': True, 'api_canary_bypassed': True, 'fresh_server_get': True,
+        'health_policy_not_cached': True, 'auth_static_canary_bypassed': True, 'no_store_static_canary_bypassed': True,
+        'canaries_removed': True, 'final_cache_public_exact': True, 'storage_private_absent': True},
+    'owned-server-down': {'second_zero_reaped': True, 'listener_gone': True, 'visible_refusal': True,
+        'token_rows_cleared': True, 'api_mode_retained': True, 'stale_or_demo_returned': False},
+}
+LIMITS = [
+    'Observed hosted Linux Chrome/ChromeDriver catalogue metadata only; no reproduced release browser artifact',
+    'No Android/iOS/installed-PWA/browser-matrix/native-session/installer/signing claim',
+    'No complete OS descendant or physical network isolation proof; disposable-host destruction remains required',
+    'Runtime mapping inventory covers observed executable mappings only, not writable browser resources or every OS input',
+]
+
+class GateRefusal(ValueError):
+    pass
+
+def need(condition):
+    if not condition:
+        raise GateRefusal('catalogue-gate-contract-refused')
+
+def exact(value, fields):
+    need(type(value) is dict and set(value) == set(fields))
+
+def digest(value):
+    need(type(value) is str and re.fullmatch(r'[0-9a-f]{64}', value) is not None)
+
+def integer(value, maximum, minimum=0):
+    need(type(value) is int and minimum <= value <= maximum)
+
+def pairs(items):
+    result = {}
+    for key, value in items:
+        need(key not in result)
+        result[key] = value
+    return result
+
+def decode(raw, maximum=MAX_PUBLIC):
+    need(type(raw) is bytes and len(raw) <= maximum)
+    try:
+        return json.loads(raw.decode('utf-8', errors='strict'), object_pairs_hook=pairs,
+            parse_constant=lambda _value: (_ for _ in ()).throw(GateRefusal('catalogue-gate-contract-refused')))
+    except (ValueError, RecursionError) as exc:
+        raise GateRefusal('catalogue-gate-contract-refused') from exc
+
+def check_case(name, facts):
+    need(type(name) is str and name in CASES)
+    exact(facts, CASES[name])
+    for key, expected in CASES[name].items():
+        if type(expected) is bool:
+            need(facts[key] is expected)
+        else:
+            need(type(facts[key]) is int and facts[key] == expected)
+
+def validate(raw, expected, *, policy_cleanup_pending=False):
+    record = decode(raw)
+    exact(record, {'schema', 'status', 'complete', 'binding', 'runtime', 'checks', 'inventories', 'events',
+        'cleanup', 'host_policy', 'host_policy_cleanup', 'elapsed_ms', 'server_down_ms', 'source_unchanged', 'runtime_unchanged', 'limits', 'readiness_credit'})
+    need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v2')
+    need(record['status'] == 'observations-complete-with-limits' and record['complete'] is True)
+    exact(record['binding'], {'nonce', 'source_head', 'source_tree', 'source_bytes_sha256', 'workflow_sha256',
+        'run_id', 'run_attempt', 'event_sha', 'image_version', 'image_os'})
+    need(record['binding'] == expected['binding'])
+    for key in ('nonce', 'source_bytes_sha256', 'workflow_sha256'):
+        digest(record['binding'][key])
+    for key in ('source_head', 'source_tree', 'event_sha'):
+        need(type(record['binding'][key]) is str and re.fullmatch(r'[0-9a-f]{40}', record['binding'][key]))
+    for key in ('run_id', 'run_attempt'):
+        need(type(record['binding'][key]) is str and re.fullmatch(r'[1-9][0-9]{0,19}', record['binding'][key]))
+    need(record['binding']['image_os'] == 'ubuntu24')
+    need(type(record['binding']['image_version']) is str and re.fullmatch(r'[0-9.]{1,64}', record['binding']['image_version']))
+    exact(record['runtime'], {'chrome_version', 'driver_version', 'python_version', 'tool_inventory_sha256', 'loaded_runtime_sha256', 'loaded_runtime_files'})
+    need(record['runtime'] == expected['runtime'])
+    need(type(record['runtime']['chrome_version']) is str and re.fullmatch(r'[0-9]+(?:\.[0-9]+){3}', record['runtime']['chrome_version']))
+    need(record['runtime']['driver_version'] == record['runtime']['chrome_version'])
+    need(record['runtime']['python_version'] == '3.14.7')
+    digest(record['runtime']['tool_inventory_sha256'])
+    digest(record['runtime']['loaded_runtime_sha256'])
+    integer(record['runtime']['loaded_runtime_files'], 4096, 1)
+    rows = record['checks']
+    need(type(rows) is list and len(rows) == len(CASES))
+    need([row.get('id') for row in rows if type(row) is dict] == list(CASES))
+    for row in rows:
+        exact(row, {'id', 'facts'})
+        check_case(row['id'], row['facts'])
+    inventories = record['inventories']
+    need(type(inventories) is list and len(inventories) == 4)
+    for row, (phase, count) in zip(inventories, (('seed', 1), ('created', 2), ('restarted', 2), ('second-created', 3)), strict=True):
+        exact(row, {'phase', 'count', 'digest'})
+        need(row['phase'] == phase and type(row['count']) is int and row['count'] == count)
+        digest(row['digest'])
+    need(inventories[1]['digest'] == inventories[2]['digest'])
+    need(inventories[0]['digest'] != inventories[1]['digest'] != inventories[3]['digest'])
+    events = record['events']
+    need(type(events) is list and 8 <= len(events) <= 128)
+    seen = set()
+    for event in events:
+        exact(event, {'launch', 'ordinal', 'case', 'method', 'route', 'status', 'no_store', 'authorization_present'})
+        integer(event['launch'], 2, 1)
+        integer(event['ordinal'], 128, 1)
+        need((event['launch'], event['ordinal']) not in seen)
+        seen.add((event['launch'], event['ordinal']))
+        need(type(event['case']) is str and event['case'] in CASES)
+        need(event['method'] in ('GET', 'POST') and event['route'] in ('catalogue', 'health', 'policy', 'static'))
+        need(type(event['status']) is int and event['status'] in (200, 201, 401))
+        need(type(event['authorization_present']) is bool and type(event['no_store']) is bool)
+        if event['route'] != 'static':
+            need(event['no_store'] is True)
+    for case, method, status in (('api-read', 'GET', 200), ('api-create-refresh', 'POST', 201),
+        ('api-create-refresh', 'GET', 200), ('restart-persistence-auth-rotation', 'GET', 401),
+        ('restart-persistence-auth-rotation', 'GET', 200), ('restart-persistence-auth-rotation', 'POST', 201),
+        ('service-worker-api-cache-boundary', 'GET', 200)):
+        need(any(event['case'] == case and event['route'] == 'catalogue' and event['method'] == method
+            and event['status'] == status and event['authorization_present'] is True for event in events))
+    exact(record['cleanup'], {'all_retained_zero', 'all_reaped', 'owned_groups_gone', 'listeners_gone', 'forced_cleanup', 'descendants_complete'})
+    for key in ('all_retained_zero', 'all_reaped', 'owned_groups_gone', 'listeners_gone'):
+        need(record['cleanup'][key] is True)
+    need(record['cleanup']['forced_cleanup'] is False and record['cleanup']['descendants_complete'] is False)
+    integer(record['elapsed_ms'], 299999)
+    integer(record['server_down_ms'], 5500)
+    need(record['source_unchanged'] is True and record['runtime_unchanged'] is True)
+    need(record['limits'] == LIMITS and type(record['readiness_credit']) is int and record['readiness_credit'] == 0)
+    host_policy_evidence(record['host_policy'], complete=True)
+    need(type(policy_cleanup_pending) is bool)
+    if policy_cleanup_pending:
+        need(record['host_policy_cleanup'] == {'status': 'pending'})
+    else:
+        host_policy_cleanup(record['host_policy_cleanup'], record['host_policy'], complete=True)
+    return {'status': 'result-contract-valid-only', 'record_sha256': hashlib.sha256(raw).hexdigest(),
+        'genuine_host_authority': False, 'readiness_credit': 0}
+
+
+API_READ_STAGES = (
+    'navigation-command', 'browser-connect', 'fixture-inspection',
+    'disk-dom-inventory', 'catalogue-event-selection', 'case-contract',
+)
+API_READ_EXCEPTIONS = (
+    'gate-refusal', 'key-error', 'index-error', 'type-error', 'value-error',
+    'timeout-error', 'os-error', 'other-exact-type',
+)
+
+
+def api_read_diagnostic(value):
+    required = {'entered_stage', 'exception_category'}
+    optional = {'case_failure_bits'} if type(value) is dict and 'case_failure_bits' in value else set()
+    exact(value, required | optional)
+    need(all(type(key) is str for key in value))
+    need(type(value['entered_stage']) is str and value['entered_stage'] in API_READ_STAGES)
+    need(type(value['exception_category']) is str and value['exception_category'] in API_READ_EXCEPTIONS)
+    if optional:
+        bits = value['case_failure_bits']
+        need(type(bits) is int and 1 <= bits <= 31)
+        need(value['entered_stage'] == 'case-contract' and value['exception_category'] == 'gate-refusal')
+    return value.copy()
+
+
+PREPARATION_STEPS = ('source-checks', 'workflow-command', 'workflow-bytes', 'source-summary',
+    'python-path', 'chrome-file-pin', 'driver-file-pin', 'python-file-pin', 'git-file-pin',
+    'runtime-tool-owners', 'runtime-checkpoint')
+
+
+CHROME_FILE_STAGES = ('lstat-before', 'regular-file', 'single-link', 'size-bound', 'nonempty',
+    'write-mode', 'root-owner', 'trusted-owner', 'open', 'header-read', 'rewind', 'sha256-read',
+    'elf-header', 'executable-mode', 'lstat-after', 'stable-identity')
+
+
+def runtime_diagnostic(stage, versions=None):
+    need(type(stage) is str and stage in RUNTIME_STAGES)
+    result = {'runtime_stage': stage}
+    if versions is not None:
+        need(stage == 'version-equality')
+        exact(versions, {'chrome', 'driver'})
+        for value in versions.values():
+            need(type(value) is str and len(value) <= 64 and re.fullmatch(r'[0-9]+(?:\.[0-9]+){3}', value) is not None)
+        result['runtime_versions'] = versions.copy()
+    return result
+
+
+DRIVER_START_OPERATIONS = (
+    'session-create',
+    'session-result',
+    'session-capabilities',
+    'session-timeouts',
+)
+DRIVER_START_STEPS = (
+    'start-control',
+    'call-preflight',
+    'connection-create',
+    'request-encode',
+    'request-send',
+    'response-open',
+    'response-read',
+    'response-guard',
+    'response-decode',
+    'value-envelope',
+    'connection-close',
+)
+DRIVER_START_EXCEPTIONS = (
+    'gate-refusal',
+    'timeout',
+    'connection-refused',
+    'connection-reset',
+    'broken-pipe',
+    'remote-disconnected',
+    'http-error',
+    'key-error',
+    'type-error',
+    'value-error',
+    'interrupted',
+    'other',
+)
+DRIVER_START_ERRORS = (
+    'unknown error',
+    'session not created',
+    'invalid argument',
+    'invalid session id',
+    'timeout',
+    'script timeout',
+    'other',
+)
+
+
+def driver_start_diagnostic(value):
+    required = {'operation', 'step', 'exception', 'http_status', 'webdriver_error'}
+    optional = {key for key in ('message_bits', 'stderr_bits') if type(value) is dict and key in value}
+    exact(value, required | optional)
+    for key, allowed in (('operation', DRIVER_START_OPERATIONS), ('step', DRIVER_START_STEPS),
+                         ('exception', DRIVER_START_EXCEPTIONS)):
+        need(type(value[key]) is str and value[key] in allowed)
+    status = value['http_status']
+    need(status is None or (type(status) is int and 100 <= status <= 599))
+    token = value['webdriver_error']
+    need(token is None or (type(token) is str and token in DRIVER_START_ERRORS))
+    if value['step'] == 'connection-close' or value['operation'] in ('session-result', 'session-capabilities'):
+        need(status is None and token is None)
+    if value['operation'] in ('session-result', 'session-capabilities'):
+        need(value['step'] == 'start-control')
+    if token is not None:
+        need(status is not None and status != 200 and value['step'] == 'response-guard')
+    if 'message_bits' in value:
+        bits = value['message_bits']
+        need(type(bits) is int and 1 <= bits <= 31)
+        need(value['operation'] == 'session-create' and value['step'] == 'response-guard'
+             and value['exception'] == 'gate-refusal' and type(status) is int and status == 500
+             and token == 'session not created')
+    if 'stderr_bits' in value:
+        bits = value['stderr_bits']
+        need(type(bits) is int and 1 <= bits <= 63)
+        need(value['operation'] == 'session-create' and value['step'] == 'response-guard'
+             and value['exception'] == 'gate-refusal' and type(status) is int and status == 500
+             and token == 'session not created')
+    return value.copy()
+
+
+
+HOST_POLICY_DIGESTS = ('profile_sha256', 'abi_sha256', 'tool_sha256', 'features_sha256', 'intent_sha256')
+
+
+def host_policy_evidence(value, *, complete=False):
+    exact(value, {'scope', 'host_policy_changed', 'default_browser_sandbox_requested',
+        'profile_loaded_preparation_observed', 'task_label_initial_observed',
+        'initial_observed_chrome_tasks', 'task_label_final_observed',
+        'final_observed_chrome_tasks', *HOST_POLICY_DIGESTS})
+    need(type(complete) is bool and type(value['scope']) is str
+        and value['scope'] == 'exact-pinned-chrome-userns' and value['host_policy_changed'] is True
+        and value['default_browser_sandbox_requested'] is True
+        and value['profile_loaded_preparation_observed'] is True)
+    for checkpoint in ('initial', 'final'):
+        flag = value['task_label_' + checkpoint + '_observed']
+        count = value[checkpoint + '_observed_chrome_tasks']
+        need(type(flag) is bool)
+        integer(count, 256)
+        need(count >= 1 if flag else count == 0)
+    need(not value['task_label_final_observed'] or value['task_label_initial_observed'])
+    if complete:
+        need(value['task_label_initial_observed'] is True and value['task_label_final_observed'] is True)
+    for key in HOST_POLICY_DIGESTS:
+        digest(value[key])
+    return value.copy()
+
+
+def host_policy_cleanup(value, policy=None, *, complete=False):
+    need(type(complete) is bool and type(value) is dict and type(value.get('status')) is str)
+    status = value['status']
+    need(status in ('removed', 'already-absent', 'not-needed'))
+    if status == 'not-needed':
+        exact(value, {'status', 'intent_absent_observed', 'host_disposal_required', 'descendants_complete'})
+        need(not complete and policy is None and value['intent_absent_observed'] is True)
+    else:
+        exact(value, {'status', 'profile_present_pre_remove_observed', 'remove_attempted',
+            'profile_absent_observed', 'scalar_state_unchanged', 'host_disposal_required',
+            'descendants_complete', *HOST_POLICY_DIGESTS})
+        need(type(value['profile_present_pre_remove_observed']) is bool
+            and type(value['remove_attempted']) is bool)
+        present = status == 'removed'
+        need(value['profile_present_pre_remove_observed'] is present
+            and value['remove_attempted'] is present and value['profile_absent_observed'] is True
+            and value['scalar_state_unchanged'] is True)
+        need(not complete or present)
+        for key in HOST_POLICY_DIGESTS:
+            digest(value[key])
+        if policy is not None:
+            host_policy_evidence(policy, complete=complete)
+            need(all(value[key] == policy[key] for key in HOST_POLICY_DIGESTS))
+        need(not complete or policy is not None)
+    need(value['host_disposal_required'] is True and value['descendants_complete'] is False)
+    return value.copy()
+
+
+def public_bytes(raw):
+    """Privacy reader, not an authenticity/adoption or genuine-host decision."""
+    record = decode(raw)
+    need(type(record) is dict)
+    if record.get('complete') is True:
+        need('binding' in record and 'runtime' in record)
+        validate(raw, {'binding': record['binding'], 'runtime': record['runtime']})
+        return raw
+    required = {'schema', 'status', 'complete', 'phase', 'readiness_credit', 'limits'}
+    optional = {'private_streams', 'forced_cleanup_attempted', 'cleanup_complete', 'preparation_step', 'chrome_file_stage', 'runtime_stage', 'runtime_versions', 'driver_start', 'host_policy', 'host_policy_cleanup'}
+    need(required.issubset(record) and set(record).issubset(required | optional))
+    need(record['schema'] == 'row.ubuntu-actual-catalogue-webdriver.v2' and record['status'] == 'refused'
+         and record['complete'] is False and type(record['readiness_credit']) is int and record['readiness_credit'] == 0
+         and record['limits'] == LIMITS)
+    need(type(record['phase']) is str and record['phase'] in ('preparation', 'host-runtime-observation', *CASES, 'cleanup'))
+    if 'host_policy' in record:
+        host_policy_evidence(record['host_policy'])
+    if 'host_policy_cleanup' in record:
+        host_policy_cleanup(record['host_policy_cleanup'], record.get('host_policy'))
+    if 'runtime_versions' in record:
+        need('runtime_stage' in record and record['runtime_versions'] is not None)
+    if 'runtime_stage' in record:
+        need(record['phase'] == 'host-runtime-observation')
+        runtime_diagnostic(record['runtime_stage'], record.get('runtime_versions'))
+    if 'driver_start' in record:
+        need(record['phase'] == 'host-runtime-observation'
+             and record.get('runtime_stage') == 'browser-session-start' and 'runtime_versions' not in record)
+        driver_start_diagnostic(record['driver_start'])
+    if 'preparation_step' in record:
+        step = record['preparation_step']
+        need(type(step) is str and step in PREPARATION_STEPS)
+        need(record['phase'] == 'preparation' or (record['phase'] == 'host-runtime-observation'
+             and step == 'runtime-checkpoint'))
+    if 'chrome_file_stage' in record:
+        stage = record['chrome_file_stage']
+        need(type(stage) is str and stage in CHROME_FILE_STAGES)
+        need(record['phase'] == 'preparation' and record.get('preparation_step') == 'chrome-file-pin')
+    for key in ('forced_cleanup_attempted', 'cleanup_complete'):
+        if key in record:
+            need(type(record[key]) is bool)
+    if 'private_streams' in record:
+        streams = record['private_streams']
+        need(type(streams) is list and len(streams) <= 128)
+        for stream in streams:
+            exact(stream, {'stdout_bytes', 'stdout_sha256', 'stderr_bytes', 'stderr_sha256', 'overflow'})
+            integer(stream['stdout_bytes'], 65536)
+            integer(stream['stderr_bytes'], 65536)
+            digest(stream['stdout_sha256'])
+            digest(stream['stderr_sha256'])
+            need(type(stream['overflow']) is bool)
+    return raw

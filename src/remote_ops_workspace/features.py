@@ -73,12 +73,12 @@ STATUS_EVIDENCE_TYPES: dict[str, str] = {
     "script-seam": "platform-script",
 }
 
-WORKFLOW_PARITY_LABEL = "release-backed product workflow parity"
+WORKFLOW_PARITY_LABEL = "implementation-backed workflow coverage"
 WORKFLOW_PARITY_SCOPE = (
-    "Counts requested public product feature families when this release provides an "
-    "implemented adapter, optional dependency path, CLI workflow, GUI workflow, "
-    "platform shell, or combined workflow tied to manifest evidence. This is not a "
-    "claim of proprietary native clone parity or embedded protocol-engine parity."
+    "Measures implemented feature-family mapping from repository metadata: adapters, "
+    "optional dependencies, CLI/GUI workflows and platform shells. Runtime execution, "
+    "shipped artifact trust, host support and production readiness require separate "
+    "execution evidence. Proprietary native clone parity is outside this metric."
 )
 LINUX_ACCEPTED_EVIDENCE_CHECKS = {
     "builder_preflight",
@@ -633,13 +633,15 @@ def coverage_report(path: Path | None = None) -> dict[str, Any]:
             "feature_family_mapping": "public feature-family mapping",
             "adapter_ready_coverage": "adapter-ready coverage",
             "production_parity_coverage": WORKFLOW_PARITY_LABEL,
-            "platform_verified_readiness": "platform verified readiness",
+            "platform_verified_readiness": "platform build contract coverage",
         },
         "workflow_parity_contract": {
             "metric": "production_parity_coverage",
             "label": WORKFLOW_PARITY_LABEL,
             "scope": WORKFLOW_PARITY_SCOPE,
             "native_clone_claimed": False,
+            "runtime_verified": False,
+            "production_readiness_percent": None,
         },
         "status_weights": feature_family_weights,
         "adapter_ready_status_weights": adapter_ready_weights,
@@ -958,7 +960,7 @@ def _workflow_parity_evidence(
                 "full_parity_feature_count": sum(
                     1
                     for item in feature_evidence
-                    if item["counts_as_full_parity"] and item["release_backed"]
+                    if item["counts_as_full_parity"] and item["implementation_backed"]
                 ),
                 "partial_feature_count": sum(
                     1 for item in feature_evidence if not item["counts_as_full_parity"]
@@ -968,6 +970,12 @@ def _workflow_parity_evidence(
                     for item in feature_evidence
                     if item["counts_as_full_parity"] and not item["release_backed"]
                 ),
+                "missing_implementation_evidence_count": sum(
+                    1
+                    for item in feature_evidence
+                    if item["counts_as_full_parity"] and not item["implementation_backed"]
+                ),
+                "runtime_verified": False,
                 "feature_evidence": feature_evidence,
             }
         )
@@ -988,7 +996,7 @@ def _workflow_parity_feature(
     status_weight = float(weights.get(status, 0.0))
     counts_as_full_parity = status_weight >= 1.0
     evidence_count = int(evidence.get("evidence_count", 0))
-    release_backed = (
+    implementation_backed = (
         counts_as_full_parity
         and status.startswith("implemented")
         and bool(extension_point)
@@ -1005,7 +1013,11 @@ def _workflow_parity_feature(
         "extension_point": extension_point,
         "status_weight": round(status_weight, 2),
         "counts_as_full_parity": counts_as_full_parity,
-        "release_backed": release_backed,
+        "implementation_backed": implementation_backed,
+        # Retain the legacy key without turning catalog metadata into runtime proof.
+        "release_backed": False,
+        "runtime_verified": False,
+        "verification_status": "implementation-metadata-only",
         "product_mapping_source": _product_mapping_source(
             product,
             feature,
@@ -1124,12 +1136,15 @@ def _platform_verified_readiness(
     overall = _with_protected_goal_summary(_platform_overall(rows), protected_goal)
     return {
         "target_percent": 100.0,
+        "metric_kind": "platform-build-contract-coverage",
+        "runtime_verified": False,
+        "production_readiness_percent": None,
         "method": (
-            "Overall verified readiness averages only verified default-native "
-            "and verified mobile Web/PWA release targets. Manual script-native "
-            "and legacy Windows rows remain visible as extended compatibility "
-            "rows outside the verified-readiness denominator until matching "
-            "release or host verification exists in configs/platform_verified_evidence.json."
+            "The legacy platform_verified_readiness key measures declared default-native "
+            "and mobile build-contract coverage, using catalog channels. Its percentages "
+            "do not assess runtime production readiness. Manual and legacy rows remain "
+            "visible, and protected platform evidence is assessed separately. Exact "
+            "artifact, host execution, trust and recovery evidence is required for production."
         ),
         "denominator": denominator,
         "overall": overall,
@@ -1154,7 +1169,11 @@ def _release_target_readiness(
         )
     channel = str(item.get("github_release_channel", ""))
     if channel == "default-native":
-        return 100.0, "verified-default-native", "Default GitHub release channel with native artifacts."
+        return (
+            100.0,
+            "verified-default-native",
+            "Declared default-native build contract; runtime deployment is unverified by this catalog score.",
+        )
     if channel == "manual-script-native":
         return 70.0, "manual-script-supported", "Native artifacts are declared but require a matching manual builder."
     if channel == "default-termux-web":

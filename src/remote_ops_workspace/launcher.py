@@ -7,7 +7,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import command_safety as safe
@@ -15,6 +15,7 @@ from .enterprise_policy import assert_profile_launch_allowed
 from .models import Profile, Tunnel
 from .plugins import LoadedPlugin, load_plugin_registry
 from .profile_validation import CLEARTEXT_PROTOCOL_OPT_IN, CLEARTEXT_PROTOCOLS, prepare_profile
+from .x11 import managed_x11_environment, managed_xauth_location
 
 
 @dataclass(slots=True)
@@ -22,6 +23,7 @@ class LaunchPlan:
     protocol: str
     command: list[str]
     notes: list[str]
+    environment: dict[str, str] = field(default_factory=dict)
 
     def printable(self) -> str:
         return shlex.join(self.command)
@@ -186,7 +188,10 @@ def launch(profile: Profile, dry_run: bool = False) -> LaunchPlan:
     safe.argv_list(plan.command, "launch command")
     if dry_run:
         return plan
-    subprocess.Popen(plan.command)  # noqa: S603 - command is built as an argv list, not shell=True
+    if plan.environment:
+        subprocess.Popen(plan.command, env={**os.environ, **plan.environment})  # noqa: S603
+    else:
+        subprocess.Popen(plan.command)  # noqa: S603 - command is built as an argv list, not shell=True
     return plan
 
 
@@ -250,13 +255,22 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
         notes.extend(_ssh_smartcard_notes(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
         cmd.extend(_ssh_tunnel_args(profile.tunnels))
+        environment: dict[str, str] = {}
         if profile.options.get("x11", "").lower() in {"1", "true", "yes", "trusted"}:
             cmd.append("-Y" if profile.options.get("x11") == "trusted" else "-X")
+            environment = managed_x11_environment(os.environ.get("DISPLAY", ":0"))
+            xauth_location = managed_xauth_location()
+            if xauth_location is not None:
+                # OpenSSH parses each -o value as a config line even though the
+                # process receives argv. Quote a helper installed under a path
+                # such as Program Files for that second parsing boundary.
+                location = safe.path_arg(xauth_location, "XAuthLocation").replace("\\", "\\\\").replace('"', '\\"')
+                cmd.extend(["-o", f'XAuthLocation="{location}"'])
             notes.append("X11 forwarding requested. Ensure XQuartz, Xorg or VcXsrv is running locally.")
         if _option_bool(profile.options, "agent_forward", "forward_agent"):
             cmd.append("-A")
         cmd.append(target)
-        return LaunchPlan(protocol, cmd, notes)
+        return LaunchPlan(protocol, cmd, notes, environment=environment)
 
     if protocol == "sftp":
         cmd = ["sftp", "-P", str(port)]

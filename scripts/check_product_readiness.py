@@ -159,17 +159,25 @@ def check_product_readiness() -> list[str]:
             errors.append(f"{row['product']} workflow parity evidence feature count does not match coverage row")
         if evidence.get("partial_feature_count") != 0:
             errors.append(f"{row['product']} workflow parity has partial feature evidence")
-        if evidence.get("missing_release_evidence_count") != 0:
-            errors.append(f"{row['product']} workflow parity is missing release-backed evidence")
+        if evidence.get("missing_implementation_evidence_count") != 0:
+            errors.append(f"{row['product']} workflow coverage is missing implementation evidence")
         if evidence.get("full_parity_feature_count") != row["feature_count"]:
             errors.append(f"{row['product']} workflow parity full evidence count does not cover every feature")
         for item in evidence.get("feature_evidence", []):
-            if item.get("counts_as_full_parity") and not item.get("release_backed"):
-                errors.append(f"{row['product']} feature {item.get('id')} lacks release-backed parity evidence")
+            if item.get("counts_as_full_parity") and not item.get("implementation_backed"):
+                errors.append(f"{row['product']} feature {item.get('id')} lacks implementation evidence")
+            if item.get("release_backed") is not False or item.get("runtime_verified") is not False:
+                errors.append(f"{row['product']} feature {item.get('id')} must not claim runtime proof from metadata")
             if item.get("counts_as_full_parity") and not item.get("evidence_refs"):
                 errors.append(f"{row['product']} feature {item.get('id')} lacks evidence refs")
 
     platform = report["platform_verified_readiness"]
+    contract = report["workflow_parity_contract"]
+    for name, metric in (("workflow coverage", contract), ("platform coverage", platform)):
+        if metric.get("runtime_verified") is not False or metric.get("production_readiness_percent") is not None:
+            errors.append(f"{name} must not claim production readiness from catalog metadata")
+    if platform.get("metric_kind") != "platform-build-contract-coverage":
+        errors.append("platform coverage must identify its build-contract scope")
     platform_rows = platform.get("targets", [])
     if not platform_rows:
         errors.append("platform verified readiness must include release and legacy targets")

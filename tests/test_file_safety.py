@@ -107,6 +107,156 @@ def test_private_atomic_write_removes_final_artifact_when_final_mode_fails(
     assert not path.exists()
 
 
+def test_private_atomic_write_restores_old_bytes_after_final_permission_failure(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_chmod = file_safety._chmod_required
+
+    def denied_final_permissions(target, mode):
+        if target == path:
+            raise PermissionError("final permissions denied")
+        original_chmod(target, mode)
+
+    monkeypatch.setattr(file_safety, "_chmod_required", denied_final_permissions)
+    with pytest.raises(PermissionError, match="final permissions denied"):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+
+    assert path.read_bytes() == b"old-private-state"
+    assert not list(tmp_path.glob(".*.tmp"))
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == PRIVATE_FILE_MODE
+
+
+def test_private_write_retains_secure_recovery_copy_when_restore_is_denied(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_chmod = file_safety._chmod_required
+    original_replace = file_safety.os.replace
+
+    def denied_final_permissions(target, mode):
+        if target == path:
+            raise PermissionError("final permissions denied")
+        original_chmod(target, mode)
+
+    def denied_restore(source, destination):
+        if ".rollback." in str(source):
+            raise PermissionError("recovery replace denied")
+        original_replace(source, destination)
+
+    monkeypatch.setattr(file_safety, "_chmod_required", denied_final_permissions)
+    monkeypatch.setattr(file_safety.os, "replace", denied_restore)
+    with pytest.raises(OSError, match="original private file preserved for recovery at") as failure:
+        write_bytes_atomic(path, b"new-private-state", private=True)
+
+    recovery = list(tmp_path.glob(".*.rollback.*.tmp"))
+    assert len(recovery) == 1
+    assert recovery[0].read_bytes() == b"old-private-state"
+    assert str(recovery[0]) in str(failure.value)
+    assert "recovery replace denied" in str(failure.value)
+    if os.name == "posix":
+        assert stat.S_IMODE(recovery[0].stat().st_mode) == PRIVATE_FILE_MODE
+
+
+def test_private_write_rejects_recovery_after_destination_identity_changes(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "profiles.json"
+    replacement = tmp_path / "other.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    write_bytes_atomic(replacement, b"independent-state", private=True)
+    original_chmod = file_safety._chmod_required
+
+    def replace_identity_before_failure(target, mode):
+        if target == path:
+            file_safety.os.replace(replacement, path)
+            raise PermissionError("final permissions denied")
+        original_chmod(target, mode)
+
+    monkeypatch.setattr(file_safety, "_chmod_required", replace_identity_before_failure)
+    with pytest.raises(OSError, match="private artifact changed before rollback"):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+
+    assert path.read_bytes() == b"independent-state"
+    recovery = list(tmp_path.glob(".*.rollback.*.tmp"))
+    assert len(recovery) == 1
+    assert recovery[0].read_bytes() == b"old-private-state"
+
+
+def test_private_write_rejects_changed_recovery_copy(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_chmod = file_safety._chmod_required
+
+    def replace_recovery_before_failure(target, mode):
+        if target == path:
+            recovery = next(tmp_path.glob(".*.rollback.*.tmp"))
+            replacement = tmp_path / "replacement"
+            replacement.write_bytes(b"foreign-state")
+            file_safety.os.replace(replacement, recovery)
+            raise PermissionError("final permissions denied")
+        original_chmod(target, mode)
+
+    monkeypatch.setattr(file_safety, "_chmod_required", replace_recovery_before_failure)
+    with pytest.raises(OSError, match="private recovery file changed before rollback"):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+    assert path.read_bytes() == b"new-private-state"
+
+
+def test_backup_permission_failure_preserves_original_error_and_old_file(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_chmod = file_safety._chmod_required
+    original_unlink = file_safety.Path.unlink
+
+    def denied_backup_permissions(target, mode):
+        if ".rollback." in target.name:
+            raise PermissionError("backup permissions denied")
+        original_chmod(target, mode)
+
+    def denied_backup_cleanup(target, *args, **kwargs):
+        if ".rollback." in target.name:
+            raise PermissionError("backup cleanup denied")
+        original_unlink(target, *args, **kwargs)
+
+    monkeypatch.setattr(file_safety, "_chmod_required", denied_backup_permissions)
+    monkeypatch.setattr(file_safety.Path, "unlink", denied_backup_cleanup)
+    with pytest.raises(PermissionError, match="backup permissions denied"):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+    assert path.read_bytes() == b"old-private-state"
+    assert next(tmp_path.glob(".*.rollback.*.tmp")).read_bytes() == b""
+
+
+def test_successful_private_write_keeps_secured_backup_if_cleanup_is_denied(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_unlink = file_safety.Path.unlink
+
+    def denied_backup_cleanup(target, *args, **kwargs):
+        if ".rollback." in target.name:
+            raise PermissionError("backup cleanup denied")
+        original_unlink(target, *args, **kwargs)
+
+    monkeypatch.setattr(file_safety.Path, "unlink", denied_backup_cleanup)
+    write_bytes_atomic(path, b"new-private-state", private=True)
+    assert path.read_bytes() == b"new-private-state"
+    backup = next(tmp_path.glob(".*.rollback.*.tmp"))
+    assert backup.read_bytes() == b"old-private-state"
+    if os.name == "posix":
+        assert stat.S_IMODE(backup.stat().st_mode) == PRIVATE_FILE_MODE
+
+
+def test_backup_copy_failure_aborts_before_replacing_original(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+
+    def denied_copy(*_args):
+        raise OSError("backup copy failed")
+
+    monkeypatch.setattr(file_safety.shutil, "copyfileobj", denied_copy)
+    with pytest.raises(OSError, match="backup copy failed"):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+    assert path.read_bytes() == b"old-private-state"
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
 def test_chmod_best_effort_ignores_unsupported_permissions() -> None:
     class UnsupportedPath:
         def chmod(self, _mode: int) -> None:

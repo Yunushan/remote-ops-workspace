@@ -160,8 +160,10 @@ def test_feature_coverage_report_includes_evidence_records() -> None:
 def test_workflow_parity_report_explains_every_coverage_row() -> None:
     report = coverage_report()
     contract = report["workflow_parity_contract"]
-    assert contract["label"] == "release-backed product workflow parity"
+    assert contract["label"] == "implementation-backed workflow coverage"
     assert contract["native_clone_claimed"] is False
+    assert contract["runtime_verified"] is False
+    assert contract["production_readiness_percent"] is None
 
     evidence_rows = {
         row["product"]: row for row in report["workflow_parity_evidence"]
@@ -180,12 +182,15 @@ def test_workflow_parity_report_explains_every_coverage_row() -> None:
         assert len(evidence["feature_ids"]) == row["feature_count"]
         assert evidence["full_parity_feature_count"] == row["feature_count"]
         assert evidence["partial_feature_count"] == 0
-        assert evidence["missing_release_evidence_count"] == 0
+        assert evidence["missing_release_evidence_count"] == row["feature_count"]
+        assert evidence["missing_implementation_evidence_count"] == 0
         for item in evidence["feature_evidence"]:
             assert item["id"]
             assert item["extension_point"]
             assert item["counts_as_full_parity"] is True
-            assert item["release_backed"] is True
+            assert item["implementation_backed"] is True
+            assert item["release_backed"] is False
+            assert item["runtime_verified"] is False
             assert item["evidence_refs"]
 
 
@@ -223,7 +228,7 @@ def test_readme_coverage_tables_match_generated_readiness_scores() -> None:
         for line in expected_lines:
             assert line in text
         assert "| MobaXterm | 100.0% | 100.0% | 100.0% | 0.0% | 50 |" in text
-        assert "release-backed product workflow parity" in text
+        assert "implementation-backed workflow coverage" in text
         assert "not a proprietary native clone" in text
 
 

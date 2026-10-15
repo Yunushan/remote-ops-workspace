@@ -60,11 +60,21 @@ def test_module_entrypoint_coverage_prints_protected_platform_goal(tmp_path: Pat
     result = _run_row(env, "features", "--coverage")
 
     assert result.returncode == 0
-    assert "Platform verified readiness   : 100.0%" in result.stdout
+    assert "Platform build contract coverage: 100.0%" in result.stdout
+    assert "10 included build targets" in result.stdout
     assert (
-        "Verified denominator        : 10 included, 7 extended excluded; "
+        "Build contract denominator    : 10 included, 7 extended excluded; "
         "protected goal source=protected_goal_parity"
     ) in result.stdout
+    assert (
+        "Runtime verification          : not assessed by this catalog; "
+        "production readiness requires artifact, host, trust and recovery evidence"
+    ) in result.stdout
+    for legacy in ("verified-default-native", "verified-termux-web-mobile", "verified-ios-web-pwa"):
+        assert legacy not in result.stdout
+        assert legacy.replace("verified-", "declared-", 1) in result.stdout
+    assert "verified targets" not in result.stdout
+    assert "Verified denominator" not in result.stdout
     assert (
         "Protected platform goal       : 0.0% "
         "(100.0% gap; 0/4 accepted; missing-accepted-evidence)"
@@ -87,6 +97,16 @@ def test_module_entrypoint_coverage_prints_protected_platform_goal(tmp_path: Pat
         "windows-xp-native-x86, windows-xp-native-x64"
     ) in result.stdout
     assert "accepted records/release assets pending" in result.stdout
+
+    json_result = _run_row(env, "features", "--coverage", "--json")
+    assert json_result.returncode == 0
+    platform = json.loads(json_result.stdout)["platform_verified_readiness"]
+    assert platform["runtime_verified"] is False
+    assert platform["production_readiness_percent"] is None
+    statuses = {row["target"]: row["status"] for row in platform["targets"]}
+    assert statuses["windows-x64"] == "verified-default-native"
+    assert statuses["android-arm64"] == "verified-termux-web-mobile"
+    assert statuses["ios-web"] == "verified-ios-web-pwa"
 
 
 def _run_row(env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:

@@ -37,6 +37,7 @@ PROJECT_FILES = [
     "docs",
     "installers",
     "redistribution-evidence",
+    "requirements-locks",
     "scripts",
     "src",
     "tests",

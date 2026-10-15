@@ -8,7 +8,7 @@ import stat
 import threading
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .file_safety import (
@@ -45,6 +45,7 @@ def exclusive_file_lock(
     *,
     timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
     shared: bool = False,
+    _private_guard=None,
 ) -> Iterator[None]:
     """Hold an exclusive cross-process lock for a state artifact.
 
@@ -54,6 +55,10 @@ def exclusive_file_lock(
     threads in this process and supports same-thread re-entry.
     """
 
+    if _private_guard is not None:
+        if os.name != "nt" or shared:
+            raise OSError("private native state lock boundary refused")
+        _private_guard.verify()
     timeout_seconds = _validate_timeout(timeout_seconds)
     owner_pid = os.getpid()
     lock_path = lock_path_for(path)
@@ -64,44 +69,69 @@ def exclusive_file_lock(
         raise FileLockTimeoutError(f"timed out waiting for state lock: {path}")
 
     held = _held_locks()
+    private_held = _held_private_guards()
     if key in held:
+        if _private_guard is not None and private_held.get(key) is not _private_guard:
+            thread_lock.release()
+            raise OSError("private native state lock reentry refused")
         held[key] += 1
         try:
             yield
         finally:
             if os.getpid() == owner_pid:
-                held[key] -= 1
-                thread_lock.release()
+                try:
+                    if _private_guard is not None:
+                        _private_guard.verify()
+                finally:
+                    held[key] -= 1
+                    thread_lock.release()
         return
 
     descriptor: int | None = None
     acquired = False
+    private_scope = ExitStack()
     try:
         with _registry_guard:
             descriptor = (
                 _open_lock_file(lock_path, shared=True)
                 if shared
-                else _open_lock_file(lock_path)
+                else (_open_lock_file(lock_path) if _private_guard is None
+                      else _open_lock_file(lock_path, _private_guard=_private_guard, _private_scope=private_scope))
             )
             _active_lock_descriptors.add(descriptor)
         _acquire_os_lock(descriptor, path, deadline)
         acquired = True
         held[key] = 1
+        if _private_guard is not None:
+            private_held[key] = _private_guard
         yield
     finally:
         if os.getpid() == owner_pid:
-            held.pop(key, None)
-            if descriptor is not None:
-                with _registry_guard:
-                    try:
-                        if acquired:
-                            _release_os_lock(descriptor)
-                    finally:
-                        try:
-                            os.close(descriptor)
-                        finally:
-                            _active_lock_descriptors.discard(descriptor)
-            thread_lock.release()
+            try:
+                _close_owned_lock(descriptor, acquired, private_scope)
+            finally:
+                held.pop(key, None)
+                private_held.pop(key, None)
+                thread_lock.release()
+
+
+def _close_owned_lock(descriptor, acquired, private_scope):
+    """Attempt every cleanup while preserving the actual native file lease."""
+    if descriptor is None:
+        private_scope.close()
+        return
+    with _registry_guard:
+        try:
+            if acquired:
+                _release_os_lock(descriptor)
+        finally:
+            try:
+                private_scope.close()
+            finally:
+                try:
+                    os.close(descriptor)
+                finally:
+                    _active_lock_descriptors.discard(descriptor)
 
 
 def _validate_timeout(value: float) -> float:
@@ -132,8 +162,21 @@ def _held_locks() -> dict[str, int]:
     return held
 
 
-def _open_lock_file(path: Path, *, shared: bool = False) -> int:
-    if shared:
+def _held_private_guards():
+    guards = getattr(_thread_state, "private_guards", None)
+    if guards is None:
+        guards = {}
+        _thread_state.private_guards = guards
+    return guards
+
+
+def _open_lock_file(path: Path, *, shared: bool = False, _private_guard=None, _private_scope=None) -> int:
+    if _private_guard is not None:
+        if os.name != "nt" or shared or _private_scope is None:
+            raise OSError("private native state lock boundary refused")
+        _private_guard.verify()
+        shared_parent = None
+    elif shared:
         ensure_shared_dir(path.parent)
         shared_parent = path.parent.stat(follow_symlinks=False)
     else:
@@ -190,21 +233,32 @@ def _open_lock_file(path: Path, *, shared: bool = False) -> int:
                     "shared state lock group must match its setgid directory "
                     f"({shared_parent.st_gid}), found {opened.st_gid}: {path}"
                 )
-        _secure_lock_mode(
-            descriptor,
-            path,
-            mode=mode,
-            shared=shared,
-            created=created,
-            opened=opened,
-        )
+        if _private_guard is not None:
+            from .windows_private_storage import descriptor_handle
+
+            if opened.st_nlink != 1 or opened.st_size not in (0, 1):
+                raise OSError("private native lock file metadata refused")
+            _private_scope.enter_context(_private_guard.private_file(descriptor_handle(descriptor), path))
+        else:
+            _secure_lock_mode(
+                descriptor,
+                path,
+                mode=mode,
+                shared=shared,
+                created=created,
+                opened=opened,
+            )
         if opened.st_size == 0:
             os.write(descriptor, b"\0")
             os.fsync(descriptor)
         os.lseek(descriptor, 0, os.SEEK_SET)
         return descriptor
-    except Exception:
-        os.close(descriptor)
+    except BaseException:
+        try:
+            if _private_scope is not None:
+                _private_scope.close()
+        finally:
+            os.close(descriptor)
         raise
 
 

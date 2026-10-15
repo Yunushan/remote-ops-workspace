@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from . import command_safety as safe
+
 REDACTED = "***REDACTED***"
+COMMAND_TEXT_KEYS = frozenset({"command", "command_line", "proxy_command", "remote_command"})
+POSIX_SHELL_PROGRAMS = frozenset({"ash", "bash", "csh", "dash", "fish", "ksh", "sh", "tcsh", "zsh"})
+POWERSHELL_PROGRAMS = frozenset({"powershell", "pwsh"})
 
 SENSITIVE_KEY_TOKENS = (
     "auth",
@@ -43,6 +49,11 @@ SENSITIVE_ARG_NAMES = {
     "--secret",
     "--token",
 }
+TEXT_SECRET_ARG_RE = re.compile(
+    r"(?<!\S)(?:(?:"
+    + "|".join(re.escape(flag) for flag in sorted(SENSITIVE_ARG_NAMES))
+    + r")\s+|(?i:/(?:p|pass|password|passwd|token|secret):))"
+)
 
 SENSITIVE_ASSIGNMENT_KEYS = {
     "api_key",
@@ -103,7 +114,12 @@ def redact_value(value: Any) -> Any:
     if isinstance(value, dict):
         redacted: dict[Any, Any] = {}
         for key, item in value.items():
-            redacted[key] = REDACTED if is_sensitive_key(key) else redact_value(item)
+            if is_sensitive_key(key):
+                redacted[key] = REDACTED
+            elif isinstance(item, str) and str(key).replace("-", "_").lower() in COMMAND_TEXT_KEYS:
+                redacted[key] = _redact_command_text(item)
+            else:
+                redacted[key] = redact_value(item)
         return redacted
     if isinstance(value, list):
         return _redact_sequence(value)
@@ -114,11 +130,27 @@ def redact_value(value: Any) -> Any:
     return value
 
 
+def _redact_command_text(value: str) -> str:
+    """Apply argv redaction to command copies stored alongside launch arguments."""
+
+    if not value.strip():
+        return value
+    try:
+        arguments = safe.argv(value, "audit command")
+    except safe.CommandSafetyError:
+        # A malformed or unavailable platform parser cannot establish secret
+        # boundaries. Do not retain potentially sensitive command text.
+        return REDACTED
+    redacted = _redact_sequence(arguments)
+    return value if redacted == arguments else shlex.join(redacted)
+
+
 def redact_text(value: str) -> str:
     text = _redact_url_password(value)
     text = _redact_embedded_url_passwords(text)
     text = BEARER_RE.sub(r"\1 " + REDACTED, text)
     text = _redact_assignments(text)
+    text = _redact_secret_arguments(text)
     text = SSHPASS_COMMAND_RE.sub(_redact_sshpass_command, text)
     return text
 
@@ -126,8 +158,12 @@ def redact_text(value: str) -> str:
 def _redact_sequence(value: list[Any]) -> list[Any]:
     redacted: list[Any] = []
     redact_next = False
+    shell_payload_start = _opaque_shell_payload_start(value)
     sshpass_argv = bool(value) and isinstance(value[0], str) and _is_sshpass_program(value[0])
-    for item in value:
+    for index, item in enumerate(value):
+        if shell_payload_start is not None and index >= shell_payload_start:
+            redacted.append(REDACTED)
+            continue
         if redact_next:
             redacted.append(REDACTED)
             redact_next = False
@@ -148,6 +184,25 @@ def _redact_sequence(value: list[Any]) -> list[Any]:
             continue
         redacted.append(redact_value(item))
     return redacted
+
+
+def _opaque_shell_payload_start(value: list[Any]) -> int | None:
+    """Keep executable shell bodies out of audit records.
+
+    An outer argv parser cannot establish credential boundaries inside another
+    interpreter's language: quoted or concatenated option names, substitutions,
+    and encoded scripts all change those boundaries. All interpreter arguments
+    therefore form an opaque payload, including remote shell commands and the
+    different spellings of command switches accepted by individual shells.
+    """
+
+    for program_index, item in enumerate(value):
+        if not isinstance(item, str):
+            continue
+        program = item.replace("\\", "/").rsplit("/", 1)[-1].casefold().removesuffix(".exe")
+        if program in POSIX_SHELL_PROGRAMS | POWERSHELL_PROGRAMS | {"cmd"}:
+            return program_index + 1
+    return None
 
 
 def _redact_string_arg(value: str) -> str:
@@ -174,11 +229,7 @@ def _redact_assignments(value: str) -> str:
         if ASSIGNMENT_SENSITIVE_TOKEN_RE.search(match.group()) is None:
             continue
         value_start = key_end + 1
-        value_end = value_start
-        while value_end < len(value) and not (
-            value[value_end].isspace() or value[value_end] in ",;"
-        ):
-            value_end += 1
+        value_end = _secret_text_value_end(value, value_start, delimiters=",;")
         if value_end == value_start:
             continue
         parts.extend((value[copied_to:value_start], REDACTED))
@@ -187,6 +238,45 @@ def _redact_assignments(value: str) -> str:
         return value
     parts.append(value[copied_to:])
     return "".join(parts)
+
+
+def _redact_secret_arguments(value: str) -> str:
+    parts: list[str] = []
+    copied_to = 0
+    for match in TEXT_SECRET_ARG_RE.finditer(value):
+        if match.start() < copied_to:
+            continue
+        value_start = match.end()
+        value_end = _secret_text_value_end(value, value_start, delimiters=";&|")
+        if value_end == value_start:
+            continue
+        parts.extend((value[copied_to:value_start], REDACTED))
+        copied_to = value_end
+    if not parts:
+        return value
+    parts.append(value[copied_to:])
+    return "".join(parts)
+
+
+def _secret_text_value_end(value: str, start: int, *, delimiters: str) -> int:
+    """Consume a whole quoted token, hiding the remainder if quotes never close."""
+
+    index = start
+    quote = ""
+    while index < len(value):
+        character = value[index]
+        if character == "\\" and quote != "'":
+            index = min(index + 2, len(value))
+            continue
+        if quote:
+            if character == quote:
+                quote = ""
+        elif character in "\"'":
+            quote = character
+        elif character.isspace() or character in delimiters:
+            break
+        index += 1
+    return index
 
 
 def _redact_embedded_url_passwords(value: str) -> str:

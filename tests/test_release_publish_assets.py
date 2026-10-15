@@ -1486,6 +1486,20 @@ def test_source_assets_only_rejects_source_bundle_link_member(tmp_path: Path) ->
     )
 
 
+def test_release_contract_requires_locked_source_server_runtime() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    mutations = (
+        ("--require-hashes --only-binary=:all: --requirement requirements-locks/source-linux-x86_64-bootstrap.txt", "--requirement requirements-locks/source-linux-x86_64-bootstrap.txt"),
+        ("--require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement requirements-locks/source-linux-x86_64.txt", "--no-build-isolation --requirement requirements-locks/source-linux-x86_64.txt"),
+        ('--no-deps --no-build-isolation ".[desktop,security,package,servers]"', '".[desktop,security,package]"'),
+    )
+    for original, replacement in mutations:
+        assert original in workflow
+        errors = checker.check_source_and_python_job(workflow.replace(original, replacement))
+        assert any("source-and-python job missing" in error for error in errors)
+
+
 def test_release_contract_requires_installed_source_wheel_smoke() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8").replace(

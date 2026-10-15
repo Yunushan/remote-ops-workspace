@@ -773,6 +773,33 @@ class _StartApi:
         self.closed.append(int(handle.value))
 
 
+@pytest.mark.parametrize("environment", [None, {"DISPLAY": ":77", "XAUTHORITY": "C:/private/ü authority"}])
+def test_native_create_process_passes_explicit_unicode_environment_block(monkeypatch, environment) -> None:
+    calls = []
+    api = _StartApi("create-process")
+    original_create = api.CreateProcessW
+
+    def create_process(*args):
+        block = "".join(args[6]) if args[6] is not None else None
+        calls.append((args[5], block))
+        return original_create(*args)
+
+    monkeypatch.setattr(api, "CreateProcessW", create_process)
+    monkeypatch.setattr(conpty, "_Kernel32Api", lambda: api)
+    monkeypatch.setattr(conpty, "_resolve_windows_executable", lambda _value: "C:/Windows/System32/cmd.exe")
+    monkeypatch.setattr(conpty, "_last_error", lambda operation: _error(operation))
+    process = conpty.WindowsConPtyProcess(["cmd.exe"], env=environment)
+    with pytest.raises(conpty.ConPtyProcessError):
+        process.start()
+    flags, block = calls[0]
+    if environment is None:
+        assert block is None
+        assert flags == conpty._EXTENDED_STARTUPINFO_PRESENT
+    else:
+        assert flags == conpty._EXTENDED_STARTUPINFO_PRESENT | conpty._CREATE_UNICODE_ENVIRONMENT
+        assert block == "DISPLAY=:77\0XAUTHORITY=C:/private/ü authority\0\0\0"
+
+
 class _ReadApi:
     def __init__(self, outcomes: list[bytes | int]) -> None:
         self.outcomes = outcomes

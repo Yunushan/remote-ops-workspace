@@ -222,7 +222,7 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert "--exclude-module remote_ops_workspace.gui" in script
     assert 'Path(sys.executable).with_name("row-gui.exe")' in cli
     assert 'getattr(sys, "frozen", False)' in cli
-    assert '".[desktop,security,package]"' in workflow
+    assert '".[desktop,security,package,servers]"' in workflow
     assert "Test-RowGuiLauncher" in smoke
     assert "Test-PortableGuiLauncher" in smoke
     assert "Expand-Archive" in smoke

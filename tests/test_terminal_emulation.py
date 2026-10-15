@@ -69,6 +69,15 @@ def test_ansi_transcript_bounds_scrollback_and_supports_screen_clear() -> None:
     assert TERMINAL_EMULATOR_BACKEND == "ansi-transcript-v1"
 
 
+def test_newline_after_cursor_rewrite_preserves_following_history() -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.feed("first\nsecond\nthird")
+
+    assert terminal.feed("\x1b[2A\r\x1b[2Krewritten\n") == "rewritten\nsecond\nthird"
+    assert (terminal.cursor_row, terminal.cursor_column) == (1, 0)
+    assert terminal.feed("\x1b[2Kreplacement") == "rewritten\nreplacement\nthird"
+
+
 def test_ansi_transcript_supports_primary_cursor_erase_and_save_restore_controls() -> None:
     erase_to_end = AnsiTerminalTranscript()
     erase_to_end.feed("one\ntwo\nthree\nfour")

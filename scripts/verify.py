@@ -122,6 +122,11 @@ def build_steps(
             env=_source_env(),
         ),
         VerifyStep(
+            "resolved release dependency locks",
+            [python, "scripts/check_release_dependency_locks.py"],
+            env=_source_env(),
+        ),
+        VerifyStep(
             "release matrix policy",
             [python, "scripts/check_release_matrix.py"],
             env=_source_env(),

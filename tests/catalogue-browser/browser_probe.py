@@ -18,6 +18,8 @@ from gate_contract import (
 )
 
 ELEMENT = 'element-6066-11e4-a52e-4f735466cecf'
+PAGEHIDE_PROOF_INSTALL = "\nconst key = arguments[0], storage = sessionStorage;\nif (storage.length >= 128 || storage.getItem(key) !== null) return false;\nwindow.addEventListener('pagehide', event => {\n  if (event.isTrusted !== true) return;\n  storage.setItem(key, catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? '1' : '0');\n}, {once: true});\nreturn true;\n"
+PAGEHIDE_PROOF_CONSUME = "\nconst key = arguments[0], storage = sessionStorage;\nlet value;\ntry { value = storage.getItem(key); }\nfinally { storage.removeItem(key); }\nif (storage.getItem(key) !== null) return '';\nreturn value === '1' ? 'qualification-cleared' : value === '0' ? 'qualification-refused' : '';\n"
 SNAPSHOT = """
 return {mode: catalogueMode, tokenEmpty: catalogueTokenValue === '',
  inputEmpty: catalogueToken.value === '', rows: catalogueRows,
@@ -499,11 +501,13 @@ class Driver:
             stage = 'connect'
             self.connect(token, 3)
             stage = 'pagehide-handler-install'
-            self.execute("window.addEventListener('pagehide', () => { window.name = catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? 'qualification-cleared' : 'qualification-refused'; }, {once: true});")
+            need(type(nonce) is str and re.fullmatch(r'[0-9a-f]{64}', nonce) is not None)
+            key = 'row-qualification-pagehide-' + nonce
+            need(self.execute(PAGEHIDE_PROOF_INSTALL, key) is True)
             stage = 'same-origin-navigation'
             self.command('/url', {'url': origin + '/index.html?qualification-away=' + nonce})
             stage = 'pagehide-marker-read'
-            marker = self.execute('return window.name;')
+            marker = self.execute(PAGEHIDE_PROOF_CONSUME, key)
             stage = 'pagehide-fresh-snapshot'
             fresh = self.snapshot()
             stage = 'pagehide-state-guard'

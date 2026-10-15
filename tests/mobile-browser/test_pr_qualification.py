@@ -4866,5 +4866,114 @@ class ChromeSectionLayoutDiagnosticTests(unittest.TestCase):
                 self.assertNotIn(private, line)
 
 
+class ChromeRandomizedApkPathTests(unittest.TestCase):
+    TOKEN_A = "A" * 22 + "=="
+    TOKEN_B = "-_" * 10 + "_w=="
+
+    def path(self, filename="base.apk", first=None, second=None):
+        first = self.TOKEN_A if first is None else first
+        second = self.TOKEN_B if second is None else second
+        return "/data/app/~~" + first + "/com.android.chrome-" + second + "/" + filename
+
+    def adb(self, paths, *, digest=None, size=b"123\n", dump=None):
+        case = ActiveChromePackageVersionTests()
+        responses = [case.dump(hidden=("98.0", "789")) if dump is None else dump,
+                     "".join("package:" + path + "\n" for path in paths).encode("ascii")]
+        for path in paths:
+            responses.extend([("a" * 64 + " " + path + "\n").encode("ascii") if digest is None else digest, size])
+        return SimpleNamespace(shell=mock.Mock(side_effect=responses))
+
+    def test_canonical_16byte_tokens_base_and_splits_preserve_exact_native_inventory(self):
+        case = ActiveChromePackageVersionTests()
+        for last in "AQgw":
+            token = "A" * 21 + last + "=="
+            paths = [self.path(first=token), self.path("split_config.arm64_v8a.apk", second=token),
+                     self.path("split_feature2.apk", first=token, second=token)]
+            with self.subTest(last=last):
+                adb = self.adb(paths)
+                with (mock.patch.object(H.subprocess, "Popen") as native,
+                      mock.patch.object(H.socket, "create_connection") as provider):
+                    result = H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual((result["version"], result["version_code"]), ("123.0", "456"))
+                self.assertEqual(result["apks"], [{"path": path, "sha256": "a" * 64, "bytes": 123} for path in paths])
+                expected = [mock.call(case.FIXED), mock.call("pm path com.android.chrome")]
+                for path in paths:
+                    expected.extend([mock.call("sha256sum " + path), mock.call("stat -c %s " + path)])
+                self.assertEqual(adb.shell.call_args_list, expected)
+                self.assertEqual(result["publisher_signing_trust"], "not-approved-by-this-test")
+                native.assert_not_called()
+                provider.assert_not_called()
+
+    def test_old_four_roots_and_original_longer_system_ext_bound_remain_accepted(self):
+        paths = ["/system/app/Chrome/Chrome.apk", "/product/app/Chrome/Chrome.apk",
+                 "/system_ext/app/Chrome/Chrome.apk", "/data/app/com.android.chrome-abc/base.apk",
+                 "/system_ext/" + "a" * 240 + ".apk"]
+        self.assertEqual(len(paths[-1]), 256)
+        for path in paths:
+            with self.subTest(path=path):
+                result = H.package_inventory(self.adb([path]), "com.android.chrome")
+                self.assertEqual(result["apks"][0]["path"], path)
+
+    def test_noncanonical_tokens_wrong_identity_roots_files_and_shell_paths_refuse_before_digest(self):
+        valid = self.path()
+        bad_tokens = ("A" * 21 + "B==", "A" * 22, "A" * 22 + "=", "A" * 22 + "===",
+                      "A" * 21 + "==", "A" * 23 + "==", "+" + "A" * 20 + "A==",
+                      "/" + "A" * 20 + "A==", "A" * 20 + " A==")
+        malformed = [self.path(first=token) for token in bad_tokens]
+        malformed.extend(self.path(second=token) for token in bad_tokens)
+        malformed.extend([valid.replace("~~", "~", 1), valid.replace("~~", "~~~", 1),
+                          valid.replace("com.android.chrome-", "com.android.foreign-", 1),
+                          valid.replace("/data/app/", "/product/app/", 1),
+                          valid.replace("/data/app/", "/data/local/tmp/", 1)])
+        malformed.extend(self.path(filename) for filename in (
+            "other.apk", "base.APK", "base.apk/private.apk", "../base.apk", "./base.apk", "base.apk;id",
+            "base.apk&x", "base.apk|x", "$(id).apk", "`id`.apk", "base apk", "base\\.apk",
+            "split_.apk", "split_1feature.apk", "split_a..b.apk", "split_feature-x.apk",
+            "split_a=b.apk", "split_a+b.apk", "split_" + "a" * 160 + ".apk"))
+        for path in malformed:
+            with self.subTest(path=path):
+                adb = self.adb([path])
+                with self.assertRaises(H.Refusal) as caught:
+                    H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual(caught.exception.args, ("apk-path-bound",))
+                self.assertIsNone(caught.exception.__context__)
+                self.assertEqual(adb.shell.call_args_list,
+                                 [mock.call(ActiveChromePackageVersionTests.FIXED), mock.call("pm path com.android.chrome")])
+
+    def test_existing_count_uniqueness_and_maximum16_paths_are_preserved(self):
+        for paths in ([], [self.path(), self.path()], [self.path("split_f" + str(i) + ".apk") for i in range(17)]):
+            with self.subTest(count=len(paths)):
+                adb = self.adb(paths)
+                with self.assertRaises(H.Refusal) as caught:
+                    H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual(caught.exception.args, ("actual-apk-path-inventory-unobserved",))
+                self.assertEqual(adb.shell.call_count, 2)
+        paths = [self.path()] + [self.path("split_f" + str(i) + ".apk") for i in range(15)]
+        adb = self.adb(paths)
+        result = H.package_inventory(adb, "com.android.chrome")
+        self.assertEqual([row["path"] for row in result["apks"]], paths)
+        self.assertEqual(adb.shell.call_count, 34)
+
+    def test_digest_stat_and_selected_provider_error_guards_do_not_change(self):
+        path = self.path()
+        cases = ((b"a" * 64 + b" /wrong.apk\n", b"123\n", "actual-apk-digest-layout", 3),
+                 (("g" * 64 + " " + path + "\n").encode("ascii"), b"123\n", "unobserved-exact-digest", 4),
+                 (("a" * 64 + " " + path + "\n").encode("ascii"), b"0\n", "actual-apk-size-layout", 4))
+        for digest, size, code, calls in cases:
+            with self.subTest(code=code):
+                adb = self.adb([path], digest=digest, size=size)
+                with self.assertRaises(H.Refusal) as caught:
+                    H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual(caught.exception.args, (code,))
+                self.assertEqual(adb.shell.call_count, calls)
+        for error in (H.Refusal("inventory-shell-closed"), KeyboardInterrupt("PRIVATE"), SystemExit("PRIVATE")):
+            adb = self.adb([path])
+            adb.shell.side_effect = [ActiveChromePackageVersionTests.dump(), ("package:" + path + "\n").encode("ascii"), error]
+            with self.assertRaises(type(error)) as caught:
+                H.package_inventory(adb, "com.android.chrome")
+            self.assertIs(caught.exception, error)
+            self.assertEqual(adb.shell.call_count, 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

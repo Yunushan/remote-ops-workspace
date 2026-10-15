@@ -1144,7 +1144,11 @@ def package_inventory(adb, package):
         if not line.startswith("package:"):
             raise Refusal("apk-path-layout")
         path = line[8:]
-        if re.fullmatch(r"/(?:system|product|system_ext|data)/[A-Za-z0-9_./+=-]{1,240}\.apk", path) is None or ".." in path.split("/"):
+        if ((re.fullmatch(r"/(?:system|product|system_ext|data)/[A-Za-z0-9_./+=-]{1,240}\.apk", path) is None
+                and (len(path) > 250 or re.fullmatch(
+                    r"/data/app/~~[A-Za-z0-9_-]{21}[AQgw]==/com\.android\.chrome-[A-Za-z0-9_-]{21}[AQgw]==/"
+                    r"(?:base|split_[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)\.apk", path) is None))
+                or ".." in path.split("/")):
             raise Refusal("apk-path-bound")
         fields = inventory_shell(adb, "sha256sum " + path, "chrome-apk-sha256").decode("ascii").split()
         if len(fields) != 2 or fields[1] != path:

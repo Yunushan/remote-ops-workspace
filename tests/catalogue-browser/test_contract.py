@@ -2838,7 +2838,10 @@ class DriverLifecycleDiagnosticTests(unittest.TestCase):
         'new-window-switch', 'new-window-navigation', 'new-window-opener-guard', 'new-window-snapshot',
         'new-window-state-guard', 'new-window-close', 'original-window-restore')
     FIRST = {'tokenEmpty': True, 'inputEmpty': True, 'rows': [], 'refreshDisabled': True}
-    HANDLER = "window.addEventListener('pagehide', () => { window.name = catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? 'qualification-cleared' : 'qualification-refused'; }, {once: true});"
+    HANDLER = "\nconst key = arguments[0], storage = sessionStorage;\nif (storage.length >= 128 || storage.getItem(key) !== null) return false;\nwindow.addEventListener('pagehide', event => {\n  if (event.isTrusted !== true) return;\n  storage.setItem(key, catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? '1' : '0');\n}, {once: true});\nreturn true;\n"
+    CONSUME = "\nconst key = arguments[0], storage = sessionStorage;\nlet value;\ntry { value = storage.getItem(key); }\nfinally { storage.removeItem(key); }\nif (storage.getItem(key) !== null) return '';\nreturn value === '1' ? 'qualification-cleared' : value === '0' ? 'qualification-refused' : '';\n"
+    NONCE = 'a' * 64
+    KEY = 'row-qualification-pagehide-' + NONCE
 
     def run_lifecycle(self, failure=None, *, bits=0, primary=None, fresh_override=None, marker_override=...,
                       entry_fault=None, serialization_fault=None, stream_fault=None):
@@ -2863,16 +2866,19 @@ class DriverLifecycleDiagnosticTests(unittest.TestCase):
             if stage == failure and stage not in ('pagehide-state-guard', 'new-window-state-guard'):
                 raise selected
             return value
-        def execute(script):
+        def execute(script, *args):
             if script == self.HANDLER:
-                return entered('pagehide-handler-install')
-            if script == 'return window.name;':
+                self.assertEqual(args, (self.KEY,))
+                return entered('pagehide-handler-install', True)
+            if script == self.CONSUME:
+                self.assertEqual(args, (self.KEY,))
                 return entered('pagehide-marker-read', marker)
+            self.assertEqual(args, ())
             self.assertEqual(script, 'return window.opener === null;')
             return entered('new-window-opener-guard', True)
         def command(path, body=None, method='POST'):
             if path == '/url':
-                if body['url'] == 'http://127.0.0.1:12346/index.html?qualification-away=synthetic-nonce':
+                if body['url'] == 'http://127.0.0.1:12346/index.html?qualification-away=' + self.NONCE:
                     return entered('same-origin-navigation')
                 self.assertEqual(body, {'url': 'http://127.0.0.1:12346/index.html'})
                 return entered('new-window-navigation')
@@ -2910,7 +2916,7 @@ class DriverLifecycleDiagnosticTests(unittest.TestCase):
                 patch.object(browser_probe.sys, 'stderr', stream), patch.object(browser_probe.json, 'dumps', side_effect=dumps), \
                 patch.object(browser_probe.http.client, 'HTTPConnection') as transport:
             try:
-                result = driver.lifecycle('http://127.0.0.1:12346', 'synthetic-private-token', 'synthetic-nonce')
+                result = driver.lifecycle('http://127.0.0.1:12346', 'synthetic-private-token', self.NONCE)
             except BaseException as caught:
                 error = caught
             transport.assert_not_called()
@@ -2931,10 +2937,10 @@ class DriverLifecycleDiagnosticTests(unittest.TestCase):
         self.assertEqual(events, [stage for stage in self.STAGES if stage not in ('pagehide-state-guard', 'new-window-state-guard')])
         driver.connect.assert_called_once_with('synthetic-private-token', 3)
         self.assertEqual([call.args for call in driver.execute.call_args_list],
-            [(self.HANDLER,), ('return window.name;',), ('return window.opener === null;',)])
+            [(self.HANDLER, self.KEY), (self.CONSUME, self.KEY), ('return window.opener === null;',)])
         self.assertEqual(driver.snapshot.call_count, 2)
         self.assertEqual([(call.args, call.kwargs) for call in driver.command.call_args_list], [
-            (('/url', {'url': 'http://127.0.0.1:12346/index.html?qualification-away=synthetic-nonce'}), {}),
+            (('/url', {'url': 'http://127.0.0.1:12346/index.html?qualification-away=' + self.NONCE}), {}),
             (('/window',), {'method': 'GET'}), (('/window/new', {'type': 'tab'}), {}),
             (('/window', {'handle': 'new-window'}), {}), (('/url', {'url': 'http://127.0.0.1:12346/index.html'}), {}),
             (('/window',), {'method': 'DELETE'}), (('/window', {'handle': 'original-window'}), {})])
@@ -3069,6 +3075,110 @@ class LifecycleMarkerKindTests(unittest.TestCase):
                 self.assertNotIn('first_guard_failure_bits', record)
                 self.assertEqual(set(record), {'schema', 'status', 'phase', 'readiness_credit',
                     'entered_stage', 'exception_category'})
+
+
+class PagehideSessionProofTests(unittest.TestCase):
+    def test_scripts_require_trusted_pagehide_and_consume_only_one_fixed_byte(self):
+        install = browser_probe.PAGEHIDE_PROOF_INSTALL
+        consume = browser_probe.PAGEHIDE_PROOF_CONSUME
+        self.assertEqual(install, DriverLifecycleDiagnosticTests.HANDLER)
+        self.assertEqual(consume, DriverLifecycleDiagnosticTests.CONSUME)
+        self.assertIn("storage.length >= 128 || storage.getItem(key) !== null", install)
+        self.assertLess(install.index('event.isTrusted !== true'), install.index('storage.setItem('))
+        self.assertEqual(install.count('storage.setItem('), 1)
+        self.assertIn("catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? '1' : '0'", install)
+        self.assertIn("}, {once: true});", install)
+        self.assertLess(consume.index('value = storage.getItem(key)'), consume.index('storage.removeItem(key)'))
+        self.assertLess(consume.index('storage.removeItem(key)'), consume.index("storage.getItem(key) !== null"))
+        self.assertLess(consume.index("storage.getItem(key) !== null"), consume.index("value === '1'"))
+        self.assertIn("value === '1' ? 'qualification-cleared' : value === '0' ? 'qualification-refused' : ''", consume)
+        self.assertEqual(consume.count('storage.removeItem(key)'), 1)
+        for forbidden in ('window.name', 'dispatchEvent', 'resetCatalogue', 'localStorage', 'catalogueToken.value = '):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, install + consume)
+
+    def test_nonce_must_have_exact_real_producer_shape_before_any_install_or_navigation(self):
+        class Text(str):
+            pass
+        cases = (None, True, 1, [], Text('a' * 64), '', 'a' * 63, 'a' * 65, 'A' * 64,
+            'g' * 64, 'a' * 63 + '\n', 'synthetic-nonce')
+        for nonce in cases:
+            driver = browser_probe.Driver(12345, 200)
+            driver.connect, driver.execute, driver.command, driver.snapshot = Mock(), Mock(), Mock(), Mock()
+            with self.subTest(kind=type(nonce).__name__), patch.object(browser_probe.sys, 'stderr', io.StringIO()) as stream:
+                with self.assertRaises(contract.GateRefusal):
+                    driver.lifecycle('http://127.0.0.1:12346', 'synthetic-private-token', nonce)
+                driver.connect.assert_called_once_with('synthetic-private-token', 3)
+                driver.execute.assert_not_called()
+                driver.command.assert_not_called()
+                driver.snapshot.assert_not_called()
+                record = json.loads(stream.getvalue())
+                self.assertEqual(record['entered_stage'], 'pagehide-handler-install')
+                self.assertNotIn('synthetic-private', stream.getvalue())
+
+    def test_install_requires_exact_true_ack_so_collision_bound_or_missing_setup_cannot_pass(self):
+        for ack in (None, False, 0, 1, 'true', [], {}):
+            driver = browser_probe.Driver(12345, 200)
+            driver.connect = Mock()
+            driver.execute = Mock(return_value=ack)
+            driver.command, driver.snapshot = Mock(), Mock()
+            with self.subTest(kind=type(ack).__name__), patch.object(browser_probe.sys, 'stderr', io.StringIO()) as stream:
+                with self.assertRaises(contract.GateRefusal):
+                    driver.lifecycle('http://127.0.0.1:12346', 'synthetic-private-token', 'a' * 64)
+                driver.execute.assert_called_once_with(browser_probe.PAGEHIDE_PROOF_INSTALL,
+                    'row-qualification-pagehide-' + 'a' * 64)
+                driver.command.assert_not_called()
+                driver.snapshot.assert_not_called()
+                self.assertEqual(json.loads(stream.getvalue())['entered_stage'], 'pagehide-handler-install')
+
+    def test_each_fresh_nonce_binds_install_and_consumption_in_the_same_original_positions(self):
+        fixture = DriverLifecycleDiagnosticTests('test_success_retains_exact_native_operation_order_and_return')
+        for nonce in ('a' * 64, 'b' * 64):
+            key = 'row-qualification-pagehide-' + nonce
+            with self.subTest(nonce=nonce), patch.object(fixture, 'NONCE', nonce), patch.object(fixture, 'KEY', key):
+                result, error, events, stream, driver = fixture.run_lifecycle()
+                self.assertIsNone(error)
+                self.assertEqual(result, dict(contract.CASES['pagehide-new-document']))
+                self.assertEqual(stream.getvalue(), '')
+                self.assertEqual([call.args for call in driver.execute.call_args_list], [
+                    (fixture.HANDLER, key), (fixture.CONSUME, key), ('return window.opener === null;',)])
+                self.assertEqual(driver.execute.call_count, 3)
+                self.assertEqual(driver.command.call_count, 7)
+                self.assertEqual(driver.snapshot.call_count, 2)
+                self.assertLess(events.index('pagehide-marker-read'), events.index('pagehide-fresh-snapshot'))
+                self.assertLess(events.index('pagehide-marker-read'), events.index('new-window-create'))
+                self.assertEqual(driver.deadline, 200)
+
+    def test_missing_refused_or_unrecognized_consumed_proof_never_accepts_fresh_defaults(self):
+        fixture = DriverLifecycleDiagnosticTests('test_success_retains_exact_native_operation_order_and_return')
+        for marker in ('', 'qualification-refused', 'synthetic-private-marker'):
+            with self.subTest(marker=marker):
+                result, error, events, stream, driver = fixture.run_lifecycle('pagehide-state-guard', marker_override=marker)
+                self.assertIsNone(result)
+                self.assertIs(type(error), contract.GateRefusal)
+                self.assertEqual(driver.snapshot.call_count, 1)
+                self.assertEqual(driver.command.call_count, 1)
+                self.assertNotIn('new-window-create', events)
+                self.assertEqual(json.loads(stream.getvalue())['first_guard_failure_bits'], 1)
+                self.assertNotIn('synthetic-private', stream.getvalue())
+
+    def test_install_and_consumption_faults_preserve_selected_error_chain_without_cleanup_queries(self):
+        fixture = DriverLifecycleDiagnosticTests('test_success_retains_exact_native_operation_order_and_return')
+        for stage in ('pagehide-handler-install', 'pagehide-marker-read'):
+            for kind in (KeyboardInterrupt, SystemExit, MemoryError, TimeoutError, OSError):
+                selected = kind('synthetic-private-selected')
+                selected.__cause__ = RuntimeError('synthetic-private-cause')
+                before = (selected.args, selected.__cause__, selected.__context__, selected.__suppress_context__)
+                with self.subTest(stage=stage, kind=kind.__name__):
+                    result, error, _events, stream, driver = fixture.run_lifecycle(stage, primary=selected)
+                    self.assertIsNone(result)
+                    self.assertIs(error, selected)
+                    self.assertEqual((error.args, error.__cause__, error.__context__, error.__suppress_context__), before)
+                    self.assertEqual(driver.execute.call_count, 1 if stage == 'pagehide-handler-install' else 2)
+                    self.assertEqual(driver.command.call_count, 0 if stage == 'pagehide-handler-install' else 1)
+                    self.assertEqual(driver.snapshot.call_count, 0)
+                    self.assertEqual(json.loads(stream.getvalue())['entered_stage'], stage)
+                    self.assertNotIn('synthetic-private', stream.getvalue())
 
 
 if __name__ == '__main__':

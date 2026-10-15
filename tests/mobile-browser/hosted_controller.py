@@ -1207,7 +1207,7 @@ def package_inventory(adb, package):
         if ((re.fullmatch(r"/(?:system|product|system_ext|data)/[A-Za-z0-9_./+=-]{1,240}\.apk", path) is None
                 and (len(path) > 250 or re.fullmatch(
                     r"/data/app/~~[A-Za-z0-9_-]{21}[AQgw]==/com\.android\.chrome-[A-Za-z0-9_-]{21}[AQgw]==/"
-                    r"(?:base|split_[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)\.apk", path) is None))
+                    r"(?:base|Chrome|split_[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)\.apk", path) is None))
                 or ".." in path.split("/")):
             try:
                 raise Refusal("apk-path-bound")

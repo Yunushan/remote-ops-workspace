@@ -128,7 +128,7 @@ let stage = 'controller';
     await cache.put(url('/app.js'), new Response(marker));
     stage = mode === 'auth' ? 'auth-static-fetch' : 'no-store-static-fetch';
     const response = await fetch('/app.js', mode === 'auth'
-      ? {headers: {'Authorization': 'Bearer ' + token}} : {cache: 'no-store'});
+      ? {cache: 'reload', headers: {'Authorization': 'Bearer ' + token}} : {cache: 'no-store'});
     stage = mode === 'auth' ? 'auth-static-response' : 'no-store-static-response';
     if (response.status !== 200 || await hash(await response.arrayBuffer()) !== expected['/app.js']) throw new Error('bypass');
     if (mode === 'auth') authBypass = true; else noStoreBypass = true;

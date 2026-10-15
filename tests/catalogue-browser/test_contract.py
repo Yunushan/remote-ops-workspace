@@ -3338,5 +3338,46 @@ class ServiceWorkerBoundaryDiagnosticTests(unittest.TestCase):
         self.assertNotIn('error.stack', source)
 
 
+class ServiceWorkerAuthNetworkTests(unittest.TestCase):
+    def test_auth_probe_uses_reload_to_distinguish_HTTP_cache_from_worker_authorization_bypass(self):
+        source = browser_probe.SW_PROBE
+        start = "const response = await fetch('/app.js', mode === 'auth'\n      ? "
+        auth = source.split(start, 1)[1].split(" : {cache: 'no-store'});", 1)[0]
+        self.assertEqual(auth, "{cache: 'reload', headers: {'Authorization': 'Bearer ' + token}}")
+        cache_mode = auth.split("cache: '", 1)[1].split("'", 1)[0]
+        has_authorization = "headers: {'Authorization': 'Bearer ' + token}" in auth
+        self.assertEqual(cache_mode, 'reload')
+        self.assertNotEqual(cache_mode, 'no-store')
+        self.assertTrue(has_authorization)
+        # Counterfactual model: the SW cache contains the existing poisoned canary;
+        # the HTTP cache contains a fresh real asset. This models the two distinct stores.
+        def observations(mode, authorization, worker_honors_auth):
+            worker_bypassed = mode == 'no-store' or authorization and worker_honors_auth
+            correct_asset_bytes = worker_bypassed
+            fresh_server_event = worker_bypassed and mode in ('reload', 'no-store')
+            return correct_asset_bytes, fresh_server_event
+        self.assertEqual(observations(cache_mode, has_authorization, True), (True, True))
+        self.assertEqual(observations(cache_mode, has_authorization, False), (False, False))
+        self.assertEqual(observations(cache_mode, False, True), (False, False))
+        self.assertEqual(observations('default', True, True), (True, False))
+        self.assertEqual(observations('no-store', True, False), (True, True))
+        self.assertEqual(source.count("? {cache: 'reload', headers: {'Authorization': 'Bearer ' + token}} : {cache: 'no-store'});"), 1)
+
+    def test_real_Driver_execute_emits_same_single_async_command_with_full_probe_and_arguments(self):
+        driver = browser_probe.Driver(12345, 200)
+        expected = {'/app.js': 'a' * 64}
+        answer = {'controlled': True, 'healthPolicyAbsent': True, 'authBypass': True,
+            'noStoreBypass': True, 'removed': True, 'exact': True}
+        driver.command = Mock(return_value=answer)
+        with patch.object(browser_probe.http.client, 'HTTPConnection') as connection:
+            result = driver.execute(browser_probe.SW_PROBE, 'synthetic-private-token', expected, 'finish', async_=True)
+            connection.assert_not_called()
+        self.assertIs(result, answer)
+        driver.command.assert_called_once_with('/execute/async', {'script': browser_probe.SW_PROBE,
+            'args': ['synthetic-private-token', expected, 'finish']})
+        self.assertEqual(driver.deadline, 200)
+        self.assertIn("if (response.status !== 200 || await hash(await response.arrayBuffer()) !== expected['/app.js']) throw new Error('bypass');", browser_probe.SW_PROBE)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

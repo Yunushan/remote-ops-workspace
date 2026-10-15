@@ -5106,5 +5106,49 @@ class ChromeApkPathShapeDiagnosticTests(unittest.TestCase):
                 self.assertNotIn(private, line)
 
 
+class ChromePreservedSystemApkNameTests(unittest.TestCase):
+    def test_literal_preserved_Chrome_apk_keeps_version_apk_proofs_and_exact_query_order(self):
+        case = ActiveChromePackageVersionTests()
+        random = ChromeRandomizedApkPathTests()
+        for last in "AQgw":
+            token = "A" * 21 + last + "=="
+            chrome = random.path("Chrome.apk", first=token, second=token)
+            paths = [chrome, random.path("split_config.en.apk", first=token, second=token)]
+            self.assertEqual(len(chrome), 91)
+            with self.subTest(last=last):
+                adb = random.adb(paths)
+                with (mock.patch.object(H.subprocess, "Popen") as native,
+                      mock.patch.object(H.socket, "create_connection") as provider):
+                    result = H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual((result["version"], result["version_code"]), ("123.0", "456"))
+                self.assertEqual(result["apks"], [{"path": path, "sha256": "a" * 64, "bytes": 123} for path in paths])
+                self.assertEqual(adb.shell.call_args_list, [mock.call(case.FIXED), mock.call("pm path com.android.chrome"),
+                    mock.call("sha256sum " + paths[0]), mock.call("stat -c %s " + paths[0]),
+                    mock.call("sha256sum " + paths[1]), mock.call("stat -c %s " + paths[1])])
+                self.assertEqual(result["publisher_signing_trust"], "not-approved-by-this-test")
+                native.assert_not_called()
+                provider.assert_not_called()
+
+    def test_other_names_aliases_foreign_identity_noncanonical_tokens_and_shell_forms_still_refuse(self):
+        random = ChromeRandomizedApkPathTests()
+        names = ("chrome.apk", "CHROME.apk", "Chrome.APK", "ChromePublic.apk", "ChromeBeta.apk", "Other.apk",
+                 "Chrome.apk.gz", "Chrome.apk.old", "Chrome.apks", "Chrome.apk/other.apk", "../Chrome.apk",
+                 "Chrome.apk;id", "Chrome.apk&x", "Chrome.apk|x", "Chrome$(id).apk", "Chrome`id`.apk", "Chrome apk")
+        paths = [random.path(name) for name in names]
+        paths.extend((random.path("Chrome.apk").replace("com.android.chrome-", "com.android.foreign-"),
+                      random.path("Chrome.apk", first="A" * 21 + "B=="),
+                      random.path("Chrome.apk", second="A" * 22),
+                      random.path("Chrome.apk").replace("/data/app/", "/product/app/")))
+        for path in paths:
+            with self.subTest(path=path):
+                adb = random.adb([path])
+                with self.assertRaises(H.Refusal) as caught:
+                    H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual(caught.exception.args, ("apk-path-bound",))
+                self.assertIsNone(caught.exception.__context__)
+                self.assertEqual(adb.shell.call_args_list, [mock.call(ActiveChromePackageVersionTests.FIXED),
+                                                          mock.call("pm path com.android.chrome")])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

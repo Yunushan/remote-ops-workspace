@@ -2525,7 +2525,8 @@ class ApiReadDiagnosticTests(unittest.TestCase):
         code, record, _labels, _operations, driver, _owners, _versions, line, selected = self.run_api_read_main('__none__')
         self.assertEqual(code, 1)
         self.assertEqual(record['phase'], 'api-create-refresh')
-        self.assertEqual(line, '')
+        self.assertEqual(line, '{"phase":"api-create-refresh","readiness_credit":0,'
+            '"schema":"row.catalogue-case-refusal.v1","status":"refused"}\n')
         self.assertIsNone(host_controller.api_read_refusal(record, selected[0][1], selected[0][0], selected[0][2]))
         driver.create.assert_called_once_with('catalogue created one', 'one.example.invalid:2222', 2)
         self.assertNotIn('entered_stage', record)
@@ -2829,6 +2830,184 @@ class CatalogueCaseRefusalTests(unittest.TestCase):
                 host_controller.emit_case_refusal(public)
                 self.assertEqual(stream.getvalue(), '')
                 self.assertEqual(repr(public), before)
+
+
+class DriverLifecycleDiagnosticTests(unittest.TestCase):
+    STAGES = ('connect', 'pagehide-handler-install', 'same-origin-navigation', 'pagehide-marker-read',
+        'pagehide-fresh-snapshot', 'pagehide-state-guard', 'original-window-read', 'new-window-create',
+        'new-window-switch', 'new-window-navigation', 'new-window-opener-guard', 'new-window-snapshot',
+        'new-window-state-guard', 'new-window-close', 'original-window-restore')
+    FIRST = {'tokenEmpty': True, 'inputEmpty': True, 'rows': [], 'refreshDisabled': True}
+    HANDLER = "window.addEventListener('pagehide', () => { window.name = catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? 'qualification-cleared' : 'qualification-refused'; }, {once: true});"
+
+    def run_lifecycle(self, failure=None, *, bits=0, primary=None, fresh_override=None,
+                      entry_fault=None, serialization_fault=None, stream_fault=None):
+        driver = browser_probe.Driver(12345, 200)
+        events = []
+        selected = contract.GateRefusal('synthetic-private-primary') if primary is None else primary
+        first, second = copy.deepcopy(self.FIRST), copy.deepcopy(self.FIRST)
+        marker = 'synthetic-private-marker' if bits & 1 or failure == 'pagehide-state-guard' and not bits else 'qualification-cleared'
+        for bit, key, value in ((2, 'tokenEmpty', False), (4, 'inputEmpty', False),
+                                (8, 'rows', [{'private': 'synthetic-private-row'}]), (16, 'refreshDisabled', False)):
+            if bits & bit:
+                first[key] = value
+        if fresh_override is not None:
+            first = fresh_override
+        if failure == 'new-window-state-guard':
+            second['tokenEmpty'] = False
+        snapshots = iter((first, second))
+        def entered(stage, value=None):
+            events.append(stage)
+            if stage == failure and stage not in ('pagehide-state-guard', 'new-window-state-guard'):
+                raise selected
+            return value
+        def execute(script):
+            if script == self.HANDLER:
+                return entered('pagehide-handler-install')
+            if script == 'return window.name;':
+                return entered('pagehide-marker-read', marker)
+            self.assertEqual(script, 'return window.opener === null;')
+            return entered('new-window-opener-guard', True)
+        def command(path, body=None, method='POST'):
+            if path == '/url':
+                if body['url'] == 'http://127.0.0.1:12346/index.html?qualification-away=synthetic-nonce':
+                    return entered('same-origin-navigation')
+                self.assertEqual(body, {'url': 'http://127.0.0.1:12346/index.html'})
+                return entered('new-window-navigation')
+            if path == '/window/new':
+                self.assertEqual(body, {'type': 'tab'})
+                return entered('new-window-create', {'handle': 'new-window'})
+            self.assertEqual(path, '/window')
+            if method == 'GET':
+                return entered('original-window-read', 'original-window')
+            if method == 'DELETE':
+                return entered('new-window-close')
+            self.assertEqual(method, 'POST')
+            if body == {'handle': 'new-window'}:
+                return entered('new-window-switch')
+            self.assertEqual(body, {'handle': 'original-window'})
+            return entered('original-window-restore')
+        def snapshot():
+            stage = 'new-window-snapshot' if 'new-window-opener-guard' in events else 'pagehide-fresh-snapshot'
+            return entered(stage, next(snapshots))
+        driver.connect = Mock(side_effect=lambda token, count: entered('connect'))
+        driver.execute = Mock(side_effect=execute)
+        driver.command = Mock(side_effect=command)
+        driver.snapshot = Mock(side_effect=snapshot)
+        stream = io.StringIO()
+        if stream_fault is not None:
+            stream = Mock()
+            stream.write.side_effect = stream_fault
+        original_dumps = browser_probe.json.dumps
+        def dumps(value, *args, **kwargs):
+            if type(value) is dict and value.get('schema') == 'row.catalogue-lifecycle-refusal.v1' and serialization_fault is not None:
+                raise serialization_fault
+            return original_dumps(value, *args, **kwargs)
+        result, error = None, None
+        with patch.object(browser_probe, 'emit_lifecycle_refusal', side_effect=entry_fault, wraps=browser_probe.emit_lifecycle_refusal) as emit, \
+                patch.object(browser_probe.sys, 'stderr', stream), patch.object(browser_probe.json, 'dumps', side_effect=dumps), \
+                patch.object(browser_probe.http.client, 'HTTPConnection') as transport:
+            try:
+                result = driver.lifecycle('http://127.0.0.1:12346', 'synthetic-private-token', 'synthetic-nonce')
+            except BaseException as caught:
+                error = caught
+            transport.assert_not_called()
+        if error is not None:
+            emit.assert_called_once()
+            self.assertIs(emit.call_args.args[1], error)
+            if failure not in ('pagehide-state-guard', 'new-window-state-guard'):
+                self.assertIs(error, selected)
+        else:
+            emit.assert_not_called()
+        return result, error, events, stream, driver
+
+    def test_success_retains_exact_native_operation_order_and_return(self):
+        result, error, events, stream, driver = self.run_lifecycle()
+        self.assertIsNone(error)
+        self.assertEqual(result, dict(contract.CASES['pagehide-new-document']))
+        self.assertEqual(stream.getvalue(), '')
+        self.assertEqual(events, [stage for stage in self.STAGES if stage not in ('pagehide-state-guard', 'new-window-state-guard')])
+        driver.connect.assert_called_once_with('synthetic-private-token', 3)
+        self.assertEqual([call.args for call in driver.execute.call_args_list],
+            [(self.HANDLER,), ('return window.name;',), ('return window.opener === null;',)])
+        self.assertEqual(driver.snapshot.call_count, 2)
+        self.assertEqual([(call.args, call.kwargs) for call in driver.command.call_args_list], [
+            (('/url', {'url': 'http://127.0.0.1:12346/index.html?qualification-away=synthetic-nonce'}), {}),
+            (('/window',), {'method': 'GET'}), (('/window/new', {'type': 'tab'}), {}),
+            (('/window', {'handle': 'new-window'}), {}), (('/url', {'url': 'http://127.0.0.1:12346/index.html'}), {}),
+            (('/window',), {'method': 'DELETE'}), (('/window', {'handle': 'original-window'}), {})])
+
+    def test_each_actual_lifecycle_boundary_reports_fixed_stage_and_preserves_error(self):
+        for index, stage in enumerate(self.STAGES):
+            with self.subTest(stage=stage):
+                result, error, events, stream, _driver = self.run_lifecycle(stage)
+                self.assertIsNone(result)
+                self.assertIs(type(error), contract.GateRefusal)
+                self.assertEqual(events, [item for item in self.STAGES[:index + 1]
+                    if item not in ('pagehide-state-guard', 'new-window-state-guard')])
+                record = json.loads(stream.getvalue())
+                self.assertEqual(record['entered_stage'], stage)
+                self.assertEqual(record['exception_category'], 'gate-refusal')
+                self.assertEqual(record['phase'], 'pagehide-new-document')
+                self.assertEqual(record['readiness_credit'], 0)
+                self.assertEqual(record.get('first_guard_failure_bits'), 1 if stage == 'pagehide-state-guard' else None)
+                self.assertTrue(stream.getvalue().isascii())
+                self.assertLessEqual(len(stream.getvalue().encode('ascii')), 512)
+                self.assertNotIn('synthetic-private', stream.getvalue())
+
+    def test_first_guard_positive_bits_and_combination_do_not_relax_predicate(self):
+        for bits in (1, 2, 4, 8, 16, 31):
+            with self.subTest(bits=bits):
+                result, error, _events, stream, _driver = self.run_lifecycle('pagehide-state-guard', bits=bits)
+                self.assertIsNone(result)
+                self.assertIs(type(error), contract.GateRefusal)
+                self.assertEqual(json.loads(stream.getvalue())['first_guard_failure_bits'], bits)
+
+    def test_exact_exception_categories_and_primary_chain_are_preserved(self):
+        class RefusalSubclass(contract.GateRefusal):
+            pass
+        cases = ((KeyError, 'key-error'), (IndexError, 'index-error'), (TypeError, 'type-error'),
+            (ValueError, 'value-error'), (TimeoutError, 'timeout-error'), (OSError, 'os-error'),
+            (RuntimeError, 'other-exact-type'), (RefusalSubclass, 'other-exact-type'))
+        for kind, category in cases:
+            selected = kind('synthetic-private-primary')
+            selected.__cause__ = RuntimeError('synthetic-private-cause')
+            original_chain = (selected.args, selected.__cause__, selected.__context__, selected.__suppress_context__)
+            with self.subTest(kind=kind):
+                _result, error, _events, stream, _driver = self.run_lifecycle('pagehide-marker-read', primary=selected)
+                self.assertIs(error, selected)
+                self.assertEqual((error.args, error.__cause__, error.__context__, error.__suppress_context__), original_chain)
+                self.assertEqual(json.loads(stream.getvalue())['exception_category'], category)
+
+    def test_diagnostic_entry_serialization_and_write_interruptions_preserve_original_error(self):
+        for fault in (KeyboardInterrupt(), SystemExit(9), MemoryError('synthetic-private')):
+            for key in ('entry_fault', 'serialization_fault', 'stream_fault'):
+                primary = TimeoutError('synthetic-private-selected')
+                with self.subTest(fault=type(fault).__name__, key=key):
+                    result, error, _events, stream, _driver = self.run_lifecycle('same-origin-navigation', primary=primary, **{key: fault})
+                    self.assertIsNone(result)
+                    self.assertIs(error, primary)
+                    if key != 'stream_fault':
+                        self.assertEqual(stream.getvalue(), '')
+
+    def test_malformed_first_snapshot_omits_bits_but_keeps_selected_failure_and_closed_fields(self):
+        class Text(str):
+            pass
+        class Mapping(dict):
+            pass
+        class Rows(list):
+            pass
+        invalid = [[], Mapping(self.FIRST), {**self.FIRST, 'tokenEmpty': 1},
+            {**self.FIRST, 'rows': Rows()}, {**self.FIRST, 'rows': 'synthetic-private'},
+            {Text('tokenEmpty'): True, 'inputEmpty': True, 'rows': [], 'refreshDisabled': True}]
+        for fresh in invalid:
+            with self.subTest(kind=type(fresh).__name__):
+                _result, error, _events, stream, _driver = self.run_lifecycle('pagehide-state-guard', fresh_override=fresh)
+                self.assertIs(type(error), contract.GateRefusal)
+                record = json.loads(stream.getvalue())
+                self.assertNotIn('first_guard_failure_bits', record)
+                self.assertEqual(set(record), {'schema', 'status', 'phase', 'readiness_credit', 'entered_stage', 'exception_category'})
+                self.assertNotIn('synthetic-private', stream.getvalue())
 
 
 if __name__ == '__main__':

@@ -6,6 +6,7 @@ No browser process, product import or network operation occurs at module import.
 import http.client
 import json
 import re
+import sys
 import time
 
 from gate_contract import (
@@ -302,6 +303,37 @@ def driver_start_fields(context, error):
         return None
 
 
+def emit_lifecycle_refusal(stage, error, marker=None, fresh=None):
+    """Project only current caller-local fixed stage/category and optional typed mismatch bits."""
+    try:
+        need(type(stage) is str and stage in ('connect', 'pagehide-handler-install',
+            'same-origin-navigation', 'pagehide-marker-read', 'pagehide-fresh-snapshot',
+            'pagehide-state-guard', 'original-window-read', 'new-window-create',
+            'new-window-switch', 'new-window-navigation', 'new-window-opener-guard',
+            'new-window-snapshot', 'new-window-state-guard', 'new-window-close', 'original-window-restore'))
+        categories = {GateRefusal: 'gate-refusal', KeyError: 'key-error', IndexError: 'index-error',
+            TypeError: 'type-error', ValueError: 'value-error', TimeoutError: 'timeout-error', OSError: 'os-error'}
+        diagnostic = {'schema': 'row.catalogue-lifecycle-refusal.v1', 'status': 'refused',
+            'phase': 'pagehide-new-document', 'readiness_credit': 0, 'entered_stage': stage,
+            'exception_category': categories.get(type(error), 'other-exact-type')}
+        if (stage == 'pagehide-state-guard' and type(error) is GateRefusal
+                and type(marker) is str and type(fresh) is dict
+                and all(type(key) is str for key in fresh)
+                and all(key in fresh for key in ('tokenEmpty', 'inputEmpty', 'rows', 'refreshDisabled'))
+                and all(type(fresh[key]) is bool for key in ('tokenEmpty', 'inputEmpty', 'refreshDisabled'))
+                and type(fresh['rows']) is list):
+            failed = (marker != 'qualification-cleared', fresh['tokenEmpty'] is not True,
+                fresh['inputEmpty'] is not True, len(fresh['rows']) != 0, fresh['refreshDisabled'] is not True)
+            bits = sum(1 << index for index, value in enumerate(failed) if value)
+            if bits:
+                diagnostic['first_guard_failure_bits'] = bits
+        raw = json.dumps(diagnostic, sort_keys=True, separators=(',', ':')).encode('ascii')
+        need(len(raw) + 1 <= 512)
+        sys.stderr.write(raw.decode('ascii') + '\n')
+    except BaseException:
+        pass
+
+
 class Driver:
     def __init__(self, port, deadline):
         need(type(port) is int and 1 <= port <= 65535)
@@ -454,24 +486,48 @@ class Driver:
         return True
 
     def lifecycle(self, origin, token, nonce):
-        self.connect(token, 3)
-        self.execute("window.addEventListener('pagehide', () => { window.name = catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? 'qualification-cleared' : 'qualification-refused'; }, {once: true});")
-        self.command('/url', {'url': origin + '/index.html?qualification-away=' + nonce})
-        marker = self.execute('return window.name;')
-        fresh = self.snapshot()
-        need(marker == 'qualification-cleared' and fresh['tokenEmpty'] and fresh['inputEmpty']
-             and fresh['rows'] == [] and fresh['refreshDisabled'])
-        original = self.command('/window', method='GET')
-        tab = self.command('/window/new', {'type': 'tab'})
-        self.command('/window', {'handle': tab['handle']})
-        self.command('/url', {'url': origin + '/index.html'})
-        need(self.execute('return window.opener === null;') is True)
-        fresh = self.snapshot()
-        need(fresh['tokenEmpty'] and fresh['inputEmpty'] and fresh['rows'] == [] and fresh['refreshDisabled'])
-        self.command('/window', method='DELETE')
-        self.command('/window', {'handle': original})
-        return {'real_pagehide_clear_observed': True, 'new_document_requires_auth': True,
-            'new_noopener_requires_auth': True, 'synthetic_lifecycle_event_used': False}
+        stage = None
+        marker = fresh = None
+        try:
+            stage = 'connect'
+            self.connect(token, 3)
+            stage = 'pagehide-handler-install'
+            self.execute("window.addEventListener('pagehide', () => { window.name = catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? 'qualification-cleared' : 'qualification-refused'; }, {once: true});")
+            stage = 'same-origin-navigation'
+            self.command('/url', {'url': origin + '/index.html?qualification-away=' + nonce})
+            stage = 'pagehide-marker-read'
+            marker = self.execute('return window.name;')
+            stage = 'pagehide-fresh-snapshot'
+            fresh = self.snapshot()
+            stage = 'pagehide-state-guard'
+            need(marker == 'qualification-cleared' and fresh['tokenEmpty'] and fresh['inputEmpty']
+                 and fresh['rows'] == [] and fresh['refreshDisabled'])
+            stage = 'original-window-read'
+            original = self.command('/window', method='GET')
+            stage = 'new-window-create'
+            tab = self.command('/window/new', {'type': 'tab'})
+            stage = 'new-window-switch'
+            self.command('/window', {'handle': tab['handle']})
+            stage = 'new-window-navigation'
+            self.command('/url', {'url': origin + '/index.html'})
+            stage = 'new-window-opener-guard'
+            need(self.execute('return window.opener === null;') is True)
+            stage = 'new-window-snapshot'
+            fresh = self.snapshot()
+            stage = 'new-window-state-guard'
+            need(fresh['tokenEmpty'] and fresh['inputEmpty'] and fresh['rows'] == [] and fresh['refreshDisabled'])
+            stage = 'new-window-close'
+            self.command('/window', method='DELETE')
+            stage = 'original-window-restore'
+            self.command('/window', {'handle': original})
+            return {'real_pagehide_clear_observed': True, 'new_document_requires_auth': True,
+                'new_noopener_requires_auth': True, 'synthetic_lifecycle_event_used': False}
+        except BaseException as error:
+            try:
+                emit_lifecycle_refusal(stage, error, marker, fresh)
+            except BaseException:
+                pass
+            raise
 
     def controlled(self):
         value = self.execute("const done = arguments[arguments.length-1]; navigator.serviceWorker.ready.then(() => { if (navigator.serviceWorker.controller) done(true); else navigator.serviceWorker.addEventListener('controllerchange', () => done(!!navigator.serviceWorker.controller), {once:true}); }).catch(() => done(false));", async_=True)

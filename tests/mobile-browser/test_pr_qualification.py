@@ -4504,6 +4504,8 @@ class ChromeSectionShapeDiagnosticTests(unittest.TestCase):
         (b"    Hidden system package PRIVATE", "hidden-title-other"),
         (b"Packages" + b"x" * 257, "over-bound"),
         (b"PRIVATE", "other-candidate"),
+        (b"Renamed packages:", "renamed-title-exact"),
+        (b"  renamed packages:", "renamed-title-shape"),
     )
 
     def refused(self, raw):
@@ -4517,7 +4519,7 @@ class ChromeSectionShapeDiagnosticTests(unittest.TestCase):
 
     def test_closed_classifier_includes_defensive_exact_titles_without_reachability_claim(self):
         self.assertEqual(tuple(H.CHROME_SECTION_SHAPES), tuple(Q.CHROME_SECTION_SHAPES))
-        self.assertEqual(len(set(H.CHROME_SECTION_SHAPES)), 17)
+        self.assertEqual(len(set(H.CHROME_SECTION_SHAPES)), 19)
         for line, expected in self.ROWS:
             with self.subTest(expected=expected):
                 self.assertEqual(H._chrome_section_shape(line.decode("ascii")), expected)
@@ -4615,6 +4617,28 @@ class ChromeSectionShapeDiagnosticTests(unittest.TestCase):
         with mock.patch.object(H, "_chrome_section_shape", side_effect=reentered):
             error = self.refused(case.dump() + b"    packageSource=PRIVATE\n")
         self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_renamed_title_partition_retains_original_refusal_before_active_and_in_both_scopes(self):
+        rows = (
+            (b"Renamed packages:", "renamed-title-exact"),
+            (b"renamed packages:", "renamed-title-shape"),
+            (b"  Renamed packages:", "renamed-title-shape"),
+            (b"\tRenamed packages:", "renamed-title-shape"),
+        )
+        case = ActiveChromePackageVersionTests()
+        prefixes = ((b"", "unobserved"), (case.dump(), "active"),
+                    (case.dump(hidden=("98.0", "789")), "hidden"))
+        for line, expected in rows:
+            for prefix, scope in prefixes:
+                with self.subTest(expected=expected, scope=scope):
+                    self.assertEqual(H._chrome_section_shape(line.decode("ascii")), expected)
+                    error = self.refused(prefix + line + b"\n")
+                    self.assertEqual(Q.chrome_parser_check_diagnostic(error),
+                        {"check": "section-title", "scope": scope, "section_shape": expected})
+                    self.assertEqual(error.args, (self.CODE,))
+                    self.assertIsNone(error.__context__)
+        for candidate in ("Renamed packages: PRIVATE", "Other packages:"):
+            self.assertEqual(H._chrome_section_shape(candidate), "embedded-packages-colon")
 
     def test_new_branch_stays_below_retained_bound_and_never_serializes_private_input(self):
         error = self.refused(ActiveChromePackageVersionTests.dump() + b"    packageSource=PRIVATE\n")

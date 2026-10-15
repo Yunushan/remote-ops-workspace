@@ -518,7 +518,8 @@ CHROME_COLON_CONTEXTS = ("schemes-empty", "schemes-target", "schemes-package", "
 CHROME_SECTION_SHAPES = ("source-case", "source-label", "source-indent", "source-padding",
     "source-empty", "source-enum", "source-digits", "source-value", "active-title-exact",
     "active-title-shape", "hidden-title-exact", "hidden-title-shape", "embedded-packages-colon",
-    "packages-prefix-other", "hidden-title-other", "over-bound", "other-candidate")
+    "packages-prefix-other", "hidden-title-other", "over-bound", "other-candidate",
+    "renamed-title-exact", "renamed-title-shape")
 
 
 def chrome_parser_check_diagnostic(exc):

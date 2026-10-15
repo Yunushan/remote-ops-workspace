@@ -716,7 +716,8 @@ def _chrome_colon_context(line, state):
 CHROME_SECTION_SHAPES = ("source-case", "source-label", "source-indent", "source-padding",
     "source-empty", "source-enum", "source-digits", "source-value", "active-title-exact",
     "active-title-shape", "hidden-title-exact", "hidden-title-shape", "embedded-packages-colon",
-    "packages-prefix-other", "hidden-title-other", "over-bound", "other-candidate")
+    "packages-prefix-other", "hidden-title-other", "over-bound", "other-candidate",
+    "renamed-title-exact", "renamed-title-shape")
 
 
 def _chrome_section_shape(line):
@@ -747,6 +748,8 @@ def _chrome_section_shape(line):
         return "active-title-exact" if line == "Packages:" else "active-title-shape"
     if lower == "hidden system packages:":
         return "hidden-title-exact" if line == "Hidden system packages:" else "hidden-title-shape"
+    if lower == "renamed packages:":
+        return "renamed-title-exact" if line == "Renamed packages:" else "renamed-title-shape"
     if "packages:" in lower:
         return "embedded-packages-colon"
     if lower.startswith("packages"):

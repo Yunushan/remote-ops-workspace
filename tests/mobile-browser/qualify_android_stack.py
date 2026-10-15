@@ -515,6 +515,12 @@ CHROME_COLON_CONTEXTS = ("schemes-empty", "schemes-target", "schemes-package", "
     "unobserved-empty", "unobserved-target", "unobserved-package", "unobserved-other")
 
 
+CHROME_SECTION_SHAPES = ("source-case", "source-label", "source-indent", "source-padding",
+    "source-empty", "source-enum", "source-digits", "source-value", "active-title-exact",
+    "active-title-shape", "hidden-title-exact", "hidden-title-shape", "embedded-packages-colon",
+    "packages-prefix-other", "hidden-title-other", "over-bound", "other-candidate")
+
+
 def chrome_parser_check_diagnostic(exc):
     """Closed current-attempt check/scope/category/context; never raw header or cause."""
     try:
@@ -529,6 +535,7 @@ def chrome_parser_check_diagnostic(exc):
         if (type(value) is not dict or len(value) not in (4, 5, 6, 7) or any(type(key) is not str for key in value)
                 or set(value) not in ({"attempt_token", "selected_error", "check", "scope"},
                                      {"attempt_token", "selected_error", "check", "scope", "header_kind"},
+                                     {"attempt_token", "selected_error", "check", "scope", "section_shape"},
                                      {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"},
                                      {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context", "colon_context"})
                 or value["attempt_token"] is not token or value["selected_error"] is not exc):
@@ -538,6 +545,13 @@ def chrome_parser_check_diagnostic(exc):
                 or type(scope) is not str or scope not in CHROME_PARSER_SCOPES):
             return None
         result = {"check": check, "scope": scope}
+        if "section_shape" in value:
+            try:
+                shape = value["section_shape"]
+                if check == "section-title" and type(shape) is str and shape in CHROME_SECTION_SHAPES:
+                    result["section_shape"] = shape
+            except BaseException:
+                result.pop("section_shape", None)
         if "header_kind" in value:
             kind = value["header_kind"]
             if check != "package-header" or type(kind) is not str or kind not in CHROME_HEADER_KINDS:

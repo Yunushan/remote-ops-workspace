@@ -2026,7 +2026,7 @@ class HostPolicyPublisherTests(unittest.TestCase):
 
 
 class ActualPolicyCheckpointMainTests(unittest.TestCase):
-    def run_actual_main(self, *, final_label_failure):
+    def run_actual_main(self, *, final_label_failure, failure_phase=None, failure_error=None, diagnostic_stream=None):
         import hashlib
         import stat
         import threading
@@ -2113,6 +2113,8 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
                     state['pending'] = {'ready': True, 'nonce': 'a' * 64, 'port': 12345, 'inventory': inventory()}
                 else:
                     state['case'] = value['case']
+                    if value['case'] == failure_phase:
+                        raise failure_error
                     if value['op'] == 'stop':
                         state['alive'] = False
                     state['pending'] = {'nonce': 'a' * 64, 'inventory': inventory()}
@@ -2201,6 +2203,8 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
             case.assertIs(selected, holder)
             case.assertIs(owner, owners[1])
             task_calls.append(checkpoint)
+            if checkpoint == 'final' and failure_phase == 'cleanup':
+                raise failure_error
             return original_observe(selected, owner, deadline, checkpoint=checkpoint)
         with memory:
             memory.raw = raw
@@ -2242,7 +2246,7 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
                 connection = enter(patch.object(host_controller.http.client, 'HTTPConnection'))
                 connection.return_value.getresponse.return_value.status = 200
                 connection.return_value.getresponse.return_value.read.return_value = b''
-                enter(patch.object(host_controller.sys, 'stderr', io.StringIO()))
+                enter(patch.object(host_controller.sys, 'stderr', io.StringIO() if diagnostic_stream is None else diagnostic_stream))
                 code = host_controller.main()
                 self.assertEqual(commands.call_count, 2)
                 self.assertEqual([call.args[1] for call in commands.call_args_list],
@@ -2250,8 +2254,9 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
                 timer.return_value.start.assert_called_once()
                 timer.return_value.cancel.assert_called_once()
         record = json.loads(files['/synthetic-repo/.tmp/catalogue-browser-public/result.json'])
-        self.assertEqual(task_calls, ['initial', 'final'])
-        self.assertEqual([row[0] for row in native_calls], ['owned', 'owned', 'driver', 'owned'])
+        self.assertEqual(task_calls, ['initial', 'final'] if failure_phase in (None, 'cleanup') else ['initial'])
+        self.assertEqual([row[0] for row in native_calls], ['owned', 'owned', 'driver']
+            if failure_phase in ('api-create-refresh', 'restart-persistence-auth-rotation') else ['owned', 'owned', 'driver', 'owned'])
         self.assertTrue(holder['samples']['initial']['observed'])
         self.assertEqual(holder['samples']['initial']['count'], 1)
         return code, record, holder
@@ -2719,6 +2724,111 @@ class DriverElementPathTests(unittest.TestCase):
                 self.assertEqual(clock.call_count, 1)
                 self.assert_requests_and_closes(connections,
                     [('/session/owned-session/element', {'using': 'css selector', 'value': '#synthetic'})])
+
+
+class CatalogueCaseRefusalTests(unittest.TestCase):
+    PHASES = ('api-create-refresh', 'restart-persistence-auth-rotation', 'disconnect-token-state',
+        'pagehide-new-document', 'service-worker-api-cache-boundary', 'owned-server-down', 'cleanup')
+
+    def run_failure(self, phase, *, entry_fault=None, packed_fault=None, stream_fault=None):
+        selected = contract.GateRefusal('synthetic-private-case-failure')
+        stream = io.StringIO()
+        if stream_fault is not None:
+            stream = Mock()
+            stream.write.side_effect = stream_fault
+        original_packed = host_controller.packed
+        def packed(value):
+            if type(value) is dict and value.get('schema') == 'row.catalogue-case-refusal.v1' and packed_fault is not None:
+                raise packed_fault
+            return original_packed(value)
+        fixture = ActualPolicyCheckpointMainTests('test_actual_H_main_normal_commits_both_samples_in_order_before_pending_result')
+        with patch.object(host_controller, 'emit_case_refusal', side_effect=entry_fault, wraps=host_controller.emit_case_refusal) as emit, \
+                patch.object(host_controller, 'packed', side_effect=packed), \
+                patch.object(host_controller, 'api_read_refusal', wraps=host_controller.api_read_refusal) as original_failure:
+            code, record, holder = fixture.run_actual_main(final_label_failure=False,
+                failure_phase=phase, failure_error=selected, diagnostic_stream=stream)
+        emit.assert_called_once()
+        self.assertIs(original_failure.call_args.args[1], selected)
+        return code, record, holder, stream
+
+    def test_actual_main_each_remaining_case_and_cleanup_emits_only_fixed_phase(self):
+        for phase in self.PHASES:
+            with self.subTest(phase=phase):
+                code, record, holder, stream = self.run_failure(phase)
+                self.assertEqual(code, 1)
+                self.assertEqual(record['phase'], phase)
+                self.assertFalse(record['complete'])
+                self.assertTrue(record['forced_cleanup_attempted'])
+                self.assertTrue(record['cleanup_complete'])
+                self.assertTrue(holder['samples']['initial']['observed'])
+                self.assertFalse(holder['samples']['final']['observed'])
+                self.assertEqual(json.loads(stream.getvalue()), {'schema': 'row.catalogue-case-refusal.v1',
+                    'status': 'refused', 'phase': phase, 'readiness_credit': 0})
+                self.assertNotIn('synthetic-private', stream.getvalue())
+                self.assertLessEqual(len(stream.getvalue().encode('ascii')), 512)
+                self.assertEqual(stream.getvalue().count('\n'), 1)
+                self.assertNotIn('case_diagnostic', record)
+
+    def test_default_full_main_success_retains_original_result_and_emits_nothing(self):
+        fixture = ActualPolicyCheckpointMainTests('test_actual_H_main_normal_commits_both_samples_in_order_before_pending_result')
+        stream = io.StringIO()
+        with patch.object(host_controller, 'emit_case_refusal', wraps=host_controller.emit_case_refusal) as emit:
+            code, record, holder = fixture.run_actual_main(final_label_failure=False, diagnostic_stream=stream)
+        self.assertEqual(code, 0)
+        self.assertTrue(record['complete'])
+        self.assertTrue(holder['samples']['final']['observed'])
+        self.assertEqual(record['host_policy_cleanup'], {'status': 'pending'})
+        self.assertEqual(stream.getvalue(), '')
+        emit.assert_not_called()
+
+    def test_emitter_entry_serialization_and_stream_faults_preserve_result_and_cleanup(self):
+        for fault in (KeyboardInterrupt(), SystemExit(9), MemoryError('synthetic-private')):
+            for location in ('entry_fault', 'packed_fault', 'stream_fault'):
+                with self.subTest(fault=type(fault).__name__, location=location):
+                    code, record, holder, stream = self.run_failure('api-create-refresh', **{location: fault})
+                    self.assertEqual(code, 1)
+                    self.assertEqual(record['phase'], 'api-create-refresh')
+                    self.assertFalse(record['complete'])
+                    self.assertTrue(record['cleanup_complete'])
+                    self.assertTrue(record['forced_cleanup_attempted'])
+                    self.assertFalse(holder['samples']['final']['observed'])
+                    if location != 'stream_fault':
+                        self.assertEqual(stream.getvalue(), '')
+
+    def test_closed_phase_record_never_serializes_other_public_fields(self):
+        for phase in self.PHASES:
+            with self.subTest(phase=phase), patch.object(host_controller.sys, 'stderr', io.StringIO()) as stream:
+                public = {'phase': phase, 'status': 'refused', 'complete': False,
+                    'private_example': '/synthetic-private/path?token=PRIVATE', 'private_streams': [object()]}
+                before = public.copy()
+                host_controller.emit_case_refusal(public)
+                self.assertEqual(public, before)
+                self.assertEqual(json.loads(stream.getvalue()), {'schema': 'row.catalogue-case-refusal.v1',
+                    'phase': phase, 'status': 'refused', 'readiness_credit': 0})
+                self.assertTrue(stream.getvalue().isascii())
+                self.assertLessEqual(len(stream.getvalue().encode('ascii')), 512)
+                self.assertNotIn('PRIVATE', stream.getvalue())
+                self.assertNotIn('synthetic-private', stream.getvalue())
+
+    def test_wrong_phases_types_and_success_records_are_omitted_without_mutation(self):
+        class Text(str):
+            pass
+        class Mapping(dict):
+            pass
+        invalid = [None, [], Mapping(phase='cleanup', status='refused', complete=False)]
+        for phase in ('api-read', 'host-runtime-observation', 'preparation', 'unknown', '/PRIVATE',
+                      '', None, True, ['cleanup'], Text('cleanup')):
+            invalid.append({'phase': phase, 'status': 'refused', 'complete': False})
+        invalid.extend([{'phase': 'cleanup', 'status': status, 'complete': False}
+            for status in ('observations-complete-with-limits', None, Text('refused'))])
+        invalid.extend([{'phase': 'cleanup', 'status': 'refused', 'complete': complete}
+            for complete in (True, 0, None)])
+        for public in invalid:
+            before = repr(public)
+            with self.subTest(public=before), patch.object(host_controller.sys, 'stderr', io.StringIO()) as stream:
+                host_controller.emit_case_refusal(public)
+                self.assertEqual(stream.getvalue(), '')
+                self.assertEqual(repr(public), before)
 
 
 if __name__ == '__main__':

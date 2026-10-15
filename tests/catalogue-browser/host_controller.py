@@ -536,6 +536,24 @@ def emit_runtime_refusal(public):
         pass
 
 
+def emit_case_refusal(public):
+    """Emit only a fixed entered phase; no exception or private observation is read."""
+    try:
+        need(type(public) is dict and type(public.get('status')) is str
+             and public['status'] == 'refused' and public.get('complete') is False)
+        phase = public['phase']
+        need(type(phase) is str and phase in ('api-create-refresh',
+            'restart-persistence-auth-rotation', 'disconnect-token-state',
+            'pagehide-new-document', 'service-worker-api-cache-boundary',
+            'owned-server-down', 'cleanup'))
+        raw = packed({'schema': 'row.catalogue-case-refusal.v1', 'status': 'refused',
+            'phase': phase, 'readiness_credit': 0})
+        need(len(raw) + 1 <= 512)
+        sys.stderr.write(raw.decode('ascii') + '\n')
+    except BaseException:
+        pass
+
+
 def inventories_row(phase, inventory):
     need(type(inventory['count']) is int and inventory['count'] == len(inventory['profiles']))
     return {'phase': phase, 'count': inventory['count'], 'digest': inventory['digest']}
@@ -1033,6 +1051,10 @@ def main():
                 emit_runtime_refusal(public)
                 try:
                     emit_api_read_refusal(public, api_read_failure)
+                except BaseException:
+                    pass
+                try:
+                    emit_case_refusal(public)
                 except BaseException:
                     pass
                 (output / 'result.json').write_bytes(packed(public))

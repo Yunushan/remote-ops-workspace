@@ -713,6 +713,49 @@ def _chrome_colon_context(line, state):
         form = "other"
     return state[0] + "-" + form
 
+CHROME_SECTION_SHAPES = ("source-case", "source-label", "source-indent", "source-padding",
+    "source-empty", "source-enum", "source-digits", "source-value", "active-title-exact",
+    "active-title-shape", "hidden-title-exact", "hidden-title-shape", "embedded-packages-colon",
+    "packages-prefix-other", "hidden-title-other", "over-bound", "other-candidate")
+
+
+def _chrome_section_shape(line):
+    """Closed lexical shape of an already-refused section candidate, never raw text."""
+    if type(line) is not str:
+        return None
+    if len(line) > 256:
+        return "over-bound"
+    stripped = line.strip(" \t")
+    lower = stripped.lower()
+    if lower.startswith("packagesource"):
+        if not stripped.startswith("packageSource="):
+            return "source-case" if lower.startswith("packagesource=") else "source-label"
+        indentation = line[:len(line) - len(line.lstrip(" \t"))]
+        if indentation != "    ":
+            return "source-indent"
+        if line != "    " + stripped:
+            return "source-padding"
+        value = stripped[len("packageSource="):]
+        if not value:
+            return "source-empty"
+        if value in ("0", "1", "2", "3", "4"):
+            return "source-enum"
+        if re.fullmatch(r"[0-9]{1,12}", value) is not None:
+            return "source-digits"
+        return "source-value"
+    if lower == "packages:":
+        return "active-title-exact" if line == "Packages:" else "active-title-shape"
+    if lower == "hidden system packages:":
+        return "hidden-title-exact" if line == "Hidden system packages:" else "hidden-title-shape"
+    if "packages:" in lower:
+        return "embedded-packages-colon"
+    if lower.startswith("packages"):
+        return "packages-prefix-other"
+    if "hidden system package" in lower:
+        return "hidden-title-other"
+    return "other-candidate"
+
+
 def _note_chrome_parser_check(error, context, attempt_token):
     if (type(error) is not Refusal or type(error.args) is not tuple
             or error.args != ("actual-package-version-unobserved",)
@@ -721,6 +764,7 @@ def _note_chrome_parser_check(error, context, attempt_token):
             or any(type(key) is not str for key in context)
             or set(context) not in ({"attempt_token", "selected_error", "check", "scope"},
                                    {"attempt_token", "selected_error", "check", "scope", "header_kind"},
+                                   {"attempt_token", "selected_error", "check", "scope", "section_shape"},
                                    {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"},
                                    {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context", "colon_context"})
             or context["attempt_token"] is not attempt_token or context["selected_error"] is not error):
@@ -731,6 +775,13 @@ def _note_chrome_parser_check(error, context, attempt_token):
         return
     observed = {"attempt_token": attempt_token, "selected_error": error,
                 "check": check, "scope": scope}
+    if "section_shape" in context:
+        try:
+            value = context["section_shape"]
+            if check == "section-title" and type(value) is str and value in CHROME_SECTION_SHAPES:
+                observed["section_shape"] = value
+        except BaseException:
+            observed.pop("section_shape", None)
     if "header_kind" in context:
         kind = context["header_kind"]
         if check != "package-header" or type(kind) is not str or kind not in CHROME_HEADER_KINDS:
@@ -801,7 +852,19 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
                                 colon_context = _chrome_colon_context(line, colon_heading)
                             except BaseException:
                                 pass
+                        section_shape = None
+                        if check == "section-title":
+                            try:
+                                section_shape = _chrome_section_shape(line)
+                            except BaseException:
+                                pass
                         _annotate_chrome_parser_context(diagnostic_context, error, check, scope)
+                        if type(section_shape) is str:
+                            try:
+                                if section_shape in CHROME_SECTION_SHAPES:
+                                    diagnostic_context["section_shape"] = section_shape
+                            except BaseException:
+                                diagnostic_context.pop("section_shape", None)
                         if type(header_kind) is str and header_kind in CHROME_HEADER_KINDS:
                             diagnostic_context["header_kind"] = header_kind
                             if (header_kind == "keyword-prefix" and type(keyword_context) is str

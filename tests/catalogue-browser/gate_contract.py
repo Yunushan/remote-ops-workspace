@@ -162,6 +162,30 @@ def validate(raw, expected, *, policy_cleanup_pending=False):
         'genuine_host_authority': False, 'readiness_credit': 0}
 
 
+API_READ_STAGES = (
+    'navigation-command', 'browser-connect', 'fixture-inspection',
+    'disk-dom-inventory', 'catalogue-event-selection', 'case-contract',
+)
+API_READ_EXCEPTIONS = (
+    'gate-refusal', 'key-error', 'index-error', 'type-error', 'value-error',
+    'timeout-error', 'os-error', 'other-exact-type',
+)
+
+
+def api_read_diagnostic(value):
+    required = {'entered_stage', 'exception_category'}
+    optional = {'case_failure_bits'} if type(value) is dict and 'case_failure_bits' in value else set()
+    exact(value, required | optional)
+    need(all(type(key) is str for key in value))
+    need(type(value['entered_stage']) is str and value['entered_stage'] in API_READ_STAGES)
+    need(type(value['exception_category']) is str and value['exception_category'] in API_READ_EXCEPTIONS)
+    if optional:
+        bits = value['case_failure_bits']
+        need(type(bits) is int and 1 <= bits <= 31)
+        need(value['entered_stage'] == 'case-contract' and value['exception_category'] == 'gate-refusal')
+    return value.copy()
+
+
 PREPARATION_STEPS = ('source-checks', 'workflow-command', 'workflow-bytes', 'source-summary',
     'python-path', 'chrome-file-pin', 'driver-file-pin', 'python-file-pin', 'git-file-pin',
     'runtime-tool-owners', 'runtime-checkpoint')

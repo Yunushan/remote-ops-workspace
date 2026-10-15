@@ -668,15 +668,61 @@ def _chrome_keyword_context(line, active_count):
     return ("before-active" if active_count == 0 else "after-active") + "-" + form
 
 
+
+CHROME_COLON_CONTEXTS = ("schemes-empty", "schemes-target", "schemes-package", "schemes-other",
+    "unobserved-empty", "unobserved-target", "unobserved-package", "unobserved-other")
+
+
+def _sample_chrome_colon_heading(line, state):
+    """Sample a preceding Schemes heading only; no verified parent-section claim."""
+    if (type(line) is not str or type(state) is not tuple or len(state) != 2
+            or type(state[0]) is not str or state[0] not in ("schemes", "unobserved")
+            or type(state[1]) is not int or not 0 <= state[1] <= 256
+            or (state[0] == "unobserved" and state[1] != 0)):
+        return None
+    if len(line) > 256:
+        return ("unobserved", 0)
+    stripped = line.strip(" \t")
+    indentation = len(line) - len(line.lstrip(" \t"))
+    if stripped == "Schemes:":
+        return ("schemes", indentation)
+    if stripped and state[0] == "schemes" and indentation <= state[1]:
+        return ("unobserved", 0)
+    return state
+
+
+def _chrome_colon_context(line, state):
+    """Closed payload/heading shape of an already-rejected colon line, never identity."""
+    if (type(line) is not str or len(line) > 256 or type(state) is not tuple or len(state) != 2
+            or type(state[0]) is not str or state[0] not in ("schemes", "unobserved")
+            or type(state[1]) is not int or not 0 <= state[1] <= 256
+            or (state[0] == "unobserved" and state[1] != 0)):
+        return None
+    stripped = line.strip(" \t")
+    if stripped[:8].lower() != "package:":
+        return None
+    payload = stripped[8:].strip(" \t")
+    if not payload:
+        form = "empty"
+    elif payload == "com.android.chrome":
+        form = "target"
+    elif (len(payload) <= 160 and
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+", payload) is not None):
+        form = "package"
+    else:
+        form = "other"
+    return state[0] + "-" + form
+
 def _note_chrome_parser_check(error, context, attempt_token):
     if (type(error) is not Refusal or type(error.args) is not tuple
             or error.args != ("actual-package-version-unobserved",)
             or type(attempt_token) is not object or _chrome_parser_current_token is not attempt_token
-            or type(context) is not dict or len(context) not in (4, 5, 6)
+            or type(context) is not dict or len(context) not in (4, 5, 6, 7)
             or any(type(key) is not str for key in context)
             or set(context) not in ({"attempt_token", "selected_error", "check", "scope"},
                                    {"attempt_token", "selected_error", "check", "scope", "header_kind"},
-                                   {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"})
+                                   {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"},
+                                   {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context", "colon_context"})
             or context["attempt_token"] is not attempt_token or context["selected_error"] is not error):
         return
     check, scope = context["check"], context["scope"]
@@ -697,6 +743,15 @@ def _note_chrome_parser_check(error, context, attempt_token):
                 or (scope in ("active", "hidden") and not value.startswith("after-active-"))):
             return
         observed["keyword_context"] = value
+    if "colon_context" in context:
+        try:
+            value = context["colon_context"]
+            if (check == "package-header" and observed.get("header_kind") == "keyword-prefix"
+                    and observed.get("keyword_context") in ("before-active-colon", "after-active-colon")
+                    and type(value) is str and value in CHROME_COLON_CONTEXTS):
+                observed["colon_context"] = value
+        except BaseException:
+            observed.pop("colon_context", None)
     if _chrome_parser_current_token is not attempt_token:
         return
     error.chrome_parser_check = observed
@@ -738,6 +793,14 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
                                 keyword_context = _chrome_keyword_context(line, titles["active"])
                             except BaseException:
                                 pass
+                        colon_context = None
+                        if (type(keyword_context) is str
+                                and keyword_context in ("before-active-colon", "after-active-colon")
+                                and colon_observation_valid):
+                            try:
+                                colon_context = _chrome_colon_context(line, colon_heading)
+                            except BaseException:
+                                pass
                         _annotate_chrome_parser_context(diagnostic_context, error, check, scope)
                         if type(header_kind) is str and header_kind in CHROME_HEADER_KINDS:
                             diagnostic_context["header_kind"] = header_kind
@@ -745,6 +808,13 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
                                     and keyword_context in CHROME_KEYWORD_CONTEXTS
                                     and (scope == "unobserved" or keyword_context.startswith("after-active-"))):
                                 diagnostic_context["keyword_context"] = keyword_context
+                        if (type(colon_context) is str and
+                                keyword_context in ("before-active-colon", "after-active-colon")):
+                            try:
+                                if colon_context in CHROME_COLON_CONTEXTS:
+                                    diagnostic_context["colon_context"] = colon_context
+                            except BaseException:
+                                diagnostic_context.pop("colon_context", None)
                 except BaseException:
                     # Complete mutation followed by failure is ineligible too.
                     if _chrome_parser_current_token is attempt_token:
@@ -757,6 +827,8 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
     pairs = {}
     section = None
     block = None
+    colon_heading = ("unobserved", 0)
+    colon_observation_valid = True
 
     def finish_block():
         nonlocal block
@@ -767,6 +839,17 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
             block = None
 
     for line in dump.split("\n"):
+        if diagnostic_context is not None and colon_observation_valid:
+            try:
+                sampled = _sample_chrome_colon_heading(line, colon_heading)
+                if (type(sampled) is tuple and len(sampled) == 2 and type(sampled[0]) is str
+                        and sampled[0] in ("schemes", "unobserved") and type(sampled[1]) is int
+                        and 0 <= sampled[1] <= 256 and (sampled[0] != "unobserved" or sampled[1] == 0)):
+                    colon_heading = sampled
+                else:
+                    colon_observation_valid = False
+            except BaseException:
+                colon_observation_valid = False
         stripped = line.strip(" \t")
         lower = stripped.lower()
         if "packages:" in lower or lower.startswith("packages") or "hidden system package" in lower:

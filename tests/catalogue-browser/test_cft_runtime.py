@@ -865,7 +865,7 @@ class PolicyMemory:
         inode = self.inodes.setdefault(name, len(self.inodes) + 1)
         size = len(self.data[name]) if name in self.data else 0
         return SimpleNamespace(st_dev=1, st_ino=inode, st_mode=mode, st_uid=0, st_gid=0,
-            st_nlink=1, st_mtime_ns=0, st_size=size)
+            st_nlink=1, st_mtime_ns=0, st_ctime_ns=0, st_size=size)
 
     def open(self, path, flags, *, dir_fd=None):
         name = str(path)
@@ -975,7 +975,7 @@ class PolicyMemory:
             patch(mock.patch.object(runtime.os, getter, return_value=0, create=True))
         for name, value in (('O_NOFOLLOW', 131072), ('O_CLOEXEC', 524288), ('O_DIRECTORY', 65536)):
             patch(mock.patch.object(runtime.os, name, value, create=True))
-        patch(mock.patch.object(FixturePath, 'lstat', self.info))
+        patch(mock.patch.object(FixturePath, 'lstat', lambda path: memory.info(path)))
         patch(mock.patch.object(FixturePath, 'exists', lambda path: str(path) in memory.data or str(path) in memory.modes))
         patch(mock.patch.object(FixturePath, 'is_symlink', return_value=False))
         patch(mock.patch.object(FixturePath, 'iterdir', lambda path: [FixturePath(name) for name in memory.data if FixturePath(name).parent == path]))

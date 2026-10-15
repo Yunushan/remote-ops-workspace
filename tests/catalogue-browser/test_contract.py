@@ -2280,5 +2280,346 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
         self.assertEqual(record['phase'], 'cleanup')
 
 
+class ApiReadDiagnosticTests(unittest.TestCase):
+    STAGES = RuntimeStartupDiagnosticTests.STAGES
+
+    def run_api_read_main(self, stage, *, fact_mask=0, projection_failure=None, emission_failure=None,
+                          invalid_projection=None, emitter_entry_failure=None):
+        failure_stage, note_failure, write_failure = '__none__', None, False
+        files, owners, labels, operations, selected = {}, [], [], [], []
+        name = 'different seed' if fact_mask & 2 else 'catalogue seed'
+        profiles = [{'protocol': 'ssh', 'name': name, 'host': 'seed.example.invalid', 'port': 22}]
+        if fact_mask & 16:
+            profiles[0]['credential_ref'] = 'synthetic-private-canary'
+        event = {'route': 'catalogue', 'status': 401 if fact_mask & 1 else 200, 'no_store': not bool(fact_mask & 8)}
+        if stage == 'case-contract':
+            event['status'] = 401
+        inventory = {'count': 1, 'profiles': profiles, 'digest': '1' * 64,
+            'events': [] if stage == 'catalogue-event-selection' else [event]}
+        snapshot = {'texts': ['ssh \u2022 ' + name + ' \u2022 seed.example.invalid:22'],
+            'rows': [{}], 'inputEmpty': not bool(fact_mask & 4)}
+        if stage == 'disk-dom-inventory':
+            snapshot['texts'] = ['synthetic mismatched DOM']
+        error = contract.GateRefusal('synthetic-private-operation-refused')
+        case = self
+
+        class Sink:
+            def __init__(self, path):
+                self.path = path
+
+            def __enter__(self):
+                return self
+
+            def write(self, raw):
+                files[str(self.path)] = raw
+                return len(raw)
+
+            def __exit__(self, _kind, _error, _traceback):
+                return False
+
+        class MemoryPath(PurePosixPath):
+            def resolve(self, strict=False):
+                return self
+
+            def exists(self):
+                return str(self) in files
+
+            def mkdir(self, mode=0o777, parents=False):
+                pass
+
+            def open(self, mode):
+                case.assertEqual(mode, 'wb')
+                return Sink(self)
+
+            def replace(self, target):
+                files[str(target)] = files.pop(str(self))
+                return target
+
+            def write_bytes(self, raw):
+                files[str(self)] = raw
+                return len(raw)
+
+        def entered(stage):
+            operations.append(stage)
+            if failure_stage == stage:
+                raise error
+
+        def owned(registry, argv, cwd, env, deadline, *, frames=False):
+            owner = Mock(finished=False, reaped=False, output=bytearray(), errors=bytearray())
+            owner.overflow.is_set.return_value = False
+            owner.cleanup_observed.return_value = True
+            owner.process.poll.return_value = None
+            owner.process.returncode = None
+            registry.append(owner)
+            owners.append(owner)
+            entered('initial-fixture-startup' if frames else 'driver-service-birth')
+            if frames:
+                count = 0 if failure_stage == 'initial-fixture-inventory' else 1
+                ready = {'ready': True, 'nonce': 'a' * 64, 'port': 12345,
+                    'inventory': {'count': count, 'profiles': [{}] * count, 'digest': '1' * 64}}
+                inspected = {'nonce': 'a' * 64, 'inventory': inventory}
+                owner.receive.side_effect = [ready, error if stage == 'fixture-inspection' else inspected, inspected]
+            else:
+                case.assertEqual(argv, ['/synthetic/driver', '--port=0', '--enable-chrome-logs'])
+                port = 0 if failure_stage == 'driver-port-validation' else 12346
+                owner.output.extend(('ChromeDriver was started successfully on port ' + str(port)).encode())
+                owner.process.poll.side_effect = lambda: entered('driver-port-wait')
+            return owner
+
+        def listener(owner, port):
+            if owner is owners[-1] and len(owners) == 2:
+                entered('driver-listener')
+
+        driver = Mock()
+        def start(binary, profile):
+            entered('browser-session-start')
+            return {'browserVersion': '9.9.9.9' if failure_stage == 'browser-capabilities' else '1.2.3.4',
+                'chrome': {'chromedriverVersion': '1.2.3.4 synthetic', 'userDataDir': str(profile)}}
+        driver.start.side_effect = start
+        driver.command.side_effect = error if stage == 'navigation-command' else None
+        driver.connect.side_effect = error if stage == 'browser-connect' else None
+        driver.connect.return_value = snapshot
+        driver.create.side_effect = error
+
+        def make_driver(port, deadline):
+            entered('browser-client')
+            return driver
+
+        def loaded(owner):
+            entered('loaded-runtime-inventory')
+            return {} if failure_stage == 'loaded-runtime-tools' else {
+                '/synthetic/chrome': {}, '/synthetic/driver': {}}
+
+        tokens = iter(('a' * 64, 'b' * 64, 'c' * 64))
+        def token(size):
+            case.assertEqual(size, 32)
+            entered('session-setup')
+            return next(tokens)
+
+        original_note = host_controller.runtime_note
+        original_inert = host_controller.inert_runtime_note
+        original_packed = host_controller.packed
+        def note(public, stage, versions=None):
+            if note_failure is not None and stage in self.STAGES:
+                raise note_failure
+            return original_note(public, stage, versions)
+
+        def inert(public, stage):
+            labels.append(stage)
+            return original_inert(public, stage)
+
+        def packed(value):
+            if emission_failure is not None and not write_failure and value.get('schema') == 'row.catalogue-api-read-refusal.v1':
+                raise emission_failure
+            return original_packed(value)
+
+        original_projection = host_controller.api_read_refusal
+        def projection(public, error, entered_stage, facts):
+            selected.append((entered_stage, error, facts))
+            if projection_failure is not None:
+                raise projection_failure
+            if invalid_projection is not None:
+                return invalid_projection
+            return original_projection(public, error, entered_stage, facts)
+        stream = io.StringIO()
+        if write_failure:
+            stream = Mock()
+            stream.write.side_effect = emission_failure
+        timer = Mock()
+        patches = {
+            'context': patch.object(host_controller, 'host_context', return_value={'source': 'a' * 40, 'event': 'b' * 40, 'image_version': '1.2'}),
+            'paths': patch.object(host_controller, 'Path', MemoryPath),
+            'directory': patch.object(host_controller, 'DIRECTORY', MemoryPath('/synthetic-repo/tests/catalogue-browser')),
+            'temp': patch.object(host_controller.tempfile, 'TemporaryDirectory'),
+            'chmod': patch.object(host_controller.os, 'chmod'),
+            'env': patch.dict(host_controller.os.environ, {'GITHUB_WORKSPACE': '/synthetic-repo', 'RUNNER_TEMP': '/synthetic-temp'}),
+            'clock': patch.object(host_controller.time, 'monotonic', return_value=100),
+            'timer': patch.object(host_controller.threading, 'Timer', return_value=timer),
+            'source': patch.object(host_controller, 'source_guard', return_value={'head': 'a' * 40, 'tree': 'b' * 40, 'bytes': 'c' * 64, 'workflow': 'd' * 64}),
+            'selection': patch.object(host_controller, 'selected_runtime', return_value=(MemoryPath('/synthetic/chrome'), MemoryPath('/synthetic/driver'), {'provider': 'pinned-cft', 'installed': {'version': '1.2.3.4'}, 'host_policy': {}})),
+            'policy_evidence': patch.object(host_controller, 'policy_evidence', return_value=synthetic_policy_evidence(observed=False)),
+            'policy_tasks': patch.object(host_controller, 'observe_policy_tasks', side_effect=lambda holder, owner, deadline, *, checkpoint: synthetic_policy_evidence(initial_only=checkpoint == 'initial')),
+            'pins': patch.object(host_controller, 'file_pin', return_value={'uid': 0}),
+            'version_argv': patch.object(host_controller, 'chrome_version_argv', return_value=['/synthetic/chrome', '--product-version']),
+            'version_match': patch.object(host_controller, 'chrome_version_match', return_value=(b'1.2.3.4', b'1.2.3.4')),
+            'commands': patch.object(host_controller, 'command', side_effect=[b'1.2.3.4\n', b'ChromeDriver 1.2.3.4\n']),
+            'owned': patch.object(host_controller, 'Owned', side_effect=owned),
+            'listener': patch.object(host_controller, 'owned_listener', side_effect=listener),
+            'driver': patch.object(host_controller, 'Driver', side_effect=make_driver),
+            'loaded': patch.object(host_controller, 'loaded_runtime', side_effect=loaded),
+            'tokens': patch.object(host_controller.secrets, 'token_hex', side_effect=token),
+            'note': patch.object(host_controller, 'runtime_note', side_effect=note),
+            'inert': patch.object(host_controller, 'inert_runtime_note', side_effect=inert),
+            'packed': patch.object(host_controller, 'packed', side_effect=packed),
+            'stderr': patch.object(host_controller.sys, 'stderr', stream),
+            'projection': patch.object(host_controller, 'api_read_refusal', side_effect=projection),
+            'api_emitter': patch.object(host_controller, 'emit_api_read_refusal', side_effect=emitter_entry_failure, wraps=host_controller.emit_api_read_refusal),
+            'birth': patch.object(host_controller.subprocess, 'Popen'),
+            'transport': patch.object(host_controller.http.client, 'HTTPConnection'),
+            'thread': patch.object(host_controller.threading, 'Thread'),
+        }
+        with ExitStack() as stack:
+            mocks = {name: stack.enter_context(context) for name, context in patches.items()}
+            mocks['temp'].return_value.__enter__.return_value = '/synthetic-private'
+            code = host_controller.main()
+            version_calls = [call.args[1] for call in mocks['note'].call_args_list if call.args[1] in contract.RUNTIME_STAGES[:3]]
+            policy_calls = mocks['policy_tasks'].call_args_list
+            expected_checkpoints = ['initial'] if 'loaded-runtime-inventory' in operations else []
+            case.assertEqual([call.kwargs['checkpoint'] for call in policy_calls], expected_checkpoints)
+            for call in policy_calls:
+                case.assertIs(call.args[0], mocks['selection'].return_value[2]['host_policy'])
+                case.assertIs(call.args[1], owners[1])
+                case.assertEqual(len(call.args), 3)
+                case.assertEqual(set(call.kwargs), {'checkpoint'})
+            for name in ('birth', 'transport', 'thread'):
+                mocks[name].assert_not_called()
+        timer.start.assert_called_once()
+        timer.cancel.assert_called_once()
+        for owner in owners:
+            owner.refuse_cleanup.assert_called_once()
+            owner.cleanup_observed.assert_called_once()
+        record = json.loads(files['/synthetic-repo/.tmp/catalogue-browser-public/result.json'])
+        return code, record, labels, operations, driver, owners, version_calls, stream.getvalue(), selected
+
+    def test_actual_main_six_boundaries_keep_original_calls_and_cleanup(self):
+        for stage in contract.API_READ_STAGES:
+            with self.subTest(stage=stage):
+                code, record, _labels, _operations, driver, owners, versions, line, selected = self.run_api_read_main(stage)
+                self.assertEqual(code, 1)
+                self.assertEqual(record['phase'], 'api-read')
+                self.assertFalse(record['complete'])
+                self.assertTrue(record['cleanup_complete'])
+                self.assertTrue(record['forced_cleanup_attempted'])
+                diagnostic = json.loads(line)
+                self.assertEqual(diagnostic['entered_stage'], stage)
+                self.assertEqual(diagnostic['exception_category'], 'index-error' if stage == 'catalogue-event-selection' else 'gate-refusal')
+                self.assertEqual(diagnostic['readiness_credit'], 0)
+                self.assertNotIn('synthetic-private', line)
+                self.assertTrue(line.isascii())
+                self.assertLessEqual(len(line.encode('ascii')), 512)
+                self.assertEqual(len(selected), 1)
+                self.assertEqual(selected[0][0], stage)
+                driver.command.assert_called_once_with('/url', {'url': 'http://127.0.0.1:12345/index.html'})
+                self.assertEqual(driver.connect.call_count, 0 if stage == 'navigation-command' else 1)
+                driver.create.assert_not_called()
+                self.assertEqual(len(owners), 2)
+                self.assertEqual(versions, list(contract.RUNTIME_STAGES[:3]))
+
+    def test_actual_main_each_fact_bit_and_combination_remain_refused(self):
+        for bits in (1, 2, 4, 8, 16, 31):
+            with self.subTest(bits=bits):
+                code, record, _labels, _operations, driver, _owners, _versions, line, selected = self.run_api_read_main('__none__', fact_mask=bits)
+                self.assertEqual(code, 1)
+                self.assertEqual(record['phase'], 'api-read')
+                self.assertEqual(json.loads(line)['case_failure_bits'], bits)
+                self.assertIs(type(selected[0][1]), contract.GateRefusal)
+                driver.create.assert_not_called()
+
+    def test_successful_api_read_has_no_stale_diagnostic_in_next_phase(self):
+        code, record, _labels, _operations, driver, _owners, _versions, line, selected = self.run_api_read_main('__none__')
+        self.assertEqual(code, 1)
+        self.assertEqual(record['phase'], 'api-create-refresh')
+        self.assertEqual(line, '')
+        self.assertIsNone(host_controller.api_read_refusal(record, selected[0][1], selected[0][0], selected[0][2]))
+        driver.create.assert_called_once_with('catalogue created one', 'one.example.invalid:2222', 2)
+        self.assertNotIn('entered_stage', record)
+        self.assertNotIn('api_read', record)
+
+    def test_projection_and_publication_interruptions_are_inert(self):
+        for error in (RuntimeError('synthetic-private'), KeyboardInterrupt(), SystemExit(9)):
+            with self.subTest(kind=type(error).__name__, path='projection'):
+                code, record, *_rest, line, selected = self.run_api_read_main('navigation-command', projection_failure=error)
+                self.assertEqual(code, 1)
+                self.assertTrue(record['cleanup_complete'])
+                self.assertEqual(line, '')
+                self.assertIs(type(selected[0][1]), contract.GateRefusal)
+            with self.subTest(kind=type(error).__name__, path='publication'):
+                code, record, *_rest, line, _selected = self.run_api_read_main('navigation-command', emission_failure=error)
+                self.assertEqual(code, 1)
+                self.assertTrue(record['cleanup_complete'])
+                self.assertEqual(line, '')
+
+        for error in (KeyboardInterrupt(), SystemExit(9), MemoryError('synthetic-private')):
+            with self.subTest(kind=type(error).__name__, path='emitter-entry'):
+                code, record, *_rest, line, selected = self.run_api_read_main('navigation-command', emitter_entry_failure=error)
+                self.assertEqual(code, 1)
+                self.assertTrue(record['cleanup_complete'])
+                self.assertTrue(record['forced_cleanup_attempted'])
+                self.assertEqual(line, '')
+                self.assertIs(type(selected[0][1]), contract.GateRefusal)
+
+    def test_independent_emitter_drops_bad_projection_returns(self):
+        for value in ({'entered_stage': '/synthetic-private', 'exception_category': 'gate-refusal'},
+                      {'entered_stage': 'navigation-command', 'exception_category': 'gate-refusal', 'path': '/synthetic-private'},
+                      {'entered_stage': 'navigation-command', 'exception_category': 'gate-refusal', 'case_failure_bits': 1}):
+            with self.subTest(value=value):
+                code, record, *_rest, line, _selected = self.run_api_read_main('navigation-command', invalid_projection=value)
+                self.assertEqual(code, 1)
+                self.assertTrue(record['cleanup_complete'])
+                self.assertEqual(line, '')
+
+    def test_closed_validator_types_keys_positive_bits_and_context(self):
+        class Text(str):
+            pass
+        valid = {'entered_stage': 'case-contract', 'exception_category': 'gate-refusal', 'case_failure_bits': 31}
+        self.assertEqual(contract.api_read_diagnostic(valid), valid)
+        for key, value in (('entered_stage', Text('case-contract')), ('exception_category', Text('gate-refusal')),
+                           ('case_failure_bits', True), ('case_failure_bits', 0), ('case_failure_bits', 32),
+                           ('entered_stage', 'navigation-command'), ('exception_category', 'other-exact-type')):
+            with self.subTest(key=key, value=value):
+                changed = dict(valid, **{key: value})
+                with self.assertRaises(contract.GateRefusal):
+                    contract.api_read_diagnostic(changed)
+        changed = {Text('entered_stage'): 'case-contract', 'exception_category': 'gate-refusal'}
+        with self.assertRaises(contract.GateRefusal):
+            contract.api_read_diagnostic(changed)
+
+    def test_exact_error_types_and_reused_poisoned_exception_never_read_attributes(self):
+        class PoisonError(Exception):
+            def __getattribute__(self, name):
+                raise AssertionError('private exception attribute read')
+        public = {'status': 'refused', 'complete': False, 'phase': 'api-read'}
+        error = PoisonError('synthetic-private')
+        for _ in range(2):
+            self.assertEqual(host_controller.api_read_refusal(public, error, 'browser-connect'),
+                {'entered_stage': 'browser-connect', 'exception_category': 'other-exact-type'})
+        class Refusal(contract.GateRefusal):
+            pass
+        self.assertEqual(host_controller.api_read_refusal(public, Refusal('synthetic-private'), 'case-contract',
+            {'status': 401, 'dom_seed': True, 'input_cleared': True, 'no_store': True, 'public_only': True}),
+            {'entered_stage': 'case-contract', 'exception_category': 'other-exact-type'})
+
+    def test_bad_facts_and_wrong_context_omit_without_private_serialization(self):
+        public = {'status': 'refused', 'complete': False, 'phase': 'api-read'}
+        error = contract.GateRefusal('synthetic-private')
+        expected = {'entered_stage': 'case-contract', 'exception_category': 'gate-refusal'}
+        class Text(str):
+            pass
+        for facts in (None, {}, {'private': 'canary'}, {Text('status'): 401, 'dom_seed': True,
+                'input_cleared': True, 'no_store': True, 'public_only': True},
+                {'status': True, 'dom_seed': True, 'input_cleared': True, 'no_store': True, 'public_only': True}):
+            self.assertEqual(host_controller.api_read_refusal(public, error, 'case-contract', facts), expected)
+        for key, value in (('phase', 'cleanup'), ('status', 'observations-complete-with-limits'), ('complete', True)):
+            self.assertIsNone(host_controller.api_read_refusal(dict(public, **{key: value}), error, 'case-contract'))
+
+    def test_all_closed_records_bounded_with_LF_and_public_unchanged(self):
+        public = {'status': 'refused', 'complete': False, 'phase': 'api-read'}
+        original = copy.deepcopy(public)
+        for stage in contract.API_READ_STAGES:
+            for category in contract.API_READ_EXCEPTIONS:
+                value = {'entered_stage': stage, 'exception_category': category}
+                if stage == 'case-contract' and category == 'gate-refusal':
+                    value['case_failure_bits'] = 31
+                stream = io.StringIO()
+                with patch.object(host_controller.sys, 'stderr', stream):
+                    host_controller.emit_api_read_refusal(public, value)
+                line = stream.getvalue()
+                self.assertTrue(line.isascii())
+                self.assertLessEqual(len(line.encode('ascii')), 512)
+                self.assertEqual(json.loads(line)['entered_stage'], stage)
+                self.assertEqual(public, original)
+
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

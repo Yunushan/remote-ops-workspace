@@ -511,6 +511,10 @@ CHROME_HEADER_KINDS = ("target-spacing", "target-identity", "target-suffix", "fo
 CHROME_KEYWORD_CONTEXTS = ('before-active-bare', 'before-active-horizontal-bracket', 'before-active-horizontal-word', 'before-active-horizontal-other', 'before-active-colon', 'before-active-equals', 'before-active-bracket', 'before-active-other-punctuation', 'after-active-bare', 'after-active-horizontal-bracket', 'after-active-horizontal-word', 'after-active-horizontal-other', 'after-active-colon', 'after-active-equals', 'after-active-bracket', 'after-active-other-punctuation')
 
 
+CHROME_COLON_CONTEXTS = ("schemes-empty", "schemes-target", "schemes-package", "schemes-other",
+    "unobserved-empty", "unobserved-target", "unobserved-package", "unobserved-other")
+
+
 def chrome_parser_check_diagnostic(exc):
     """Closed current-attempt check/scope/category/context; never raw header or cause."""
     try:
@@ -522,10 +526,11 @@ def chrome_parser_check_diagnostic(exc):
         if type(state) is not dict:
             return None
         value = state.get("chrome_parser_check")
-        if (type(value) is not dict or len(value) not in (4, 5, 6) or any(type(key) is not str for key in value)
+        if (type(value) is not dict or len(value) not in (4, 5, 6, 7) or any(type(key) is not str for key in value)
                 or set(value) not in ({"attempt_token", "selected_error", "check", "scope"},
                                      {"attempt_token", "selected_error", "check", "scope", "header_kind"},
-                                     {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"})
+                                     {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"},
+                                     {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context", "colon_context"})
                 or value["attempt_token"] is not token or value["selected_error"] is not exc):
             return None
         check, scope = value["check"], value["scope"]
@@ -545,6 +550,15 @@ def chrome_parser_check_diagnostic(exc):
                     or (scope in ("active", "hidden") and not context.startswith("after-active-"))):
                 return None
             result["keyword_context"] = context
+        if "colon_context" in value:
+            try:
+                colon = value["colon_context"]
+                if (check == "package-header" and result.get("header_kind") == "keyword-prefix"
+                        and result.get("keyword_context") in ("before-active-colon", "after-active-colon")
+                        and type(colon) is str and colon in CHROME_COLON_CONTEXTS):
+                    result["colon_context"] = colon
+            except BaseException:
+                result.pop("colon_context", None)
         if H._chrome_parser_current_token is not token:
             return None
         return result

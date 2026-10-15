@@ -3614,9 +3614,11 @@ class ChromeKeywordContextDiagnosticTests(unittest.TestCase):
                 self.assertIsNone(error.__cause__)
                 self.assertIsNone(error.__context__)
                 self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved",
-                    "header_kind": "keyword-prefix", "keyword_context": place + "-" + form})
+                    "header_kind": "keyword-prefix", "keyword_context": place + "-" + form,
+                    **({"colon_context": "unobserved-other"} if form == "colon" else {})})
                 self.assertEqual(set(error.chrome_parser_check),
-                    {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"})
+                    {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"}
+                    | ({"colon_context"} if form == "colon" else set()))
                 self.assertIs(error.chrome_parser_check["selected_error"], error)
                 self.assertIs(error.chrome_parser_check["attempt_token"], H._chrome_parser_current_token)
                 adb.shell.assert_called_once_with(case.FIXED)
@@ -3955,6 +3957,261 @@ class ChromeKeywordContextDiagnosticTests(unittest.TestCase):
                 self.assertEqual(json.loads(line)["chrome_parser_check"], {"check": "package-header", "scope": "unobserved",
                     "header_kind": "keyword-prefix", "keyword_context": "before-active-horizontal-word"})
                 self.assertNotIn("PRIVATE", line)
+
+
+
+class ChromeColonContextDiagnosticTests(unittest.TestCase):
+    PHASE = "chrome-static-device-inventory"
+    CODE = "actual-package-version-unobserved"
+    PAYLOADS = ((b"", "empty"), (b"com.android.chrome", "target"),
+                (b"com.example.PRIVATE", "package"), (b"/PRIVATE.apk", "other"))
+
+    def setUp(self):
+        ChromeParserCheckDiagnosticTests.setUp(self)
+
+    def refused(self, raw):
+        return ChromeParserCheckDiagnosticTests.refused(self, raw)
+
+    @staticmethod
+    def dump(header, *, after=False, schemes=False):
+        prefix = b"Resolver:\n  Schemes:\n" if schemes else b"Other:\n"
+        selected = prefix + b"    " + header + b"\n"
+        active = ActiveChromePackageVersionTests.dump(hidden=("98.0", "789"))
+        return active + selected if after else selected + active
+
+    def projected(self, error):
+        return Q.capture_refusal_diagnostic(error, self.PHASE)["chrome_parser_check"]
+
+    def test_eight_categories_before_and_after_active_keep_original_query_and_refusal(self):
+        case = ActiveChromePackageVersionTests()
+        self.assertEqual(tuple(H.CHROME_COLON_CONTEXTS), tuple(Q.CHROME_COLON_CONTEXTS))
+        self.assertEqual(len(set(H.CHROME_COLON_CONTEXTS)), 8)
+        for payload, form in self.PAYLOADS:
+            for after in (False, True):
+                for schemes in (False, True):
+                    raw = self.dump(b"Package: " + payload, after=after, schemes=schemes)
+                    adb = case.inventory(raw)
+                    with (self.subTest(form=form, after=after, schemes=schemes),
+                            mock.patch.object(H.subprocess, "Popen") as native,
+                            mock.patch.object(H.socket, "create_connection") as provider):
+                        with self.assertRaises(H.Refusal) as caught:
+                            H.package_inventory(adb, "com.android.chrome")
+                    error = caught.exception
+                    self.assertIs(type(error), H.Refusal)
+                    self.assertEqual(error.args, (self.CODE,))
+                    self.assertIsNone(error.__cause__)
+                    self.assertIsNone(error.__context__)
+                    self.assertEqual(self.projected(error), {
+                        "check": "package-header", "scope": "unobserved", "header_kind": "keyword-prefix",
+                        "keyword_context": ("after-active" if after else "before-active") + "-colon",
+                        "colon_context": ("schemes" if schemes else "unobserved") + "-" + form})
+                    self.assertIs(error.chrome_parser_check["selected_error"], error)
+                    self.assertIs(error.chrome_parser_check["attempt_token"], H._chrome_parser_current_token)
+                    adb.shell.assert_called_once_with(case.FIXED)
+                    native.assert_not_called()
+                    provider.assert_not_called()
+
+    def test_heading_sampling_is_exact_bounded_lexical_context_and_resets(self):
+        rows = (
+            (b"Resolver:\n  Schemes:\n    package:\n", "schemes-empty"),
+            (b"Resolver:\n  Schemes:\n\n    http:\n      PRIVATE\n    package:\n", "schemes-empty"),
+            (b"Resolver:\n  Schemes:\n  Non-Data Actions:\n    package:\n", "unobserved-empty"),
+            (b"Resolver:\n  Schemes:\nOther:\n    package:\n", "unobserved-empty"),
+            (b"Resolver:\n  schemes:\n    package:\n", "unobserved-empty"),
+            (b"Resolver:\n  Schemes:\n  package:\n", "unobserved-empty"),
+            (b"Resolver:\n  Schemes:\n" + b" " * 4 + b"P" * 257 + b"\n    package:\n", "unobserved-empty"),
+        )
+        for raw, expected in rows:
+            with self.subTest(expected=expected, raw_size=len(raw)):
+                error = self.refused(raw + ActiveChromePackageVersionTests.dump())
+            self.assertEqual(self.projected(error)["colon_context"], expected)
+
+    def test_payload_shape_exact_target_case_and_horizontal_whitespace(self):
+        rows = ((b" \tPACKAGE:\tcom.android.chrome \t", "target"),
+                (b"Package: COM.android.chrome", "package"),
+                (b"Package: com.android.chrome.private", "package"),
+                (b"Package: com..PRIVATE", "other"),
+                (b"Package: com.example.PRIVATE extra", "other"),
+                (b"Package: [com.android.chrome]", "other"),
+                (b"Package:\t", "empty"))
+        for header, form in rows:
+            with self.subTest(form=form):
+                error = self.refused(header + b"\n")
+            self.assertEqual(self.projected(error)["colon_context"], "unobserved-" + form)
+
+    def test_exact_line_and_identity_bounds_are_diagnostic_only(self):
+        for size in (255, 256, 257):
+            header = b"Package: " + b"P" * (size - 9)
+            with self.subTest(size=size):
+                error = self.refused(header + b"\n")
+            if size <= 256:
+                self.assertEqual(self.projected(error)["colon_context"], "unobserved-other")
+            else:
+                self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved",
+                    "header_kind": "over-bound"})
+        for size in (160, 161):
+            header = b"Package: c." + b"P" * (size - 2)
+            error = self.refused(header + b"\n")
+            self.assertEqual(self.projected(error)["colon_context"],
+                "unobserved-" + ("package" if size == 160 else "other"))
+
+    def test_heading_and_classifier_faults_preserve_old_fields_and_token(self):
+        for name in ("_sample_chrome_colon_heading", "_chrome_colon_context"):
+            for fault in (MemoryError("PRIVATE"), KeyboardInterrupt(), SystemExit(9)):
+                with self.subTest(name=name, fault=type(fault).__name__):
+                    with mock.patch.object(H, name, side_effect=fault):
+                        error = self.refused(self.dump(b"Package: PRIVATE", schemes=True))
+                    token = H._chrome_parser_current_token
+                    self.assertIs(type(token), object)
+                    self.assertEqual(error.args, (self.CODE,))
+                    self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved",
+                        "header_kind": "keyword-prefix", "keyword_context": "before-active-colon"})
+                    self.assertIs(error.chrome_parser_check["attempt_token"], token)
+                    self.assertIsNone(error.__context__)
+
+    def test_invalid_optional_sampler_and_classifier_results_omit_only_new_field(self):
+        class Text(str):
+            pass
+        for name, values in (
+            ("_sample_chrome_colon_heading", (None, [], ("schemes", True), (Text("schemes"), 1),
+                                             ("unobserved", 1), ("PRIVATE", 0), ("schemes", 257))),
+            ("_chrome_colon_context", (None, True, {}, Text("schemes-empty"), "PRIVATE"))):
+            for value in values:
+                with self.subTest(name=name, type=type(value).__name__):
+                    with mock.patch.object(H, name, return_value=value):
+                        error = self.refused(self.dump(b"Package:", schemes=True))
+                    self.assertNotIn("colon_context", error.chrome_parser_check)
+                    self.assertEqual(self.projected(error)["keyword_context"], "before-active-colon")
+                    self.assertIs(error.chrome_parser_check["attempt_token"], H._chrome_parser_current_token)
+
+    def test_producer_and_consumer_independent_optional_type_enum_and_relation_checks(self):
+        error = self.refused(self.dump(b"Package:", schemes=True))
+        good = dict(error.chrome_parser_check)
+        token = H._chrome_parser_current_token
+        for value in (None, True, {}, "PRIVATE", 2):
+            for producer in (False, True):
+                with self.subTest(type=type(value).__name__, producer=producer):
+                    candidate = {**good, "colon_context": value}
+                    if producer:
+                        H._note_chrome_parser_check(error, candidate, token)
+                    else:
+                        error.chrome_parser_check = candidate
+                    result = self.projected(error)
+                    self.assertNotIn("colon_context", result)
+                    self.assertEqual(result["keyword_context"], "before-active-colon")
+        for context in ("before-active-horizontal-word", "after-active-equals"):
+            candidate = {**good, "keyword_context": context}
+            H._note_chrome_parser_check(error, candidate, token)
+            self.assertNotIn("colon_context", self.projected(error))
+            error.chrome_parser_check = candidate
+            self.assertNotIn("colon_context", self.projected(error))
+
+    def test_new_field_keeps_original_wrong_phase_identity_and_stale_token_refusals(self):
+        error = self.refused(self.dump(b"Package:", schemes=True))
+        good = dict(error.chrome_parser_check)
+        for phase in ("sdk-observation", "owned-api36-emulator", "PRIVATE"):
+            self.assertNotIn("chrome_parser_check", Q.capture_refusal_diagnostic(error, phase))
+        for replacement in (H.Refusal(self.CODE), H.Refusal(self.CODE, "PRIVATE"), RuntimeError(self.CODE)):
+            replacement.chrome_parser_check = good
+            self.assertIsNone(Q.chrome_parser_check_diagnostic(replacement))
+        later = self.refused(b"Package: PRIVATE\n")
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        self.assertIsNotNone(Q.chrome_parser_check_diagnostic(later))
+
+    def test_no_optional_colon_classification_for_noncolon_or_valid_dump(self):
+        for header in (b"Package PRIVATE", b"Package=PRIVATE", b"Package[PRIVATE]"):
+            with mock.patch.object(H, "_chrome_colon_context", side_effect=AssertionError("not-colon")) as classify:
+                error = self.refused(header + b"\n")
+            classify.assert_not_called()
+            self.assertNotIn("colon_context", self.projected(error))
+        case = ActiveChromePackageVersionTests()
+        adb = case.inventory(case.dump())
+        with (mock.patch.object(H, "_chrome_colon_context", side_effect=AssertionError("valid-dump")) as classify,
+                mock.patch.object(H.subprocess, "Popen") as native,
+                mock.patch.object(H.socket, "create_connection") as provider):
+            result = H.package_inventory(adb, "com.android.chrome")
+        self.assertEqual(result["version"], "123.0")
+        self.assertEqual(result["version_code"], "456")
+        self.assertEqual(adb.shell.call_args_list, [mock.call(case.FIXED), mock.call("pm path com.android.chrome"),
+            mock.call("sha256sum " + case.APK), mock.call("stat -c %s " + case.APK)])
+        classify.assert_not_called()
+        native.assert_not_called()
+        provider.assert_not_called()
+
+    def test_all_closed_colon_records_bounded_and_never_emit_payload_or_heading_text(self):
+        error = self.refused(self.dump(b"Package: /PRIVATE.apk", schemes=True))
+        good = dict(error.chrome_parser_check)
+        error.chrome_version_shape = dict.fromkeys(ChromeVersionShapeDiagnosticTests.KEYS, 2)
+        maximum = 0
+        for context in H.CHROME_COLON_CONTEXTS:
+            for place in ("before-active-colon", "after-active-colon"):
+                error.chrome_parser_check = {**good, "keyword_context": place, "colon_context": context}
+                line = json.dumps(Q.capture_refusal_diagnostic(error, self.PHASE),
+                    ensure_ascii=True, separators=(",", ":")) + "\n"
+                maximum = max(maximum, len(line.encode("ascii")))
+                self.assertLessEqual(len(line.encode("ascii")), 512)
+                for secret in ("PRIVATE", "com.android.chrome", "com.example", "Schemes:",
+                               "attempt_token", "selected_error", "Package:", "/PRIVATE.apk"):
+                    self.assertNotIn(secret, line)
+        self.assertGreater(maximum, 386)
+
+
+    def test_early_original_checks_keep_current_token_and_complete_old_fields(self):
+        cases = ((None, "input-shape"), (b"PRIVATE", "input-shape"),
+                 (" " * (H.CHROME_PACKAGE_DUMP_WIRE_LIMIT + 1), "input-shape"),
+                 ("\0", "ascii-controls"), ("Package:\r\n", "ascii-controls"))
+        for selected_dump, check in cases:
+            token = object()
+            context = {"attempt_token": token}
+            with (self.subTest(check=check, input_type=type(selected_dump).__name__),
+                    mock.patch.object(H, "_chrome_parser_current_token", token),
+                    mock.patch.object(H, "_sample_chrome_colon_heading",
+                        side_effect=AssertionError("early-heading")) as sample,
+                    mock.patch.object(H, "_chrome_colon_context",
+                        side_effect=AssertionError("early-colon")) as classify,
+                    mock.patch.object(H.subprocess, "Popen") as native,
+                    mock.patch.object(H.socket, "create_connection") as provider):
+                with self.assertRaises(H.Refusal) as caught:
+                    H._active_chrome_package_versions(selected_dump, diagnostic_context=context)
+                error = caught.exception
+                self.assertIs(type(error), H.Refusal)
+                self.assertEqual(error.args, (self.CODE,))
+                self.assertIsNone(error.__cause__)
+                self.assertIsNone(error.__context__)
+                self.assertIs(H._chrome_parser_current_token, token)
+                self.assertEqual(set(context), {"attempt_token", "selected_error", "check", "scope"})
+                self.assertIs(context["attempt_token"], token)
+                self.assertIs(context["selected_error"], error)
+                self.assertEqual((context["check"], context["scope"]), (check, "unobserved"))
+                H._note_chrome_parser_check(error, context, token)
+                self.assertEqual(self.projected(error), {"check": check, "scope": "unobserved"})
+                self.assertIs(H._chrome_parser_current_token, token)
+                self.assertIs(error.chrome_parser_check["selected_error"], error)
+                self.assertIs(error.chrome_parser_check["attempt_token"], token)
+                sample.assert_not_called()
+                classify.assert_not_called()
+                native.assert_not_called()
+                provider.assert_not_called()
+
+        class Poison:
+            def __eq__(self, _other):
+                raise AssertionError("PRIVATE-equality")
+        with (mock.patch.object(H, "_chrome_keyword_context", return_value=Poison()),
+                mock.patch.object(H, "_chrome_colon_context",
+                    side_effect=AssertionError("poison-colon")) as classify,
+                mock.patch.object(H.subprocess, "Popen") as native,
+                mock.patch.object(H.socket, "create_connection") as provider):
+            error = self.refused(b"Package: PRIVATE\n")
+        self.assertEqual(error.args, (self.CODE,))
+        self.assertEqual(self.projected(error), {"check": "package-header", "scope": "unobserved",
+            "header_kind": "keyword-prefix"})
+        self.assertEqual(len(error.chrome_parser_check), 5)
+        self.assertIs(error.chrome_parser_check["attempt_token"], H._chrome_parser_current_token)
+        self.assertIs(error.chrome_parser_check["selected_error"], error)
+        classify.assert_not_called()
+        native.assert_not_called()
+        provider.assert_not_called()
+
 
 
 if __name__ == "__main__":

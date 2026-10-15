@@ -35,6 +35,8 @@ from gate_contract import (
     CHROME_FILE_STAGES,
     LIMITS,
     PREPARATION_STEPS,
+    GateRefusal,
+    api_read_diagnostic,
     decode,
     driver_start_diagnostic,
     need,
@@ -539,6 +541,41 @@ def inventories_row(phase, inventory):
     return {'phase': phase, 'count': inventory['count'], 'digest': inventory['digest']}
 
 
+def api_read_refusal(public, error, stage, facts=None):
+    """Project only a fresh caller-local selected failure; never inspect exception attributes."""
+    try:
+        need(type(public) is dict and public['status'] == 'refused'
+             and public['complete'] is False and public['phase'] == 'api-read')
+        categories = {GateRefusal: 'gate-refusal', KeyError: 'key-error', IndexError: 'index-error',
+            TypeError: 'type-error', ValueError: 'value-error', TimeoutError: 'timeout-error',
+            OSError: 'os-error'}
+        result = {'entered_stage': stage, 'exception_category': categories.get(type(error), 'other-exact-type')}
+        if stage == 'case-contract' and type(error) is GateRefusal:
+            expected = {'status': 200, 'dom_seed': True, 'input_cleared': True, 'no_store': True, 'public_only': True}
+            if (type(facts) is dict and all(type(key) is str for key in facts)
+                    and set(facts) == set(expected)
+                    and all(type(facts[key]) is type(value) for key, value in expected.items())):
+                bits = sum(1 << index for index, (key, value) in enumerate(expected.items()) if facts[key] != value)
+                if bits:
+                    result['case_failure_bits'] = bits
+        return api_read_diagnostic(result)
+    except BaseException:
+        return None
+
+
+def emit_api_read_refusal(public, diagnostic):
+    try:
+        need(type(public) is dict and public['status'] == 'refused'
+             and public['complete'] is False and public['phase'] == 'api-read')
+        fields = api_read_diagnostic(diagnostic)
+        raw = packed({'schema': 'row.catalogue-api-read-refusal.v1', 'status': 'refused',
+            'phase': 'api-read', 'readiness_credit': 0, **fields})
+        need(len(raw) + 1 <= 512)
+        sys.stderr.write(raw.decode('ascii') + '\n')
+    except BaseException:
+        pass
+
+
 def disk_dom(snapshot, inventory):
     expected = []
     for row in inventory['profiles']:
@@ -687,6 +724,9 @@ def main():
     retained_ports = []
     driver = None
     driver_start_context = None
+    api_read_stage = None
+    api_read_facts = None
+    api_read_failure = None
     forced = False
     # Fresh private root; actual product/server/browser files are never public artifacts.
     with tempfile.TemporaryDirectory(prefix='catalogue-owned-', dir=os.environ['RUNNER_TEMP']) as temp:
@@ -802,14 +842,21 @@ def main():
             public.pop('runtime_stage', None)
             public.pop('runtime_versions', None)
             checkpoint('api-read')
+            api_read_stage = 'navigation-command'
             driver.command('/url', {'url': origin + '/index.html'})
+            api_read_stage = 'browser-connect'
             snapshot = driver.connect(tokens[0], 1)
+            api_read_stage = 'fixture-inspection'
             first = observe('api-read')
+            api_read_stage = 'disk-dom-inventory'
             disk_dom(snapshot, first)
+            api_read_stage = 'catalogue-event-selection'
             read_event = [event for event in first['events'] if event['route'] == 'catalogue'][-1]
-            record('api-read', {'status': read_event['status'], 'dom_seed': snapshot['texts'] == ['ssh • catalogue seed • seed.example.invalid:22'],
+            api_read_stage = 'case-contract'
+            api_read_facts = {'status': read_event['status'], 'dom_seed': snapshot['texts'] == ['ssh • catalogue seed • seed.example.invalid:22'],
                 'input_cleared': snapshot['inputEmpty'], 'no_store': read_event['no_store'],
-                'public_only': all('credential_ref' not in row and 'identity_file' not in row for row in first['profiles'])})
+                'public_only': all('credential_ref' not in row and 'identity_file' not in row for row in first['profiles'])}
+            record('api-read', api_read_facts)
             checkpoint('api-create-refresh')
             frame('mark', 'api-create-refresh')
             driver.create('catalogue created one', 'one.example.invalid:2222', 2)
@@ -951,6 +998,10 @@ def main():
             return 0
         except Exception as error:
             try:
+                api_read_failure = api_read_refusal(public, error, api_read_stage, api_read_facts)
+            except BaseException:
+                api_read_failure = None
+            try:
                 driver_start_note(public, error, driver_start_context)
             except BaseException:
                 pass
@@ -980,6 +1031,10 @@ def main():
                 except Exception:
                     public['cleanup_complete'] = False
                 emit_runtime_refusal(public)
+                try:
+                    emit_api_read_refusal(public, api_read_failure)
+                except BaseException:
+                    pass
                 (output / 'result.json').write_bytes(packed(public))
             watchdog.cancel()
 

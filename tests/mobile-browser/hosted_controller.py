@@ -1091,6 +1091,66 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
     return pairs["active"]
 
 
+def _apk_path_shape_value(value):
+    if (type(value) is not dict or len(value) != 7 or any(type(key) is not str for key in value)
+            or set(value) != {"length", "root", "file", "package", "tokens", "chars", "traversal"}
+            or type(value["length"]) is not int or not 0 <= value["length"] <= 257):
+        return None
+    choices = {"root": ("system", "product", "system_ext", "data", "apex", "mnt", "vendor", "odm", "other", "relative", "unobserved"),
+               "file": ("base", "split", "apk-other", "other", "unobserved"),
+               "package": ("chrome", "other", "unobserved"),
+               "tokens": ("canonical", "unpadded", "length", "characters", "padding", "padding-bits", "unobserved"),
+               "chars": ("old-safe", "tilde-only", "at-only", "other", "unobserved"),
+               "traversal": ("present", "absent", "unobserved")}
+    if any(type(value[key]) is not str or value[key] not in allowed for key, allowed in choices.items()):
+        return None
+    if value["root"] == "unobserved":
+        if value["length"] != 257 or any(value[key] != "unobserved" for key in choices):
+            return None
+    elif (any(value[key] == "unobserved" for key in ("file", "chars", "traversal"))
+          or ((value["package"] == "unobserved") != (value["tokens"] == "unobserved"))
+          or (value["package"] != "unobserved" and value["root"] != "data")):
+        return None
+    return {key: value[key] for key in ("length", "root", "file", "package", "tokens", "chars", "traversal")}
+
+
+def _apk_path_shape(path):
+    """Closed lexical facts over a rejected private path; never acceptance authority."""
+    if type(path) is not str:
+        return None
+    observed = {"length": min(len(path), 257), "root": "unobserved", "file": "unobserved",
+                "package": "unobserved", "tokens": "unobserved", "chars": "unobserved", "traversal": "unobserved"}
+    if len(path) > 1024:
+        return observed
+    parts = path.split("/")
+    root = parts[1] if path.startswith("/") and len(parts) > 1 else ""
+    observed["root"] = root if root in ("system", "product", "system_ext", "data", "apex", "mnt", "vendor", "odm") else "other" if path.startswith("/") else "relative"
+    name = parts[-1]
+    observed["file"] = "base" if name == "base.apk" else "split" if re.fullmatch(
+        r"split_[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*\.apk", name) is not None else "apk-other" if name.endswith(".apk") else "other"
+    observed["traversal"] = "present" if ".." in parts else "absent"
+    old = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./+=-"
+    observed["chars"] = "old-safe" if all(char in old for char in path) else "tilde-only" if all(
+        char in old + "~" for char in path) else "at-only" if all(char in old + "@" for char in path) else "other"
+    if len(parts) == 6 and parts[:3] == ["", "data", "app"] and parts[3].startswith("~~"):
+        package, separator, second = parts[4].partition("-")
+        observed["package"] = "chrome" if separator and package == "com.android.chrome" else "other"
+        tokens = (parts[3][2:], second)
+        if all(re.fullmatch(r"[A-Za-z0-9_-]{21}[AQgw]==", token) is not None for token in tokens):
+            observed["tokens"] = "canonical"
+        elif all(re.fullmatch(r"[A-Za-z0-9_-]{21}[AQgw]", token) is not None for token in tokens):
+            observed["tokens"] = "unpadded"
+        elif any(len(token) != 24 for token in tokens):
+            observed["tokens"] = "length"
+        elif any(re.fullmatch(r"[A-Za-z0-9_=-]+", token) is None for token in tokens):
+            observed["tokens"] = "characters"
+        elif any(re.fullmatch(r"[A-Za-z0-9_-]{22}==", token) is None for token in tokens):
+            observed["tokens"] = "padding"
+        else:
+            observed["tokens"] = "padding-bits"
+    return observed
+
+
 def package_inventory(adb, package):
     global _chrome_parser_current_token
     _chrome_parser_current_token = None
@@ -1149,7 +1209,23 @@ def package_inventory(adb, package):
                     r"/data/app/~~[A-Za-z0-9_-]{21}[AQgw]==/com\.android\.chrome-[A-Za-z0-9_-]{21}[AQgw]==/"
                     r"(?:base|split_[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*)\.apk", path) is None))
                 or ".." in path.split("/")):
-            raise Refusal("apk-path-bound")
+            try:
+                raise Refusal("apk-path-bound")
+            except Refusal as error:
+                observation = None
+                try:
+                    shape = _apk_path_shape_value(_apk_path_shape(path))
+                    if type(shape) is dict:
+                        observation = {"selected_error": error, "complete": False, "value": shape}
+                        error.apk_path_shape = observation
+                        observation["complete"] = True
+                except BaseException:
+                    try:
+                        if type(observation) is dict:
+                            observation["complete"] = False
+                    except BaseException:
+                        pass
+                raise
         fields = inventory_shell(adb, "sha256sum " + path, "chrome-apk-sha256").decode("ascii").split()
         if len(fields) != 2 or fields[1] != path:
             raise Refusal("actual-apk-digest-layout")

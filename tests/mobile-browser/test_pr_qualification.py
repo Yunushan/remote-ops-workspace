@@ -4975,5 +4975,136 @@ class ChromeRandomizedApkPathTests(unittest.TestCase):
             self.assertEqual(adb.shell.call_count, 3)
 
 
+class ChromeApkPathShapeDiagnosticTests(unittest.TestCase):
+    PHASE = "chrome-static-device-inventory"
+    CODE = "apk-path-bound"
+
+    def refused(self, path):
+        case = ActiveChromePackageVersionTests()
+        adb = case.inventory(case.dump(), paths=("package:" + path + "\n").encode("ascii"))
+        with (mock.patch.object(H.subprocess, "Popen") as native,
+              mock.patch.object(H.socket, "create_connection") as provider):
+            with self.assertRaises(H.Refusal) as caught:
+                H.package_inventory(adb, "com.android.chrome")
+        self.assertEqual(caught.exception.args, (self.CODE,))
+        self.assertIsNone(caught.exception.__context__)
+        self.assertEqual(adb.shell.call_args_list, [mock.call(case.FIXED), mock.call("pm path com.android.chrome")])
+        native.assert_not_called()
+        provider.assert_not_called()
+        return caught.exception
+
+    def test_actual_guard_projects_closed_shapes_without_path_or_parser_attempt_claim(self):
+        random = ChromeRandomizedApkPathTests()
+        rows = (("/product/app/Chrome@PRIVATE/Chrome.apk", "product", "apk-other", "unobserved", "unobserved", "at-only", "absent"),
+                (random.path("other.apk"), "data", "apk-other", "chrome", "canonical", "tilde-only", "absent"),
+                (random.path(first="A" * 22, second="A" * 22), "data", "base", "chrome", "unpadded", "tilde-only", "absent"),
+                (random.path(first="A" * 21 + "B=="), "data", "base", "chrome", "padding-bits", "tilde-only", "absent"),
+                (random.path(first="A=="), "data", "base", "chrome", "length", "tilde-only", "absent"),
+                (random.path(first="+" + "A" * 21 + "=="), "data", "base", "chrome", "characters", "tilde-only", "absent"),
+                (random.path(first="=" + "A" * 23), "data", "base", "chrome", "padding", "tilde-only", "absent"),
+                (random.path().replace("com.android.chrome-", "com.android.foreign-"), "data", "base", "other", "canonical", "tilde-only", "absent"),
+                ("/apex/PRIVATE/base.apk", "apex", "base", "unobserved", "unobserved", "old-safe", "absent"),
+                ("/vendor/PRIVATE/split_config.en.apk", "vendor", "split", "unobserved", "unobserved", "old-safe", "absent"),
+                ("PRIVATE/base.apk", "relative", "base", "unobserved", "unobserved", "old-safe", "absent"),
+                ("/system/app/../base.apk", "system", "base", "unobserved", "unobserved", "old-safe", "present"),
+                ("/data/PRIVATE;id.apk", "data", "apk-other", "unobserved", "unobserved", "other", "absent"))
+        for path, root, file, package, tokens, chars, traversal in rows:
+            expected = {"length": min(len(path), 257), "root": root, "file": file, "package": package,
+                        "tokens": tokens, "chars": chars, "traversal": traversal}
+            with self.subTest(root=root, file=file, tokens=tokens):
+                error = self.refused(path)
+                self.assertEqual(Q.apk_path_shape_diagnostic(error), expected)
+                self.assertEqual(Q.capture_refusal_diagnostic(error, self.PHASE)["apk_path_shape"], expected)
+                self.assertIs(error.apk_path_shape["selected_error"], error)
+                self.assertIs(error.apk_path_shape["complete"], True)
+                self.assertNotIn("chrome_parser_check", Q.capture_refusal_diagnostic(error, self.PHASE))
+
+    def test_input_cap_saturation_exact_types_keysets_and_independent_relations(self):
+        class Text(str):
+            pass
+        class Dict(dict):
+            pass
+        class Poison:
+            def __eq__(self, _other):
+                raise AssertionError("PRIVATE")
+        good = {"length": 37, "root": "product", "file": "apk-other", "package": "unobserved",
+                "tokens": "unobserved", "chars": "at-only", "traversal": "absent"}
+        self.assertIsNone(H._apk_path_shape(Text("PRIVATE")))
+        self.assertIsNone(H._apk_path_shape(None))
+        overflow = H._apk_path_shape("/product/" + "PRIVATE" * 160 + ".apk")
+        self.assertEqual(overflow, {"length": 257, **dict.fromkeys(("root", "file", "package", "tokens", "chars", "traversal"), "unobserved")})
+        invalids = (None, {}, Dict(good), {**good, "raw_path": "PRIVATE"}, {**good, "length": True},
+                    {**good, "length": -1}, {**good, "length": 258}, {**good, "root": Text("product")},
+                    {**good, "file": Poison()}, {**good, "tokens": "canonical"}, {**good, "package": "chrome"},
+                    {**good, "root": "unobserved"}, {**good, "traversal": False}, {**good, "chars": "unobserved"})
+        for invalid in invalids:
+            with self.subTest(kind=type(invalid).__name__):
+                self.assertIsNone(H._apk_path_shape_value(invalid))
+                self.assertIsNone(Q._apk_path_shape_value(invalid))
+        self.assertEqual(H._apk_path_shape_value(good), good)
+        self.assertEqual(Q._apk_path_shape_value(good), good)
+        self.assertEqual(Q._apk_path_shape_value(overflow), overflow)
+
+    def test_classifier_annotation_and_projection_faults_keep_original_selected_refusal(self):
+        path = "/product/app/Chrome@PRIVATE/Chrome.apk"
+        for helper in ("_apk_path_shape", "_apk_path_shape_value"):
+            for fault in (MemoryError("PRIVATE"), KeyboardInterrupt("PRIVATE"), SystemExit("PRIVATE")):
+                with self.subTest(helper=helper, fault=type(fault).__name__), mock.patch.object(H, helper, side_effect=fault):
+                    error = self.refused(path)
+                self.assertIsNone(Q.apk_path_shape_diagnostic(error))
+                self.assertEqual(Q.capture_refusal_diagnostic(error, self.PHASE)["refusal_code"], self.CODE)
+        original = H.Refusal
+        for fault in (MemoryError("PRIVATE"), KeyboardInterrupt("PRIVATE"), SystemExit("PRIVATE")):
+            class SetterFault(original):
+                def __setattr__(self, name, value, *, selected=fault):
+                    super().__setattr__(name, value)
+                    if name == "apk_path_shape":
+                        raise selected
+            with self.subTest(setter=type(fault).__name__), mock.patch.object(H, "Refusal", SetterFault):
+                error = self.refused(path)
+                self.assertIs(error.apk_path_shape["complete"], False)
+                self.assertIsNone(Q.apk_path_shape_diagnostic(error))
+                self.assertEqual(error.args, (self.CODE,))
+        error = self.refused(path)
+        for helper in ("_apk_path_shape_value", "apk_path_shape_diagnostic"):
+            with mock.patch.object(Q, helper, side_effect=KeyboardInterrupt("PRIVATE")):
+                record = Q.capture_refusal_diagnostic(error, self.PHASE)
+            self.assertEqual(record["refusal_code"], self.CODE)
+            self.assertNotIn("apk_path_shape", record)
+
+    def test_error_binding_complete_marker_phase_and_primitive_projection_are_closed(self):
+        error = self.refused("/product/app/Chrome@PRIVATE/Chrome.apk")
+        good = error.apk_path_shape
+        replacement = H.Refusal(self.CODE)
+        replacement.apk_path_shape = good
+        self.assertIsNone(Q.apk_path_shape_diagnostic(replacement))
+        for update in ({"complete": 1}, {"complete": False}, {"selected_error": replacement},
+                       {"raw_path": "PRIVATE"}, {"value": {**good["value"], "raw": "PRIVATE"}}):
+            error.apk_path_shape = {**good, **update}
+            self.assertIsNone(Q.apk_path_shape_diagnostic(error))
+        error.apk_path_shape = good
+        for phase in ("unobserved", "owned-api36-emulator", "sdk-observation"):
+            self.assertNotIn("apk_path_shape", Q.capture_refusal_diagnostic(error, phase))
+        error.args = ("actual-package-version-unobserved",)
+        self.assertIsNone(Q.apk_path_shape_diagnostic(error))
+        self.assertNotIn("apk_path_shape", Q.capture_refusal_diagnostic(error, self.PHASE))
+
+    def test_success_early_refusal_privacy_and_compact_bound_remain_unchanged(self):
+        case = ActiveChromePackageVersionTests()
+        with mock.patch.object(H, "_apk_path_shape", side_effect=AssertionError("not-a-refusal")) as classify:
+            result = H.package_inventory(case.inventory(case.dump()), "com.android.chrome")
+            self.assertEqual(result["version"], "123.0")
+            error = case.refused(b"PRIVATE")
+            self.assertEqual(error.args, (case.CODE,))
+            classify.assert_not_called()
+        for path in ("/product/app/Chrome@PRIVATE/Chrome.apk", "/product/" + "PRIVATE" * 160 + ".apk"):
+            error = self.refused(path)
+            line = json.dumps(Q.capture_refusal_diagnostic(error, self.PHASE), ensure_ascii=True, separators=(",", ":")) + "\n"
+            self.assertLessEqual(len(line.encode("ascii")), 339)
+            self.assertLessEqual(len(line.encode("ascii")), 512)
+            for private in ("PRIVATE", path, "selected_error", "complete", "raw_path", "Chrome.apk", "attempt_token"):
+                self.assertNotIn(private, line)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -47,6 +47,9 @@ from gate_contract import (
 DIRECTORY = Path(__file__).resolve().parent
 WORKFLOW = '.github/workflows/ubuntu-catalogue-browser.yml'
 PUBLIC_REPO = 'Yunushan/remote-ops-workspace'
+SW_HOST_STAGES = ('case-mark', 'connect', 'controller', 'asset-inventory', 'seed-probe', 'seed-result-guard', 'event-before', 'refresh', 'event-after', 'refresh-event-proof', 'finish-probe', 'finish-result-guard', 'event-final', 'static-event-guard', 'case-facts', 'case-record')
+SW_PROBE_STAGES = ('controller', 'cache-inventory', 'cache-open', 'api-canary-seed', 'api-canary-read', 'api-canary-remove', 'healthz-fetch', 'api-health-fetch', 'policy-fetch', 'healthz-response', 'api-health-response', 'policy-response', 'healthz-cache', 'api-health-cache', 'policy-cache', 'auth-static-canary', 'no-store-static-canary', 'auth-static-fetch', 'no-store-static-fetch', 'auth-static-response', 'no-store-static-response', 'static-canary-remove', 'static-restore-fetch', 'static-restore-response', 'static-restore-put', 'final-cache-inventory', 'final-entry-request', 'final-entry-policy', 'final-entry-bytes')
+SW_CASE_FACTS = ('controlled', 'api_canary_bypassed', 'fresh_server_get', 'health_policy_not_cached', 'auth_static_canary_bypassed', 'no_store_static_canary_bypassed', 'canaries_removed', 'final_cache_public_exact', 'storage_private_absent')
 
 
 def packed(value):
@@ -536,6 +539,44 @@ def emit_runtime_refusal(public):
         pass
 
 
+def emit_service_worker_refusal(public, error, stage, probe=None, facts=None):
+    """Only current caller-local fixed stages and exact primitive failed facts are public."""
+    try:
+        need(type(public) is dict and type(public.get('phase')) is str
+             and public['phase'] == 'service-worker-api-cache-boundary'
+             and type(public.get('status')) is str and public['status'] == 'refused'
+             and public.get('complete') is False and type(stage) is str and stage in SW_HOST_STAGES)
+        categories = {GateRefusal: 'gate-refusal', KeyError: 'key-error', IndexError: 'index-error',
+            TypeError: 'type-error', ValueError: 'value-error', TimeoutError: 'timeout-error', OSError: 'os-error'}
+        diagnostic = {'schema': 'row.catalogue-service-worker-refusal.v1', 'status': 'refused',
+            'phase': 'service-worker-api-cache-boundary', 'readiness_credit': 0,
+            'entered_stage': stage, 'exception_category': categories.get(type(error), 'other-exact-type')}
+        if type(error) is GateRefusal and stage in ('seed-result-guard', 'finish-result-guard'):
+            try:
+                if (type(probe) is dict and all(type(key) is str for key in probe)
+                        and set(probe) == {'controlled', 'entered_stage'} and probe['controlled'] is False
+                        and type(probe['entered_stage']) is str and probe['entered_stage'] in SW_PROBE_STAGES
+                        and (probe['entered_stage'] in ('controller', 'cache-inventory', 'cache-open', 'api-canary-seed')
+                            if stage == 'seed-result-guard' else probe['entered_stage'] != 'api-canary-seed')):
+                    diagnostic['probe_stage'] = probe['entered_stage']
+            except BaseException:
+                pass
+        if type(error) is GateRefusal and stage == 'case-record':
+            try:
+                if (type(facts) is dict and all(type(key) is str for key in facts) and set(facts) == set(SW_CASE_FACTS)
+                        and all(type(facts[key]) is bool for key in SW_CASE_FACTS)):
+                    bits = sum(1 << index for index, key in enumerate(SW_CASE_FACTS) if facts[key] is False)
+                    if bits:
+                        diagnostic['case_failure_bits'] = bits
+            except BaseException:
+                pass
+        raw = packed(diagnostic)
+        need(len(raw) + 1 <= 512)
+        sys.stderr.write(raw.decode('ascii') + '\n')
+    except BaseException:
+        pass
+
+
 def emit_case_refusal(public):
     """Emit only a fixed entered phase; no exception or private observation is read."""
     try:
@@ -745,6 +786,7 @@ def main():
     api_read_stage = None
     api_read_facts = None
     api_read_failure = None
+    service_worker_stage = service_worker_facts = None
     forced = False
     # Fresh private root; actual product/server/browser files are never public artifacts.
     with tempfile.TemporaryDirectory(prefix='catalogue-owned-', dir=os.environ['RUNNER_TEMP']) as temp:
@@ -929,31 +971,48 @@ def main():
             frame('mark', 'pagehide-new-document')
             record('pagehide-new-document', driver.lifecycle(origin, tokens[1], nonce))
             checkpoint('service-worker-api-cache-boundary')
+            service_worker_stage = 'case-mark'
             frame('mark', 'service-worker-api-cache-boundary')
+            service_worker_stage = 'connect'
             driver.connect(tokens[1], 3)
+            service_worker_stage = 'controller'
             driver.controlled()
+            service_worker_stage = 'asset-inventory'
             assets = {('/' if name == 'index.html' else '/' + name): hashed((repo / 'apps' / 'web' / name).read_bytes())
                 for name in ('index.html', 'styles.css', 'app.js', 'manifest.json')}
             assets['/index.html'] = assets['/']
+            service_worker_stage = 'seed-probe'
             seed = driver.execute(SW_PROBE, tokens[1], assets, 'seed-api', async_=True)
+            service_worker_stage = 'seed-result-guard'
             need(seed['controlled'] is True and seed['seeded'] is True)
+            service_worker_stage = 'event-before'
             before = observe('service-worker-api-cache-boundary')['events']
+            service_worker_stage = 'refresh'
             snapshot = driver.refresh(3)
+            service_worker_stage = 'event-after'
             after = observe('service-worker-api-cache-boundary')['events']
+            service_worker_stage = 'refresh-event-proof'
             real_get = any(event['route'] == 'catalogue' and event['method'] == 'GET' and event['status'] == 200
                 and event['authorization_present'] is True for event in after[len(before):])
+            service_worker_stage = 'finish-probe'
             sw = driver.execute(SW_PROBE, tokens[1], assets, 'finish', async_=True)
+            service_worker_stage = 'finish-result-guard'
             need(sw['controlled'] is True)
+            service_worker_stage = 'event-final'
             final_events = observe('service-worker-api-cache-boundary')['events']
             static_events = final_events[len(after):]
+            service_worker_stage = 'static-event-guard'
             need(any(event['route'] == 'static' and event['authorization_present'] for event in static_events)
                  and sum(event['route'] == 'static' and event['status'] == 200 for event in static_events) >= 3)
-            record('service-worker-api-cache-boundary', {'controlled': sw['controlled'],
+            service_worker_stage = 'case-facts'
+            service_worker_facts = {'controlled': sw['controlled'],
                 'api_canary_bypassed': disk_dom(snapshot, created_two) and not any('qualification-cache-canary' in text for text in snapshot['texts']),
                 'fresh_server_get': real_get, 'health_policy_not_cached': sw['healthPolicyAbsent'],
                 'auth_static_canary_bypassed': sw['authBypass'], 'no_store_static_canary_bypassed': sw['noStoreBypass'],
                 'canaries_removed': sw['removed'], 'final_cache_public_exact': sw['exact'],
-                'storage_private_absent': driver.private_storage_absent(tokens, names)})
+                'storage_private_absent': driver.private_storage_absent(tokens, names)}
+            service_worker_stage = 'case-record'
+            record('service-worker-api-cache-boundary', service_worker_facts)
             checkpoint('owned-server-down')
             stopped = frame('stop', 'owned-server-down')
             fixture.finish()
@@ -1015,6 +1074,12 @@ def main():
             (output / 'result.json').write_bytes(raw)
             return 0
         except Exception as error:
+            try:
+                emit_service_worker_refusal(public, error, service_worker_stage,
+                    seed if service_worker_stage == 'seed-result-guard' else sw if service_worker_stage == 'finish-result-guard' else None,
+                    service_worker_facts)
+            except BaseException:
+                pass
             try:
                 api_read_failure = api_read_refusal(public, error, api_read_stage, api_read_facts)
             except BaseException:

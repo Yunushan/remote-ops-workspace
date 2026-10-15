@@ -605,6 +605,48 @@ def chrome_parser_check_diagnostic(exc):
     return None
 
 
+def _apk_path_shape_value(value):
+    if (type(value) is not dict or len(value) != 7 or any(type(key) is not str for key in value)
+            or set(value) != {"length", "root", "file", "package", "tokens", "chars", "traversal"}
+            or type(value["length"]) is not int or not 0 <= value["length"] <= 257):
+        return None
+    choices = {"root": ("system", "product", "system_ext", "data", "apex", "mnt", "vendor", "odm", "other", "relative", "unobserved"),
+               "file": ("base", "split", "apk-other", "other", "unobserved"),
+               "package": ("chrome", "other", "unobserved"),
+               "tokens": ("canonical", "unpadded", "length", "characters", "padding", "padding-bits", "unobserved"),
+               "chars": ("old-safe", "tilde-only", "at-only", "other", "unobserved"),
+               "traversal": ("present", "absent", "unobserved")}
+    if any(type(value[key]) is not str or value[key] not in allowed for key, allowed in choices.items()):
+        return None
+    if value["root"] == "unobserved":
+        if value["length"] != 257 or any(value[key] != "unobserved" for key in choices):
+            return None
+    elif (any(value[key] == "unobserved" for key in ("file", "chars", "traversal"))
+          or ((value["package"] == "unobserved") != (value["tokens"] == "unobserved"))
+          or (value["package"] != "unobserved" and value["root"] != "data")):
+        return None
+    return {key: value[key] for key in ("length", "root", "file", "package", "tokens", "chars", "traversal")}
+
+
+def apk_path_shape_diagnostic(exc):
+    """New APK-guard error binding only; no package-parser attempt provenance."""
+    try:
+        if (type(exc) is not H.Refusal or type(exc.args) is not tuple or exc.args != ("apk-path-bound",)):
+            return None
+        state = exc.__dict__
+        if type(state) is not dict:
+            return None
+        record = state.get("apk_path_shape")
+        if (type(record) is not dict or len(record) != 3 or any(type(key) is not str for key in record)
+                or set(record) != {"selected_error", "complete", "value"}
+                or record["selected_error"] is not exc or record["complete"] is not True):
+            return None
+        return _apk_path_shape_value(record["value"])
+    except BaseException:
+        pass
+    return None
+
+
 def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
@@ -647,6 +689,13 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
             parser_check = chrome_parser_check_diagnostic(exc)
             if parser_check is not None:
                 record["chrome_parser_check"] = parser_check
+        except BaseException:
+            pass
+    if code == "apk-path-bound" and phase == "chrome-static-device-inventory":
+        try:
+            observed = apk_path_shape_diagnostic(exc)
+            if observed is not None:
+                record["apk_path_shape"] = observed
         except BaseException:
             pass
     if code == "tree-total-byte-bound" and phase == "sdk-observation":

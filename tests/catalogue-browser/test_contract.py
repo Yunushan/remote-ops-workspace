@@ -2026,7 +2026,7 @@ class HostPolicyPublisherTests(unittest.TestCase):
 
 
 class ActualPolicyCheckpointMainTests(unittest.TestCase):
-    def run_actual_main(self, *, final_label_failure, failure_phase=None, failure_error=None, diagnostic_stream=None):
+    def run_actual_main(self, *, final_label_failure, failure_phase=None, failure_error=None, diagnostic_stream=None, service_worker_result=None):
         import hashlib
         import stat
         import threading
@@ -2176,10 +2176,14 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
             def execute(self, script, token, assets, action, *, async_):
                 case.assertIs(async_, True)
                 if action == 'seed-api':
+                    if service_worker_result is not None and service_worker_result[0] == action:
+                        return copy.deepcopy(service_worker_result[1])
                     return {'controlled': True, 'seeded': True}
                 case.assertEqual(action, 'finish')
                 for _ in range(3):
                     event('GET', 200, route='static')
+                if service_worker_result is not None and service_worker_result[0] == action:
+                    return copy.deepcopy(service_worker_result[1])
                 return {'controlled': True, 'healthPolicyAbsent': True, 'authBypass': True,
                     'noStoreBypass': True, 'removed': True, 'exact': True}
             def close(self): pass
@@ -2254,7 +2258,8 @@ class ActualPolicyCheckpointMainTests(unittest.TestCase):
                 timer.return_value.start.assert_called_once()
                 timer.return_value.cancel.assert_called_once()
         record = json.loads(files['/synthetic-repo/.tmp/catalogue-browser-public/result.json'])
-        self.assertEqual(task_calls, ['initial', 'final'] if failure_phase in (None, 'cleanup') else ['initial'])
+        self.assertEqual(task_calls, ['initial', 'final'] if failure_phase in (None, 'cleanup')
+            and (service_worker_result is None or record['phase'] == 'cleanup') else ['initial'])
         self.assertEqual([row[0] for row in native_calls], ['owned', 'owned', 'driver']
             if failure_phase in ('api-create-refresh', 'restart-persistence-auth-rotation') else ['owned', 'owned', 'driver', 'owned'])
         self.assertTrue(holder['samples']['initial']['observed'])
@@ -2763,11 +2768,15 @@ class CatalogueCaseRefusalTests(unittest.TestCase):
                 self.assertTrue(record['cleanup_complete'])
                 self.assertTrue(holder['samples']['initial']['observed'])
                 self.assertFalse(holder['samples']['final']['observed'])
-                self.assertEqual(json.loads(stream.getvalue()), {'schema': 'row.catalogue-case-refusal.v1',
-                    'status': 'refused', 'phase': phase, 'readiness_credit': 0})
+                expected = [{'schema': 'row.catalogue-case-refusal.v1',
+                    'status': 'refused', 'phase': phase, 'readiness_credit': 0}]
+                if phase == 'service-worker-api-cache-boundary':
+                    expected.insert(0, {'schema': 'row.catalogue-service-worker-refusal.v1', 'status': 'refused',
+                        'phase': phase, 'readiness_credit': 0, 'entered_stage': 'case-mark', 'exception_category': 'gate-refusal'})
+                self.assertEqual([json.loads(line) for line in stream.getvalue().splitlines()], expected)
                 self.assertNotIn('synthetic-private', stream.getvalue())
                 self.assertLessEqual(len(stream.getvalue().encode('ascii')), 512)
-                self.assertEqual(stream.getvalue().count('\n'), 1)
+                self.assertEqual(stream.getvalue().count('\n'), 2 if phase == 'service-worker-api-cache-boundary' else 1)
                 self.assertNotIn('case_diagnostic', record)
 
     def test_default_full_main_success_retains_original_result_and_emits_nothing(self):
@@ -3179,6 +3188,154 @@ class PagehideSessionProofTests(unittest.TestCase):
                     self.assertEqual(driver.snapshot.call_count, 0)
                     self.assertEqual(json.loads(stream.getvalue())['entered_stage'], stage)
                     self.assertNotIn('synthetic-private', stream.getvalue())
+
+
+class ServiceWorkerBoundaryDiagnosticTests(unittest.TestCase):
+    PUBLIC = {'phase': 'service-worker-api-cache-boundary', 'status': 'refused', 'complete': False}
+
+    def actual_failure(self, *, result=None, entry_fault=None, packed_fault=None, stream_fault=None):
+        fixture = ActualPolicyCheckpointMainTests('test_actual_H_main_normal_commits_both_samples_in_order_before_pending_result')
+        selected = contract.GateRefusal('synthetic-private-primary')
+        stream = io.StringIO() if stream_fault is None else Mock()
+        if stream_fault is not None:
+            stream.write.side_effect = stream_fault
+        original_packed = host_controller.packed
+        def packed(value):
+            if type(value) is dict and value.get('schema') == 'row.catalogue-service-worker-refusal.v1' and packed_fault is not None:
+                raise packed_fault
+            return original_packed(value)
+        with patch.object(host_controller, 'emit_service_worker_refusal', side_effect=entry_fault,
+                wraps=host_controller.emit_service_worker_refusal) as emit, \
+                patch.object(host_controller, 'packed', side_effect=packed), \
+                patch.object(host_controller, 'api_read_refusal', wraps=host_controller.api_read_refusal) as captured:
+            code, record, holder = fixture.run_actual_main(final_label_failure=False,
+                failure_phase='service-worker-api-cache-boundary' if result is None else None,
+                failure_error=selected if result is None else None, service_worker_result=result, diagnostic_stream=stream)
+        emit.assert_called_once()
+        self.assertIs(emit.call_args.args[1], captured.call_args.args[1])
+        if result is None:
+            self.assertIs(captured.call_args.args[1], selected)
+            self.assertEqual(selected.args, ('synthetic-private-primary',))
+        self.assertEqual(code, 1)
+        self.assertEqual(record['phase'], 'service-worker-api-cache-boundary')
+        self.assertFalse(record['complete'])
+        self.assertTrue(record['forced_cleanup_attempted'])
+        self.assertTrue(record['cleanup_complete'])
+        self.assertTrue(holder['samples']['initial']['observed'])
+        self.assertFalse(holder['samples']['final']['observed'])
+        return stream
+
+    def test_actual_mark_failure_preserves_selected_error_cleanup_and_exact_two_lines(self):
+        stream = self.actual_failure()
+        lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+        self.assertEqual(lines, [{'schema': 'row.catalogue-service-worker-refusal.v1', 'status': 'refused',
+            'phase': 'service-worker-api-cache-boundary', 'readiness_credit': 0,
+            'entered_stage': 'case-mark', 'exception_category': 'gate-refusal'},
+            {'schema': 'row.catalogue-case-refusal.v1', 'status': 'refused',
+                'phase': 'service-worker-api-cache-boundary', 'readiness_credit': 0}])
+        self.assertNotIn('synthetic-private', stream.getvalue())
+
+    def test_actual_seed_and_finish_guards_project_every_closed_JS_stage(self):
+        for action in ('seed-api', 'finish'):
+            eligible = host_controller.SW_PROBE_STAGES[:4] if action == 'seed-api' else tuple(
+                stage for stage in host_controller.SW_PROBE_STAGES if stage != 'api-canary-seed')
+            for stage in eligible:
+                with self.subTest(action=action, stage=stage):
+                    stream = self.actual_failure(result=(action, {'controlled': False, 'entered_stage': stage}))
+                    diagnostic = json.loads(stream.getvalue().splitlines()[0])
+                    self.assertEqual(diagnostic['entered_stage'], 'seed-result-guard' if action == 'seed-api' else 'finish-result-guard')
+                    self.assertEqual(diagnostic['probe_stage'], stage)
+                    self.assertEqual(diagnostic['exception_category'], 'gate-refusal')
+                    self.assertNotIn('case_failure_bits', diagnostic)
+                    self.assertLessEqual(len(stream.getvalue().splitlines()[0].encode('ascii')) + 1, 512)
+
+    def test_actual_case_contract_false_fact_bits_remain_refused_after_real_static_event_guards(self):
+        result = {'controlled': True, 'healthPolicyAbsent': True, 'authBypass': True,
+            'noStoreBypass': True, 'removed': True, 'exact': True}
+        for key, bit in (('healthPolicyAbsent', 8), ('authBypass', 16), ('noStoreBypass', 32),
+                         ('removed', 64), ('exact', 128)):
+            with self.subTest(key=key):
+                stream = self.actual_failure(result=('finish', {**result, key: False}))
+                diagnostic = json.loads(stream.getvalue().splitlines()[0])
+                self.assertEqual(diagnostic['entered_stage'], 'case-record')
+                self.assertEqual(diagnostic['case_failure_bits'], bit)
+                self.assertNotIn('probe_stage', diagnostic)
+
+    def test_all_operation_categories_and_primitive_masks_are_closed_and_private_free(self):
+        class RefusalSubclass(contract.GateRefusal):
+            pass
+        cases = ((contract.GateRefusal, 'gate-refusal'), (KeyError, 'key-error'), (IndexError, 'index-error'),
+            (TypeError, 'type-error'), (ValueError, 'value-error'), (TimeoutError, 'timeout-error'),
+            (OSError, 'os-error'), (RefusalSubclass, 'other-exact-type'), (KeyboardInterrupt, 'other-exact-type'))
+        for stage in host_controller.SW_HOST_STAGES:
+            for kind, category in cases:
+                with self.subTest(stage=stage, kind=kind.__name__), patch.object(host_controller.sys, 'stderr', io.StringIO()) as stream:
+                    host_controller.emit_service_worker_refusal(self.PUBLIC, kind('synthetic-private'), stage)
+                    diagnostic = json.loads(stream.getvalue())
+                    self.assertEqual(diagnostic['exception_category'], category)
+                    self.assertEqual(set(diagnostic), {'schema', 'status', 'phase', 'readiness_credit', 'entered_stage', 'exception_category'})
+                    self.assertNotIn('synthetic-private', stream.getvalue())
+        for bits in (1, 2, 4, 8, 16, 32, 64, 128, 256, 511):
+            facts = {key: not bool(bits & (1 << index)) for index, key in enumerate(host_controller.SW_CASE_FACTS)}
+            with self.subTest(bits=bits), patch.object(host_controller.sys, 'stderr', io.StringIO()) as stream:
+                host_controller.emit_service_worker_refusal(self.PUBLIC, contract.GateRefusal(), 'case-record', facts=facts)
+                self.assertEqual(json.loads(stream.getvalue())['case_failure_bits'], bits)
+                self.assertLessEqual(len(stream.getvalue().encode('ascii')), 512)
+
+    def test_malformed_private_wrong_context_and_subclass_optional_values_are_omitted(self):
+        class Text(str):
+            pass
+        class Mapping(dict):
+            pass
+        probes = (None, [], Mapping(controlled=False, entered_stage='controller'),
+            {'controlled': 0, 'entered_stage': 'controller'}, {'controlled': False, 'entered_stage': Text('controller')},
+            {'controlled': False, 'entered_stage': 'synthetic-private-stage'},
+            {'controlled': False, 'entered_stage': 'final-entry-bytes'},
+            {Text('controlled'): False, 'entered_stage': 'controller'},
+            {'controlled': False, 'entered_stage': 'controller', 'private': '/synthetic-private/path'})
+        for probe in probes:
+            with self.subTest(kind=type(probe).__name__), patch.object(host_controller.sys, 'stderr', io.StringIO()) as stream:
+                host_controller.emit_service_worker_refusal(self.PUBLIC, contract.GateRefusal(), 'seed-result-guard', probe)
+                self.assertNotIn('probe_stage', json.loads(stream.getvalue()))
+                self.assertNotIn('synthetic-private', stream.getvalue())
+        facts = dict.fromkeys(host_controller.SW_CASE_FACTS, True)
+        for bad in ([], Mapping(facts), {**facts, 'controlled': 0}, {**facts, 'controlled': False, 'private': True},
+                    {Text(key): value for key, value in facts.items()}):
+            with self.subTest(kind=type(bad).__name__), patch.object(host_controller.sys, 'stderr', io.StringIO()) as stream:
+                host_controller.emit_service_worker_refusal(self.PUBLIC, contract.GateRefusal(), 'case-record', facts=bad)
+                self.assertNotIn('case_failure_bits', json.loads(stream.getvalue()))
+        for public, stage in (({**self.PUBLIC, 'phase': 'api-read'}, 'case-record'),
+                ({**self.PUBLIC, 'complete': True}, 'case-record'), ({**self.PUBLIC, 'status': 'complete'}, 'case-record'),
+                (Mapping(self.PUBLIC), 'case-record'), (self.PUBLIC, Text('case-record')), (self.PUBLIC, '/synthetic-private')):
+            with self.subTest(stage=stage), patch.object(host_controller.sys, 'stderr', io.StringIO()) as stream:
+                host_controller.emit_service_worker_refusal(public, contract.GateRefusal(), stage)
+                self.assertEqual(stream.getvalue(), '')
+
+    def test_entry_serialization_and_stream_interruptions_never_replace_result_or_cleanup(self):
+        for fault in (KeyboardInterrupt(), SystemExit(9), MemoryError('synthetic-private')):
+            for location in ('entry_fault', 'packed_fault', 'stream_fault'):
+                with self.subTest(fault=type(fault).__name__, location=location):
+                    stream = self.actual_failure(**{location: fault})
+                    if location != 'stream_fault':
+                        self.assertEqual(json.loads(stream.getvalue()), {'schema': 'row.catalogue-case-refusal.v1',
+                            'status': 'refused', 'phase': 'service-worker-api-cache-boundary', 'readiness_credit': 0})
+
+    def test_seed_is_only_before_real_refresh_and_finish_checks_retained_canary_without_reseeding(self):
+        source = browser_probe.SW_PROBE
+        seed = source.index("if (arguments[2] === 'seed-api') {")
+        write = source.index("await cache.put(url('/api/v1/profiles')")
+        done = source.index('callback({controlled: true, seeded: true}); return;')
+        read = source.index("const api = await cache.match(url('/api/v1/profiles'))")
+        remove = source.index("await cache.delete(url('/api/v1/profiles'))")
+        self.assertLess(seed, write)
+        self.assertLess(write, done)
+        self.assertLess(done, read)
+        self.assertLess(read, remove)
+        self.assertEqual(source.count("cache.put(url('/api/v1/profiles')"), 1)
+        self.assertIn("if (!api || !(await api.text()).includes(marker)) throw new Error('canary');", source)
+        self.assertIn("})().catch(() => callback({controlled: false, entered_stage: stage}));", source)
+        self.assertNotIn('error.message', source)
+        self.assertNotIn('error.stack', source)
 
 
 if __name__ == '__main__':

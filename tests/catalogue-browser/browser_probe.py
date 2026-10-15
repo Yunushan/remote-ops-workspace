@@ -91,49 +91,71 @@ const secrets = arguments[0], callback = arguments[arguments.length - 1];
 """
 SW_PROBE = """
 const token = arguments[0], expected = arguments[1], callback = arguments[arguments.length - 1];
+let stage = 'controller';
 (async () => {
   if (!navigator.serviceWorker.controller) throw new Error('uncontrolled');
+  stage = 'cache-inventory';
   const names = await caches.keys();
   if (names.length !== 1 || names[0] !== 'remote-ops-workspace-static-v3') throw new Error('cache');
+  stage = 'cache-open';
   const cache = await caches.open(names[0]), url = path => new URL(path, location.origin).href;
   const marker = 'qualification-cache-canary';
-  await cache.put(url('/api/v1/profiles'), new Response(JSON.stringify({profiles: [{name: marker}]}),
-    {headers: {'Content-Type': 'application/json'}}));
-  // The controller clicks the real refresh button before removing this API canary.
-  if (arguments[2] === 'seed-api') { callback({controlled: true, seeded: true}); return; }
+  // The controller clicks the real refresh button before this same canary is checked and removed.
+  if (arguments[2] === 'seed-api') {
+    stage = 'api-canary-seed';
+    await cache.put(url('/api/v1/profiles'), new Response(JSON.stringify({profiles: [{name: marker}]}),
+      {headers: {'Content-Type': 'application/json'}}));
+    callback({controlled: true, seeded: true}); return;
+  }
+  stage = 'api-canary-read';
   const api = await cache.match(url('/api/v1/profiles'));
   if (!api || !(await api.text()).includes(marker)) throw new Error('canary');
+  stage = 'api-canary-remove';
   await cache.delete(url('/api/v1/profiles'));
   for (const path of ['/healthz', '/api/v1/health', '/enterprise-policy.json']) {
+    stage = path === '/healthz' ? 'healthz-fetch' : path === '/api/v1/health' ? 'api-health-fetch' : 'policy-fetch';
     const response = await fetch(path, {cache: 'no-store', headers: {'Authorization': 'Bearer ' + token}});
+    stage = path === '/healthz' ? 'healthz-response' : path === '/api/v1/health' ? 'api-health-response' : 'policy-response';
     if (response.status !== 200 || response.headers.get('Cache-Control') !== 'no-store') throw new Error('response');
+    stage = path === '/healthz' ? 'healthz-cache' : path === '/api/v1/health' ? 'api-health-cache' : 'policy-cache';
     if (await cache.match(url(path))) throw new Error('private-cache');
   }
   const hash = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
     value => value.toString(16).padStart(2, '0')).join('');
   let authBypass = false, noStoreBypass = false;
   for (const mode of ['auth', 'no-store']) {
+    stage = mode === 'auth' ? 'auth-static-canary' : 'no-store-static-canary';
     await cache.put(url('/app.js'), new Response(marker));
+    stage = mode === 'auth' ? 'auth-static-fetch' : 'no-store-static-fetch';
     const response = await fetch('/app.js', mode === 'auth'
       ? {headers: {'Authorization': 'Bearer ' + token}} : {cache: 'no-store'});
+    stage = mode === 'auth' ? 'auth-static-response' : 'no-store-static-response';
     if (response.status !== 200 || await hash(await response.arrayBuffer()) !== expected['/app.js']) throw new Error('bypass');
     if (mode === 'auth') authBypass = true; else noStoreBypass = true;
   }
+  stage = 'static-canary-remove';
   await cache.delete(url('/app.js'));
+  stage = 'static-restore-fetch';
   const publicResponse = await fetch('/app.js', {cache: 'no-store', credentials: 'omit'});
+  stage = 'static-restore-response';
   if (publicResponse.status !== 200) throw new Error('static');
+  stage = 'static-restore-put';
   await cache.put(url('/app.js'), publicResponse);
+  stage = 'final-cache-inventory';
   const keys = await cache.keys();
   if (keys.length !== Object.keys(expected).length) throw new Error('inventory');
   for (const request of keys) {
+    stage = 'final-entry-request';
     const parsed = new URL(request.url);
     if (parsed.origin !== location.origin || parsed.search || !Object.hasOwn(expected, parsed.pathname)) throw new Error('private');
+    stage = 'final-entry-policy';
     const response = await cache.match(request);
     if (response.headers.get('Cache-Control')?.includes('no-store') || request.headers.has('Authorization')) throw new Error('private');
+    stage = 'final-entry-bytes';
     if (await hash(await response.arrayBuffer()) !== expected[parsed.pathname]) throw new Error('bytes');
   }
   callback({controlled: true, healthPolicyAbsent: true, authBypass, noStoreBypass, removed: true, exact: true});
-})().catch(() => callback({controlled: false}));
+})().catch(() => callback({controlled: false, entered_stage: stage}));
 """
 
 

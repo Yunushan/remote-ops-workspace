@@ -5150,5 +5150,176 @@ class ChromePreservedSystemApkNameTests(unittest.TestCase):
                                                           mock.call("pm path com.android.chrome")])
 
 
+class QualificationCurrentIdentityDiagnosticTests(unittest.TestCase):
+    CODE = "qualification-current-source-tool-or-device-changed"
+    PHASE = "chrome-static-device-inventory"
+
+    def run_capture(self, selected, *, classifier_fault=None, setter_fault=None, success=False):
+        with fixture() as root:
+            (root / ".tmp").mkdir()
+            sdk = root / "owned-sdk"
+            leaders = [SimpleNamespace(child=SimpleNamespace(stdin=mock.Mock()), zero=mock.Mock(),
+                live=mock.Mock(), buffers=[bytearray(), bytearray()]) for _ in range(3)]
+            born, seen = [], []
+            counts = dict.fromkeys(("source", "sdk", "chrome"), 0)
+            initial = {"source": {"source_sha": "a" * 40}, "sdk": {"tree_sha256": "e" * 64},
+                       "chrome": {"version": "123.0", "apks": [{"bytes": 123}]}}
+
+            def managed(_argv, _env, _cwd):
+                self.assertLess(len(born), 3)
+                self.assertIs(_cwd, root)
+                result = leaders[len(born)]
+                born.append(result)
+                return result
+
+            def sample(kind):
+                counts[kind] += 1
+                seen.append(kind)
+                return {**initial[kind], "changed": True} if counts[kind] == 2 and selected == kind else initial[kind]
+
+            def clock():
+                return 1500 if selected == "deadline" and all(counts[key] == 2 for key in counts) else 0
+
+            def command(service, **_kwargs):
+                if service == "host:devices":
+                    return (H.SERIAL + "\tdevice\n").encode("ascii")
+                self.assertEqual(service, "shell,v2,raw:getprop sys.boot_completed")
+                return ChromeDumpWireBudgetTests.wire(b"1\n")
+
+            adb = SimpleNamespace(command=mock.Mock(side_effect=command),
+                shell=mock.Mock(side_effect=[b"36\n", b"x86_64\n", b"header\n"]))
+            with ExitStack() as patches:
+                patches.enter_context(mock.patch.dict(os.environ, {"ANDROID_HOME": str(sdk)}, clear=True))
+                patches.enter_context(mock.patch.object(Q, "event_guard", return_value={}))
+                patches.enter_context(mock.patch.object(Q, "commands", return_value=(object(), 0)))
+                source = patches.enter_context(mock.patch.object(Q, "source_binding", side_effect=lambda *_: sample("source")))
+                patches.enter_context(mock.patch.object(Q, "clone_guard", return_value=(initial["source"], {})))
+                patches.enter_context(mock.patch.object(Q, "owned_sdk", return_value=sdk))
+                inventory = patches.enter_context(mock.patch.object(Q, "sdk_inventory", side_effect=lambda *_: sample("sdk")))
+                chrome = patches.enter_context(mock.patch.object(H, "package_inventory", side_effect=lambda *_: sample("chrome")))
+                patches.enter_context(mock.patch.object(Q.time, "monotonic", side_effect=clock))
+                reservations = patches.enter_context(mock.patch.object(Q.socket, "socket", side_effect=[mock.MagicMock() for _ in range(3)]))
+                provider = patches.enter_context(mock.patch.object(H, "Managed", side_effect=managed))
+                patches.enter_context(mock.patch.object(H, "owned_listener", return_value=None))
+                patches.enter_context(mock.patch.object(H, "AdbSocket", return_value=adb))
+                cleanup = patches.enter_context(mock.patch.object(H, "cleanup_all", return_value=[]))
+                receipt = patches.enter_context(mock.patch.object(Q, "public_receipt"))
+                process = patches.enter_context(mock.patch.object(H.subprocess, "Popen"))
+                connect = patches.enter_context(mock.patch.object(H.socket, "create_connection"))
+                stream = io.StringIO()
+                patches.enter_context(mock.patch.object(sys, "stderr", stream))
+                if classifier_fault is not None:
+                    patches.enter_context(mock.patch.object(Q, "_current_identity_mismatch", side_effect=classifier_fault))
+                if setter_fault is not None:
+                    original = H.Refusal
+                    class SetterFault(original):
+                        def __setattr__(self, name, value):
+                            super().__setattr__(name, value)
+                            if name == "current_identity_mismatch":
+                                raise setter_fault
+                    patches.enter_context(mock.patch.object(H, "Refusal", SetterFault))
+                if success:
+                    classifier = patches.enter_context(mock.patch.object(Q, "_current_identity_mismatch", side_effect=AssertionError("success")))
+                    patches.enter_context(mock.patch.object(H, "read_plain", return_value=b"saved"))
+                    result = Q.capture(root)
+                    self.assertEqual(result["status"], "observations-with-unresolved-browser")
+                    classifier.assert_not_called()
+                    error = None
+                    self.assertEqual(cleanup.call_count, 2)
+                else:
+                    with self.assertRaises(H.Refusal) as caught:
+                        Q.capture(root)
+                    error = caught.exception
+                    self.assertEqual(error.args, (self.CODE,))
+                    self.assertIsNone(error.__context__)
+                    cleanup.assert_called_once_with(born)
+                self.assertEqual(provider.call_count, 3)
+                self.assertEqual(reservations.call_count, 3)
+                self.assertEqual(adb.command.call_count, 2)
+                self.assertEqual(adb.shell.call_args_list, [mock.call("getprop ro.build.version.sdk"),
+                    mock.call("getprop ro.product.cpu.abi"), mock.call("cat /proc/net/unix")])
+                receipt.assert_called_once()
+                process.assert_not_called()
+                connect.assert_not_called()
+                return error, seen, (source.call_count, inventory.call_count, chrome.call_count), stream.getvalue()
+
+    def test_actual_capture_preserves_short_circuit_reads_and_selects_exact_first_mismatch(self):
+        for selected, expected, suffix, counts in (
+                ("source", "source-binding", ["source"], (2, 1, 1)),
+                ("sdk", "sdk-inventory", ["source", "sdk"], (2, 2, 1)),
+                ("chrome", "chrome-inventory", ["source", "sdk", "chrome"], (2, 2, 2)),
+                ("deadline", "deadline", ["source", "sdk", "chrome"], (2, 2, 2))):
+            with self.subTest(selected=selected):
+                error, seen, actual_counts, line = self.run_capture(selected)
+                self.assertEqual(seen, ["source", "sdk", "chrome"] + suffix)
+                self.assertEqual(actual_counts, counts)
+                self.assertEqual(Q.current_identity_mismatch_diagnostic(error), expected)
+                self.assertEqual(json.loads(line)["current_identity_mismatch"], expected)
+                self.assertIs(error.current_identity_mismatch["selected_error"], error)
+                self.assertIs(error.current_identity_mismatch["complete"], True)
+
+    def test_only_exact_false_true_none_prefix_pattern_is_eligible_without_unknown_truth_testing(self):
+        class Poison:
+            def __bool__(self):
+                raise AssertionError("PRIVATE-truth")
+            def __eq__(self, _other):
+                raise AssertionError("PRIVATE-equality")
+        for index, expected in enumerate(("source-binding", "sdk-inventory", "chrome-inventory", "deadline")):
+            self.assertEqual(Q._current_identity_mismatch((False,) * index + (True,) + (None,) * (3 - index)), expected)
+        for values in (None, [True, None, None, None], (False,) * 4, (None,) * 4, (True, False, None, None),
+                       (True, True, None, None), (None, True, None, None), (1, None, None, None),
+                       (False, 0, True, None), (Poison(), None, None, None), (True, Poison(), None, None)):
+            self.assertIsNone(Q._current_identity_mismatch(values))
+
+    def test_actual_classifier_and_partial_attachment_faults_preserve_refusal_and_cleanup(self):
+        for fault in (MemoryError("PRIVATE"), KeyboardInterrupt("PRIVATE"), SystemExit("PRIVATE")):
+            for mode in ("classify", "setter"):
+                with self.subTest(mode=mode, fault=type(fault).__name__):
+                    kwargs = {"classifier_fault" if mode == "classify" else "setter_fault": fault}
+                    error, seen, counts, line = self.run_capture("sdk", **kwargs)
+                    self.assertEqual(seen, ["source", "sdk", "chrome", "source", "sdk"])
+                    self.assertEqual(counts, (2, 2, 1))
+                    self.assertIsNone(Q.current_identity_mismatch_diagnostic(error))
+                    self.assertNotIn("current_identity_mismatch", json.loads(line))
+                    self.assertEqual(json.loads(line)["refusal_code"], self.CODE)
+                    if mode == "setter":
+                        self.assertIs(error.current_identity_mismatch["complete"], False)
+
+    def test_independent_consumer_error_completion_phase_and_enum_grammar_are_closed(self):
+        class Text(str):
+            pass
+        class Poison:
+            def __eq__(self, _other):
+                raise AssertionError("PRIVATE")
+        error, _seen, _counts, _line = self.run_capture("chrome")
+        good = error.current_identity_mismatch
+        other = H.Refusal(self.CODE)
+        other.current_identity_mismatch = good
+        self.assertIsNone(Q.current_identity_mismatch_diagnostic(other))
+        for update in ({"complete": 1}, {"complete": False}, {"selected_error": other}, {"raw": "PRIVATE"},
+                       {"value": Text("chrome-inventory")}, {"value": Poison()}, {"value": "PRIVATE"}):
+            error.current_identity_mismatch = {**good, **update}
+            self.assertIsNone(Q.current_identity_mismatch_diagnostic(error))
+        error.current_identity_mismatch = good
+        for phase in ("unobserved", "owned-api36-emulator", "sdk-observation"):
+            self.assertNotIn("current_identity_mismatch", Q.capture_refusal_diagnostic(error, phase))
+        for helper in ("current_identity_mismatch_diagnostic",):
+            with mock.patch.object(Q, helper, side_effect=KeyboardInterrupt("PRIVATE")):
+                self.assertNotIn("current_identity_mismatch", Q.capture_refusal_diagnostic(error, self.PHASE))
+
+    def test_success_keeps_full_rechecks_and_refusal_record_stays_small_and_private(self):
+        error, seen, counts, line = self.run_capture(None, success=True)
+        self.assertIsNone(error)
+        self.assertEqual(seen, ["source", "sdk", "chrome"] * 2)
+        self.assertEqual(counts, (2, 2, 2))
+        self.assertEqual(line, "")
+        for selected in ("source", "sdk", "chrome", "deadline"):
+            error, _seen, _counts, line = self.run_capture(selected)
+            self.assertLessEqual(len(line.encode("ascii")), 265)
+            self.assertLessEqual(len(line.encode("ascii")), 512)
+            for private in ("PRIVATE", "selected_error", "complete", '"changed":', "tree_sha256", "source_sha", "attempt_token"):
+                self.assertNotIn(private, line)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

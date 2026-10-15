@@ -647,6 +647,51 @@ def apk_path_shape_diagnostic(exc):
     return None
 
 
+def _current_identity_mismatch(values):
+    """Only already-computed exact bools; never re-read or compare inventory values."""
+    if type(values) is not tuple or len(values) != 4:
+        return None
+    selected = None
+    for index, value in enumerate(values):
+        if value is True:
+            if selected is not None:
+                return None
+            selected = index
+        elif value is False:
+            if selected is not None:
+                return None
+        elif value is None:
+            if selected is None:
+                return None
+        else:
+            return None
+    if selected is not None:
+        return ("source-binding", "sdk-inventory", "chrome-inventory", "deadline")[selected]
+    return None
+
+
+def current_identity_mismatch_diagnostic(exc):
+    """Closed category bound to the fresh combined-guard error, not parser attempts."""
+    try:
+        if (type(exc) is not H.Refusal or type(exc.args) is not tuple
+                or exc.args != ("qualification-current-source-tool-or-device-changed",)):
+            return None
+        state = exc.__dict__
+        if type(state) is not dict:
+            return None
+        observed = state.get("current_identity_mismatch")
+        if (type(observed) is not dict or len(observed) != 3 or any(type(key) is not str for key in observed)
+                or set(observed) != {"selected_error", "complete", "value"}
+                or observed["selected_error"] is not exc or observed["complete"] is not True):
+            return None
+        value = observed["value"]
+        if type(value) is str and value in ("source-binding", "sdk-inventory", "chrome-inventory", "deadline"):
+            return value
+    except BaseException:
+        pass
+    return None
+
+
 def capture_refusal_diagnostic(exc, phase, owned_substage=None):
     code = "unclassified"
     if type(exc) is H.Refusal and len(exc.args) == 1:
@@ -689,6 +734,13 @@ def capture_refusal_diagnostic(exc, phase, owned_substage=None):
             parser_check = chrome_parser_check_diagnostic(exc)
             if parser_check is not None:
                 record["chrome_parser_check"] = parser_check
+        except BaseException:
+            pass
+    if code == "qualification-current-source-tool-or-device-changed" and phase == "chrome-static-device-inventory":
+        try:
+            observed = current_identity_mismatch_diagnostic(exc)
+            if observed is not None:
+                record["current_identity_mismatch"] = observed
         except BaseException:
             pass
     if code == "apk-path-bound" and phase == "chrome-static-device-inventory":
@@ -859,9 +911,29 @@ def capture(root):
         # No am start, UI command, Playwright require or DevTools connection.
         socket_seen = any(row.split()[-1:] == ["@chrome_devtools_remote"] for row in socket_rows)
         context["observed"]["chrome_apk_count"] = len(chrome["apks"])
-        if (source_binding(root, short) != binding or sdk_inventory(sdk) != observed
-                or H.package_inventory(adb, "com.android.chrome") != chrome or time.monotonic() >= started + 1500):
-            raise H.Refusal("qualification-current-source-tool-or-device-changed")
+        identity_source_changed = identity_sdk_changed = identity_chrome_changed = identity_deadline_elapsed = None
+        if ((identity_source_changed := source_binding(root, short) != binding)
+                or (identity_sdk_changed := sdk_inventory(sdk) != observed)
+                or (identity_chrome_changed := H.package_inventory(adb, "com.android.chrome") != chrome)
+                or (identity_deadline_elapsed := time.monotonic() >= started + 1500)):
+            try:
+                raise H.Refusal("qualification-current-source-tool-or-device-changed")
+            except H.Refusal as error:
+                identity_observation = None
+                try:
+                    mismatch = _current_identity_mismatch((identity_source_changed, identity_sdk_changed,
+                        identity_chrome_changed, identity_deadline_elapsed))
+                    if type(mismatch) is str and mismatch in ("source-binding", "sdk-inventory", "chrome-inventory", "deadline"):
+                        identity_observation = {"selected_error": error, "complete": False, "value": mismatch}
+                        error.current_identity_mismatch = identity_observation
+                        identity_observation["complete"] = True
+                except BaseException:
+                    try:
+                        if type(identity_observation) is dict:
+                            identity_observation["complete"] = False
+                    except BaseException:
+                        pass
+                raise
         cleanup = H.cleanup_all(leaders)
         if any(not row["complete"] for row in cleanup):
             raise H.Refusal("qualification-owned-cleanup-unproved")

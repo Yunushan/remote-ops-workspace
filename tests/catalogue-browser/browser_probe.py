@@ -321,7 +321,8 @@ class Driver:
         status = None
         data = None
         try:
-            need(method in ('GET', 'POST', 'DELETE') and re.fullmatch(r'/[A-Za-z0-9/_-]*', path))
+            need(method in ('GET', 'POST', 'DELETE') and re.fullmatch(r'/[A-Za-z0-9/_.-]*', path)
+                 and all(segment not in ('.', '..') for segment in path.split('/')))
             remaining = min(timeout, self.deadline - time.monotonic())
             need(remaining > 0)
             step = 'connection-create'

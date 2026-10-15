@@ -2622,5 +2622,104 @@ class ApiReadDiagnosticTests(unittest.TestCase):
 
 
 
+class DriverElementPathTests(unittest.TestCase):
+    def response_connections(self, values):
+        connections = []
+        for value in values:
+            response = Mock(status=200)
+            response.read.return_value = json.dumps({'value': value}, separators=(',', ':')).encode('utf-8')
+            connection = Mock()
+            connection.getresponse.return_value = response
+            connections.append(connection)
+        return connections
+
+    def assert_requests_and_closes(self, connections, requests):
+        self.assertEqual(len(connections), len(requests))
+        for connection, (path, body) in zip(connections, requests, strict=True):
+            connection.request.assert_called_once_with('POST', path,
+                body=json.dumps(body, separators=(',', ':')).encode('utf-8'),
+                headers={'Content-Type': 'application/json'})
+            connection.getresponse.assert_called_once_with()
+            connection.getresponse.return_value.read.assert_called_once_with(262145)
+            connection.close.assert_called_once_with()
+
+    def test_real_element_fill_and_click_transport_dotted_opaque_ids(self):
+        for identifier in ('f.1.d.2.e.3', 'opaque._-9', '..opaque..', '.' + 'a' * 254 + '.'):
+            for action in ('fill', 'click'):
+                with self.subTest(identifier=identifier, action=action):
+                    values = [{browser_probe.ELEMENT: identifier}, None]
+                    requests = [('/session/owned-session/element', {'using': 'css selector', 'value': '#synthetic'})]
+                    path = '/session/owned-session/element/' + identifier
+                    if action == 'fill':
+                        values.append(None)
+                        requests.extend([(path + '/clear', {}), (path + '/value', {'text': 'synthetic-token'})])
+                    else:
+                        requests.append((path + '/click', {}))
+                    connections = self.response_connections(values)
+                    driver = browser_probe.Driver(12345, 200)
+                    driver.session = 'owned-session'
+                    with patch.object(browser_probe.time, 'monotonic', return_value=100) as clock, \
+                            patch.object(browser_probe.http.client, 'HTTPConnection', side_effect=connections) as provider:
+                        if action == 'fill':
+                            self.assertIsNone(driver.fill('#synthetic', 'synthetic-token'))
+                        else:
+                            self.assertIsNone(driver.click('#synthetic'))
+                    self.assertEqual(provider.call_count, len(requests))
+                    self.assertEqual(clock.call_count, len(requests))
+                    for call in provider.call_args_list:
+                        self.assertEqual(call.args, ('127.0.0.1', 12345))
+                        self.assertEqual(call.kwargs, {'timeout': 10})
+                    self.assert_requests_and_closes(connections, requests)
+
+    def test_whole_dot_element_ids_refuse_action_after_the_existing_lookup(self):
+        for identifier in ('.', '..'):
+            for action in ('fill', 'click'):
+                with self.subTest(identifier=identifier, action=action):
+                    connections = self.response_connections([{browser_probe.ELEMENT: identifier}])
+                    driver = browser_probe.Driver(12345, 200)
+                    driver.session = 'owned-session'
+                    with patch.object(browser_probe.time, 'monotonic', return_value=100) as clock, \
+                            patch.object(browser_probe.http.client, 'HTTPConnection', side_effect=connections) as provider:
+                        with self.assertRaises(contract.GateRefusal):
+                            if action == 'fill':
+                                driver.fill('#synthetic', 'synthetic-token')
+                            else:
+                                driver.click('#synthetic')
+                    provider.assert_called_once_with('127.0.0.1', 12345, timeout=10)
+                    self.assertEqual(clock.call_count, 1)
+                    self.assert_requests_and_closes(connections,
+                        [('/session/owned-session/element', {'using': 'css selector', 'value': '#synthetic'})])
+
+    def test_invalid_paths_and_whole_dot_segments_refuse_before_clock_or_connection(self):
+        paths = ('/.', '/..', '/./', '/../', '/session/owned/./click', '/session/owned/../click',
+            '/session/owned/element/./value', '/session/owned/element/../click',
+            '/session/owned/element/%2e/click', '/session/owned/element/%2E%2E/click',
+            '/session/owned/element/a?b/click', '/session/owned/element/a#b/click',
+            '/session/owned/element/a\\b/click', '/session/owned/element/a:b/click',
+            'https://outside.invalid/status', 'status', '/a b', '/a\n', '/a\x00', '/caf\u00e9')
+        for path in paths:
+            with self.subTest(path=path), patch.object(browser_probe.time, 'monotonic') as clock, \
+                    patch.object(browser_probe.http.client, 'HTTPConnection') as provider:
+                with self.assertRaises(contract.GateRefusal):
+                    browser_probe.Driver(12345, 200).call('POST', path, {})
+                provider.assert_not_called()
+                clock.assert_not_called()
+
+    def test_element_invalid_ids_still_refuse_after_lookup_without_action_transport(self):
+        for identifier in ('', 'a/b', 'a%b', 'a?b', 'a b', 'caf\u00e9', 'a\n', 'a' * 257, None, True):
+            with self.subTest(identifier=identifier):
+                connections = self.response_connections([{browser_probe.ELEMENT: identifier}])
+                driver = browser_probe.Driver(12345, 200)
+                driver.session = 'owned-session'
+                with patch.object(browser_probe.time, 'monotonic', return_value=100) as clock, \
+                        patch.object(browser_probe.http.client, 'HTTPConnection', side_effect=connections) as provider:
+                    with self.assertRaises(contract.GateRefusal):
+                        driver.fill('#synthetic', 'synthetic-token')
+                provider.assert_called_once_with('127.0.0.1', 12345, timeout=10)
+                self.assertEqual(clock.call_count, 1)
+                self.assert_requests_and_closes(connections,
+                    [('/session/owned-session/element', {'using': 'css selector', 'value': '#synthetic'})])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

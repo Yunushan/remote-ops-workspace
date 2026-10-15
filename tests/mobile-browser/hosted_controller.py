@@ -827,6 +827,7 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
     pairs = {}
     section = None
     block = None
+    package_source_seen = False
     resolver_table = False
     resolver_schemes = False
     resolver_package_seen = False
@@ -866,6 +867,11 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
             resolver_indent = line[:len(line) - len(line.lstrip(" \t"))]
             if "\t" in resolver_indent or len(resolver_indent) < 6:
                 resolver_schemes = line == "  Schemes:"
+        # This informational field is emitted within the validated package block.
+        if (section in ("active", "hidden") and block is not None and not package_source_seen
+                and re.fullmatch(r"    packageSource=[0-4]", line) is not None):
+            package_source_seen = True
+            continue
         if "packages:" in lower or lower.startswith("packages") or "hidden system package" in lower:
             require(line in ("Packages:", "Hidden system packages:"), "section-title")
             finish_block()
@@ -888,6 +894,7 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
             require(re.fullmatch(r"  Package \[com\.android\.chrome\] \([0-9a-f]{1,8}\):", line) is not None, "package-header")
             require(section in ("active", "hidden") and block is None and section not in pairs, "package-position")
             block = {"scope": section}
+            package_source_seen = False
             continue
         if "versionname" in lower or "versioncode" in lower:
             require(block is not None, "version-position")

@@ -4361,5 +4361,125 @@ class ChromeResolverSchemeGrammarTests(unittest.TestCase):
         self.assertEqual(error.args, ("actual-package-version-unobserved",))
 
 
+
+class ChromePackageSourceFieldTests(unittest.TestCase):
+    @staticmethod
+    def with_field(raw, value, *, hidden=False, position="header"):
+        header = b"  Package [com.android.chrome] (def):\n" if hidden else b"  Package [com.android.chrome] (abc):\n"
+        if position == "header":
+            return raw.replace(header, header + value + b"\n", 1)
+        anchor = b"    versionName=98.0\n" if hidden else b"    versionName=123.0\n"
+        return raw.replace(anchor, anchor + value + b"\n", 1)
+
+    def refused(self, raw):
+        case = ActiveChromePackageVersionTests()
+        with (mock.patch.object(H.subprocess, "Popen") as process,
+                mock.patch.object(H.socket, "create_connection") as provider):
+            error = case.refused(raw)
+        process.assert_not_called()
+        provider.assert_not_called()
+        return error
+
+    def test_documented_values_in_active_and_hidden_blocks_preserve_all_APK_queries(self):
+        case = ActiveChromePackageVersionTests()
+        for value in range(5):
+            field = ("    packageSource=" + str(value)).encode("ascii")
+            for hidden in (None, ("98.0", "789"), ("123.0", "456")):
+                raw = self.with_field(case.dump(hidden=hidden), field)
+                if hidden is not None:
+                    raw = raw.replace(b"  Package [com.android.chrome] (def):\n",
+                                      b"  Package [com.android.chrome] (def):\n" + field + b"\n", 1)
+                adb = case.inventory(raw)
+                with (self.subTest(value=value, hidden=hidden),
+                        mock.patch.object(H.subprocess, "Popen") as process,
+                        mock.patch.object(H.socket, "create_connection") as provider):
+                    result = H.package_inventory(adb, "com.android.chrome")
+                self.assertEqual((result["version"], result["version_code"]), ("123.0", "456"))
+                self.assertEqual(result["apks"], [{"path": case.APK, "sha256": "a" * 64, "bytes": 123}])
+                self.assertEqual(result["publisher_signing_trust"], "not-approved-by-this-test")
+                self.assertEqual(adb.shell.call_args_list, [
+                    mock.call(case.FIXED), mock.call("pm path com.android.chrome"),
+                    mock.call("sha256sum " + case.APK), mock.call("stat -c %s " + case.APK)])
+                process.assert_not_called()
+                provider.assert_not_called()
+
+    def test_field_after_versions_and_absent_optional_field_keep_the_active_pair(self):
+        case = ActiveChromePackageVersionTests()
+        raw = self.with_field(case.dump(hidden=("98.0", "789")), b"    packageSource=2", position="after")
+        raw = self.with_field(raw, b"    packageSource=0", hidden=True, position="after")
+        for source in (case.dump(), raw):
+            with self.subTest(length=len(source)):
+                self.assertEqual(H._active_chrome_package_versions(source.decode("ascii")), ("123.0", "456"))
+
+    def test_wrong_case_indent_values_suffixes_and_controls_still_refuse(self):
+        active = ActiveChromePackageVersionTests.dump()
+        fields = (
+            b"packageSource=0", b"  packageSource=0", b"   packageSource=0", b"     packageSource=0",
+            b"   \tpackageSource=0", b"    packagesource=0", b"    PackageSource=0",
+            b"    packageSOURCE=0", b"    package Source=0", b"    packageSource =0",
+            b"    packageSource=", b"    packageSource=-1", b"    packageSource=5",
+            b"    packageSource=00", b"    packageSource=+0", b"    packageSource=0 ",
+            b"    packageSource=0\t", b"    packageSource=0 PRIVATE", b"    packageSource=0:Packages:",
+            b"    packageSource=0 versionName=999.0", b"    packageSource=0\r",
+        )
+        for field in fields:
+            with self.subTest(length=len(field)):
+                self.refused(self.with_field(active, field))
+
+    def test_field_requires_existing_identity_block_and_is_single_use_per_block(self):
+        case = ActiveChromePackageVersionTests()
+        active = case.dump()
+        field = b"    packageSource=0\n"
+        valid = self.with_field(active, field[:-1])
+        hidden = case.dump(hidden=("98.0", "789"))
+        rows = (
+            field + active,
+            active.replace(b"Packages:\n", b"Packages:\n" + field, 1),
+            active + b"Other:\n" + field,
+            hidden.replace(b"Hidden system packages:\n", b"Hidden system packages:\n" + field, 1),
+            valid + field,
+            valid + b"    packageSource=4\n",
+            self.with_field(hidden, field[:-1], hidden=True) + field,
+        )
+        for raw in rows:
+            with self.subTest(length=len(raw)):
+                self.refused(raw)
+
+    def test_valid_field_never_hides_malformed_sections_identities_or_version_pairing(self):
+        case = ActiveChromePackageVersionTests()
+        valid = self.with_field(case.dump(), b"    packageSource=0")
+        hidden = self.with_field(case.dump(hidden=("98.0", "789")), b"    packageSource=4", hidden=True)
+        rows = (
+            valid.replace(b"Packages:", b"Packages:PRIVATE", 1),
+            valid.replace(b"Packages:", b" Packages:", 1),
+            valid.replace(b"com.android.chrome]", b"com.android.foreign]", 1),
+            valid.replace(b"(abc):", b"(ABC):", 1),
+            valid.replace(b"    versionName=123.0\n", b""),
+            valid + b"    versionName=123.0\n",
+            valid + valid,
+            hidden.replace(b"    versionName=98.0\n", b""),
+            valid + b"Renamed packages:\n  PRIVATE\n",
+            valid + b"    compat name=PRIVATE\n",
+        )
+        for raw in rows:
+            with self.subTest(length=len(raw)):
+                self.refused(raw)
+
+    def test_optional_diagnostic_allocation_or_sampler_faults_do_not_control_field_grammar(self):
+        case = ActiveChromePackageVersionTests()
+        raw = self.with_field(case.dump(), b"    packageSource=1")
+        for name in ("_new_chrome_parser_context", "_sample_chrome_colon_heading"):
+            adb = case.inventory(raw)
+            with (self.subTest(name=name),
+                    mock.patch.object(H, name, side_effect=MemoryError("PRIVATE")),
+                    mock.patch.object(H.subprocess, "Popen") as process,
+                    mock.patch.object(H.socket, "create_connection") as provider):
+                result = H.package_inventory(adb, "com.android.chrome")
+            self.assertEqual((result["version"], result["version_code"]), ("123.0", "456"))
+            self.assertEqual(len(adb.shell.call_args_list), 4)
+            process.assert_not_called()
+            provider.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

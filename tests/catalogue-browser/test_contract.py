@@ -2840,13 +2840,15 @@ class DriverLifecycleDiagnosticTests(unittest.TestCase):
     FIRST = {'tokenEmpty': True, 'inputEmpty': True, 'rows': [], 'refreshDisabled': True}
     HANDLER = "window.addEventListener('pagehide', () => { window.name = catalogueTokenValue === '' && catalogueToken.value === '' && catalogueRows.length === 0 ? 'qualification-cleared' : 'qualification-refused'; }, {once: true});"
 
-    def run_lifecycle(self, failure=None, *, bits=0, primary=None, fresh_override=None,
+    def run_lifecycle(self, failure=None, *, bits=0, primary=None, fresh_override=None, marker_override=...,
                       entry_fault=None, serialization_fault=None, stream_fault=None):
         driver = browser_probe.Driver(12345, 200)
         events = []
         selected = contract.GateRefusal('synthetic-private-primary') if primary is None else primary
         first, second = copy.deepcopy(self.FIRST), copy.deepcopy(self.FIRST)
         marker = 'synthetic-private-marker' if bits & 1 or failure == 'pagehide-state-guard' and not bits else 'qualification-cleared'
+        if marker_override is not Ellipsis:
+            marker = marker_override
         for bit, key, value in ((2, 'tokenEmpty', False), (4, 'inputEmpty', False),
                                 (8, 'rows', [{'private': 'synthetic-private-row'}]), (16, 'refreshDisabled', False)):
             if bits & bit:
@@ -3008,6 +3010,65 @@ class DriverLifecycleDiagnosticTests(unittest.TestCase):
                 self.assertNotIn('first_guard_failure_bits', record)
                 self.assertEqual(set(record), {'schema', 'status', 'phase', 'readiness_credit', 'entered_stage', 'exception_category'})
                 self.assertNotIn('synthetic-private', stream.getvalue())
+
+
+class LifecycleMarkerKindTests(unittest.TestCase):
+    def observed_marker(self, marker, *, bits=0):
+        fixture = DriverLifecycleDiagnosticTests('test_success_retains_exact_native_operation_order_and_return')
+        result, error, _events, stream, _driver = fixture.run_lifecycle('pagehide-state-guard',
+            bits=bits, marker_override=marker)
+        self.assertIsNone(result)
+        self.assertIs(type(error), contract.GateRefusal)
+        self.assertTrue(stream.getvalue().isascii())
+        self.assertLessEqual(len(stream.getvalue().encode('ascii')), 512)
+        return json.loads(stream.getvalue()), stream.getvalue()
+
+    def test_three_exact_marker_classes_from_real_selected_guard_never_publish_marker(self):
+        cases = (('', 'empty'), ('qualification-refused', 'refused-literal'),
+            ('synthetic-private-marker', 'other-string'), ('qualification-refused-extra', 'other-string'),
+            ('qualification-cleared-extra', 'other-string'))
+        for marker, kind in cases:
+            with self.subTest(kind=kind, marker=marker):
+                record, line = self.observed_marker(marker)
+                self.assertEqual(record['first_marker_kind'], kind)
+                self.assertEqual(record['first_guard_failure_bits'], 1)
+                self.assertEqual(record['entered_stage'], 'pagehide-state-guard')
+                self.assertEqual(record['exception_category'], 'gate-refusal')
+                self.assertEqual(set(record), {'schema', 'status', 'phase', 'readiness_credit',
+                    'entered_stage', 'exception_category', 'first_guard_failure_bits', 'first_marker_kind'})
+                self.assertNotIn('synthetic-private', line)
+                self.assertNotIn('qualification-refused-extra', line)
+                self.assertNotIn('qualification-cleared-extra', line)
+
+    def test_cleared_marker_other_failed_facts_have_bits_without_marker_category(self):
+        for bits in (2, 4, 8, 16, 30):
+            with self.subTest(bits=bits):
+                record, _line = self.observed_marker('qualification-cleared', bits=bits)
+                self.assertEqual(record['first_guard_failure_bits'], bits)
+                self.assertNotIn('first_marker_kind', record)
+
+    def test_wrong_marker_types_context_error_and_snapshot_omit_new_field(self):
+        class Text(str):
+            pass
+        class RefusalSubclass(contract.GateRefusal):
+            pass
+        fresh = DriverLifecycleDiagnosticTests.FIRST
+        rows = [('pagehide-state-guard', contract.GateRefusal(), marker, fresh)
+            for marker in (None, True, 1, [], Text(''), Text('qualification-refused'))]
+        rows.extend([('new-window-state-guard', contract.GateRefusal(), '', fresh),
+            ('pagehide-state-guard', ValueError(), '', fresh),
+            ('pagehide-state-guard', RefusalSubclass(), '', fresh),
+            ('pagehide-state-guard', contract.GateRefusal(), '', []),
+            ('pagehide-state-guard', contract.GateRefusal(), '', {**fresh, 'tokenEmpty': 1})])
+        for stage, error, marker, snapshot in rows:
+            with self.subTest(stage=stage, error=type(error).__name__, marker=type(marker).__name__), \
+                    patch.object(browser_probe.sys, 'stderr', io.StringIO()) as stream:
+                browser_probe.emit_lifecycle_refusal(stage, error, marker, snapshot)
+                record = json.loads(stream.getvalue())
+                self.assertNotIn('first_marker_kind', record)
+                self.assertNotIn('first_guard_failure_bits', record)
+                self.assertEqual(set(record), {'schema', 'status', 'phase', 'readiness_credit',
+                    'entered_stage', 'exception_category'})
 
 
 if __name__ == '__main__':

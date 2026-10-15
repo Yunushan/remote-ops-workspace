@@ -759,6 +759,35 @@ def _chrome_section_shape(line):
     return "other-candidate"
 
 
+def _chrome_section_layout(line):
+    """Bounded lexical offsets only; the section parser does not consult this."""
+    if type(line) is not str or len(line) > 256:
+        return None
+    marker = line.lower().find("packages:")
+    if marker < 0:
+        return None
+    prefix = line[:len(line) - len(line.lstrip(" \t"))]
+    indent = -1 if "\t" in prefix else len(prefix)
+    colon = marker + 8
+    tail = line[colon + 1:].strip(" \t")
+    shape = "empty" if not tail else "bracketed" if tail.startswith("[") and tail.endswith("]") else "other"
+    return {"indent": indent, "colon": colon, "tail": shape}
+
+
+def _chrome_section_layout_value(value):
+    if (type(value) is not dict or len(value) != 3 or any(type(key) is not str for key in value)
+            or set(value) != {"indent", "colon", "tail"}):
+        return None
+    indent, colon, tail = value["indent"], value["colon"], value["tail"]
+    if (type(indent) is not int or not -1 <= indent <= 247
+            or type(colon) is not int or not 8 <= colon <= 255
+            or type(tail) is not str or tail not in ("empty", "bracketed", "other")
+            or (indent >= 0 and colon < indent + 8) or (indent == -1 and colon < 9)
+            or (tail == "bracketed" and colon > 253) or (tail == "other" and colon > 254)):
+        return None
+    return {"indent": indent, "colon": colon, "tail": tail}
+
+
 def _note_chrome_parser_check(error, context, attempt_token):
     if (type(error) is not Refusal or type(error.args) is not tuple
             or error.args != ("actual-package-version-unobserved",)
@@ -768,6 +797,7 @@ def _note_chrome_parser_check(error, context, attempt_token):
             or set(context) not in ({"attempt_token", "selected_error", "check", "scope"},
                                    {"attempt_token", "selected_error", "check", "scope", "header_kind"},
                                    {"attempt_token", "selected_error", "check", "scope", "section_shape"},
+                                   {"attempt_token", "selected_error", "check", "scope", "section_shape", "section_layout"},
                                    {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"},
                                    {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context", "colon_context"})
             or context["attempt_token"] is not attempt_token or context["selected_error"] is not error):
@@ -785,6 +815,14 @@ def _note_chrome_parser_check(error, context, attempt_token):
                 observed["section_shape"] = value
         except BaseException:
             observed.pop("section_shape", None)
+    if "section_layout" in context:
+        try:
+            if check == "section-title" and observed.get("section_shape") == "embedded-packages-colon":
+                layout = _chrome_section_layout_value(context["section_layout"])
+                if type(layout) is dict:
+                    observed["section_layout"] = layout
+        except BaseException:
+            observed.pop("section_layout", None)
     if "header_kind" in context:
         kind = context["header_kind"]
         if check != "package-header" or type(kind) is not str or kind not in CHROME_HEADER_KINDS:
@@ -811,6 +849,44 @@ def _note_chrome_parser_check(error, context, attempt_token):
     error.chrome_parser_check = observed
     if _chrome_parser_current_token is not attempt_token:
         return
+
+
+CHROME_INSTALL_PERMISSION_FLAGS = (
+    "USER_SET", "USER_FIXED", "POLICY_FIXED", "REVOKED_COMPAT", "SYSTEM_FIXED",
+    "GRANTED_BY_DEFAULT", "REVIEW_REQUIRED", "REVOKE_WHEN_REQUESTED",
+    "USER_SENSITIVE_WHEN_GRANTED", "USER_SENSITIVE_WHEN_DENIED", "1024",
+    "RESTRICTION_INSTALLER_EXEMPT", "RESTRICTION_SYSTEM_EXEMPT", "RESTRICTION_UPGRADE_EXEMPT",
+    "APPLY_RESTRICTION", "GRANTED_BY_ROLE", "ONE_TIME", "AUTO_REVOKED", "262144", "524288",
+    "1048576", "2097152", "4194304", "8388608", "16777216", "33554432", "67108864",
+    "134217728", "268435456", "536870912", "1073741824", "-2147483648")
+
+
+def _chrome_install_permission_row(line):
+    """Closed Settings install-permission row; not a permission or identity proof."""
+    if type(line) is not str or len(line) > 1024:
+        return None
+    row = re.fullmatch(
+        r"      (android\.permission\.(?:QUERY_ALL_PACKAGES|REQUEST_INSTALL_PACKAGES))"
+        r": granted=(?:true|false)(?:, flags=\[ ([A-Z_0-9|\-]+)\])?"
+        r"(?:, userId=([1-9][0-9]{0,9}))?", line)
+    if row is None:
+        return None
+    if row[2] is not None:
+        flags = row[2].split("|")
+        if not 1 <= len(flags) <= 32:
+            return None
+        previous = -1
+        for flag in flags:
+            if flag not in CHROME_INSTALL_PERMISSION_FLAGS:
+                return None
+            position = CHROME_INSTALL_PERMISSION_FLAGS.index(flag)
+            if position <= previous:
+                return None
+            previous = position
+    user = 0 if row[3] is None else int(row[3])
+    if user > 2147483647:
+        return None
+    return row[1], user
 
 
 def _active_chrome_package_versions(dump, *, diagnostic_context=None):
@@ -861,6 +937,12 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
                                 section_shape = _chrome_section_shape(line)
                             except BaseException:
                                 pass
+                        section_layout = None
+                        if type(section_shape) is str and section_shape == "embedded-packages-colon":
+                            try:
+                                section_layout = _chrome_section_layout_value(_chrome_section_layout(line))
+                            except BaseException:
+                                pass
                         _annotate_chrome_parser_context(diagnostic_context, error, check, scope)
                         if type(section_shape) is str:
                             try:
@@ -868,6 +950,11 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
                                     diagnostic_context["section_shape"] = section_shape
                             except BaseException:
                                 diagnostic_context.pop("section_shape", None)
+                        if type(section_layout) is dict:
+                            try:
+                                diagnostic_context["section_layout"] = section_layout
+                            except BaseException:
+                                diagnostic_context.pop("section_layout", None)
                         if type(header_kind) is str and header_kind in CHROME_HEADER_KINDS:
                             diagnostic_context["header_kind"] = header_kind
                             if (header_kind == "keyword-prefix" and type(keyword_context) is str
@@ -894,6 +981,9 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
     section = None
     block = None
     package_source_seen = False
+    install_permissions = False
+    install_permissions_seen = False
+    install_permission_rows = set()
     resolver_table = False
     resolver_schemes = False
     resolver_package_seen = False
@@ -933,6 +1023,18 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
             resolver_indent = line[:len(line) - len(line.lstrip(" \t"))]
             if "\t" in resolver_indent or len(resolver_indent) < 6:
                 resolver_schemes = line == "  Schemes:"
+        if stripped:
+            permission_indent = line[:len(line) - len(line.lstrip(" \t"))]
+            if "\t" in permission_indent or len(permission_indent) < 6:
+                install_permissions = (section in ("active", "hidden") and block is not None
+                    and not install_permissions_seen and line == "    install permissions:")
+                if install_permissions:
+                    install_permissions_seen = True
+        if install_permissions and section in ("active", "hidden") and block is not None:
+            permission_row = _chrome_install_permission_row(line)
+            if permission_row is not None and permission_row not in install_permission_rows:
+                install_permission_rows.add(permission_row)
+                continue
         # This informational field is emitted within the validated package block.
         if (section in ("active", "hidden") and block is not None and not package_source_seen
                 and re.fullmatch(r"    packageSource=[0-4]", line) is not None):
@@ -961,6 +1063,9 @@ def _active_chrome_package_versions(dump, *, diagnostic_context=None):
             require(section in ("active", "hidden") and block is None and section not in pairs, "package-position")
             block = {"scope": section}
             package_source_seen = False
+            install_permissions = False
+            install_permissions_seen = False
+            install_permission_rows = set()
             continue
         if "versionname" in lower or "versioncode" in lower:
             require(block is not None, "version-position")

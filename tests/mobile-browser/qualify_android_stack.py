@@ -522,6 +522,20 @@ CHROME_SECTION_SHAPES = ("source-case", "source-label", "source-indent", "source
     "renamed-title-exact", "renamed-title-shape")
 
 
+def _chrome_section_layout_value(value):
+    if (type(value) is not dict or len(value) != 3 or any(type(key) is not str for key in value)
+            or set(value) != {"indent", "colon", "tail"}):
+        return None
+    indent, colon, tail = value["indent"], value["colon"], value["tail"]
+    if (type(indent) is not int or not -1 <= indent <= 247
+            or type(colon) is not int or not 8 <= colon <= 255
+            or type(tail) is not str or tail not in ("empty", "bracketed", "other")
+            or (indent >= 0 and colon < indent + 8) or (indent == -1 and colon < 9)
+            or (tail == "bracketed" and colon > 253) or (tail == "other" and colon > 254)):
+        return None
+    return {"indent": indent, "colon": colon, "tail": tail}
+
+
 def chrome_parser_check_diagnostic(exc):
     """Closed current-attempt check/scope/category/context; never raw header or cause."""
     try:
@@ -537,6 +551,7 @@ def chrome_parser_check_diagnostic(exc):
                 or set(value) not in ({"attempt_token", "selected_error", "check", "scope"},
                                      {"attempt_token", "selected_error", "check", "scope", "header_kind"},
                                      {"attempt_token", "selected_error", "check", "scope", "section_shape"},
+                                     {"attempt_token", "selected_error", "check", "scope", "section_shape", "section_layout"},
                                      {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context"},
                                      {"attempt_token", "selected_error", "check", "scope", "header_kind", "keyword_context", "colon_context"})
                 or value["attempt_token"] is not token or value["selected_error"] is not exc):
@@ -553,6 +568,14 @@ def chrome_parser_check_diagnostic(exc):
                     result["section_shape"] = shape
             except BaseException:
                 result.pop("section_shape", None)
+        if "section_layout" in value:
+            try:
+                if check == "section-title" and result.get("section_shape") == "embedded-packages-colon":
+                    layout = _chrome_section_layout_value(value["section_layout"])
+                    if type(layout) is dict:
+                        result["section_layout"] = layout
+            except BaseException:
+                result.pop("section_layout", None)
         if "header_kind" in value:
             kind = value["header_kind"]
             if check != "package-header" or type(kind) is not str or kind not in CHROME_HEADER_KINDS:

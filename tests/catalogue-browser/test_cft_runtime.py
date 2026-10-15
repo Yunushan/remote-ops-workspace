@@ -1016,6 +1016,12 @@ def policy_fixture_holder():
 
 
 class HostPolicyLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        path_patch = mock.patch.object(runtime, 'Path', FixturePath)
+        self.addCleanup(path_patch.stop)
+        path_patch.start()
+
     def test_actual_prepare_and_remove_with_actual_registered_policy_owned(self):
         memory = PolicyMemory()
         memory.case = self
@@ -1751,6 +1757,12 @@ class RepairedRootMainFaultTests(unittest.TestCase):
 class PolicyTaskIdentityTests(unittest.TestCase):
     ROW = {'pid': 123, 'group': 123, 'session': 123, 'start': 99, 'state': 'S'}
 
+    def setUp(self):
+        super().setUp()
+        path_patch = mock.patch.object(runtime, 'Path', FixturePath)
+        self.addCleanup(path_patch.stop)
+        path_patch.start()
+
     def observe_fixture(self, scanned, before, after, *, label=None, refusal=False):
         import host_controller as host
         holder = policy_fixture_holder()
@@ -1768,11 +1780,11 @@ class PolicyTaskIdentityTests(unittest.TestCase):
             return [scanned]
         def executable(path):
             events.append('exe')
-            self.assertEqual(path, Path('/proc') / str(scanned['pid']) / 'exe')
+            self.assertEqual(path, FixturePath('/proc') / str(scanned['pid']) / 'exe')
             return holder['state']['root'] + '/chrome-linux64/chrome'
         def read_label(path, maximum, deadline, *, uid):
             events.append('label')
-            self.assertEqual(path, Path('/proc') / str(scanned['pid']) / 'attr/apparmor/current')
+            self.assertEqual(path, FixturePath('/proc') / str(scanned['pid']) / 'attr/apparmor/current')
             self.assertEqual((maximum, deadline, uid), (4096, 30, 1001))
             return (holder['state']['name'] + ' (unconfined)\n').encode() if label is None else label
         with mock.patch.object(runtime, 'policy_readback', side_effect=lambda *_args: events.append('readback')) as readback, \

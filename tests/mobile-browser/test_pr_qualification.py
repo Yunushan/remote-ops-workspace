@@ -4538,7 +4538,9 @@ class ChromeSectionShapeDiagnosticTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 error = self.refused(prefix + line + b"\n")
                 self.assertEqual(Q.chrome_parser_check_diagnostic(error),
-                    {"check": "section-title", "scope": "active", "section_shape": expected})
+                    {"check": "section-title", "scope": "active", "section_shape": expected,
+                     **({"section_layout": {"indent": 4, "colon": 20, "tail": "empty"}}
+                        if expected == "embedded-packages-colon" else {})})
                 self.assertIs(error.chrome_parser_check["selected_error"], error)
                 self.assertIs(error.chrome_parser_check["attempt_token"], H._chrome_parser_current_token)
                 self.assertEqual(error.args, (self.CODE,))
@@ -4653,6 +4655,215 @@ class ChromeSectionShapeDiagnosticTests(unittest.TestCase):
                 for private in ("PRIVATE", "packageSource", "Packages:", "Hidden system packages:",
                                 "attempt_token", "selected_error", "raw_line"):
                     self.assertNotIn(private, line)
+
+
+class ChromeInstallPermissionRowTests(unittest.TestCase):
+    NAMES = ("QUERY_ALL_PACKAGES", "REQUEST_INSTALL_PACKAGES")
+
+    def with_rows(self, rows, hidden=False):
+        case = ActiveChromePackageVersionTests()
+        raw = case.dump(hidden=("98.0", "789") if hidden else None)
+        return raw + b"    install permissions:\n" + b"".join(row.encode("ascii") + b"\n" for row in rows)
+
+    def test_exact_rows_preserve_active_pair_apk_proofs_and_query_order_in_both_scopes(self):
+        case = ActiveChromePackageVersionTests()
+        rows = ["      android.permission." + name + ": granted=" + truth + suffix
+                for name in self.NAMES for truth in ("true", "false")
+                for suffix in ("", ", flags=[ USER_SET|SYSTEM_FIXED]", ", userId=10",
+                               ", flags=[ GRANTED_BY_DEFAULT|1024|AUTO_REVOKED], userId=2147483647")]
+        for row in rows:
+            for hidden in (False, True):
+                with self.subTest(row=row, hidden=hidden):
+                    adb = case.inventory(self.with_rows([row], hidden))
+                    with (mock.patch.object(H.subprocess, "Popen") as native,
+                          mock.patch.object(H.socket, "create_connection") as provider):
+                        result = H.package_inventory(adb, "com.android.chrome")
+                    self.assertEqual((result["version"], result["version_code"]), ("123.0", "456"))
+                    self.assertEqual(result["apks"], [{"path": case.APK, "sha256": "a" * 64, "bytes": 123}])
+                    self.assertEqual(adb.shell.call_args_list, [mock.call(case.FIXED),
+                        mock.call("pm path com.android.chrome"), mock.call("sha256sum " + case.APK),
+                        mock.call("stat -c %s " + case.APK)])
+                    native.assert_not_called()
+                    provider.assert_not_called()
+
+    def test_closed_flags_all32_order_and_canonical_user_ids(self):
+        flags = H.CHROME_INSTALL_PERMISSION_FLAGS
+        self.assertEqual(len(flags), 32)
+        stem = "      android.permission.QUERY_ALL_PACKAGES: granted=false"
+        for suffix in (", flags=[ " + "|".join(flags) + "]", ", flags=[ -2147483648]",
+                       ", flags=[ USER_SET|262144|1073741824|-2147483648], userId=1"):
+            row = stem + suffix
+            self.assertEqual(H._chrome_install_permission_row(row),
+                             ("android.permission.QUERY_ALL_PACKAGES", 1 if suffix.endswith("=1") else 0))
+        for suffix in (", flags=[ ]", ", flags=[ USER_SET|USER_SET]", ", flags=[ SYSTEM_FIXED|USER_SET]",
+                       ", flags=[ PRIVATE]", ", flags=[ 3]", ", flags=[ 0]", ", flags=[ 0001024]",
+                       ", flags=[USER_SET]", ", flags=[ USER_SET ]", ", flags=[ USER_SET|]",
+                       ", userId=0", ", userId=01", ", userId=-1", ", userId=2147483648"):
+            with self.subTest(suffix=suffix):
+                self.assertIsNone(H._chrome_install_permission_row(stem + suffix))
+                ActiveChromePackageVersionTests().refused(self.with_rows([stem + suffix]))
+
+    def test_duplicate_permission_user_is_refused_but_distinct_users_and_names_are_not_merged(self):
+        first = "      android.permission.QUERY_ALL_PACKAGES: granted=true"
+        second = "      android.permission.REQUEST_INSTALL_PACKAGES: granted=false"
+        case = ActiveChromePackageVersionTests()
+        for rows in ([first, first], [first, first.replace("true", "false")],
+                     [first + ", userId=10", first + ", flags=[ USER_SET], userId=10"]):
+            with self.subTest(rows=rows):
+                case.refused(self.with_rows(rows))
+        raw = self.with_rows([first, first + ", userId=10", second, second + ", userId=11"])
+        self.assertEqual(H._active_chrome_package_versions(raw.decode("ascii")), ("123.0", "456"))
+        both = self.with_rows([first]) + b"Hidden system packages:\n  Package [com.android.chrome] (def):\n"
+        both += b"    versionCode=789 minSdk=26 targetSdk=36\n    versionName=98.0\n"
+        both += b"    install permissions:\n" + first.encode("ascii") + b"\n"
+        self.assertEqual(H._active_chrome_package_versions(both.decode("ascii")), ("123.0", "456"))
+
+    def test_exact_subsection_block_indent_and_case_are_required(self):
+        case = ActiveChromePackageVersionTests()
+        row = b"      android.permission.QUERY_ALL_PACKAGES: granted=true\n"
+        for raw in (row + case.dump(), b"    install permissions:\n" + row + case.dump(),
+                    b"Packages:\n    install permissions:\n" + row + case.dump(),
+                    case.dump() + row, case.dump() + b"    Install permissions:\n" + row,
+                    case.dump() + b"   install permissions:\n" + row,
+                    case.dump() + b"    install permissions:\n    other:\n" + row,
+                    case.dump() + b"    install permissions:\n\tother\n" + row,
+                    case.dump() + b"    install permissions:\n    install permissions:\n" + row,
+                    case.dump() + b"Other:\n    install permissions:\n" + row):
+            with self.subTest(raw=raw):
+                case.refused(raw)
+        for malformed in (row[1:], b" " + row, row.replace(b"      ", b"\t     ", 1),
+                          row.replace(b"QUERY_ALL_PACKAGES", b"query_all_packages"),
+                          row.replace(b"true", b"True"), row.rstrip(b"\n") + b" PRIVATE\n",
+                          row.replace(b"QUERY_ALL_PACKAGES", b"OTHER_PACKAGES"),
+                          row.replace(b": granted=true", b": granted=true, versionName=1")):
+            case.refused(case.dump() + b"    install permissions:\n" + malformed)
+
+    def test_rows_do_not_hide_critical_headers_renames_versions_or_foreign_identities(self):
+        case = ActiveChromePackageVersionTests()
+        row = "      android.permission.QUERY_ALL_PACKAGES: granted=true"
+        for critical in (b"Renamed packages:", b"    renamed packages: PRIVATE", b"  Package [foreign.name] (abc):",
+                         b"  Package\t[foreign.name] (abc):", b"  Package [com.android.chrome] (abc):",
+                         b"    versionName=999", b"    versionCode=999 targetSdk=36", b"Packages:",
+                         b"    Packages:", b"    compat name=PRIVATE"):
+            with self.subTest(critical=critical):
+                case.refused(self.with_rows([row]) + critical + b"\n")
+
+
+class ChromeSectionLayoutDiagnosticTests(unittest.TestCase):
+    CODE = "actual-package-version-unobserved"
+    PHASE = "chrome-static-device-inventory"
+
+    def refused(self, line):
+        return ChromeSectionShapeDiagnosticTests().refused(
+            ActiveChromePackageVersionTests.dump() + line.encode("ascii") + b"\n")
+
+    def test_structural_offsets_tail_shapes_tabs_and_boundaries_are_closed(self):
+        rows = (("    PRIVATE packages:", {"indent": 4, "colon": 20, "tail": "empty"}),
+                ("      android.permission.QUERY_ALL_PACKAGES: granted=true", {"indent": 6, "colon": 43, "tail": "other"}),
+                ("\tX packages: [PRIVATE]", {"indent": -1, "colon": 11, "tail": "bracketed"}),
+                ("X packages: [PRIVATE", {"indent": 0, "colon": 10, "tail": "other"}),
+                (" " * 245 + "packages:[]", {"indent": 245, "colon": 253, "tail": "bracketed"}),
+                ("X" * 247 + "packages:", {"indent": 0, "colon": 255, "tail": "empty"}))
+        for line, expected in rows:
+            with self.subTest(line=line):
+                self.assertEqual(H._chrome_section_layout(line), expected)
+                self.assertEqual(H._chrome_section_layout_value(expected), expected)
+                self.assertEqual(Q._chrome_section_layout_value(expected), expected)
+                error = self.refused(line)
+                self.assertEqual(Q.chrome_parser_check_diagnostic(error), {"check": "section-title", "scope": "active",
+                    "section_shape": "embedded-packages-colon", "section_layout": expected})
+                self.assertEqual(error.args, (self.CODE,))
+                self.assertIsNone(error.__context__)
+                self.assertIs(error.chrome_parser_check["selected_error"], error)
+                self.assertIs(error.chrome_parser_check["attempt_token"], H._chrome_parser_current_token)
+        for value in (None, True, b"X packages:", "X" * 249 + "packages:", "PRIVATE"):
+            self.assertIsNone(H._chrome_section_layout(value))
+
+    def test_invalid_layouts_and_classifier_faults_omit_only_optional_field(self):
+        class Poison:
+            def __eq__(self, _other):
+                raise AssertionError("PRIVATE")
+        class Dict(dict):
+            pass
+        class Text(str):
+            pass
+        good = {"indent": 4, "colon": 20, "tail": "empty"}
+        invalids = (None, True, {}, Dict(good), {**good, "raw": "PRIVATE"}, {**good, "indent": True},
+                    {**good, "indent": -2}, {**good, "indent": 248}, {**good, "colon": False},
+                    {**good, "colon": 7}, {**good, "colon": 256}, {**good, "indent": 20},
+                    {**good, "indent": -1, "colon": 8}, {**good, "tail": Text("empty")},
+                    {**good, "tail": Poison()}, {**good, "tail": "PRIVATE"},
+                    {**good, "colon": 254, "tail": "bracketed"}, {**good, "colon": 255, "tail": "other"})
+        expected = {"check": "section-title", "scope": "active", "section_shape": "embedded-packages-colon"}
+        for value in invalids:
+            with self.subTest(value=value):
+                self.assertIsNone(H._chrome_section_layout_value(value))
+                self.assertIsNone(Q._chrome_section_layout_value(value))
+                with mock.patch.object(H, "_chrome_section_layout", return_value=value):
+                    error = self.refused("    PRIVATE packages:")
+                self.assertEqual(Q.chrome_parser_check_diagnostic(error), expected)
+                self.assertIs(error.chrome_parser_check["attempt_token"], H._chrome_parser_current_token)
+        for name in ("_chrome_section_layout", "_chrome_section_layout_value"):
+            for fault in (MemoryError("PRIVATE"), KeyboardInterrupt("PRIVATE"), SystemExit("PRIVATE")):
+                with self.subTest(name=name, fault=type(fault).__name__), mock.patch.object(H, name, side_effect=fault):
+                    error = self.refused("    PRIVATE packages:")
+                self.assertEqual(Q.chrome_parser_check_diagnostic(error), expected)
+                self.assertEqual(error.args, (self.CODE,))
+
+    def test_independent_consumer_relations_faults_and_stale_attempt(self):
+        error = self.refused("    PRIVATE packages:")
+        good = dict(error.chrome_parser_check)
+        expected = {"check": "section-title", "scope": "active", "section_shape": "embedded-packages-colon"}
+        for value in (None, {}, {"indent": 12, "colon": 10, "tail": "empty"}):
+            error.chrome_parser_check = {**good, "section_layout": value}
+            self.assertEqual(Q.chrome_parser_check_diagnostic(error), expected)
+        error.chrome_parser_check = {**good, "section_shape": "source-value"}
+        self.assertEqual(Q.chrome_parser_check_diagnostic(error), {**expected, "section_shape": "source-value"})
+        error.chrome_parser_check = {**good, "raw_line": "PRIVATE"}
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        error.chrome_parser_check = good
+        with mock.patch.object(Q, "_chrome_section_layout_value", side_effect=KeyboardInterrupt("PRIVATE")):
+            self.assertEqual(Q.chrome_parser_check_diagnostic(error), expected)
+        later = self.refused("    PRIVATE packages:")
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+        self.assertIsNotNone(Q.chrome_parser_check_diagnostic(later))
+
+    def test_early_checks_noneligible_shape_success_and_reentry_never_use_layout_for_acceptance(self):
+        for value, check in ((None, "input-shape"), ("\0", "ascii-controls")):
+            token = object()
+            context = {"attempt_token": token}
+            with (self.subTest(check=check), mock.patch.object(H, "_chrome_parser_current_token", token),
+                  mock.patch.object(H, "_chrome_section_layout", side_effect=AssertionError("early")) as classify):
+                with self.assertRaises(H.Refusal) as caught:
+                    H._active_chrome_package_versions(value, diagnostic_context=context)
+                H._note_chrome_parser_check(caught.exception, context, token)
+                self.assertEqual(Q.chrome_parser_check_diagnostic(caught.exception), {"check": check, "scope": "unobserved"})
+                self.assertIs(H._chrome_parser_current_token, token)
+                classify.assert_not_called()
+        with mock.patch.object(H, "_chrome_section_layout", side_effect=AssertionError("ineligible")) as classify:
+            error = ChromeSectionShapeDiagnosticTests().refused(ActiveChromePackageVersionTests.dump() + b"    packageSource=PRIVATE\n")
+            self.assertEqual(Q.chrome_parser_check_diagnostic(error)["section_shape"], "source-value")
+            classify.assert_not_called()
+            self.assertEqual(H._active_chrome_package_versions(ActiveChromePackageVersionTests.dump().decode("ascii")), ("123.0", "456"))
+        def reentered(_line):
+            H._chrome_parser_current_token = object()
+            return {"indent": 4, "colon": 20, "tail": "empty"}
+        with mock.patch.object(H, "_chrome_section_layout", side_effect=reentered):
+            error = self.refused("    PRIVATE packages:")
+        self.assertIsNone(Q.chrome_parser_check_diagnostic(error))
+
+    def test_public_bound_and_privacy_remain_below_retained462_and512(self):
+        error = self.refused(" " * 245 + "packages:[]")
+        error.chrome_version_shape = dict.fromkeys(ChromeVersionShapeDiagnosticTests.KEYS, 2)
+        good = dict(error.chrome_parser_check)
+        for scope in H.CHROME_PARSER_SCOPES:
+            error.chrome_parser_check = {**good, "scope": scope}
+            record = Q.capture_refusal_diagnostic(error, self.PHASE)
+            line = json.dumps(record, ensure_ascii=True, separators=(",", ":")) + "\n"
+            self.assertLessEqual(len(line.encode("ascii")), 462)
+            self.assertLessEqual(len(line.encode("ascii")), 512)
+            for private in ("PRIVATE", "packages:", "android.permission", "attempt_token", "selected_error", "raw_line"):
+                self.assertNotIn(private, line)
 
 
 if __name__ == "__main__":

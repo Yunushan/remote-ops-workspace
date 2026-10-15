@@ -327,6 +327,13 @@ def emit_lifecycle_refusal(stage, error, marker=None, fresh=None):
             bits = sum(1 << index for index, value in enumerate(failed) if value)
             if bits:
                 diagnostic['first_guard_failure_bits'] = bits
+                if bits & 1:
+                    kind = 'other-string'
+                    if marker == '':
+                        kind = 'empty'
+                    elif marker == 'qualification-refused':
+                        kind = 'refused-literal'
+                    diagnostic['first_marker_kind'] = kind
         raw = json.dumps(diagnostic, sort_keys=True, separators=(',', ':')).encode('ascii')
         need(len(raw) + 1 <= 512)
         sys.stderr.write(raw.decode('ascii') + '\n')

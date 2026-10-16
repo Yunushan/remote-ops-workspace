@@ -42,7 +42,7 @@ jobs:
           python tests/mobile-browser/qualify_android_stack.py observe-public
       - name: Retain public NPM qualification even if a later SDK stage refuses
         if: ${{ always() && steps.observe.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: Android-public-NPM-observation-${{ github.run_id }}-${{ github.run_attempt }}
           path: build/mobile-browser/android-public-stack-observation.json
@@ -130,7 +130,7 @@ jobs:
       - name: Observe owned emulator package identities without starting Chrome
         id: capture
         run: python tests/mobile-browser/qualify_android_stack.py capture
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: ${{ always() && steps.capture.outputs.public_receipt == 'saved' }}
         with:
           name: Android-public-toolchain-qualification-${{ github.run_id }}-${{ github.run_attempt }}

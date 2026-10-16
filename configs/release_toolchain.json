@@ -74,7 +74,7 @@
     },
     {
       "name": "pycparser",
-      "version": "3.0",
+      "version": "3.11",
       "purpose": "Pinned transitive cffi parser dependency used by release security builds."
     },
     {

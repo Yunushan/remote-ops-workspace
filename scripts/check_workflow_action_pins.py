@@ -10,7 +10,7 @@ ACTION_PINS = {
     "actions/checkout": "df4cb1c069e1874edd31b4311f1884172cec0e10",
     "actions/setup-python": "ece7cb06caefa5fff74198d8649806c4678c61a1",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-    "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+    "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",
     "actions/attest": "1e69f48acb82d1966a394da916b4c1698aa569d6",
     "softprops/action-gh-release": "c12583777ecdfd3be55c69cf75464299dc01057e",
     "github/codeql-action/init": "2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2",

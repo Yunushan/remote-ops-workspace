@@ -330,7 +330,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f'--bundle-sha256s "{assets_dir}/extended-linux-evidence-bundle-{target}-${{RELEASE_TAG}}-SHA256SUMS.txt"': "finalized evidence checksum sidecar binding",
         f'--out "{assets_dir}/platform-verified-evidence-{target}-final.json"': "finalized evidence record output",
         stage_upload_snippet: "scoped Linux evidence upload staging",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "evidence artifact upload",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": "evidence artifact upload",
         f"name: {action_source_artifact_name}": "target/release-scoped evidence artifact name",
         f"path: {action_upload_dir}/*": "target/release scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
@@ -373,7 +373,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
                     f"      - name: Finalize {step_prefix} accepted-evidence candidate",
                 ),
                 ("scoped Linux evidence upload staging", f"      - name: Stage scoped {step_prefix} evidence upload"),
-                ("evidence artifact upload", "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"),
+                ("evidence artifact upload", "      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7"),
             ),
             job=job,
         )

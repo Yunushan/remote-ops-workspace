@@ -93,7 +93,7 @@ def check_workflow(workflow: str | None = None) -> list[str]:
             "all-control PyQt6 interaction evidence"
         ),
         "--out-dir artifacts/pyqt6-forward-interactions": "forward interaction evidence directory",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": (
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": (
             "pinned evidence upload action"
         ),
         "if: ${{ always() }}": "evidence upload after failures",

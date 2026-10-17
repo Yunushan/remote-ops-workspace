@@ -218,7 +218,7 @@ jobs:
             --source-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts" \
             --out-dir "platform-evidence-upload/linux-i386/${RELEASE_TAG}" \
             --force
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: extended-linux-evidence-linux-i386-${{ inputs.release_tag }}
           path: platform-evidence-upload/linux-i386/${{ inputs.release_tag }}/*
@@ -364,7 +364,7 @@ jobs:
             --source-dir "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/artifacts" \
             --out-dir "platform-evidence-upload/linux-armhf/${RELEASE_TAG}" \
             --force
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: extended-linux-evidence-linux-armhf-${{ inputs.release_tag }}
           path: platform-evidence-upload/linux-armhf/${{ inputs.release_tag }}/*

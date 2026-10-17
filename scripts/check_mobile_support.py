@@ -132,7 +132,7 @@ def check_workflow(workflow: str) -> list[str]:
         "runs-on: xcode-27": "Xcode 27 preview runner",
         "--ios-version 27": "exact iOS 27 simulator smoke",
         "--platform ios": "iOS mobile smoke helper call",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "mobile screenshot artifact upload",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": "mobile screenshot artifact upload",
     }
     for snippet, label in snippets.items():
         if snippet not in workflow:

@@ -23,6 +23,8 @@ from .storage import ProfileStore
 
 SUPPORTED_IMPORT_FORMATS = {"auto", "row", "remmina", "mremoteng", "termius", "mobaxterm"}
 
+MAX_XML_IMPORT_BYTES = 5 * 1024 * 1024
+
 
 class _CasePreservingConfigParser(configparser.ConfigParser):
     def optionxform(self, optionstr: str) -> str:
@@ -162,7 +164,7 @@ def _load_remmina(path: Path) -> ProfileImportResult:
 
 
 def _load_mremoteng(path: Path) -> ProfileImportResult:
-    root = ET.fromstring(_read_text(path))
+    root = ET.fromstring(_read_xml_text(path))
     profiles: list[Profile] = []
     warnings: list[str] = []
 
@@ -690,3 +692,13 @@ def _read_text(path: Path) -> str:
         except UnicodeError:
             continue
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _read_xml_text(path: Path) -> str:
+    if path.stat().st_size > MAX_XML_IMPORT_BYTES:
+        raise ValueError(f"XML import exceeds {MAX_XML_IMPORT_BYTES} bytes: {path}")
+    text = _read_text(path)
+    lowered = text.lower()
+    if "<!doctype" in lowered or "<!entity" in lowered:
+        raise ValueError("XML import must not declare a DOCTYPE or ENTITY")
+    return text

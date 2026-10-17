@@ -29,6 +29,7 @@ artifacts/real-gui-render-final/
 .pytest_cache/
 .pytest-*/
 .pytest-codex-*/
+.test-temp-*/
 .mypy_cache/
 .ruff_cache/
 .coverage
@@ -49,6 +50,12 @@ artifacts/coverage-readiness/dist-*/
 artifacts/coverage-readiness/ci-*/
 artifacts/readiness-dist*/
 artifacts/readiness-dist-install*.json
+artifacts/production-readiness-*
+artifacts/pytest-*/
+artifacts/pr*-*.md
+artifacts/workspace-recovery-local.json
+artifacts/Android-*.zip
+artifacts/*.zip
 
 # Remote Ops Workspace private data
 .row/

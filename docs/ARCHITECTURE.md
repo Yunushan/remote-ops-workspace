@@ -86,3 +86,71 @@ with the expected entry point, plugin class and launch-plan test. See
 Sync backends, terminal widgets, vault backends and network-tool plugins remain
 future extension points. They should not be represented as active integrations
 until they have a caller path equivalent to the protocol-launch path above.
+
+## Desktop GUI subsystem
+
+The PyQt6 desktop shell is split across a family of `gui_*` modules so that the
+main window stays a composition layer rather than a monolith:
+
+- `gui.py` owns the `MainWindow` shell: menus, toolbars, the profile tree,
+  tab/split-pane layout, activity log and the top-level event wiring.
+- `gui_designs.py` holds the six view presets (Native, MobaXterm-style,
+  SecureCRT-style, Termius-style, Remmina-style, mRemoteNG-style) and their
+  shared stylesheet/geometry metadata. The same metadata feeds both the live
+  window and the static preview renderer.
+- `gui_workspace.py` and `gui_connected.py` build the connected-session
+  workspace and its monitoring panels.
+- `gui_terminal.py` and `qt_terminal_process.py` render terminal panes and bind
+  each process-backed session to a transport (general `QProcess`, or the
+  dependency-free Windows ConPTY transport for direct OpenSSH SSH/SFTP).
+- `gui_lifecycle.py` centralizes the process stop contract; `gui_processes.py`
+  covers managed process state and `gui_values.py` holds shared pure helpers.
+- `gui_dialogs.py`, `gui_editors.py` and `gui_smoke.py` provide dialogs, the
+  profile/layout editors and the smoke-test entry points.
+
+GUI editors convert widget input into `Profile`/`LayoutPane` objects through
+pure functions before persisting, so validation is shared with the CLI and
+tests rather than duplicated in widgets.
+
+## MobaXterm-style depth subsystem
+
+The `moba_*` modules implement the MobaXterm-style operator workflows that go
+beyond command building:
+
+- `moba_connected.py` drives the connected-session workbench behavior.
+- `moba_ssh_browser.py` implements the left SSH browsing dock.
+- `moba_customizer.py`, `moba_macros.py`, `moba_multiexec.py` and
+  `moba_mobapt.py` cover the customizer, macro, multi-execution and package
+  helpers.
+- `moba_servers.py` and `moba_smartcards.py` manage packaged auxiliary server
+  runtimes and smartcard behavior, with manifest hash bindings.
+- `moba_text.py` handles remote text editing flows.
+
+These are compatibility-oriented features with their own integrity and safety
+rules (loopback-default servers, hash-bound packaged runtimes, explicit
+opt-ins). They do not by themselves constitute strict MobaXterm parity; that is
+tracked as evidence in `docs/MOBAXTERM_PARITY.md`.
+
+## Verification and evidence subsystem
+
+Production readiness is enforced by code, not by prose:
+
+- `scripts/verify.py` is the local quality profile (pytest, Ruff, mypy,
+  CLI smoke, real PyQt6 render gates).
+- `scripts/check_*.py` implements the individual evidence gates (release
+  maturity, license compliance, release provenance, platform parity evidence,
+  MobaXterm depth, repository governance, and others). Each gate reads real
+  artifacts, GitHub APIs, or release bytes and fails closed.
+- `configs/*.json` holds the tracked policy and accepted-evidence registries
+  (for example `release_compliance_policy.json`,
+  `platform_verified_evidence.json`, `mobaxterm_parity_evidence.json`).
+- `.github/workflows/*.yml` runs the CI matrix, release candidate build, and
+  the protected promotion lane. `release.yml` builds and seals candidates but
+  never publishes; `release-promotion.yml` performs the independent,
+  tag-and-SHA-bound audit before any GitHub Release is created.
+
+The authoritative gate definition, external prerequisites and promotion
+sequence are in [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md). Current
+score and backlog are in
+[`PRODUCTION_READINESS_SCORECARD.md`](PRODUCTION_READINESS_SCORECARD.md) and
+[`PRODUCTION_READINESS_BACKLOG.md`](PRODUCTION_READINESS_BACKLOG.md).

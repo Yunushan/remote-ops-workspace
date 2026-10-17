@@ -51,13 +51,13 @@
     },
     {
       "path": "src/remote_ops_workspace/paths.py",
-      "sha256": "89550ed598d486c096e062a4a08d2b7f5f84974ed4ca71150c0f506329069252",
-      "size": 2252
+      "sha256": "7e742ac90be7184952b802f179243c006f15dcbebca53a3ecc4b3f59b6aacb15",
+      "size": 2261
     },
     {
       "path": "src/remote_ops_workspace/plugins.py",
-      "sha256": "9bd51b353ad2b21b490f1c1f5d6cf3b3469689c510af5361556609ef93ddb7b7",
-      "size": 6436
+      "sha256": "a8bc9cf1bf1bb97579fb4c9e0bb8cf338d76b4c65b94ef4430a9810bcf7df454",
+      "size": 8012
     },
     {
       "path": "src/remote_ops_workspace/profile_sharing.py",
@@ -86,8 +86,8 @@
     },
     {
       "path": "src/remote_ops_workspace/web_server.py",
-      "sha256": "3f825e0cfd01fcc99e76d1096d1e9d4e2dd096585d7f1258b40f1a7d622dcc72",
-      "size": 14513
+      "sha256": "360b4247a06753059d389015d65d25cfbe9fe562c85ddc240ba818711985ea69",
+      "size": 14690
     },
     {
       "path": "apps/web/app.js",

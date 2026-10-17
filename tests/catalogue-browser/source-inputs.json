@@ -25,6 +25,31 @@
   "product_baseline_head": "120a05f41263cf5ea490aa3453b42bff2627f19b",
   "product_inputs": [
     {
+      "path": "apps/web/app.js",
+      "sha256": "8230d460b616e37282be34f36e9bf711c53733f0f91ba2e2e4dfc7336c098916",
+      "size": 21469
+    },
+    {
+      "path": "apps/web/index.html",
+      "sha256": "44f34a929c895a26bbd877d75720b883a990eec030235641c6c0fb91bd1ac259",
+      "size": 3344
+    },
+    {
+      "path": "apps/web/manifest.json",
+      "sha256": "2a9cc415cdcf9266da5b7f9cf43b9c97df02e1e5d9d38ba690d57c0ed074f96e",
+      "size": 281
+    },
+    {
+      "path": "apps/web/styles.css",
+      "sha256": "a89afb5236d5bac11dd13a4c1cde85cf09a37d1c3e07730e2f007c16a76f9a52",
+      "size": 2033
+    },
+    {
+      "path": "apps/web/sw.js",
+      "sha256": "fdf5072cd7720c798dff6f32b24d473ff65fcad19d13a30621b9889211e10dda",
+      "size": 2153
+    },
+    {
       "path": "src/remote_ops_workspace/__init__.py",
       "sha256": "d5c8c895843555f142e2628c430abb78e1805b21e4d70f18b9882e0aea5ef51c",
       "size": 78
@@ -88,31 +113,6 @@
       "path": "src/remote_ops_workspace/web_server.py",
       "sha256": "360b4247a06753059d389015d65d25cfbe9fe562c85ddc240ba818711985ea69",
       "size": 14690
-    },
-    {
-      "path": "apps/web/app.js",
-      "sha256": "8230d460b616e37282be34f36e9bf711c53733f0f91ba2e2e4dfc7336c098916",
-      "size": 21469
-    },
-    {
-      "path": "apps/web/index.html",
-      "sha256": "44f34a929c895a26bbd877d75720b883a990eec030235641c6c0fb91bd1ac259",
-      "size": 3344
-    },
-    {
-      "path": "apps/web/manifest.json",
-      "sha256": "2a9cc415cdcf9266da5b7f9cf43b9c97df02e1e5d9d38ba690d57c0ed074f96e",
-      "size": 281
-    },
-    {
-      "path": "apps/web/styles.css",
-      "sha256": "a89afb5236d5bac11dd13a4c1cde85cf09a37d1c3e07730e2f007c16a76f9a52",
-      "size": 2033
-    },
-    {
-      "path": "apps/web/sw.js",
-      "sha256": "fdf5072cd7720c798dff6f32b24d473ff65fcad19d13a30621b9889211e10dda",
-      "size": 2153
     }
   ]
 }

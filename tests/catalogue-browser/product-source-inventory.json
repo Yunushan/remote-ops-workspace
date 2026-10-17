@@ -23,8 +23,8 @@
     },
     {
       "path": "src/remote_ops_workspace/cli.py",
-      "sha256": "263febd885026b502cbdf88ac877d2a789e9c8354903336de8041681ee7cd301",
-      "size": 153606
+      "sha256": "6bb81615925d42d14b19f2110b66d7e100f8910f93b0631ade512dfee7018713",
+      "size": 154060
     },
     {
       "path": "src/remote_ops_workspace/command_safety.py",
@@ -38,8 +38,8 @@
     },
     {
       "path": "src/remote_ops_workspace/embedded_ftp.py",
-      "sha256": "07bfe1eb4896946cc183710ea786463774d20bac204a26701a0472fd33721793",
-      "size": 4087
+      "sha256": "becd869c1e986f3be73f236a40d7e06204a6f3a67f51a40ae7760810ddd30f8e",
+      "size": 4265
     },
     {
       "path": "src/remote_ops_workspace/enterprise_policy.py",
@@ -137,6 +137,11 @@
       "size": 12304
     },
     {
+      "path": "src/remote_ops_workspace/logging_setup.py",
+      "sha256": "7d6319618e0e08aaf0a366f4d49d54ebc7d914877571b1856fad5f7dec2bfd16",
+      "size": 1608
+    },
+    {
       "path": "src/remote_ops_workspace/moba_connected.py",
       "sha256": "5733abef5a9fca651eb6d21c4ab34dbc4488396466c8abd36b859c3253ef10d6",
       "size": 69649
@@ -163,8 +168,8 @@
     },
     {
       "path": "src/remote_ops_workspace/moba_servers.py",
-      "sha256": "09c1908400ad5652aaf15d8d80d66fa3306fdf75bb626f88e6895b32e3b0d774",
-      "size": 64278
+      "sha256": "d646cc5fcabd7395d0c716529d8c705e85de638e6521cc161abc48d02bc73ce2",
+      "size": 66694
     },
     {
       "path": "src/remote_ops_workspace/moba_smartcards.py",
@@ -193,8 +198,8 @@
     },
     {
       "path": "src/remote_ops_workspace/paths.py",
-      "sha256": "89550ed598d486c096e062a4a08d2b7f5f84974ed4ca71150c0f506329069252",
-      "size": 2252
+      "sha256": "7e742ac90be7184952b802f179243c006f15dcbebca53a3ecc4b3f59b6aacb15",
+      "size": 2261
     },
     {
       "path": "src/remote_ops_workspace/platform_targets.py",
@@ -208,8 +213,8 @@
     },
     {
       "path": "src/remote_ops_workspace/plugins.py",
-      "sha256": "9bd51b353ad2b21b490f1c1f5d6cf3b3469689c510af5361556609ef93ddb7b7",
-      "size": 6436
+      "sha256": "a8bc9cf1bf1bb97579fb4c9e0bb8cf338d76b4c65b94ef4430a9810bcf7df454",
+      "size": 8012
     },
     {
       "path": "src/remote_ops_workspace/process_launch.py",
@@ -223,8 +228,8 @@
     },
     {
       "path": "src/remote_ops_workspace/profile_importers.py",
-      "sha256": "9f6b433b672e20860d4c373d8c3e4969e8701c2977f8f5a45a16b7eb313d4bbe",
-      "size": 24802
+      "sha256": "1d605a7acd7380d2f37e15dd112e6e1939808522f5e630613f5fb83302ccfd93",
+      "size": 25226
     },
     {
       "path": "src/remote_ops_workspace/profile_sharing.py",
@@ -313,8 +318,8 @@
     },
     {
       "path": "src/remote_ops_workspace/web_server.py",
-      "sha256": "3f825e0cfd01fcc99e76d1096d1e9d4e2dd096585d7f1258b40f1a7d622dcc72",
-      "size": 14513
+      "sha256": "360b4247a06753059d389015d65d25cfbe9fe562c85ddc240ba818711985ea69",
+      "size": 14690
     },
     {
       "path": "src/remote_ops_workspace/windows_conpty.py",
@@ -333,8 +338,8 @@
     },
     {
       "path": "src/remote_ops_workspace/x11.py",
-      "sha256": "da5e0c22e3fb22cc6f6c2891c3e3b665c4002f72afae3e76212d97044e652ed9",
-      "size": 53472
+      "sha256": "e939d207f3ebc0c9159d001909d3dc2c2f9ee3f86fbf78cea834f959c3159bd1",
+      "size": 55273
     }
   ]
 }

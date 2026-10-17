@@ -505,3 +505,70 @@ def _sha256(path: Path) -> str:
 
 def _raise(error: BaseException) -> None:
     raise error
+
+
+def _packaged_x_runtime(
+    root: Path,
+    *,
+    digest: str | None,
+    recorded_executable: str = "linux/bin/Xvfb",
+) -> x11.XServerRuntimeCandidate:
+    executable = root / "linux" / "bin" / "Xvfb"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_bytes(b"xvfb-bytes")
+    record: dict[str, object] = {"key": "xvfb", "executable": recorded_executable}
+    if digest is not None:
+        record["sha256"] = digest
+    manifest = {"schema": x11.XSERVER_RUNTIME_BUNDLE_SCHEMA, "runtime": record}
+    (root / x11.XSERVER_RUNTIME_MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
+    return x11.XServerRuntimeCandidate("xvfb", "Xvfb", str(executable), True, "packaged:test", bundled=True)
+
+
+def test_packaged_x_runtime_integrity_accepts_matching_and_skips_unbundled(tmp_path: Path) -> None:
+    runtime = _packaged_x_runtime(tmp_path / "bundle", digest=hashlib.sha256(b"xvfb-bytes").hexdigest())
+    x11.verify_packaged_x_server_runtime_integrity(runtime)
+    x11.verify_packaged_x_server_runtime_integrity(replace(runtime, bundled=False))
+
+
+def test_packaged_x_runtime_integrity_refuses_missing_manifest(tmp_path: Path) -> None:
+    runtime = replace(
+        _packaged_x_runtime(tmp_path / "bundle", digest=hashlib.sha256(b"xvfb-bytes").hexdigest()),
+        executable=str(tmp_path / "loose" / "linux" / "bin" / "Xvfb"),
+    )
+    with pytest.raises(ValueError, match="no integrity manifest"):
+        x11.verify_packaged_x_server_runtime_integrity(runtime)
+
+
+def test_packaged_x_runtime_integrity_refuses_path_drift_and_missing_hash(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    drifted = _packaged_x_runtime(root, digest=None, recorded_executable="linux/bin/other")
+    with pytest.raises(ValueError, match="path does not match"):
+        x11.verify_packaged_x_server_runtime_integrity(drifted)
+
+    recorded = _packaged_x_runtime(root, digest=None)
+    with pytest.raises(ValueError, match="no recorded sha256"):
+        x11.verify_packaged_x_server_runtime_integrity(recorded)
+
+
+def test_packaged_x_runtime_integrity_refuses_hash_mismatch(tmp_path: Path) -> None:
+    runtime = _packaged_x_runtime(tmp_path / "bundle", digest="c" * 64)
+    with pytest.raises(ValueError, match="failed its integrity check"):
+        x11.verify_packaged_x_server_runtime_integrity(runtime)
+
+
+def test_packaged_x_runtime_integrity_refuses_malformed_and_unreadable_manifest(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    runtime = _packaged_x_runtime(root, digest=hashlib.sha256(b"xvfb-bytes").hexdigest())
+    manifest_path = root / x11.XSERVER_RUNTIME_MANIFEST_NAME
+
+    manifest_path.write_text(json.dumps({"runtime": "not-a-dict"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="is malformed"):
+        x11.verify_packaged_x_server_runtime_integrity(runtime)
+
+    manifest_path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="is malformed"):
+        x11.verify_packaged_x_server_runtime_integrity(runtime)
+
+    manifest_path.write_text("{not-json", encoding="utf-8")
+    with pytest.raises(ValueError, match="is unreadable"):
+        x11.verify_packaged_x_server_runtime_integrity(runtime)

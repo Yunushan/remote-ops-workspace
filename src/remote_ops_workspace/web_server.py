@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from . import command_safety as safe
 from .enterprise_policy import load_enterprise_policy
+from .logging_setup import diagnostic_logger
 from .models import Profile
 from .paths import runtime_web_dir
 from .profile_sharing import (
@@ -332,6 +333,9 @@ def validate_web_bind(host: str, *, allow_public_bind: bool = False) -> str:
             "serve-web refuses non-loopback bind hosts by default; "
             "use --allow-public-bind only for trusted networks or container entrypoints"
         )
+    diagnostic_logger("web").warning(
+        "serve-web is binding to a non-loopback host %s with --allow-public-bind", host
+    )
     return host
 
 

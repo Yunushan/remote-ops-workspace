@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import os
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from importlib.metadata import entry_points
@@ -11,6 +12,11 @@ from .profile_validation import SUPPORTED_PROFILE_PROTOCOLS
 
 if TYPE_CHECKING:
     from .launcher import LaunchPlan
+
+PLUGIN_ENTRY_POINT_GROUP = "remote_ops_workspace.plugins"
+PLUGIN_ENABLE_ENV = "ROW_ENABLE_PLUGINS"
+PLUGIN_ALLOWLIST_ENV = "ROW_PLUGIN_ALLOWLIST"
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
 class ProtocolPlugin(Protocol):
@@ -89,22 +95,58 @@ class PluginRegistry:
 EntryPointsProvider = Callable[[], Any]
 
 
-def load_plugin_registry(*, entry_points_provider: EntryPointsProvider | None = None) -> PluginRegistry:
+def plugins_enabled_from_environment() -> bool:
+    """Third-party plugin code loads only after an explicit opt-in (default off)."""
+    return os.environ.get(PLUGIN_ENABLE_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def plugin_allowlist_from_environment() -> frozenset[str] | None:
+    """Optional comma-separated entry-point names that may load; empty means all."""
+    raw = os.environ.get(PLUGIN_ALLOWLIST_ENV, "").strip()
+    if not raw:
+        return None
+    return frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+
+
+def load_plugin_registry(
+    *,
+    entry_points_provider: EntryPointsProvider | None = None,
+    allow_plugins: bool | None = None,
+) -> PluginRegistry:
+    if allow_plugins is None:
+        allow_plugins = entry_points_provider is not None or plugins_enabled_from_environment()
+    if not allow_plugins:
+        return PluginRegistry(
+            loaded=[],
+            failures=[
+                PluginLoadFailure(
+                    name="plugins-disabled",
+                    entry_point=PLUGIN_ENTRY_POINT_GROUP,
+                    error=(
+                        "third-party plugin loading is disabled by default; "
+                        f"set {PLUGIN_ENABLE_ENV}=1 to opt in"
+                    ),
+                )
+            ],
+        )
+    allowlist = plugin_allowlist_from_environment()
     loaded: list[LoadedPlugin] = []
     failures: list[PluginLoadFailure] = []
     try:
         eps = (entry_points_provider or entry_points)()
-        selected = eps.select(group="remote_ops_workspace.plugins")
+        selected = eps.select(group=PLUGIN_ENTRY_POINT_GROUP)
     except Exception as exc:
         failures.append(
             PluginLoadFailure(
                 name="entry-point-discovery",
-                entry_point="remote_ops_workspace.plugins",
+                entry_point=PLUGIN_ENTRY_POINT_GROUP,
                 error=str(exc),
             )
         )
         return PluginRegistry(loaded=loaded, failures=failures)
     for ep in selected:
+        if allowlist is not None and str(getattr(ep, "name", "")).lower() not in allowlist:
+            continue
         try:
             plugin = ep.load()
             instance = plugin() if isinstance(plugin, type) else plugin

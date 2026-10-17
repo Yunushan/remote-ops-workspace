@@ -379,3 +379,34 @@ def test_read_text_uses_cp1252_and_replacement_fallback(tmp_path: Path) -> None:
     fake = FailingTextPath()
     assert importers._read_text(fake) == "replacement"  # type: ignore[arg-type]
     assert fake.calls == 4
+
+
+def test_read_xml_text_rejects_oversized_and_entity_declarations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "connections.xml"
+    source.write_text("<Connections />", encoding="utf-8")
+
+    monkeypatch.setattr(importers, "MAX_XML_IMPORT_BYTES", 4)
+    with pytest.raises(ValueError, match="exceeds"):
+        importers._read_xml_text(source)
+    monkeypatch.setattr(importers, "MAX_XML_IMPORT_BYTES", 5 * 1024 * 1024)
+
+    doctype = tmp_path / "doctype.xml"
+    doctype.write_text("<!DOCTYPE Connections []><Connections />", encoding="utf-8")
+    with pytest.raises(ValueError, match="DOCTYPE or ENTITY"):
+        importers._read_xml_text(doctype)
+
+    entity = tmp_path / "entity.xml"
+    entity.write_text("<!ENTITY payload 'value'><Connections />", encoding="utf-8")
+    with pytest.raises(ValueError, match="DOCTYPE or ENTITY"):
+        importers._read_xml_text(entity)
+
+    assert importers._read_xml_text(source) == "<Connections />"
+
+
+def test_import_profiles_rejects_xml_with_doctype(tmp_path: Path) -> None:
+    source = tmp_path / "confCons.xml"
+    source.write_text("<!DOCTYPE Connections []><Connections />", encoding="utf-8")
+    with pytest.raises(ValueError, match="DOCTYPE or ENTITY"):
+        importers.import_profiles(source, source_format="mremoteng")

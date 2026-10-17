@@ -1,5 +1,11 @@
 # Production-readiness gate
 
+The numeric assessment of current readiness and the itemized work to close each
+gap are maintained in
+[`docs/PRODUCTION_READINESS_SCORECARD.md`](PRODUCTION_READINESS_SCORECARD.md) and
+[`docs/PRODUCTION_READINESS_BACKLOG.md`](PRODUCTION_READINESS_BACKLOG.md). This
+file remains the authoritative pass/fail certification gate.
+
 The 100/100 target is an evidence gate, not a feature-manifest percentage. A
 green source build, a candidate installer, or a generated GUI parity score does
 not close a native-host or release-trust requirement by itself.

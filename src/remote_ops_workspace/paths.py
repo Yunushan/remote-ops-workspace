@@ -51,7 +51,7 @@ def runtime_config_path(name: str) -> Path:
     repository_path = repo_root() / "configs" / name
     if repository_path.is_file():
         return repository_path
-    packaged_path = Path(str(files("remote_ops_workspace").joinpath("configs", name)))
+    packaged_path = Path(str(files("remote_ops_workspace").joinpath("configs").joinpath(name)))
     if packaged_path.is_file():
         return packaged_path
     raise FileNotFoundError(f"runtime configuration is missing: {name}")

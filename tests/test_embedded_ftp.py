@@ -60,6 +60,11 @@ def test_auth_credentials_must_be_present_non_anonymous_and_valid(settings):
         embedded_ftp.validate_ftp_environment(settings)
 
 
+def test_auth_rejects_short_password_for_valid_username():
+    with pytest.raises(ValueError, match="at least 12 characters"):
+        embedded_ftp.validate_ftp_environment({"ROW_FTP_USERNAME": "audit-user", "ROW_FTP_PASSWORD": "short"})
+
+
 @pytest.mark.parametrize("certificate,key", [("", ""), ("missing-certificate", "missing-key"), ("exists", "missing-key")])
 def test_required_tls_refuses_missing_certificate_or_private_key(tmp_path, certificate, key):
     present = tmp_path / "exists"

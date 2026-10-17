@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import platform
@@ -38,6 +39,7 @@ ProbeRunner = Callable[..., Any]
 XSERVER_RELEASE_EVIDENCE_SCHEMA = "row.moba-xserver.release-evidence.v1"
 XSERVER_RUNTIME_BUNDLE_SCHEMA = "row.moba-xserver.runtime-bundle.v1"
 XSERVER_RUNTIME_DIR_ENV = "ROW_XSERVER_RUNTIME_DIR"
+XSERVER_RUNTIME_MANIFEST_NAME = "xserver-runtime.json"
 
 
 @dataclass(slots=True)
@@ -455,7 +457,7 @@ def build_moba_x_server_runtime_bundle_plan(
     root = Path(out_dir).expanduser()
     packaged_name = executable_name or _packaged_runtime_executable_name(system_key, default_executable)
     target = root / system_key / "bin" / safe.path_arg(packaged_name, "x server executable name")
-    manifest_path = root / "xserver-runtime.json"
+    manifest_path = root / XSERVER_RUNTIME_MANIFEST_NAME
     notes = [
         "Bundle plan writes a release-owned X server runtime layout discoverable through ROW_XSERVER_RUNTIME_DIR.",
         "Production parity should use real X server binaries supplied by the release build; placeholders are only for local contract rehearsal.",
@@ -581,6 +583,7 @@ def start_moba_x_server(
         )
     if not plan.runtime.available:
         raise ValueError(f"X server runtime is not available: {plan.runtime.label}")
+    verify_packaged_x_server_runtime_integrity(plan.runtime)
     with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
         _require_replaceable_x_server_record(target_state_path)
         return _start_moba_x_server_locked(plan, target_state_path, now, popen_factory, identity_factory)
@@ -1096,6 +1099,37 @@ def _packaged_executable_paths(
 
 def _relative_to_root(path: Path, root: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
+
+
+def _packaged_x_server_manifest_path(executable: Path) -> Path:
+    for parent in executable.resolve().parents:
+        candidate = parent / XSERVER_RUNTIME_MANIFEST_NAME
+        if candidate.is_file():
+            return candidate
+    raise ValueError(f"packaged X server runtime has no integrity manifest: {executable}")
+
+
+def verify_packaged_x_server_runtime_integrity(runtime: XServerRuntimeCandidate) -> None:
+    """Refuse to launch a packaged X server whose bytes no longer match its manifest."""
+    if not runtime.bundled:
+        return
+    executable = Path(runtime.executable)
+    manifest_path = _packaged_x_server_manifest_path(executable)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"packaged X server manifest is unreadable: {manifest_path}") from exc
+    record = manifest.get("runtime") if isinstance(manifest, dict) else None
+    if not isinstance(record, dict):
+        raise ValueError(f"packaged X server manifest is malformed: {manifest_path}")
+    recorded_executable = manifest_path.parent / str(record.get("executable") or "")
+    if recorded_executable.resolve() != executable.resolve():
+        raise ValueError(f"packaged X server runtime path does not match its manifest record: {executable}")
+    expected = str(record.get("sha256") or "")
+    if not expected:
+        raise ValueError(f"packaged X server runtime has no recorded sha256: {runtime.key}")
+    if not hmac.compare_digest(_sha256_file(executable), expected):
+        raise ValueError(f"packaged X server runtime failed its integrity check: {executable}")
 
 
 def _chmod_executable(path: Path) -> None:

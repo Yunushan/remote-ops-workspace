@@ -1206,7 +1206,7 @@ def test_ci_workflow_requires_authenticated_windows_ssh_loopback_gate() -> None:
         "",
     )
     without_evidence_upload = source.replace(
-        "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n"
+        "      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\n"
         "        with:\n"
         "          name: windows-ssh-loopback-conpty\n"
         "          path: artifacts/windows-ssh-loopback/*\n"
@@ -1281,10 +1281,10 @@ def test_ci_workflow_rejects_comment_only_native_windows_ssh_and_gui_lines() -> 
         1,
     )
     commented_upload = source.replace(
-        "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n"
+        "      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\n"
         "        with:\n"
         "          name: gui-real-render-windows\n",
-        "      # - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n"
+        "      # - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\n"
         "        with:\n"
         "          name: gui-real-render-windows\n",
         1,
@@ -1323,7 +1323,7 @@ def test_ci_workflow_requires_native_windows_tab_switch_paint_gate() -> None:
         "",
     )
     without_paint_evidence = source.replace(
-        "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\n"
+        "      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\n"
         "        with:\n"
         "          name: gui-tab-switch-paint-windows\n"
         "          path: artifacts/gui-tab-switch-windows/*\n"

@@ -140,7 +140,7 @@ jobs:
         run: python scripts/finalize_platform_verified_evidence_record.py --candidate-record "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/platform-verified-evidence-$($env:EVIDENCE_TARGET).json" --bundle-manifest "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/xp-native-evidence-bundle-$($env:EVIDENCE_TARGET)-$($env:RELEASE_TAG).json" --bundle-archive "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/xp-native-evidence-bundle-$($env:EVIDENCE_TARGET)-$($env:RELEASE_TAG).zip" --bundle-sha256s "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/xp-native-evidence-bundle-$($env:EVIDENCE_TARGET)-$($env:RELEASE_TAG)-SHA256SUMS.txt" --out "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)/platform-verified-evidence-$($env:EVIDENCE_TARGET)-final.json"
       - name: Stage scoped XP evidence upload
         run: python scripts/stage_xp_native_evidence_upload.py --target "$env:EVIDENCE_TARGET" --release-tag "$env:RELEASE_TAG" --assets-dir "$env:ASSETS_DIR" --evidence-output-dir "xp-evidence-output/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)" --out-dir "platform-evidence-upload/$($env:EVIDENCE_TARGET)/$($env:RELEASE_TAG)" --force
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}
           path: platform-evidence-upload/${{ inputs.target }}/${{ inputs.release_tag }}/*

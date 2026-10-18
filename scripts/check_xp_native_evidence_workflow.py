@@ -280,7 +280,7 @@ def check_xp_job(workflow: str) -> list[str]:
         f'--bundle-sha256s "{XP_EVIDENCE_OUTPUT_DIR}/xp-native-evidence-bundle-{PS_TARGET_EXPR}-{PS_RELEASE_TAG_EXPR}-SHA256SUMS.txt"': "target/release scoped finalized evidence checksum sidecar binding",
         f'--out "{XP_EVIDENCE_OUTPUT_DIR}/platform-verified-evidence-{PS_TARGET_EXPR}-final.json"': "target/release scoped finalized evidence output",
         f'python scripts/stage_xp_native_evidence_upload.py --target "{PS_TARGET}" --release-tag "{PS_RELEASE_TAG}" --assets-dir "{PS_ASSETS_DIR}" --evidence-output-dir "{XP_EVIDENCE_OUTPUT_DIR}" --out-dir "{XP_EVIDENCE_UPLOAD_DIR}" --force': "target/release scoped XP upload staging",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "evidence artifact upload",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": "evidence artifact upload",
         "name: xp-native-evidence-${{ inputs.target }}-${{ inputs.release_tag }}": "target/release scoped uploaded artifact",
         f"path: {ACTION_XP_EVIDENCE_UPLOAD_DIR}/*": "target/release scoped staged upload path",
         "if-no-files-found: error": "missing evidence artifact failure",
@@ -308,7 +308,7 @@ def check_xp_job(workflow: str) -> list[str]:
                 ("review evidence bundle generation", "      - name: Package XP review evidence bundle"),
                 ("finalized evidence record generation", "      - name: Finalize XP accepted-evidence candidate"),
                 ("scoped XP upload staging", "      - name: Stage scoped XP evidence upload"),
-                ("evidence artifact upload", "      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"),
+                ("evidence artifact upload", "      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7"),
             ),
             job="xp-native-evidence",
         )

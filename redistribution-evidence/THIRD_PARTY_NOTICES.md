@@ -16,7 +16,7 @@ packages:
 | PyQt6 | 6.11.0 | GPL-3.0-only |
 | Qt | 6.11.2 | LGPL-3.0-only for the Qt libraries used by this GUI |
 | PyQt6-sip | 13.12.0 | BSD-2-Clause |
-| cryptography | 50.0.1 | Apache-2.0 OR BSD-3-Clause |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause |
 | bcrypt | 5.0.0 | Apache-2.0 |
 | truststore | 0.10.4 | MIT |
 | PyInstaller | 6.22.3 | GPL-2.0-or-later with the PyInstaller bootloader exception |

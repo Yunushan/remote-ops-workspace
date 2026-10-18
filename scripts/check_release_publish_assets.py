@@ -736,7 +736,7 @@ def check_protected_publish_job(workflow: str) -> list[str]:
         "artifact-metadata: write": "artifact metadata write permission",
         "id-token: write": "OIDC token permission for attestation",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for published evidence audit",
-        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c": "artifact download",
+        "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333": "artifact download",
         "merge-multiple: true": "merged downloaded artifact directory",
         PUBLISH_PROTECTED_PLATFORM_ASSET_COMMAND: "protected platform release asset gate",
         "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag": "protected publish asset validation",

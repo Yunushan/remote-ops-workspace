@@ -89,7 +89,7 @@
     },
     {
       "name": "PyQt6-sip",
-      "version": "13.12.0",
+      "version": "13.13.0",
       "purpose": "Pinned PyQt6 SIP runtime dependency."
     },
     {
@@ -104,7 +104,7 @@
     },
     {
       "name": "truststore",
-      "version": "0.10.4",
+      "version": "0.10.5",
       "purpose": "Pinned native certificate-store integration used by the security extra."
     },
     {

@@ -104,7 +104,7 @@
     },
     {
       "name": "truststore",
-      "version": "0.10.4",
+      "version": "0.10.5",
       "purpose": "Pinned native certificate-store integration used by the security extra."
     },
     {

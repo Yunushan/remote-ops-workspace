@@ -285,7 +285,7 @@ jobs:
           --out build/candidate-proof/windows-x64/native-upgrade-rollback.json
       - name: Retain unreleased candidate proof and artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: candidate-windows-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
           path: |
@@ -396,7 +396,7 @@ jobs:
             --output "candidate-runtime-inventory/macos-${{ matrix.arch }}"
       - name: Retain unreleased candidate proof and artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: candidate-macos-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
           path: |
@@ -523,7 +523,7 @@ jobs:
           --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
       - name: Retain unreleased candidate proof and artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: candidate-linux-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
           path: |

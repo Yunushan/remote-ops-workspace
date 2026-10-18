@@ -62,7 +62,7 @@ jobs:
         run: python -I -S -B scripts/observe_windows_default_native.py publish
       - name: Retain bounded public observation only
         if: always() && steps.public-receipt.outcome == 'success'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-default-native-${{ github.run_id }}-${{ github.run_attempt }}
           path: .tmp/windows-default-native-public/result.json

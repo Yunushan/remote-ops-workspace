@@ -352,7 +352,7 @@ def check_candidate_build_contract(workflow: str) -> list[str]:
     )
     upload_index = mandatory_uses_step_index(
         steps,
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
         errors,
         required_text="name: release-candidate-inventory",
         step_name="Upload immutable candidate inventory",
@@ -679,7 +679,7 @@ def check_source_and_python_job(workflow: str) -> list[str]:
         'PYTHONPATH="$RUNNER_TEMP/source-bundle-smoke-package" python -m remote_ops_workspace features --coverage': (
             "installed source-bundle bundled configuration smoke"
         ),
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a": (
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9": (
             "source/Python artifact upload"
         ),
         "path: dist/*": "source/Python artifact upload path",
@@ -839,7 +839,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
             "imported platform review bundle validator"
         ),
         "--require-final-record-assets": "imported finalized accepted-record asset validator",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a": "imported artifact upload",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9": "imported artifact upload",
         "name: release-platform-evidence-assets": "platform evidence release artifact name",
         "path: release-assets/*": "platform evidence release artifact path",
         "if-no-files-found: error": "missing imported asset failure",
@@ -853,7 +853,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         errors.append("platform evidence import job must download accepted artifacts, not run with --dry-run")
     import_index = block.find("scripts/import_platform_evidence_artifacts.py")
     review_bundle_index = block.find("scripts/check_platform_review_bundle_artifacts.py")
-    upload_index = block.find("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a")
+    upload_index = block.find("actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9")
     if import_index < 0 or upload_index < 0 or import_index > upload_index:
         errors.append("platform evidence import must run before imported artifact upload")
     if review_bundle_index < 0 or upload_index < 0 or review_bundle_index > upload_index:

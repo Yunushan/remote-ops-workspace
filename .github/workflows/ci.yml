@@ -89,13 +89,13 @@ jobs:
         run: >-
           python scripts/smoke_workspace_recovery.py --download-previous-wheel
           --out artifacts/workspace-recovery.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: embedded-server-security-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}
           path: artifacts/embedded-server-security.json
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: managed-process-lifecycle-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}
@@ -103,7 +103,7 @@ jobs:
           if-no-files-found: error
           include-hidden-files: false
           retention-days: 14
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: workspace-recovery-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}
@@ -157,7 +157,7 @@ jobs:
           --report artifacts/coverage/coverage.json
           --min-total 100
           --min-branches 100
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() }}
         with:
           name: python-branch-aware-coverage
@@ -365,42 +365,42 @@ jobs:
           python scripts/check_python_distribution_install.py
           --dist-dir artifacts/python315-dist
           --out artifacts/python315-runtime/distribution-install.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() && hashFiles('artifacts/python315-gui/**') != '' }}
         with:
           name: python315-gui-${{ matrix.os }}
           path: artifacts/python315-gui
           if-no-files-found: error
           retention-days: 90
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() && hashFiles('artifacts/python315-interactions/**') != '' }}
         with:
           name: python315-interactions-${{ matrix.os }}
           path: artifacts/python315-interactions
           if-no-files-found: error
           retention-days: 90
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() && hashFiles('artifacts/python315-dist/**') != '' }}
         with:
           name: python315-distributions-${{ matrix.os }}
           path: artifacts/python315-dist
           if-no-files-found: error
           retention-days: 90
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() && hashFiles('artifacts/python315-runtime/**') != '' }}
         with:
           name: python315-runtime-${{ matrix.os }}
           path: artifacts/python315-runtime
           if-no-files-found: error
           retention-days: 90
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() && hashFiles('artifacts/python315-frozen/**') != '' }}
         with:
           name: python315-frozen-${{ matrix.os }}
           path: artifacts/python315-frozen
           if-no-files-found: error
           retention-days: 90
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() && runner.os == 'Windows' && hashFiles('artifacts/python315-windows-ssh/**') != '' }}
         with:
           name: python315-windows-ssh-${{ matrix.os }}
@@ -516,7 +516,7 @@ jobs:
             --run-attempt "$GITHUB_RUN_ATTEMPT"
       - name: Upload sanitized recovery evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: web-recovery-evidence-${{ github.sha }}-${{ github.run_attempt }}
           path: artifacts/recovery/web-recovery-evidence.json
@@ -674,7 +674,7 @@ jobs:
             tail -200 web-server.log || true
             exit 1
           fi
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: android-web-pwa-api-${{ matrix.api-level }}
           path: artifacts/mobile
@@ -737,7 +737,7 @@ jobs:
           PY
       - name: iOS Web/PWA simulator smoke
         run: python scripts/check_mobile_emulator_smoke.py --platform ios --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --out-dir artifacts/mobile
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ios-web-pwa-simulator
           path: artifacts/mobile
@@ -832,7 +832,7 @@ jobs:
           PY
       - name: iOS 27 Web/PWA simulator smoke
         run: python scripts/check_mobile_emulator_smoke.py --platform ios --ios-version 27 --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --out-dir artifacts/apple-27
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() }}
         with:
           name: apple-27-validation
@@ -901,12 +901,12 @@ jobs:
       - name: Exercise GUI controls and responsive layouts
         timeout-minutes: 5
         run: python scripts/check_gui_interactions.py --require-pyqt6 --out-dir artifacts/gui-interactions
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gui-real-render
           path: artifacts/gui-real/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gui-interactions-linux-offscreen
           path: artifacts/gui-interactions/*
@@ -951,22 +951,22 @@ jobs:
       - name: Capture native Windows terminal tab-switch paint turns
         timeout-minutes: 3
         run: python scripts/check_windows_tab_switch_paint.py --require-native-windows --out-dir artifacts/gui-tab-switch-windows
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gui-real-render-windows
           path: artifacts/gui-real-windows/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gui-interactions-windows
           path: artifacts/gui-interactions-windows/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: gui-tab-switch-paint-windows
           path: artifacts/gui-tab-switch-windows/*
           if-no-files-found: error
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-ssh-loopback-conpty
           path: artifacts/windows-ssh-loopback/*

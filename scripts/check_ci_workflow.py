@@ -587,7 +587,7 @@ def check_gui_render_job(workflow: str) -> list[str]:
         "path: artifacts/gui-real/*": "dedicated live GUI screenshot artifact path",
         "name: gui-interactions-linux-offscreen": "Linux GUI interaction artifact name",
         "path: artifacts/gui-interactions/*": "Linux GUI interaction artifact path",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "live GUI screenshot artifact upload",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": "live GUI screenshot artifact upload",
         "if-no-files-found: error": "artifact upload failure on missing live screenshots",
     }
     for snippet, label in required_snippets.items():
@@ -668,7 +668,7 @@ def check_gui_interactions_windows_job(workflow: str) -> list[str]:
         r"^        run: python scripts/check_windows_tab_switch_paint\.py --require-native-windows --out-dir artifacts/gui-tab-switch-windows\s*$": (
             "native Windows real tab-bar click and transient paint gate"
         ),
-        r"^      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\s*$": (
+        r"^      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\s*$": (
             "native Windows GUI interaction artifact upload"
         ),
         r"^          name: gui-real-render-windows\s*$": (
@@ -701,7 +701,7 @@ def check_gui_interactions_windows_job(workflow: str) -> list[str]:
             errors.append(f"ci gui-interactions-windows job missing active {label}")
     upload_action_pattern = (
         r"^      - uses: actions/upload-artifact@"
-        r"043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\s*$"
+        r"cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\s*$"
     )
     if len(re.findall(upload_action_pattern, block, re.MULTILINE)) != 4:
         errors.append(
@@ -818,7 +818,7 @@ def check_web_recovery_job(workflow: str) -> list[str]:
         '--run-attempt "$GITHUB_RUN_ATTEMPT"': "workflow-attempt-bound recovery evidence",
         "python scripts/check_web_recovery_evidence.py": "independent retained evidence validation",
         "if: ${{ always() }}": "failure-path evidence retention",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": (
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": (
             "pinned recovery evidence upload"
         ),
         "name: web-recovery-evidence-${{ github.sha }}-${{ github.run_attempt }}": (
@@ -895,7 +895,7 @@ def check_android_emulator_web_job(workflow: str) -> list[str]:
         '--url "$WEB_PWA_URL"': "emulator-routed Web/PWA URL",
         "timeout-minutes: 2": "bounded Android Web/PWA response smoke timeout",
         "tail -200 web-server.log": "Web/PWA server failure diagnostics",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "Android smoke screenshot upload",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": "Android smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing Android screenshots",
     }
     for snippet, label in required_snippets.items():
@@ -935,7 +935,7 @@ def check_ios_simulator_web_job(workflow: str) -> list[str]:
         "scripts/check_mobile_emulator_smoke.py --platform ios": "iOS simulator smoke helper",
         "--ios-open-url-attempts 3": "iOS simulator openurl retry budget",
         '--url "$WEB_PWA_URL"': "iOS simulator host loopback URL",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": "iOS smoke screenshot upload",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": "iOS smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing iOS screenshots",
     }
     for snippet, label in required_snippets.items():
@@ -974,7 +974,7 @@ def check_apple_27_validation_job(workflow: str) -> list[str]:
         ),
         "--ios-version 27": "exact iOS 27 simulator runtime requirement",
         '--url "$WEB_PWA_URL"': "Apple validation host loopback URL",
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7": (
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": (
             "Apple 27 evidence upload"
         ),
         "name: apple-27-validation": "Apple 27 evidence artifact name",

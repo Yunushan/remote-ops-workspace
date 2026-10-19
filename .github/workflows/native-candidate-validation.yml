@@ -168,14 +168,14 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Hashed ARM64 build bootstrap installation failed" }
             python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed ARM64 runtime installation failed" }
-            $ExpectedCryptography = "50.0.1"
+            $ExpectedCryptography = "50.0.2"
             $ExpectedOpenSsl = "OpenSSL 3.6.3"
           } else {
             python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed Windows build bootstrap installation failed" }
             python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed Windows runtime installation failed" }
-            $ExpectedCryptography = "50.0.1"
+            $ExpectedCryptography = "50.0.2"
           }
           if ($ExpectedCryptography) {
             python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; actual_openssl = backend.openssl_version_text(); assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '$ExpectedCryptography'; assert not '$ExpectedOpenSsl' or actual_openssl.startswith('$ExpectedOpenSsl'), actual_openssl; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={actual_openssl}')"
@@ -285,7 +285,7 @@ jobs:
           --out build/candidate-proof/windows-x64/native-upgrade-rollback.json
       - name: Retain unreleased candidate proof and artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: candidate-windows-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
           path: |
@@ -350,11 +350,11 @@ jobs:
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
             python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
             python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"
-            expected_cryptography="50.0.1"
+            expected_cryptography="50.0.2"
           else
             python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
             python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
-            expected_cryptography="50.0.1"
+            expected_cryptography="50.0.2"
           fi
           python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[desktop,security,package,servers]"
           python -m pip check
@@ -396,7 +396,7 @@ jobs:
             --output "candidate-runtime-inventory/macos-${{ matrix.arch }}"
       - name: Retain unreleased candidate proof and artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: candidate-macos-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
           path: |
@@ -470,7 +470,7 @@ jobs:
           python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement "${{ matrix.lock }}"
           python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[security,package,servers]"
           python -m pip check
-          python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.1'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+          python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.2'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Build Linux DEB, RPM and AppImage packages
         id: native-build
         env:
@@ -523,7 +523,7 @@ jobs:
           --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
       - name: Retain unreleased candidate proof and artifacts
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: candidate-linux-${{ matrix.arch }}-${{ needs.candidate-source.outputs.candidate_sha }}-${{ github.run_attempt }}
           path: |

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-def test_non_gui_type_gate_accepts_bounded_gui_debt() -> None:
+def test_non_gui_type_gate_rejects_any_gui_error() -> None:
     checker = _load_checker()
     output = "\n".join(
         [
@@ -15,7 +15,10 @@ def test_non_gui_type_gate_accepts_bounded_gui_debt() -> None:
         ]
     )
 
-    assert checker.check_mypy_output(output, 1) == ([], 2)
+    errors, gui_errors = checker.check_mypy_output(output, 1)
+
+    assert gui_errors == 2
+    assert errors == ["GUI type errors increased from the 0-error baseline to 2"]
 
 
 def test_non_gui_type_gate_checks_each_modern_host_platform() -> None:
@@ -36,17 +39,17 @@ def test_non_gui_type_gate_rejects_error_outside_gui() -> None:
 
 def test_non_gui_type_gate_rejects_gui_regression() -> None:
     checker = _load_checker()
-    output = "\n".join(
-        f"src/remote_ops_workspace/gui.py:{index}: error: regression [union-attr]"
-        for index in range(1, checker.GUI_ERROR_BASELINE + 2)
-    )
+    # The baseline is enforced at zero: any GUI-module error, on top of the
+    # non-GUI modules, must fail the gate.
+    output = "src/remote_ops_workspace/gui.py:10: error: regression [union-attr]"
 
     errors, gui_errors = checker.check_mypy_output(output, 1)
 
-    assert gui_errors == checker.GUI_ERROR_BASELINE + 1
+    assert gui_errors == 1
     assert errors == [
-        "GUI type errors increased from the 382-error baseline to 383"
+        "GUI type errors increased from the 0-error baseline to 1"
     ]
+    assert checker.GUI_ERROR_BASELINE == 0
 
 
 def test_non_gui_type_gate_rejects_unparseable_mypy_failure() -> None:

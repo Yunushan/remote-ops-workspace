@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import replace
@@ -472,3 +473,99 @@ def test_pid_probe_uses_read_only_process_status(monkeypatch: pytest.MonkeyPatch
 
 def _raise(error: BaseException) -> None:
     raise error
+
+
+def _packaged_runtime(
+    root: Path,
+    *,
+    digest: str | None,
+    recorded_executable: str = "linux/ssh/bin/sshd",
+    key: str = "sshd",
+) -> servers.MobaEmbeddedServerRuntime:
+    executable = root / "linux" / "ssh" / "bin" / "sshd"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_bytes(b"daemon-bytes")
+    record: dict[str, object] = {"key": "sshd", "executable": recorded_executable}
+    if digest is not None:
+        record["sha256"] = digest
+    manifest = {
+        "schema": servers.SERVER_RUNTIME_BUNDLE_SCHEMA,
+        "services": [{"service": "ssh", "runtime": record}],
+    }
+    (root / servers.SERVER_RUNTIME_MANIFEST_NAME).write_text(json.dumps(manifest), encoding="utf-8")
+    return servers.MobaEmbeddedServerRuntime(
+        key=key,
+        label=key,
+        service="ssh",
+        executable=str(executable),
+        available=True,
+        bundled=True,
+        builtin=False,
+        notes=["test runtime"],
+    )
+
+
+def _matching_digest() -> str:
+    return hashlib.sha256(b"daemon-bytes").hexdigest()
+
+
+def test_packaged_runtime_integrity_accepts_matching_and_skips_unbundled(tmp_path: Path) -> None:
+    runtime = _packaged_runtime(tmp_path / "bundle", digest=_matching_digest())
+    servers.verify_packaged_runtime_integrity(runtime)
+    servers.verify_packaged_runtime_integrity(replace(runtime, bundled=False))
+
+
+def test_packaged_runtime_integrity_refuses_missing_manifest(tmp_path: Path) -> None:
+    runtime = replace(
+        _packaged_runtime(tmp_path / "bundle", digest=_matching_digest()),
+        executable=str(tmp_path / "loose" / "linux" / "ssh" / "bin" / "sshd"),
+    )
+    with pytest.raises(ValueError, match="no integrity manifest"):
+        servers.verify_packaged_runtime_integrity(runtime)
+
+
+def test_packaged_runtime_integrity_refuses_unrecorded_entry(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    runtime = _packaged_runtime(root, digest=_matching_digest())
+    manifest_path = root / servers.SERVER_RUNTIME_MANIFEST_NAME
+    manifest_path.write_text(
+        json.dumps({"services": ["junk", {"service": "other"}, {"service": "ssh", "runtime": {"key": "other"}}]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="is not recorded"):
+        servers.verify_packaged_runtime_integrity(replace(runtime, key="sshd"))
+
+
+def test_packaged_runtime_integrity_refuses_path_drift_and_missing_hash(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    runtime = _packaged_runtime(root, digest=None, recorded_executable="linux/ssh/bin/other")
+    with pytest.raises(ValueError, match="path does not match"):
+        servers.verify_packaged_runtime_integrity(runtime)
+
+    recorded = _packaged_runtime(root, digest=None)
+    with pytest.raises(ValueError, match="no recorded sha256"):
+        servers.verify_packaged_runtime_integrity(recorded)
+
+
+def test_packaged_runtime_integrity_refuses_hash_mismatch(tmp_path: Path) -> None:
+    runtime = _packaged_runtime(tmp_path / "bundle", digest="b" * 64)
+    with pytest.raises(ValueError, match="failed its integrity check"):
+        servers.verify_packaged_runtime_integrity(runtime)
+
+
+def test_packaged_runtime_integrity_refuses_malformed_and_unreadable_manifest(tmp_path: Path) -> None:
+    root = tmp_path / "bundle"
+    runtime = _packaged_runtime(root, digest=_matching_digest())
+    manifest_path = root / servers.SERVER_RUNTIME_MANIFEST_NAME
+
+    manifest_path.write_text(json.dumps({"services": "not-a-list"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="is malformed"):
+        servers.verify_packaged_runtime_integrity(runtime)
+
+    manifest_path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="is malformed"):
+        servers.verify_packaged_runtime_integrity(runtime)
+
+    manifest_path.write_text("{not-json", encoding="utf-8")
+    with pytest.raises(ValueError, match="is unreadable"):
+        servers.verify_packaged_runtime_integrity(runtime)

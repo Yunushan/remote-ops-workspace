@@ -175,7 +175,8 @@ def test_prepare_profile_accepts_explicit_plugin_protocols() -> None:
     assert profile.host is None
 
 
-def test_launcher_dispatches_plugin_launch_plan() -> None:
+def test_launcher_dispatches_plugin_launch_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", "1")
     with with_fake_entry_points(fake_entry_points):
         plan = build_launch_plan(Profile(name="plug", protocol="demo"))
 
@@ -184,7 +185,10 @@ def test_launcher_dispatches_plugin_launch_plan() -> None:
     assert "demo plugin plan" in plan.notes
 
 
-def test_profile_store_accepts_plugin_protocol_when_installed(tmp_path: Path) -> None:
+def test_profile_store_accepts_plugin_protocol_when_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", "1")
     with with_fake_entry_points(fake_entry_points):
         store = ProfileStore(tmp_path / "profiles.json")
         store.add(Profile(name="plug", protocol="demo"))
@@ -193,7 +197,8 @@ def test_profile_store_accepts_plugin_protocol_when_installed(tmp_path: Path) ->
     assert loaded.protocol == "demo"
 
 
-def test_cli_plugins_list_json_reports_loaded_plugins() -> None:
+def test_cli_plugins_list_json_reports_loaded_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", "1")
     with with_fake_entry_points(fake_entry_points):
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
@@ -287,7 +292,8 @@ def test_plugin_validation_report_text_covers_loaded_failures_and_plan_details()
     assert "  error: no plan" in text
 
 
-def test_cli_plugins_validate_json_reports_plan_checks() -> None:
+def test_cli_plugins_validate_json_reports_plan_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", "1")
     with with_fake_entry_points(fake_entry_points):
         stdout = io.StringIO()
         with contextlib.redirect_stdout(stdout):
@@ -455,3 +461,55 @@ def test_plugin_metadata_normalization_covers_strings_none_duplicates_and_reject
         normalize_plugin_protocols(["-bad"])
     with pytest.raises(TypeError, match="executables"):
         normalize_plugin_executables(7)
+
+
+def test_plugin_loading_is_disabled_by_default_and_requires_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ROW_ENABLE_PLUGINS", raising=False)
+    monkeypatch.delenv("ROW_PLUGIN_ALLOWLIST", raising=False)
+
+    disabled = load_plugin_registry()
+    assert disabled.loaded == []
+    assert [failure.name for failure in disabled.failures] == ["plugins-disabled"]
+    assert "ROW_ENABLE_PLUGINS=1" in disabled.failures[0].error
+
+    forced_off = load_plugin_registry(entry_points_provider=fake_entry_points, allow_plugins=False)
+    assert forced_off.loaded == []
+
+    forced_on = load_plugin_registry(entry_points_provider=fake_entry_points, allow_plugins=True)
+    assert [plugin.name for plugin in forced_on.loaded] == ["demo plugin"]
+
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", "maybe")
+    assert load_plugin_registry().loaded == []
+
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", "1")
+    assert load_plugin_registry(entry_points_provider=fake_entry_points).loaded[0].name == "demo plugin"
+
+
+def test_plugin_allowlist_restricts_entry_points_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", "1")
+
+    monkeypatch.setenv("ROW_PLUGIN_ALLOWLIST", "demoplugin")
+    allowed = load_plugin_registry(entry_points_provider=fake_entry_points)
+    assert [plugin.name for plugin in allowed.loaded] == ["demo plugin"]
+
+    monkeypatch.setenv("ROW_PLUGIN_ALLOWLIST", "other, something")
+    blocked = load_plugin_registry(entry_points_provider=fake_entry_points)
+    assert blocked.loaded == []
+    assert blocked.failures == []
+
+    monkeypatch.setenv("ROW_PLUGIN_ALLOWLIST", "   ")
+    blank = load_plugin_registry(entry_points_provider=fake_entry_points)
+    assert [plugin.name for plugin in blank.loaded] == ["demo plugin"]
+
+
+def test_plugin_environment_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ROW_ENABLE_PLUGINS", raising=False)
+    monkeypatch.delenv("ROW_PLUGIN_ALLOWLIST", raising=False)
+    assert plugins_module.plugins_enabled_from_environment() is False
+    assert plugins_module.plugin_allowlist_from_environment() is None
+
+    monkeypatch.setenv("ROW_ENABLE_PLUGINS", " On ")
+    assert plugins_module.plugins_enabled_from_environment() is True
+
+    monkeypatch.setenv("ROW_PLUGIN_ALLOWLIST", " A , b ,, ")
+    assert plugins_module.plugin_allowlist_from_environment() == frozenset({"a", "b"})

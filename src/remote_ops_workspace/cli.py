@@ -47,6 +47,7 @@ from .layouts import (
     parse_layout_pane,
     run_layout_terminal_plans,
 )
+from .logging_setup import configure_logging
 from .moba_customizer import (
     REQUIRED_POLICY_SURFACES,
     build_moba_professional_customizer_plan,
@@ -157,6 +158,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        configure_logging(getattr(args, "log_level", None))
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    try:
         return args.func(args)
     except (KeyError, ValueError, OSError, LauncherError, VaultError, VaultBackendUnavailable, ProcessStatusError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -166,6 +172,12 @@ def main(argv: list[str] | None = None) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="row", description="Remote Ops Workspace CLI")
     parser.add_argument("--version", action="version", version=f"remote-ops-workspace {__version__}")
+    parser.add_argument(
+        "--log-level",
+        choices=sorted(("CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "NOTSET")),
+        default=None,
+        help="diagnostic log level for stderr (default: ROW_LOG_LEVEL or WARNING)",
+    )
     sub = parser.add_subparsers(required=True)
 
     init = sub.add_parser("init", help="initialize local workspace data")

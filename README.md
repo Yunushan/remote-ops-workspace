@@ -583,7 +583,12 @@ independently signed evidence and publishes only after all promotion gates pass.
 
 The complete 100/100 production-readiness checklist, including signing secrets,
 real evidence-host prerequisites, and the final promotion sequence, is in
-[`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
+[`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md). The current
+weighted readiness score and the itemized backlog to close each gap are in
+[`docs/PRODUCTION_READINESS_SCORECARD.md`](docs/PRODUCTION_READINESS_SCORECARD.md)
+and
+[`docs/PRODUCTION_READINESS_BACKLOG.md`](docs/PRODUCTION_READINESS_BACKLOG.md).
+Release history is summarized in [`CHANGELOG.md`](CHANGELOG.md).
 
 Signed installers are the production channel. Both protected Windows and macOS
 signing stacks are required before `release.yml` can stage a candidate. The

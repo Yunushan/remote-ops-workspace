@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import importlib.util
 import ipaddress
 import json
@@ -33,6 +34,7 @@ PidProbe = Callable[[int], bool]
 ProcessTerminator = Callable[[int], None]
 SERVER_RUNTIME_DIR_ENV = "ROW_SERVER_RUNTIME_DIR"
 SERVER_RUNTIME_BUNDLE_SCHEMA = "row.moba-servers.runtime-bundle.v1"
+SERVER_RUNTIME_MANIFEST_NAME = "servers-runtime.json"
 SERVER_RELEASE_EVIDENCE_SCHEMA = "row.moba-servers.release-evidence.v1"
 SERVER_POLICY_SCHEMA = "row.moba-servers.policy.v1"
 SERVER_GUI_CONFIG_SCHEMA = "row.moba-servers.gui-config-surface.v1"
@@ -526,7 +528,7 @@ def build_moba_server_runtime_bundle_plan(
     root = Path(out_dir).expanduser()
     packaged_name = executable_name or _packaged_daemon_executable_name(system_key, default_executable)
     target = root / system_key / service_key / "bin" / _safe_executable_name(packaged_name)
-    manifest_path = root / "servers-runtime.json"
+    manifest_path = root / SERVER_RUNTIME_MANIFEST_NAME
     notes = [
         "Bundle plan writes a release-owned embedded-server daemon layout discoverable through ROW_SERVER_RUNTIME_DIR.",
         "Production parity should use real daemon binaries supplied by the release build; placeholders are only for local contract rehearsal.",
@@ -992,6 +994,7 @@ def start_moba_server(
         )
     if not plan.runtime.available:
         raise ValueError(f"embedded server runtime is not available: {plan.runtime.label}")
+    verify_packaged_runtime_integrity(plan.runtime)
     if plan.service == "ftp":
         from .embedded_ftp import validate_ftp_environment
 
@@ -1318,6 +1321,50 @@ def _merged_server_runtime_manifest(
 
 def _relative_to_root(path: Path, root: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
+
+
+def _packaged_runtime_manifest_path(executable: Path) -> Path:
+    for parent in executable.resolve().parents:
+        candidate = parent / SERVER_RUNTIME_MANIFEST_NAME
+        if candidate.is_file():
+            return candidate
+    raise ValueError(f"packaged embedded server runtime has no integrity manifest: {executable}")
+
+
+def _manifest_runtime_record(manifest_path: Path, runtime: MobaEmbeddedServerRuntime) -> dict[str, Any]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"packaged embedded server manifest is unreadable: {manifest_path}") from exc
+    services = manifest.get("services") if isinstance(manifest, dict) else None
+    if not isinstance(services, list):
+        raise ValueError(f"packaged embedded server manifest is malformed: {manifest_path}")
+    for item in services:
+        if not isinstance(item, dict) or str(item.get("service") or "") != runtime.service:
+            continue
+        record = item.get("runtime")
+        if isinstance(record, dict) and str(record.get("key") or "") == runtime.key:
+            return record
+    raise ValueError(f"packaged embedded server runtime is not recorded in {manifest_path.name}: {runtime.key}")
+
+
+def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> None:
+    """Refuse to launch a packaged daemon whose bytes no longer match its manifest."""
+    if not runtime.bundled:
+        return
+    executable = Path(runtime.executable)
+    manifest_path = _packaged_runtime_manifest_path(executable)
+    record = _manifest_runtime_record(manifest_path, runtime)
+    recorded_executable = manifest_path.parent / str(record.get("executable") or "")
+    if recorded_executable.resolve() != executable.resolve():
+        raise ValueError(
+            f"packaged embedded server runtime path does not match its manifest record: {executable}"
+        )
+    expected = str(record.get("sha256") or "")
+    if not expected:
+        raise ValueError(f"packaged embedded server runtime has no recorded sha256: {runtime.key}")
+    if not hmac.compare_digest(_sha256_file(executable), expected):
+        raise ValueError(f"packaged embedded server runtime failed its integrity check: {executable}")
 
 
 def _chmod_executable(path: Path) -> None:

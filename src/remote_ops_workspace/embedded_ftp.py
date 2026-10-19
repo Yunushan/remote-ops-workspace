@@ -11,12 +11,16 @@ from typing import Any
 
 from . import command_safety as safe
 
+MIN_FTP_PASSWORD_LENGTH = 12
+
 
 def validate_ftp_environment(environment: Mapping[str, str]) -> tuple[str, str, bool, str, str]:
     username = environment.get("ROW_FTP_USERNAME", "")
     password = environment.get("ROW_FTP_PASSWORD", "")
     if not username or username.lower() == "anonymous" or not password:
         raise ValueError("FTP requires a non-anonymous ROW_FTP_USERNAME and ROW_FTP_PASSWORD")
+    if len(password) < MIN_FTP_PASSWORD_LENGTH:
+        raise ValueError(f"ROW_FTP_PASSWORD must be at least {MIN_FTP_PASSWORD_LENGTH} characters")
     safe.clean_text(username, "FTP username")
     tls_required = environment.get("ROW_FTP_TLS_REQUIRED", "0") == "1"
     certificate = environment.get("ROW_FTP_TLS_CERT", "")

@@ -8,7 +8,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GUI_MODULE = "src/remote_ops_workspace/gui.py"
-GUI_ERROR_BASELINE = 382
+# The GUI module is checked separately by the CI GUI-type job. Its non-GUI
+# companions (gui_connected.py, gui_terminal.py, gui_processes.py) still carry
+# pre-existing un-annotated callables, so this gate keeps its focus on the
+# non-GUI production modules and must stay at zero there.
+GUI_ERROR_BASELINE = 0
 MYPY_PLATFORMS = ("linux", "win32", "darwin")
 ERROR_RE = re.compile(r"^(?P<path>.*?):\d+(?::\d+)?: error:")
 

@@ -250,6 +250,44 @@ def test_latest_ios_runtime_rejects_empty_requested_version(monkeypatch) -> None
         raise AssertionError("empty requested iOS runtime version should fail closed")
 
 
+def test_create_ios_simulator_tries_another_device_only_for_incompatibility(monkeypatch) -> None:
+    smoke = _load_smoke()
+    calls = []
+
+    def fake_run(args, *, check=True, text=True):
+        calls.append(args)
+        if args[2] == "list":
+            return subprocess.CompletedProcess(args, 0, json.dumps({"devicetypes": [
+                {"identifier": "com.apple.iPhone-16"}, {"identifier": "com.apple.iPhone-17"},
+            ]}), "")
+        if args[4].endswith("16"):
+            return subprocess.CompletedProcess(args, 147, "", "Incompatible device")
+        return subprocess.CompletedProcess(args, 0, "SIM-UDID\n", "")
+
+    monkeypatch.setattr(smoke, "run", fake_run)
+    assert smoke.create_ios_simulator("iOS-27") == "SIM-UDID"
+    assert len(calls) == 3
+
+
+def test_create_ios_simulator_reports_other_errors_without_retry(monkeypatch) -> None:
+    smoke = _load_smoke()
+    calls = []
+
+    def fake_run(args, *, check=True, text=True):
+        calls.append(args)
+        if args[2] == "list":
+            return subprocess.CompletedProcess(args, 0, json.dumps({"devicetypes": [
+                {"identifier": "com.apple.iPhone-16"}, {"identifier": "com.apple.iPhone-17"},
+            ]}), "")
+        return subprocess.CompletedProcess(args, 1, "", "permission denied")
+
+    monkeypatch.setattr(smoke, "run", fake_run)
+    import pytest
+    with pytest.raises(SystemExit, match="permission denied"):
+        smoke.create_ios_simulator("iOS-27")
+    assert len(calls) == 2
+
+
 def _load_smoke():
     path = Path("scripts/check_mobile_emulator_smoke.py")
     spec = importlib.util.spec_from_file_location("check_mobile_emulator_smoke_script", path)

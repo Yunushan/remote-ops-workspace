@@ -288,6 +288,34 @@ def test_create_ios_simulator_reports_other_errors_without_retry(monkeypatch) ->
     assert len(calls) == 2
 
 
+def test_ios_screenshot_selects_reported_primary_display(monkeypatch, tmp_path) -> None:
+    smoke = _load_smoke()
+    calls = []
+
+    def fake_run(args, *, check=True, text=True):
+        calls.append(args)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(args, 22, "", (
+                "Cannot choose between 2 displays. Specify one with --display:\n"
+                "    --display=3 LCD-1 (primary-1) 2007x2853\n"
+                "    --display=1 LCD (primary) 1398x2034\n"
+            ))
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(smoke, "run", fake_run)
+    target = tmp_path / "screen.png"
+    smoke.capture_ios_screenshot("SIM-UDID", target)
+    assert calls[1] == ["xcrun", "simctl", "io", "SIM-UDID", "screenshot", "--display=1", str(target)]
+
+
+def test_ios_screenshot_does_not_retry_unrelated_errors(monkeypatch, tmp_path) -> None:
+    smoke = _load_smoke()
+    monkeypatch.setattr(smoke, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 1, "", "disk full"))
+    import pytest
+    with pytest.raises(SystemExit, match="disk full"):
+        smoke.capture_ios_screenshot("SIM-UDID", tmp_path / "screen.png")
+
+
 def _load_smoke():
     path = Path("scripts/check_mobile_emulator_smoke.py")
     spec = importlib.util.spec_from_file_location("check_mobile_emulator_smoke_script", path)

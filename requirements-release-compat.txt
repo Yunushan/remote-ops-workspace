@@ -2,7 +2,7 @@
 # The encrypted-vault and encrypted OpenSSH-key backends are deliberately
 # absent because no reviewed bcrypt/cryptography build chain exists for this
 # architecture.
-pip==26.2.1
+pip==26.2.2
 setuptools==84.0.0
 wheel==0.48.0
 build==1.6.1

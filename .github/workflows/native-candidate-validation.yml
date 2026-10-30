@@ -59,7 +59,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || inputs.source_sha || github.sha }}
           persist-credentials: false
           clean: true
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
       - name: Bind candidate head and tree without creating a tag
@@ -109,7 +109,7 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
           architecture: ${{ matrix.python-architecture }}
@@ -330,7 +330,7 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
       - name: Isolate candidate Python environment
@@ -445,7 +445,7 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
       - name: Isolate candidate Python environment

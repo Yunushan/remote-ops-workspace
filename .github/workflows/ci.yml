@@ -472,7 +472,7 @@ jobs:
           docker inspect --format '{{.HostConfig.CapDrop}}' "$container_id" | grep -Fx "[ALL]"
           docker inspect --format '{{.HostConfig.SecurityOpt}}' "$container_id" | grep -Fx "[no-new-privileges:true]"
           compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
       - name: Collect container image Python inventory

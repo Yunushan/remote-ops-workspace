@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-
 PWSH = shutil.which("pwsh")
 INSTALLER = Path(__file__).resolve().parents[1] / "installers" / "install.ps1"
 STAGES = ("version", "venv", "upgrade", "install", "init", "doctor", "welcome")

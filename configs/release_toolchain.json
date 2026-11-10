@@ -39,7 +39,7 @@
   "python_packages": [
     {
       "name": "pip",
-      "version": "26.2.1",
+      "version": "26.3",
       "purpose": "Pinned installer front-end for release jobs."
     },
     {

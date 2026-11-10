@@ -134,7 +134,7 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
     for snippet, label in required_workflow_snippets.items():
         if snippet not in workflow:
             errors.append(f"ci workflow missing {label}: {snippet}")
-    for runner in ("macos-26-intel", "macos-14", "macos-15", "macos-26"):
+    for runner in ("macos-26-intel", "macos-15", "macos-26"):
         row = f'          - os: {runner}\n            python-version: "3.15"'
         if row not in workflow:
             errors.append(f"ci workflow missing {runner} Python 3.15 host row")

@@ -355,7 +355,7 @@ def test_actual_regular_reader_retains_identity_guards_and_shared_api_fields(gat
     path_states = iter((before, after_path))
     descriptor_states = iter((opened, after_fd))
     path = SimpleNamespace(lstat=lambda: next(path_states), open=lambda _mode: Stream())
-    monkeypatch.setattr(gate.os, "fstat", lambda _fd: next(descriptor_states))
+    monkeypatch.setattr(gate, "os", SimpleNamespace(fstat=lambda _fd: next(descriptor_states)))
     if mutation in {"none", "api-ctime"}:
         assert gate.read_regular(path, 10) == b"abc"
     else:

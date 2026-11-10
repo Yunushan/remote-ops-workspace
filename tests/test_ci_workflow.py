@@ -711,7 +711,7 @@ def test_ci_workflow_requires_current_macos_intel_and_apple_silicon_smoke_runner
     checker = _load_checker()
     source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    for runner in ("macos-26-intel", "macos-14", "macos-15", "macos-26"):
+    for runner in ("macos-26-intel", "macos-15", "macos-26"):
         for version in ("3.12", "3.13", "3.14", "3.15"):
             workflow = source.replace(
                 f'          - os: {runner}\n            python-version: "{version}"\n',
@@ -1077,6 +1077,17 @@ def test_ci_workflow_rejects_unknown_hosted_runner_labels() -> None:
 
     assert any("unsupported GitHub-hosted runner label 'windows-2025-vs20260'" in error for error in matrix_errors)
     assert any("unsupported GitHub-hosted runner label 'macos-260'" in error for error in direct_errors)
+
+
+def test_ci_workflow_rejects_retired_macos_14_runner() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow = source.replace("          - os: macos-15\n", "          - os: macos-14\n", 1)
+    assert workflow != source
+    assert any(
+        "unsupported GitHub-hosted runner label 'macos-14'" in error
+        for error in checker.check_ci_workflow(workflow)
+    )
 
 
 def test_ci_workflow_requires_bounded_live_gui_render_timeouts() -> None:

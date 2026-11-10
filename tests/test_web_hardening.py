@@ -1612,7 +1612,7 @@ if (scenario === 'pending') {
         str(output_path.with_suffix(".progress.json")),
     ]
     result = _run_web_policy_harness(
-        command, output_path, scenario, nonce, timeout=30 if os.name == "nt" else 10
+        command, output_path, scenario, nonce, timeout=30
     )
     assert result["saved"] == expected_saved
     assert expected_blocked in result["blocked"]

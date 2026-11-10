@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -186,8 +187,7 @@ def check_ios(
     require_tool("xcrun")
     wait_for_web_url(url)
     runtime = latest_ios_runtime(required_version=required_version)
-    device_type = preferred_iphone_device_type()
-    udid = run(["xcrun", "simctl", "create", "row-web-pwa", device_type, runtime["identifier"]]).stdout.strip()
+    udid = create_ios_simulator(runtime["identifier"])
     try:
         run(["xcrun", "simctl", "boot", udid], check=False)
         run(["xcrun", "simctl", "bootstatus", udid, "-b"])
@@ -195,7 +195,7 @@ def check_ios(
         open_ios_url(udid, url, attempts=open_url_attempts)
         time.sleep(5)
         target = out_dir / "ios-simulator-web-pwa.png"
-        run(["xcrun", "simctl", "io", udid, "screenshot", str(target)])
+        capture_ios_screenshot(udid, target)
         if not target.exists() or target.stat().st_size == 0:
             raise SystemExit("iOS simulator screenshot was empty")
         print(f"iOS simulator Web/PWA smoke passed on {runtime['name']}: {target}")
@@ -203,6 +203,18 @@ def check_ios(
     finally:
         run(["xcrun", "simctl", "shutdown", udid], check=False)
         run(["xcrun", "simctl", "delete", udid], check=False)
+
+
+def capture_ios_screenshot(udid: str, target: Path) -> None:
+    command = ["xcrun", "simctl", "io", udid, "screenshot"]
+    result = run([*command, str(target)], check=False)
+    if result.returncode == 0:
+        return
+    error = result.stderr.strip()
+    primary = re.search(r"--display=(\d+)\s+[^\r\n]*\(primary\)", error)
+    if "Cannot choose between" not in error or primary is None:
+        raise SystemExit(f"{' '.join(command)} failed with exit {result.returncode}: {error}")
+    run([*command, f"--display={primary.group(1)}", str(target)])
 
 
 def wait_for_web_url(url: str, timeout_seconds: float = DEFAULT_WEB_READY_TIMEOUT_SECONDS) -> None:
@@ -286,22 +298,23 @@ def latest_ios_runtime(*, required_version: str | None = None) -> dict[str, Any]
     return max(ios_runtimes, key=lambda runtime: version_key(str(runtime.get("version", ""))))
 
 
-def preferred_iphone_device_type() -> str:
+def create_ios_simulator(runtime_identifier: str) -> str:
     result = run(["xcrun", "simctl", "list", "devicetypes", "--json"])
     device_types = json.loads(result.stdout).get("devicetypes", [])
-    identifiers = [str(item.get("identifier", "")) for item in device_types]
-    preferred = (
-        "com.apple.CoreSimulator.SimDeviceType.iPhone-16",
-        "com.apple.CoreSimulator.SimDeviceType.iPhone-15",
-        "com.apple.CoreSimulator.SimDeviceType.iPhone-14",
-    )
-    for identifier in preferred:
-        if identifier in identifiers:
-            return identifier
+    identifiers = [str(item.get("identifier", "")) for item in device_types if ".iPhone-" in str(item.get("identifier", ""))]
+    if not identifiers:
+        raise SystemExit("No iPhone simulator device type found")
+    failures = []
     for identifier in identifiers:
-        if ".iPhone-" in identifier:
-            return identifier
-    raise SystemExit("No iPhone simulator device type found")
+        command = ["xcrun", "simctl", "create", "row-web-pwa", identifier, runtime_identifier]
+        result = run(command, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        error = result.stderr.strip()
+        if "Incompatible device" not in error:
+            raise SystemExit(f"{' '.join(command)} failed with exit {result.returncode}: {error}")
+        failures.append(f"{identifier}: {error}")
+    raise SystemExit(f"No compatible iPhone simulator for {runtime_identifier}: {'; '.join(failures)}")
 
 
 def version_key(value: str) -> tuple[int, ...]:

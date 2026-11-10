@@ -63,7 +63,9 @@ def test_same_private_guard_reentry_initializes_registry_and_releases_one_owned_
     monkeypatch.setattr(locking, "_canonical_lock_key", lambda _path: "synthetic-key")
     monkeypatch.setattr(locking, "_acquire_os_lock", lambda descriptor, _path, _deadline: events.append(("acquire", descriptor)))
     monkeypatch.setattr(locking, "_release_os_lock", lambda descriptor: events.append(("release", descriptor)))
-    _os_facade(monkeypatch, name="nt", getpid=lambda: 101, close=lambda descriptor: events.append(("close", descriptor)))
+    _os_facade(monkeypatch, name="nt", getpid=lambda: 101,
+        fstat=lambda _descriptor: SimpleNamespace(st_size=1),
+        close=lambda descriptor: events.append(("close", descriptor)))
 
     @contextmanager
     def private_lease():

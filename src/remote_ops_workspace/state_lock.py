@@ -101,6 +101,11 @@ def exclusive_file_lock(
             _active_lock_descriptors.add(descriptor)
         _acquire_os_lock(descriptor, path, deadline)
         acquired = True
+        # Windows enforces byte-range locks on writes. Initialize only after
+        # acquiring the lock, since another opener may have observed size zero.
+        if os.fstat(descriptor).st_size == 0:
+            os.write(descriptor, b"\0")
+            os.fsync(descriptor)
         held[key] = 1
         if _private_guard is not None:
             private_held[key] = _private_guard
@@ -248,9 +253,6 @@ def _open_lock_file(path: Path, *, shared: bool = False, _private_guard=None, _p
                 created=created,
                 opened=opened,
             )
-        if opened.st_size == 0:
-            os.write(descriptor, b"\0")
-            os.fsync(descriptor)
         os.lseek(descriptor, 0, os.SEEK_SET)
         return descriptor
     except BaseException:

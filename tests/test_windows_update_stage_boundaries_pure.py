@@ -425,17 +425,21 @@ def lock_fixture(monkeypatch, *, refuse=False):
     return scene, guard
 
 
-def test_actual_lock_nul_is_after_private_reader_writer_binding_and_lease_retained(monkeypatch):
+def test_actual_lock_nul_is_after_private_binding_and_os_lock_and_lease_retained(monkeypatch):
     scene, guard = lock_fixture(monkeypatch)
     path = scene.path(STAGE + r"\.transaction.json.lock")
-    with ExitStack() as scope:
-        descriptor = locks._open_lock_file(path, _private_guard=guard, _private_scope=scope)
+    monkeypatch.setattr(locks.os, "getpid", lambda: 42, raising=False)
+    monkeypatch.setattr(locks, "lock_path_for", lambda value: value)
+    monkeypatch.setattr(locks, "_canonical_lock_key", lambda _path: "synthetic-private-lock")
+    monkeypatch.setattr(locks, "_acquire_os_lock", lambda *_args: scene.events.append(("acquire",)))
+    monkeypatch.setattr(locks, "_release_os_lock", lambda *_args: scene.events.append(("release",)))
+    with locks.exclusive_file_lock(path, _private_guard=guard):
         labels = [row[0] for row in scene.events]
-        assert labels.index("private-enter") < labels.index("write") < labels.index("fsync")
+        assert labels.index("private-enter") < labels.index("acquire") < labels.index("write") < labels.index("fsync")
         assert "private-close" not in labels
         assert scene.data[str(path)] == b"\0"
-    assert scene.events[-2:] == [("private-verified", str(path)), ("private-close", str(path))]
-    scene.close(descriptor)
+    labels = [row[0] for row in scene.events]
+    assert labels.index("fsync") < labels.index("release") < labels.index("private-verified") < labels.index("private-close") < labels.index("close-crt")
 
 
 def test_actual_lock_acl_refusal_precedes_first_nul_and_closes_empty_descriptor(monkeypatch):
@@ -498,6 +502,7 @@ def test_whole_exclusive_lock_releases_thread_state_when_native_cleanup_refuses(
         return 17
 
     monkeypatch.setattr(locks, "os", SimpleNamespace(name="nt", getpid=lambda: 1,
+                                                   fstat=lambda _fd: SimpleNamespace(st_size=1),
                                                    close=lambda *_args: events.append("crt-close")))
     monkeypatch.setattr(locks, "time", SimpleNamespace(monotonic=lambda: 0))
     monkeypatch.setattr(locks, "_registry_guard", Scope())

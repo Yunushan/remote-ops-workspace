@@ -9,6 +9,7 @@ WEB_DOCKERFILE = ROOT / "docker" / "Dockerfile.web"
 COMPOSE_PATH = ROOT / "docker" / "compose.yaml"
 DOCKERIGNORE_PATH = ROOT / ".dockerignore"
 DEPENDABOT_CONFIG_PATH = ROOT / ".github" / "dependabot.yml"
+CI_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 PYTHON_BASE_IMAGE = (
     "python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de"
 )
@@ -26,10 +27,16 @@ REQUIRED_WEB_SERVICE_LOG_OPTIONS = (
     'max-size: "10m"',
     'max-file: "3"',
 )
+CONTAINER_INVENTORY_PATH = "artifacts/container-sbom/container-image-packages.json"
+CONTAINER_SBOM_PATH = "artifacts/container-sbom/container-image-sbom.cdx.json"
+CONTAINER_SBOM_BUILDER = "scripts/build_container_sbom.py"
+CONTAINER_SBOM_ATTEST_ACTION = "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
+CONTAINER_SBOM_UPLOAD_ACTION = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
 
 
 def main() -> int:
     errors = check_container_base_images()
+    errors.extend(check_container_image_sbom())
     if errors:
         for error in errors:
             print(f"container base images: {error}", file=sys.stderr)
@@ -122,6 +129,53 @@ def check_compose_hardening(compose_text: str | None = None) -> list[str]:
         if snippet in text:
             errors.append(f"compose.yaml must not enable {label}: {snippet}")
     return errors
+
+
+def check_container_image_sbom(workflow: str | None = None) -> list[str]:
+    text = workflow if workflow is not None else CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+    block = ci_job_block(text, "web-container")
+    if not block:
+        return ["ci workflow missing web-container job for live Web/PWA container smoke"]
+    errors: list[str] = []
+    required_snippets = {
+        "importlib.metadata.distributions()": "container image Python inventory collection",
+        CONTAINER_INVENTORY_PATH: "materialized container image Python inventory",
+        CONTAINER_SBOM_BUILDER: "container image SBOM generator",
+        CONTAINER_SBOM_PATH: "container image CycloneDX SBOM output",
+        "attestations: write": "container image SBOM attestation permission",
+        "id-token: write": "OIDC token permission for the container image SBOM attestation",
+        CONTAINER_SBOM_ATTEST_ACTION: "pinned container image SBOM attestation action",
+        f"if: ${{{{ github.event_name == 'push' }}}}\n        uses: {CONTAINER_SBOM_ATTEST_ACTION}": (
+            "container image SBOM attestation restricted to push events"
+        ),
+        f"subject-path: {CONTAINER_SBOM_PATH}": "container image SBOM attestation subject",
+        CONTAINER_SBOM_UPLOAD_ACTION: "pinned container image SBOM artifact upload",
+        "name: container-image-sbom": "named container image SBOM artifact",
+        f"path: {CONTAINER_SBOM_PATH}": "container image SBOM artifact path",
+        "retention-days: 30": "bounded container image SBOM retention",
+    }
+    for snippet, label in required_snippets.items():
+        if snippet not in block:
+            errors.append(f"ci web-container job missing {label}: {snippet}")
+    inventory_index = block.find(CONTAINER_INVENTORY_PATH)
+    generate_index = block.find(CONTAINER_SBOM_BUILDER)
+    attest_index = block.find(CONTAINER_SBOM_ATTEST_ACTION)
+    upload_index = block.find(CONTAINER_SBOM_UPLOAD_ACTION)
+    if min(inventory_index, generate_index, attest_index, upload_index) >= 0 and not (
+        inventory_index < generate_index < attest_index < upload_index
+    ):
+        errors.append(
+            "ci web-container job must inventory, generate, attest, then upload the container image SBOM in order"
+        )
+    return errors
+
+
+def ci_job_block(workflow_text: str, job_name: str) -> str:
+    match = re.search(
+        rf"(?ms)^  {re.escape(job_name)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        workflow_text,
+    )
+    return match.group(1) if match else ""
 
 
 def compose_service_block(compose_text: str, service_name: str) -> str:

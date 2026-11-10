@@ -12,7 +12,6 @@ SUPPORTED_HOSTED_RUNNERS = {
     "ubuntu-latest",
     "windows-11-arm",
     "windows-2025-vs2026",
-    "macos-14",
     "macos-15",
     "macos-15-intel",
     "macos-26",
@@ -219,7 +218,6 @@ def check_test_job(workflow: str) -> list[str]:
         "windows-11-arm",
         "macos-15-intel",
         "macos-26-intel",
-        "macos-14",
         "macos-15",
         "macos-26",
     ):
@@ -228,7 +226,7 @@ def check_test_job(workflow: str) -> list[str]:
     for version in ("3.10", "3.11", "3.12", "3.13", "3.14", "3.15"):
         if f'"{version}"' not in block:
             errors.append(f"ci test matrix missing Python {version}")
-    for os_name in ("macos-26-intel", "macos-14", "macos-15", "macos-26"):
+    for os_name in ("macos-26-intel", "macos-15", "macos-26"):
         for version in ("3.12", "3.13", "3.14", "3.15"):
             if not workflow_includes_matrix_entry(block, os_name=os_name, python_version=version):
                 errors.append(f"ci test matrix missing macOS smoke row: {os_name} Python {version}")

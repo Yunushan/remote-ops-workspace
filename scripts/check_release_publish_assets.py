@@ -820,7 +820,7 @@ def check_platform_evidence_import_job(workflow: str) -> list[str]:
         "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10": "repository checkout",
         "persist-credentials: false": "checkout credential isolation",
         "clean: true": "clean platform evidence import checkout",
-        "uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1": "Python setup",
+        "uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0": "Python setup",
         "GH_TOKEN: ${{ github.token }}": "GitHub token for gh artifact download",
         "name: Check out immutable release source for evidence binding": (
             "immutable release source checkout"

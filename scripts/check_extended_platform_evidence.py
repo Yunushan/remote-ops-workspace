@@ -179,7 +179,7 @@ def check_runner_readiness_job(workflow: str) -> list[str]:
         "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "readiness preflight checkout",
         "persist-credentials: false": "readiness checkout credential isolation",
         "clean: true": "readiness checkout workspace cleanup",
-        "uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6": "readiness Python setup",
+        "uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0": "readiness Python setup",
         'python-version: "3.12"': "readiness Python version pin",
         "GH_TOKEN: ${{ github.token }}": "GitHub token binding for runner inventory",
         "python scripts/check_platform_evidence_runner_readiness.py \\\n            --repository \"${{ github.repository }}\" \\\n            --target \"${{ inputs.target }}\" \\\n            --require-idle \\\n            --allow-unavailable \\\n            --github-output \"$GITHUB_OUTPUT\"": "target-specific idle runner readiness check",
@@ -193,7 +193,7 @@ def check_runner_readiness_job(workflow: str) -> list[str]:
             block,
             (
                 ("readiness preflight checkout", "      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6"),
-                ("readiness Python setup", "      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6"),
+                ("readiness Python setup", "      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0"),
                 (
                     "target-specific idle runner readiness check",
                     "      - id: runner-readiness\n        name: Check evidence runner availability",

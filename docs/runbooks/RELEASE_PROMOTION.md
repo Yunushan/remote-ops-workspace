@@ -46,18 +46,25 @@ promotion target.
 
 ## Verify a published artifact
 
-Every download carries a release manifest and a `SHA256SUMS.txt` checksum
-sidecar (per release, plus per-platform `native-SHA256SUMS.txt`). Verify both the
-checksum and the build provenance before installing:
+Keep the file's published name. Set `release_tag` and `release_sha` to the
+approved promotion tag and its full source commit SHA before verifying the
+download.
 
-```bash
-sha256sum -c remote-ops-workspace-v<version>-SHA256SUMS.txt
-gh attestation verify ./remote-ops-workspace-v<version>-linux-x86_64.AppImage \
-  --repo Yunushan/remote-ops-workspace
+```sh
+release_tag=REPLACE_WITH_RELEASE_TAG
+release_sha=REPLACE_WITH_RELEASE_COMMIT_SHA
+python scripts/check_release_provenance.py \
+  --asset "./remote-ops-workspace-${release_tag}-linux-x86_64.AppImage" \
+  --repository Yunushan/remote-ops-workspace \
+  --tag "$release_tag" \
+  --sha "$release_sha"
 ```
 
-The same pattern applies to Windows and macOS native artifacts and their
-per-platform sidecars. See [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPLOYMENT.md).
+The verifier compares the file's SHA-256 with the immutable GitHub Release
+and checks the attestation against the completed promotion run. Use the
+matching published filename on Windows, macOS, and Linux. Verify the platform
+installer signature before installation. See
+[`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPLOYMENT.md).
 
 ## Installer trust boundary (O3)
 
@@ -66,11 +73,8 @@ per-platform sidecars. See [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPLOYM
 checked-out source tree and perform no artifact integrity check. They must not be
 used to fetch an opaque binary over the network.
 
-For a released binary, always download through the verified path above
-(`SHA256SUMS.txt` plus `gh attestation verify`) rather than piping an unchecked
-URL into a shell. Automating checksum and attestation verification inside the
-installers is tracked as a follow-up; until then, verification is an operator
-step documented here.
+For a promoted binary, run the verification command above on the downloaded
+file before opening the installer.
 
 ## Rollback
 

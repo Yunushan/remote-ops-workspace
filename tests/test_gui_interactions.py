@@ -234,7 +234,6 @@ def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
         / "gui.py"
     ).read_text(encoding="utf-8")
 
-    assert 'assert_profile_launch_allowed(self.profile, surface="gui")' in source
     assert 'assert_profile_launch_allowed(profile, surface="gui")' in source
     assert "profiles = self.layout_launch_profiles(layout)" in source
     assert "self.open_terminal_tab(pane_plan, profile=profile)" in source
@@ -247,6 +246,7 @@ def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
         / "remote_ops_workspace"
         / "gui_dialogs.py"
     ).read_text(encoding="utf-8")
+    assert 'assert_profile_launch_allowed(self.profile, surface="gui")' in dialog_source
     for required in (
         "allow_insecure_sshv1=true",
         "legacy_target=windows-xp-32",

@@ -139,58 +139,86 @@ def test_container_image_sbom_requires_image_inventory_generation() -> None:
     errors = checker.check_container_image_sbom(workflow)
 
     assert (
-        "ci web-container job missing container image Python inventory collection: "
+        "ci web-container step Collect container image package inventory missing: "
         "importlib.metadata.distributions()" in errors
     )
 
 
-def test_container_image_sbom_requires_generate_attest_upload_order() -> None:
+def test_container_image_sbom_requires_digest_check_before_signing() -> None:
     checker = _load_checker()
-    workload = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    attest_step = (
-        "      - name: Attest container image SBOM\n"
-        "        if: ${{ github.event_name == 'push' }}\n"
-        "        uses: "
-        f"{checker.CONTAINER_SBOM_ATTEST_ACTION} # v4.2.2\n"
-        "        with:\n"
-        f"          subject-path: {checker.CONTAINER_SBOM_PATH}\n"
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    verify = workflow.index("      - name: Verify the SBOM names the downloaded image manifest digest\n")
+    attest = workflow.index("      - name: Attest Web/PWA image build provenance\n", verify)
+    following = workflow.index("      - name: Attest the Web/PWA image SBOM\n", attest)
+    workflow = workflow[:verify] + workflow[attest:following] + workflow[verify:attest] + workflow[following:]
+
+    errors = checker.check_container_image_sbom(workflow)
+
+    assert "ci web-container-attestation job has an out-of-order step: Attest Web/PWA image build provenance" in errors
+
+
+def test_container_image_sbom_restricts_attestation_permissions_to_main_push_job() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    attestation = "  web-container-attestation:\n"
+    build, signing = workflow.split(attestation, 1)
+    build = build.replace(
+        "    name: Web/PWA container smoke\n",
+        "    name: Web/PWA container smoke\n    permissions:\n      id-token: write\n",
     )
-    upload_step = (
-        f"      - uses: {checker.CONTAINER_SBOM_UPLOAD_ACTION} # v7\n"
-        "        with:\n"
-        "          name: container-image-sbom\n"
-        f"          path: {checker.CONTAINER_SBOM_PATH}\n"
-        "          if-no-files-found: error\n"
-        "          retention-days: 30\n"
-    )
-    workflow = workload.replace(attest_step, "").replace(
-        upload_step,
-        f"{upload_step}{attest_step}",
+    signing = signing.replace("      attestations: write\n      contents: read\n      id-token: write\n", "", 1)
+    signing = signing.replace(checker.MAIN_PUSH, "if: always()", 1)
+
+    errors = checker.check_container_image_sbom(build + attestation + signing)
+
+    assert "ci web-container job must build and test without attestation permissions" in errors
+    assert "ci web-container-attestation job missing: attestations: write" in errors
+    assert "ci web-container-attestation job missing: id-token: write" in errors
+    assert f"ci web-container-attestation job missing: {checker.MAIN_PUSH}" in errors
+
+
+def test_container_image_sbom_binds_the_producer_artifact_and_image_subject() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        f"artifact-ids: {checker.ATTESTATION_ARTIFACT}",
+        "name: web-container-image",
+    ).replace(
+        f"subject-path: {checker.CONTAINER_MANIFEST_PATH}",
+        f"subject-path: {checker.CONTAINER_SBOM_PATH}",
+    ).replace(
+        '--source-digest "$GITHUB_SHA"',
+        '--source-digest "$OTHER_SHA"',
     )
 
     errors = checker.check_container_image_sbom(workflow)
 
     assert (
-        "ci web-container job must inventory, generate, attest, then upload the container image "
-        "SBOM in order" in errors
-    )
-
-
-def test_container_image_sbom_requires_attestation_permissions() -> None:
-    checker = _load_checker()
-    workflow = (
-        Path(".github/workflows/ci.yml")
-        .read_text(encoding="utf-8")
-        .replace("      attestations: write\n      contents: read\n      id-token: write\n", "")
-    )
-
-    errors = checker.check_container_image_sbom(workflow)
-
-    assert "ci web-container job missing container image SBOM attestation permission: attestations: write" in errors
+        "ci web-container-attestation step Download the Web/PWA image evidence missing: "
+        f"artifact-ids: {checker.ATTESTATION_ARTIFACT}"
+    ) in errors
     assert (
-        "ci web-container job missing OIDC token permission for the container image SBOM "
-        "attestation: id-token: write" in errors
+        "ci web-container-attestation step Attest the Web/PWA image SBOM missing: "
+        f"subject-path: {checker.CONTAINER_MANIFEST_PATH}"
+    ) in errors
+    assert (
+        "ci web-container-attestation step Verify the Web/PWA image attestations missing: "
+        '--source-digest "$GITHUB_SHA"'
+    ) in errors
+
+
+def test_container_image_sbom_rejects_an_export_that_uses_a_mutable_tag() -> None:
+    checker = _load_checker()
+    export = 'docker image save --output "$RUNNER_TEMP/web-container-image.tar" "$TESTED_IMAGE_ID"'
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
+        export,
+        export.replace('"$TESTED_IMAGE_ID"', "remote-ops-workspace-web:latest"),
     )
+
+    assert (
+        "ci web-container step Export the smoke-tested Web/PWA image missing: "
+        f"{export}"
+    ) in checker.check_container_image_sbom(workflow)
 
 
 def _load_checker():

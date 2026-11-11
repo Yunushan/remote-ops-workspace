@@ -139,19 +139,25 @@ artifact-metadata, OIDC, release-write, and Actions-read permissions needed for
 that operation. Consumers should verify a promoted release's GitHub
 attestation as well as its installer signatures and SHA-256 checksums.
 
-After downloading a release asset, verify its build provenance against the
-specific release workflow before deployment:
+Verify a downloaded asset using the approved release tag and full source
+commit SHA. Run the verifier from a trusted checkout of the promotion source
+with GitHub CLI available.
 
 ```sh
-gh attestation verify ./remote-ops-workspace-v<version>-linux-x86_64.AppImage \
-  --repo Yunushan/remote-ops-workspace \
-  --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/release-promotion.yml
+release_tag=REPLACE_WITH_RELEASE_TAG
+release_sha=REPLACE_WITH_RELEASE_COMMIT_SHA
+python scripts/check_release_provenance.py \
+  --asset "./remote-ops-workspace-${release_tag}-linux-x86_64.AppImage" \
+  --repository Yunushan/remote-ops-workspace \
+  --tag "$release_tag" \
+  --sha "$release_sha"
 ```
 
-Use the matching local filename for any Windows, macOS, Linux, source, or
-protected-platform asset. The command verifies the artifact digest, GitHub
-repository identity, OIDC issuer, and SLSA provenance predicate; it does not
-replace native installer signature verification or the SHA-256 sidecar check.
+Keep the published filename for each Windows, macOS, Linux, source, or
+protected-platform asset. The verifier checks the published SHA-256, SLSA
+attestation, and exact promotion run. Verify native installer signatures
+before installation. Use `--assets-dir` to verify the entire published release
+inventory and its common promotion run.
 
 The source/Python release also includes
 `remote-ops-workspace-v<version>-sbom.cdx.json`, a deterministic CycloneDX 1.5
@@ -160,6 +166,35 @@ It is covered by the release manifest, SHA-256 sidecar, and GitHub attestation.
 Its scope is deliberately limited to that source/Python environment; inspect
 each native artifact's manifest, signature state, checksums, and provenance
 attestation separately before deployment.
+
+### Web/PWA container evidence
+
+The CI run for a push to `main` exports the Web/PWA image by ID after the
+Compose smoke test. CI checks the OCI image manifest against that ID and
+verifies the archived configuration and layer digests. The CycloneDX inventory
+records the manifest SHA-256 and the Python distributions and Debian packages
+installed in the tested container. A separate job attests the manifest with
+SLSA provenance and the CycloneDX SBOM.
+
+Download the `web-container-image-evidence-<attempt>` Actions artifact from the
+successful run for the source commit you want to verify. The artifact contains
+the OCI manifest and SBOM. Set `source_sha` to the run's full commit SHA and
+verify both attestations for the extracted manifest.
+
+```bash
+source_sha=REPLACE_WITH_MAIN_COMMIT_SHA
+for predicate in https://slsa.dev/provenance/v1 https://cyclonedx.org/bom; do
+  gh attestation verify web-container-image-manifest.json \
+    --repo Yunushan/remote-ops-workspace \
+    --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/ci.yml \
+    --source-ref refs/heads/main \
+    --source-digest "$source_sha" \
+    --deny-self-hosted-runners \
+    --predicate-type "$predicate" || exit 1
+done
+```
+
+### Dependency checks
 
 The repository-policy CI job also runs `pip-audit --strict` against the exact
 release dependency pins. It uses the system trust store, so inspection remains

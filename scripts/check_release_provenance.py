@@ -7,7 +7,8 @@ must match GitHub's size and digest, and every asset in the certified inventory
 must have SLSA provenance issued by the exact release workflow and source SHA.
 Final verification requires one common completed successful run; the narrowly
 scoped draft-transaction mode instead binds every draft asset to the current
-tag-triggered run before the draft is promoted.
+tag-triggered run before the draft is promoted. Operators can verify a single
+downloaded file against the immutable published release and its promotion run.
 """
 
 from __future__ import annotations
@@ -91,6 +92,9 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("current transaction run id and attempt must be positive")
         if draft_transaction and current_transaction:
             raise ValueError("draft and published current-transaction modes are mutually exclusive")
+        single_asset = args.asset is not None
+        if single_asset and (draft_transaction or current_transaction):
+            raise ValueError("--asset requires a completed published release, outside a transaction")
         if args.published_release_id is not None and args.published_release_id < 1:
             raise ValueError("published release id must be positive")
         repository = normalize_repository(args.repository)
@@ -98,9 +102,15 @@ def main(argv: list[str] | None = None) -> int:
         tag = normalize_tag(args.tag)
         matrix = read_json(MATRIX_PATH, "release matrix")
         standard_assets = expected_release_assets(matrix, tag=tag)
-        local_assets, local_errors = local_release_assets(args.assets_dir)
-        if local_errors:
-            raise RuntimeError("; ".join(local_errors))
+        if single_asset:
+            asset = args.asset.absolute()
+            if not safe_asset_name(asset.name) or asset.is_symlink() or not asset.is_file():
+                raise ValueError("--asset must identify a regular file with its published name")
+            local_assets = {asset.name: asset}
+        else:
+            local_assets, local_errors = local_release_assets(args.assets_dir)
+            if local_errors:
+                raise RuntimeError("; ".join(local_errors))
 
         if draft_transaction and args.published_release_id is not None:
             raise ValueError("draft and published numeric release ids are mutually exclusive")
@@ -115,6 +125,14 @@ def main(argv: list[str] | None = None) -> int:
             "GitHub release metadata",
             60,
         )
+        release = release_with_all_assets(
+            release,
+            repository=repository,
+            tag=tag,
+            expected_draft=draft_transaction,
+            require_immutable=not draft_transaction,
+            expected_release_id=numeric_release_id,
+        )
         errors = check_release_asset_bytes(
             release,
             local_assets,
@@ -124,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_draft=draft_transaction,
             require_immutable=not draft_transaction,
             expected_release_id=numeric_release_id,
+            verify_single_asset=single_asset,
         )
         if errors:
             raise RuntimeError("; ".join(errors))
@@ -225,6 +244,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     chosen = max(successful)
+    if single_asset:
+        print(
+            f"release asset provenance passed: {asset.name} matches immutable {tag} "
+            f"and its completed promotion run {chosen.url}"
+        )
+        return 0
     print(
         "release provenance passed: "
         f"{len(local_assets)}/{len(local_assets)} published bytes match; "
@@ -237,10 +262,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Match downloaded release bytes to GitHub and verify exact-SHA SLSA provenance "
-            "for every asset in the certified release inventory."
+            "for an entire release directory or one published asset."
         )
     )
-    parser.add_argument("--assets-dir", required=True, type=Path)
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--assets-dir", type=Path, help="verify the complete published or draft inventory")
+    inputs.add_argument("--asset", type=Path, help="verify one downloaded file from an immutable published release")
     parser.add_argument("--repository", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--sha", required=True)
@@ -339,16 +366,49 @@ def local_release_assets(root: Path) -> tuple[dict[str, Path], list[str]]:
     return assets, errors
 
 
-def check_release_asset_bytes(
+def release_with_all_assets(
     release: Any,
-    local_assets: dict[str, Path],
     *,
     repository: str,
     tag: str,
-    required_standard_assets: set[str],
-    expected_draft: bool = False,
-    require_immutable: bool = True,
-    expected_release_id: int | None = None,
+    expected_draft: bool,
+    require_immutable: bool,
+    expected_release_id: int | None,
+) -> dict[str, Any]:
+    errors = release_identity_errors(
+        release,
+        tag=tag,
+        expected_draft=expected_draft,
+        require_immutable=require_immutable,
+        expected_release_id=expected_release_id,
+    )
+    if errors:
+        raise ValueError("; ".join(errors))
+    release_id = release.get("id")
+    if type(release_id) is not int or release_id < 1:
+        raise ValueError("GitHub release metadata must contain a positive ID")
+    pages = run_gh_json(
+        [
+            "api",
+            "--paginate",
+            "--slurp",
+            f"repos/{repository}/releases/{release_id}/assets?per_page=100",
+        ],
+        "GitHub release asset list",
+        60,
+    )
+    if not isinstance(pages, list) or not pages or not all(isinstance(page, list) for page in pages):
+        raise ValueError("GitHub release assets must be paginated lists")
+    return {**release, "assets": [item for page in pages for item in page]}
+
+
+def release_identity_errors(
+    release: Any,
+    *,
+    tag: str,
+    expected_draft: bool,
+    require_immutable: bool,
+    expected_release_id: int | None,
 ) -> list[str]:
     if not isinstance(release, dict):
         return ["GitHub release metadata must be a JSON object"]
@@ -365,6 +425,32 @@ def check_release_asset_bytes(
         errors.append("published production release must not be a prerelease")
     if require_immutable and release.get("immutable") is not True:
         errors.append("published production release must have GitHub immutable releases enabled")
+    return errors
+
+
+def check_release_asset_bytes(
+    release: Any,
+    local_assets: dict[str, Path],
+    *,
+    repository: str,
+    tag: str,
+    required_standard_assets: set[str],
+    expected_draft: bool = False,
+    require_immutable: bool = True,
+    expected_release_id: int | None = None,
+    verify_single_asset: bool = False,
+) -> list[str]:
+    if verify_single_asset and (expected_draft or not require_immutable or len(local_assets) != 1):
+        return ["single-asset verification requires one file from an immutable published release"]
+    errors = release_identity_errors(
+        release,
+        tag=tag,
+        expected_draft=expected_draft,
+        require_immutable=require_immutable,
+        expected_release_id=expected_release_id,
+    )
+    if not isinstance(release, dict):
+        return errors
     raw_assets = release.get("assets")
     if not isinstance(raw_assets, list):
         return [*errors, "published release assets must be a list"]
@@ -408,15 +494,17 @@ def check_release_asset_bytes(
 
     local_names = set(local_assets)
     remote_names = set(remote)
-    missing_standard = sorted(required_standard_assets - local_names)
+    inventory_names = remote_names if verify_single_asset else local_names
+    missing_standard = sorted(required_standard_assets - inventory_names)
     if missing_standard:
-        errors.append(f"local release assets missing standard files: {missing_standard}")
+        location = "published" if verify_single_asset else "local"
+        errors.append(f"{location} release assets missing standard files: {missing_standard}")
     if local_names != remote_names:
         missing_remote = sorted(local_names - remote_names)
         missing_local = sorted(remote_names - local_names)
         if missing_remote:
             errors.append(f"published release missing downloaded local files: {missing_remote}")
-        if missing_local:
+        if missing_local and not verify_single_asset:
             errors.append(f"downloaded release directory missing published files: {missing_local}")
 
     for name in sorted(local_names & remote_names):

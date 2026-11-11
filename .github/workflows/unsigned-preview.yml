@@ -37,13 +37,9 @@ jobs:
     name: Guard preview-only source
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      source-sha: ${{ steps.pin-source.outputs.sha }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          ref: ${{ env.PREVIEW_REF }}
-          persist-credentials: false
-          clean: true
-          fetch-depth: 0
       - name: Reject production refs
         shell: bash
         run: |
@@ -71,18 +67,37 @@ jobs:
             exit 1
           fi
           echo "Unsigned preview source accepted: $PREVIEW_REF"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || format('refs/heads/{0}', env.PREVIEW_REF) }}
+          persist-credentials: false
+          clean: true
+      - name: Pin the selected preview commit
+        id: pin-source
+        shell: bash
+        run: |
+          sha="$(git rev-parse HEAD)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build unsigned preview source and Python assets
     needs: guard
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      artifact-id: ${{ steps.preview-assets.outputs.artifact-id }}
+    env:
+      PREVIEW_SHA: ${{ needs.guard.outputs.source-sha }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ env.PREVIEW_REF }}
+          ref: ${{ env.PREVIEW_SHA }}
           persist-credentials: false
           clean: true
+      - name: Verify the pinned build commit
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$PREVIEW_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
@@ -109,7 +124,7 @@ jobs:
           UNSIGNED PREVIEW ARTIFACTS
 
           Branch: ${PREVIEW_REF}
-          Commit: ${GITHUB_SHA}
+          Commit: ${PREVIEW_SHA}
           Release tag: ${PREVIEW_TAG}
 
           These files were built without production signing or notarization.
@@ -118,23 +133,31 @@ jobs:
           default-branch promotion, verified commits and signing credentials.
           EOF
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        id: preview-assets
         with:
-          name: unsigned-preview-source-python-${{ github.run_id }}
+          name: unsigned-preview-source-python-${{ github.run_id }}-${{ github.run_attempt }}
           path: preview-dist/*
           if-no-files-found: error
           retention-days: 14
 
   publish:
     name: Publish unsigned preview prerelease
-    needs: build
+    needs: [guard, build]
     permissions:
       contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      PREVIEW_SHA: ${{ needs.guard.outputs.source-sha }}
     steps:
+      - name: Require the exact build artifact ID
+        shell: bash
+        env:
+          PREVIEW_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+        run: '[[ "$PREVIEW_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
         with:
-          name: unsigned-preview-source-python-${{ github.run_id }}
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
           path: preview-dist
       - name: Write preview release notes
         shell: bash
@@ -142,7 +165,7 @@ jobs:
           cat > preview-notes.md <<EOF
           # UNSIGNED PREVIEW
 
-          This prerelease was built from **${PREVIEW_REF}** at **${GITHUB_SHA}**.
+          This prerelease was built from **${PREVIEW_REF}** at **${PREVIEW_SHA}**.
 
           It is intentionally unsigned and is provided for branch review and
           smoke testing only. It is not a production release, has no production
@@ -151,16 +174,87 @@ jobs:
           Production releases remain gated by the protected default branch,
           verified commits, required review, and platform signing credentials.
           EOF
-      - name: Publish clearly labeled prerelease
-        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v2
-        with:
-          tag_name: ${{ env.PREVIEW_TAG }}
-          target_commitish: ${{ github.sha }}
-          name: ${{ env.PREVIEW_TAG }} (UNSIGNED PREVIEW)
-          prerelease: true
-          draft: false
-          body_path: preview-notes.md
-          files: preview-dist/*
-          fail_on_unmatched_files: true
+      - name: Publish verified preview draft
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$PREVIEW_TAG" =~ ^unsigned-preview-[0-9]+$ && "$PREVIEW_TAG" == "unsigned-preview-$GITHUB_RUN_ID" ]]
+          [[ "$PREVIEW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          api="repos/$GITHUB_REPOSITORY"
+          request="$RUNNER_TEMP/preview-draft-request.json"
+          inventory="$RUNNER_TEMP/preview-inventory.json"
+          snapshot="$RUNNER_TEMP/preview-release.json"
+          tag_ref="refs/tags/$PREVIEW_TAG"
+
+          shopt -s nullglob
+          assets=(preview-dist/*)
+          test -f preview-dist/UNSIGNED_PREVIEW.txt
+          for asset in "${assets[@]}"; do
+            test -f "$asset" && test ! -L "$asset" || exit 1
+            name="${asset##*/}"
+            [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]
+            size="$(stat -c '%s' -- "$asset")"
+            digest="$(sha256sum -- "$asset" | cut -d' ' -f1)"
+            jq -n --arg name "$name" --argjson size "$size" --arg digest "sha256:$digest" \
+              '{name: $name, size: $size, digest: $digest}'
+          done > "$RUNNER_TEMP/preview-inventory-entries.jsonl"
+          jq -es 'sort_by(.name) | select(length > 0 and (map(.name | ascii_downcase) | unique | length) == length)' \
+            "$RUNNER_TEMP/preview-inventory-entries.jsonl" > "$inventory"
+
+          require_unused_tag() {
+            gh api "$api/git/matching-refs/tags/$PREVIEW_TAG" | jq -e --arg ref "$tag_ref" \
+              'type == "array" and all(.[]; (.ref | type) == "string" and .ref != $ref)' > /dev/null
+          }
+
+          verify_identity() {
+            jq -e --slurpfile request "$request" --argjson id "$release_id" --argjson draft "$1" \
+              '.id == $id and .draft == $draft and .prerelease == true and
+               ({tag_name, target_commitish, name, body} == ($request[0] | {tag_name, target_commitish, name, body}))' \
+              "$snapshot" > /dev/null
+          }
+
+          verify_release() {
+            gh api "$api/releases/$release_id" > "$snapshot"
+            verify_identity "$1"
+            jq -e --slurpfile expected "$inventory" \
+              '.assets | type == "array" and all(.[]; .state == "uploaded" and (.id | type == "number" and . > 0)) and
+               (map({name, size, digest}) | sort_by(.name)) == $expected[0]' "$snapshot" > /dev/null
+          }
+
+          report_failed_release() {
+            if [[ "$1" != 0 ]]; then
+              echo "::warning::Inspect preview release $release_id ($PREVIEW_TAG) after the failed publication attempt"
+            fi
+          }
+
+          require_unused_tag
+          gh api --paginate --slurp "$api/releases?per_page=100" | jq -e --arg tag "$PREVIEW_TAG" \
+            'type == "array" and length > 0 and all(.[]; type == "array" and all(.[]; (.tag_name | type) == "string" and .tag_name != $tag))' > /dev/null
+          marker="<!-- remote-ops-branch-preview:$PREVIEW_TAG:$PREVIEW_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"
+          jq -n --arg tag "$PREVIEW_TAG" --arg sha "$PREVIEW_SHA" --arg marker "$marker" --rawfile notes preview-notes.md \
+            '{tag_name: $tag, target_commitish: $sha, name: ($tag + " (UNSIGNED PREVIEW)"), body: ($notes + "\n" + $marker + "\n"), draft: true, prerelease: true}' > "$request"
+          gh api --method POST "$api/releases" --input "$request" > "$snapshot"
+          release_id="$(jq -er '.id | select(type == "number") | tostring | select(test("^[1-9][0-9]*$"))' "$snapshot")"
+          trap 'report_failed_release "$?"' EXIT
+          verify_identity true
+          upload_url="$(jq -er '.upload_url | sub("\\{.*$"; "")' "$snapshot")"
+          test "$upload_url" = "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets"
+
+          for asset in "${assets[@]}"; do
+            encoded_name="$(jq -rn --arg name "${asset##*/}" '$name | @uri')"
+            status="$(curl --silent --show-error --output "$RUNNER_TEMP/preview-upload.json" --write-out '%{http_code}' \
+              --request POST --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'Accept: application/vnd.github+json' --header 'X-GitHub-Api-Version: 2022-11-28' \
+              --header 'Content-Type: application/octet-stream' --data-binary "@$asset" "$upload_url?name=$encoded_name")"
+            test "$status" = 201
+          done
+
+          verify_release true
+          require_unused_tag
+          gh api --method PATCH "$api/releases/$release_id" --field draft=false --silent
+          verify_release false
+          gh api "$api/git/ref/tags/$PREVIEW_TAG" | jq -e --arg ref "$tag_ref" --arg sha "$PREVIEW_SHA" \
+            '.ref == $ref and .object.type == "commit" and .object.sha == $sha' > /dev/null
+          echo "Published and verified $PREVIEW_TAG at $PREVIEW_SHA"

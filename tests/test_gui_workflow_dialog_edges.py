@@ -39,7 +39,7 @@ def test_transfer_queue_local_and_remote_preview_edges(
     gui_window,
     monkeypatch,
 ) -> None:
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_dialogs
 
     _app, window = gui_window
     profile = Profile(
@@ -51,7 +51,7 @@ def test_transfer_queue_local_and_remote_preview_edges(
     dialog = window.create_transfer_queue_dialog(profile)
 
     monkeypatch.setattr(
-        gui,
+        gui_dialogs,
         "preview_local_path",
         lambda _path: (_ for _ in ()).throw(ValueError("invalid local path")),
     )
@@ -77,7 +77,7 @@ def test_transfer_queue_local_and_remote_preview_edges(
         "error": "controlled read warning",
     }
     monkeypatch.setattr(
-        gui,
+        gui_dialogs,
         "preview_local_path",
         lambda _path: _Preview(rich_preview),
     )
@@ -101,7 +101,7 @@ def test_transfer_queue_local_and_remote_preview_edges(
         "error": "",
     }
     monkeypatch.setattr(
-        gui,
+        gui_dialogs,
         "preview_local_path",
         lambda _path: _Preview(sparse_preview),
     )
@@ -222,7 +222,7 @@ def test_transfer_queue_guard_failure_and_callback_edges(
 
     from PyQt6.QtCore import QProcess
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_dialogs
 
     _app, window = gui_window
     profile = Profile(
@@ -300,16 +300,16 @@ def test_transfer_queue_guard_failure_and_callback_edges(
     invalid.run_queue()
     assert invalid.preview.toPlainText().startswith("error:")
 
-    original_policy = gui.assert_profile_launch_allowed
+    original_policy = gui_dialogs.assert_profile_launch_allowed
     monkeypatch.setattr(
-        gui,
+        gui_dialogs,
         "assert_profile_launch_allowed",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("policy denied")),
     )
     invalid.operations.setPlainText("get /remote/file ./local-file")
     invalid.run_queue()
     assert invalid.preview.toPlainText() == "error: policy denied"
-    monkeypatch.setattr(gui, "assert_profile_launch_allowed", original_policy)
+    monkeypatch.setattr(gui_dialogs, "assert_profile_launch_allowed", original_policy)
 
     destructive = window.create_transfer_queue_dialog(profile)
     destructive.operations.setPlainText("rm /remote/old.txt")

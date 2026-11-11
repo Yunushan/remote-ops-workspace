@@ -59,6 +59,7 @@ from .terminal import (
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     ssh_command_with_control_path,
+    ssh_connection_key,
     ssh_control_path_for_profile,
 )
 from .terminal_emulation import TERMINAL_EMULATOR_BACKEND, AnsiTerminalTranscript, AnsiTextStyle
@@ -68,6 +69,19 @@ from .terminal_highlighting import (
     terminal_syntax_rule_keys,
 )
 from .terminal_output import _ByteChunkQueue
+
+_SGR_MOUSE_BUTTON_CODES = {
+    Qt.MouseButton.LeftButton: 0,
+    Qt.MouseButton.MiddleButton: 1,
+    Qt.MouseButton.RightButton: 2,
+}
+_SGR_MOUSE_EVENTS = {
+    QEvent.Type.MouseButtonPress,
+    QEvent.Type.MouseButtonDblClick,
+    QEvent.Type.MouseButtonRelease,
+    QEvent.Type.MouseMove,
+    QEvent.Type.Wheel,
+}
 
 
 def _application_clipboard() -> QClipboard:
@@ -204,6 +218,7 @@ class TerminalPane(QWidget):
         plan = harden_terminal_pane_plan_for_native_windows(plan)
         self.profile = profile
         self.ssh_control_path = ""
+        self.ssh_connection_key = ""
         if profile is not None:
             control_path = ssh_control_path_for_profile(profile)
             shared_command = ssh_command_with_control_path(
@@ -214,6 +229,7 @@ class TerminalPane(QWidget):
             if shared_command != plan.command:
                 plan = replace(plan, command=shared_command)
                 self.ssh_control_path = control_path
+                self.ssh_connection_key = ssh_connection_key(profile)
         self.plan = plan
         self.setProperty("sshControlPath", self.ssh_control_path)
         self.process, self._terminal_backend_warning = _terminal_process_backend(
@@ -324,6 +340,11 @@ class TerminalPane(QWidget):
         )
         terminal_scroll_bar.valueChanged.connect(self._on_terminal_scroll_value_changed)
         self.terminal_emulator = AnsiTerminalTranscript()
+        self._terminal_mouse_mode = 0
+        self._terminal_mouse_buttons: list[Qt.MouseButton] = []
+        self._terminal_mouse_cell: tuple[int, int] | None = None
+        self._terminal_mouse_wheel_remainder = [0, 0]
+        self._viewport_mouse_tracking_default = self.output_viewport.hasMouseTracking()
         self.output.setProperty("terminalEmulatorBackend", TERMINAL_EMULATOR_BACKEND)
         self.output.setProperty(
             "terminalEmulatorPty",
@@ -615,10 +636,12 @@ class TerminalPane(QWidget):
         self.layout_terminal_actions(event.size().width())
         self.resize_terminal_backend()
 
-    def resize_terminal_backend(self) -> None:
+    def terminal_cell_size(self) -> tuple[int, int]:
         metrics = self.output.fontMetrics()
-        cell_width = max(1, metrics.horizontalAdvance("M"))
-        cell_height = max(1, metrics.lineSpacing())
+        return max(1, metrics.horizontalAdvance("M")), max(1, metrics.lineSpacing())
+
+    def resize_terminal_backend(self) -> None:
+        cell_width, cell_height = self.terminal_cell_size()
         viewport = self.output_viewport.size()
         columns = max(20, viewport.width() // cell_width)
         rows = max(5, viewport.height() // cell_height)
@@ -708,6 +731,13 @@ class TerminalPane(QWidget):
             remember = getattr(workspace, "remember_terminal_focus", None)
             if callable(remember):
                 remember(None, watched)
+        if (
+            watched is self.output_viewport
+            and event.type() in _SGR_MOUSE_EVENTS
+            and self.report_terminal_mouse_event(event)
+        ):
+            event.accept()
+            return True
         if watched in terminal_targets and event.type() == QEvent.Type.MouseButtonPress:
             self.output.setFocus(Qt.FocusReason.MouseFocusReason)
             self.output.setProperty("terminalLastInputSurface", "viewport")
@@ -736,6 +766,15 @@ class TerminalPane(QWidget):
             # the complete context menu available through Shift+Right-click
             # (and let users switch the fast path off from that menu).
             modifiers = event.modifiers()
+            if (
+                self._terminal_mouse_mode
+                and self.is_running()
+                and not self._secret_prompt_active
+                and event.reason() == QContextMenuEvent.Reason.Mouse
+                and not modifiers & Qt.KeyboardModifier.ShiftModifier
+            ):
+                event.accept()
+                return True
             if (
                 self._terminal_right_click_paste_enabled
                 and event.reason() == QContextMenuEvent.Reason.Mouse
@@ -815,6 +854,83 @@ class TerminalPane(QWidget):
                 self.send_raw_input(payload)
                 return True
         return super().eventFilter(watched, event)
+
+    def report_terminal_mouse_event(self, event) -> bool:
+        """Deliver negotiated xterm mouse events through the active terminal input."""
+
+        mode = self._terminal_mouse_mode
+        if not mode or not self.is_running() or self._secret_prompt_active:
+            return False
+        kind = event.type()
+        modifiers = event.modifiers()
+        release = kind == QEvent.Type.MouseButtonRelease
+        if release:
+            button = event.button()
+            if button not in self._terminal_mouse_buttons:
+                return False
+            self._terminal_mouse_buttons.remove(button)
+            codes = [_SGR_MOUSE_BUTTON_CODES[button]]
+        elif modifiers & Qt.KeyboardModifier.ShiftModifier:
+            return False
+        elif kind == QEvent.Type.Wheel:
+            codes = self.terminal_wheel_mouse_codes(event.angleDelta())
+        elif kind == QEvent.Type.MouseMove:
+            buttons = event.buttons()
+            # Qt may deliver the release to another widget while reporting is suspended.
+            self._terminal_mouse_buttons[:] = [
+                button for button in self._terminal_mouse_buttons if buttons & button
+            ]
+            if mode == 1000 or (mode == 1002 and not self._terminal_mouse_buttons):
+                return False
+            motion_button_code = (
+                _SGR_MOUSE_BUTTON_CODES[self._terminal_mouse_buttons[-1]]
+                if self._terminal_mouse_buttons
+                else 3
+            )
+            codes = [32 + motion_button_code]
+        else:
+            button = event.button()
+            code = _SGR_MOUSE_BUTTON_CODES.get(button)
+            if code is None:
+                return False
+            if button not in self._terminal_mouse_buttons:
+                self._terminal_mouse_buttons.append(button)
+            self.output.setFocus(Qt.FocusReason.MouseFocusReason)
+            self.output.setProperty("terminalLastInputSurface", "viewport")
+            codes = [code]
+
+        point = event.position()
+        cell_width, cell_height = self.terminal_cell_size()
+        document = _required_gui_value(self.output.document(), "terminal output document")
+        margin = document.documentMargin()
+        cell = self.terminal_emulator.mouse_report_cell(
+            int((point.x() - margin) // cell_width) + 1,
+            int((point.y() - margin) // cell_height) + 1,
+        )
+        if kind == QEvent.Type.MouseMove and cell == self._terminal_mouse_cell:
+            return True
+        column, row = cell
+        modifier_code = 8 * bool(modifiers & (Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier))
+        modifier_code += 16 * bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+        suffix = "m" if release else "M"
+        if codes:
+            self._terminal_mouse_cell = cell
+            self.send_raw_input(b"".join(
+                f"\x1b[<{code | modifier_code};{column};{row}{suffix}".encode("ascii")
+                for code in codes
+            ))
+        return True
+
+    def terminal_wheel_mouse_codes(self, delta: QPoint) -> list[int]:
+        codes: list[int] = []
+        for index, angle in enumerate((delta.y(), delta.x())):
+            amount = self._terminal_mouse_wheel_remainder[index] + angle
+            count, remainder = divmod(abs(amount), 120)
+            backwards = amount < 0
+            self._terminal_mouse_wheel_remainder[index] = -remainder if backwards else remainder
+            # Bound a single event while preserving ordinary multi-notch input.
+            codes.extend([64 + 2 * index + int(backwards)] * min(count, 32))
+        return codes
 
     def _arm_right_click_paste_suppression(self) -> None:
         """Avoid duplicate Moba paste when Qt also emits a context event."""
@@ -1270,6 +1386,7 @@ class TerminalPane(QWidget):
         self.output.clear()
         self._rendered_terminal_text = ""
         self.terminal_emulator.reset()
+        self.sync_terminal_emulator_mode_properties()
         self._terminal_follow_output = True
         self._terminal_force_follow_output = False
         self.output.setProperty("terminalFollowOutput", True)
@@ -1417,6 +1534,7 @@ class TerminalPane(QWidget):
         self.output.clear()
         self._rendered_terminal_text = ""
         self.terminal_emulator.reset()
+        self.sync_terminal_emulator_mode_properties()
         self.reset_process_output_pipeline()
         self._restart_when_output_drained = False
         if self.startup_preamble:
@@ -2069,6 +2187,14 @@ class TerminalPane(QWidget):
             "terminalAutoWrapActive",
             self.terminal_emulator.auto_wrap_active,
         )
+        mode = self.terminal_emulator.sgr_mouse_tracking_mode
+        if mode != self._terminal_mouse_mode:
+            self._terminal_mouse_mode = mode
+            self._terminal_mouse_buttons.clear()
+            self._terminal_mouse_cell = None
+            self._terminal_mouse_wheel_remainder[:] = [0, 0]
+            self.output_viewport.setMouseTracking(self._viewport_mouse_tracking_default or mode == 1003)
+        self.output.setProperty("terminalSgrMouseTrackingMode", mode)
 
     def forward_terminal_emulator_responses(self) -> None:
         """Answer terminal capability/cursor queries without rendering them.
@@ -2156,7 +2282,9 @@ class TerminalPane(QWidget):
         self.terminal_emulator.reset()
         self.output.clear()
         self._rendered_terminal_text = ""
-        self.render_terminal_transcript(self.terminal_emulator.feed(text))
+        transcript = self.terminal_emulator.feed(text)
+        self.sync_terminal_emulator_mode_properties()
+        self.render_terminal_transcript(transcript)
 
     def render_terminal_transcript(self, transcript: str) -> None:
         if bool(self.output.property("terminalTabPaintFrozen")):

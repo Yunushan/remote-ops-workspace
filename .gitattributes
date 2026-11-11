@@ -1,6 +1,7 @@
 *.sh text eol=lf
 *.ps1 text eol=crlf
 *.py text eol=lf
+*.qss text eol=lf
 *.md text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf

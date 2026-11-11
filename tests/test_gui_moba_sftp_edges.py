@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from remote_ops_workspace.models import Profile
-from remote_ops_workspace.terminal import TerminalPanePlan
+from remote_ops_workspace.terminal import TerminalPanePlan, ssh_connection_key
 
 
 class _FakeProcess:
@@ -121,6 +121,21 @@ def _set_checked(control, checked: bool) -> None:
     control.blockSignals(True)
     control.setChecked(checked)
     control.blockSignals(False)
+
+
+def test_connected_dock_refuses_an_edited_ssh_identity(connected_workspace, monkeypatch) -> None:
+    _app, window, _panel, dock, profile = connected_workspace
+    relabeled = replace(profile, description="Updated description")
+    monkeypatch.setattr(window, "profile_by_name", lambda _name: relabeled)
+    assert dock.profile_for_sftp_action() is relabeled
+    assert dock.can_reuse_for_state(dock.state)
+
+    updated = replace(profile, credential_ref="different-key")
+    monkeypatch.setattr(window, "profile_by_name", lambda _name: updated)
+    assert dock.profile_for_sftp_action() is None
+    assert not dock.can_reuse_for_state(
+        replace(dock.state, ssh_connection_key=ssh_connection_key(updated))
+    )
 
 
 def test_connected_session_falls_back_when_browser_preferences_are_corrupt(
@@ -976,17 +991,21 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
     panes = [
         SimpleNamespace(profile=None, is_running=lambda: True),
         SimpleNamespace(
-            profile=Profile(name="other", protocol="ssh", host="other.invalid"),
+            profile=replace(profile, host="other.invalid"),
+            ssh_connection_key=ssh_connection_key(replace(profile, host="other.invalid")),
             is_running=lambda: True,
+            ssh_control_path="wrong-host-path",
         ),
-        SimpleNamespace(profile=profile, is_running=lambda: False),
+        SimpleNamespace(profile=profile, ssh_connection_key=dock.state.ssh_connection_key, is_running=lambda: False),
         SimpleNamespace(
             profile=profile,
+            ssh_connection_key=dock.state.ssh_connection_key,
             is_running=lambda: True,
             ssh_control_path="",
         ),
         SimpleNamespace(
             profile=profile,
+            ssh_connection_key=dock.state.ssh_connection_key,
             is_running=lambda: True,
             ssh_control_path="controlled-path",
         ),
@@ -997,6 +1016,12 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
     )
     monkeypatch.setattr(dock, "main_window", lambda: shared_window)
     assert dock.shared_ssh_control_path() == "controlled-path"
+    panes.pop()
+    assert dock.shared_ssh_control_path() == ""
+    state = dock.state
+    monkeypatch.setattr(dock, "state", replace(state, ssh_connection_key=""))
+    assert dock.shared_ssh_control_path() == ""
+    monkeypatch.setattr(dock, "state", state)
     monkeypatch.setattr(dock, "main_window", original_main_window)
 
     dock._background_password = bytearray(b"session-secret")

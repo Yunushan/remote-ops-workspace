@@ -47,6 +47,13 @@ on any repository/tag/SHA/run-attempt/reviewer/release-byte provenance drift.
 These fields do not replace the external review, exact GitHub run and published
 release; they record and bind those externally obtained facts.
 
+For production certification, merge the reviewed registry into protected
+`main` after the published release is available and retain the full commit
+SHA. The aggregate gate reads the registry from that commit and verifies all
+eight records against the exact release SHA, the live workflow attempts and
+reviews, and the downloaded release assets. See the
+[production-readiness gate](PRODUCTION_READINESS.md).
+
 ## Implemented or adapter-backed families
 
 - SSH, SFTP, SCP, FTP, RDP, VNC, Telnet, rlogin, rsh, Mosh, XDMCP and raw
@@ -118,9 +125,10 @@ release; they record and bind those externally obtained facts.
   New-file, new-folder, delete, ASCII-mode and split-view controls remain
   disabled in that dock until safe operational backends replace their earlier
   metadata-only previews.
-  The current terminal renderer is a bounded stream transcript rather than a
-  complete VT screen. Alternate-screen applications, cursor-addressed TUIs,
-  mouse reporting and the full DEC/OSC mode set remain outside this claim.
+  The terminal renderer keeps a bounded transcript and a cursor-addressed
+  alternate-screen buffer. Applications can request xterm SGR mouse reporting
+  for clicks, wheel input and cell motion. Hold Shift to use local selection or
+  scrolling while the application is tracking the mouse.
 - MobApt-style `row mobapt status/search/install/update` workflow that
   inventories Unix tools, discovers host package managers such as `apt`,
   `brew`, `winget`, `scoop` and `choco`, builds explicit argv plans and

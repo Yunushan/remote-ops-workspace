@@ -462,9 +462,7 @@ jobs:
         with:
           python-version: "3.14.7"
       - name: Install Linux packaging toolchains
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm
+        run: bash scripts/install_ci_ubuntu_packages.sh rpm
       - name: Install Python packaging dependencies
         run: |
           python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
@@ -562,8 +560,7 @@ jobs:
       - name: Install native archive inspector
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full squashfs-tools rpm2cpio cpio msitools \
+          bash scripts/install_ci_ubuntu_packages.sh p7zip-full squashfs-tools rpm2cpio cpio msitools \
             build-essential cmake libboost-iostreams-dev libboost-filesystem-dev \
             libboost-date-time-dev libboost-system-dev libboost-program-options-dev liblzma-dev
           # Upstream PR 210 adds the loader and payload formats used by Inno Setup 6.7.
@@ -818,17 +815,12 @@ jobs:
           PY
           git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-unsigned-published"
           test "$(git rev-parse 'refs/tags/row-unsigned-published^{commit}')" = "$RELEASE_SHA"
-      - name: Delete only this run's failed unsigned draft
-        if: ${{ always() && failure() && steps.create-draft.outputs.release-id != '' && steps.publish-draft.outcome != 'success' }}
+      - name: Report the release ID after failure
+        if: ${{ failure() && steps.create-draft.outputs.release-id != '' }}
         shell: bash
         env:
           RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
         run: |
           set -euo pipefail
-          response="$RUNNER_TEMP/failed-unsigned-draft.json"
-          marker="<!-- remote-ops-unsigned-transaction:$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$response"
-          jq -e --argjson id "$RELEASE_ID" --arg tag "$RELEASE_TAG" --arg marker "$marker" \
-            '.id == $id and .tag_name == $tag and .draft == true and (.body | type == "string" and contains($marker))' \
-            "$response" > /dev/null
-          gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --silent
+          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
+          echo "::warning::Inspect release $RELEASE_ID ($RELEASE_TAG) after the failed publication attempt"

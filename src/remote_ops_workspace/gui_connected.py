@@ -125,6 +125,7 @@ from .terminal import (
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     ssh_command_with_control_path,
+    ssh_connection_key,
 )
 
 if TYPE_CHECKING:
@@ -902,7 +903,8 @@ def create_moba_connected_classes(
             """Find the running terminal that owns this session's SSH master."""
 
             main_window = self.main_window()
-            if main_window is None or not hasattr(main_window, "tabs"):
+            key = self.state.ssh_connection_key
+            if not key or main_window is None or not hasattr(main_window, "tabs"):
                 return ""
             pane_provider = getattr(main_window, "all_terminal_panes", None)
             if callable(pane_provider):
@@ -913,12 +915,7 @@ def create_moba_connected_classes(
                     return ""
                 panes = main_window.terminal_panes_in(current)
             for pane in panes:
-                pane_profile = getattr(pane, "profile", None)
-                if (
-                    pane_profile is None
-                    or pane_profile.name != self.state.profile_name
-                    or not pane.is_running()
-                ):
+                if getattr(pane, "ssh_connection_key", "") != key or not pane.is_running():
                     continue
                 control_path = str(getattr(pane, "ssh_control_path", "") or "")
                 if control_path:
@@ -2695,6 +2692,7 @@ def create_moba_connected_classes(
                 not self.runtime_shutting_down
                 and self.state.profile_name == state.profile_name
                 and self.state.target == state.target
+                and self.state.ssh_connection_key == state.ssh_connection_key
                 and self.active_remote_path == state.remote_path
                 and self.state.monitoring_plan == state.monitoring_plan
                 and self.state.sftp_list_plan == state.sftp_list_plan
@@ -3704,7 +3702,10 @@ def create_moba_connected_classes(
             main_window = self.main_window()
             if main_window is None:
                 return None
-            return main_window.profile_by_name(self.state.profile_name)
+            profile = main_window.profile_by_name(self.state.profile_name)
+            if profile is None or ssh_connection_key(profile) != self.state.ssh_connection_key:
+                return None
+            return profile
 
         def show_sftp_status(self, message: str) -> None:
             main_window = self.main_window()

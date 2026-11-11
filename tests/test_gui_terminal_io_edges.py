@@ -95,6 +95,95 @@ class _Process:
         return self.accepted
 
 
+def test_terminal_sgr_mouse_reporting_and_local_override(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import QEvent, QPoint, QPointF, QProcess, Qt
+    from PyQt6.QtGui import QContextMenuEvent, QMouseEvent, QWheelEvent
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    process = _Process(QProcess.ProcessState.Running, accepted=None)
+    with monkeypatch.context() as patch:
+        patch.setattr(pane, "process", process)
+        viewport = pane.output_viewport
+        margin = pane.output.document().documentMargin()
+        first = QPointF(margin + 1, margin + 1)
+        second = first + QPointF(pane.terminal_cell_size()[0], 0)
+        no_button = Qt.MouseButton.NoButton
+        left = Qt.MouseButton.LeftButton
+        right = Qt.MouseButton.RightButton
+        shift = Qt.KeyboardModifier.ShiftModifier
+        no_modifier = Qt.KeyboardModifier.NoModifier
+
+        def mouse(kind, button=no_button, point=first, modifiers=no_modifier, buttons=None):
+            event = QMouseEvent(kind, point, point, button, button if buttons is None else buttons, modifiers)
+            return pane.eventFilter(viewport, event)
+
+        def wheel(dx, dy, modifiers=no_modifier):
+            event = QWheelEvent(first, first, QPoint(), QPoint(dx, dy), no_button,
+                                modifiers, Qt.ScrollPhase.NoScrollPhase, False)
+            return pane.eventFilter(viewport, event)
+
+        press = QEvent.Type.MouseButtonPress
+        release = QEvent.Type.MouseButtonRelease
+        move = QEvent.Type.MouseMove
+        mouse(press, left)
+        assert process.writes == []
+
+        pane.append_text("\x1b[?1000;1006h")
+        assert pane.output.property("terminalSgrMouseTrackingMode") == 1000
+        process.process_state = QProcess.ProcessState.NotRunning
+        mouse(press, left)
+        process.process_state = QProcess.ProcessState.Running
+        pane._secret_prompt_active = True
+        mouse(press, left)
+        pane._secret_prompt_active = False
+        mouse(press, left, modifiers=shift)
+        mouse(release, left)
+        mouse(press, Qt.MouseButton.BackButton)
+        mouse(release, Qt.MouseButton.BackButton)
+        wheel(0, 120, shift)
+        assert process.writes == []
+
+        assert mouse(press, right)
+        menu = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, first.toPoint())
+        assert pane.eventFilter(viewport, menu)
+        assert mouse(release, right, modifiers=shift)
+        assert mouse(QEvent.Type.MouseButtonDblClick, left)
+        mouse(move, point=second, buttons=left)
+        assert mouse(release, left)
+        assert process.writes == [b"\x1b[<2;1;1M", b"\x1b[<2;1;1m", b"\x1b[<0;1;1M", b"\x1b[<0;1;1m"]
+
+        assert wheel(0, 60)
+        assert len(process.writes) == 4
+        assert wheel(-120, 60, Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.ControlModifier)
+        assert process.writes[-1] == b"\x1b[<88;1;1M\x1b[<91;1;1M"
+        assert wheel(0, -120)
+        assert process.writes[-1] == b"\x1b[<65;1;1M"
+
+        pane.append_text("\x1b[?1002h")
+        mouse(move, point=second)
+        assert process.writes[-1] == b"\x1b[<65;1;1M"
+        assert mouse(press, left)
+        assert mouse(press, left)
+        assert mouse(move, point=second, buttons=left)
+        assert process.writes[-1] == b"\x1b[<32;2;1M"
+        count = len(process.writes)
+        assert mouse(move, point=second, buttons=left)
+        assert len(process.writes) == count
+        mouse(move)
+        assert len(process.writes) == count
+
+        pane.append_text("\x1b[?1003h")
+        assert viewport.hasMouseTracking()
+        assert mouse(move, point=second)
+        assert process.writes[-1] == b"\x1b[<35;2;1M"
+        pane.append_text("\x1b[?1006l")
+        assert pane.output.property("terminalSgrMouseTrackingMode") == 0
+        assert viewport.hasMouseTracking() == pane._viewport_mouse_tracking_default
+        mouse(press, left)
+        assert process.writes[-1] == b"\x1b[<35;2;1M"
+
+
 def test_terminal_response_forwarding_clear_link_and_deferred_output_edges(
     gui_window,
     monkeypatch,
@@ -977,10 +1066,7 @@ def test_gui_low_level_platform_dialog_and_cursor_edges(
         host="background.example.invalid",
     )
     dialog = window.create_transfer_queue_dialog(profile)
-    background_process = _closure_value(
-        type(dialog).__init__,
-        "_background_process",
-    )
+    background_process = dialog._process_factory
     monkeypatch.setattr(gui.sys, "platform", "non-windows")
     generic_process = background_process(window)
     assert generic_process.parent() is window
@@ -1013,10 +1099,7 @@ def test_gui_low_level_platform_dialog_and_cursor_edges(
             "<b>not markup</b>",
         ) == QMessageBox.StandardButton.Ok
 
-    clamp_dialog = _closure_value(
-        type(dialog).showEvent,
-        "_clamp_dialog_frame_to_parent_screen",
-    )
+    clamp_dialog = dialog.services.clamp_to_screen
     dialog_screen = _closure_value(clamp_dialog, "_dialog_screen")
     assert dialog_screen(None) is QApplication.primaryScreen()
     assert dialog_screen(SimpleNamespace(screen=lambda: None)) is QApplication.primaryScreen()
@@ -1086,6 +1169,7 @@ def test_terminal_remaining_operator_io_and_lifecycle_edges(
         autostart=False,
     )
     assert pane.ssh_control_path == "controlled-socket"
+    assert pane.ssh_connection_key == gui_terminal.ssh_connection_key(profile)
     assert pane.plan.command[-1] == "ControlMaster=auto"
 
     pane._terminal_right_click_paste_generation = 9
@@ -1795,10 +1879,7 @@ def test_remaining_terminal_pipeline_branch_outcomes(
         host="background-fallback.example.invalid",
     )
     dialog = window.create_transfer_queue_dialog(profile)
-    background_process = _closure_value(
-        type(dialog).__init__,
-        "_background_process",
-    )
+    background_process = dialog._process_factory
     with monkeypatch.context() as scoped:
         scoped.setattr(gui.sys, "platform", "win32")
         scoped.setattr(

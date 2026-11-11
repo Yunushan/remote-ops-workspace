@@ -462,8 +462,13 @@ jobs:
           --asset-dir native-dist/linux
       - name: Install Linux packaging toolchains
         run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm
+          if [[ -f scripts/install_ci_ubuntu_packages.sh ]]; then
+            bash scripts/install_ci_ubuntu_packages.sh rpm
+          else
+            # A manual validation can select an older source commit.
+            sudo apt-get update
+            sudo apt-get install -y rpm
+          fi
       - name: Install Python packaging dependencies
         run: |
           python -m pip --isolated install --index-url https://pypi.org/simple --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"

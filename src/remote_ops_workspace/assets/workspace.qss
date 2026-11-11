@@ -1,0 +1,1152 @@
+
+QMainWindow#remoteOpsMain {
+  background: ${window};
+}
+QToolBar#mainToolbar, QToolBar#layoutToolbar {
+  background: ${toolbar};
+  border-bottom: 1px solid ${toolbar_border};
+  spacing: 5px;
+  padding: 5px 7px;
+}
+QToolBar#mainToolbar[productChromePreset="securecrt"],
+QToolBar#mainToolbar[productChromePreset="mremoteng"] {
+  spacing: 2px;
+  padding: 2px 6px;
+}
+QToolBar#mainToolbar[productChromePreset="termius"],
+QToolBar#mainToolbar[productChromePreset="remmina"] {
+  spacing: 3px;
+  padding: 3px 6px;
+}
+QToolBar#mainToolbar[productChromePreset="termius"] {
+  background: ${window};
+  border-bottom-color: ${control_border};
+}
+QToolBar#layoutToolbar[productChromePreset="securecrt"],
+QToolBar#layoutToolbar[productChromePreset="termius"],
+QToolBar#layoutToolbar[productChromePreset="remmina"],
+QToolBar#layoutToolbar[productChromePreset="mremoteng"] {
+  spacing: 3px;
+  padding: 2px 6px;
+  border-bottom: 1px solid ${toolbar_border};
+}
+QToolBar#layoutToolbar[productChromePreset="termius"] {
+  background: ${window};
+  border-bottom-color: ${control_border};
+}
+QToolBar#layoutToolbar[productChromePreset="remmina"] {
+  background: ${toolbar};
+}
+QToolBar#layoutToolbar[productChromePreset="securecrt"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="termius"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="remmina"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="mremoteng"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="securecrt"] QLineEdit,
+QToolBar#layoutToolbar[productChromePreset="termius"] QLineEdit,
+QToolBar#layoutToolbar[productChromePreset="remmina"] QLineEdit,
+QToolBar#layoutToolbar[productChromePreset="mremoteng"] QLineEdit {
+  min-height: 20px;
+  max-height: 24px;
+  padding: 2px 6px;
+}
+QMenuBar {
+  background: ${toolbar};
+  color: ${control_text};
+  border-bottom: 1px solid ${toolbar_border};
+  padding: 2px 6px;
+}
+QMenuBar#mobaTopMenuBar {
+  background: ${window};
+}
+QMenuBar#secureCrtMenuBar {
+  background: ${window};
+  border-bottom: 1px solid ${toolbar_border};
+  padding: 2px 7px;
+}
+QMenuBar#mRemoteNgMenuBar {
+  background: ${toolbar};
+  border-bottom: 1px solid ${toolbar_border};
+  padding: 2px 7px;
+}
+QMenuBar::item {
+  padding: 3px 8px;
+  background: transparent;
+}
+QMenuBar::item:selected {
+  background: ${control};
+}
+QLabel#toolbarLabel {
+  color: ${sidebar_muted};
+  padding-left: 8px;
+  padding-right: 2px;
+}
+QFrame#leftPanelHeader {
+  background: ${sidebar};
+  border-bottom: 1px solid ${pane_border};
+}
+QLabel#leftPanelTitle {
+  color: ${sidebar_text};
+  font-size: 13px;
+  font-weight: 700;
+}
+QLabel#leftPanelSubtitle {
+  color: ${sidebar_muted};
+  font-size: 10px;
+}
+QPushButton, QToolButton, QComboBox, QLineEdit {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: ${control_padding};
+}
+QPushButton, QComboBox, QLineEdit {
+  min-height: 24px;
+}
+QPushButton:hover, QToolButton:hover, QComboBox:hover, QLineEdit:hover {
+  border-color: ${control_hover};
+}
+QComboBox QAbstractItemView {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+  selection-background-color: ${sidebar_selected};
+  selection-color: ${sidebar_selected_text};
+  outline: 0;
+}
+QPushButton:disabled, QToolButton:disabled {
+  color: ${sidebar_muted};
+  background: ${pane};
+}
+QPushButton[interactionState="active"], QToolButton[interactionState="active"] {
+  background: ${primary};
+  color: ${primary_text};
+  border-color: ${primary};
+  font-weight: 700;
+}
+QPushButton[interactionState="checked"], QToolButton[interactionState="checked"] {
+  background: ${sidebar_selected};
+  color: ${sidebar_selected_text};
+  border-color: ${control_hover};
+  font-weight: 700;
+}
+QPushButton[interactionState="disabled"], QToolButton[interactionState="disabled"] {
+  background: ${pane};
+  color: ${sidebar_muted};
+  border-color: ${toolbar_border};
+}
+QToolButton#productToolbarButton[productChromePreset="securecrt"],
+QToolButton#productToolbarButton[productChromePreset="mremoteng"],
+QToolButton#productToolbarButton[productChromePreset="remmina"],
+QToolButton#productToolbarButton[productChromePreset="termius"] {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 1px;
+  padding: 1px;
+  color: ${control_text};
+}
+QToolButton#productToolbarButton[productChromePreset="securecrt"]:hover,
+QToolButton#productToolbarButton[productChromePreset="mremoteng"]:hover,
+QToolButton#productToolbarButton[productChromePreset="remmina"]:hover,
+QToolButton#productToolbarButton[productChromePreset="termius"]:hover {
+  background: ${control};
+  border-color: ${control_hover};
+}
+QToolButton#productToolbarButton[productChromePreset="securecrt"][interactionState="active"],
+QToolButton#productToolbarButton[productChromePreset="mremoteng"][interactionState="active"],
+QToolButton#productToolbarButton[productChromePreset="remmina"][interactionState="active"],
+QToolButton#productToolbarButton[productChromePreset="termius"][interactionState="active"] {
+  background: ${primary};
+  border-color: ${primary};
+}
+QToolButton#productToolbarButton[productChromePreset="securecrt"][interactionState="checked"],
+QToolButton#productToolbarButton[productChromePreset="mremoteng"][interactionState="checked"],
+QToolButton#productToolbarButton[productChromePreset="remmina"][interactionState="checked"],
+QToolButton#productToolbarButton[productChromePreset="termius"][interactionState="checked"] {
+  background: ${sidebar_selected};
+  border-color: ${control_hover};
+}
+QToolButton#productToolbarButton[productChromePreset="securecrt"]:disabled,
+QToolButton#productToolbarButton[productChromePreset="mremoteng"]:disabled,
+QToolButton#productToolbarButton[productChromePreset="remmina"]:disabled,
+QToolButton#productToolbarButton[productChromePreset="termius"]:disabled {
+  background: transparent;
+  border-color: transparent;
+}
+QLineEdit#secureCrtHostInput,
+QLineEdit#secureCrtKeywordInput,
+QLineEdit#mRemoteNgConnectInput {
+  min-height: 20px;
+  max-height: 24px;
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+  border-radius: 1px;
+  padding: 1px 5px;
+}
+QLabel#mRemoteNgProtocolLabel {
+  color: ${primary};
+  font-weight: 700;
+  padding: 1px 3px;
+}
+QToolBar#mainToolbar[productChromePreset="securecrt"] QLineEdit,
+QToolBar#mainToolbar[productChromePreset="mremoteng"] QLineEdit {
+  background: ${control};
+  border-radius: 1px;
+  padding: 1px 5px;
+}
+QToolBar#layoutToolbar[productChromePreset="securecrt"] QComboBox,
+QToolBar#layoutToolbar[productChromePreset="mremoteng"] QComboBox {
+  border-radius: 1px;
+  padding: 1px 5px;
+}
+QLineEdit[interactionState="focused"], QComboBox[interactionState="focused"] {
+  border: 2px solid ${control_hover};
+  padding: ${control_padding};
+}
+QPushButton#primaryAction, QToolButton#primaryAction {
+  background: ${primary};
+  color: ${primary_text};
+  border-color: ${primary};
+  font-weight: 600;
+}
+QPushButton#primaryAction:hover, QToolButton#primaryAction:hover {
+  border-color: ${control_hover};
+}
+QPushButton#dangerAction, QToolButton#dangerAction {
+  color: ${danger_text};
+  border-color: ${danger};
+}
+QToolButton#mobaRibbonButton {
+  background: transparent;
+  color: ${control_text};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 500;
+}
+QToolButton#mobaRibbonButton:hover {
+  background: ${control};
+  border-color: ${control_border};
+}
+QToolButton#mobaXServerAction {
+  background: transparent;
+  color: ${primary};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+QToolButton#mobaXServerAction:hover {
+  background: ${control};
+  border-color: ${control_border};
+}
+QToolButton#mobaExitAction {
+  background: transparent;
+  color: ${danger_text};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+QToolButton#mobaExitAction:hover {
+  background: ${control};
+  border-color: ${danger};
+}
+QLineEdit#toolbarSearch {
+  min-width: 150px;
+}
+QLineEdit#quickConnect {
+  background: ${control};
+  color: ${control_text};
+  border: 0;
+  border-radius: 0;
+  padding: ${quick_connect_input_padding};
+}
+QFrame#mobaQuickConnectChrome {
+  background: ${control};
+  border: 1px solid ${toolbar_border};
+  border-radius: 0;
+}
+QFrame#mobaQuickConnectChrome[interactionState="focused"] {
+  border: 2px solid ${control_hover};
+}
+QLabel#mobaQuickConnectDropdown {
+  background: ${control};
+  color: ${sidebar_muted};
+  border-left: 1px solid ${toolbar_border};
+  font-weight: 700;
+}
+QTreeWidget#quickConnectSuggestions {
+  background: ${sidebar};
+  color: ${sidebar_text};
+  border: 1px solid ${toolbar_border};
+  border-top: 0;
+  padding: 3px;
+  outline: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+QTreeWidget#quickConnectSuggestions::item {
+  padding: 3px 5px;
+  border-radius: ${radius}px;
+  min-height: ${quick_connect_suggestion_row_height}px;
+}
+QTreeWidget#quickConnectSuggestions::item:selected {
+  background: ${sidebar_selected};
+  color: ${sidebar_selected_text};
+}
+QWidget#mobaRail {
+  background: ${window};
+  border-right: 1px solid ${toolbar_border};
+}
+QLabel#mobaRailLabel {
+  color: ${sidebar_text};
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid ${toolbar_border};
+  font-size: ${rail_label_font_size}px;
+  font-weight: 700;
+}
+QLabel#mobaRailButton, QToolButton#mobaRailButton {
+  color: ${sidebar_text};
+  padding: 7px 3px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid ${toolbar_border};
+  font-weight: 600;
+}
+QLabel#mobaRailButton:hover, QToolButton#mobaRailButton:hover {
+  background: ${control};
+  border-color: ${toolbar_border};
+}
+QLabel#mobaRailButton:checked, QToolButton#mobaRailButton:checked {
+  color: ${primary};
+  background: ${sidebar};
+}
+QLabel#mobaRailAccent, QToolButton#mobaRailAccent {
+  color: ${status};
+  padding: 7px 3px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid ${toolbar_border};
+  font-weight: 700;
+}
+QLabel#mobaRailAccent:hover, QToolButton#mobaRailAccent:hover {
+  background: ${control};
+}
+QLabel#mobaRailAccent:checked, QToolButton#mobaRailAccent:checked {
+  background: ${sidebar};
+}
+QTreeWidget#profileTree {
+  background: ${sidebar};
+  color: ${sidebar_text};
+  border: 0;
+  border-right: 1px solid ${pane_border};
+  padding: 5px;
+  outline: 0;
+  font-family: "Segoe UI", Arial, sans-serif;
+}
+QTreeWidget#profileTree::item {
+  padding: ${tree_padding};
+  border-radius: ${radius}px;
+}
+QTreeWidget#profileTree::item:hover {
+  background: ${control};
+}
+QTreeWidget#profileTree::item:selected {
+  background: ${sidebar_selected};
+  color: ${sidebar_selected_text};
+}
+QTreeWidget#profileTree::branch {
+  background: transparent;
+}
+QTabWidget#sessionTabs::pane {
+  background: ${pane};
+  border: 1px solid ${pane_border};
+}
+QTabBar::tab {
+  background: ${tab};
+  color: ${tab_text};
+  padding: ${tab_padding};
+  border: 1px solid ${pane_border};
+  margin-right: 2px;
+}
+QTabBar::tab:selected {
+  background: ${tab_selected};
+  color: ${tab_selected_text};
+  border-bottom-color: ${tab_selected};
+  font-weight: 600;
+}
+QTabBar::tab:hover {
+  background: ${control};
+  color: ${control_text};
+}
+QWidget#terminalPane {
+  background: ${pane};
+}
+QFrame#terminalHeader {
+  background: ${toolbar};
+  border: 1px solid ${pane_border};
+  border-bottom: 0;
+}
+QFrame#terminalCommandRow {
+  background: ${control};
+  border-left: 1px solid ${pane_border};
+  border-right: 1px solid ${pane_border};
+  border-bottom: 1px solid ${pane_border};
+}
+QWidget#terminalPane[productReferenceTerminalChrome="connected-document"] QFrame#terminalHeader {
+  padding: 3px 7px;
+  border-bottom: 1px solid ${pane_border};
+}
+QWidget#terminalPane[productReferenceTerminalChrome="connected-document"] QLineEdit#terminalInput {
+  min-height: 22px;
+  max-height: 26px;
+  padding: 2px 7px;
+}
+QLabel#terminalTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLabel#terminalSource {
+  color: ${sidebar_muted};
+}
+QLabel#terminalCommand {
+  color: ${terminal_accent};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QToolButton#terminalAction {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 3px 6px;
+}
+QToolButton#terminalAction:hover {
+  border-color: ${control_hover};
+}
+QToolButton#terminalAction:disabled {
+  color: ${sidebar_muted};
+  background: ${pane};
+}
+QDialog#workflowDialog {
+  background: ${pane};
+  color: ${control_text};
+}
+QDialog#workflowDialog QScrollArea#profileFormScroll,
+QDialog#workflowDialog QWidget#profileFormBody,
+QDialog#workflowDialog QScrollArea#layoutFormScroll,
+QDialog#workflowDialog QWidget#layoutFormBody {
+  background: ${pane};
+  color: ${control_text};
+  border: 0;
+}
+QDialog#workflowDialog QWidget#profileFormBody QLabel,
+QDialog#workflowDialog QWidget#layoutFormBody QLabel {
+  background: transparent;
+  color: ${control_text};
+}
+QDialog#workflowDialog QLabel#workflowTitle {
+  color: ${control_text};
+  font-size: 18px;
+  font-weight: 700;
+}
+QDialog#workflowDialog QLabel#workflowSubtitle {
+  color: ${sidebar_muted};
+}
+QDialog#workflowDialog QLabel#profileValidationError,
+QDialog#workflowDialog QLabel#layoutValidationError {
+  background: ${danger};
+  color: ${primary_text};
+  border-radius: ${radius}px;
+  padding: 7px 9px;
+  font-weight: 600;
+}
+QDialog#workflowDialog QLineEdit,
+QDialog#workflowDialog QComboBox,
+QDialog#workflowDialog QPlainTextEdit {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: ${control_padding};
+}
+QDialog#workflowDialog QTreeWidget#workflowRows {
+  background: ${sidebar};
+  color: ${sidebar_text};
+  border: 1px solid ${pane_border};
+  outline: 0;
+}
+QDialog#workflowDialog QTreeWidget#workflowRows::item {
+  padding: 5px;
+}
+QDialog#workflowDialog QTreeWidget#workflowRows::item:selected {
+  background: ${sidebar_selected};
+  color: ${sidebar_selected_text};
+}
+QDialog#workflowDialog QTextEdit#workflowPreview {
+  background: ${terminal};
+  color: ${terminal_text};
+  border: 1px solid ${pane_border};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QDialog#workflowDialog QToolButton#workflowAction {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 4px 9px;
+  font-weight: 600;
+}
+QDialog#workflowDialog QToolButton#workflowAction:hover {
+  border-color: ${control_hover};
+}
+QWidget#newSessionTab {
+  background: ${pane};
+}
+QWidget#welcomeHome {
+  background: ${pane};
+}
+QFrame#welcomePanel {
+  background: ${pane};
+  border: 0;
+}
+QLabel#welcomeLogo {
+  background: ${control};
+  color: ${terminal_accent};
+  border: 2px solid ${sidebar_muted};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 21px;
+  font-weight: 700;
+  padding: 6px;
+}
+QLabel#welcomeTitle {
+  color: ${control_text};
+  font-size: 30px;
+  font-weight: 600;
+}
+QLabel#welcomeSubtitle, QLabel#workspaceSurfaceSubtitle, QLabel#recentSessionsLabel {
+  color: ${sidebar_muted};
+}
+QLabel#recentSessionsTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLineEdit#homeSearch {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${sidebar_muted};
+  border-radius: 0;
+  padding: 4px 7px;
+}
+QFrame#mobaHomeWelcomeSurface {
+  background: transparent;
+  border: 0;
+}
+QLabel#mobaHomeTitle {
+  color: ${control_text};
+  font-size: 30px;
+  font-weight: 600;
+}
+QLabel#mobaHomeSubtitle, QLabel#mobaRecentSession {
+  color: ${control_text};
+}
+QLabel#mobaHomeFooter {
+  color: ${control_hover};
+}
+QPushButton#mobaHomePrimaryAction {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_hover};
+  border-radius: 0;
+  padding: 7px 20px;
+}
+QPushButton#mobaHomeAction {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+  border-radius: 0;
+  padding: 7px 20px;
+}
+QPushButton#mobaHomePrimaryAction:hover, QPushButton#mobaHomeAction:hover {
+  border-color: ${terminal_accent};
+}
+QLabel#homePromo {
+  color: ${control_hover};
+}
+QFrame#productWorkflowEvidence {
+  background: ${control};
+  border: 1px solid ${pane_border};
+  border-radius: ${radius}px;
+  padding: 6px;
+}
+QFrame#productWorkflowCard {
+  background: ${pane};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 6px;
+}
+QLabel#productWorkflowTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLabel#productWorkflowPrimary {
+  color: ${terminal_accent};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QLabel#productWorkflowSecondary {
+  color: ${sidebar_muted};
+}
+QFrame#productWorkspaceSurface {
+  background: ${control};
+  border: 1px solid ${pane_border};
+  border-radius: ${radius}px;
+  padding: 6px;
+}
+QFrame#productReferenceState {
+  background: ${pane};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 4px;
+}
+QLabel#productReferenceStateItem {
+  color: ${control_text};
+  font-size: 10px;
+  font-weight: 600;
+}
+QFrame#productWorkspacePrimaryPane, QFrame#productWorkspaceSecondaryPane {
+  background: ${terminal};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 6px;
+}
+QFrame#secureCrtCommandWindow {
+  background: ${log};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 6px;
+}
+QFrame#secureCrtSessionStatusStrip {
+  background: ${pane};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 5px;
+}
+QFrame#secureCrtSessionManagerChrome {
+  background: ${pane};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 5px;
+}
+QLabel#secureCrtSessionManagerTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLineEdit#secureCrtSessionFilter {
+  background: ${terminal};
+  border: 1px solid ${primary};
+  color: ${control_text};
+  padding: 3px 5px;
+}
+QToolButton#secureCrtSessionManagerAction {
+  background: ${control};
+  border: 1px solid ${control_border};
+  color: ${control_text};
+  padding: 3px 6px;
+}
+QToolButton#secureCrtSessionManagerAction:hover {
+  border-color: ${primary};
+}
+QToolButton#secureCrtSessionManagerAction[secureCrtSessionRouteActive="true"] {
+  border-color: ${primary};
+  background: ${control};
+}
+QLabel#secureCrtSessionStatusTitle {
+  color: ${sidebar_muted};
+  font-weight: 700;
+}
+QLabel#secureCrtSessionStatusCell {
+  background: ${terminal};
+  border: 1px solid ${control_border};
+  color: ${control_text};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  padding: 4px 7px;
+}
+QFrame#remminaViewerControls {
+  background: ${toolbar};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 5px;
+}
+QToolButton#remminaViewerControl {
+  background: ${control};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  color: ${control_text};
+  padding: 4px 8px;
+  font-weight: 600;
+}
+QToolButton#remminaViewerControl:hover {
+  border-color: ${primary};
+}
+QToolButton#remminaViewerControl[remminaProfileViewerRouteActive="true"] {
+  border-color: ${primary};
+  background: ${toolbar};
+}
+QFrame#remminaProfileListChrome {
+  background: ${pane};
+  border: 1px solid ${pane_border};
+  border-radius: ${radius}px;
+  padding: 5px;
+}
+QLineEdit#remminaProfileFilter {
+  background: ${control};
+  border: 1px solid ${control_border};
+  color: ${control_text};
+  padding: 3px 5px;
+}
+QLabel#remminaProfileListTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLabel#remminaProfileListColumn {
+  color: ${sidebar_muted};
+  font-weight: 700;
+}
+QFrame#remminaProfileListRow {
+  background: ${control};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+}
+QFrame#remminaProfileListRow[selectedRow="true"] {
+  background: ${sidebar_selected};
+  border-color: ${primary};
+}
+QLabel#remminaProfileListCell {
+  color: ${control_text};
+}
+QFrame#termiusHeaderChips {
+  background: ${toolbar};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 5px;
+}
+QFrame#termiusHostsChrome {
+  background: ${pane};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 5px;
+}
+QLabel#termiusHostsTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLineEdit#termiusHostSearch {
+  background: ${terminal};
+  border: 1px solid ${primary};
+  border-radius: ${radius}px;
+  color: ${control_text};
+  padding: 3px 5px;
+}
+QToolButton#termiusHostsAction {
+  background: ${control};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  color: ${control_text};
+  padding: 3px;
+}
+QToolButton#termiusHostsAction:hover {
+  border-color: ${control_hover};
+}
+QFrame#termiusHostIdentityStrip {
+  background: ${pane};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 5px;
+}
+QLabel#termiusHeaderChip {
+  background: ${control};
+  border: 1px solid ${control_border};
+  border-radius: 12px;
+  color: ${terminal_accent};
+  font-weight: 700;
+  padding: 5px 11px;
+}
+QLabel#termiusHostIdentityTitle {
+  color: ${sidebar_muted};
+  font-weight: 700;
+}
+QLabel#termiusHostIdentityCell {
+  background: ${terminal};
+  border: 1px solid ${control_border};
+  color: ${control_text};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  padding: 4px 7px;
+}
+QFrame#mRemoteNgDocumentControls {
+  background: ${control};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 0px;
+}
+QLabel#mRemoteNgDocumentTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QToolButton#mRemoteNgDocumentControl {
+  background: ${toolbar};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  color: ${control_text};
+  padding: 4px 8px;
+}
+QToolButton#mRemoteNgDocumentControl:hover {
+  border-color: ${primary};
+}
+QToolButton#mRemoteNgDocumentControl[mRemoteNgConnectionRouteActive="true"] {
+  border-color: ${primary};
+  background: ${control};
+}
+QLineEdit#mRemoteNgDocumentFilter {
+  background: ${window};
+  border: 1px solid ${control_border};
+  color: ${control_text};
+  padding: 4px 8px;
+}
+QFrame#mRemoteNgPropertyGrid {
+  background: ${log};
+  border: 1px solid ${control_border};
+  border-radius: ${radius}px;
+  padding: 5px;
+}
+QLabel#mRemoteNgPropertyGridTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLabel#mRemoteNgPropertyGridScope {
+  color: ${status};
+  font-weight: 700;
+}
+QLabel#mRemoteNgPropertyGridColumn {
+  background: ${toolbar};
+  border: 1px solid ${control_border};
+  color: ${control_text};
+  font-weight: 700;
+  padding: 3px 6px;
+}
+QFrame#mRemoteNgPropertyGridRow {
+  background: ${window};
+  border: 1px solid ${control_border};
+}
+QFrame#mRemoteNgPropertyGridRow[inherited="true"] {
+  background: ${log};
+}
+QLabel#mRemoteNgPropertyGridCell {
+  color: ${log_text};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  padding: 3px 6px;
+}
+QLabel#secureCrtCommandTitle, QLabel#secureCrtCommandTarget, QLabel#secureCrtCommandSend {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLabel#secureCrtCommandHelper, QLabel#secureCrtCommandStatus {
+  color: ${sidebar_muted};
+}
+QLabel#secureCrtCommandInput {
+  background: ${terminal};
+  border: 1px solid ${primary};
+  color: ${terminal_accent};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  padding: 4px 8px;
+}
+QLabel#productWorkspaceTitle, QLabel#productWorkspacePaneTitle {
+  color: ${control_text};
+  font-weight: 700;
+}
+QLabel#productWorkspaceState, QLabel#productWorkspaceLead {
+  color: ${terminal_accent};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QLabel#productWorkspaceLine {
+  color: ${terminal_text};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QWidget#mobaConnectedSession, QWidget#mobaTerminalArea {
+  background: ${pane};
+}
+QStackedWidget#mobaLeftStack {
+  background: ${sidebar};
+  border: 0;
+}
+QFrame#mobaSftpBrowser, QFrame#mobaConnectedLeftDock {
+  background: ${sidebar};
+  border-right: 1px solid ${pane_border};
+}
+QFrame#mobaSftpToolbar {
+  background: ${control};
+  border: 1px solid ${pane_border};
+}
+QToolButton#mobaSftpAction {
+  background: transparent;
+  color: ${control_text};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 2px;
+}
+QToolButton#mobaSftpAction:hover {
+  border-color: ${terminal_accent};
+  background: ${pane};
+}
+QToolButton#mobaSftpTransferMenu {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+  border-radius: 2px;
+  padding: 2px 5px;
+  min-height: 22px;
+  max-height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+}
+QToolButton#mobaSftpTransferMenu:hover,
+QToolButton#mobaSftpTransferMenu::menu-button:hover {
+  background: ${control_hover};
+  color: ${primary_text};
+}
+QMenu#mobaSftpTransferMenuPopup {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${control_border};
+}
+QFrame#mobaSftpToolbarSeparator {
+  color: ${pane_border};
+  background: transparent;
+}
+QLineEdit#mobaSftpPath {
+  background: ${control};
+  color: ${control_text};
+  border: 1px solid ${pane_border};
+  border-radius: 0;
+  padding: 3px 6px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QTreeWidget#mobaSftpFileTable {
+  background: ${sidebar};
+  color: ${sidebar_text};
+  border: 1px solid ${pane_border};
+  outline: 0;
+  font-size: 11px;
+}
+QTreeWidget#mobaSftpFileTable::item {
+  padding: 2px 4px;
+}
+QTreeWidget#mobaSftpFileTable::item:selected {
+  background: ${sidebar_selected};
+  color: ${sidebar_selected_text};
+}
+QFrame#mobaRemoteMonitoring {
+  background: ${window};
+  border-top: 1px solid ${sidebar_muted};
+}
+QFrame#mobaMonitoringControls {
+  background: transparent;
+}
+QToolButton#mobaMonitoringControl {
+  background: transparent;
+  border: 1px solid transparent;
+  color: ${control_text};
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 4px;
+}
+QToolButton#mobaMonitoringControl:checked {
+  border-color: ${terminal_accent};
+}
+QToolButton#mobaMonitoringControl:hover {
+  background: ${control};
+  border-color: ${control_hover};
+}
+QLabel#mobaMonitoringMetric, QCheckBox#mobaFollowTerminalFolder {
+  color: ${control_text};
+  font-size: 11px;
+}
+QFrame#mobaSshBanner {
+  background: ${terminal};
+  border: 1px solid ${terminal_accent};
+  margin: 0;
+}
+QLabel#mobaSshBannerLine, QLabel#mobaSshBannerTargetLine, QLabel#mobaSshBannerCapability {
+  color: ${terminal_text};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+QLabel#mobaSshBannerCapability[capabilityStatus="ok"] {
+  color: ${control_text};
+}
+QLabel#mobaSshBannerCapability[capabilityStatus="disabled"] {
+  color: ${status};
+}
+QLabel#mobaSshBannerFooter {
+  color: ${control_text};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+QLabel#mobaSshBannerTitle {
+  color: ${status};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 14px;
+  font-weight: 700;
+}
+QLabel#mobaSshBannerSubtitle {
+  color: ${status};
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}
+QFrame#mobaRightUtilityRail {
+  background: ${pane};
+  border-left: 1px solid ${toolbar_border};
+}
+QToolButton#mobaRightUtilityAction {
+  background: transparent;
+  color: ${control_hover};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 3px;
+}
+QToolButton#mobaRightUtilityAction:hover {
+  background: ${control};
+  border-color: ${control_hover};
+}
+QFrame#mobaSessionEdgeControls {
+  background: transparent;
+  border: 0;
+}
+QToolButton#mobaSessionEdgeAction {
+  background: transparent;
+  color: ${control_hover};
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 2px;
+}
+QToolButton#mobaSessionEdgeAction:hover {
+  background: ${control};
+  border-color: ${control_hover};
+}
+QFrame#mobaTelemetryBar {
+  background: ${toolbar};
+  border-top: 1px solid ${pane_border};
+}
+QLabel#mobaTelemetryItem {
+  color: ${control_text};
+  font-size: 11px;
+}
+QLabel#mobaTelemetryIcon {
+  color: ${terminal_accent};
+  font-weight: 700;
+  font-size: 11px;
+  padding-left: 2px;
+}
+QLabel#paneStatus {
+  color: ${status};
+  font-weight: 600;
+  padding: 2px 7px;
+  border: 1px solid ${status};
+  border-radius: ${radius}px;
+}
+QLabel#paneStatus[state="running"] {
+  color: ${primary_text};
+  background: ${primary};
+  border-color: ${primary};
+}
+QLabel#paneStatus[state="starting"], QLabel#paneStatus[state="stopping"] {
+  color: ${terminal_accent};
+  border-color: ${terminal_accent};
+}
+QLabel#paneStatus[state="error"], QLabel#paneStatus[state="blocked"] {
+  color: ${danger_text};
+  border-color: ${danger};
+}
+QTextEdit#terminalOutput, QPlainTextEdit {
+  background: ${terminal};
+  color: ${terminal_text};
+  selection-background-color: ${terminal_text};
+  selection-color: ${terminal};
+  border: 1px solid ${pane_border};
+  border-top: 0;
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QLineEdit#terminalInput {
+  background: ${terminal};
+  color: ${terminal_text};
+  border-color: ${primary};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QTextEdit#activityLog {
+  background: ${log};
+  color: ${log_text};
+  border: 1px solid ${pane_border};
+  font-family: "Cascadia Mono", Consolas, monospace;
+}
+QSplitter::handle {
+  background: ${toolbar_border};
+}
+QSplitter::handle:hover {
+  background: ${primary};
+}
+QStatusBar {
+  background: ${toolbar};
+  color: ${sidebar_muted};
+  border-top: 1px solid ${toolbar_border};
+}
+QStatusBar QLabel#productStatusNotice {
+  color: ${control_text};
+  font-weight: 700;
+  padding: 0 6px;
+}
+QStatusBar QLabel#productStatusMarker {
+  color: ${sidebar_muted};
+  border: 1px solid ${toolbar_border};
+  padding: 0 4px;
+}
+QFrame#mobaBottomEdgeControls {
+  background: transparent;
+  border: 0;
+}
+QToolButton#mobaBottomEdgeControl {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 1px;
+}
+QToolButton#mobaBottomEdgeControl:hover {
+  background: ${control};
+  border-color: ${control_hover};
+}
+QStatusBar QLabel#productStatusSegment {
+  color: ${sidebar_muted};
+  border-left: 1px solid ${toolbar_border};
+  padding: 0 8px;
+}
+/* Keep selection semantics consistent across native, MobaXterm and the
+   product-reference views.  View-specific geometry may still differ, but a
+   selected row always uses the same semantic palette for that preset. */
+QAbstractItemView::item:selected,
+QTreeWidget::item:selected,
+QListWidget::item:selected,
+QListView::item:selected,
+QTableView::item:selected,
+QTableWidget::item:selected {
+  background: ${sidebar_selected};
+  color: ${sidebar_selected_text};
+}
+QLineEdit {
+  selection-background-color: ${sidebar_selected};
+  selection-color: ${sidebar_selected_text};
+}
+QLabel {
+  color: ${control_text};
+}

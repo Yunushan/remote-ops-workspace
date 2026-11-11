@@ -977,10 +977,7 @@ def test_gui_low_level_platform_dialog_and_cursor_edges(
         host="background.example.invalid",
     )
     dialog = window.create_transfer_queue_dialog(profile)
-    background_process = _closure_value(
-        type(dialog).__init__,
-        "_background_process",
-    )
+    background_process = dialog._process_factory
     monkeypatch.setattr(gui.sys, "platform", "non-windows")
     generic_process = background_process(window)
     assert generic_process.parent() is window
@@ -1795,10 +1792,7 @@ def test_remaining_terminal_pipeline_branch_outcomes(
         host="background-fallback.example.invalid",
     )
     dialog = window.create_transfer_queue_dialog(profile)
-    background_process = _closure_value(
-        type(dialog).__init__,
-        "_background_process",
-    )
+    background_process = dialog._process_factory
     with monkeypatch.context() as scoped:
         scoped.setattr(gui.sys, "platform", "win32")
         scoped.setattr(

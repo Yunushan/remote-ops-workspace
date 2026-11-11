@@ -15,6 +15,7 @@ MAX_NODES = 20000
 MAX_DEPTH = 32
 ATTRIBUTES = (
     '*.sh text eol=lf', '*.ps1 text eol=crlf', '*.py text eol=lf',
+    '*.qss text eol=lf',
     '*.md text eol=lf', '*.yml text eol=lf', '*.yaml text eol=lf',
     '*.json text eol=lf', 'requirements-release.txt text eol=lf',
     'requirements-locks/*.txt text eol=lf',

@@ -1081,6 +1081,10 @@ def test_ci_pyqt6_minimum_lock_requires_reviewed_regular_file(tmp_path, monkeypa
     assert checker.check_pyqt6_minimum_lock(candidate) == [
         "ci PyQt6 minimum runtime lock must be a regular file"
     ]
+    reviewed = checker.PYQT6_MINIMUM_LOCK.read_text(encoding="utf-8").encode("utf-8")
+    candidate.write_bytes(reviewed.replace(b"\n", b"\r\n"))
+    assert checker.check_pyqt6_minimum_lock(candidate) == []
+
     candidate.write_text("unreviewed\n", encoding="utf-8")
     assert checker.check_pyqt6_minimum_lock(candidate) == [
         "ci PyQt6 minimum runtime lock bytes differ from the reviewed input"

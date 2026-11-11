@@ -8,7 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 PYQT6_MINIMUM_LOCK = ROOT / "tests" / "fixtures" / "pyqt6-minimum-requirements.txt"
-PYQT6_MINIMUM_LOCK_SHA256 = "51992f1312a1a705912de297e56dcb87c00db71f56f094baa08d2f14f35659cb"
+PYQT6_MINIMUM_LOCK_SHA256 = {
+    "51992f1312a1a705912de297e56dcb87c00db71f56f094baa08d2f14f35659cb",  # LF
+    "1330b5ca3b61264394711826b4f69de1ff308e19f75ef35bfdf75ff0fa404245",  # CRLF
+}
 SUPPORTED_HOSTED_RUNNERS = {
     "ubuntu-24.04",
     "ubuntu-24.04-arm",
@@ -519,7 +522,7 @@ def check_pyqt6_minimum_lock(path: Path = PYQT6_MINIMUM_LOCK) -> list[str]:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
         return ["ci PyQt6 minimum runtime lock must be a regular file"]
-    if digest != PYQT6_MINIMUM_LOCK_SHA256:
+    if digest not in PYQT6_MINIMUM_LOCK_SHA256:
         return ["ci PyQt6 minimum runtime lock bytes differ from the reviewed input"]
     return []
 

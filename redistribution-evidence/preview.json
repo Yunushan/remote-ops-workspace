@@ -5,7 +5,7 @@
   "materials": {
     "third_party_notices": {
       "file": "THIRD_PARTY_NOTICES.md",
-      "sha256": "96d419531b248483982137d22ed4de987d746f0b2762c6464c94487bb39bbdfc"
+      "sha256": "e5c085fc9fda3a0fc3388d9a5f4be1fcbb921d744b43be039107521e8f3d3781"
     },
     "pyqt6_gplv3": {
       "file": "PyQt6-GPL-3.0.txt",

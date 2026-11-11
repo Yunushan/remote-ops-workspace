@@ -91,9 +91,6 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         "python scripts/check_real_gui_render.py --out-dir artifacts/python315-gui": (
             "Python 3.15 all-preset real application GUI render"
         ),
-        "QT_QPA_PLATFORM: ${{ matrix.qt_platform }}": (
-            "host-native Python 3.15 full GUI renderer platform"
-        ),
         (
             "          - os: macos-15-intel\n"
             "            # Hosted macOS is not guaranteed to expose a logged-in WindowServer.\n"
@@ -144,6 +141,9 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
             errors.append(f"ci workflow missing {runner} Python 3.15 ARM64 host row")
     python315_block = workflow_job_block(workflow, "python315-optional-dependencies")
     required_python315_block_snippets = {
+        "QT_QPA_PLATFORM: ${{ matrix.qt_platform }}": (
+            "host-native Python 3.15 full GUI renderer platform"
+        ),
         'python -m pip install -e ".[desktop,security,package,dev]"': (
             "Python 3.15 complete optional-extra environment"
         ),
@@ -176,9 +176,9 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
     readiness_block = workflow_job_block(workflow, "python315-readiness")
     readiness_patterns = {
         "stable Python 3.15 readiness name": r"^    name: Python 3\.15 readiness\s*$",
-        "both Python 3.15 upstream jobs": (
+        "Python 3.15 and PyQt6 upstream jobs": (
             r"^    needs:\s*\[\s*test\s*,\s*python315-optional-dependencies\s*,"
-            r"\s*apple-27-readiness\s*\]\s*$"
+            r"\s*apple-27-readiness\s*,\s*pyqt6-minimum-runtime\s*\]\s*$"
         ),
         "fail-closed always evaluation": r"^    if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$",
         "normal matrix success assertion": (
@@ -193,6 +193,13 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         ),
         "Apple 27 success assertion": (
             r'^          test "\$APPLE_27_RESULT" = "success"\s*$'
+        ),
+        "PyQt6 minimum runtime result": (
+            r"^      PYQT6_MINIMUM_RESULT:\s*\$\{\{\s*"
+            r"needs\.pyqt6-minimum-runtime\.result\s*\}\}\s*$"
+        ),
+        "PyQt6 minimum runtime success assertion": (
+            r'^          test "\$PYQT6_MINIMUM_RESULT" = "success"\s*$'
         ),
     }
     if not readiness_block:

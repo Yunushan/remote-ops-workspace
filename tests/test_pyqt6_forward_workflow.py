@@ -50,13 +50,14 @@ def test_pyqt6_forward_workflow_requires_real_runtime_and_gui_evidence() -> None
             '"PyQt6>=6.11.0,<6.12.0"',
             "exact PyQt6 6.12 dependency range",
         ),
-        "--only-binary PyQt6,PyQt6-Qt6,PyQt6-sip": (
-            "--only-binary PyQt6",
+        "--only-binary=:all:": (
+            "--only-binary=PyQt6",
             "binary PyQt6 runtime wheels",
         ),
     }
 
     for original, (replacement, label) in mutations.items():
+        assert original in source, label
         errors = checker.check_workflow(source.replace(original, replacement))
         assert any(label in error for error in errors)
 

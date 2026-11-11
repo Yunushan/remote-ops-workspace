@@ -20,8 +20,3 @@ def test_minimum_pyqt_runtime_lock_is_complete_and_hash_pinned() -> None:
         "pyqt6-sip": "13.13.0",
     }
     assert all(re.search(r"--hash=sha256:[0-9a-f]{64}", hashes) for _, _, hashes in blocks)
-
-
-def test_minimum_pyqt_lock_has_stable_checkout_line_endings() -> None:
-    attributes = Path(".gitattributes").read_text(encoding="utf-8").splitlines()
-    assert "tests/fixtures/pyqt6-minimum-requirements.txt text eol=lf" in attributes

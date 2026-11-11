@@ -447,7 +447,7 @@ def test_ssh_control_socket_reuse_is_private_and_background_clients_cannot_creat
 
     control_path = ssh_control_path_for_profile(profile)
     assert control_path
-    assert Path(control_path).parent == tmp_path / "remote-ops-workspace" / "ssh-control"
+    assert Path(control_path).parent == tmp_path.resolve() / f"row-ssh-{tmp_path.stat().st_uid}"
 
     terminal_command = ssh_command_with_control_path(
         ["ssh", "-o", "ControlMaster=no", "operator@192.0.2.10"],

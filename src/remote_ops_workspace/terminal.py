@@ -7,6 +7,7 @@ import os
 import platform
 import re
 import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import command_safety as safe
+from .file_safety import PRIVATE_DIR_MODE
 from .file_transfer import build_sftp_interactive_plan
 from .launcher import build_launch_plan
 from .models import Profile
@@ -581,6 +583,45 @@ def harden_terminal_pane_plan_for_native_windows(plan: TerminalPanePlan) -> Term
     return replace(plan, command=native_command, notes=notes)
 
 
+def _private_ssh_control_path(socket_name: str) -> Path | None:
+    get_uid = getattr(os, "geteuid", None)
+    if get_uid is None:
+        return None
+    uid = get_uid()
+    try:
+        root = Path(tempfile.gettempdir()).resolve(strict=True)
+        # OpenSSH expands tokens and parses configuration quoting in ControlPath.
+        if any(char.isspace() or char in "%$\\\"'" for char in str(root)):
+            return None
+        for ancestor in (root, *root.parents):
+            info = ancestor.lstat()
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid not in {0, uid}:
+                return None
+            # In a sticky directory such as /tmp, another user cannot replace
+            # an entry owned by the current user or root.
+            if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH) and not info.st_mode & stat.S_ISVTX:
+                return None
+        directory = root / f"row-ssh-{uid}"
+        directory.mkdir(mode=PRIVATE_DIR_MODE, exist_ok=True)
+        info = directory.lstat()
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != uid
+            or stat.S_IMODE(info.st_mode) != PRIVATE_DIR_MODE
+        ):
+            return None
+        path = directory / socket_name
+        try:
+            existing = path.lstat()
+        except FileNotFoundError:
+            return path
+        if stat.S_ISSOCK(existing.st_mode) and existing.st_uid == uid:
+            return path
+    except (OSError, RuntimeError):
+        pass
+    return None
+
+
 def ssh_control_path_for_profile(profile: Profile) -> str:
     """Return a private, stable OpenSSH control-socket path for ``profile``.
 
@@ -634,13 +675,8 @@ def ssh_control_path_for_profile(profile: Profile) -> str:
         )
     )
     digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:24]
-    directory = Path(tempfile.gettempdir()) / "remote-ops-workspace" / "ssh-control"
-    try:
-        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        directory.chmod(0o700)
-    except OSError:
-        return ""
-    return str(directory / f"cm-{digest}")
+    path = _private_ssh_control_path(f"cm-{digest}")
+    return str(path) if path is not None else ""
 
 
 def ssh_command_with_control_path(

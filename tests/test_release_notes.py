@@ -34,6 +34,7 @@ def test_unsigned_preview_notes_report_boundaries(tmp_path: Path) -> None:
     assert "selected signed promotion registry" not in notes
     assert "remote-ops-workspace-v1.0.27-windows.zip" in notes
     assert "Native jobs: windows-native, macos-native, linux-native." in notes
+    assert "Native macOS DMG and PKG packages require macOS 14.4 or later." in notes
     assert "Protected platform evidence accepted for this source is 0/4" in notes
     assert "Strict MobaXterm parity evidence accepted for this source is 0/8" in notes
     assert "must not be treated as trusted production artifacts" in notes

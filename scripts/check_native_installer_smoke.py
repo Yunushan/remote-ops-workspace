@@ -199,6 +199,8 @@ def check_runtime_resource_script(platform: str, script: Path, text: str) -> lis
             "verify_app_runtime_resources": "installed app resource-probe helper",
             "platforms --json": "installed app platform catalog invocation",
             "Contents/MacOS": "installed app executable invocation",
+            "Print :LSMinimumSystemVersion": "installed app minimum macOS version inspection",
+            '[[ "$minimum" != "14.4.0" ]]': "macOS 14.4 minimum version assertion",
             "release_architectures": "release architecture resource assertion",
             "windows_legacy_targets": "legacy Windows resource assertion",
             "native installer smoke runtime resources:": "resource-probe evidence line",

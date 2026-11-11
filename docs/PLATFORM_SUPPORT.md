@@ -529,6 +529,9 @@ Target support:
 - macOS Intel.
 - macOS Apple Silicon.
 
+Native DMG and PKG builds that bundle Qt 6.12 require macOS 14.4 or later
+on both architectures. See [Qt 6.12 supported macOS configurations](https://doc.qt.io/qt-6.12/macos.html).
+
 Recommended external clients:
 
 - OpenSSH.

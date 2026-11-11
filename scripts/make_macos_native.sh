@@ -48,6 +48,7 @@ PY_DIST="$BUILD_DIR/pyinstaller-dist"
 PY_WORK="$BUILD_DIR/pyinstaller-work"
 LAUNCHER="$BUILD_DIR/remote_ops_workspace_gui_launcher.py"
 APP_NAME="Remote Ops Workspace"
+MACOS_MINIMUM_VERSION="14.4.0"
 APP_PATH="$PY_DIST/$APP_NAME.app"
 
 sign_macos_artifact() {
@@ -118,6 +119,11 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
+APP_INFO="$APP_PATH/Contents/Info.plist"
+if ! /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion $MACOS_MINIMUM_VERSION" "$APP_INFO" 2>/dev/null; then
+  /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string $MACOS_MINIMUM_VERSION" "$APP_INFO"
+fi
+
 LICENSE_DIR="$APP_PATH/Contents/Resources/licenses"
 mkdir -p "$LICENSE_DIR"
 cp "$ROOT/LICENSE" "$LICENSE_DIR/LICENSE"
@@ -141,6 +147,7 @@ cat > "$DMG_STAGE/RELEASE_TARGET.md" <<EOF
 Package: remote-ops-workspace
 Version: v$VERSION
 Target: macOS $ARTIFACT_ARCH
+Minimum macOS version: $MACOS_MINIMUM_VERSION
 
 This native package installs a PyInstaller app bundle for the PyQt6 desktop UI.
 The bundled GUI uses PyQt6 under GPLv3 and Qt under LGPLv3. Full license texts,

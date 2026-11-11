@@ -92,6 +92,13 @@ verify_app_runtime_resources() {
   local label="$2"
   local public_path="$3" phase="$4"
   local executable="$app_path/Contents/MacOS/$APP_EXECUTABLE_NAME"
+  local minimum
+  minimum="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app_path/Contents/Info.plist")" || return 1
+  if [[ "$minimum" != "14.4.0" ]]; then
+    echo "$label declares macOS $minimum as the minimum. Expected 14.4.0." >&2
+    return 1
+  fi
+  echo "native installer smoke macOS minimum: $label $minimum"
   local probe_name
   local probe_file
   probe_name="$(printf '%s' "$label" | tr -c '[:alnum:]' '-')"

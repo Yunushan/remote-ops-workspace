@@ -59,6 +59,7 @@ from .terminal import (
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     ssh_command_with_control_path,
+    ssh_connection_key,
     ssh_control_path_for_profile,
 )
 from .terminal_emulation import TERMINAL_EMULATOR_BACKEND, AnsiTerminalTranscript, AnsiTextStyle
@@ -204,6 +205,7 @@ class TerminalPane(QWidget):
         plan = harden_terminal_pane_plan_for_native_windows(plan)
         self.profile = profile
         self.ssh_control_path = ""
+        self.ssh_connection_key = ""
         if profile is not None:
             control_path = ssh_control_path_for_profile(profile)
             shared_command = ssh_command_with_control_path(
@@ -214,6 +216,7 @@ class TerminalPane(QWidget):
             if shared_command != plan.command:
                 plan = replace(plan, command=shared_command)
                 self.ssh_control_path = control_path
+                self.ssh_connection_key = ssh_connection_key(profile)
         self.plan = plan
         self.setProperty("sshControlPath", self.ssh_control_path)
         self.process, self._terminal_backend_warning = _terminal_process_backend(

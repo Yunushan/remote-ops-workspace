@@ -12,6 +12,7 @@ from .file_transfer import SftpBatchPlan, build_sftp_interactive_plan, build_sft
 from .launcher import LaunchPlan, build_launch_plan
 from .moba_text import MobaTextEditorTabPlan, build_moba_text_editor_tab_plan
 from .models import Profile
+from .terminal import ssh_connection_key
 
 REMOTE_MONITORING_SCRIPT = (
     "LC_ALL=C; export LC_ALL; "
@@ -621,6 +622,7 @@ class MobaConnectedSessionState:
     terminal_transcript: tuple[MobaTerminalTranscriptLine, ...]
     state_source: str = "live"
     connection_phase: str = "connecting"
+    ssh_connection_key: str = field(default="", repr=False)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -901,6 +903,7 @@ def build_moba_connected_session_state(
         terminal_transcript=transcript,
         state_source=state_source,
         connection_phase=connection_phase,
+        ssh_connection_key=ssh_connection_key(profile),
     )
 
 

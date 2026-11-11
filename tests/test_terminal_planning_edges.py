@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import os
+import stat
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, call
 
 import pytest
 
 import remote_ops_workspace.terminal as terminal
 from remote_ops_workspace.launcher import LaunchPlan
-from remote_ops_workspace.models import Profile
+from remote_ops_workspace.models import Profile, Tunnel
 from remote_ops_workspace.terminal import (
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     split_shell_plans,
     ssh_command_with_control_path,
+    ssh_connection_key,
     ssh_control_path_for_profile,
     terminal_plan_for_profile,
 )
@@ -223,11 +229,9 @@ def test_windows_mux_cleanup_preserves_prefixed_flags_and_value_operands(
 
 
 def test_control_path_contract_covers_disabled_explicit_success_and_io_failure(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(terminal, "_is_native_windows", lambda: False)
-    monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: str(tmp_path))
 
     assert ssh_control_path_for_profile(Profile(name="web", protocol="https")) == ""
     assert (
@@ -254,19 +258,144 @@ def test_control_path_contract_covers_disabled_explicit_success_and_io_failure(
     )
 
     profile = Profile(name="edge", protocol="ssh", host="target.example", username="operator")
-    control_path = ssh_control_path_for_profile(profile)
-    directory = Path(control_path).parent
-    assert directory == tmp_path / "remote-ops-workspace" / "ssh-control"
-    assert directory.exists()
-
-    original_mkdir = Path.mkdir
-
-    def fail_mkdir(_path: Path, *args: object, **kwargs: object) -> None:
-        raise OSError("read-only")
-
-    monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+    monkeypatch.delattr(terminal.os, "geteuid", raising=False)
     assert ssh_control_path_for_profile(profile) == ""
-    monkeypatch.setattr(Path, "mkdir", original_mkdir)
+    monkeypatch.setattr(terminal.os, "geteuid", lambda: 1000, raising=False)
+
+    root, directory, endpoint = (MagicMock(spec=Path) for _ in range(3))
+    monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: "/tmp")
+    monkeypatch.setattr(terminal, "Path", lambda _: root)
+    root.resolve.return_value = root
+    root.__str__.return_value = "/tmp"
+    root.parents = ()
+    root.__truediv__.return_value = directory
+    directory.__truediv__.return_value = endpoint
+    endpoint.__str__.return_value = "/tmp/row-ssh-1000/cm-test"
+    root.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFDIR | 0o1777, st_uid=0)
+    directory.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=1000)
+    endpoint.lstat.side_effect = FileNotFoundError
+    assert ssh_control_path_for_profile(profile) == str(endpoint)
+    root.__truediv__.assert_called_with("row-ssh-1000")
+    directory.mkdir.assert_called_with(mode=0o700, exist_ok=True)
+    endpoint.lstat.side_effect = None
+
+    endpoint.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFSOCK | 0o600, st_uid=1000)
+    assert ssh_control_path_for_profile(profile) == str(endpoint)
+    endpoint.lstat.return_value.st_uid = 1001
+    assert ssh_control_path_for_profile(profile) == ""
+    endpoint.lstat.return_value.st_mode = stat.S_IFREG | 0o600
+    assert ssh_control_path_for_profile(profile) == ""
+
+    directory.lstat.return_value.st_mode = stat.S_IFDIR | 0o777
+    assert ssh_control_path_for_profile(profile) == ""
+    directory.lstat.return_value.st_mode = stat.S_IFDIR | 0o700
+    directory.lstat.return_value.st_uid = 1001
+    assert ssh_control_path_for_profile(profile) == ""
+    directory.lstat.return_value.st_mode = stat.S_IFLNK | 0o700
+    assert ssh_control_path_for_profile(profile) == ""
+    directory.chmod.assert_not_called()
+
+    root.lstat.return_value.st_mode = stat.S_IFDIR | 0o777
+    assert ssh_control_path_for_profile(profile) == ""
+    root.lstat.return_value.st_mode = stat.S_IFDIR | 0o755
+    root.lstat.return_value.st_uid = 1001
+    assert ssh_control_path_for_profile(profile) == ""
+    root.lstat.return_value.st_mode = stat.S_IFREG | 0o755
+    assert ssh_control_path_for_profile(profile) == ""
+    root.__str__.return_value = "/tmp/%h"
+    assert ssh_control_path_for_profile(profile) == ""
+    root.__str__.return_value = "/tmp"
+    root.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFDIR | 0o1777, st_uid=0)
+    directory.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=1000)
+    endpoint.lstat.side_effect = FileNotFoundError
+
+    # OpenSSH has to fit the terminator and its temporary suffix too.
+    path_factory = MagicMock(return_value=root)
+    monkeypatch.setattr(terminal, "Path", path_factory)
+    monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: "/configured")
+    endpoint.__str__.return_value = "/" + "a" * 85
+    assert ssh_control_path_for_profile(profile) == str(endpoint)
+    assert path_factory.call_args_list == [call("/configured")]
+
+    too_long = MagicMock(spec=Path)
+    too_long.__str__.return_value = "/" + "a" * 86
+    path_factory.reset_mock()
+    directory.__truediv__.side_effect = [too_long, endpoint]
+    assert ssh_control_path_for_profile(profile) == str(endpoint)
+    assert path_factory.call_args_list == [call("/configured"), call("/tmp")]
+
+    directory.mkdir.reset_mock()
+    directory.__truediv__.side_effect = [too_long, too_long]
+    assert ssh_control_path_for_profile(profile) == ""
+    directory.mkdir.assert_not_called()
+
+    directory.__truediv__.side_effect = None
+    root.lstat.side_effect = OSError("read-only")
+    assert ssh_control_path_for_profile(profile) == ""
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX socket directory ownership")
+def test_control_path_refuses_unsafe_existing_directory_or_link(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(terminal, "_SSH_CONTROL_PATH_MAX_BYTES", 4096)
+    monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: str(tmp_path))
+    profile = Profile(name="edge", protocol="ssh", host="target.example")
+    directory = tmp_path / f"row-ssh-{os.geteuid()}"
+    directory.mkdir()
+    directory.chmod(0o777)
+    assert ssh_control_path_for_profile(profile) == ""
+    assert stat.S_IMODE(directory.stat().st_mode) == 0o777
+
+    directory.rmdir()
+    target = tmp_path / "other"
+    target.mkdir(mode=0o700)
+    directory.symlink_to(target, target_is_directory=True)
+    assert ssh_control_path_for_profile(profile) == ""
+    assert directory.is_symlink()
+    assert list(target.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX socket directory ownership")
+def test_control_path_refuses_replaceable_ancestors(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(terminal, "_SSH_CONTROL_PATH_MAX_BYTES", 4096)
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o777)
+    child = shared / "user-tmp"
+    child.mkdir(mode=0o700)
+    monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: str(child))
+    profile = Profile(name="edge", protocol="ssh", host="target.example")
+    assert ssh_control_path_for_profile(profile) == ""
+    assert list(child.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX socket directory ownership")
+def test_control_path_refuses_non_socket_at_expected_endpoint(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(terminal, "_SSH_CONTROL_PATH_MAX_BYTES", 4096)
+    monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: str(tmp_path))
+    profile = Profile(name="edge", protocol="ssh", host="target.example")
+    control_path = ssh_control_path_for_profile(profile)
+    assert control_path
+    path = Path(control_path)
+    path.write_text("existing file", encoding="utf-8")
+    assert ssh_control_path_for_profile(profile) == ""
+    assert path.read_text(encoding="utf-8") == "existing file"
+
+
+def test_ssh_connection_key_matches_launch_inputs_not_profile_labels() -> None:
+    profile = Profile(name="edge", protocol="ssh", host="target.example", username="operator")
+    key = ssh_connection_key(profile)
+    assert ssh_connection_key(replace(profile, description="Updated label", port=22)) == key
+    assert ssh_connection_key(replace(profile, options={"moba_monitoring_output": "cpu=2"})) == key
+    for changes in (
+        {"host": "other.example"},
+        {"port": 2222},
+        {"username": "admin"},
+        {"identity_file": "another-key"},
+        {"credential_ref": "another-entry"},
+        {"options": {"proxy_jump": "jump.example"}},
+        {"tunnels": [Tunnel(mode="dynamic", local_port=1080)]},
+    ):
+        assert ssh_connection_key(replace(profile, **changes)) != key
 
 
 def test_control_path_command_handles_empty_unsupported_and_supported_commands(

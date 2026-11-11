@@ -633,6 +633,8 @@ def _private_ssh_control_path(socket_name: str) -> Path | None:
 
 def ssh_connection_key(profile: Profile) -> str:
     """Bind a managed SSH connection to its profile's launch and auth inputs."""
+    # The connected workspace only uses saved monitoring output for display.
+    options = {key: value for key, value in profile.options.items() if key != "moba_monitoring_output"}
     identity = (
         profile.name,
         profile.protocol.lower().strip(),
@@ -641,7 +643,7 @@ def ssh_connection_key(profile: Profile) -> str:
         profile.username,
         profile.identity_file,
         profile.credential_ref,
-        profile.options,
+        options,
         [tunnel.to_dict() for tunnel in profile.tunnels],
     )
     payload = json.dumps(identity, sort_keys=True, separators=(",", ":"))

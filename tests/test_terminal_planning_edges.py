@@ -385,6 +385,7 @@ def test_ssh_connection_key_matches_launch_inputs_not_profile_labels() -> None:
     profile = Profile(name="edge", protocol="ssh", host="target.example", username="operator")
     key = ssh_connection_key(profile)
     assert ssh_connection_key(replace(profile, description="Updated label", port=22)) == key
+    assert ssh_connection_key(replace(profile, options={"moba_monitoring_output": "cpu=2"})) == key
     for changes in (
         {"host": "other.example"},
         {"port": 2222},

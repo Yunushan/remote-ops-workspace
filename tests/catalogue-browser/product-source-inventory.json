@@ -283,8 +283,8 @@
     },
     {
       "path": "src/remote_ops_workspace/terminal.py",
-      "sha256": "2b040df4dd6ee70bdd51264c6ec6bb2b85dceaee04f8251f89f9307de5b2c49a",
-      "size": 28735
+      "sha256": "dffe4a34244cc097627bf3baacbfae4bdbc6082ec56de94c74ca750ddd6f750a",
+      "size": 29119
     },
     {
       "path": "src/remote_ops_workspace/terminal_emulation.py",

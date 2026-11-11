@@ -31,6 +31,9 @@ _WINDOWS_OPENSSH_CONNECTION_SHARING_NOTE = (
     "Windows OpenSSH connection sharing options were ignored because "
     "native Windows does not support the required control socket."
 )
+# macOS sun_path holds 104 bytes including NUL. OpenSSH binds a temporary
+# pathname with a dot and 16 extra characters before linking ControlPath.
+_SSH_CONTROL_PATH_MAX_BYTES = 104 - 1 - 17
 
 
 @dataclass(slots=True)
@@ -590,7 +593,14 @@ def _private_ssh_control_path(socket_name: str) -> Path | None:
         return None
     uid = get_uid()
     try:
-        root = Path(tempfile.gettempdir()).resolve(strict=True)
+        for candidate in (tempfile.gettempdir(), "/tmp"):
+            root = Path(candidate).resolve(strict=True)
+            directory = root / f"row-ssh-{uid}"
+            path = directory / socket_name
+            if len(os.fsencode(str(path))) <= _SSH_CONTROL_PATH_MAX_BYTES:
+                break
+        else:
+            return None
         # OpenSSH expands tokens and parses configuration quoting in ControlPath.
         if any(char.isspace() or char in "%$\\\"'" for char in str(root)):
             return None
@@ -602,7 +612,6 @@ def _private_ssh_control_path(socket_name: str) -> Path | None:
             # an entry owned by the current user or root.
             if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH) and not info.st_mode & stat.S_ISVTX:
                 return None
-        directory = root / f"row-ssh-{uid}"
         directory.mkdir(mode=PRIVATE_DIR_MODE, exist_ok=True)
         info = directory.lstat()
         if (
@@ -611,7 +620,6 @@ def _private_ssh_control_path(socket_name: str) -> Path | None:
             or stat.S_IMODE(info.st_mode) != PRIVATE_DIR_MODE
         ):
             return None
-        path = directory / socket_name
         try:
             existing = path.lstat()
         except FileNotFoundError:

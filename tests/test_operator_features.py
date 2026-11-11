@@ -436,6 +436,8 @@ def test_ssh_control_socket_reuse_is_private_and_background_clients_cannot_creat
     # Windows OpenSSH cannot create the AF_UNIX socket used by ControlPath.
     if terminal_module._is_native_windows():
         return
+    # This test isolates ownership from the runner's temporary pathname length.
+    monkeypatch.setattr(terminal_module, "_SSH_CONTROL_PATH_MAX_BYTES", 4096)
     monkeypatch.setattr(terminal_module.tempfile, "gettempdir", lambda: str(tmp_path))
     profile = Profile(
         name="shared-edge",

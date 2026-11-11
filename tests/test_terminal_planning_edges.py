@@ -5,7 +5,7 @@ import stat
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -305,12 +305,38 @@ def test_control_path_contract_covers_disabled_explicit_success_and_io_failure(
     root.__str__.return_value = "/tmp/%h"
     assert ssh_control_path_for_profile(profile) == ""
     root.__str__.return_value = "/tmp"
+    root.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFDIR | 0o1777, st_uid=0)
+    directory.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=1000)
+    endpoint.lstat.side_effect = FileNotFoundError
+
+    # OpenSSH has to fit the terminator and its temporary suffix too.
+    path_factory = MagicMock(return_value=root)
+    monkeypatch.setattr(terminal, "Path", path_factory)
+    monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: "/configured")
+    endpoint.__str__.return_value = "/" + "a" * 85
+    assert ssh_control_path_for_profile(profile) == str(endpoint)
+    assert path_factory.call_args_list == [call("/configured")]
+
+    too_long = MagicMock(spec=Path)
+    too_long.__str__.return_value = "/" + "a" * 86
+    path_factory.reset_mock()
+    directory.__truediv__.side_effect = [too_long, endpoint]
+    assert ssh_control_path_for_profile(profile) == str(endpoint)
+    assert path_factory.call_args_list == [call("/configured"), call("/tmp")]
+
+    directory.mkdir.reset_mock()
+    directory.__truediv__.side_effect = [too_long, too_long]
+    assert ssh_control_path_for_profile(profile) == ""
+    directory.mkdir.assert_not_called()
+
+    directory.__truediv__.side_effect = None
     root.lstat.side_effect = OSError("read-only")
     assert ssh_control_path_for_profile(profile) == ""
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX socket directory ownership")
 def test_control_path_refuses_unsafe_existing_directory_or_link(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(terminal, "_SSH_CONTROL_PATH_MAX_BYTES", 4096)
     monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: str(tmp_path))
     profile = Profile(name="edge", protocol="ssh", host="target.example")
     directory = tmp_path / f"row-ssh-{os.geteuid()}"
@@ -330,6 +356,7 @@ def test_control_path_refuses_unsafe_existing_directory_or_link(tmp_path, monkey
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX socket directory ownership")
 def test_control_path_refuses_replaceable_ancestors(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(terminal, "_SSH_CONTROL_PATH_MAX_BYTES", 4096)
     shared = tmp_path / "shared"
     shared.mkdir()
     shared.chmod(0o777)
@@ -343,6 +370,7 @@ def test_control_path_refuses_replaceable_ancestors(tmp_path, monkeypatch) -> No
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX socket directory ownership")
 def test_control_path_refuses_non_socket_at_expected_endpoint(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(terminal, "_SSH_CONTROL_PATH_MAX_BYTES", 4096)
     monkeypatch.setattr(terminal.tempfile, "gettempdir", lambda: str(tmp_path))
     profile = Profile(name="edge", protocol="ssh", host="target.example")
     control_path = ssh_control_path_for_profile(profile)

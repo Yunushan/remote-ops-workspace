@@ -880,12 +880,12 @@ class TerminalPane(QWidget):
             ]
             if mode == 1000 or (mode == 1002 and not self._terminal_mouse_buttons):
                 return False
-            code = (
+            motion_button_code = (
                 _SGR_MOUSE_BUTTON_CODES[self._terminal_mouse_buttons[-1]]
                 if self._terminal_mouse_buttons
                 else 3
             )
-            codes = [32 + code]
+            codes = [32 + motion_button_code]
         else:
             button = event.button()
             code = _SGR_MOUSE_BUTTON_CODES.get(button)

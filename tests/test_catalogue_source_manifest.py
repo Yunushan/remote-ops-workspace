@@ -1,4 +1,5 @@
 """Detect source-pin drift before disposable browser hosts start preparation."""
+import ast
 import hashlib
 import json
 import re
@@ -6,6 +7,17 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOGUE = ROOT / "tests" / "catalogue-browser"
+
+
+def test_catalogue_preflight_allows_the_exact_repository_attributes():
+    source = ast.parse((CATALOGUE / "cft_git_config.py").read_text(encoding="utf-8"))
+    declaration = next(
+        node for node in source.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "ATTRIBUTES" for target in node.targets)
+    )
+    expected = ("\n".join(ast.literal_eval(declaration.value)) + "\n").encode("ascii")
+    assert (ROOT / ".gitattributes").read_bytes() in (expected, expected.replace(b"\n", b"\r\n"))
 
 
 def test_catalogue_manifests_pin_the_current_product_bytes():

@@ -366,7 +366,8 @@ def test_certification_rejects_other_release_and_changed_download(reviewed_relea
     stale = next(row for row in reviewed_release.records if row["article_id"] == "professional-deployment")
     stale["release_tag"] = "v1.0.1"
     stale["release_source"]["release_tag"] = "v1.0.1"
-    stale["release_asset_urls"][0] = stale["release_asset_urls"][0].replace("v1.0.2", "v1.0.1")
+    stale["release_asset_urls"][0] = stale["release_asset_urls"][0].replace("/download/v1.0.2/", "/download/v1.0.1/")
+    assert _load_checker().check_record(stale) == []
     reviewed_release.asset.write_bytes(b"changed download")
 
     errors = release_parity.audit_release(**reviewed_release.args)

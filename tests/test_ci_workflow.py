@@ -902,6 +902,10 @@ def test_ci_workflow_requires_comprehensive_python_315_dependency_and_package_ev
             "python -c \"print('runtime unrecorded')\"",
             "exact Python 3.15 runtime evidence producer",
         ),
+        "--require-standard-gil --require-final --out artifacts/python315-runtime/runtime.json": (
+            "--require-standard-gil --out artifacts/python315-runtime/runtime.json",
+            "standard GIL-enabled runtime evidence contract",
+        ),
         "python scripts/check_gui_interactions.py --require-pyqt6": (
             "python -c \"print('interactions skipped')\"",
             "all-preset GUI interaction gate",

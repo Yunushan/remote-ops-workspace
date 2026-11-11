@@ -10,45 +10,31 @@ and must not be accepted implicitly.
 
 ## Python 3.15 evidence boundary
 
-As of 2026-08-23, upstream Python 3.15 is at `3.15.0rc1`; its final release is
-scheduled for 2026-10-01. The repository therefore distinguishes two claims:
+Python 3.15.0 reached general availability on October 9, 2026.
+See the [Python 3.15 release schedule](https://peps.python.org/pep-0790/).
 
-- **3.15 release-candidate compatibility:** the normal release-blocking matrix
-  resolves the latest available 3.15 prerelease and runs the full test suite on
-  Linux, Windows and macOS. A second blocking job deliberately repeats the full
-  suite with the desktop, security, package and development extras installed so
-  PyQt-backed tests cannot silently skip. It runs `pip check`, imports and smokes
-  every declared extra, starts PyInstaller, builds and launches a package-aware
-  one-file CLI executable, renders and exercises every GUI preset, builds both
-  distribution formats, and installs the wheel and sdist in clean virtual environments.
-  The frozen smoke runs both `--version` and `platforms --json`
-  and retains the executable SHA-256 plus command evidence; importing
-  PyInstaller or printing its version alone is not accepted as packaged-runtime
-  compatibility. The package extra requires PyInstaller 6.21 or newer because
-  6.21 is the first upstream release with Python 3.15 support; older PyInstaller
-  releases cannot satisfy this runtime contract. The desktop extra requires
-  PyQt6 6.11.0 or newer and stays below PyQt6 7.0.0, matching the GUI stack
-  used by the release toolchain; older PyQt6 releases are not part of the
-  Python 3.15 support claim.
-  Both native Windows rows additionally install the
-  pinned loopback SSH server dependency and rerun the real OpenSSH/ConPTY,
-  ProxyJump, terminal-input and GUI terminal-pane proofs with skip-to-pass
-  disabled.
-- **3.15 final-GA certification:** this requires the same blocking jobs to
-  complete with a `3.15.0` final interpreter after that interpreter exists. The
-  runtime evidence validator must report `releaselevel=final`; a release
-  candidate cannot satisfy that final-GA condition merely because all tests pass.
-  Until then, the project does not describe the upstream preview runtime as a
-  production-safe Python release.
+- **Stable CPython 3.15.** The blocking compatibility matrix runs the full
+  test suite on Linux, Windows and macOS. The optional-dependency matrix repeats
+  the suite with the desktop, security, package and development extras installed.
+  It runs `pip check`, exercises the extras, renders and exercises every GUI
+  preset, and installs the wheel and sdist in clean virtual environments. It
+  also uses PyInstaller 6.21 or newer to build and launch a one-file CLI
+  executable. The smoke runs `--version` and `platforms --json` and retains the
+  executable SHA-256 and command evidence. Both Windows architectures run real
+  OpenSSH/ConPTY, ProxyJump, terminal-input and GUI terminal-pane tests.
+- **3.15 final-GA certification.** Each optional-dependency host must record
+  `releaselevel=final` on a standard GIL-enabled 3.15 interpreter. Release
+  evidence binds those results to the exact tagged source SHA.
 
 The dedicated evidence matrix covers Linux x64 and ARM64, Windows x64 and ARM64, and macOS Intel and Apple Silicon. The normal compatibility matrix also runs
 3.15 on every tracked hosted macOS row and explicit Linux/Windows ARM64 rows.
 These jobs are not advisory and may not use `continue-on-error`.
 
 The stable aggregate check context is `Python 3.15 readiness`. It evaluates with
-`always()` and succeeds only when both the normal compatibility matrix and the
-six-host optional-dependency/evidence matrix succeed. Repository governance
-requires that exact context. Merge blocking becomes effective only after the
+`always()` and requires the normal compatibility matrix, the six-host
+optional-dependency matrix, Apple 27 readiness and the PyQt6 minimum-runtime
+matrix. Repository governance requires that exact context. Merge blocking
+becomes effective only after the
 live `main` branch rule includes it and the separate `Native Windows readiness`
 context, and after
 `python scripts/check_repository_governance.py --repository <owner/repo>`

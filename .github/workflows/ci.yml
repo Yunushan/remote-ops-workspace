@@ -316,7 +316,7 @@ jobs:
       - name: Record exact Python 3.15 runtime evidence
         run: >-
           python scripts/write_python_runtime_evidence.py --expected-version 3.15
-          --require-standard-gil --out artifacts/python315-runtime/runtime.json
+          --require-standard-gil --require-final --out artifacts/python315-runtime/runtime.json
       - name: Verify Python 3.15 offscreen QtWidgets application startup
         run: >-
           python -c "import sys; assert sys.version_info[:2] == (3, 15), sys.version;

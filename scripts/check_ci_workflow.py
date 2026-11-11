@@ -372,7 +372,7 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
         "python scripts/write_python_runtime_evidence.py --expected-version 3.15": (
             "exact Python 3.15 runtime evidence producer"
         ),
-        "--require-standard-gil --out artifacts/python315-runtime/runtime.json": (
+        "--require-standard-gil --require-final --out artifacts/python315-runtime/runtime.json": (
             "standard GIL-enabled runtime evidence contract"
         ),
         "sys.version_info[:2] == (3, 15)": "resolved Python 3.15 assertion",

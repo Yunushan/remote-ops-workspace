@@ -76,7 +76,7 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
         "python scripts/write_python_runtime_evidence.py --expected-version 3.15": (
             "exact Python 3.15 runtime evidence"
         ),
-        "--require-standard-gil --out artifacts/python315-runtime/runtime.json": (
+        "--require-standard-gil --require-final --out artifacts/python315-runtime/runtime.json": (
             "standard GIL-enabled Python 3.15 runtime evidence"
         ),
         "sys.version_info[:2] == (3, 15)": "resolved Python 3.15 assertion",
@@ -269,7 +269,7 @@ def check_python_support(overrides: dict[str, str] | None = None) -> list[str]:
     support_doc = read(PYTHON_SUPPORT_DOC, overrides)
     required_doc_snippets = {
         "standard, GIL-enabled CPython 3.10 through 3.15": "standard runtime boundary",
-        "3.15 release-candidate compatibility": "release-candidate evidence claim",
+        "Stable CPython 3.15": "stable interpreter evidence claim",
         "3.15 final-GA certification": "final-GA evidence distinction",
         "releaselevel=final": "machine-checked final-GA runtime distinction",
         "Linux x64 and ARM64, Windows x64 and ARM64, and macOS Intel and Apple Silicon": (

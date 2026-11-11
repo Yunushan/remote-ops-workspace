@@ -169,8 +169,8 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
     ("condition", "expected_error"),
     [
         ("valid", ""),
-        ("mutable", "exact immutable published production release"),
-        ("unpublished", "exact immutable published production release"),
+        ("mutable", "must have GitHub immutable releases enabled"),
+        ("unpublished", "must not be a draft"),
         ("malformed-page", "paginated lists"),
         ("missing-standard", "published release assets missing standard files"),
         ("wrong-bytes", "digest must match downloaded bytes"),
@@ -261,6 +261,63 @@ def test_single_asset_mode_rejects_draft_transactions_before_contacting_github(c
     ])
     assert result == 1
     assert "requires a completed published release" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("mode", ["draft", "published-transaction", "published"])
+def test_complete_inventory_rejects_unapproved_asset_on_a_later_api_page(
+    tmp_path: Path, monkeypatch, capsys, mode: str,
+) -> None:
+    checker = _load_checker()
+    repository, tag, sha = "example/project", "v1.2.3", "a" * 40
+    published = tmp_path / "published"
+    published.mkdir()
+    (published / "installer.bin").write_bytes(b"installer")
+    (published / "unexpected.bin").write_bytes(b"unexpected")
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    (downloads / "installer.bin").write_bytes(b"installer")
+    release = _release(checker, published, repository, tag)
+    expected, unexpected = release["assets"]
+    release["assets"] = [expected]
+    endpoint = f"repos/{repository}/releases/77"
+    transaction_args: list[str] = []
+    if mode == "draft":
+        release.update(draft=True, immutable=False)
+        transaction_args = [
+            "--draft-release-id", "77",
+            "--draft-transaction-run-id", "123",
+            "--draft-transaction-run-attempt", "1",
+        ]
+    elif mode == "published-transaction":
+        transaction_args = [
+            "--published-release-id", "77",
+            "--current-transaction-run-id", "123",
+            "--current-transaction-run-attempt", "1",
+        ]
+    else:
+        endpoint = f"repos/{repository}/releases/tags/{tag}"
+    monkeypatch.setattr(checker, "expected_release_assets", lambda _matrix, *, tag: {"installer.bin"})
+    calls: list[list[str]] = []
+    pages = ["api", "--paginate", "--slurp", f"repos/{repository}/releases/77/assets?per_page=100"]
+
+    def fake_run(args: list[str], _label: str, _timeout: int):
+        calls.append(args)
+        if args == ["api", endpoint]:
+            return release
+        if args == pages:
+            return [[expected], [unexpected]]
+        raise AssertionError(f"unexpected GitHub CLI arguments: {args}")
+
+    monkeypatch.setattr(checker, "run_gh_json", fake_run)
+    result = checker.main([
+        "--assets-dir", str(downloads), "--repository", repository, "--tag", tag, "--sha", sha,
+        *transaction_args,
+    ])
+    output = capsys.readouterr()
+    assert result == 1
+    assert "downloaded release directory missing published files: ['unexpected.bin']" in output.err
+    assert output.out == ""
+    assert calls == [["api", endpoint], pages]
 
 
 def test_verified_attestation_binds_digest_source_ref_and_run_attempt() -> None:

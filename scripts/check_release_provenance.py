@@ -125,8 +125,14 @@ def main(argv: list[str] | None = None) -> int:
             "GitHub release metadata",
             60,
         )
-        if single_asset:
-            release = published_release_with_all_assets(release, repository=repository, tag=tag)
+        release = release_with_all_assets(
+            release,
+            repository=repository,
+            tag=tag,
+            expected_draft=draft_transaction,
+            require_immutable=not draft_transaction,
+            expected_release_id=numeric_release_id,
+        )
         errors = check_release_asset_bytes(
             release,
             local_assets,
@@ -360,20 +366,27 @@ def local_release_assets(root: Path) -> tuple[dict[str, Path], list[str]]:
     return assets, errors
 
 
-def published_release_with_all_assets(
-    release: Any, *, repository: str, tag: str,
+def release_with_all_assets(
+    release: Any,
+    *,
+    repository: str,
+    tag: str,
+    expected_draft: bool,
+    require_immutable: bool,
+    expected_release_id: int | None,
 ) -> dict[str, Any]:
-    if (
-        not isinstance(release, dict)
-        or release.get("tag_name") != tag
-        or release.get("draft") is not False
-        or release.get("prerelease") is not False
-        or release.get("immutable") is not True
-    ):
-        raise ValueError("--asset requires the exact immutable published production release")
+    errors = release_identity_errors(
+        release,
+        tag=tag,
+        expected_draft=expected_draft,
+        require_immutable=require_immutable,
+        expected_release_id=expected_release_id,
+    )
+    if errors:
+        raise ValueError("; ".join(errors))
     release_id = release.get("id")
     if type(release_id) is not int or release_id < 1:
-        raise ValueError("published release metadata must contain a positive ID")
+        raise ValueError("GitHub release metadata must contain a positive ID")
     pages = run_gh_json(
         [
             "api",
@@ -381,12 +394,38 @@ def published_release_with_all_assets(
             "--slurp",
             f"repos/{repository}/releases/{release_id}/assets?per_page=100",
         ],
-        "GitHub published release asset list",
+        "GitHub release asset list",
         60,
     )
     if not isinstance(pages, list) or not pages or not all(isinstance(page, list) for page in pages):
-        raise ValueError("GitHub published release assets must be paginated lists")
+        raise ValueError("GitHub release assets must be paginated lists")
     return {**release, "assets": [item for page in pages for item in page]}
+
+
+def release_identity_errors(
+    release: Any,
+    *,
+    tag: str,
+    expected_draft: bool,
+    require_immutable: bool,
+    expected_release_id: int | None,
+) -> list[str]:
+    if not isinstance(release, dict):
+        return ["GitHub release metadata must be a JSON object"]
+    errors: list[str] = []
+    if release.get("tag_name") != tag:
+        errors.append(f"production release tag_name must be {tag!r}")
+    if expected_release_id is not None and release.get("id") != expected_release_id:
+        state = "draft" if expected_draft else "published"
+        errors.append(f"{state} release id must be {expected_release_id}")
+    if release.get("draft") is not expected_draft:
+        state = "be a draft" if expected_draft else "not be a draft"
+        errors.append(f"production release transaction must {state}")
+    if release.get("prerelease") is not False:
+        errors.append("published production release must not be a prerelease")
+    if require_immutable and release.get("immutable") is not True:
+        errors.append("published production release must have GitHub immutable releases enabled")
+    return errors
 
 
 def check_release_asset_bytes(
@@ -403,21 +442,15 @@ def check_release_asset_bytes(
 ) -> list[str]:
     if verify_single_asset and (expected_draft or not require_immutable or len(local_assets) != 1):
         return ["single-asset verification requires one file from an immutable published release"]
+    errors = release_identity_errors(
+        release,
+        tag=tag,
+        expected_draft=expected_draft,
+        require_immutable=require_immutable,
+        expected_release_id=expected_release_id,
+    )
     if not isinstance(release, dict):
-        return ["GitHub release metadata must be a JSON object"]
-    errors: list[str] = []
-    if release.get("tag_name") != tag:
-        errors.append(f"production release tag_name must be {tag!r}")
-    if expected_release_id is not None and release.get("id") != expected_release_id:
-        state = "draft" if expected_draft else "published"
-        errors.append(f"{state} release id must be {expected_release_id}")
-    if release.get("draft") is not expected_draft:
-        state = "be a draft" if expected_draft else "not be a draft"
-        errors.append(f"production release transaction must {state}")
-    if release.get("prerelease") is not False:
-        errors.append("published production release must not be a prerelease")
-    if require_immutable and release.get("immutable") is not True:
-        errors.append("published production release must have GitHub immutable releases enabled")
+        return errors
     raw_assets = release.get("assets")
     if not isinstance(raw_assets, list):
         return [*errors, "published release assets must be a list"]

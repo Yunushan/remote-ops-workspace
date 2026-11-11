@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import gzip
 import hashlib
 import importlib.util
+import io
 import json
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
 
 DEBIAN_PACKAGES = "install ok installed\tlibc6\t2.41-12\tamd64\n"
 IMAGE_ID = "sha256:" + "a" * 64
-ARCHIVE_SHA256 = "b" * 64
+MANIFEST_SHA256 = "b" * 64
 
 
 def test_container_image_sbom_inventories_installed_python_and_debian_packages() -> None:
@@ -27,7 +30,7 @@ def test_container_image_sbom_inventories_installed_python_and_debian_packages()
         image_id=IMAGE_ID,
         epoch=1_704_067_200,
         debian_packages=DEBIAN_PACKAGES,
-        image_archive_sha256=ARCHIVE_SHA256,
+        image_manifest_sha256=MANIFEST_SHA256,
     )
 
     assert payload["bomFormat"] == "CycloneDX"
@@ -38,10 +41,10 @@ def test_container_image_sbom_inventories_installed_python_and_debian_packages()
     assert metadata["timestamp"] == "2024-01-01T00:00:00Z"
     assert metadata["component"] == {
         "type": "container",
-        "bom-ref": f"sha256:{ARCHIVE_SHA256}",
+        "bom-ref": f"sha256:{MANIFEST_SHA256}",
         "name": "remote-ops-workspace-web",
         "version": "1.0.27",
-        "hashes": [{"alg": "SHA-256", "content": ARCHIVE_SHA256}],
+        "hashes": [{"alg": "SHA-256", "content": MANIFEST_SHA256}],
     }
     assert metadata["properties"] == [
         {
@@ -97,7 +100,7 @@ def test_container_image_sbom_serial_is_deterministic_and_bound_to_the_image() -
         image_id=IMAGE_ID,
         epoch=1_704_067_200,
         debian_packages=DEBIAN_PACKAGES,
-        image_archive_sha256=ARCHIVE_SHA256,
+        image_manifest_sha256=MANIFEST_SHA256,
     )
     repeat = builder.build_container_image_sbom(
         packages,
@@ -105,19 +108,19 @@ def test_container_image_sbom_serial_is_deterministic_and_bound_to_the_image() -
         image_id=IMAGE_ID,
         epoch=1_704_067_200,
         debian_packages=DEBIAN_PACKAGES,
-        image_archive_sha256=ARCHIVE_SHA256,
+        image_manifest_sha256=MANIFEST_SHA256,
     )
-    other_archive = builder.build_container_image_sbom(
+    other_manifest = builder.build_container_image_sbom(
         packages,
         application_version="1.0.27",
         image_id=IMAGE_ID,
         epoch=1_704_067_200,
         debian_packages=DEBIAN_PACKAGES,
-        image_archive_sha256="c" * 64,
+        image_manifest_sha256="c" * 64,
     )
 
     assert first["serialNumber"] == repeat["serialNumber"]
-    assert first["serialNumber"] != other_archive["serialNumber"]
+    assert first["serialNumber"] != other_manifest["serialNumber"]
 
 
 def test_debian_inventory_distinguishes_architectures_and_skips_removed_packages() -> None:
@@ -150,13 +153,13 @@ def test_debian_inventory_refuses_unusable_package_state(inventory, error) -> No
 
 
 @pytest.mark.parametrize(
-    ("image_id", "archive_sha256", "error"),
+    ("image_id", "manifest_sha256", "error"),
     [
-        ("latest", ARCHIVE_SHA256, "image ID must be a SHA-256 digest"),
-        (IMAGE_ID, "unknown", "image archive must have a SHA-256 digest"),
+        ("latest", MANIFEST_SHA256, "image ID must be a SHA-256 digest"),
+        (IMAGE_ID, "unknown", "image manifest must have a SHA-256 digest"),
     ],
 )
-def test_container_image_sbom_refuses_unbound_identity(image_id, archive_sha256, error) -> None:
+def test_container_image_sbom_refuses_unbound_identity(image_id, manifest_sha256, error) -> None:
     builder = _load_builder()
     with pytest.raises(ValueError, match=error):
         builder.build_container_image_sbom(
@@ -164,7 +167,7 @@ def test_container_image_sbom_refuses_unbound_identity(image_id, archive_sha256,
             debian_packages=DEBIAN_PACKAGES,
             application_version="1.0.27",
             image_id=image_id,
-            image_archive_sha256=archive_sha256,
+            image_manifest_sha256=manifest_sha256,
         )
 
 
@@ -179,7 +182,7 @@ def test_container_image_sbom_uses_the_source_date_epoch_environment_default(
         application_version="1.0.27",
         image_id=IMAGE_ID,
         debian_packages=DEBIAN_PACKAGES,
-        image_archive_sha256=ARCHIVE_SHA256,
+        image_manifest_sha256=MANIFEST_SHA256,
     )
 
     assert payload["metadata"]["timestamp"] == "2024-01-01T00:00:00Z"
@@ -193,7 +196,7 @@ def test_container_image_sbom_uses_the_source_date_epoch_environment_default(
             application_version="1.0.27",
             image_id=IMAGE_ID,
             debian_packages=DEBIAN_PACKAGES,
-            image_archive_sha256=ARCHIVE_SHA256,
+            image_manifest_sha256=MANIFEST_SHA256,
         )["metadata"]["timestamp"]
         == "2024-01-03T00:00:00Z"
     )
@@ -218,7 +221,7 @@ def test_container_image_sbom_rejects_incomplete_inventories(packages) -> None:
             application_version="1.0.27",
             image_id=IMAGE_ID,
             debian_packages=DEBIAN_PACKAGES,
-            image_archive_sha256=ARCHIVE_SHA256,
+            image_manifest_sha256=MANIFEST_SHA256,
         )
 
 
@@ -252,7 +255,7 @@ def test_container_image_sbom_rejects_missing_or_mismatched_application(packages
             application_version="1.0.27",
             image_id=IMAGE_ID,
             debian_packages=DEBIAN_PACKAGES,
-            image_archive_sha256=ARCHIVE_SHA256,
+            image_manifest_sha256=MANIFEST_SHA256,
         )
 
 
@@ -264,7 +267,7 @@ def test_container_image_sbom_accepts_normalized_application_name() -> None:
         application_version="1.0.27",
         image_id=IMAGE_ID,
         debian_packages=DEBIAN_PACKAGES,
-        image_archive_sha256=ARCHIVE_SHA256,
+        image_manifest_sha256=MANIFEST_SHA256,
     )
 
     assert payload["components"][0]["purl"] == "pkg:pypi/remote-ops-workspace@1.0.27"
@@ -311,8 +314,9 @@ def test_container_image_sbom_cli_writes_cyclonedx_output(tmp_path: Path, capsys
     )
     debian = tmp_path / "debian.tsv"
     debian.write_text(DEBIAN_PACKAGES, encoding="utf-8")
-    archive = tmp_path / "image.tar.gz"
-    archive.write_bytes(b"test image archive bytes")
+    archive = tmp_path / "image.tar"
+    image_id, manifest = _write_image_archive(archive)
+    manifest_output = tmp_path / "nested" / "image-manifest.json"
     output = tmp_path / "nested" / "container-image-sbom.cdx.json"
 
     assert (
@@ -323,11 +327,13 @@ def test_container_image_sbom_cli_writes_cyclonedx_output(tmp_path: Path, capsys
                 "--version",
                 "1.0.27",
                 "--image-id",
-                IMAGE_ID,
+                image_id,
                 "--debian-packages",
                 str(debian),
                 "--image-archive",
                 str(archive),
+                "--manifest-output",
+                str(manifest_output),
                 "--output",
                 str(output),
             ]
@@ -342,9 +348,91 @@ def test_container_image_sbom_cli_writes_cyclonedx_output(tmp_path: Path, capsys
         "libc6",
     ]
     assert payload["metadata"]["component"]["hashes"] == [
-        {"alg": "SHA-256", "content": hashlib.sha256(archive.read_bytes()).hexdigest()}
+        {"alg": "SHA-256", "content": hashlib.sha256(manifest).hexdigest()}
     ]
+    assert manifest_output.read_bytes() == manifest
     assert f"container image SBOM written: {output}" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_verified_manifest_checks_image_id_and_layer_contents(tmp_path: Path, compressed) -> None:
+    builder = _load_builder()
+    archive = tmp_path / "image.tar"
+    image_id, manifest = _write_image_archive(archive, compressed=compressed)
+    assert builder.verified_image_manifest(archive, image_id) == manifest
+    with pytest.raises(ValueError, match="config does not match the smoke-tested image ID"):
+        builder.verified_image_manifest(archive, IMAGE_ID)
+
+
+@pytest.mark.parametrize(
+    ("corrupt_blob", "different_layer", "error"),
+    [
+        (True, False, "blob digest mismatch"),
+        (False, True, "layer does not match the tested configuration"),
+    ],
+)
+def test_verified_manifest_rejects_replaced_layer(
+    tmp_path: Path, corrupt_blob, different_layer, error,
+) -> None:
+    builder = _load_builder()
+    archive = tmp_path / "image.tar"
+    image_id, _manifest = _write_image_archive(
+        archive, corrupt_blob=corrupt_blob, different_layer=different_layer,
+    )
+    with pytest.raises(ValueError, match=error):
+        builder.verified_image_manifest(archive, image_id)
+
+
+def _write_image_archive(
+    path: Path,
+    *,
+    compressed: bool = False,
+    corrupt_blob: bool = False,
+    different_layer: bool = False,
+) -> tuple[str, bytes]:
+    def descriptor(data: bytes, media_type: str) -> dict[str, str | int]:
+        return {
+            "digest": f"sha256:{hashlib.sha256(data).hexdigest()}",
+            "mediaType": media_type,
+            "size": len(data),
+        }
+
+    layer = b"tested image layer"
+    layer_type = "application/vnd.oci.image.layer.v1.tar"
+    diff_id = descriptor(layer, layer_type)["digest"]
+    config = json.dumps({"rootfs": {"type": "layers", "diff_ids": [diff_id]}}).encode()
+    if different_layer:
+        layer = b"unrelated image layer"
+    if compressed:
+        layer = gzip.compress(layer, mtime=0)
+        layer_type += "+gzip"
+    layer_descriptor = descriptor(layer, layer_type)
+    config_descriptor = descriptor(config, "application/vnd.oci.image.config.v1+json")
+    manifest_type = "application/vnd.oci.image.manifest.v1+json"
+    manifest = json.dumps({
+        "schemaVersion": 2,
+        "mediaType": manifest_type,
+        "config": config_descriptor,
+        "layers": [layer_descriptor],
+    }).encode()
+    manifest_descriptor = descriptor(manifest, manifest_type)
+    index = json.dumps({"schemaVersion": 2, "manifests": [manifest_descriptor]}).encode()
+    if corrupt_blob:
+        layer = b"x" + layer[1:]
+    files = {"index.json": index}
+    for blob, metadata in (
+        (manifest, manifest_descriptor),
+        (config, config_descriptor),
+        (layer, layer_descriptor),
+    ):
+        digest = str(metadata["digest"]).removeprefix("sha256:")
+        files[f"blobs/sha256/{digest}"] = blob
+    with tarfile.open(path, "w") as archive:
+        for name, data in files.items():
+            member = tarfile.TarInfo(name)
+            member.size = len(data)
+            archive.addfile(member, io.BytesIO(data))
+    return str(config_descriptor["digest"]), manifest
 
 
 def _load_builder():

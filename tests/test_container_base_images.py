@@ -147,7 +147,7 @@ def test_container_image_sbom_requires_image_inventory_generation() -> None:
 def test_container_image_sbom_requires_digest_check_before_signing() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    verify = workflow.index("      - name: Verify the SBOM names the downloaded archive digest\n")
+    verify = workflow.index("      - name: Verify the SBOM names the downloaded image manifest digest\n")
     attest = workflow.index("      - name: Attest Web/PWA image build provenance\n", verify)
     following = workflow.index("      - name: Attest the Web/PWA image SBOM\n", attest)
     workflow = workflow[:verify] + workflow[attest:following] + workflow[verify:attest] + workflow[following:]
@@ -184,7 +184,7 @@ def test_container_image_sbom_binds_the_producer_artifact_and_image_subject() ->
         f"artifact-ids: {checker.ATTESTATION_ARTIFACT}",
         "name: web-container-image",
     ).replace(
-        f"subject-path: {checker.CONTAINER_ARCHIVE_PATH}",
+        f"subject-path: {checker.CONTAINER_MANIFEST_PATH}",
         f"subject-path: {checker.CONTAINER_SBOM_PATH}",
     ).replace(
         '--source-digest "$GITHUB_SHA"',
@@ -194,12 +194,12 @@ def test_container_image_sbom_binds_the_producer_artifact_and_image_subject() ->
     errors = checker.check_container_image_sbom(workflow)
 
     assert (
-        "ci web-container-attestation step Download the smoke-tested Web/PWA image missing: "
+        "ci web-container-attestation step Download the Web/PWA image evidence missing: "
         f"artifact-ids: {checker.ATTESTATION_ARTIFACT}"
     ) in errors
     assert (
         "ci web-container-attestation step Attest the Web/PWA image SBOM missing: "
-        f"subject-path: {checker.CONTAINER_ARCHIVE_PATH}"
+        f"subject-path: {checker.CONTAINER_MANIFEST_PATH}"
     ) in errors
     assert (
         "ci web-container-attestation step Verify the Web/PWA image attestations missing: "
@@ -209,14 +209,15 @@ def test_container_image_sbom_binds_the_producer_artifact_and_image_subject() ->
 
 def test_container_image_sbom_rejects_an_export_that_uses_a_mutable_tag() -> None:
     checker = _load_checker()
+    export = 'docker image save --output "$RUNNER_TEMP/web-container-image.tar" "$TESTED_IMAGE_ID"'
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        'docker image save "$TESTED_IMAGE_ID"',
-        "docker image save remote-ops-workspace-web:latest",
+        export,
+        export.replace('"$TESTED_IMAGE_ID"', "remote-ops-workspace-web:latest"),
     )
 
     assert (
         "ci web-container step Export the smoke-tested Web/PWA image missing: "
-        f'docker image save "$TESTED_IMAGE_ID" | gzip -n > {checker.CONTAINER_ARCHIVE_PATH}'
+        f"{export}"
     ) in checker.check_container_image_sbom(workflow)
 
 

@@ -33,7 +33,7 @@ CONTAINER_SBOM_BUILDER = "scripts/build_container_sbom.py"
 CONTAINER_SBOM_ATTEST_ACTION = "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
 CONTAINER_SBOM_UPLOAD_ACTION = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
 CONTAINER_DEBIAN_INVENTORY_PATH = "artifacts/container-sbom/container-image-debian-packages.tsv"
-CONTAINER_ARCHIVE_PATH = "artifacts/container-sbom/web-container-image.tar.gz"
+CONTAINER_MANIFEST_PATH = "artifacts/container-sbom/web-container-image-manifest.json"
 CONTAINER_DOWNLOAD_ACTION = "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"
 MAIN_PUSH = "if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
 ATTESTATION_ARTIFACT = "${{ needs.web-container.outputs.image-artifact-id }}"
@@ -168,24 +168,23 @@ def check_container_image_sbom(workflow: str | None = None) -> list[str]:
         ),
         "Export the smoke-tested Web/PWA image": (
             f"TESTED_IMAGE_ID: {IMAGE_ID_OUTPUT}",
-            f'docker image save "$TESTED_IMAGE_ID" | gzip -n > {CONTAINER_ARCHIVE_PATH}',
-            f"gzip --test {CONTAINER_ARCHIVE_PATH}",
+            'docker image save --output "$RUNNER_TEMP/web-container-image.tar" "$TESTED_IMAGE_ID"',
         ),
         "Generate container image SBOM": (
             f"TESTED_CONTAINER_ID: {CONTAINER_ID_OUTPUT}",
             f"TESTED_IMAGE_ID: {IMAGE_ID_OUTPUT}",
             CONTAINER_SBOM_BUILDER,
             f"--debian-packages {CONTAINER_DEBIAN_INVENTORY_PATH}",
-            f"--image-archive {CONTAINER_ARCHIVE_PATH}",
+            '--image-archive "$RUNNER_TEMP/web-container-image.tar"',
+            f"--manifest-output {CONTAINER_MANIFEST_PATH}",
             f"--output {CONTAINER_SBOM_PATH}",
         ),
-        "Upload the smoke-tested Web/PWA image for attestation": (
+        "Upload the Web/PWA image evidence for attestation": (
             MAIN_PUSH,
             "id: upload-web-container",
             f"uses: {CONTAINER_SBOM_UPLOAD_ACTION}",
-            "name: web-container-image-${{ github.run_attempt }}",
-            CONTAINER_ARCHIVE_PATH,
-            CONTAINER_SBOM_PATH,
+            "name: web-container-image-evidence-${{ github.run_attempt }}",
+            f"path: |\n            {CONTAINER_MANIFEST_PATH}\n            {CONTAINER_SBOM_PATH}\n          if-no-files-found: error",
             "retention-days: 30",
         ),
     }))
@@ -197,31 +196,31 @@ def check_container_image_sbom(workflow: str | None = None) -> list[str]:
         if snippet not in header:
             errors.append(f"ci web-container-attestation job missing: {snippet}")
     errors.extend(check_container_steps("web-container-attestation", attestation, {
-        "Require the smoke job's exact image artifact": (
+        "Require the smoke job's exact image evidence artifact": (
             f"IMAGE_ARTIFACT_ID: {ATTESTATION_ARTIFACT}",
             '[[ "$IMAGE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]',
         ),
-        "Download the smoke-tested Web/PWA image": (
+        "Download the Web/PWA image evidence": (
             f"uses: {CONTAINER_DOWNLOAD_ACTION}",
             f"artifact-ids: {ATTESTATION_ARTIFACT}",
         ),
-        "Verify the SBOM names the downloaded archive digest": (
-            "sha256sum web-container-image.tar.gz",
+        "Verify the SBOM names the downloaded image manifest digest": (
+            "sha256sum web-container-image-manifest.json",
             '.metadata.component.hashes == [{"alg":"SHA-256","content":$digest}]',
             "container-image-sbom.cdx.json",
         ),
         "Attest Web/PWA image build provenance": (
             f"uses: {CONTAINER_SBOM_ATTEST_ACTION}",
-            f"subject-path: |\n            {CONTAINER_ARCHIVE_PATH}\n            {CONTAINER_SBOM_PATH}",
+            f"subject-path: |\n            {CONTAINER_MANIFEST_PATH}\n            {CONTAINER_SBOM_PATH}",
         ),
         "Attest the Web/PWA image SBOM": (
             f"uses: {CONTAINER_SBOM_ATTEST_ACTION}",
-            f"subject-path: {CONTAINER_ARCHIVE_PATH}",
+            f"subject-path: {CONTAINER_MANIFEST_PATH}",
             "predicate-type: https://cyclonedx.org/bom",
             f"predicate-path: {CONTAINER_SBOM_PATH}",
         ),
         "Verify the Web/PWA image attestations": (
-            f"image={CONTAINER_ARCHIVE_PATH}",
+            f"manifest={CONTAINER_MANIFEST_PATH}",
             '--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
             "--source-ref refs/heads/main",
             '--source-digest "$GITHUB_SHA"',

@@ -583,8 +583,7 @@ jobs:
           TESTED_IMAGE_ID: ${{ steps.smoke-tested-container.outputs.image-id }}
         run: |
           set -euo pipefail
-          docker image save "$TESTED_IMAGE_ID" | gzip -n > artifacts/container-sbom/web-container-image.tar.gz
-          gzip --test artifacts/container-sbom/web-container-image.tar.gz
+          docker image save --output "$RUNNER_TEMP/web-container-image.tar" "$TESTED_IMAGE_ID"
       - name: Generate container image SBOM
         shell: bash
         env:
@@ -598,7 +597,8 @@ jobs:
             --debian-packages artifacts/container-sbom/container-image-debian-packages.tsv \
             --version "$application_version" \
             --image-id "$TESTED_IMAGE_ID" \
-            --image-archive artifacts/container-sbom/web-container-image.tar.gz \
+            --image-archive "$RUNNER_TEMP/web-container-image.tar" \
+            --manifest-output artifacts/container-sbom/web-container-image-manifest.json \
             --output artifacts/container-sbom/container-image-sbom.cdx.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -606,16 +606,15 @@ jobs:
           path: artifacts/container-sbom/container-image-sbom.cdx.json
           if-no-files-found: error
           retention-days: 30
-      - name: Upload the smoke-tested Web/PWA image for attestation
+      - name: Upload the Web/PWA image evidence for attestation
         id: upload-web-container
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: web-container-image-${{ github.run_attempt }}
+          name: web-container-image-evidence-${{ github.run_attempt }}
           path: |
-            artifacts/container-sbom/web-container-image.tar.gz
+            artifacts/container-sbom/web-container-image-manifest.json
             artifacts/container-sbom/container-image-sbom.cdx.json
-          compression-level: 0
           if-no-files-found: error
           retention-days: 30
       - name: Tear down Web/PWA container
@@ -638,22 +637,22 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Require the smoke job's exact image artifact
+      - name: Require the smoke job's exact image evidence artifact
         shell: bash
         env:
           IMAGE_ARTIFACT_ID: ${{ needs.web-container.outputs.image-artifact-id }}
         run: '[[ "$IMAGE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]'
-      - name: Download the smoke-tested Web/PWA image
+      - name: Download the Web/PWA image evidence
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
         with:
           artifact-ids: ${{ needs.web-container.outputs.image-artifact-id }}
           path: artifacts/container-sbom
-      - name: Verify the SBOM names the downloaded archive digest
+      - name: Verify the SBOM names the downloaded image manifest digest
         shell: bash
         working-directory: artifacts/container-sbom
         run: |
           set -euo pipefail
-          digest="$(sha256sum web-container-image.tar.gz | cut -d ' ' -f 1)"
+          digest="$(sha256sum web-container-image-manifest.json | cut -d ' ' -f 1)"
           jq -e --arg digest "$digest" \
             '.metadata.component.hashes == [{"alg":"SHA-256","content":$digest}]' \
             container-image-sbom.cdx.json > /dev/null
@@ -662,13 +661,13 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
-            artifacts/container-sbom/web-container-image.tar.gz
+            artifacts/container-sbom/web-container-image-manifest.json
             artifacts/container-sbom/container-image-sbom.cdx.json
       - name: Attest the Web/PWA image SBOM
         id: attest-container-sbom
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: artifacts/container-sbom/web-container-image.tar.gz
+          subject-path: artifacts/container-sbom/web-container-image-manifest.json
           predicate-type: https://cyclonedx.org/bom
           predicate-path: artifacts/container-sbom/container-image-sbom.cdx.json
       - name: Verify the Web/PWA image attestations
@@ -679,7 +678,7 @@ jobs:
           SBOM_BUNDLE: ${{ steps.attest-container-sbom.outputs.bundle-path }}
         run: |
           set -euo pipefail
-          image=artifacts/container-sbom/web-container-image.tar.gz
+          manifest=artifacts/container-sbom/web-container-image-manifest.json
           scope=(
             --repo "$GITHUB_REPOSITORY"
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"
@@ -687,9 +686,9 @@ jobs:
             --source-digest "$GITHUB_SHA"
             --deny-self-hosted-runners
           )
-          gh attestation verify "$image" "${scope[@]}" --bundle "$PROVENANCE_BUNDLE" \
+          gh attestation verify "$manifest" "${scope[@]}" --bundle "$PROVENANCE_BUNDLE" \
             --predicate-type https://slsa.dev/provenance/v1
-          gh attestation verify "$image" "${scope[@]}" --bundle "$SBOM_BUNDLE" \
+          gh attestation verify "$manifest" "${scope[@]}" --bundle "$SBOM_BUNDLE" \
             --predicate-type https://cyclonedx.org/bom
 
   web-recovery:

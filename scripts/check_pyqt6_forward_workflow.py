@@ -60,6 +60,7 @@ def check_workflow(workflow: str | None = None) -> list[str]:
         'python-version: "3.15"': "Python 3.15 interpreter",
         "allow-prereleases: true": "Python 3.15 prerelease resolution",
         "name: Install Linux Qt runtime libraries": "Linux Qt runtime dependencies",
+        "bash scripts/install_ci_ubuntu_packages.sh --no-install-recommends": "signed Ubuntu Qt package setup",
         "if: runner.os == 'Linux'": "Linux-only Qt dependency installation",
         'python -m pip install -e ".[security,package,dev]"': "GUI verification dependencies",
         "--extra-index-url https://www.riverbankcomputing.com/pypi/simple/": (

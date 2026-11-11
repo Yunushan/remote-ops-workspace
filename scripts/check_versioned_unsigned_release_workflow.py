@@ -299,7 +299,7 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
             errors.append("unsigned publication must preserve releases after failure")
         _require_step(
             errors, publish, "Install native archive inspector",
-            ("msitools", "cpio", "p7zip-full", "cmake --build",
+            ("bash scripts/install_ci_ubuntu_packages.sh", "msitools", "cpio", "p7zip-full", "cmake --build",
              "https://codeload.github.com/dscho/innoextract/legacy.tar.gz/376a13e7c41cc5528b6088d0dd16ec1b323a8d37",
              "16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede",
              "sha256sum --check --strict", "/usr/local/bin/innoextract"),

@@ -45,8 +45,7 @@ jobs:
       - name: Install Linux Qt runtime libraries
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          bash scripts/install_ci_ubuntu_packages.sh --no-install-recommends \
             fontconfig \
             fonts-dejavu-core \
             libegl1 \

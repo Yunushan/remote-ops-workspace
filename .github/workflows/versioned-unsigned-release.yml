@@ -462,9 +462,7 @@ jobs:
         with:
           python-version: "3.14.7"
       - name: Install Linux packaging toolchains
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rpm
+        run: bash scripts/install_ci_ubuntu_packages.sh rpm
       - name: Install Python packaging dependencies
         run: |
           python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
@@ -562,8 +560,7 @@ jobs:
       - name: Install native archive inspector
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full squashfs-tools rpm2cpio cpio msitools \
+          bash scripts/install_ci_ubuntu_packages.sh p7zip-full squashfs-tools rpm2cpio cpio msitools \
             build-essential cmake libboost-iostreams-dev libboost-filesystem-dev \
             libboost-date-time-dev libboost-system-dev libboost-program-options-dev liblzma-dev
           # Upstream PR 210 adds the loader and payload formats used by Inno Setup 6.7.

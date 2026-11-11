@@ -26,6 +26,12 @@ def test_exact_tag_unsigned_preview_contract_passes() -> None:
     assert checker().check_versioned_unsigned_release_workflow(workflow()) == []
 
 
+def test_unsigned_publication_rejects_automatic_release_deletion() -> None:
+    changed = workflow() + '          gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"\n'
+    errors = checker().check_versioned_unsigned_release_workflow(changed)
+    assert "unsigned publication must preserve releases after failure" in errors
+
+
 @pytest.mark.parametrize(
     ("old", "new", "expected"),
     [

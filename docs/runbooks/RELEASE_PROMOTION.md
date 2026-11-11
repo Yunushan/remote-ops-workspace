@@ -72,6 +72,16 @@ URL into a shell. Automating checksum and attestation verification inside the
 installers is tracked as a follow-up; until then, verification is an operator
 step documented here.
 
+## Recover a failed publication
+
+Both versioned publication workflows report the numeric release ID if an error
+occurs after draft creation. Once the failed run ends, inspect that release and
+match its tag and transaction marker to the failed run. If it is still a draft,
+remove that draft and dispatch a new run for the same tag. Use the workflow to
+publish so it can verify the complete inventory and provenance before promotion.
+If GitHub already shows a published release, retain it and investigate the
+failed check before using the release or claiming certification.
+
 ## Rollback
 
 If a promoted release is withdrawn after publication, follow

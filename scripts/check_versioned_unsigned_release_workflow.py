@@ -280,6 +280,7 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
             "Publish verified unsigned draft by numeric ID once",
             "Verify published unsigned release notes",
             "Verify final numeric release and exact asset bytes",
+            "Report the release ID after failure",
         )
         positions = [publish.find(f"      - name: {name}\n") for name in required_steps]
         for name, position in zip(required_steps, positions, strict=True):
@@ -287,6 +288,16 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
                 errors.append(f"publish-unsigned-preview missing mandatory step: {name}")
         if all(position >= 0 for position in positions) and positions != sorted(positions):
             errors.append("unsigned publication must validate, attest, verify draft bytes, then publish")
+        report = _step_block(publish, "Report the release ID after failure")
+        report_requirements = (
+            "failure() && steps.create-draft.outputs.release-id != ''",
+            "RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}",
+            'Inspect release $RELEASE_ID ($RELEASE_TAG)',
+        )
+        if not all(token in report for token in report_requirements):
+            errors.append("unsigned publication must report the captured release ID after failure")
+        if "--method DELETE" in publish or "gh release delete" in publish:
+            errors.append("unsigned publication must preserve releases after failure")
         _require_step(
             errors, publish, "Install native archive inspector",
             ("msitools", "cpio", "p7zip-full", "cmake --build",

@@ -201,15 +201,11 @@ def test_promotion_requires_exact_tag_sha_and_signed_pinned_evidence() -> None:
     assert "Re-resolve immutable tag after publication" in workflow
 
 
-def test_failed_draft_cleanup_is_exact_id_guarded_and_marker_bound() -> None:
+def test_promotion_rejects_automatic_release_deletion() -> None:
     checker = load_script("check_release_truth")
     workflow = promotion_workflow()
-    errors = checker.check_promotion_truth(workflow)
-    assert not errors
-    assert "steps.publish-draft.outcome != 'success'" in workflow
-    assert ".draft == true" in workflow
-    assert "remote-ops-release-transaction:" in workflow
-    assert 'DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"' in workflow
+    changed = workflow + '          gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"\n'
+    assert "promotion workflow must preserve releases after failure" in checker.check_promotion_truth(changed)
 
 
 def test_completed_certification_is_separate_from_in_progress_transaction() -> None:

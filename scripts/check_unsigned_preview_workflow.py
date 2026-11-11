@@ -56,6 +56,8 @@ def check_unsigned_preview_workflow(workflow: str | None = None) -> list[str]:
         errors.append("preview publication must use the isolated draft transaction without a checkout")
     if "continue-on-error:" in publish:
         errors.append("preview publication must fail closed")
+    if "--method DELETE" in publish or "gh release delete" in publish:
+        errors.append("preview publication must preserve a failed release for inspection")
 
     guard_and_build = (
         "source-sha: ${{ steps.pin-source.outputs.sha }}",

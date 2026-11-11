@@ -48,6 +48,11 @@ def test_unsigned_preview_workflow_requires_verification_before_publication() ->
     assert "preview publication must verify the full draft before publishing and recheck the final release and tag" in errors
 
 
+def test_unsigned_preview_workflow_rejects_release_deletion() -> None:
+    errors = check_unsigned_preview_workflow(WORKFLOW + '          gh api --method DELETE "$api/releases/$release_id"\n')
+    assert "preview publication must preserve a failed release for inspection" in errors
+
+
 MOCK_PREVIEW_API = r'''
 gh() {
   case "$*" in
@@ -57,7 +62,7 @@ gh() {
       jq -e --arg sha "$PREVIEW_SHA" --arg tag "$PREVIEW_TAG" \
         'select(.draft and .prerelease and .tag_name == $tag and .target_commitish == $sha) |
          . + {id: 42, upload_url: "https://uploads.github.com/repos/owner/repo/releases/42/assets{?name,label}"}' \
-        "$request" ;;
+        "$request" && touch created ;;
     "api $api/releases/42")
       local draft=true
       if [[ -f published ]]; then draft=false; fi
@@ -114,8 +119,11 @@ def test_preview_draft_transaction_verifies_bytes_before_publishing(tmp_path, ma
         timeout=20,
     )
     assert (result.returncode == 0) is matches, result.stdout + result.stderr
+    assert (tmp_path / "created").exists()
     assert (tmp_path / "published").exists() is matches
-    assert (tmp_path / "deleted").exists() is not matches
+    assert not (tmp_path / "deleted").exists()
+    if not matches:
+        assert "Inspect preview release 42 (unsigned-preview-123)" in result.stdout
     assert (tmp_path / "uploads.txt").read_text(encoding="utf-8").splitlines() == [
         f"https://uploads.github.com/repos/owner/repo/releases/42/assets?name={asset['name']}"
         for asset in uploaded

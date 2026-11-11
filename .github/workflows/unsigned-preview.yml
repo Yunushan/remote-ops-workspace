@@ -187,7 +187,6 @@ jobs:
           inventory="$RUNNER_TEMP/preview-inventory.json"
           snapshot="$RUNNER_TEMP/preview-release.json"
           tag_ref="refs/tags/$PREVIEW_TAG"
-          release_id=""
 
           shopt -s nullglob
           assets=(preview-dist/*)
@@ -224,15 +223,10 @@ jobs:
                (map({name, size, digest}) | sort_by(.name)) == $expected[0]' "$snapshot" > /dev/null
           }
 
-          clean_failed_draft() {
-            status=$?
-            trap - EXIT
-            if [[ "$status" != 0 && -n "$release_id" ]] &&
-              gh api "$api/releases/$release_id" > "$snapshot" && verify_identity true; then
-              gh api --method DELETE "$api/releases/$release_id" --silent ||
-                echo "::warning::Could not clean up preview draft $release_id"
+          report_failed_release() {
+            if [[ "$1" != 0 ]]; then
+              echo "::warning::Inspect preview release $release_id ($PREVIEW_TAG) after the failed publication attempt"
             fi
-            exit "$status"
           }
 
           require_unused_tag
@@ -241,9 +235,9 @@ jobs:
           marker="<!-- remote-ops-branch-preview:$PREVIEW_TAG:$PREVIEW_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"
           jq -n --arg tag "$PREVIEW_TAG" --arg sha "$PREVIEW_SHA" --arg marker "$marker" --rawfile notes preview-notes.md \
             '{tag_name: $tag, target_commitish: $sha, name: ($tag + " (UNSIGNED PREVIEW)"), body: ($notes + "\n" + $marker + "\n"), draft: true, prerelease: true}' > "$request"
-          trap clean_failed_draft EXIT
           gh api --method POST "$api/releases" --input "$request" > "$snapshot"
           release_id="$(jq -er '.id | select(type == "number") | tostring | select(test("^[1-9][0-9]*$"))' "$snapshot")"
+          trap 'report_failed_release "$?"' EXIT
           verify_identity true
           upload_url="$(jq -er '.upload_url | sub("\\{.*$"; "")' "$snapshot")"
           test "$upload_url" = "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets"

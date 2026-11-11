@@ -1010,10 +1010,7 @@ def test_gui_low_level_platform_dialog_and_cursor_edges(
             "<b>not markup</b>",
         ) == QMessageBox.StandardButton.Ok
 
-    clamp_dialog = _closure_value(
-        type(dialog).showEvent,
-        "_clamp_dialog_frame_to_parent_screen",
-    )
+    clamp_dialog = dialog.services.clamp_to_screen
     dialog_screen = _closure_value(clamp_dialog, "_dialog_screen")
     assert dialog_screen(None) is QApplication.primaryScreen()
     assert dialog_screen(SimpleNamespace(screen=lambda: None)) is QApplication.primaryScreen()

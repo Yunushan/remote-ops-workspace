@@ -69,7 +69,6 @@ from .terminal_highlighting import (
 )
 from .terminal_output import _ByteChunkQueue
 
-
 _SGR_MOUSE_BUTTON_CODES = {
     Qt.MouseButton.LeftButton: 0,
     Qt.MouseButton.MiddleButton: 1,

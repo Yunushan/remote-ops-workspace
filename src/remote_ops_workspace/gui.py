@@ -14,12 +14,6 @@ from .file_safety import (
     write_bytes_atomic,
     write_json_atomic,
 )
-from .file_transfer import (
-    SftpQueuePlan,
-    build_sftp_queue_plan,
-    parse_transfer_item_spec,
-    preview_local_path,
-)
 from .gui_designs import (
     GUI_DESIGN_PRESETS,
     PRODUCT_GUI_PRESET_IDS,
@@ -143,7 +137,6 @@ from .storage import ProfileStore
 from .terminal import (
     TerminalPanePlan,
     default_shell_plan,
-    openssh_command_without_windows_connection_sharing,
     split_shell_plans,
     terminal_plan_for_profile,
     terminal_plan_for_sftp_browser,
@@ -418,7 +411,6 @@ def create_main_window(
             QByteArray,
             QIODevice,
             QPoint,
-            QProcess,
             QSize,
             Qt,
             QTimer,
@@ -443,12 +435,9 @@ def create_main_window(
         from PyQt6.QtWidgets import (
             QAbstractButton,
             QApplication,
-            QCheckBox,
             QComboBox,
             QDialog,
-            QDialogButtonBox,
             QFileDialog,
-            QFormLayout,
             QFrame,
             QHBoxLayout,
             QLabel,
@@ -475,7 +464,6 @@ def create_main_window(
             QWidget,
         )
 
-        from .gui_processes import _background_process
         from .gui_terminal import TerminalPane
     except Exception as exc:  # pragma: no cover - optional dependency
         raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
@@ -488,7 +476,15 @@ def create_main_window(
         ConnectedSftpDock,
         create_moba_connected_classes,
     )
-    from .gui_dialogs import DialogServices, LayoutDialog, ProfileDialog, ProfileImportPreviewDialog
+    from .gui_dialogs import (
+        DialogServices,
+        LayoutDialog,
+        LiteralTextEdit,
+        ProfileDialog,
+        ProfileImportPreviewDialog,
+        TransferQueueDialog,
+        WorkflowDialog,
+    )
     from .gui_workspace import MobaRailLabel, MobaWorkspaceTabBar, ResponsiveWorkspaceTabs
 
     def _application_clipboard() -> QClipboard:
@@ -604,24 +600,6 @@ def create_main_window(
         require_value=_required_gui_value,
     )
 
-    class _ScreenBoundedDialog(QDialog):
-        def showEvent(self, event) -> None:
-            super().showEvent(event)
-            QTimer.singleShot(0, lambda: _clamp_dialog_frame_to_parent_screen(self))
-
-    class LiteralTextEdit(QTextEdit):
-        """QTextEdit whose append API never interprets terminal or profile text as HTML."""
-
-        def append(self, text: object) -> None:
-            cursor = self.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            if cursor.position() > 0:
-                cursor.insertBlock()
-            cursor.insertText(str(text), QTextCharFormat())
-            self.setTextCursor(cursor)
-            self.ensureCursorVisible()
-
-
     TREE_ICON_KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 31
     TREE_ROW_KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 32
     TREE_ICON_SIZE_ROLE = int(Qt.ItemDataRole.UserRole) + 33
@@ -688,378 +666,6 @@ def create_main_window(
     MobaSftpDock, MobaConnectedSessionPanel = create_moba_connected_classes(
         connected_services,
     )
-
-    class TransferQueueDialog(_ScreenBoundedDialog):
-        def __init__(self, profile, parent=None, *, process_factory=None) -> None:
-            super().__init__(parent)
-            self.setObjectName("workflowDialog")
-            self.profile = profile
-            self.setWindowTitle(f"Transfer Queue: {profile.name}")
-            _size_dialog_for_parent_screen(
-                self,
-                parent,
-                maximum_width=640,
-                maximum_height=620,
-                minimum_width=420,
-                minimum_height=360,
-            )
-
-            root = QVBoxLayout(self)
-            title = _literal_label("Transfer queue")
-            title.setObjectName("workflowTitle")
-            subtitle = _literal_label(f"Build and preview SFTP operations for {profile.name}.")
-            subtitle.setObjectName("workflowSubtitle")
-            subtitle.setWordWrap(True)
-            root.addWidget(title)
-            root.addWidget(subtitle)
-            form = QFormLayout()
-            self.operations = QPlainTextEdit()
-            self.operations.setMinimumHeight(90)
-            self.operations.setPlaceholderText(
-                "get /etc/hosts ./hosts.copy\nput ./build.tar.gz /tmp/build.tar.gz\nmkdir /tmp/releases"
-            )
-            self.local_preview_path = QLineEdit()
-            self.local_preview_path.setPlaceholderText("Local file or directory")
-            self.force_destructive = QCheckBox("Force destructive actions")
-            form.addRow("Operations", self.operations)
-            form.addRow("Local preview", self.local_preview_path)
-            form.addRow("", self.force_destructive)
-            root.addLayout(form)
-
-            controls = QHBoxLayout()
-            self.preview_button = QPushButton("Preview Queue")
-            self.local_preview_button = QPushButton("Preview Local")
-            self.run_button = QPushButton("Run Queue")
-            self.cancel_queue_button = QPushButton("Cancel Queue")
-            self.cancel_queue_button.setObjectName("cancelTransferQueue")
-            self.cancel_queue_button.setEnabled(False)
-            controls.addWidget(self.preview_button)
-            controls.addWidget(self.local_preview_button)
-            controls.addWidget(self.run_button)
-            controls.addWidget(self.cancel_queue_button)
-            controls.addStretch(1)
-            root.addLayout(controls)
-
-            self.preview = LiteralTextEdit()
-            self.preview.setReadOnly(True)
-            self.preview.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-            self.preview.setMinimumHeight(100)
-            root.addWidget(self.preview, 1)
-
-            self.buttons = QDialogButtonBox(
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-            )
-            self.buttons.setObjectName("transferQueueDialogButtons")
-            self.buttons.accepted.connect(self.accept)
-            self.buttons.rejected.connect(self.reject)
-            root.addWidget(self.buttons)
-
-            self.preview_button.clicked.connect(self.refresh_queue_preview)
-            self.local_preview_button.clicked.connect(self.refresh_local_preview)
-            self.run_button.clicked.connect(self.run_queue)
-            self.cancel_queue_button.clicked.connect(self.cancel_queue)
-            self._process_factory = process_factory or _background_process
-            self.active_queue_plan: SftpQueuePlan | None = None
-            self.active_queue_index = 0
-            self.active_queue_process: QProcess | None = None
-            self.queue_cancel_requested = False
-            self.queue_cancel_timer = QTimer(self)
-            self.queue_cancel_timer.setSingleShot(True)
-            self.queue_cancel_timer.setInterval(1500)
-            self.queue_cancel_timer.timeout.connect(self.kill_cancelled_queue_process)
-
-        def queue_is_active(self) -> bool:
-            return self.active_queue_plan is not None
-
-        def set_queue_controls_active(self, active: bool) -> None:
-            for widget in (
-                self.operations,
-                self.local_preview_path,
-                self.force_destructive,
-                self.preview_button,
-                self.local_preview_button,
-                self.run_button,
-            ):
-                widget.setEnabled(not active)
-            for standard_button in (
-                QDialogButtonBox.StandardButton.Ok,
-                QDialogButtonBox.StandardButton.Cancel,
-            ):
-                button = self.buttons.button(standard_button)
-                if button is not None:
-                    button.setEnabled(not active)
-            self.cancel_queue_button.setEnabled(active and not self.queue_cancel_requested)
-
-        def finish_queue_execution(self, message: str) -> None:
-            process = self.active_queue_process
-            self.queue_cancel_timer.stop()
-            self.active_queue_plan = None
-            self.active_queue_index = 0
-            self.active_queue_process = None
-            self.queue_cancel_requested = False
-            self.set_queue_controls_active(False)
-            if message:
-                self.preview.append(message)
-            if process is not None:
-                process.deleteLater()
-
-        def accept(self) -> None:
-            if self.queue_is_active():
-                return
-            super().accept()
-
-        def reject(self) -> None:
-            if self.queue_is_active():
-                return
-            super().reject()
-
-        def closeEvent(self, event) -> None:
-            if self.queue_is_active():
-                event.ignore()
-                return
-            super().closeEvent(event)
-
-        def queue_plan(self) -> SftpQueuePlan:
-            items = []
-            for line in self.operations.toPlainText().splitlines():
-                raw = line.strip()
-                if raw and not raw.startswith("#"):
-                    items.append(parse_transfer_item_spec(raw))
-            return build_sftp_queue_plan(self.profile, items, force=self.force_destructive.isChecked())
-
-        def refresh_queue_preview(self) -> None:
-            try:
-                plan = self.queue_plan()
-            except ValueError as exc:
-                self.preview.setPlainText(f"error: {exc}")
-                return
-            lines = [plan.printable(), "", "queue:"]
-            for index, command in enumerate(plan.batch_commands, start=1):
-                lines.append(f"{index}. {command}")
-            for note in plan.notes:
-                lines.append(f"note: {note}")
-            self.preview.setPlainText("\n".join(lines))
-
-        def run_queue(self) -> None:
-            if self.queue_is_active():
-                return
-            try:
-                assert_profile_launch_allowed(self.profile, surface="gui")
-                plan = self.queue_plan()
-            except ValueError as exc:
-                self.preview.setPlainText(f"error: {exc}")
-                return
-            if plan.destructive and not plan.force:
-                self.preview.setPlainText("error: destructive queue actions require Force destructive actions before execution")
-                return
-            self.active_queue_plan = plan
-            self.active_queue_index = 0
-            self.active_queue_process = None
-            self.queue_cancel_requested = False
-            self.preview.clear()
-            self.set_queue_controls_active(True)
-            self.preview.append(f"queue started: {len(plan.items)} operation(s)")
-            self.run_next_queue_item()
-
-        def run_next_queue_item(self) -> None:
-            plan = self.active_queue_plan
-            if plan is None:
-                return
-            if self.active_queue_index >= len(plan.items):
-                self.finish_queue_execution("queue completed")
-                return
-            index = self.active_queue_index
-            command = plan.batch_commands[index]
-            self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: running")
-            process = self._process_factory(self)
-            runtime_command = openssh_command_without_windows_connection_sharing(list(plan.command))
-            process.setProgram(runtime_command[0])
-            process.setArguments(runtime_command[1:])
-            process.readyReadStandardOutput.connect(
-                lambda active=process: self.preview.append(bytes(active.readAllStandardOutput()).decode(errors="replace").rstrip())
-            )
-            process.readyReadStandardError.connect(
-                lambda active=process: self.preview.append(bytes(active.readAllStandardError()).decode(errors="replace").rstrip())
-            )
-            process.started.connect(lambda active=process, queued=command: self.write_queue_command(active, queued))
-            process.finished.connect(
-                lambda exit_code, _status, active=process, queued_index=index: self.finish_queue_item(
-                    active, queued_index, exit_code
-                )
-            )
-            process.errorOccurred.connect(
-                lambda error, active=process, queued_index=index: self.handle_queue_process_error(
-                    active, queued_index, error
-                )
-            )
-            self.active_queue_process = process
-            process.start()
-
-        def write_queue_command(self, process: QProcess, command: str) -> None:
-            process.write(f"{command}\n".encode())
-            process.closeWriteChannel()
-
-        def finish_queue_item(self, process: QProcess, index: int, exit_code: int) -> None:
-            plan = self.active_queue_plan
-            if plan is None or process is not self.active_queue_process:
-                return
-            self.queue_cancel_timer.stop()
-            self.active_queue_process = None
-            process.deleteLater()
-            if self.queue_cancel_requested:
-                self.finish_queue_execution("queue cancelled")
-                return
-            if exit_code != 0:
-                self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: failed (exit {exit_code})")
-                self.finish_queue_execution("queue stopped after failure")
-                return
-            self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: completed")
-            self.active_queue_index += 1
-            self.run_next_queue_item()
-
-        def handle_queue_process_error(self, process: QProcess, index: int, error) -> None:
-            if process is not self.active_queue_process or self.active_queue_plan is None:
-                return
-            if self.queue_cancel_requested:
-                if process.state() == QProcess.ProcessState.NotRunning:
-                    self.finish_queue_execution("queue cancelled")
-                return
-            if error == QProcess.ProcessError.FailedToStart:
-                detail = process.errorString().strip() or "unknown process start error"
-                self.preview.append(f"{index + 1}: failed to start ({detail})")
-                self.finish_queue_execution("queue stopped after failure")
-
-        def cancel_queue(self) -> None:
-            if not self.queue_is_active() or self.queue_cancel_requested:
-                return
-            self.queue_cancel_requested = True
-            self.set_queue_controls_active(True)
-            self.preview.append("queue cancellation requested")
-            process = self.active_queue_process
-            if process is None or process.state() == QProcess.ProcessState.NotRunning:
-                self.finish_queue_execution("queue cancelled")
-                return
-            process.terminate()
-            self.queue_cancel_timer.start()
-
-        def kill_cancelled_queue_process(self) -> None:
-            if not self.queue_cancel_requested:
-                return
-            process = self.active_queue_process
-            if process is None or process.state() == QProcess.ProcessState.NotRunning:
-                self.finish_queue_execution("queue cancelled")
-                return
-            self.preview.append("queue process did not terminate; killing it")
-            process.kill()
-
-        def refresh_local_preview(self) -> None:
-            try:
-                preview = preview_local_path(self.local_preview_path.text())
-            except ValueError as exc:
-                self.preview.setPlainText(f"error: {exc}")
-                return
-            data = preview.to_dict()
-            lines = [f"{data['path']}: {data['kind']}"]
-            if data.get("size") is not None:
-                lines.append(f"size: {data['size']}")
-            children = data.get("children")
-            if isinstance(children, (list, tuple)):
-                for child in children:
-                    lines.append(f"  {child}")
-            if data.get("binary"):
-                lines.append("binary: true")
-            if data.get("truncated"):
-                lines.append("truncated: true")
-            if data.get("text"):
-                lines.append("")
-                lines.append(str(data["text"]))
-            if data.get("error"):
-                lines.append(f"error: {data['error']}")
-            self.preview.setPlainText("\n".join(lines))
-
-    class WorkflowDialog(_ScreenBoundedDialog):
-        def __init__(
-            self,
-            title: str,
-            subtitle: str,
-            rows: list[tuple[str, str, str]],
-            detail: str,
-            actions: Sequence[tuple[str, Callable[..., object]]] | None = None,
-            parent=None,
-            *,
-            message_handler: Callable[..., object],
-        ) -> None:
-            super().__init__(parent)
-            self.message_handler = message_handler
-            self.setObjectName("workflowDialog")
-            self.setWindowTitle(title)
-            _size_dialog_for_parent_screen(
-                self,
-                parent,
-                maximum_width=660,
-                maximum_height=520,
-                minimum_width=420,
-                minimum_height=360,
-            )
-
-            root = QVBoxLayout(self)
-            root.setSpacing(10)
-            title_label = _literal_label(title)
-            title_label.setObjectName("workflowTitle")
-            subtitle_label = _literal_label(subtitle)
-            subtitle_label.setObjectName("workflowSubtitle")
-            subtitle_label.setWordWrap(True)
-            root.addWidget(title_label)
-            root.addWidget(subtitle_label)
-
-            self.rows = QTreeWidget()
-            self.rows.setObjectName("workflowRows")
-            self.rows.setColumnCount(3)
-            self.rows.setHeaderLabels(["Workflow", "State", "Detail"])
-            self.rows.setRootIsDecorated(False)
-            for workflow, state, row_detail in rows:
-                item = QTreeWidgetItem([workflow, state, row_detail])
-                self.rows.addTopLevelItem(item)
-            self.rows.resizeColumnToContents(0)
-            self.rows.resizeColumnToContents(1)
-            root.addWidget(self.rows, 1)
-
-            self.detail = QTextEdit()
-            self.detail.setObjectName("workflowPreview")
-            self.detail.setReadOnly(True)
-            self.detail.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-            self.detail.setPlainText(detail)
-            root.addWidget(self.detail, 1)
-
-            action_footer = QFrame()
-            action_footer.setObjectName("workflowFooter")
-            action_row = QHBoxLayout(action_footer)
-            action_row.setContentsMargins(0, 0, 0, 0)
-            for label, callback in actions or []:
-                button = QToolButton()
-                button.setObjectName("workflowAction")
-                button.setText(label)
-                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-                button.clicked.connect(self.workflow_action(callback))
-                action_row.addWidget(button)
-            action_row.addStretch(1)
-            close_button = QToolButton()
-            close_button.setObjectName("workflowAction")
-            close_button.setText("Close")
-            close_button.clicked.connect(self.accept)
-            action_row.addWidget(close_button)
-            root.addWidget(action_footer)
-
-        def workflow_action(self, callback):
-            def run(*_args) -> None:
-                try:
-                    callback()
-                except (OSError, ProcessStatusError) as exc:
-                    self.message_handler(QMessageBox.Icon.Warning, "Workspace operation failed", str(exc))
-                    return
-                self.accept()
-
-            return run
 
     class MainWindow(QMainWindow):
         CLOSE_STOP_POLICY = ProcessStopPolicy(terminate_timeout_ms=300, kill_timeout_ms=0)
@@ -6840,7 +6446,13 @@ def create_main_window(
             actions: Sequence[tuple[str, Callable[..., object]]] | None = None,
         ):
             return WorkflowDialog(
-                title, subtitle, rows, detail, actions=actions, parent=self,
+                title,
+                subtitle,
+                rows,
+                detail,
+                actions=actions,
+                parent=self,
+                services=dialog_services,
                 message_handler=self.show_message,
             )
 
@@ -8153,7 +7765,12 @@ def create_main_window(
         def create_transfer_queue_dialog(
             self, profile: Profile, *, process_factory=None,
         ) -> TransferQueueDialog:
-            return TransferQueueDialog(profile, self, process_factory=process_factory)
+            return TransferQueueDialog(
+                profile,
+                self,
+                services=dialog_services,
+                process_factory=process_factory,
+            )
 
         def show_doctor(self) -> None:
             self.log.append(run_doctor().to_json())

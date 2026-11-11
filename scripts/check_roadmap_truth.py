@@ -182,7 +182,7 @@ IMPLEMENTED_ITEMS = (
         evidence=(
             Evidence("src/remote_ops_workspace/file_transfer.py", "class SftpQueueProgress"),
             Evidence("src/remote_ops_workspace/file_transfer.py", "on_progress"),
-            Evidence("src/remote_ops_workspace/gui.py", "def run_next_queue_item"),
+            Evidence("src/remote_ops_workspace/gui_dialogs.py", "def run_next_queue_item"),
             Evidence("tests/test_file_transfer_queue.py", "test_sftp_queue_reports_actual_item_progress_and_stops_after_failure"),
             Evidence("docs/FILE_TRANSFER.md", "fabricated byte percentages"),
         ),

@@ -376,7 +376,7 @@ def test_ci_workflow_requires_live_web_container_smoke_job() -> None:
 def test_ci_workflow_requires_writable_non_root_web_data_volume() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8").replace(
-        "          compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'\n",
+        "          docker exec \"$container_id\" sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'\n",
         "",
     )
 

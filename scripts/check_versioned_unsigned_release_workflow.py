@@ -280,7 +280,6 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
             "Publish verified unsigned draft by numeric ID once",
             "Verify published unsigned release notes",
             "Verify final numeric release and exact asset bytes",
-            "Report the release ID after failure",
         )
         positions = [publish.find(f"      - name: {name}\n") for name in required_steps]
         for name, position in zip(required_steps, positions, strict=True):

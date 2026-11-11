@@ -200,6 +200,8 @@ def check_runtime_resource_script(platform: str, script: Path, text: str) -> lis
             "platforms --json": "installed app platform catalog invocation",
             "Contents/MacOS": "installed app executable invocation",
             "Print :LSMinimumSystemVersion": "installed app minimum macOS version inspection",
+            'verify_app_macos_minimum "$DMG_APP" "DMG verify"': "DMG minimum macOS version check",
+            'verify_app_macos_minimum "$PKG_APP" "PKG verify"': "PKG minimum macOS version check",
             '[[ "$minimum" != "14.4.0" ]]': "macOS 14.4 minimum version assertion",
             "release_architectures": "release architecture resource assertion",
             "windows_legacy_targets": "legacy Windows resource assertion",

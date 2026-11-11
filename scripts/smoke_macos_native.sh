@@ -87,11 +87,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-verify_app_runtime_resources() {
+verify_app_macos_minimum() {
   local app_path="$1"
   local label="$2"
-  local public_path="$3" phase="$4"
-  local executable="$app_path/Contents/MacOS/$APP_EXECUTABLE_NAME"
   local minimum
   minimum="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app_path/Contents/Info.plist")" || return 1
   if [[ "$minimum" != "14.4.0" ]]; then
@@ -99,6 +97,13 @@ verify_app_runtime_resources() {
     return 1
   fi
   echo "native installer smoke macOS minimum: $label $minimum"
+}
+
+verify_app_runtime_resources() {
+  local app_path="$1"
+  local label="$2"
+  local public_path="$3" phase="$4"
+  local executable="$app_path/Contents/MacOS/$APP_EXECUTABLE_NAME"
   local probe_name
   local probe_file
   probe_name="$(printf '%s' "$label" | tr -c '[:alnum:]' '-')"
@@ -174,6 +179,7 @@ ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 
 echo "native installer smoke: DMG verify"
 codesign --verify --deep --strict "$DMG_APP"
+verify_app_macos_minimum "$DMG_APP" "DMG verify"
 verify_app_runtime_resources "$DMG_APP" "DMG verify" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
 verify_app_gui "$DMG_APP" "DMG verify" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
 
@@ -181,6 +187,7 @@ echo "native installer smoke: DMG upgrade"
 rm -rf "$DMG_APP"
 ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 codesign --verify --deep --strict "$DMG_APP"
+verify_app_macos_minimum "$DMG_APP" "DMG upgrade"
 verify_app_runtime_resources "$DMG_APP" "DMG upgrade" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall
 
 echo "native installer smoke: DMG uninstall"
@@ -201,6 +208,7 @@ fi
 
 echo "native installer smoke: PKG verify"
 codesign --verify --deep --strict "$PKG_APP"
+verify_app_macos_minimum "$PKG_APP" "PKG verify"
 verify_app_runtime_resources "$PKG_APP" "PKG verify" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
 verify_app_gui "$PKG_APP" "PKG verify" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
 
@@ -211,6 +219,7 @@ if [[ ! -d "$PKG_APP" ]]; then
   exit 1
 fi
 codesign --verify --deep --strict "$PKG_APP"
+verify_app_macos_minimum "$PKG_APP" "PKG upgrade"
 verify_app_runtime_resources "$PKG_APP" "PKG upgrade" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall
 
 echo "native installer smoke: PKG uninstall"

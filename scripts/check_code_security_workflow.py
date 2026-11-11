@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
-CODEQL_PIN = "6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee"
+CODEQL_PIN = "33d7b85da1a04171e211befe2c739303b9a4c066"
 
 
 def main() -> int:

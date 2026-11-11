@@ -6,6 +6,7 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
     target = makefile.split("production-readiness:\n", 1)[1].split("\nrun-web:", 1)[0]
 
     assert 'test -n "$(RELEASE_SHA)"' in target
+    assert 'test -n "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)"' in target
     assert 'test -n "$(RELEASE_LICENSE_EVIDENCE)"' in target
     assert 'test -n "$(RELEASE_LICENSE_SIGNATURE)"' in target
     assert 'test -n "$(RELEASE_LICENSE_EVIDENCE_ROOT)"' in target
@@ -45,6 +46,14 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
         '--require-goal-targets --require-source-runs --require-source-artifact-bytes '
         '--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head'
     ) in target
+    assert (
+        'python scripts/check_release_mobaxterm_parity.py --repository "$(RELEASE_REPOSITORY)" '
+        '--tag "$(RELEASE_TAG)" --sha "$(RELEASE_SHA)" '
+        '--registry-commit "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" --assets-dir "$(RELEASE_ASSETS_DIR)"'
+    ) in target
+    assert target.index("scripts/check_release_provenance.py") < target.index(
+        "scripts/check_release_mobaxterm_parity.py"
+    ) < target.index('echo "production readiness: 100/100 gates passed"')
     assert target.index("scripts/check_repository_cleanup.py --require-clean") < target.index(
         "scripts/verify.py --production-quality"
     )

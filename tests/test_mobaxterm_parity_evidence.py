@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+from scripts import check_release_mobaxterm_parity as release_parity
 
 
 def test_mobaxterm_parity_evidence_empty_registry_is_valid_but_not_complete() -> None:
@@ -254,6 +258,138 @@ def test_mobaxterm_finalizer_rejects_tampered_published_bytes(tmp_path: Path) ->
 
     assert accepted == {}
     assert any("published release asset bytes" in error for error in errors)
+
+
+
+@pytest.fixture
+def reviewed_release(tmp_path, monkeypatch):
+    release_sha = "d" * 40
+    registry_commit = "e" * 40
+    main_tip = "f" * 40
+    repository = "example/remote-ops-workspace"
+    tag = "v1.0.2"
+    name = "remote-ops-workspace-v1.0.2-windows-x64.msi"
+    asset = tmp_path / name
+    asset.write_bytes(b"published release asset bytes")
+    digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+
+    records = []
+    for article, spec in release_parity.ARTICLE_SPECS.items():
+        record = _complete_record(spec)
+        record["article_id"] = article
+        record["release_asset_urls"] = [
+            f"https://github.com/{repository}/releases/download/{tag}/{name}"
+        ]
+        record["artifact_sha256"] = {name: digest}
+        record["release_asset_bytes"]["sha256"] = {name: digest}
+        if article == "shared-authenticated-transport-terminal-grid":
+            record["validation_summary"]["summary"] = {
+                "repository": repository,
+                "release_tag": tag,
+                "release_target": record["release_target"],
+                "source_head_sha": release_sha,
+                "workflow_run_url": record["release_source"]["workflow_run_url"],
+                "run_attempt": 2,
+            }
+        records.append(record)
+    registry = {"schema_version": 2, "policy": _policy(), "accepted_evidence": records}
+
+    on_main = f"compare/{registry_commit}...{main_tip}?per_page=1"
+    run = "actions/runs/1234/attempts/2"
+    review = "pulls/42/reviews/99"
+    responses = {
+        "branches/main": {"name": "main", "protected": True, "commit": {"sha": main_tip}},
+        run: {
+            "id": 1234,
+            "run_attempt": 2,
+            "head_sha": release_sha,
+            "status": "completed",
+            "conclusion": "success",
+            "repository": {"full_name": repository},
+            "head_repository": {"full_name": repository},
+        },
+        review: {
+            "id": 99,
+            "state": "APPROVED",
+            "html_url": records[0]["acceptance_review"]["review_url"],
+            "submitted_at": "2026-08-23T12:34:56Z",
+            "user": {"login": "release-reviewer"},
+        },
+    }
+    for ancestor, descendant in ((release_sha, registry_commit), (registry_commit, main_tip)):
+        responses[f"compare/{ancestor}...{descendant}?per_page=1"] = {
+            "status": "ahead",
+            "behind_by": 0,
+            "base_commit": {"sha": ancestor},
+            "merge_base_commit": {"sha": ancestor},
+        }
+
+    def github_object(expected_repository, resource):
+        assert expected_repository == repository
+        if resource == f"contents/{release_parity.REGISTRY}?ref={registry_commit}":
+            payload = json.dumps(registry).encode("utf-8")
+            return {
+                "type": "file",
+                "path": release_parity.REGISTRY,
+                "encoding": "base64",
+                "content": base64.b64encode(payload).decode("ascii"),
+                "size": len(payload),
+            }
+        return responses[resource]
+
+    monkeypatch.setattr(release_parity, "github_object", github_object)
+    args = {
+        "repository": repository,
+        "tag": tag,
+        "release_sha": release_sha,
+        "registry_commit": registry_commit,
+        "assets_dir": tmp_path,
+    }
+    return SimpleNamespace(
+        args=args, asset=asset, records=records, responses=responses,
+        on_main=on_main, run=run, review=review,
+    )
+
+
+def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_release) -> None:
+    assert release_parity.audit_release(**reviewed_release.args) == []
+
+
+def test_certification_rejects_registry_commit_outside_main(reviewed_release) -> None:
+    reviewed_release.responses[reviewed_release.on_main]["status"] = "diverged"
+
+    with pytest.raises(ValueError, match="did not establish .* as an ancestor"):
+        release_parity.audit_release(**reviewed_release.args)
+
+
+def test_certification_rejects_other_release_and_changed_download(reviewed_release) -> None:
+    stale = next(row for row in reviewed_release.records if row["article_id"] == "professional-deployment")
+    stale["release_tag"] = "v1.0.1"
+    stale["release_source"]["release_tag"] = "v1.0.1"
+    stale["release_asset_urls"][0] = stale["release_asset_urls"][0].replace("v1.0.2", "v1.0.1")
+    reviewed_release.asset.write_bytes(b"changed download")
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert any("professional-deployment accepted record must bind the exact release" in error for error in errors)
+    assert any("SHA-256 differs from the downloaded release asset" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("key", "field", "value", "expected_error"),
+    [
+        ("run", "run_attempt", 3, "does not match successful release evidence"),
+        ("review", "state", "DISMISSED", "review is not approved"),
+    ],
+)
+def test_certification_checks_live_attempt_and_review(
+    reviewed_release, key, field, value, expected_error,
+) -> None:
+    reviewed_release.responses[getattr(reviewed_release, key)][field] = value
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert any(expected_error in error for error in errors)
 
 
 def _load_checker():

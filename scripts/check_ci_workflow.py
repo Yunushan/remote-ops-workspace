@@ -132,7 +132,7 @@ def check_repo_policy_job(workflow: str) -> list[str]:
         "runs-on: ubuntu-latest": "stable policy runner",
         "timeout-minutes: 15": "bounded policy job timeout",
         'python-version: "3.12"': "stable policy Python version",
-        "sudo apt-get install -y libegl1": "Qt headless runtime dependency",
+        "run: bash scripts/install_ci_ubuntu_packages.sh libegl1": "Qt headless runtime dependency",
         "python -m pip install -r requirements-dev.txt": "policy dependency installation",
         "- name: Install minimum PyQt runtime for policy checks\n"
         "        run: >-\n"
@@ -657,7 +657,7 @@ def check_gui_render_job(workflow: str) -> list[str]:
         "timeout-minutes: 15": "bounded live GUI render job timeout",
         'QT_QPA_PLATFORM: "offscreen"': "offscreen Qt platform",
         'python-version: "3.12"': "stable GUI smoke Python version",
-        "sudo apt-get update": "Linux package index update for Qt runtime libraries",
+        "bash scripts/install_ci_ubuntu_packages.sh --no-install-recommends": "Linux Qt runtime package setup",
         "fontconfig": "Qt font discovery runtime",
         "fonts-dejavu-core": "known readable Linux GUI font",
         "libegl1": "Qt EGL runtime library for PyQt6",

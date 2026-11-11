@@ -72,6 +72,18 @@ def test_ci_workflow_requires_single_row_policy_verifier() -> None:
     assert "ci workflow missing repo-policy job for single-row repository gates" in errors
 
 
+def test_ci_policy_requires_minimum_pyqt_typecheck_runtime() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    step = "      - name: Install minimum PyQt runtime for policy checks\n"
+    missing = source.replace(step, "", 1)
+    skipped = source.replace(step, step + "        if: false\n", 1)
+
+    for workflow in (missing, skipped):
+        errors = checker.check_ci_workflow(workflow)
+        assert any("hash-pinned minimum PyQt policy runtime" in error for error in errors)
+
+
 def test_ci_workflow_scopes_pushes_to_main_and_cancels_superseded_runs() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -742,7 +754,7 @@ def test_ci_workflow_requires_python_315_linux_and_windows_arm64_smoke_rows() ->
         )
 
 
-def test_ci_workflow_requires_windows_arm64_security_source_build_in_both_jobs() -> None:
+def test_ci_workflow_requires_windows_arm64_security_source_build_in_each_job() -> None:
     checker = _load_checker()
     source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     step = """      - name: Prepare pinned Windows ARM64 security source build
@@ -751,19 +763,19 @@ def test_ci_workflow_requires_windows_arm64_security_source_build_in_both_jobs()
         run: .\\scripts\\install_windows_arm64_security.ps1
 """
 
-    assert source.count(step) == 2
-    without_first = source.replace(step, "", 1)
-    without_both = source.replace(step, "")
-
-    assert any(
-        "ci test job missing maintained Windows ARM64 security source-build step" in error
-        for error in checker.check_ci_workflow(without_first)
-    )
-    assert any(
-        "ci python315-optional-dependencies job missing maintained Windows ARM64 "
-        "security source-build step" in error
-        for error in checker.check_ci_workflow(without_both)
-    )
+    for job, expected in (
+        ("test", "ci test job missing maintained Windows ARM64 security source-build step"),
+        (
+            "python315-optional-dependencies",
+            "ci python315-optional-dependencies job missing maintained Windows ARM64 "
+            "security source-build step",
+        ),
+        ("pyqt6-minimum-runtime", "ci PyQt6 minimum runtime job missing Windows ARM64 security preparation"),
+    ):
+        block = checker.workflow_job_block(source, job)
+        assert block.count(step) == 1
+        changed = source.replace(block, block.replace(step, "", 1), 1)
+        assert any(expected in error for error in checker.check_ci_workflow(changed))
 
 
 def test_ci_workflow_requires_python_315_prerelease_resolution() -> None:
@@ -952,18 +964,26 @@ def test_ci_workflow_requires_fail_closed_python315_readiness_aggregate() -> Non
     checker = _load_checker()
     source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     without_normal_need = source.replace(
-        "    needs: [test, python315-optional-dependencies, apple-27-readiness]\n",
+        "    needs: [test, python315-optional-dependencies, apple-27-readiness, pyqt6-minimum-runtime]\n",
         "    needs: [python315-optional-dependencies]\n",
         1,
+    )
+    without_minimum_need = source.replace(
+        "    needs: [test, python315-optional-dependencies, apple-27-readiness, pyqt6-minimum-runtime]\n",
+        "    needs: [test, python315-optional-dependencies, apple-27-readiness]\n",
+        1,
+    )
+    without_minimum_result = source.replace(
+        "      PYQT6_MINIMUM_RESULT: ${{ needs.pyqt6-minimum-runtime.result }}\n", "", 1
     )
     without_always = source.replace(
         "  python315-readiness:\n"
         "    name: Python 3.15 readiness\n"
-        "    needs: [test, python315-optional-dependencies, apple-27-readiness]\n"
+        "    needs: [test, python315-optional-dependencies, apple-27-readiness, pyqt6-minimum-runtime]\n"
         "    if: ${{ always() }}\n",
         "  python315-readiness:\n"
         "    name: Python 3.15 readiness\n"
-        "    needs: [test, python315-optional-dependencies, apple-27-readiness]\n",
+        "    needs: [test, python315-optional-dependencies, apple-27-readiness, pyqt6-minimum-runtime]\n",
         1,
     )
     advisory = source.replace(
@@ -975,6 +995,14 @@ def test_ci_workflow_requires_fail_closed_python315_readiness_aggregate() -> Non
     assert any(
         "readiness aggregate missing active needs" in error
         for error in checker.check_ci_workflow(without_normal_need)
+    )
+    assert any(
+        "readiness aggregate missing active needs" in error
+        for error in checker.check_ci_workflow(without_minimum_need)
+    )
+    assert any(
+        "readiness aggregate missing active minimum runtime result" in error
+        for error in checker.check_ci_workflow(without_minimum_result)
     )
     assert any(
         "readiness aggregate missing active always" in error
@@ -999,11 +1027,68 @@ def test_ci_workflow_rejects_comment_only_python315_readiness_assertions() -> No
             '          test "$APPLE_27_RESULT" = "success"',
             "Apple 27 success assertion",
         ),
+        (
+            '          test "$PYQT6_MINIMUM_RESULT" = "success"',
+            "minimum runtime success assertion",
+        ),
     ):
         workflow = source.replace(command, f"          # {command.strip()}", 1)
         errors = checker.check_ci_workflow(workflow)
 
         assert any(f"missing active {label}" in error for error in errors)
+
+
+def test_ci_workflow_requires_fail_closed_pyqt6_minimum_runtime() -> None:
+    checker = _load_checker()
+    source = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    missing = source.replace("  pyqt6-minimum-runtime:", "  removed-minimum-runtime:", 1)
+    assert "ci workflow missing PyQt6 minimum runtime job" in checker.check_ci_workflow(missing)
+
+    for snippet, label in (
+        ("runs-on: ${{ matrix.os }}", "matrix runner"),
+        ("timeout-minutes: 30", "bounded runtime job"),
+        ("fail-fast: false", "complete runtime matrix"),
+        ("- os: ubuntu-24.04-arm\n            arch: arm64", "minimum runtime platform matrix"),
+        ('python-version: "3.12"', "minimum runtime Python version and architecture"),
+        ("ROW_EXPECTED_ARCH: ${{ matrix.arch }}", "minimum runtime architecture check"),
+        ('QT_QPA_PLATFORM: ${{ matrix.qt_platform }}', "platform-specific Qt runtime"),
+        ("--requirement tests/fixtures/pyqt6-minimum-requirements.txt", "hash-pinned binary installation"),
+        ("--target-version 6.11.0 --require-target", "minimum runtime version check"),
+        ("--out-dir artifacts/gui-minimum", "minimum runtime GUI render"),
+        ("--artifact-dir artifacts/gui-minimum", "minimum runtime render validation"),
+        ("name: gui-minimum-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}", "retained minimum runtime render evidence"),
+    ):
+        block = checker.workflow_job_block(source, "pyqt6-minimum-runtime")
+        assert snippet in block
+        changed = source.replace(block, block.replace(snippet, "removed", 1), 1)
+        assert f"ci PyQt6 minimum runtime job missing {label}" in checker.check_ci_workflow(changed)
+
+    for directive in (
+        "    if: false\n",
+        "    continue-on-error: true\n",
+        "    continue-on-error: ${{ true }}\n",
+        "    strategy:\n      matrix:\n        exclude: []\n",
+    ):
+        changed = source.replace("  pyqt6-minimum-runtime:\n", "  pyqt6-minimum-runtime:\n" + directive, 1)
+        assert "ci PyQt6 minimum runtime job must run and fail closed" in checker.check_ci_workflow(changed)
+
+
+def test_ci_pyqt6_minimum_lock_requires_reviewed_regular_file(tmp_path, monkeypatch) -> None:
+    checker = _load_checker()
+    assert checker.check_pyqt6_minimum_lock() == []
+
+    candidate = tmp_path / "minimum.txt"
+    assert checker.check_pyqt6_minimum_lock(candidate) == [
+        "ci PyQt6 minimum runtime lock must be a regular file"
+    ]
+    candidate.write_text("unreviewed\n", encoding="utf-8")
+    assert checker.check_pyqt6_minimum_lock(candidate) == [
+        "ci PyQt6 minimum runtime lock bytes differ from the reviewed input"
+    ]
+    monkeypatch.setattr(Path, "is_symlink", lambda path: path == candidate)
+    assert checker.check_pyqt6_minimum_lock(candidate) == [
+        "ci PyQt6 minimum runtime lock must be a regular file"
+    ]
 
 
 def test_ci_workflow_requires_fail_closed_native_windows_readiness_aggregate() -> None:

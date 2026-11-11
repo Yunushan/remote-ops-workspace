@@ -30,9 +30,9 @@ def test_pyqt6_forward_workflow_requires_real_runtime_and_gui_evidence() -> None
         encoding="utf-8"
     )
     mutations = {
-        "python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0": (
-            "python scripts/check_pyqt6_compatibility.py",
-            "PyQt6 6.12 runtime contract",
+        "--target-version 6.12.0 --require-target --require-forward-binding": (
+            "--target-version 6.12.0 --require-target",
+            "strict PyQt6 6.12 runtime contract with a newer binding",
         ),
         "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 300": (
             "python scripts/check_real_gui_render.py --preset native",

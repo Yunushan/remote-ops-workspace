@@ -61,26 +61,18 @@ def check_workflow(workflow: str | None = None) -> list[str]:
         "allow-prereleases: true": "Python 3.15 prerelease resolution",
         "name: Install Linux Qt runtime libraries": "Linux Qt runtime dependencies",
         "if: runner.os == 'Linux'": "Linux-only Qt dependency installation",
-        'python -m pip install -e ".[desktop,security,package,dev]" --pre': (
-            "complete prerelease GUI verification environment"
-        ),
+        'python -m pip install -e ".[security,package,dev]"': "GUI verification dependencies",
         "--extra-index-url https://www.riverbankcomputing.com/pypi/simple/": (
             "Riverbank prerelease package index"
         ),
-        "name: Select exact PyQt6 6.12 line when published": (
-            "target-line selection step"
-        ),
-        "python -m pip index versions PyQt6": "PyQt6 target availability query",
+        "name: Install the latest PyQt6 and Qt 6.12 wheels": "target-line selection step",
+        "python -m pip install --upgrade --upgrade-strategy eager --pre": "prerelease wheel upgrade",
         '"PyQt6>=6.12.0,<6.13.0"': "exact PyQt6 6.12 dependency range",
         '"PyQt6-Qt6>=6.12.0,<6.13.0"': "exact Qt 6.12 dependency range",
-        "--upgrade-strategy eager": "eager PyQt6 dependency upgrades",
-        "--only-binary PyQt6,PyQt6-Qt6,PyQt6-sip": "binary PyQt6 runtime wheels",
-        '"PYQT6_TARGET_AVAILABLE=$targetAvailable"': "target availability propagation",
-        "python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0": (
-            "PyQt6 6.12 runtime contract"
-        ),
-        "python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.12.0 --require-target": (
-            "strict PyQt6 6.12 runtime contract"
+        "--only-binary=:all:": "binary PyQt6 runtime wheels",
+        "python scripts/check_pyqt6_compatibility.py --require-pyqt6\n"
+        "          --target-version 6.12.0 --require-target --require-forward-binding": (
+            "strict PyQt6 6.12 runtime contract with a newer binding"
         ),
         "python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 300": (
             "all-preset PyQt6 render evidence"

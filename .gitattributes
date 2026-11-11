@@ -8,5 +8,6 @@
 requirements-release.txt text eol=lf
 requirements-locks/*.txt text eol=lf
 requirements-locks/inputs/*.in text eol=lf
+tests/fixtures/pyqt6-minimum-requirements.txt text eol=lf
 redistribution-evidence/*.txt text eol=lf
 *.png binary

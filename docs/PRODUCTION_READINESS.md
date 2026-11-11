@@ -21,7 +21,7 @@ not close a native-host or release-trust requirement by itself.
 | Third-party redistribution and realized runtime | An independently signed approval binds the exact native manifest and artifact hashes, the complete `pip inspect` environment, component classifications, packaged license-file extraction scans, and a per-platform fully hashed lock actually consumed by the mandatory tagged build workflow. GUI bundles additionally identify the PyQt/Qt channel and bind either both commercial licenses or the open-source application-license review, corresponding source, and relink mechanism | `python scripts/check_release_license_compliance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha> --evidence <approval.json> --signature <approval.sig.json> --evidence-root <evidence-bundle>` |
 | Production signing | Windows Authenticode and macOS Developer ID/notarization proofs are present | release environment signing readiness and native manifest signing metadata |
 | Protected platform parity | Finalized, release-bound accepted records for Linux i386, Linux armhf, Windows XP x86 and Windows XP x64, including real host smoke and release-byte provenance | `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>` and the asset-backed protected-goal gate |
-| Strict MobaXterm depth | One accepted release evidence record for every tracked article | `python scripts/check_mobaxterm_parity_evidence.py --require-complete` |
+| Strict MobaXterm depth | Eight accepted records from a pinned registry commit on protected `main`, bound to the release SHA, reviewed workflow attempts and published artifact hashes | `python scripts/check_release_mobaxterm_parity.py --repository <owner/repo> --tag <tag> --sha <release-sha> --registry-commit <commit> --assets-dir <release-assets>` |
 | Repository governance | Required checks (including the stable `Python 3.15 readiness` and `Native Windows readiness` aggregates), conversation resolution, linear history, and no force-push/deletion are enabled on `main`; every required check is bound in branch protection to the configured GitHub App and resolves through that app's exact check suite to a successful `push` run of `.github/workflows/ci.yml` or `.github/workflows/codeql.yml` at the release SHA; an active, applicable tag ruleset prevents update and deletion of the exact release tag without bypass actors; pull-request approvals and signed commits remain optional controls | `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-sha> --release-tag <tag>` (live GitHub branch-protection, check-run, check-suite, Actions-run, and inherited tag-ruleset APIs, not a local manifest). Add `--require-review --require-signed-commits` for the stricter policy. |
 
 The protected-platform gate must report `4/4` accepted targets and the strict
@@ -56,6 +56,11 @@ values or writing them into logs:
   `ROW_MACOS_SIGN_IDENTITY`, `ROW_MACOS_INSTALLER_SIGN_IDENTITY`,
   `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`,
   `ROW_MACOS_NOTARY_ISSUER`.
+
+Enable [GitHub immutable releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
+before production promotion. Give the `release-compliance-review` environment a
+`ROW_RELEASE_IMMUTABILITY_TOKEN` with Administration read access so the workflow
+can verify the setting before creating a draft.
 
 The machine running the aggregate gate must have GitHub CLI installed and
 authenticated, with `GH_TOKEN` or `GITHUB_TOKEN` providing read access to
@@ -140,15 +145,18 @@ records, screenshots, or generated placeholders to the accepted registries.
 ## Final promotion sequence
 
 1. Run the runner-readiness check above.
-2. Dispatch `.github/workflows/extended-platform-evidence.yml` for Linux i386 and
-   armhf, and `.github/workflows/xp-native-evidence.yml` for both XP targets.
-3. Run the target-specific local preflight, bundle packer, finalizer, and staged
+2. Push the immutable production source tag after signing, dependency locks,
+   and policy prerequisites are configured. The tag push starts `release.yml`,
+   which builds and seals the signed and notarized candidate bytes.
+3. Dispatch `.github/workflows/extended-platform-evidence.yml` for Linux i386
+   and armhf and `.github/workflows/xp-native-evidence.yml` for both XP targets.
+   Select the production tag as the workflow ref and as the `release_tag` input
+   so the evidence runs bind to the tagged commit.
+4. Run the target-specific local preflight, bundle packer, finalizer, and staged
    upload commands from `docs/PLATFORM_PROMOTION_RUNBOOK.md`.
-4. Append only finalized records after their review bundles and source-run
-   metadata pass validation.
-5. Push the immutable production source tag only after signing, dependency locks,
-   and policy prerequisites are configured. Let `release.yml` produce and seal
-   the signed/notarized candidate bytes without publishing them.
+5. Put the finalized records in the protected-platform registry for the signed
+   compliance bundle after their review bundles and source-run metadata pass
+   validation.
 6. Review those exact Actions artifacts, capture each platform's tracked fully
    hashed resolver input, raw realized environment, artifact extraction/license
    inventory, and build provenance, sign the exact manifest/artifact hashes, and
@@ -163,8 +171,11 @@ records, screenshots, or generated placeholders to the accepted registries.
    certificate-bound `release-promotion.yml` run attempt dispatched from the exact
    tag at the exact release SHA; a main-branch dispatch, green run for another commit, and unattested or locally
    substituted bytes do not count.
-9. Certify only after the signed channel is ready and all four protected targets
-   plus all eight strict MobaXterm articles are accepted.
+9. Finalize the eight MobaXterm evidence records after publication. Use the
+   published bytes referenced by each record and merge the reviewed registry
+   into protected `main`. Retain the full SHA of that registry commit.
+10. Run the aggregate certification gate from the tagged checkout with the
+    downloaded release assets and the pinned evidence inputs.
 
 Until every gate above is proven, the release must remain an explicitly labeled
 preview or a default release with the protected targets outside its support
@@ -176,14 +187,28 @@ the exact downloaded release assets:
 
 ```bash
 make production-readiness \
-  RELEASE_TAG=v<project.version> \
-  RELEASE_SHA=<40-character-tag-commit-sha> \
-  RELEASE_REPOSITORY=<owner>/<repo> \
-  RELEASE_ASSETS_DIR=<release-assets-dir> \
-  RELEASE_LICENSE_EVIDENCE=<approval.json> \
-  RELEASE_LICENSE_SIGNATURE=<approval.sig.json> \
-  RELEASE_LICENSE_EVIDENCE_ROOT=<evidence-bundle-dir>
+  RELEASE_TAG="<version-tag>" \
+  RELEASE_SHA="<40-character-tag-commit-sha>" \
+  RELEASE_REPOSITORY="<owner>/<repo>" \
+  RELEASE_ASSETS_DIR="<downloaded-release-assets-dir>" \
+  RELEASE_LICENSE_EVIDENCE="<approval.json>" \
+  RELEASE_LICENSE_SIGNATURE="<approval.sig.json>" \
+  RELEASE_LICENSE_EVIDENCE_ROOT="<evidence-bundle-dir>" \
+  RELEASE_CANDIDATE_INVENTORY="<sealed-candidate-inventory.json>" \
+  RELEASE_PLATFORM_EVIDENCE_REGISTRY="<signed-bundle-platform_verified_evidence.json>" \
+  RELEASE_MOBAXTERM_REGISTRY_COMMIT="<merged-parity-registry-commit-sha>" \
+  RELEASE_TAG_GOVERNANCE_ATTESTATION="<tag-governance-attestation.json>" \
+  RELEASE_TAG_GOVERNANCE_SIGNATURE="<tag-governance-attestation.sig.json>"
 ```
+
+Use the protected-platform registry from the signed compliance bundle for
+`RELEASE_PLATFORM_EVIDENCE_REGISTRY`. The local checks and live GitHub audit
+both use that same file. The MobaXterm audit reads the registry from
+`RELEASE_MOBAXTERM_REGISTRY_COMMIT` on GitHub. That commit must descend from
+the release source and be reachable from protected `main`. The audit compares
+the accepted records with the release identity, live GitHub reviews and run
+attempts, and SHA-256 hashes of the same downloaded assets checked by the
+release provenance gate.
 
 The target prints `production readiness: 100/100 gates passed` only after the
 production metadata, tag/SHA/checkout equality, and clean-tree checks; the full local pytest, Ruff, mypy, CLI, and real-GUI

@@ -47,6 +47,13 @@ on any repository/tag/SHA/run-attempt/reviewer/release-byte provenance drift.
 These fields do not replace the external review, exact GitHub run and published
 release; they record and bind those externally obtained facts.
 
+For production certification, merge the reviewed registry into protected
+`main` after the published release is available and retain the full commit
+SHA. The aggregate gate reads the registry from that commit and verifies all
+eight records against the exact release SHA, the live workflow attempts and
+reviews, and the downloaded release assets. See the
+[production-readiness gate](PRODUCTION_READINESS.md).
+
 ## Implemented or adapter-backed families
 
 - SSH, SFTP, SCP, FTP, RDP, VNC, Telnet, rlogin, rsh, Mosh, XDMCP and raw

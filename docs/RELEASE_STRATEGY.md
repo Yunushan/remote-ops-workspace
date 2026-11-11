@@ -698,6 +698,8 @@ branch. It publishes only a uniquely named `unsigned-preview-*` prerelease with
 source/Python assets and an `UNSIGNED_PREVIEW.txt` marker. The lane rejects
 `main`, rejects all tag triggers (including `v*`), and never changes the
 protected production release requirements or verified-commit policy.
+It pins the build commit, uploads to a draft, and verifies the complete asset
+inventory before publication. This order supports GitHub release immutability.
 For an exact version tag and the full standard download set, use
 `.github/workflows/versioned-unsigned-release.yml` after the tag is on `main`.
 Its prerelease title and notes explicitly disclose unavailable signing and

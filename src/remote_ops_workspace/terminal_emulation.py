@@ -124,6 +124,8 @@ class AnsiTerminalTranscript:
     _origin_mode: bool = False
     _insert_mode: bool = False
     _auto_wrap: bool = True
+    _mouse_tracking_mode: int = 0
+    _mouse_encoding: int = 0
     _pending_responses: list[bytes] = field(default_factory=list)
     _saved_normal_state: tuple[
         list[list[str]],
@@ -178,6 +180,8 @@ class AnsiTerminalTranscript:
         self._origin_mode = False
         self._insert_mode = False
         self._auto_wrap = True
+        self._mouse_tracking_mode = 0
+        self._mouse_encoding = 0
         self._pending_responses.clear()
         self._saved_normal_state = None
         self._saved_normal_modes = None
@@ -224,6 +228,19 @@ class AnsiTerminalTranscript:
         """Whether a write past the last screen column wraps to the next row."""
 
         return self._auto_wrap
+
+    @property
+    def sgr_mouse_tracking_mode(self) -> int:
+        """Return the negotiated xterm tracking mode for SGR cell reports."""
+
+        if self._mouse_encoding == 1006 and self._mouse_tracking_mode in {1000, 1002, 1003}:
+            return self._mouse_tracking_mode
+        return 0
+
+    def mouse_report_cell(self, column: int, row: int) -> tuple[int, int]:
+        """Clamp one-based mouse coordinates to the negotiated terminal grid."""
+
+        return (max(1, min(column, self._screen_columns)), max(1, min(row, self._screen_rows)))
 
     @property
     def cursor_row(self) -> int:
@@ -368,6 +385,8 @@ class AnsiTerminalTranscript:
         self._origin_mode = False
         self._insert_mode = False
         self._auto_wrap = True
+        self._mouse_tracking_mode = 0
+        self._mouse_encoding = 0
         return self.text()
 
     def text(self) -> str:
@@ -653,6 +672,12 @@ class AnsiTerminalTranscript:
                         self._leave_alternate_screen()
                 elif mode == 2004:
                     self._bracketed_paste = enabled
+                elif mode in {9, 1000, 1001, 1002, 1003}:
+                    if enabled or self._mouse_tracking_mode == mode:
+                        self._mouse_tracking_mode = mode if enabled else 0
+                elif mode in {1005, 1006, 1015, 1016}:
+                    if enabled or self._mouse_encoding == mode:
+                        self._mouse_encoding = mode if enabled else 0
             return
         if command == "n":
             if first == 5:

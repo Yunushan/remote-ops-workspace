@@ -40,6 +40,12 @@ EXPECTED_ARTIFACT_NAMES = (
     "release-linux-native-x86_64",
     "release-linux-native-aarch64",
 )
+GUI_SMOKE_ARTIFACT_NAMES = (
+    "release-windows-gui-smoke-x64",
+    "release-windows-gui-smoke-arm64",
+    "release-macos-gui-smoke-x64",
+    "release-macos-gui-smoke-arm64",
+)
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -261,14 +267,22 @@ def stage(
         raise ValueError("GitHub run artifact listing must contain an artifacts list")
     by_name = unique_artifacts(raw_artifacts)
     actual_names = set(by_name)
-    expected_names = set(EXPECTED_ARTIFACT_NAMES)
+    expected_names = set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES)
     if actual_names != expected_names:
         raise ValueError(
             "staged run artifact names must be exact; "
             f"missing={sorted(expected_names - actual_names)}, "
             f"unexpected={sorted(actual_names - expected_names)}"
         )
-    records = materialize_records(client, by_name, assets_root)
+    # The workflow retains GUI smoke diagnostics alongside the release builds.
+    # Only the standard build archives feed the signed publication inventory.
+    for name in GUI_SMOKE_ARTIFACT_NAMES:
+        evidence = by_name[name]
+        if evidence.get("expired") is not False:
+            raise ValueError(f"GUI smoke artifact {name} must be unexpired")
+        positive_int(evidence.get("size_in_bytes"), f"GUI smoke artifact {name} size")
+    build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
+    records = materialize_records(client, build_artifacts, assets_root)
     inventory = {
         "schema_version": SCHEMA_VERSION,
         "repository": normalize_repository_from_api(run),

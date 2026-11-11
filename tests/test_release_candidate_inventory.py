@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import io
+import json
+import re
 import sys
 import urllib.error
+import zipfile
 from email.message import Message
 from pathlib import Path
 
@@ -14,6 +18,145 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import release_candidate_inventory as candidate  # noqa: E402
+
+
+def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
+    workflow = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
+    expected = set()
+    for platform, label, condition in (
+        ("windows", "Windows", "if: ${{ always() && matrix.arch != 'x86' }}"),
+        ("macos", "macOS", "if: always()"),
+    ):
+        job = re.search(
+            rf"(?ms)^  {platform}-native:\n(.*?)(?=^  [\w-]+:\n|\Z)",
+            workflow,
+        )
+        assert job is not None
+        matrix, steps = job[1].split("    steps:", 1)
+        architectures = re.findall(r"(?m)^          - arch: ([\w-]+)$", matrix)
+        marker = f"      - name: Retain installed {label} GUI workflow evidence\n"
+        smoke_step = steps.split(marker, 1)[1].split("\n      - ", 1)[0]
+        assert condition in smoke_step
+        assert f"name: release-{platform}-gui-smoke-${{{{ matrix.arch }}}}" in smoke_step
+        expected.update(
+            f"release-{platform}-gui-smoke-{arch}"
+            for arch in architectures
+            if (platform, arch) != ("windows", "x86")
+        )
+    assert expected == set(candidate.GUI_SMOKE_ARTIFACT_NAMES)
+
+
+@pytest.mark.parametrize(
+    ("condition", "error"),
+    [
+        ("complete", ""),
+        ("missing-installer", "missing=.*release-source-python"),
+        ("missing-smoke", "missing=.*release-macos-gui-smoke-x64"),
+        ("unknown-artifact", "unexpected=.*unexpected-build"),
+        ("expired-smoke", "GUI smoke artifact release-macos-gui-smoke-x64 must be unexpired"),
+    ],
+)
+def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release(
+    tmp_path: Path,
+    condition: str,
+    error: str,
+) -> None:
+    sha = "a" * 40
+    tag = "v1.2.3"
+    standard = (
+        "release-source-python",
+        "release-windows-native-x64",
+        "release-windows-native-x86",
+        "release-windows-native-arm64",
+        "release-macos-native-x64",
+        "release-macos-native-arm64",
+        "release-linux-native-x86_64",
+        "release-linux-native-aarch64",
+    )
+    smoke = (
+        "release-windows-gui-smoke-x64",
+        "release-windows-gui-smoke-arm64",
+        "release-macos-gui-smoke-x64",
+        "release-macos-gui-smoke-arm64",
+    )
+    names = [*standard, *smoke]
+    if condition == "missing-installer":
+        names.remove("release-source-python")
+    if condition == "missing-smoke":
+        names.remove("release-macos-gui-smoke-x64")
+    if condition == "unknown-artifact":
+        names.append("unexpected-build")
+    artifacts = []
+    archives: dict[int, bytes] = {}
+    for artifact_id, name in enumerate(names, start=1):
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr(f"{name}.txt", f"bytes from {name}")
+        data = stream.getvalue()
+        artifacts.append({
+            "id": artifact_id,
+            "name": name,
+            "digest": f"sha256:{hashlib.sha256(data).hexdigest()}",
+            "expired": condition == "expired-smoke" and name == "release-macos-gui-smoke-x64",
+            "size_in_bytes": len(data),
+        })
+        if name in standard:
+            archives[artifact_id] = data
+    downloads: list[int] = []
+
+    class BuildRun:
+        def json(self, endpoint: str) -> dict:
+            if endpoint == "actions/runs/123":
+                return {
+                    "id": 123,
+                    "run_attempt": 1,
+                    "event": "push",
+                    "head_branch": tag,
+                    "head_sha": sha,
+                    "path": ".github/workflows/release.yml",
+                    "repository": {"full_name": "example/project"},
+                }
+            assert endpoint == "actions/runs/123/artifacts?per_page=100"
+            return {"artifacts": artifacts}
+
+        def download(self, endpoint: str, destination: Path) -> str:
+            artifact_id = int(endpoint.split("/")[2])
+            assert endpoint == f"actions/artifacts/{artifact_id}/zip"
+            downloads.append(artifact_id)
+            data = archives[artifact_id]
+            destination.write_bytes(data)
+            return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+    root = tmp_path / "assets"
+    output = tmp_path / "inventory.json"
+
+    def seal() -> None:
+        candidate.stage(
+            BuildRun(),
+            release_tag=tag,
+            release_sha=sha,
+            run_id=123,
+            run_attempt=1,
+            assets_root=root,
+            output=output,
+        )
+
+    if error:
+        with pytest.raises(ValueError, match=error):
+            seal()
+        assert downloads == []
+        assert not output.exists()
+        return
+
+    seal()
+    inventory = json.loads(output.read_text(encoding="utf-8"))
+    records = candidate.validate_inventory(
+        inventory, repository="example/project", release_tag=tag, release_sha=sha,
+        run_id=123, run_attempt=1,
+    )
+    assert {record["name"] for record in records} == set(standard)
+    assert {path.name for path in root.iterdir()} == {f"{name}.txt" for name in standard}
+    assert len(downloads) == len(archives) and set(downloads) == set(archives)
 
 
 def redirect_error(url: str, location: str) -> urllib.error.HTTPError:

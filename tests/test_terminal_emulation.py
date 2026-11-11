@@ -172,6 +172,35 @@ def test_ansi_transcript_handles_vim_origin_insert_and_wrap_modes() -> None:
     terminal.feed("\x1b[4l\x1b[?1049l")
 
 
+def test_sgr_mouse_reporting_requires_supported_tracking_and_encoding() -> None:
+    terminal = AnsiTerminalTranscript()
+    assert terminal.feed("\x1b[?1000h") == ""
+    assert terminal.sgr_mouse_tracking_mode == 0
+    terminal.feed("\x1b[?1006h")
+    assert terminal.sgr_mouse_tracking_mode == 1000
+    terminal.feed("\x1b[?1002h\x1b[?1000l\x1b[?1016l")
+    assert terminal.sgr_mouse_tracking_mode == 1002
+    terminal.feed("\x1b[?1049h\x1b[?1003h\x1b[?1049l")
+    assert terminal.sgr_mouse_tracking_mode == 1003
+    terminal.feed("\x1b[?1016h")
+    assert terminal.sgr_mouse_tracking_mode == 0
+    terminal.feed("\x1b[?1006h\x1b[?1001h")
+    assert terminal.sgr_mouse_tracking_mode == 0
+    terminal.feed("\x1b[?1003h\x1b[?1006l")
+    assert terminal.sgr_mouse_tracking_mode == 0
+    terminal.feed("\x1b[?1006h\x1b[?1003l")
+    assert terminal.sgr_mouse_tracking_mode == 0
+    terminal.feed("\x1b[?1000h")
+    terminal.end_of_stream()
+    assert terminal.sgr_mouse_tracking_mode == 0
+    terminal.feed("\x1b[?1000;1006h")
+    terminal.reset()
+    assert terminal.sgr_mouse_tracking_mode == 0
+    terminal.set_screen_size(40, 12)
+    assert terminal.mouse_report_cell(-2, 99) == (1, 12)
+    assert terminal.mouse_report_cell(99, 0) == (40, 1)
+
+
 def test_ansi_transcript_restores_primary_modes_when_alternate_screen_closes() -> None:
     terminal = AnsiTerminalTranscript()
 

@@ -137,48 +137,73 @@ def require_unused_namespace(
     tag: str,
     token: str,
 ) -> None:
-    base_url = f"{api_root}/repos/{repository}/releases"
-    url: str | None = f"{base_url}?per_page=100"
-    pages = 0
-    while url is not None:
-        pages += 1
-        if pages > MAX_RELEASE_PAGES:
-            raise RuntimeError("GitHub release pagination exceeded the safety limit")
+    repository_url = f"{api_root}/repos/{repository}"
+    metadata, _ = get_json(repository_url, token, api_version="2022-11-28")
+    if not isinstance(metadata, dict):
+        raise RuntimeError("GitHub repository API did not return an object")
+    repository_id = metadata.get("id")
+    full_name = metadata.get("full_name")
+    if (
+        not isinstance(full_name, str)
+        or full_name.casefold() != repository.casefold()
+        or not isinstance(repository_id, int)
+        or isinstance(repository_id, bool)
+        or repository_id < 1
+    ):
+        raise RuntimeError("GitHub repository API did not identify the requested repository")
+
+    base_url = f"{repository_url}/releases"
+    # GitHub can return numeric repository paths in pagination links.
+    allowed_paths = {
+        urlsplit(base_url).path,
+        urlsplit(f"{api_root}/repositories/{repository_id}/releases").path,
+    }
+    url = f"{base_url}?per_page=100"
+    for page in range(1, MAX_RELEASE_PAGES + 1):
         payload, headers = get_json(url, token, api_version="2022-11-28")
         if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
             raise RuntimeError("GitHub releases API did not return a list of objects")
         if any(item.get("tag_name") == tag or item.get("name") == tag for item in payload):
             raise RuntimeError(f"a published or draft release already uses tag/name {tag}")
-        url = next_page_url(headers.get("Link"), current=url, base_url=base_url)
+        next_url = next_page_url(
+            headers.get("Link"), current=url, allowed_paths=allowed_paths, expected_page=page + 1
+        )
+        if next_url is None:
+            return
+        url = next_url
+    raise RuntimeError("GitHub release pagination exceeded the safety limit")
 
 
-def next_page_url(value: Any, *, current: str, base_url: str) -> str | None:
-    if not isinstance(value, str) or not value:
+def next_page_url(
+    value: str | None, *, current: str, allowed_paths: set[str], expected_page: int
+) -> str | None:
+    if value is None:
         return None
     next_values: list[str] = []
     for item in value.split(","):
         match = re.fullmatch(r'\s*<([^>]+)>\s*;\s*rel="([^"]+)"\s*', item)
-        if match and match.group(2) == "next":
+        if match is None:
+            raise RuntimeError("GitHub releases pagination has an invalid Link header")
+        if match.group(2) == "next":
             next_values.append(urljoin(current, match.group(1)))
+    if not next_values:
+        return None
     if len(next_values) != 1:
         raise RuntimeError("GitHub releases pagination has an invalid next link")
     candidate = next_values[0]
     parsed = urlsplit(candidate)
-    expected = urlsplit(base_url)
+    expected = urlsplit(current)
     query = parse_qs(parsed.query, keep_blank_values=True)
     if (
         parsed.scheme != "https"
         or parsed.netloc != expected.netloc
-        or parsed.path != expected.path
+        or parsed.path not in allowed_paths
         or parsed.username
         or parsed.password
         or parsed.fragment
-        or not set(query).issubset({"page", "per_page"})
-        or any(len(values) != 1 for values in query.values())
-        or ("page" in query and re.fullmatch(r"[1-9]\d*", query["page"][0]) is None)
-        or ("per_page" in query and query["per_page"] != ["100"])
+        or query != {"page": [str(expected_page)], "per_page": ["100"]}
     ):
-        raise RuntimeError("GitHub releases pagination left the expected HTTPS endpoint")
+        raise RuntimeError("GitHub releases pagination left the expected HTTPS endpoint or page")
     return candidate
 
 

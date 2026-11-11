@@ -39,6 +39,12 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
         '--tag "$(RELEASE_TAG)" --repository "$(RELEASE_REPOSITORY)" '
         '--sha "$(RELEASE_SHA)"'
     ) in target
+    assert (
+        'python scripts/check_platform_release_evidence_remote.py --repository "$(RELEASE_REPOSITORY)" '
+        '--registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --release-tag "$(RELEASE_TAG)" '
+        '--require-goal-targets --require-source-runs --require-source-artifact-bytes '
+        '--require-final-record-bytes --require-release-asset-bytes --require-tag-source-head'
+    ) in target
     assert target.index("scripts/check_repository_cleanup.py --require-clean") < target.index(
         "scripts/verify.py --production-quality"
     )

@@ -140,15 +140,18 @@ records, screenshots, or generated placeholders to the accepted registries.
 ## Final promotion sequence
 
 1. Run the runner-readiness check above.
-2. Dispatch `.github/workflows/extended-platform-evidence.yml` for Linux i386 and
-   armhf, and `.github/workflows/xp-native-evidence.yml` for both XP targets.
-3. Run the target-specific local preflight, bundle packer, finalizer, and staged
+2. Push the immutable production source tag after signing, dependency locks,
+   and policy prerequisites are configured. The tag push starts `release.yml`,
+   which builds and seals the signed and notarized candidate bytes.
+3. Dispatch `.github/workflows/extended-platform-evidence.yml` for Linux i386
+   and armhf and `.github/workflows/xp-native-evidence.yml` for both XP targets.
+   Select the production tag as the workflow ref and as the `release_tag` input
+   so the evidence runs bind to the tagged commit.
+4. Run the target-specific local preflight, bundle packer, finalizer, and staged
    upload commands from `docs/PLATFORM_PROMOTION_RUNBOOK.md`.
-4. Append only finalized records after their review bundles and source-run
-   metadata pass validation.
-5. Push the immutable production source tag only after signing, dependency locks,
-   and policy prerequisites are configured. Let `release.yml` produce and seal
-   the signed/notarized candidate bytes without publishing them.
+5. Put the finalized records in the protected-platform registry for the signed
+   compliance bundle after their review bundles and source-run metadata pass
+   validation.
 6. Review those exact Actions artifacts, capture each platform's tracked fully
    hashed resolver input, raw realized environment, artifact extraction/license
    inventory, and build provenance, sign the exact manifest/artifact hashes, and
@@ -176,14 +179,22 @@ the exact downloaded release assets:
 
 ```bash
 make production-readiness \
-  RELEASE_TAG=v<project.version> \
-  RELEASE_SHA=<40-character-tag-commit-sha> \
-  RELEASE_REPOSITORY=<owner>/<repo> \
-  RELEASE_ASSETS_DIR=<release-assets-dir> \
-  RELEASE_LICENSE_EVIDENCE=<approval.json> \
-  RELEASE_LICENSE_SIGNATURE=<approval.sig.json> \
-  RELEASE_LICENSE_EVIDENCE_ROOT=<evidence-bundle-dir>
+  RELEASE_TAG="<version-tag>" \
+  RELEASE_SHA="<40-character-tag-commit-sha>" \
+  RELEASE_REPOSITORY="<owner>/<repo>" \
+  RELEASE_ASSETS_DIR="<downloaded-release-assets-dir>" \
+  RELEASE_LICENSE_EVIDENCE="<approval.json>" \
+  RELEASE_LICENSE_SIGNATURE="<approval.sig.json>" \
+  RELEASE_LICENSE_EVIDENCE_ROOT="<evidence-bundle-dir>" \
+  RELEASE_CANDIDATE_INVENTORY="<sealed-candidate-inventory.json>" \
+  RELEASE_PLATFORM_EVIDENCE_REGISTRY="<signed-bundle-platform_verified_evidence.json>" \
+  RELEASE_TAG_GOVERNANCE_ATTESTATION="<tag-governance-attestation.json>" \
+  RELEASE_TAG_GOVERNANCE_SIGNATURE="<tag-governance-attestation.sig.json>"
 ```
+
+Use the protected-platform registry from the signed compliance bundle for
+`RELEASE_PLATFORM_EVIDENCE_REGISTRY`. The local checks and live GitHub audit
+both use that same file.
 
 The target prints `production readiness: 100/100 gates passed` only after the
 production metadata, tag/SHA/checkout equality, and clean-tree checks; the full local pytest, Ruff, mypy, CLI, and real-GUI

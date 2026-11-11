@@ -32,6 +32,13 @@ CONTAINER_SBOM_PATH = "artifacts/container-sbom/container-image-sbom.cdx.json"
 CONTAINER_SBOM_BUILDER = "scripts/build_container_sbom.py"
 CONTAINER_SBOM_ATTEST_ACTION = "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6"
 CONTAINER_SBOM_UPLOAD_ACTION = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+CONTAINER_DEBIAN_INVENTORY_PATH = "artifacts/container-sbom/container-image-debian-packages.tsv"
+CONTAINER_ARCHIVE_PATH = "artifacts/container-sbom/web-container-image.tar.gz"
+CONTAINER_DOWNLOAD_ACTION = "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333"
+MAIN_PUSH = "if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
+ATTESTATION_ARTIFACT = "${{ needs.web-container.outputs.image-artifact-id }}"
+IMAGE_ID_OUTPUT = "${{ steps.smoke-tested-container.outputs.image-id }}"
+CONTAINER_ID_OUTPUT = "${{ steps.smoke-tested-container.outputs.container-id }}"
 
 
 def main() -> int:
@@ -133,40 +140,122 @@ def check_compose_hardening(compose_text: str | None = None) -> list[str]:
 
 def check_container_image_sbom(workflow: str | None = None) -> list[str]:
     text = workflow if workflow is not None else CI_WORKFLOW_PATH.read_text(encoding="utf-8")
-    block = ci_job_block(text, "web-container")
-    if not block:
+    build = ci_job_block(text, "web-container")
+    if not build:
         return ["ci workflow missing web-container job for live Web/PWA container smoke"]
     errors: list[str] = []
-    required_snippets = {
-        "importlib.metadata.distributions()": "container image Python inventory collection",
-        CONTAINER_INVENTORY_PATH: "materialized container image Python inventory",
-        CONTAINER_SBOM_BUILDER: "container image SBOM generator",
-        CONTAINER_SBOM_PATH: "container image CycloneDX SBOM output",
-        "attestations: write": "container image SBOM attestation permission",
-        "id-token: write": "OIDC token permission for the container image SBOM attestation",
-        CONTAINER_SBOM_ATTEST_ACTION: "pinned container image SBOM attestation action",
-        f"if: ${{{{ github.event_name == 'push' }}}}\n        uses: {CONTAINER_SBOM_ATTEST_ACTION}": (
-            "container image SBOM attestation restricted to push events"
-        ),
-        f"subject-path: {CONTAINER_SBOM_PATH}": "container image SBOM attestation subject",
-        CONTAINER_SBOM_UPLOAD_ACTION: "pinned container image SBOM artifact upload",
-        "name: container-image-sbom": "named container image SBOM artifact",
-        f"path: {CONTAINER_SBOM_PATH}": "container image SBOM artifact path",
-        "retention-days: 30": "bounded container image SBOM retention",
-    }
-    for snippet, label in required_snippets.items():
-        if snippet not in block:
-            errors.append(f"ci web-container job missing {label}: {snippet}")
-    inventory_index = block.find(CONTAINER_INVENTORY_PATH)
-    generate_index = block.find(CONTAINER_SBOM_BUILDER)
-    attest_index = block.find(CONTAINER_SBOM_ATTEST_ACTION)
-    upload_index = block.find(CONTAINER_SBOM_UPLOAD_ACTION)
-    if min(inventory_index, generate_index, attest_index, upload_index) >= 0 and not (
-        inventory_index < generate_index < attest_index < upload_index
+    if any(permission in build for permission in ("attestations: write", "id-token: write")):
+        errors.append("ci web-container job must build and test without attestation permissions")
+    if "image-artifact-id: ${{ steps.upload-web-container.outputs.artifact-id }}" not in build:
+        errors.append("ci web-container job must expose the exact uploaded image artifact ID")
+    if (
+        "'container-image-sbom' || format('container-image-sbom-{0}', github.run_attempt)" not in build
+        or f"path: {CONTAINER_SBOM_PATH}" not in build
     ):
-        errors.append(
-            "ci web-container job must inventory, generate, attest, then upload the container image SBOM in order"
+        errors.append("ci web-container job must retain the standalone CycloneDX SBOM artifact")
+    errors.extend(check_container_steps("web-container", build, {
+        "Build and smoke-test Web/PWA container": (
+            "id: smoke-tested-container",
+            "docker inspect --format '{{.Image}}' \"$container_id\"",
+            ">> \"$GITHUB_OUTPUT\"",
+        ),
+        "Collect container image package inventory": (
+            f"TESTED_CONTAINER_ID: {CONTAINER_ID_OUTPUT}",
+            "importlib.metadata.distributions()",
+            "dpkg-query --show",
+            CONTAINER_INVENTORY_PATH,
+            CONTAINER_DEBIAN_INVENTORY_PATH,
+        ),
+        "Export the smoke-tested Web/PWA image": (
+            f"TESTED_IMAGE_ID: {IMAGE_ID_OUTPUT}",
+            f'docker image save "$TESTED_IMAGE_ID" | gzip -n > {CONTAINER_ARCHIVE_PATH}',
+            f"gzip --test {CONTAINER_ARCHIVE_PATH}",
+        ),
+        "Generate container image SBOM": (
+            f"TESTED_CONTAINER_ID: {CONTAINER_ID_OUTPUT}",
+            f"TESTED_IMAGE_ID: {IMAGE_ID_OUTPUT}",
+            CONTAINER_SBOM_BUILDER,
+            f"--debian-packages {CONTAINER_DEBIAN_INVENTORY_PATH}",
+            f"--image-archive {CONTAINER_ARCHIVE_PATH}",
+            f"--output {CONTAINER_SBOM_PATH}",
+        ),
+        "Upload the smoke-tested Web/PWA image for attestation": (
+            MAIN_PUSH,
+            "id: upload-web-container",
+            f"uses: {CONTAINER_SBOM_UPLOAD_ACTION}",
+            "name: web-container-image-${{ github.run_attempt }}",
+            CONTAINER_ARCHIVE_PATH,
+            CONTAINER_SBOM_PATH,
+            "retention-days: 30",
+        ),
+    }))
+    attestation = ci_job_block(text, "web-container-attestation")
+    if not attestation:
+        return [*errors, "ci workflow missing the Web/PWA image attestation job"]
+    header = attestation.split("    steps:", 1)[0]
+    for snippet in (MAIN_PUSH, "needs: web-container", "attestations: write", "id-token: write"):
+        if snippet not in header:
+            errors.append(f"ci web-container-attestation job missing: {snippet}")
+    errors.extend(check_container_steps("web-container-attestation", attestation, {
+        "Require the smoke job's exact image artifact": (
+            f"IMAGE_ARTIFACT_ID: {ATTESTATION_ARTIFACT}",
+            '[[ "$IMAGE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]',
+        ),
+        "Download the smoke-tested Web/PWA image": (
+            f"uses: {CONTAINER_DOWNLOAD_ACTION}",
+            f"artifact-ids: {ATTESTATION_ARTIFACT}",
+        ),
+        "Verify the SBOM names the downloaded archive digest": (
+            "sha256sum web-container-image.tar.gz",
+            '.metadata.component.hashes == [{"alg":"SHA-256","content":$digest}]',
+            "container-image-sbom.cdx.json",
+        ),
+        "Attest Web/PWA image build provenance": (
+            f"uses: {CONTAINER_SBOM_ATTEST_ACTION}",
+            f"subject-path: |\n            {CONTAINER_ARCHIVE_PATH}\n            {CONTAINER_SBOM_PATH}",
+        ),
+        "Attest the Web/PWA image SBOM": (
+            f"uses: {CONTAINER_SBOM_ATTEST_ACTION}",
+            f"subject-path: {CONTAINER_ARCHIVE_PATH}",
+            "predicate-type: https://cyclonedx.org/bom",
+            f"predicate-path: {CONTAINER_SBOM_PATH}",
+        ),
+        "Verify the Web/PWA image attestations": (
+            f"image={CONTAINER_ARCHIVE_PATH}",
+            '--signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"',
+            "--source-ref refs/heads/main",
+            '--source-digest "$GITHUB_SHA"',
+            "--deny-self-hosted-runners",
+            '--bundle "$PROVENANCE_BUNDLE"',
+            "--predicate-type https://slsa.dev/provenance/v1",
+            '--bundle "$SBOM_BUNDLE"',
+            "--predicate-type https://cyclonedx.org/bom",
+        ),
+    }))
+    return errors
+
+
+def check_container_steps(
+    job: str,
+    block: str,
+    required_steps: dict[str, tuple[str, ...]],
+) -> list[str]:
+    errors: list[str] = []
+    previous = -1
+    for name, snippets in required_steps.items():
+        step = re.search(
+            rf"(?ms)^      - name: {re.escape(name)}\n(.*?)(?=^      - |\Z)",
+            block,
         )
+        if step is None:
+            errors.append(f"ci {job} job missing step: {name}")
+            continue
+        if step.start() <= previous:
+            errors.append(f"ci {job} job has an out-of-order step: {name}")
+        previous = step.start()
+        for snippet in snippets:
+            if snippet not in step.group(1):
+                errors.append(f"ci {job} step {name} missing: {snippet}")
     return errors
 
 

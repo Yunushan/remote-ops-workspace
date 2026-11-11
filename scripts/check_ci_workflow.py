@@ -890,7 +890,7 @@ def check_web_container_job(workflow: str) -> list[str]:
         "{{.HostConfig.PidsLimit}}": "PID limit assertion",
         "{{.HostConfig.CapDrop}}": "capability-drop assertion",
         "{{.HostConfig.SecurityOpt}}": "no-new-privileges assertion",
-        "compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'": (
+        "docker exec \"$container_id\" sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'": (
             "writable non-root data-volume smoke"
         ),
     }

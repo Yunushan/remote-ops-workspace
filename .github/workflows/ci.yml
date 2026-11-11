@@ -525,15 +525,14 @@ jobs:
     name: Web/PWA container smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      attestations: write
-      contents: read
-      id-token: write
+    outputs:
+      image-artifact-id: ${{ steps.upload-web-container.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           persist-credentials: false
       - name: Build and smoke-test Web/PWA container
+        id: smoke-tested-container
         shell: bash
         run: |
           set -euo pipefail
@@ -558,40 +557,65 @@ jobs:
           test "$(docker inspect --format '{{.HostConfig.PidsLimit}}' "$container_id")" = "128"
           docker inspect --format '{{.HostConfig.CapDrop}}' "$container_id" | grep -Fx "[ALL]"
           docker inspect --format '{{.HostConfig.SecurityOpt}}' "$container_id" | grep -Fx "[no-new-privileges:true]"
-          compose exec -T remote-ops-web sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'
+          docker exec "$container_id" sh -c 'test -w /data && touch /data/.row-write-smoke && rm /data/.row-write-smoke'
+          image_id="$(docker inspect --format '{{.Image}}' "$container_id")"
+          [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'container-id=%s\nimage-id=%s\n' "$container_id" "$image_id" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.12"
-      - name: Collect container image Python inventory
+      - name: Collect container image package inventory
         shell: bash
+        env:
+          TESTED_CONTAINER_ID: ${{ steps.smoke-tested-container.outputs.container-id }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/container-sbom
-          compose() { docker compose -p row-web-smoke -f docker/compose.yaml "$@"; }
-          compose exec -T remote-ops-web python -c \
+          docker exec "$TESTED_CONTAINER_ID" python -c \
             "import importlib.metadata, json, sys; json.dump(sorted(({'name': distribution.metadata.get('Name'), 'version': distribution.version} for distribution in importlib.metadata.distributions()), key=lambda item: (str(item['name'] or '').casefold(), str(item['version'] or ''))), sys.stdout)" \
             > artifacts/container-sbom/container-image-packages.json
-      - name: Generate container image SBOM
+          docker exec -e LC_ALL=C.UTF-8 "$TESTED_CONTAINER_ID" dpkg-query --show \
+            --showformat='${Status}\t${Package}\t${Version}\t${Architecture}\n' \
+            > artifacts/container-sbom/container-image-debian-packages.tsv
+      - name: Export the smoke-tested Web/PWA image
         shell: bash
+        env:
+          TESTED_IMAGE_ID: ${{ steps.smoke-tested-container.outputs.image-id }}
         run: |
           set -euo pipefail
-          compose() { docker compose -p row-web-smoke -f docker/compose.yaml "$@"; }
-          application_version="$(compose exec -T remote-ops-web python -c "import importlib.metadata; print(importlib.metadata.version('remote-ops-workspace'))")"
-          image_id="$(docker inspect --format '{{.Image}}' "$(compose ps -q remote-ops-web)")"
+          docker image save "$TESTED_IMAGE_ID" | gzip -n > artifacts/container-sbom/web-container-image.tar.gz
+          gzip --test artifacts/container-sbom/web-container-image.tar.gz
+      - name: Generate container image SBOM
+        shell: bash
+        env:
+          TESTED_CONTAINER_ID: ${{ steps.smoke-tested-container.outputs.container-id }}
+          TESTED_IMAGE_ID: ${{ steps.smoke-tested-container.outputs.image-id }}
+        run: |
+          set -euo pipefail
+          application_version="$(docker exec "$TESTED_CONTAINER_ID" python -c "import importlib.metadata; print(importlib.metadata.version('remote-ops-workspace'))")"
           python scripts/build_container_sbom.py \
             --packages artifacts/container-sbom/container-image-packages.json \
+            --debian-packages artifacts/container-sbom/container-image-debian-packages.tsv \
             --version "$application_version" \
-            --image-id "$image_id" \
+            --image-id "$TESTED_IMAGE_ID" \
+            --image-archive artifacts/container-sbom/web-container-image.tar.gz \
             --output artifacts/container-sbom/container-image-sbom.cdx.json
-      - name: Attest container image SBOM
-        if: ${{ github.event_name == 'push' }}
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: artifacts/container-sbom/container-image-sbom.cdx.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: container-image-sbom
+          name: ${{ github.run_attempt == '1' && 'container-image-sbom' || format('container-image-sbom-{0}', github.run_attempt) }}
           path: artifacts/container-sbom/container-image-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload the smoke-tested Web/PWA image for attestation
+        id: upload-web-container
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: web-container-image-${{ github.run_attempt }}
+          path: |
+            artifacts/container-sbom/web-container-image.tar.gz
+            artifacts/container-sbom/container-image-sbom.cdx.json
+          compression-level: 0
           if-no-files-found: error
           retention-days: 30
       - name: Tear down Web/PWA container
@@ -602,6 +626,71 @@ jobs:
           compose() { docker compose -p row-web-smoke -f docker/compose.yaml "$@"; }
           cleanup() { compose down --volumes --remove-orphans; }
           trap cleanup EXIT
+
+  web-container-attestation:
+    name: Web/PWA container attestations
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: web-container
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Require the smoke job's exact image artifact
+        shell: bash
+        env:
+          IMAGE_ARTIFACT_ID: ${{ needs.web-container.outputs.image-artifact-id }}
+        run: '[[ "$IMAGE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]'
+      - name: Download the smoke-tested Web/PWA image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
+        with:
+          artifact-ids: ${{ needs.web-container.outputs.image-artifact-id }}
+          path: artifacts/container-sbom
+      - name: Verify the SBOM names the downloaded archive digest
+        shell: bash
+        working-directory: artifacts/container-sbom
+        run: |
+          set -euo pipefail
+          digest="$(sha256sum web-container-image.tar.gz | cut -d ' ' -f 1)"
+          jq -e --arg digest "$digest" \
+            '.metadata.component.hashes == [{"alg":"SHA-256","content":$digest}]' \
+            container-image-sbom.cdx.json > /dev/null
+      - name: Attest Web/PWA image build provenance
+        id: attest-container-provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/container-sbom/web-container-image.tar.gz
+            artifacts/container-sbom/container-image-sbom.cdx.json
+      - name: Attest the Web/PWA image SBOM
+        id: attest-container-sbom
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: artifacts/container-sbom/web-container-image.tar.gz
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: artifacts/container-sbom/container-image-sbom.cdx.json
+      - name: Verify the Web/PWA image attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROVENANCE_BUNDLE: ${{ steps.attest-container-provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.attest-container-sbom.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          image=artifacts/container-sbom/web-container-image.tar.gz
+          scope=(
+            --repo "$GITHUB_REPOSITORY"
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"
+            --source-ref refs/heads/main
+            --source-digest "$GITHUB_SHA"
+            --deny-self-hosted-runners
+          )
+          gh attestation verify "$image" "${scope[@]}" --bundle "$PROVENANCE_BUNDLE" \
+            --predicate-type https://slsa.dev/provenance/v1
+          gh attestation verify "$image" "${scope[@]}" --bundle "$SBOM_BUNDLE" \
+            --predicate-type https://cyclonedx.org/bom
 
   web-recovery:
     name: Web/PWA backup and restore drill

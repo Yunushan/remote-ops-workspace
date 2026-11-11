@@ -161,6 +161,34 @@ Its scope is deliberately limited to that source/Python environment; inspect
 each native artifact's manifest, signature state, checksums, and provenance
 attestation separately before deployment.
 
+### Web/PWA container evidence
+
+The CI run for a push to `main` exports the Web/PWA image by its Docker image
+ID after the Compose smoke test. The CycloneDX inventory records the archive's
+SHA-256 and the Python distributions and Debian packages installed in the tested
+container. The separate attestation job verifies the archive digest and signs
+SLSA provenance and the CycloneDX SBOM for that archive.
+
+Download the `web-container-image-<attempt>` Actions artifact from the successful run
+for the source commit you intend to deploy. Verify both attestations for the
+extracted `web-container-image.tar.gz` before loading the archive into Docker.
+Set `source_sha` to that run's full commit SHA.
+
+```bash
+source_sha=REPLACE_WITH_MAIN_COMMIT_SHA
+for predicate in https://slsa.dev/provenance/v1 https://cyclonedx.org/bom; do
+  gh attestation verify web-container-image.tar.gz \
+    --repo Yunushan/remote-ops-workspace \
+    --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/ci.yml \
+    --source-ref refs/heads/main \
+    --source-digest "$source_sha" \
+    --deny-self-hosted-runners \
+    --predicate-type "$predicate" || exit 1
+done
+```
+
+### Dependency checks
+
 The repository-policy CI job also runs `pip-audit --strict` against the exact
 release dependency pins. It uses the system trust store, so inspection remains
 reliable on managed networks that add a trusted TLS interception certificate.

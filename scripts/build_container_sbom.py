@@ -1,17 +1,9 @@
-"""Generate a CycloneDX 1.5 SBOM for the Web/PWA container image Python environment.
-
-The Web/PWA image is built from `docker/Dockerfile.web` on a digest-pinned base
-image. This tool turns the Python distribution inventory collected from inside
-the built container (in CI, through `importlib.metadata.distributions()`) into a
-CycloneDX document so the image is covered by the same SBOM and provenance
-attestation as the source/Python release assets. Distribution packages provided
-by the operating-system layer remain covered by the digest-pinned base image and
-are deliberately not inferred here.
-"""
+"""Generate a CycloneDX SBOM for the exported Web/PWA image tested in CI."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -22,7 +14,7 @@ from urllib.parse import quote
 
 APPLICATION_NAME = "remote-ops-workspace"
 IMAGE_COMPONENT_NAME = "remote-ops-workspace-web"
-IMAGE_SCOPE = "container-web-image-python-environment"
+IMAGE_SCOPE = "container-web-image-installed-python-and-debian-packages"
 DEFAULT_SOURCE_DATE_EPOCH = 1_704_067_200  # 2024-01-01T00:00:00Z
 NORMALIZE_RE = re.compile(r"[-_.]+")
 
@@ -43,10 +35,6 @@ def source_date_epoch() -> int:
 def package_component_ref(name: str, version: str) -> str:
     normalized_name = NORMALIZE_RE.sub("-", name).lower()
     return f"pkg:pypi/{quote(normalized_name, safe='.-')}@{quote(version, safe='.-')}"
-
-
-def image_component_ref(image_id: str) -> str:
-    return f"pkg:oci/{IMAGE_COMPONENT_NAME}@{quote(image_id, safe='.-')}"
 
 
 def normalize_packages(packages: list[dict[str, object]]) -> list[dict[str, str]]:
@@ -78,13 +66,59 @@ def normalize_packages(packages: list[dict[str, object]]) -> list[dict[str, str]
     return components
 
 
+def debian_components(inventory: str) -> list[dict[str, str]]:
+    components: dict[str, dict[str, str]] = {}
+    for line_number, line in enumerate(inventory.splitlines(), start=1):
+        fields = line.split("\t")
+        if len(fields) != 4:
+            raise ValueError(f"invalid Debian package inventory line {line_number}")
+        status, name, version, architecture = fields
+        state = status.split()
+        if len(state) != 3 or state[1] != "ok":
+            raise ValueError(f"invalid Debian package status on line {line_number}")
+        if state[2] in {"not-installed", "config-files"}:
+            continue
+        if (
+            state[2] != "installed"
+            or not re.fullmatch(r"[a-z0-9][a-z0-9+.-]+", name)
+            or not re.fullmatch(r"[A-Za-z0-9.+:~-]+", version)
+            or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", architecture)
+        ):
+            raise ValueError(f"incomplete Debian package record on line {line_number}")
+        reference = f"pkg:deb/debian/{quote(name, safe='.-')}@{quote(version, safe='.-')}?arch={architecture}"
+        components[reference] = {
+            "type": "library",
+            "bom-ref": reference,
+            "name": name,
+            "version": version,
+            "purl": reference,
+        }
+    if not components:
+        raise ValueError("container image must contain installed Debian packages")
+    return [components[reference] for reference in sorted(components)]
+
+
+def archive_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def build_container_image_sbom(
     packages: list[dict[str, object]],
     *,
+    debian_packages: str,
     application_version: str,
     image_id: str,
+    image_archive_sha256: str,
     epoch: int | None = None,
 ) -> dict[str, object]:
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+        raise ValueError("container image ID must be a SHA-256 digest")
+    if not re.fullmatch(r"[0-9a-f]{64}", image_archive_sha256):
+        raise ValueError("container image archive must have a SHA-256 digest")
     resolved_epoch = source_date_epoch() if epoch is None else epoch
     components = normalize_packages(packages)
     application_versions = [
@@ -96,14 +130,14 @@ def build_container_image_sbom(
         raise ValueError(
             "container inventory must contain exactly the installed application version"
         )
+    components.extend(debian_components(debian_packages))
     component_refs = "\n".join(component["bom-ref"] for component in components)
     serial = uuid.uuid5(
         uuid.NAMESPACE_URL,
         "https://github.com/Yunushan/remote-ops-workspace/containers/"
-        f"{IMAGE_COMPONENT_NAME}\n{image_id}\n{component_refs}",
+        f"{IMAGE_COMPONENT_NAME}\n{image_id}\n{image_archive_sha256}\n{component_refs}",
     )
     timestamp = datetime.fromtimestamp(resolved_epoch, tz=timezone.utc).replace(microsecond=0)
-    reference = image_component_ref(image_id)
     return {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
@@ -113,10 +147,10 @@ def build_container_image_sbom(
             "timestamp": timestamp.isoformat().replace("+00:00", "Z"),
             "component": {
                 "type": "container",
-                "bom-ref": reference,
+                "bom-ref": f"sha256:{image_archive_sha256}",
                 "name": IMAGE_COMPONENT_NAME,
                 "version": application_version,
-                "purl": reference,
+                "hashes": [{"alg": "SHA-256", "content": image_archive_sha256}],
             },
             "properties": [
                 {"name": "row:sbom-scope", "value": IMAGE_SCOPE},
@@ -153,9 +187,21 @@ def main(argv: list[str] | None = None) -> int:
         help="application version installed in the container image",
     )
     parser.add_argument(
+        "--debian-packages",
+        type=Path,
+        required=True,
+        help="dpkg status, name, version and architecture inventory from the tested container",
+    )
+    parser.add_argument(
         "--image-id",
         required=True,
         help="container image identity the inventory was collected from",
+    )
+    parser.add_argument(
+        "--image-archive",
+        type=Path,
+        required=True,
+        help="compressed archive exported from the tested image ID",
     )
     parser.add_argument(
         "--output",
@@ -167,8 +213,10 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = build_container_image_sbom(
         load_packages(args.packages),
+        debian_packages=args.debian_packages.read_text(encoding="utf-8"),
         application_version=args.version,
         image_id=args.image_id,
+        image_archive_sha256=archive_sha256(args.image_archive),
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")

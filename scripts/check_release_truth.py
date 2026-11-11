@@ -455,16 +455,21 @@ def check_promotion_truth(workflow: str) -> list[str]:
         "Re-resolve immutable tag after publication": "post-publication tag race check",
         "Require same numeric release becomes immutable": "same-ID immutable poll",
         "--current-transaction-run-id": "in-progress final transaction proof",
-        "steps.publish-draft.outcome != 'success'": "failed-draft cleanup guard",
-        ".draft == true": "exact still-draft cleanup proof",
-        'gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"': (
-            "numeric failed-draft cleanup"
-        ),
-        "remote-ops-release-transaction:": "failed-draft transaction marker",
+        "remote-ops-release-transaction:": "draft transaction marker",
     }
     for snippet, label in required.items():
         if snippet not in workflow:
             errors.append(f"promotion workflow missing {label}: {snippet}")
+    report = workflow_step_block(block, "name: Report the release ID after failure")
+    report_requirements = (
+        "failure() && steps.create-draft.outputs.release-id != ''",
+        "RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}",
+        'Inspect release $RELEASE_ID ($RELEASE_TAG)',
+    )
+    if not all(token in report for token in report_requirements):
+        errors.append("promotion workflow must report the captured release ID after failure")
+    if "--method DELETE" in block or "gh release delete" in block:
+        errors.append("promotion workflow must preserve releases after failure")
     command_contracts = {
         "Verify attestation and download exact candidate artifact IDs": (
             (

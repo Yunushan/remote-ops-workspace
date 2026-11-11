@@ -818,17 +818,12 @@ jobs:
           PY
           git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-unsigned-published"
           test "$(git rev-parse 'refs/tags/row-unsigned-published^{commit}')" = "$RELEASE_SHA"
-      - name: Delete only this run's failed unsigned draft
-        if: ${{ always() && failure() && steps.create-draft.outputs.release-id != '' && steps.publish-draft.outcome != 'success' }}
+      - name: Report the release ID after failure
+        if: ${{ failure() && steps.create-draft.outputs.release-id != '' }}
         shell: bash
         env:
           RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
         run: |
           set -euo pipefail
-          response="$RUNNER_TEMP/failed-unsigned-draft.json"
-          marker="<!-- remote-ops-unsigned-transaction:$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$response"
-          jq -e --argjson id "$RELEASE_ID" --arg tag "$RELEASE_TAG" --arg marker "$marker" \
-            '.id == $id and .tag_name == $tag and .draft == true and (.body | type == "string" and contains($marker))' \
-            "$response" > /dev/null
-          gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --silent
+          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
+          echo "::warning::Inspect release $RELEASE_ID ($RELEASE_TAG) after the failed publication attempt"

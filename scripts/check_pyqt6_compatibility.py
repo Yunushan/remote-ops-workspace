@@ -22,6 +22,7 @@ class PyQt6Policy:
     minimum_version: Version
     target_version: Version
     maximum_version_exclusive: Version
+    release_binding_version: Version
 
 
 @dataclass(frozen=True)
@@ -51,7 +52,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Fail unless both the PyQt6 binding and bundled Qt runtime meet the target version.",
     )
+    parser.add_argument(
+        "--require-forward-binding",
+        action="store_true",
+        help="Require a binding newer than the release-toolchain pin.",
+    )
     args = parser.parse_args(argv)
+    if args.require_forward_binding and not args.require_target:
+        parser.error("--require-forward-binding requires --require-target")
 
     try:
         policy = load_policy()
@@ -75,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         target_version=target_version,
         require_pyqt6=args.require_pyqt6 or args.require_target,
         require_target=args.require_target,
+        require_forward_binding=args.require_forward_binding,
     )
     for message in messages:
         print(f"PyQt6 compatibility: {message}")
@@ -89,6 +98,11 @@ def main(argv: list[str] | None = None) -> int:
 def load_policy(path: Path = TOOLCHAIN_PATH) -> PyQt6Policy:
     manifest = json.loads(path.read_text(encoding="utf-8"))
     raw_policy = manifest["pyqt6_support"]
+    release_binding, = (
+        package["version"]
+        for package in manifest["python_packages"]
+        if package["name"].lower() == "pyqt6"
+    )
     return PyQt6Policy(
         minimum_version=parse_version(raw_policy["minimum_version"], label="minimum version"),
         target_version=parse_version(
@@ -97,6 +111,7 @@ def load_policy(path: Path = TOOLCHAIN_PATH) -> PyQt6Policy:
         maximum_version_exclusive=parse_version(
             raw_policy["maximum_version_exclusive"], label="maximum version"
         ),
+        release_binding_version=parse_version(release_binding, label="release PyQt6 pin"),
     )
 
 
@@ -148,6 +163,7 @@ def check_runtime(
     require_pyqt6: bool,
     require_target: bool,
     run_widget_smoke: bool = True,
+    require_forward_binding: bool = False,
 ) -> tuple[list[str], list[str]]:
     target_errors = validate_target_version(policy, target_version)
     if target_errors:
@@ -160,7 +176,13 @@ def check_runtime(
             return [f"PyQt6 runtime is required but unavailable: {exc}"], []
         return [], [f"PyQt6 runtime unavailable; forward-compatibility check deferred: {exc}"]
 
-    errors = validate_runtime(runtime, policy, target_version, require_target=require_target)
+    errors = validate_runtime(
+        runtime,
+        policy,
+        target_version,
+        require_target=require_target,
+        require_forward_binding=require_forward_binding,
+    )
     if errors:
         return errors, []
 
@@ -192,6 +214,7 @@ def validate_runtime(
     target_version: Version,
     *,
     require_target: bool,
+    require_forward_binding: bool = False,
 ) -> list[str]:
     errors = validate_target_version(policy, target_version)
     if errors:
@@ -207,6 +230,12 @@ def validate_runtime(
     except ValueError as exc:
         return [str(exc)]
 
+    if require_forward_binding and min(distribution, binding) <= policy.release_binding_version:
+        errors.append(
+            "Forward validation requires the PyQt6 distribution and imported binding to be "
+            f"newer than release pin {format_version(policy.release_binding_version)}; "
+            f"installed PyQt6={runtime.distribution_version}, binding={runtime.binding_version}"
+        )
     if distribution[:2] != binding[:2]:
         errors.append(
             "PyQt6 distribution and imported binding major/minor versions do not match: "

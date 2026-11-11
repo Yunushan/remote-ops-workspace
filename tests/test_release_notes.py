@@ -34,13 +34,14 @@ def test_unsigned_preview_notes_report_boundaries(tmp_path: Path) -> None:
     assert "selected signed promotion registry" not in notes
     assert "remote-ops-workspace-v1.0.27-windows.zip" in notes
     assert "Native jobs: windows-native, macos-native, linux-native." in notes
+    assert "Native macOS DMG and PKG packages require macOS 14.4 or later." in notes
     assert "Protected platform evidence accepted for this source is 0/4" in notes
     assert "Strict MobaXterm parity evidence accepted for this source is 0/8" in notes
     assert "must not be treated as trusted production artifacts" in notes
     assert "GUI package licenses and corresponding source" in notes
-    assert "PyQt6 6.11.0 source" in notes
-    assert "Qt 6.11.2 source" in notes
-    assert "45dd60aa69976de1918b5ced6b4e7b6a25abd2a919ecef5fd5826ecc76718889" in notes
+    assert "PyQt6 6.12.0 source" in notes
+    assert "Qt 6.12.0 source" in notes
+    assert "d3e021b716bae880224422f9d1b894d2d53de7e60e60dbc43f860723f9cc300b" in notes
 
 
 def test_release_notes_reject_invalid_tag_and_channel(tmp_path: Path) -> None:

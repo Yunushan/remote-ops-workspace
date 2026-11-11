@@ -176,11 +176,7 @@ def check_pyqt6_support(toolchain: dict[str, object]) -> list[str]:
             "release toolchain must pin the complete PyQt6 runtime: "
             + ", ".join(missing_runtime_packages)
         )
-    if versions.get("pyqt6") != minimum:
-        errors.append(
-            "release toolchain PyQt6 pin must equal pyqt6_support.minimum_version: "
-            f"expected {minimum}, got {versions.get('pyqt6', '<missing>')}"
-        )
+    package_lines: set[tuple[int, int]] = set()
     for package in ("pyqt6", "pyqt6-qt6"):
         version = versions.get(package)
         if version is None:
@@ -190,11 +186,16 @@ def check_pyqt6_support(toolchain: dict[str, object]) -> list[str]:
         except ValueError as exc:
             errors.append(f"release toolchain {package} pin has invalid version: {exc}")
             continue
+        package_lines.add(package_key[:2])
         if not minimum_key <= package_key < maximum_key:
             errors.append(
                 f"release toolchain {package} pin must stay within the supported PyQt6 6.x range: "
                 f"{minimum} <= {package} < {maximum}"
             )
+        if package_key[:2] > target_key[:2]:
+            errors.append(f"release toolchain {package} pin exceeds the tested PyQt6 target line {target}")
+    if len(package_lines) > 1:
+        errors.append("release toolchain PyQt6 and PyQt6-Qt6 pins must use the same major/minor line")
     if not minimum_key < target_key < maximum_key:
         errors.append(
             "pyqt6_support versions must satisfy minimum < forward-compatibility target "

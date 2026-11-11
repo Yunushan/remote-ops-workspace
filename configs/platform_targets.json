@@ -146,7 +146,7 @@
       "bits": 64,
       "release_tier": "native",
       "github_release_channel": "default-native",
-      "host_support": "macOS Intel.",
+      "host_support": "macOS Intel. Native builds with Qt 6.12 require macOS 14.4 or later.",
       "assets": [
         "remote-ops-workspace-v1.0.27-macos-x64.dmg",
         "remote-ops-workspace-v1.0.27-macos-x64.pkg",
@@ -163,7 +163,7 @@
       "bits": 64,
       "release_tier": "native",
       "github_release_channel": "default-native",
-      "host_support": "macOS Apple Silicon.",
+      "host_support": "macOS Apple Silicon. Native builds with Qt 6.12 require macOS 14.4 or later.",
       "assets": [
         "remote-ops-workspace-v1.0.27-macos-arm64.dmg",
         "remote-ops-workspace-v1.0.27-macos-arm64.pkg",

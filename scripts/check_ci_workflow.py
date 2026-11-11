@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+PYQT6_MINIMUM_LOCK = ROOT / "tests" / "fixtures" / "pyqt6-minimum-requirements.txt"
+PYQT6_MINIMUM_LOCK_SHA256 = {
+    "51992f1312a1a705912de297e56dcb87c00db71f56f094baa08d2f14f35659cb",  # LF
+    "1330b5ca3b61264394711826b4f69de1ff308e19f75ef35bfdf75ff0fa404245",  # CRLF
+}
 SUPPORTED_HOSTED_RUNNERS = {
     "ubuntu-24.04",
     "ubuntu-24.04-arm",
@@ -38,6 +44,8 @@ def check_ci_workflow(workflow: str | None = None) -> list[str]:
     errors.extend(check_coverage_job(text))
     errors.extend(check_test_job(text))
     errors.extend(check_python315_optional_dependencies_job(text))
+    errors.extend(check_pyqt6_minimum_lock())
+    errors.extend(check_pyqt6_minimum_runtime_job(text))
     errors.extend(check_python315_readiness_job(text))
     errors.extend(check_mobile_web_job(text))
     errors.extend(check_web_container_job(text))
@@ -126,6 +134,12 @@ def check_repo_policy_job(workflow: str) -> list[str]:
         'python-version: "3.12"': "stable policy Python version",
         "sudo apt-get install -y libegl1": "Qt headless runtime dependency",
         "python -m pip install -r requirements-dev.txt": "policy dependency installation",
+        "- name: Install minimum PyQt runtime for policy checks\n"
+        "        run: >-\n"
+        "          python -m pip install --force-reinstall --require-hashes --only-binary=:all:\n"
+        "          --requirement tests/fixtures/pyqt6-minimum-requirements.txt": (
+            "hash-pinned minimum PyQt policy runtime"
+        ),
         "truststore.inject_into_ssl()": "system trust-store initialization for dependency audit",
         "--strict --no-deps --disable-pip -r requirements-release.txt": (
             "exact release dependency vulnerability audit"
@@ -358,7 +372,7 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
         "python scripts/write_python_runtime_evidence.py --expected-version 3.15": (
             "exact Python 3.15 runtime evidence producer"
         ),
-        "--require-standard-gil --out artifacts/python315-runtime/runtime.json": (
+        "--require-standard-gil --require-final --out artifacts/python315-runtime/runtime.json": (
             "standard GIL-enabled runtime evidence contract"
         ),
         "sys.version_info[:2] == (3, 15)": "resolved Python 3.15 assertion",
@@ -501,6 +515,88 @@ def check_python315_optional_dependencies_job(workflow: str) -> list[str]:
     return errors
 
 
+def check_pyqt6_minimum_lock(path: Path = PYQT6_MINIMUM_LOCK) -> list[str]:
+    try:
+        if path.is_symlink():
+            return ["ci PyQt6 minimum runtime lock must be a regular file"]
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return ["ci PyQt6 minimum runtime lock must be a regular file"]
+    if digest not in PYQT6_MINIMUM_LOCK_SHA256:
+        return ["ci PyQt6 minimum runtime lock bytes differ from the reviewed input"]
+    return []
+
+
+def check_pyqt6_minimum_runtime_job(workflow: str) -> list[str]:
+    block = "\n".join(
+        line for line in workflow_job_block(workflow, "pyqt6-minimum-runtime").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    if not block:
+        return ["ci workflow missing PyQt6 minimum runtime job"]
+    required = {
+        "runs-on: ${{ matrix.os }}": "matrix runner",
+        "timeout-minutes: 30": "bounded runtime job",
+        "fail-fast: false": "complete runtime matrix",
+        "matrix:\n"
+        "        include:\n"
+        "          - os: ubuntu-24.04\n"
+        "            arch: x64\n"
+        "            qt_platform: \"offscreen\"\n"
+        "          - os: ubuntu-24.04-arm\n"
+        "            arch: arm64\n"
+        "            qt_platform: \"offscreen\"\n"
+        "          - os: windows-2025-vs2026\n"
+        "            arch: x64\n"
+        "            qt_platform: \"windows\"\n"
+        "          - os: windows-11-arm\n"
+        "            arch: arm64\n"
+        "            qt_platform: \"windows\"\n"
+        "          - os: macos-15-intel\n"
+        "            arch: x64\n"
+        "            qt_platform: \"offscreen\"\n"
+        "          - os: macos-15\n"
+        "            arch: arm64\n"
+        "            qt_platform: \"offscreen\"": "minimum runtime platform matrix",
+        'python-version: "3.12"\n          architecture: ${{ matrix.arch }}': "minimum runtime Python version and architecture",
+        "- name: Verify minimum runtime architecture\n"
+        "        env:\n"
+        "          ROW_EXPECTED_ARCH: ${{ matrix.arch }}\n"
+        "        run: >-\n"
+        "          python -c \"import os, platform, struct; expected = os.environ['ROW_EXPECTED_ARCH']; actual = platform.machine().lower(); assert actual in {'x64': ('x86_64', 'amd64'), 'arm64': ('arm64', 'aarch64')}[expected] and struct.calcsize('P') == 8, (expected, actual, struct.calcsize('P'))\"": "minimum runtime architecture check",
+        'QT_QPA_PLATFORM: ${{ matrix.qt_platform }}': "platform-specific Qt runtime",
+        "- name: Prepare pinned Windows ARM64 security source build\n"
+        "        if: runner.os == 'Windows' && runner.arch == 'ARM64'\n"
+        "        shell: powershell\n"
+        "        run: .\\scripts\\install_windows_arm64_security.ps1": "Windows ARM64 security preparation",
+        "- name: Install the hash-pinned minimum PyQt runtime\n"
+        "        run: >-\n"
+        "          python -m pip install --force-reinstall --require-hashes --only-binary=:all:\n"
+        "          --requirement tests/fixtures/pyqt6-minimum-requirements.txt": "hash-pinned binary installation",
+        "- name: Verify the minimum runtime\n"
+        "        run: python scripts/check_pyqt6_compatibility.py --require-pyqt6 --target-version 6.11.0 --require-target": "minimum runtime version check",
+        "- name: Render the minimum runtime\n"
+        "        run: python scripts/check_real_gui_render.py --require-pyqt6 --timeout-seconds 240 --out-dir artifacts/gui-minimum": "minimum runtime GUI render",
+        "- name: Validate the minimum runtime render\n"
+        "        run: python scripts/check_real_gui_render_artifact.py --artifact-dir artifacts/gui-minimum": "minimum runtime render validation",
+        "- uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7\n"
+        "        with:\n"
+        "          name: gui-minimum-${{ matrix.os }}-${{ github.sha }}-${{ github.run_attempt }}\n"
+        "          path: artifacts/gui-minimum/\n"
+        "          if-no-files-found: error\n"
+        "          include-hidden-files: false\n"
+        "          retention-days: 90": "retained minimum runtime render evidence",
+    }
+    errors = [f"ci PyQt6 minimum runtime job missing {label}" for text, label in required.items() if text not in block]
+    if (
+        re.search(r"(?m)^\s*continue-on-error:\s*(?!false\s*$)\S+", block)
+        or re.search(r"(?m)^    if:\s*", block)
+        or re.search(r"(?m)^\s*exclude:\s*", block)
+    ):
+        errors.append("ci PyQt6 minimum runtime job must run and fail closed")
+    return errors
+
+
 def check_python315_readiness_job(workflow: str) -> list[str]:
     errors: list[str] = []
     block = workflow_job_block(workflow, "python315-readiness")
@@ -511,7 +607,7 @@ def check_python315_readiness_job(workflow: str) -> list[str]:
         "name": r'^    name: Python 3\.15 readiness\s*$',
         "needs": (
             r'^    needs:\s*\[\s*test\s*,\s*python315-optional-dependencies\s*,'
-            r'\s*apple-27-readiness\s*\]\s*$'
+            r'\s*apple-27-readiness\s*,\s*pyqt6-minimum-runtime\s*\]\s*$'
         ),
         "always": r'^    if:\s*\$\{\{\s*always\(\)\s*\}\}\s*$',
         "runner": r'^    runs-on:\s*ubuntu-latest\s*$',
@@ -527,6 +623,10 @@ def check_python315_readiness_job(workflow: str) -> list[str]:
             r'^      APPLE_27_RESULT:\s*\$\{\{\s*'
             r'needs\.apple-27-readiness\.result\s*\}\}\s*$'
         ),
+        "minimum runtime result": (
+            r'^      PYQT6_MINIMUM_RESULT:\s*\$\{\{\s*'
+            r'needs\.pyqt6-minimum-runtime\.result\s*\}\}\s*$'
+        ),
         "normal success assertion": (
             r'^          test "\$NORMAL_MATRIX_RESULT" = "success"\s*$'
         ),
@@ -535,6 +635,9 @@ def check_python315_readiness_job(workflow: str) -> list[str]:
         ),
         "Apple 27 success assertion": (
             r'^          test "\$APPLE_27_RESULT" = "success"\s*$'
+        ),
+        "minimum runtime success assertion": (
+            r'^          test "\$PYQT6_MINIMUM_RESULT" = "success"\s*$'
         ),
     }
     for label, pattern in active_lines.items():

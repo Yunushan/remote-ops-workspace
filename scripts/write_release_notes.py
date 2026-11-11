@@ -202,6 +202,7 @@ def write_notes(
         "",
         "## Support boundaries",
         "",
+        "- Native macOS DMG and PKG packages require macOS 14.4 or later.",
         (
             "- The signed promotion registry proves accepted native-host evidence for all "
             "required Linux i386, Linux armhf, and Windows XP x86/x64 targets."

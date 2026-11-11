@@ -15,6 +15,7 @@ def test_pyqt6_policy_records_612_forward_target() -> None:
     assert policy.minimum_version == (6, 11, 0)
     assert policy.target_version == (6, 12, 0)
     assert policy.maximum_version_exclusive == (7, 0, 0)
+    assert policy.release_binding_version == (6, 12, 0)
 
 
 def test_pyqt6_version_parser_accepts_prerelease_prefix() -> None:
@@ -189,6 +190,34 @@ def test_pyqt6_check_runtime_accepts_target(monkeypatch) -> None:
 
     assert errors == []
     assert messages == ["PyQt6 6.12.0 and Qt 6.12.0 satisfy the 6.12.0 target"]
+
+
+@pytest.mark.parametrize(
+    ("distribution", "binding", "expected_valid"),
+    [
+        ("6.12.0", "6.12.0", False),
+        ("6.12.1.dev2611091437", "6.12.0", False),
+        ("6.12.1.dev2611091437", "6.12.1", True),
+    ],
+)
+def test_forward_runtime_requires_binding_newer_than_release_pin(
+    distribution: str, binding: str, expected_valid: bool
+) -> None:
+    checker = _load_checker()
+    policy = checker.load_policy()
+    runtime = checker.PyQt6Runtime(distribution, binding, "6.12.0", "6.12.0", "13.13.0")
+
+    errors = checker.validate_runtime(
+        runtime,
+        policy,
+        policy.target_version,
+        require_target=True,
+        require_forward_binding=True,
+    )
+
+    assert (errors == []) == expected_valid
+    if not expected_valid:
+        assert any("newer than release pin" in error for error in errors)
 
 
 def test_pyqt6_strict_target_requires_distribution_versions_too() -> None:

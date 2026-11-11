@@ -54,7 +54,7 @@ def check_workflow(workflow: str | None = None) -> list[str]:
             "pinned repository checkout"
         ),
         "persist-credentials: false": "credential-free repository checkout",
-        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6": (
+        "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0": (
             "pinned Python setup action"
         ),
         'python-version: "3.15"': "Python 3.15 interpreter",

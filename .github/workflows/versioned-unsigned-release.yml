@@ -55,7 +55,7 @@ jobs:
           git merge-base --is-ancestor "$release_sha" "refs/remotes/origin/$DEFAULT_BRANCH"
           echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "RELEASE_SHA=$release_sha" >> "$GITHUB_ENV"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
       - name: Require tagged preview redistribution materials before builds
@@ -107,7 +107,7 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
       - name: Install release build tools
@@ -215,7 +215,7 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
           architecture: ${{ matrix.python-architecture }}
@@ -377,7 +377,7 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
       - name: Install Python packaging dependencies
@@ -458,7 +458,7 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
       - name: Install Linux packaging toolchains
@@ -539,7 +539,7 @@ jobs:
           test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           test "$GITHUB_SHA" = "$RELEASE_SHA"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4

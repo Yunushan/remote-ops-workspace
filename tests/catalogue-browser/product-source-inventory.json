@@ -1,5 +1,5 @@
 {
-  "baseline_head": "120a05f41263cf5ea490aa3453b42bff2627f19b",
+  "baseline_head": "909332ae46b36a3ba791512d53e6a883fcc05a82",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -263,8 +263,8 @@
     },
     {
       "path": "src/remote_ops_workspace/state_lock.py",
-      "sha256": "c7ea5f9c97965be9917b71c7934be527cd14911a5254b6c792d875da291143b2",
-      "size": 12413
+      "sha256": "9c55be3b474f51f93a09584080ae97273c29e7dd2519c7dc3b5a74269158d42f",
+      "size": 12584
     },
     {
       "path": "src/remote_ops_workspace/storage.py",

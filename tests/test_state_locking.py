@@ -119,6 +119,24 @@ def _slow_auxiliary_store_add_worker(path: str, name: str, start, outcomes) -> N
         outcomes.put("")
 
 
+def _empty_lock_waiter(path: str, opened, outcomes) -> None:
+    original_open = state_lock_module._open_lock_file
+
+    def signal_open(*args, **kwargs):  # type: ignore[no-untyped-def]
+        descriptor = original_open(*args, **kwargs)
+        opened.set()
+        return descriptor
+
+    state_lock_module._open_lock_file = signal_open
+    try:
+        with exclusive_file_lock(Path(path), timeout_seconds=30):
+            pass
+    except BaseException:  # pragma: no cover - returned to the parent for diagnosis
+        outcomes.put(traceback.format_exc())
+    else:
+        outcomes.put("")
+
+
 def _spawn_workers(target, path: Path, names: list[str]) -> list[str]:  # type: ignore[no-untyped-def]
     context = multiprocessing.get_context("spawn")
     start = context.Event()
@@ -266,6 +284,53 @@ def test_state_lock_cleans_up_when_open_or_acquire_fails(monkeypatch, tmp_path: 
             pass
     with pytest.raises(OSError):
         os.fstat(descriptor)
+
+
+def test_empty_lock_file_is_initialized_only_after_acquisition(monkeypatch, tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    original_acquire = state_lock_module._acquire_os_lock
+    observed_sizes: list[int] = []
+
+    def acquire(descriptor: int, target: Path, deadline: float) -> None:
+        observed_sizes.append(os.fstat(descriptor).st_size)
+        original_acquire(descriptor, target, deadline)
+
+    monkeypatch.setattr(state_lock_module, "_acquire_os_lock", acquire)
+    with exclusive_file_lock(path):
+        pass
+    assert observed_sizes == [0]
+    assert lock_path_for(path).read_bytes() == b"\0"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows byte-range locks enforce write exclusion")
+def test_empty_lock_file_waits_for_an_existing_windows_byte_lock(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    lock_path = lock_path_for(path)
+    lock_path.touch()
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_BINARY)
+    context = multiprocessing.get_context("spawn")
+    opened = context.Event()
+    outcomes = context.Queue()
+    process = context.Process(target=_empty_lock_waiter, args=(str(path), opened, outcomes))
+    try:
+        state_lock_module._try_os_lock(descriptor)
+        try:
+            process.start()
+            opened_while_locked = opened.wait(timeout=15)
+        finally:
+            state_lock_module._release_os_lock(descriptor)
+        process.join(timeout=20)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
+        assert opened_while_locked, "waiter could not open the empty locked file"
+        assert process.exitcode == 0
+        assert outcomes.get(timeout=5) == ""
+        assert lock_path.read_bytes() == b"\0"
+    finally:
+        os.close(descriptor)
+        outcomes.close()
+        outcomes.join_thread()
 
 
 def test_open_lock_file_rejects_symlink_and_invalid_identity(

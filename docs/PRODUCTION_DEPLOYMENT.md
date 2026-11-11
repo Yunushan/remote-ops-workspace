@@ -139,19 +139,25 @@ artifact-metadata, OIDC, release-write, and Actions-read permissions needed for
 that operation. Consumers should verify a promoted release's GitHub
 attestation as well as its installer signatures and SHA-256 checksums.
 
-After downloading a release asset, verify its build provenance against the
-specific release workflow before deployment:
+Verify a downloaded asset using the approved release tag and full source
+commit SHA. Run the verifier from a trusted checkout of the promotion source
+with GitHub CLI available.
 
 ```sh
-gh attestation verify ./remote-ops-workspace-v<version>-linux-x86_64.AppImage \
-  --repo Yunushan/remote-ops-workspace \
-  --signer-workflow Yunushan/remote-ops-workspace/.github/workflows/release-promotion.yml
+release_tag=REPLACE_WITH_RELEASE_TAG
+release_sha=REPLACE_WITH_RELEASE_COMMIT_SHA
+python scripts/check_release_provenance.py \
+  --asset "./remote-ops-workspace-${release_tag}-linux-x86_64.AppImage" \
+  --repository Yunushan/remote-ops-workspace \
+  --tag "$release_tag" \
+  --sha "$release_sha"
 ```
 
-Use the matching local filename for any Windows, macOS, Linux, source, or
-protected-platform asset. The command verifies the artifact digest, GitHub
-repository identity, OIDC issuer, and SLSA provenance predicate; it does not
-replace native installer signature verification or the SHA-256 sidecar check.
+Keep the published filename for each Windows, macOS, Linux, source, or
+protected-platform asset. The verifier checks the published SHA-256, SLSA
+attestation, and exact promotion run. Verify native installer signatures
+before installation. Use `--assets-dir` to verify the entire published release
+inventory and its common promotion run.
 
 The source/Python release also includes
 `remote-ops-workspace-v<version>-sbom.cdx.json`, a deterministic CycloneDX 1.5

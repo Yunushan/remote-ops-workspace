@@ -57,7 +57,7 @@ values or writing them into logs:
   `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`,
   `ROW_MACOS_NOTARY_ISSUER`.
 
-Enable [GitHub immutable releases](https://docs.github.com/en/repositories/releasing-projects-on-github/enabling-immutable-releases)
+Enable [GitHub immutable releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
 before production promotion. Give the `release-compliance-review` environment a
 `ROW_RELEASE_IMMUTABILITY_TOKEN` with Administration read access so the workflow
 can verify the setting before creating a draft.

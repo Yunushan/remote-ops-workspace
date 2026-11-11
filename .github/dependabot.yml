@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      qt-runtime:
+        applies-to: version-updates
+        patterns:
+          - "pyqt6"
+          - "pyqt6-qt6"
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import ntpath
 import os
 import platform
@@ -622,6 +623,23 @@ def _private_ssh_control_path(socket_name: str) -> Path | None:
     return None
 
 
+def ssh_connection_key(profile: Profile) -> str:
+    """Bind a managed SSH connection to its profile's launch and auth inputs."""
+    identity = (
+        profile.name,
+        profile.protocol.lower().strip(),
+        profile.host,
+        profile.port or 22,
+        profile.username,
+        profile.identity_file,
+        profile.credential_ref,
+        profile.options,
+        [tunnel.to_dict() for tunnel in profile.tunnels],
+    )
+    payload = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def ssh_control_path_for_profile(profile: Profile) -> str:
     """Return a private, stable OpenSSH control-socket path for ``profile``.
 
@@ -663,18 +681,7 @@ def ssh_control_path_for_profile(profile: Profile) -> str:
     if any(key in normalized for key in ("controlpath", "ssh_control_path")):
         return ""
 
-    identity = str(profile.identity_file or "")
-    fingerprint = "\0".join(
-        (
-            profile.name,
-            profile.host or "",
-            str(profile.port or 22),
-            profile.username or "",
-            identity,
-            repr(sorted(normalized.items())),
-        )
-    )
-    digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:24]
+    digest = ssh_connection_key(profile)[:24]
     path = _private_ssh_control_path(f"cm-{digest}")
     return str(path) if path is not None else ""
 

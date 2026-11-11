@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import stat
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -10,12 +11,13 @@ import pytest
 
 import remote_ops_workspace.terminal as terminal
 from remote_ops_workspace.launcher import LaunchPlan
-from remote_ops_workspace.models import Profile
+from remote_ops_workspace.models import Profile, Tunnel
 from remote_ops_workspace.terminal import (
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     split_shell_plans,
     ssh_command_with_control_path,
+    ssh_connection_key,
     ssh_control_path_for_profile,
     terminal_plan_for_profile,
 )
@@ -349,6 +351,22 @@ def test_control_path_refuses_non_socket_at_expected_endpoint(tmp_path, monkeypa
     path.write_text("existing file", encoding="utf-8")
     assert ssh_control_path_for_profile(profile) == ""
     assert path.read_text(encoding="utf-8") == "existing file"
+
+
+def test_ssh_connection_key_matches_launch_inputs_not_profile_labels() -> None:
+    profile = Profile(name="edge", protocol="ssh", host="target.example", username="operator")
+    key = ssh_connection_key(profile)
+    assert ssh_connection_key(replace(profile, description="Updated label", port=22)) == key
+    for changes in (
+        {"host": "other.example"},
+        {"port": 2222},
+        {"username": "admin"},
+        {"identity_file": "another-key"},
+        {"credential_ref": "another-entry"},
+        {"options": {"proxy_jump": "jump.example"}},
+        {"tunnels": [Tunnel(mode="dynamic", local_port=1080)]},
+    ):
+        assert ssh_connection_key(replace(profile, **changes)) != key
 
 
 def test_control_path_command_handles_empty_unsupported_and_supported_commands(

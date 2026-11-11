@@ -1086,6 +1086,7 @@ def test_terminal_remaining_operator_io_and_lifecycle_edges(
         autostart=False,
     )
     assert pane.ssh_control_path == "controlled-socket"
+    assert pane.ssh_connection_key == gui_terminal.ssh_connection_key(profile)
     assert pane.plan.command[-1] == "ControlMaster=auto"
 
     pane._terminal_right_click_paste_generation = 9

@@ -176,6 +176,11 @@ records, screenshots, or generated placeholders to the accepted registries.
 
 ## Final promotion sequence
 
+Choose an unused production version before updating the project and package
+version declarations. The protected `v1.0.27` tag already belongs to the
+published unsigned preview. Production promotion requires a fresh release
+namespace and a tag that resolves to the exact qualified source.
+
 1. Run the runner-readiness check above.
 2. Push the immutable production source tag after signing, dependency locks,
    and policy prerequisites are configured. The tag push starts `release.yml`,

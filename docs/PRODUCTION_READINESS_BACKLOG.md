@@ -58,18 +58,13 @@ Rules:
   Add a byte cap before parse and reject `DOCTYPE`/`ENTITY` declarations without
   a new dependency. Accept: oversized or entity-bearing XML is rejected with a
   clear error. Validate: `python -m pytest tests/test_profile_importers.py tests/test_profile_importers_edges.py -q`.
-- [x] **S3 (Low-Med)** Restrict X server TCP listener. `x11.py:1239` always
-  emits `-listen tcp` on Windows. Prefer loopback binding where the backend
-  supports it, or require explicit opt-in with a visible warning. Validate:
-  `python -m pytest tests/test_x11_edges.py tests/test_x11_client_display.py -q`.
-  Resolved as a documented backend limitation. Off Windows the default is
-  already `-nolisten tcp`; TCP requires the explicit `allow_tcp` opt-in. Windows
-  X clients require TCP (VcXsrv/Xming expose no loopback-only `-listen` mode),
-  so the listener stays on and `build_moba_x_server_plan` emits a visible note
-  that the runtime may listen on all interfaces and that the host firewall must
-  restrict the port. TCP is additionally gated by the managed MIT-MAGIC-COOKIE-1
-  `-auth` file. A true loopback-only listener would require a backend that
-  supports it.
+- [x] **S3 (Low-Med)** Require explicit opt-in for the managed X server TCP
+  listener. A Windows start without `--allow-tcp` fails before launch.
+  With opt-in, the launch plan warns that the listener can bind all
+  interfaces and identifies the port to restrict in the host firewall.
+  Managed starts require MIT-MAGIC-COOKIE-1 authorization. Linux and macOS
+  continue to start with TCP disabled by default. Validate with
+  `python -m pytest tests/test_x11_edges.py tests/test_embedded_server_security.py tests/test_moba_xserver.py -q`.
 - [x] **S4 (Low)** Strengthen embedded FTP controls. `embedded_ftp.py:18-20`
   accepts any non-empty credentials; enforce a minimum length/entropy and
   consider dropping `M`/`T` permissions by default under `ROW_FTP_WRITE=1`.

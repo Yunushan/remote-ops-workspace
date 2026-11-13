@@ -75,7 +75,11 @@ XKeyboard and XDMCP. `row x11 start` refuses to start on a display that appears
 occupied; choose another display such as `:1` for a second local runtime. A
 real start records PID, display, runtime and command state in the ROW data
 directory so `row x11 status` and `row x11 stop` can report and control the
-managed process. `row x11 smoke` runs `xdpyinfo`, `xset`, `xprop` or a custom
+managed process. Managed Windows X server starts require `--allow-tcp`.
+For example, `row x11 start --display :1 --allow-tcp` enables the authenticated
+listener on port 6001. The backend can listen on all interfaces. Restrict the
+port to intended clients using the host firewall. On macOS and Linux, TCP is
+disabled by default. `row x11 smoke` runs `xdpyinfo`, `xset`, `xprop` or a custom
 `--probe-command` against the selected display and can write evidence JSON with
 a SHA-256 digest. A missing runtime or missing probe command is reported as a
 failed/unavailable smoke result instead of being treated as success.

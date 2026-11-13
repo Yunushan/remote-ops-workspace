@@ -443,18 +443,6 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "Audit signed exact-byte redistribution and resolver evidence",
         ),
         (
-            "check_release_remote_preconditions.py immutable",
-            "immutable release setting proof",
-            "run",
-            "Require immutable releases enabled before any mutation",
-        ),
-        (
-            "check_release_remote_preconditions.py namespace",
-            "draft-inclusive namespace proof",
-            "run",
-            "Require unused release namespace including drafts",
-        ),
-        (
             ATTEST_RELEASE_ASSETS_ACTION,
             "final inventory attestation",
             "uses",
@@ -465,6 +453,24 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "fresh independently signed governance for draft creation",
             "run",
             "Fetch fresh signed governance for draft creation",
+        ),
+        (
+            "git fetch --no-tags --force origin",
+            "draft-time exact tag resolution",
+            "run",
+            "Re-resolve immutable tag immediately before mutation",
+        ),
+        (
+            "check_release_remote_preconditions.py immutable",
+            "immutable release setting proof",
+            "run",
+            "Require immutable releases enabled before any mutation",
+        ),
+        (
+            "check_release_remote_preconditions.py namespace",
+            "draft-inclusive namespace proof",
+            "run",
+            "Require unused release namespace including drafts",
         ),
         (
             "check_release_tag_governance.py",
@@ -507,6 +513,18 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "draft revalidation after auditor wait",
             "run",
             "Reverify draft bytes after waiting for the auditor",
+        ),
+        (
+            "git fetch --no-tags --force origin",
+            "publication-time exact tag resolution",
+            "run",
+            "Re-resolve immutable tag before publication",
+        ),
+        (
+            "check_release_remote_preconditions.py immutable",
+            "publication-time immutable release setting proof",
+            "run",
+            "Recheck immutable releases enabled before publication",
         ),
         (
             "check_release_tag_governance.py",
@@ -665,6 +683,10 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             None,
         ),
     }
+
+    command_contracts["Recheck immutable releases enabled before publication"] = command_contracts[
+        "Require immutable releases enabled before any mutation"
+    ]
     draft_tokens, forbidden, draft_flags = command_contracts["Revalidate signed tag governance at mutation boundary"]
     command_contracts["Revalidate signed tag governance immediately before publication"] = (
         tuple(token.replace("release-governance-draft", "release-governance-publish")
@@ -727,6 +749,18 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
         mutation_index = next((index for index, step in enumerate(steps) if step_name_is(step, mutation)), -1)
         if mutation_index <= 0 or not step_name_is(steps[mutation_index - 1], proof):
             errors.append(f"promotion must revalidate tag governance immediately before {mutation}")
+    for name, local_tag in (
+        ("Re-resolve immutable tag immediately before mutation", "row-release-promotion-candidate"),
+        ("Re-resolve immutable tag before publication", "row-release-final-candidate"),
+    ):
+        step = next((step for step in steps if step_name_is(step, name)), "")
+        expected_commands = [
+            "set -euo pipefail",
+            f'git fetch --no-tags --force origin "refs/tags/${{RELEASE_TAG}}:refs/tags/{local_tag}"',
+            f"""test "$(git rev-parse 'refs/tags/{local_tag}^{{commit}}')" = "$RELEASE_SHA" """.rstrip(),
+        ]
+        if step_run_commands(step) != expected_commands:
+            errors.append(f"promotion must fetch and compare the exact source tag for {name}")
     governance_subjects = {
         "release-governance-publish/tag-governance-attestation.json",
         "release-governance-publish/tag-governance-attestation.sig.json",

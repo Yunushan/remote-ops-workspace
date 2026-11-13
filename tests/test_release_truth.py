@@ -213,6 +213,47 @@ def test_promotion_requires_fresh_governance_check_before_publication() -> None:
     assert any("publication-bound tag governance proof" in error for error in asset_errors)
 
 
+def test_promotion_requires_immutable_release_setting_at_publication() -> None:
+    workflow = remove_named_step(
+        promotion_workflow(),
+        "Recheck immutable releases enabled before publication",
+    )
+    truth_errors, asset_errors = both_contract_errors(workflow)
+    assert any("publication-time immutable release setting proof" in error for error in truth_errors)
+    assert any("publication-time immutable release setting proof" in error for error in asset_errors)
+
+
+@pytest.mark.parametrize(
+    ("name", "wait_for"),
+    [
+        ("Require unused release namespace including drafts", "draft creation"),
+        ("Re-resolve immutable tag immediately before mutation", "draft creation"),
+        ("Recheck immutable releases enabled before publication", "publication"),
+        ("Re-resolve immutable tag before publication", "publication"),
+    ],
+)
+def test_promotion_rejects_remote_preconditions_before_auditor_wait(
+    name: str, wait_for: str
+) -> None:
+    workflow = promotion_workflow()
+    step = re.search(rf"(?ms)^      - name: {re.escape(name)}\n.*?(?=^      - |\Z)", workflow)
+    assert step is not None
+    marker = f"      - name: Fetch fresh signed governance for {wait_for}\n"
+    stale = remove_named_step(workflow, name).replace(marker, step[0] + marker, 1)
+    _, errors = both_contract_errors(stale)
+    assert any("in order" in error for error in errors)
+
+
+def test_promotion_requires_post_wait_tag_comparison() -> None:
+    workflow = promotion_workflow().replace(
+        """          test "$(git rev-parse 'refs/tags/row-release-final-candidate^{commit}')" = "$RELEASE_SHA"\n""",
+        "",
+        1,
+    )
+    _, errors = both_contract_errors(workflow)
+    assert any("must fetch and compare the exact source tag" in error for error in errors)
+
+
 def test_promotion_attests_both_governance_inputs() -> None:
     workflow = promotion_workflow().replace(
         "            release-governance-publish/tag-governance-attestation.sig.json",

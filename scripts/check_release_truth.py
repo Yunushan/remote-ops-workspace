@@ -579,6 +579,10 @@ def check_promotion_truth(workflow: str) -> list[str]:
             frozenset({"--repository", "--tag"}),
         ),
     }
+
+    command_contracts["Recheck immutable releases enabled before publication"] = command_contracts[
+        "Require immutable releases enabled before any mutation"
+    ]
     draft_tokens, forbidden, draft_flags = command_contracts["Revalidate signed tag governance at mutation boundary"]
     command_contracts["Revalidate signed tag governance immediately before publication"] = (
         tuple(token.replace("release-governance-draft", "release-governance-publish")
@@ -686,6 +690,12 @@ def check_promotion_truth(workflow: str) -> list[str]:
             "fresh independently signed governance for publication",
             "run",
             "Fetch fresh signed governance for publication",
+        ),
+        (
+            "check_release_remote_preconditions.py immutable",
+            "publication-time immutable release setting proof",
+            "run",
+            "Recheck immutable releases enabled before publication",
         ),
         (
             "check_release_tag_governance.py",

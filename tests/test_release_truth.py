@@ -311,5 +311,9 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     assert "--current-transaction-run-id" not in workflow
     checker = load_script("check_release_truth")
     assert checker.check_certification_truth(workflow) == []
-    changed = workflow.replace('run-id: ${{ env.PROMOTION_RUN_ID }}', 'run-id: ${{ github.run_id }}')
-    assert any("exact artifact source run" in error for error in checker.check_certification_truth(changed))
+    changed = workflow.replace('run-id: ${{ env.PROMOTION_RUN_ID }}', 'run-id: ${{ github.run_id }}', 1)
+    assert checker.check_certification_truth(changed) == [
+        "release certification governance proof missing exact artifact source run",
+    ]
+    changed = workflow.replace("production-redistribution-approval-", "other-")
+    assert any("attempt-specific redistribution approval" in error for error in checker.check_certification_truth(changed))

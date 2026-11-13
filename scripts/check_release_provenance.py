@@ -44,6 +44,7 @@ from check_release_publish_assets import (  # noqa: E402
     MATRIX_PATH,
     expected_release_assets,
 )
+from check_release_tag_governance import check_redistribution_approval  # noqa: E402
 from fetch_release_tag_governance import promotion_transaction, require_transaction  # noqa: E402
 
 PREDICATE_TYPE = "https://slsa.dev/provenance/v1"
@@ -126,14 +127,22 @@ def main(
         if check_published_at is not None and (not verify_governance or current_transaction):
             raise ValueError("publication-time checks require a completed release with verified governance")
         approval_paths = (args.redistribution_evidence, args.redistribution_signature)
+        approval = None
         if any(path is not None for path in approval_paths):
-            if not current_transaction or not verify_governance or audited_inputs is not None or None in approval_paths:
-                raise ValueError("explicit redistribution inputs require both files and the current published transaction")
-            audited_inputs = {}
-            for path in approval_paths:
-                assert path is not None
-                data, _ = read_json_object(path, "signed redistribution approval input")
-                audited_inputs[path] = hashlib.sha256(data).hexdigest()
+            if (
+                not (current_transaction or completed_promotion) or not verify_governance
+                or audited_inputs is not None or None in approval_paths
+            ):
+                raise ValueError("explicit redistribution inputs require both files and an exact published promotion")
+            evidence_path, signature_path = approval_paths
+            assert evidence_path is not None and signature_path is not None
+            evidence_bytes, evidence = read_json_object(evidence_path, "signed redistribution approval")
+            signature_bytes, signature = read_json_object(signature_path, "redistribution approval signature")
+            approval = (evidence_bytes, evidence, signature)
+            audited_inputs = {
+                evidence_path: hashlib.sha256(evidence_bytes).hexdigest(),
+                signature_path: hashlib.sha256(signature_bytes).hexdigest(),
+            }
         if audited_inputs is not None and not verify_governance:
             raise ValueError("audited input checks require verified governance")
         if args.published_release_id is not None and args.published_release_id < 1:
@@ -174,6 +183,14 @@ def main(
             require_immutable=not draft_transaction,
             expected_release_id=numeric_release_id,
         )
+        if approval is not None:
+            policy_bytes, policy = read_json_object(POLICY_PATH, "release compliance policy")
+            published_at = parse_timestamp(release.get("published_at"), "GitHub release published_at")
+            approval_errors = check_redistribution_approval(
+                *approval, policy_bytes, policy, repository, tag, sha, now=published_at,
+            )
+            if approval_errors:
+                raise ValueError("; ".join(approval_errors))
         errors = check_release_asset_bytes(
             release,
             local_assets,

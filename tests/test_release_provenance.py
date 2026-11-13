@@ -617,8 +617,13 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         encoding="utf-8",
     )
     policy = tmp_path / "policy.json"
+    reviewer = Ed25519PrivateKey.generate()
     policy.write_text(
         json.dumps({
+            "trusted_ed25519_keys": [{
+                "key_id": "reviewer",
+                "public_key": base64.b64encode(reviewer.public_key().public_bytes_raw()).decode(),
+            }],
             "tag_governance_attestation": {
                 "state": "enforced",
                 "max_validity_seconds": 300,
@@ -680,9 +685,27 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert checker.main([*completed_args, "--completed-promotion-run-attempt", "2"]) == 1
         assert "do not share the triggering promotion" in capsys.readouterr().err
         approved = tmp_path / "release-evidence.json"
-        approved.write_bytes(b'{"decision":"approved"}')
         approved_sig = tmp_path / "release-evidence.sig.json"
-        approved_sig.write_bytes(b'{"signature":"fixture"}')
+
+        def write_approval(expires_at):
+            approved.write_text(json.dumps({
+                "schema_version": 1,
+                "decision": "approved",
+                "repository": repository,
+                "release_tag": tag,
+                "release_sha": sha,
+                "policy_sha256": checker.sha256_file(policy),
+                "reviewed_at": "2026-11-01T11:00:00Z",
+                "expires_at": expires_at,
+            }), encoding="utf-8")
+            approved_sig.write_text(json.dumps({
+                "schema_version": 1,
+                "algorithm": "ed25519",
+                "key_id": "reviewer",
+                "signature": base64.b64encode(reviewer.sign(approved.read_bytes())).decode(),
+            }), encoding="utf-8")
+
+        write_approval("2026-11-01T12:02:30Z")
         inputs = {path: checker.sha256_file(path) for path in (approved, approved_sig)}
         assert checker.main(args, audited_inputs=inputs) == 0
         assert checker.main(args, audited_inputs={**inputs, approved_sig: "b" * 64}) == 1
@@ -723,13 +746,18 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         ]
         assert checker.main(current_args) == 0
         approval_args = ["--redistribution-evidence", str(approved), "--redistribution-signature", str(approved_sig)]
+        exact_completed = [*completed_args, "--completed-promotion-run-attempt", "1", *approval_args]
         assert checker.main([*current_args, *approval_args]) == 0
+        assert checker.main(exact_completed) == 0
         assert checker.main([*current_args, *approval_args[:2]]) == 1
         assert checker.main([*args, *approval_args]) == 1
         monkeypatch.setattr(checker, "verify_attestation", mismatched_input_attempt)
         assert checker.main([*current_args, *approval_args]) == 1
         assert "signed redistribution approval must share" in capsys.readouterr().err
         monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+        write_approval("2026-11-01T12:01:59Z")
+        assert checker.main(exact_completed) == 1
+        assert "expired" in capsys.readouterr().err
         run["run_started_at"] = "2026-11-01T12:03:00Z"
         assert checker.main(args, check_published_at=check_approval) == 1
         assert publication_times == ["2026-11-01T12:02:00+00:00"]

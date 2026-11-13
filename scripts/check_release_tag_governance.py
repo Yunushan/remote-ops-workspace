@@ -37,6 +37,23 @@ def recheck_redistribution_approval(
 ) -> list[str]:
     evidence_bytes, evidence = read_json_object(evidence_path, "release compliance evidence")
     _, signature = read_json_object(signature_path, "release compliance signature")
+    return check_redistribution_approval(
+        evidence_bytes, evidence, signature, policy_bytes, policy, repository, tag, sha, now=now,
+    )
+
+
+def check_redistribution_approval(
+    evidence_bytes: bytes,
+    evidence: dict[str, Any],
+    signature: dict[str, Any],
+    policy_bytes: bytes,
+    policy: dict[str, Any],
+    repository: str,
+    tag: str,
+    sha: str,
+    *,
+    now: datetime | None,
+) -> list[str]:
     verify_evidence_signature(evidence_bytes, signature, policy)
     expected = {
         "schema_version": 1,

@@ -454,6 +454,12 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "Attest the audited redistribution approval",
         ),
         (
+            "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "audited redistribution approval retention",
+            "uses",
+            "Retain the audited redistribution approval",
+        ),
+        (
             ATTEST_RELEASE_ASSETS_ACTION,
             "final inventory attestation",
             "uses",

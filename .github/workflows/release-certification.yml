@@ -74,6 +74,14 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ env.PROMOTION_RUN_ID }}
           path: ${{ runner.temp }}/publication-governance
+      - name: Download redistribution approval from the triggering promotion attempt
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: production-redistribution-approval-${{ env.PROMOTION_RUN_ID }}-${{ env.PROMOTION_RUN_ATTEMPT }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.PROMOTION_RUN_ID }}
+          path: ${{ runner.temp }}/redistribution-approval
       - name: Re-resolve certified tag and download complete published inventory
         shell: bash
         env:
@@ -102,7 +110,9 @@ jobs:
             --completed-promotion-run-id "$PROMOTION_RUN_ID" \
             --completed-promotion-run-attempt "$PROMOTION_RUN_ATTEMPT" \
             --governance-attestation "$RUNNER_TEMP/publication-governance/tag-governance-attestation.json" \
-            --governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json"
+            --governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json" \
+            --redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json" \
+            --redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json"
       - name: Verify published production release notes
         env:
           GH_TOKEN: ${{ github.token }}

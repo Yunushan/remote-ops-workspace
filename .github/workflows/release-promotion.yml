@@ -188,6 +188,15 @@ jobs:
           subject-path: |
             release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.json
             release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.sig.json
+      - name: Retain the audited redistribution approval
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: production-redistribution-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.json
+            release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.sig.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Generate boundary-aware release notes
         run: >-
           python scripts/write_release_notes.py

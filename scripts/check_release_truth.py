@@ -672,6 +672,12 @@ def check_promotion_truth(workflow: str) -> list[str]:
             "Attest the audited redistribution approval",
         ),
         (
+            "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "audited redistribution approval retention",
+            "uses",
+            "Retain the audited redistribution approval",
+        ),
+        (
             "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
             "asset attestation",
             "uses",
@@ -784,17 +790,24 @@ def check_certification_truth(workflow: str) -> list[str]:
         "github.event.workflow_run.id": "triggering promotion run identity",
         "github.event.workflow_run.run_attempt": "triggering promotion attempt identity",
         "production-tag-governance-${{ env.PROMOTION_RUN_ID }}-${{ env.PROMOTION_RUN_ATTEMPT }}": "attempt-specific governance artifact",
-        'run-id: ${{ env.PROMOTION_RUN_ID }}': "exact artifact source run",
-        'repository: ${{ github.repository }}': "same-repository artifact source",
+        "production-redistribution-approval-${{ env.PROMOTION_RUN_ID }}-${{ env.PROMOTION_RUN_ATTEMPT }}": "attempt-specific redistribution approval",
         '--completed-promotion-run-id "$PROMOTION_RUN_ID"': "exact completed run proof",
         '--completed-promotion-run-attempt "$PROMOTION_RUN_ATTEMPT"': "exact completed attempt proof",
         '--governance-attestation "$RUNNER_TEMP/publication-governance/tag-governance-attestation.json"': "signed publication proof",
         '--governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json"': "publication proof signature",
+        '--redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json"': "signed redistribution approval",
+        '--redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json"': "redistribution approval signature",
         "--published-release-id": "numeric immutable release proof",
         "check_release_provenance.py": "completed-success provenance audit",
     }.items():
         if snippet not in workflow:
             errors.append(f"release certification workflow missing {label}: {snippet}")
+    for proof in ("governance proof", "redistribution approval"):
+        step = workflow_step_block(block, f"name: Download {proof} from the triggering promotion attempt")
+        if "run-id: ${{ env.PROMOTION_RUN_ID }}" not in step:
+            errors.append(f"release certification {proof} missing exact artifact source run")
+        if "repository: ${{ github.repository }}" not in step:
+            errors.append(f"release certification {proof} missing same-repository artifact source")
     return errors
 
 def check_tag_targeted_release_dispatch(workflow: str) -> list[str]:

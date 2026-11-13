@@ -5,13 +5,16 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 SCRIPTS = Path(__file__).resolve().parent
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+ROOT = SCRIPTS.parent
+for location in (ROOT, SCRIPTS):
+    if str(location) not in sys.path:
+        sys.path.insert(0, str(location))
 
 from check_mobaxterm_parity_evidence import (  # noqa: E402
     ARTICLE_SPECS,
@@ -20,6 +23,7 @@ from check_mobaxterm_parity_evidence import (  # noqa: E402
     check_mobaxterm_parity_evidence,
     review_acceptance_line,
 )
+from check_release_license_compliance import path_is_reparse, secure_regular_file  # noqa: E402
 from check_release_provenance import (  # noqa: E402
     local_release_assets,
     normalize_repository,
@@ -28,6 +32,9 @@ from check_release_provenance import (  # noqa: E402
     run_gh_json,
     sha256_file,
 )
+
+from scripts.make_mobaxterm_parity_evidence_record import VALIDATORS  # noqa: E402
+
 
 REGISTRY = "configs/mobaxterm_parity_evidence.json"
 
@@ -151,6 +158,43 @@ def verify_review(repository: str, review: dict[str, Any]) -> set[str]:
     return set(body.splitlines())
 
 
+def verify_article_evidence(record: dict[str, Any], evidence_root: Path) -> None:
+    article = record["article_id"]
+    root = evidence_root / article
+    if path_is_reparse(root) or not root.is_dir():
+        raise ValueError("reviewed article evidence directory must exist without a reparse point")
+
+    # Use a closed file set so a validator cannot accidentally consume an
+    # unreviewed adjacent file. All paths remain below the article directory.
+    expected = record["evidence_assets_sha256"]
+    evidence = "evidence.json"
+    if expected.get(evidence) != record["evidence_file_sha256"]:
+        raise ValueError("reviewed article evidence.json digest differs from its evidence inventory")
+    remaining = set(expected)
+    for directory, subdirs, files in os.walk(root, followlinks=False):
+        current = Path(directory)
+        if any(path_is_reparse(current / name) for name in subdirs):
+            raise ValueError("reviewed article evidence contains a linked directory")
+        for name in files:
+            relative = (current / name).relative_to(root).as_posix()
+            if relative not in remaining:
+                raise ValueError(f"reviewed article evidence contains an unexpected file: {relative}")
+            path, error = secure_regular_file(root, relative, "reviewed article evidence")
+            if error is not None or path is None:
+                raise ValueError(error or "reviewed article evidence file is unavailable")
+            if sha256_file(path) != expected[relative]:
+                raise ValueError(f"reviewed article evidence SHA-256 differs: {relative}")
+            remaining.remove(relative)
+    if remaining:
+        raise ValueError(f"reviewed article evidence files are missing: {sorted(remaining)}")
+
+    verified = VALIDATORS[article](root / evidence, assets_dir=root).to_dict()
+    if verified.get("passed") is not True:
+        raise ValueError("the article validator did not pass on the reviewed evidence")
+    if verified.get("summary") != record["validation_summary"]["summary"]:
+        raise ValueError("article validator results differ from the reviewed summary")
+
+
 def audit_release(
     *,
     repository: str,
@@ -158,11 +202,15 @@ def audit_release(
     release_sha: str,
     registry_commit: str,
     assets_dir: Path,
+    evidence_root: Path,
 ) -> list[str]:
     registry = load_registry(repository, release_sha, registry_commit)
     errors = check_mobaxterm_parity_evidence(registry=registry, require_complete=True)
     if errors:
         return errors
+    evidence_root = evidence_root.absolute()
+    if not evidence_root.is_dir() or any(path_is_reparse(path) for path in (*evidence_root.parents, evidence_root)):
+        return ["reviewed parity evidence root must be a real directory without linked parents"]
     assets, errors = local_release_assets(assets_dir)
     if errors:
         return errors
@@ -198,7 +246,8 @@ def audit_release(
                 checked_reviews[review_key] = verify_review(repository, review)
             if review_acceptance_line(record) not in checked_reviews[review_key]:
                 raise ValueError("GitHub review does not explicitly accept this exact article evidence")
-        except (RuntimeError, ValueError) as exc:
+            verify_article_evidence(record, evidence_root)
+        except (OSError, RuntimeError, ValueError) as exc:
             errors.append(f"{article} {exc}")
     return errors
 
@@ -210,6 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sha", required=True)
     parser.add_argument("--registry-commit", required=True, help="reviewed parity registry commit merged to main")
     parser.add_argument("--assets-dir", type=Path, required=True)
+    parser.add_argument("--evidence-root", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         repository = normalize_repository(args.repository)
@@ -221,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             release_sha=normalize_sha(args.sha),
             registry_commit=normalize_sha(args.registry_commit),
             assets_dir=args.assets_dir,
+            evidence_root=args.evidence_root,
         )
     except (OSError, RuntimeError, ValueError) as exc:
         errors = [str(exc)]

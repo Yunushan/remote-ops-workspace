@@ -78,7 +78,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--release-asset-url",
         action="append",
         default=[],
-        help="GitHub release asset URL for the artifact carrying this evidence",
+        help="GitHub release asset URL for a published artifact verified by this article",
     )
     parser.add_argument(
         "--artifact",

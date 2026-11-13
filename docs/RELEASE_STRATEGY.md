@@ -532,6 +532,12 @@ several article lines. The strict release audit matches each line to the exact
 candidate evidence, release asset digests and workflow attempt. Complete
 finalization with the live review URL, reviewer and timestamp.
 
+Retain the files reviewed for each article in its own `<article-id>/` directory,
+with `evidence.json` at the root. Use that directory as the candidate's
+`--assets-dir`. Supply the parent directory to the strict parity audit with
+`--evidence-root`. The audit checks every reviewed file and reruns each article's
+validator alongside the published asset and review checks.
+
 The eighth article, `shared-authenticated-transport-terminal-grid`, now has a
 strict candidate validator:
 

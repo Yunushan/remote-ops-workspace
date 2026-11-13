@@ -1,0 +1,60 @@
+name: Windows private NTFS storage qualification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-private-ntfs-qualification.yml'
+      - 'scripts/check_windows_private_ntfs.py'
+      - 'src/remote_ops_workspace/windows_private_storage.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-private-ntfs-qualification.yml'
+      - 'scripts/check_windows_private_ntfs.py'
+      - 'src/remote_ops_workspace/windows_private_storage.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-private-ntfs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-private-ntfs:
+    if: >-
+      github.repository == 'Yunushan/remote-ops-workspace' &&
+      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 8
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+          clean: true
+      - name: Bind exact source commit
+        shell: pwsh
+        run: |
+          $observed = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $observed -cne $env:SOURCE_SHA) { throw 'Unexpected source commit' }
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Exercise private storage on NTFS
+        id: storage
+        shell: pwsh
+        timeout-minutes: 2
+        run: python -I -S -B scripts/check_windows_private_ntfs.py --output (Join-Path $env:RUNNER_TEMP 'row-private-ntfs-result.json')
+      - name: Retain bounded qualification result
+        if: ${{ !cancelled() && (steps.storage.outcome == 'success' || steps.storage.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-private-ntfs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/row-private-ntfs-result.json
+          if-no-files-found: error
+          retention-days: 14

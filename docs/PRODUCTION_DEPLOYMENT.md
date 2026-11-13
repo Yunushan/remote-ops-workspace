@@ -338,6 +338,13 @@ unqualified TrustedInstaller owner or raw grants to other identities. These
 checks remain enforced; actual default-path compatibility and independent
 unprivileged-identity denial still require genuine disposable Windows evidence.
 
+The Windows private NTFS qualification workflow uses a disposable hosted runner
+and a public canary. It exercises exclusive stage creation, writes under an
+owner-only ACL, retained-handle delete sharing, rename identity, and hard-link
+refusal. The bounded result identifies which checks ran. Separate Windows
+identity testing and SDK ABI verification are required before enabling production
+staging.
+
 HTTPS uses certificate and hostname verification, TLS 1.2 or later,
 credential-free requests, disabled environment proxies, identity encoding and a
 bounded explicit redirect policy. Manifest, per-asset, asset-set, chunk and

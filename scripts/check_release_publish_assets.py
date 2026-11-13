@@ -294,8 +294,11 @@ def check_publish_contract(
 
 def check_candidate_build_contract(workflow: str) -> list[str]:
     errors: list[str] = []
-    if "workflow_dispatch:" in workflow:
-        errors.append("candidate build workflow must be tag-push-only")
+    if "  workflow_dispatch:\n\npermissions:" not in workflow:
+        errors.append("candidate build workflow must expose manual exact-tag recovery")
+    preflight = workflow_job_block(workflow, "release-preflight")
+    if "if: ${{ github.ref_type == 'tag' }}" not in preflight:
+        errors.append("candidate build workflow must guard preflight to tags")
     if "softprops/action-gh-release" in workflow or re.search(
         r"(?m)^\s*gh\s+api\s+--method\s+PATCH\b", workflow
     ):
@@ -322,6 +325,8 @@ def check_candidate_build_contract(workflow: str) -> list[str]:
     seal = workflow_job_block(workflow, "seal-release-candidate")
     required = {
         'test "$GITHUB_RUN_ATTEMPT" = "1"': "fresh-attempt refusal",
+        'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"': "exact tag ref guard",
+        'test "$GITHUB_SHA" = "$EXPECTED_RELEASE_SHA"': "event/source equality",
         "release_candidate_inventory.py stage": "candidate inventory sealer",
         '--build-run-id "$GITHUB_RUN_ID"': "build run identity binding",
         '--build-run-attempt "$GITHUB_RUN_ATTEMPT"': "build attempt binding",

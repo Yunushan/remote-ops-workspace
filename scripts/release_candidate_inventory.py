@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "stage":
             if run_attempt != 1:
                 raise ValueError(
-                    "candidate staging refuses rerun attempts; create a fresh tag build run"
+                    "candidate staging refuses rerun attempts; dispatch a fresh build from the release tag"
                 )
             stage(
                 client,
@@ -358,6 +358,7 @@ def promote(
         run_id=run_id,
         run_attempt=run_attempt,
         inventory_sha256=hashlib.sha256(approved_bytes).hexdigest(),
+        build_event=run["event"],
     )
     inventory = json.loads(approved_bytes)
     records = validate_inventory(
@@ -396,13 +397,14 @@ def check_build_run(
     expected = {
         "id": run_id,
         "run_attempt": run_attempt,
-        "event": "push",
         "head_branch": release_tag,
         "head_sha": release_sha,
     }
     for key, value in expected.items():
         if run.get(key) != value:
             raise ValueError(f"candidate build run {key} must be {value!r}, got {run.get(key)!r}")
+    if run.get("event") not in ("push", "workflow_dispatch"):
+        raise ValueError("candidate build run event must be push or workflow_dispatch")
     if not workflow_path_matches(run.get("path"), BUILD_WORKFLOW, release_tag):
         raise ValueError(
             f"candidate build run path must identify {BUILD_WORKFLOW!r} at tag {release_tag!r}"
@@ -585,6 +587,7 @@ def verify_candidate_attestation(
     run_id: int,
     run_attempt: int,
     inventory_sha256: str,
+    build_event: str,
 ) -> None:
     command = [
         "gh",
@@ -628,6 +631,7 @@ def verify_candidate_attestation(
         run_id=run_id,
         run_attempt=run_attempt,
         inventory_sha256=inventory_sha256,
+        build_event=build_event,
     )
 
 
@@ -640,6 +644,7 @@ def check_candidate_attestation_payload(
     run_id: int,
     run_attempt: int,
     inventory_sha256: str,
+    build_event: str,
 ) -> None:
     if not isinstance(payload, list) or not payload:
         raise ValueError("candidate inventory attestation verification returned no results")
@@ -663,7 +668,7 @@ def check_candidate_attestation_payload(
             continue
         if certificate_value(certificate, "runnerEnvironment") != "github-hosted":
             continue
-        if certificate_value(certificate, "buildTrigger", "githubWorkflowTrigger") != "push":
+        if certificate_value(certificate, "buildTrigger", "githubWorkflowTrigger") != build_event:
             continue
         invocation = certificate_value(certificate, "runInvocationURI", "runnerInvocationURI")
         match = RUN_URI_RE.fullmatch(invocation) if isinstance(invocation, str) else None

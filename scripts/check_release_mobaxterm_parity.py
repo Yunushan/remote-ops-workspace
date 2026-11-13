@@ -32,9 +32,7 @@ from check_release_provenance import (  # noqa: E402
     run_gh_json,
     sha256_file,
 )
-
 from scripts.make_mobaxterm_parity_evidence_record import VALIDATORS  # noqa: E402
-
 
 REGISTRY = "configs/mobaxterm_parity_evidence.json"
 

@@ -524,6 +524,14 @@ repository, release tag, source/tag head SHA, Actions run and attempt, reviewer
 URL/login, and hashes re-read from the published release bytes before an
 accepted record can enter the schema-v2 registry.
 
+Before recording the review, run the finalizer with the candidate and exact
+source provenance arguments plus `--print-review-line`. After reviewing the
+evidence and published assets, the reviewer includes the printed line on its own
+line in an approved review or acceptance comment. A single review can include
+several article lines. The strict release audit matches each line to the exact
+candidate evidence, release asset digests and workflow attempt. Complete
+finalization with the live review URL, reviewer and timestamp.
+
 The eighth article, `shared-authenticated-transport-terminal-grid`, now has a
 strict candidate validator:
 

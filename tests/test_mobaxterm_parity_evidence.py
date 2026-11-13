@@ -313,6 +313,7 @@ def reviewed_release(tmp_path, monkeypatch):
             "state": "APPROVED",
             "html_url": records[0]["acceptance_review"]["review_url"],
             "submitted_at": "2026-08-23T12:34:56Z",
+            "body": "\n".join(release_parity.review_acceptance_line(record) for record in records),
             "user": {"login": "release-reviewer"},
         },
     }
@@ -391,6 +392,60 @@ def test_certification_checks_live_attempt_and_review(
     errors = release_parity.audit_release(**reviewed_release.args)
 
     assert any(expected_error in error for error in errors)
+
+
+def test_finalizer_prints_the_same_review_line_before_acceptance(reviewed_release, tmp_path, capsys) -> None:
+    record = reviewed_release.records[0]
+    candidate = {key: value for key, value in record.items()
+                 if key not in {"release_source", "acceptance_review", "release_asset_bytes"}}
+    candidate["status"] = "candidate"
+    candidate_path = tmp_path / "candidate.json"
+    candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
+    source = record["release_source"]
+
+    assert _load_finalizer().main([
+        "--candidate-record", str(candidate_path), "--repository", source["repository"],
+        "--source-head-sha", source["head_sha"], "--tag-source-head-sha", source["tag_source_head_sha"],
+        "--workflow-run-url", source["workflow_run_url"], "--run-attempt", str(source["run_attempt"]),
+        "--print-review-line",
+    ]) == 0
+    assert capsys.readouterr().out.strip() == release_parity.review_acceptance_line(record)
+
+
+def test_certification_rejects_review_body_that_only_accepts_another_article(reviewed_release) -> None:
+    review = reviewed_release.responses[reviewed_release.review]
+    other = reviewed_release.records[-1]
+    review["body"] = release_parity.review_acceptance_line(other)
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == len(reviewed_release.records) - 1
+    assert all("does not explicitly accept this exact article evidence" in error for error in errors)
+
+
+def test_certification_rejects_changed_evidence_after_approval(reviewed_release) -> None:
+    reviewed_release.records[0]["evidence_file_sha256"] = "2" * 64
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == 1
+    assert "does not explicitly accept this exact article evidence" in errors[0]
+
+
+def test_certification_rejects_unrelated_comment_with_matching_author(reviewed_release) -> None:
+    review = reviewed_release.responses[reviewed_release.review]
+    comment_url = "https://github.com/example/remote-ops-workspace/issues/42#issuecomment-99"
+    reviewed_release.responses["issues/comments/99"] = {
+        "id": 99, "html_url": comment_url, "created_at": review["submitted_at"],
+        "user": review["user"], "body": "Thanks for putting this together.",
+    }
+    for record in reviewed_release.records:
+        record["acceptance_review"]["review_url"] = comment_url
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == len(reviewed_release.records)
+    assert all("does not explicitly accept this exact article evidence" in error for error in errors)
 
 
 def _load_checker():

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import re
 import sys
@@ -182,6 +183,17 @@ ARTICLE_SPECS: dict[str, ArticleSpec] = {
         ),
     ),
 }
+
+
+def review_acceptance_line(record: dict[str, Any]) -> str:
+    # Bind the complete candidate and source identity, including all evidence and
+    # release-asset digests. Exclude the review's own ID and timestamp.
+    subject = {
+        key: value for key, value in record.items()
+        if key not in {"status", "acceptance_review", "release_asset_bytes"}
+    }
+    payload = json.dumps(subject, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return f"ROW parity acceptance {record['article_id']} sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
 def main(argv: list[str] | None = None) -> int:

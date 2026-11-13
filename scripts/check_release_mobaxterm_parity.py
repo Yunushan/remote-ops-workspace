@@ -18,6 +18,7 @@ from check_mobaxterm_parity_evidence import (  # noqa: E402
     GITHUB_REVIEW_RE,
     GITHUB_WORKFLOW_RUN_RE,
     check_mobaxterm_parity_evidence,
+    review_acceptance_line,
 )
 from check_release_provenance import (  # noqa: E402
     local_release_assets,
@@ -119,7 +120,7 @@ def verify_workflow_run(repository: str, source: dict[str, Any]) -> None:
             raise ValueError(f"GitHub workflow attempt {key} differs from the release repository")
 
 
-def verify_review(repository: str, review: dict[str, Any]) -> None:
+def verify_review(repository: str, review: dict[str, Any]) -> set[str]:
     url = review["review_url"]
     match = GITHUB_REVIEW_RE.fullmatch(url)
     assert match is not None  # The registry validator checked the URL.
@@ -144,6 +145,10 @@ def verify_review(repository: str, review: dict[str, Any]) -> None:
         or author.get("login") != review["reviewer"]
     ):
         raise ValueError("GitHub review identity differs from the accepted evidence record")
+    body = result.get("body")
+    if not isinstance(body, str):
+        raise ValueError("GitHub review has no explicit parity acceptance")
+    return set(body.splitlines())
 
 
 def audit_release(
@@ -164,7 +169,7 @@ def audit_release(
 
     digests: dict[str, str] = {}
     checked_runs: set[tuple[str, int]] = set()
-    checked_reviews: set[tuple[str, str, str]] = set()
+    checked_reviews: dict[tuple[str, str, str], set[str]] = {}
     for record in registry["accepted_evidence"]:
         article = record["article_id"]
         source = record["release_source"]
@@ -190,8 +195,9 @@ def audit_release(
                 verify_workflow_run(repository, source)
                 checked_runs.add(run_key)
             if review_key not in checked_reviews:
-                verify_review(repository, review)
-                checked_reviews.add(review_key)
+                checked_reviews[review_key] = verify_review(repository, review)
+            if review_acceptance_line(record) not in checked_reviews[review_key]:
+                raise ValueError("GitHub review does not explicitly accept this exact article evidence")
         except (RuntimeError, ValueError) as exc:
             errors.append(f"{article} {exc}")
     return errors

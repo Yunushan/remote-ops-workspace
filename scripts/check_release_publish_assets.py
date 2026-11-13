@@ -553,6 +553,29 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
     ]
     indexes: list[int] = []
     command_contracts = {
+        "Verify final immutable release and complete exact-tag provenance": (
+            (
+                "python scripts/check_release_provenance.py",
+                "--assets-dir release-assets",
+                '--repository "$GITHUB_REPOSITORY"',
+                '--tag "$RELEASE_TAG"',
+                '--sha "$RELEASE_SHA"',
+                '--published-release-id "$PUBLISHED_RELEASE_ID"',
+                '--current-transaction-run-id "$GITHUB_RUN_ID"',
+                '--current-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"',
+                "--governance-attestation release-governance-publish/tag-governance-attestation.json",
+                "--governance-signature release-governance-publish/tag-governance-attestation.sig.json",
+                '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
+                '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
+            ),
+            ("--help",),
+            frozenset({
+                "--assets-dir", "--repository", "--tag", "--sha", "--published-release-id",
+                "--current-transaction-run-id", "--current-transaction-run-attempt",
+                "--governance-attestation", "--governance-signature",
+                "--redistribution-evidence", "--redistribution-signature",
+            }),
+        ),
         "Verify attestation and download exact candidate artifact IDs": (
             (
                 '--repository "$GITHUB_REPOSITORY"',
@@ -633,14 +656,6 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                     "--audit-redistribution-only",
                 }
             ),
-        ),
-        "Verify final immutable release and complete exact-tag provenance": (
-            (
-                '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
-                '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
-            ),
-            (),
-            None,
         ),
         "Require immutable releases enabled before any mutation": (
             (

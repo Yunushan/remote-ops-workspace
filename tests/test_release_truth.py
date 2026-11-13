@@ -213,17 +213,24 @@ def test_promotion_requires_fresh_governance_check_before_publication() -> None:
     assert any("publication-bound tag governance proof" in error for error in asset_errors)
 
 
-@pytest.mark.parametrize("index", [0, 1])
-def test_promotion_requires_signed_redistribution_at_both_mutations(index: int) -> None:
+@pytest.mark.parametrize(
+    ("step_name", "label"),
+    [
+        ("Revalidate signed tag governance at mutation boundary", "mutation-bound tag governance proof"),
+        ("Revalidate signed tag governance immediately before publication", "publication-bound tag governance proof"),
+        ("Verify final immutable release and complete exact-tag provenance", "final in-run"),
+    ],
+)
+def test_promotion_requires_signed_redistribution(step_name: str, label: str) -> None:
     workflow = promotion_workflow()
-    flag = next(line for line in workflow.splitlines() if "--redistribution-signature" in line)
-    matches = [match.start() for match in re.finditer(re.escape(flag + "\n"), workflow)]
-    assert len(matches) == 2
-    start = matches[index]
-    changed = workflow[:start] + workflow[start + len(flag) + 1:]
+    step = re.search(rf"(?ms)^      - name: {re.escape(step_name)}\n.*?(?=^      - |\Z)", workflow)
+    assert step is not None
+    changed_step, count = re.subn(r"(?m)^ +--redistribution-signature .+\n", "", step[0])
+    assert count == 1
+    changed = workflow[:step.start()] + changed_step + workflow[step.end():]
     truth_errors, asset_errors = both_contract_errors(changed)
-    assert truth_errors
-    assert asset_errors
+    assert any(label in error and "missing required exact arguments" in error for error in truth_errors)
+    assert any(label in error and "missing required exact arguments" in error for error in asset_errors)
 
 
 def test_promotion_requires_immutable_release_setting_at_publication() -> None:

@@ -294,3 +294,7 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     assert 'test "$PROMOTION_STATUS" = "completed"' in workflow
     assert "check_release_provenance.py" in workflow
     assert "--current-transaction-run-id" not in workflow
+    checker = load_script("check_release_truth")
+    assert checker.check_certification_truth(workflow) == []
+    changed = workflow.replace('run-id: ${{ env.PROMOTION_RUN_ID }}', 'run-id: ${{ github.run_id }}')
+    assert any("exact artifact source run" in error for error in checker.check_certification_truth(changed))

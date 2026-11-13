@@ -106,6 +106,10 @@ def main(
         current_transaction = current_values[0] is not None
         if current_transaction and any(value < 1 for value in current_values):
             raise ValueError("current transaction run id and attempt must be positive")
+        completed_values = (args.completed_promotion_run_id, args.completed_promotion_run_attempt)
+        completed_promotion = any(value is not None for value in completed_values)
+        if completed_promotion and any(value is None or value < 1 for value in completed_values):
+            raise ValueError("completed promotion run id and attempt must be supplied together and positive")
         if draft_transaction and current_transaction:
             raise ValueError("draft and published current-transaction modes are mutually exclusive")
         single_asset = args.asset is not None
@@ -117,6 +121,8 @@ def main(
             None in governance_paths or draft_transaction or single_asset
         ):
             raise ValueError("governance verification requires both proof files and a complete published release")
+        if completed_promotion and (not verify_governance or current_transaction or args.published_release_id is None):
+            raise ValueError("exact completed promotion requires governance proof and a numeric published release id")
         if check_published_at is not None and (not verify_governance or current_transaction):
             raise ValueError("publication-time checks require a completed release with verified governance")
         approval_paths = (args.redistribution_evidence, args.redistribution_signature)
@@ -278,6 +284,11 @@ def main(
                 f"share {expected.url}; completed-success certification remains external"
             )
             return 0
+        if completed_promotion:
+            expected = RunInvocation(repository, *completed_values)
+            common.intersection_update({expected})
+            if not common:
+                errors.append(f"release assets and governance proof do not share the triggering promotion {expected.url}")
         successful: list[RunInvocation] = []
         publication_errors: list[str] = []
         for invocation in sorted(common, reverse=True):
@@ -354,6 +365,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--recheck-draft-bytes", action="store_true")
     parser.add_argument("--current-transaction-run-id", type=int)
     parser.add_argument("--current-transaction-run-attempt", type=int)
+    parser.add_argument("--completed-promotion-run-id", type=int)
+    parser.add_argument("--completed-promotion-run-attempt", type=int)
     parser.add_argument("--governance-attestation", type=Path)
     parser.add_argument("--governance-signature", type=Path)
     parser.add_argument("--redistribution-evidence", type=Path)

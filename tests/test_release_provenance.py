@@ -674,6 +674,11 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert expected_error in capsys.readouterr().err
     else:
         assert checker.main(args) == 0
+        completed_args = [*args, "--published-release-id", "77", "--completed-promotion-run-id", "123"]
+        assert checker.main(completed_args) == 1
+        assert checker.main([*completed_args, "--completed-promotion-run-attempt", "1"]) == 0
+        assert checker.main([*completed_args, "--completed-promotion-run-attempt", "2"]) == 1
+        assert "do not share the triggering promotion" in capsys.readouterr().err
         approved = tmp_path / "release-evidence.json"
         approved.write_bytes(b'{"decision":"approved"}')
         approved_sig = tmp_path / "release-evidence.sig.json"

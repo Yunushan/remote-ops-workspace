@@ -75,7 +75,10 @@ After upload and draft verification, capture a second proof with
 `--operation publish --draft-id "<numeric draft ID>"` and a new output
 directory. Push its two files together to the new printed ref. Keep the exact
 publication proof and signature for the aggregate audit. The workflow also
-retains a copy as `production-tag-governance-<run ID>-<attempt>`.
+retains a copy as `production-tag-governance-<run ID>-<attempt>`. After a
+successful promotion, the certification workflow retrieves that copy and
+verifies that the proof and all immutable release assets share the triggering
+run and attempt.
 
 ## Verify a published artifact
 

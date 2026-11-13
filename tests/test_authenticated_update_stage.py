@@ -232,6 +232,11 @@ class SyntheticPrivateGuard:
         assert status.st_nlink == 1
         return path, self.identity(status)
 
+    def create_private_file(self, path):
+        self.verify()
+        assert Path(path).parent == self.path
+        return staging.os.open(path, staging.os.O_RDWR | staging.os.O_CREAT | staging.os.O_EXCL, 0o600)
+
     @contextmanager
     def private_file(self, handle, path):
         path, identity = self.checked_file(path)

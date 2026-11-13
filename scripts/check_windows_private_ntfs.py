@@ -199,7 +199,7 @@ def qualify(parent: Path, observed: list[str], account: str, password: str, cont
         alias = stage / "canary.link"
         with storage.private_stage_guard(stage, create=True, _native=native) as guard:
             observed.append("exclusive-private-directory")
-            with partial.open("xb") as writer:
+            with os.fdopen(guard.create_private_file(partial), "wb") as writer:
                 handle = storage.descriptor_handle(writer.fileno())
                 with guard.private_file(handle, partial) as written:
                     writer.write(CANARY)
@@ -425,6 +425,7 @@ FAILURE_CODES = frozenset({
     "other-identity-thread-token-missing", "other-identity-thread-token-mismatch",
     "native-private-storage-refused", "native-security-descriptor-refused",
     "native-directory-open-refused", "native-directory-missing", "native-file-open-refused",
+    "native-private-file-create-refused",
     "unqualified-parent-owner", "untrusted-parent-write-access", "native-held-edge-refused",
     "missing-or-null-dacl", "linked-native-object", "private-owner-mismatch", "private-dacl-not-exact",
     "private-inheritance-not-exact", "private-writer-handle-mismatch", "native-private-boundary-changed",

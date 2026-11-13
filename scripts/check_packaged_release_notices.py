@@ -6,6 +6,8 @@ import argparse
 import json
 import re
 import sys
+import tarfile
+import zipfile
 from pathlib import Path
 
 from check_preview_redistribution import (
@@ -77,7 +79,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         count = verify_notices(args.assets_dir, args.tag)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, zipfile.BadZipFile, tarfile.TarError) as exc:
         print(f"production package notices: {exc}", file=sys.stderr)
         return 1
     print(f"Verified required embedded notices in {count} exact native packages")

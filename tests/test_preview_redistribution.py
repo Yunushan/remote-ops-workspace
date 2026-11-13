@@ -4,6 +4,7 @@ import gzip
 import importlib.util
 import io
 import json
+import stat
 import tarfile
 import zipfile
 from pathlib import Path
@@ -205,6 +206,32 @@ def test_packaged_license_bytes_are_read_from_real_archives(tmp_path: Path, sepa
     assert module.embedded_file_bytes(zip_path, "THIRD_PARTY_NOTICES.md") == payload
     assert module.embedded_file_bytes(tar_path, "THIRD_PARTY_NOTICES.md") == payload
     assert module.embedded_file_bytes(zip_path, "PyQt6-GPL-3.0.txt") is None
+
+
+@pytest.mark.parametrize("extension", ["exe", "msi", "dmg", "pkg", "deb", "rpm", "AppImage"])
+def test_non_portable_packages_do_not_fall_back_to_zip(tmp_path: Path, extension: str) -> None:
+    module = checker()
+    package = tmp_path / f"relabelled.{extension}"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("docs/THIRD_PARTY_NOTICES.md", b"Copied from a companion ZIP")
+    with pytest.raises(ValueError, match="different package extension"):
+        module.embedded_file_bytes(package, "THIRD_PARTY_NOTICES.md")
+
+
+def test_portable_notice_must_be_an_unambiguous_regular_file(tmp_path: Path) -> None:
+    module = checker()
+    wanted = "THIRD_PARTY_NOTICES.md"
+    package = tmp_path / "portable.zip"
+    notice_link = zipfile.ZipInfo(f"docs/{wanted}")
+    notice_link.create_system = 3
+    notice_link.external_attr = (stat.S_IFLNK | 0o777) << 16
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr(notice_link, b"missing-target")
+    assert module.embedded_file_bytes(package, wanted) is None
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr(f"docs/{wanted}", b"expected bytes")
+        archive.writestr(f"DOCS/{wanted.lower()}", b"ambiguous Windows path")
+    assert module.embedded_file_bytes(package, wanted) is None
 
 
 def test_deb_license_bytes_are_read_from_filesystem_tar_without_extraction(tmp_path: Path) -> None:

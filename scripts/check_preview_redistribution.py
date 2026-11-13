@@ -24,6 +24,7 @@ import io
 import json
 import mmap
 import re
+import stat
 import subprocess
 import sys
 import tarfile
@@ -47,6 +48,7 @@ NATIVE_PACKAGE = re.compile(
     r"(?:-native)?(?:-setup)?\.(?:zip|tar\.gz|exe|msi|dmg|pkg|deb|rpm|AppImage)$"
 )
 GUI_TARGET = re.compile(r"-(?:windows-(?:x64|arm64)|macos-(?:x64|arm64))(?:-|\.)")
+MAX_LICENSE_BYTES = 4 * 1024 * 1024
 REQUIRED_RECORDS = {
     "third_party_notices": "THIRD_PARTY_NOTICES.md",
     "pyqt6_gplv3": "PyQt6-GPL-3.0.txt",
@@ -72,7 +74,7 @@ def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> No
         embedded = embedded_file_bytes(package, filename)
         if embedded is None:
             raise ValueError(f"{package.name} does not contain {filename}")
-        if hashlib.sha256(embedded).hexdigest() != digest:
+        if len(embedded) > MAX_LICENSE_BYTES or hashlib.sha256(embedded).hexdigest() != digest:
             raise ValueError(f"{package.name} contains different bytes for {filename}")
 
 
@@ -622,7 +624,9 @@ def extracted_file_bytes(destination: Path, wanted: str) -> bytes | None:
         if path.is_file() and not path.is_symlink()
         and path.resolve().is_relative_to(resolved_destination)
     ]
-    return matches[0].read_bytes() if len(matches) == 1 else None
+    if len(matches) != 1 or matches[0].stat().st_size > MAX_LICENSE_BYTES:
+        return None
+    return matches[0].read_bytes()
 
 
 def windows_installer_file_bytes(archive: Path, wanted: str) -> bytes | None:
@@ -670,36 +674,52 @@ def deb_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
         )
     try:
         with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:*") as package:
-            matches = [
-                member for member in package.getmembers()
-                if member.isfile() and PurePosixPath(member.name).name == wanted
-            ]
-            if len(matches) != 1:
-                return None
-            stream = package.extractfile(matches[0])
-            return stream.read() if stream else None
+            return tar_notice_bytes(package, wanted)
     except tarfile.TarError as exc:
         raise ValueError(f"cannot read {archive.name} filesystem tar stream: {exc}") from exc
 
 
+def tar_notice_bytes(package: tarfile.TarFile, wanted: str) -> bytes | None:
+    matches = [member for member in package if PurePosixPath(member.name).name == wanted]
+    if len(matches) != 1:
+        return None
+    member = matches[0]
+    path = PurePosixPath(member.name)
+    if not member.isfile() or path.is_absolute() or ".." in path.parts or member.size > MAX_LICENSE_BYTES:
+        return None
+    stream = package.extractfile(member)
+    if stream is None:
+        return None
+    with stream:
+        return stream.read()
+
+
 def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
     """Read the actual installed file from each native package format."""
-    if zipfile.is_zipfile(archive):
+    name = archive.name.lower()
+    if name.endswith(".zip"):
         with zipfile.ZipFile(archive) as package:
             matches = [
-                name for name in package.namelist()
-                if PurePosixPath(name.replace("\\", "/")).name == wanted
+                item for item in package.infolist()
+                if PurePosixPath(item.filename.replace("\\", "/")).name.casefold() == wanted.casefold()
             ]
             if len(matches) != 1:
                 return None
-            return package.read(matches[0])
-    if tarfile.is_tarfile(archive):
-        with tarfile.open(archive, "r:*") as package:
-            matches = [member for member in package.getmembers() if member.isfile() and Path(member.name).name == wanted]
-            if len(matches) != 1:
+            item = matches[0]
+            path = PurePosixPath(item.filename.replace("\\", "/"))
+            mode = stat.S_IFMT(item.external_attr >> 16)
+            if (
+                path.name != wanted or path.is_absolute() or ".." in path.parts or ":" in path.parts[0]
+                or item.is_dir() or mode not in (0, stat.S_IFREG) or item.flag_bits & 1
+                or item.file_size > MAX_LICENSE_BYTES
+            ):
                 return None
-            stream = package.extractfile(matches[0])
-            return stream.read() if stream else None
+            return package.read(item)
+    if name.endswith(".tar.gz"):
+        with tarfile.open(archive, "r:gz") as package:
+            return tar_notice_bytes(package, wanted)
+    if zipfile.is_zipfile(archive) or tarfile.is_tarfile(archive):
+        raise ValueError(f"{archive.name} is a ZIP or TAR with a different package extension")
     if archive.suffix.lower() == ".rpm":
         return rpm_embedded_file_bytes(archive, wanted)
     if archive.suffix.lower() == ".deb":
@@ -730,30 +750,8 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
                     f"cannot extract {archive.name} with unsquashfs (exit {result.returncode})"
                     + (f": {detail}" if detail else "")
                 )
-            resolved_destination = destination.resolve()
-            matches = [
-                path for path in destination.rglob(wanted)
-                if path.is_file() and not path.is_symlink()
-                and path.resolve().is_relative_to(resolved_destination)
-            ]
-            if len(matches) != 1:
-                return None
-            return matches[0].read_bytes()
-    with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
-        destination = Path(temp)
-        try:
-            result = subprocess.run(
-                ["7z", "x", "-y", f"-o{destination}", str(archive)],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                check=False,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-            raise ValueError(f"cannot inspect {archive.name} with 7z: {exc}") from exc
-        if result.returncode != 0:
-            raise ValueError(f"cannot extract {archive.name} with 7z (exit {result.returncode})")
-        return extracted_file_bytes(destination, wanted)
+            return extracted_file_bytes(destination, wanted)
+    raise ValueError(f"unsupported native package extension for {archive.name}")
 
 
 def audit(

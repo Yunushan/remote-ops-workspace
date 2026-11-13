@@ -497,6 +497,75 @@ def test_dummy_lock_install_cannot_hide_mutable_extras_resolution() -> None:
     assert any("project/extras install must use --no-deps" in error for error in errors)
 
 
+@pytest.mark.parametrize(
+    ("arguments", "accepted"),
+    [
+        ("--require-hashes -r locks/linux.txt", True),
+        ('--requirement="locks/linux.txt" --require-hashes', True),
+        ("--require-hashes -r 'locks/linux.txt'", True),
+        (
+            '--require-hashes --no-build-isolation --only-binary=:all: '
+            '--no-binary=pyftpdlib --requirement "${{ matrix.lock }}"',
+            True,
+        ),
+        ("--require-hashes --requirement locks/linux.txt.backup", False),
+        ("--require-hashes -r other.txt --constraint locks/linux.txt", False),
+        ("--require-hashes -r locks/linux.txt -r other.txt", False),
+        ("--require-hashes -r locks/linux.txt mutable-package", False),
+        ("-r locks/linux.txt --require-hashes-extra", False),
+        ("--require-hashes -r locks/linux.txt || true", False),
+        ("--require-hashes -r ${{ matrix.lock }}", False),
+    ],
+)
+def test_hashed_install_requires_the_exact_requirements_argument(
+    arguments: str,
+    accepted: bool,
+) -> None:
+    checker = _load_checker()
+
+    assert checker.installs_hashed_requirements(
+        f"python -m pip install {arguments}", ("locks/linux.txt", "${{ matrix.lock }}")
+    ) is accepted
+    assert not checker.installs_hashed_requirements(
+        f"echo python -m pip install {arguments}", ("locks/linux.txt",)
+    )
+
+
+def test_wrong_lock_argument_fails_the_native_python_check() -> None:
+    checker = _load_checker()
+    block = '''
+    steps:
+      - name: Install native dependencies
+        run: python -m pip install --require-hashes -r other.txt --constraint locks/linux.txt
+      - run: python -m pip install --no-deps --no-build-isolation ".[package]"
+'''
+
+    errors = checker.check_native_job_lock_usage(
+        block,
+        "linux-i386-native-evidence",
+        "linux-i386",
+        "locks/linux.txt",
+    )
+
+    assert any("does not consume" in error for error in errors)
+    assert any("dependency-resolving pip install outside" in error for error in errors)
+
+
+def test_wrong_verifier_bootstrap_lock_fails_the_compliance_gate(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker)
+    workflow = checker.PROMOTION_WORKFLOW_PATH
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8").replace(
+            "--requirement locks/verifier.txt",
+            "--requirement other.txt --constraint locks/verifier.txt",
+        ),
+        encoding="utf-8",
+    )
+
+    assert checker.main(args) == 1
+
+
 def test_echoed_publish_audit_is_not_executable_workflow_evidence() -> None:
     checker = _load_checker()
     block = '''

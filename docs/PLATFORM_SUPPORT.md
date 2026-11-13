@@ -501,6 +501,8 @@ Native package architecture mappings:
 The Linux native script maps these architectures, but it does not cross-compile
 PyInstaller binaries. Run `scripts/make_linux_native.sh` on the requested
 architecture, in a matching container, or on a matching self-hosted runner.
+Before packaging, the builder checks the launcher's ELF class and machine
+against the target. For armhf it also checks the hard-float ABI flag.
 
 Recommended external clients:
 

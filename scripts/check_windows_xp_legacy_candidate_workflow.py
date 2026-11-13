@@ -44,14 +44,19 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
         'tags:\n      - "v*"': "release tag trigger",
         "name: Windows XP signed candidate (${{ matrix.arch }})": "signed candidate matrix",
         "if: ${{ github.ref_type != 'tag' }}": "non-tag candidate job",
-        "if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}": "tag-only signing job",
+        "if: ${{ github.ref_type == 'tag' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}": "tag-only signing job",
+        "name: Require trusted XP release source": "trusted tag source gate",
+        'test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"': "exact tag reference",
+        'test "$GITHUB_SHA" = "$(git rev-parse \'refs/tags/row-xp-release^{commit}\')"': "live tag commit",
+        'git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"': "trusted default branch ancestry",
         "environment: release": "protected release environment",
-        "ROW_XP_REQUIRE_SIGNING:": "tag signing requirement",
+        "ROW_XP_REQUIRE_SIGNING: ${{ github.ref_type == 'tag' && '1' || '0' }}": "tag signing requirement",
         "runs-on: windows-2025-vs2026": "modern Windows builder",
         "arch: [x86, x64]": "x86/x64 matrix",
         "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "checkout",
         "persist-credentials: false": "checkout credential isolation",
         "clean: true": "clean checkout",
+        "fetch-depth: 0": "full checkout history for ancestry verification",
         "uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0": "Python setup",
         'python-version: "3.12"': "Python pin",
         "./scripts/make_windows_xp_legacy.ps1 -Arch ${{ matrix.arch }}": "legacy builder",
@@ -67,6 +72,10 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
     for snippet, label in required_snippets.items():
         if snippet not in text:
             errors.append(f"legacy candidate workflow missing {label}: {snippet}")
+    source_gate = text.find("name: Require trusted XP release source")
+    build = text.find("name: Build Windows XP legacy candidate")
+    if not 0 <= source_gate < build:
+        errors.append("legacy candidate workflow must verify the trusted release source before signing")
     verify = text.find("python scripts/check_xp_candidate_build_inputs.py")
     upload = text.find("uses: actions/upload-artifact@")
     if verify < 0 or upload < verify:

@@ -32,9 +32,12 @@ def digest(data: bytes) -> str:
         (None, None),
         (("run_attempt", 2), "successful exact-tag build attempt"),
         (("head_sha", "2" * 40), "successful exact-tag build attempt"),
-        (("event", "workflow_dispatch"), "successful exact-tag build attempt"),
+        (("event", "workflow_dispatch"), None),
+        (("event", "pull_request"), "successful exact-tag build attempt"),
+        (("head_branch", "main"), "successful exact-tag build attempt"),
         (("path", ".github/workflows/ci.yml"), "legacy candidate workflow"),
         (("repository", {"full_name": "elsewhere/project"}), "different repository"),
+        (("head_repository", {"full_name": "elsewhere/project"}), "different repository"),
     ],
 )
 def test_xp_candidate_authenticates_exact_github_run(monkeypatch, change, expected) -> None:
@@ -48,6 +51,7 @@ def test_xp_candidate_authenticates_exact_github_run(monkeypatch, change, expect
         "status": "completed",
         "conclusion": "success",
         "repository": {"full_name": "example/project"},
+        "head_repository": {"full_name": "example/project"},
         "path": ".github/workflows/xp-legacy-candidate.yml@refs/tags/v1.2.3",
     }
     if change:

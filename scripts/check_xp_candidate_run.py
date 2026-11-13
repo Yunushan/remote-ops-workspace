@@ -35,17 +35,22 @@ def check_run(
     expected = {
         "id": run_id,
         "run_attempt": attempt,
-        "event": "push",
         "head_branch": tag,
         "head_sha": sha,
         "status": "completed",
         "conclusion": "success",
     }
-    if any(run.get(key) != value for key, value in expected.items()):
+    if run.get("event") not in ("push", "workflow_dispatch") or any(
+        run.get(key) != value for key, value in expected.items()
+    ):
         raise ValueError("XP evidence must come from the successful exact-tag build attempt")
     if not workflow_path_matches(run.get("path"), WORKFLOW, tag):
         raise ValueError("XP evidence run does not use the legacy candidate workflow")
-    if normalize_repository_from_api(run).casefold() != repository.casefold():
+    if (
+        normalize_repository_from_api(run).casefold() != repository.casefold()
+        or normalize_repository_from_api({"repository": run.get("head_repository")}).casefold()
+        != repository.casefold()
+    ):
         raise ValueError("XP evidence run belongs to a different repository")
 
 

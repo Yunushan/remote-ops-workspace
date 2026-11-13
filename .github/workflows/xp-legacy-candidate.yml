@@ -48,16 +48,33 @@ jobs:
         with:
           persist-credentials: false
           clean: true
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+      - name: Require trusted XP release source
+        if: ${{ github.ref_type == 'tag' }}
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          test "$GITHUB_SHA" = "$(git rev-parse HEAD)"
+          git fetch --no-tags origin "${GITHUB_REF}:refs/tags/row-xp-release"
+          test "$GITHUB_SHA" = "$(git rev-parse 'refs/tags/row-xp-release^{commit}')"
+          git check-ref-format --branch "$DEFAULT_BRANCH" >/dev/null
+          git fetch --no-tags origin "refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"
       - name: Build Windows XP legacy candidate
         shell: pwsh
         env:
-          ROW_XP_REQUIRE_SIGNING: ${{ github.event_name == 'push' && github.ref_type == 'tag' && '1' || '0' }}
-          ROW_WINDOWS_CERTIFICATE_BASE64: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.ROW_WINDOWS_CERTIFICATE_BASE64 || '' }}
-          ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD || '' }}
-          ROW_WINDOWS_TIMESTAMP_URL: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.ROW_WINDOWS_TIMESTAMP_URL || '' }}
+          ROW_XP_REQUIRE_SIGNING: ${{ github.ref_type == 'tag' && '1' || '0' }}
+          ROW_WINDOWS_CERTIFICATE_BASE64: ${{ github.ref_type == 'tag' && secrets.ROW_WINDOWS_CERTIFICATE_BASE64 || '' }}
+          ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ github.ref_type == 'tag' && secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          ROW_WINDOWS_TIMESTAMP_URL: ${{ github.ref_type == 'tag' && secrets.ROW_WINDOWS_TIMESTAMP_URL || '' }}
         run: |
           $actual = git rev-parse HEAD
           if ($LASTEXITCODE -ne 0 -or $actual -cne $env:GITHUB_SHA) {
@@ -91,7 +108,7 @@ jobs:
           retention-days: 90
   build-signed:
     name: Windows XP signed candidate (${{ matrix.arch }})
-    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+    if: ${{ github.ref_type == 'tag' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: windows-2025-vs2026
     timeout-minutes: 15
     environment: release

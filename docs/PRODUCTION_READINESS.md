@@ -111,8 +111,11 @@ record binds the independent decision, the `.NET Framework 4` prerequisite
 and `runtime_redistributed: false`. Promotion repeats the live candidate check
 for both XP architectures using the signed records.
 Release-tag pushes build both XP candidates in the protected `release`
-environment. They use the Windows certificate and RFC 3161 timestamp
-settings above, and verify the signed executable before creating the
+environment. If the build fails, dispatch `xp-legacy-candidate.yml` from
+the same release tag for a fresh signed run. Both paths verify the live tag
+commit and its ancestry on the default branch. Both use the Windows
+certificate and RFC 3161 timestamp settings above and verify the signed
+executable before creating the
 archive. The XP build receipt and native manifest bind the resulting
 signature metadata to the candidate bytes. The XP host tests still have
 to demonstrate the behavior of those exact files on each target OS.

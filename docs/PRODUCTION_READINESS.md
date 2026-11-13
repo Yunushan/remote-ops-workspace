@@ -59,8 +59,12 @@ values or writing them into logs:
 
 Enable [GitHub immutable releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
 before production promotion. Give the `release-compliance-review` environment a
-`ROW_RELEASE_IMMUTABILITY_TOKEN` with Administration read access so the workflow
-can verify the setting before creating a draft.
+`ROW_RELEASE_IMMUTABILITY_TOKEN` scoped to this repository with Administration,
+Actions, and Checks read access. Before creating a draft and again before
+publishing it, promotion verifies the immutable-release setting, branch
+protection, and the trusted workflow identity and success of each required check
+at the release SHA. The independent signed tag-governance proof is verified at
+each mutation boundary.
 
 The machine running the aggregate gate must have GitHub CLI installed and
 authenticated, with `GH_TOKEN` or `GITHUB_TOKEN` providing read access to

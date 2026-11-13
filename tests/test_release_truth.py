@@ -256,8 +256,10 @@ def test_promotion_requires_immutable_release_setting_at_publication() -> None:
     [
         ("Require unused release namespace including drafts", "draft creation"),
         ("Re-resolve immutable tag immediately before mutation", "draft creation"),
+        ("Verify protected branch and exact required checks before draft creation", "draft creation"),
         ("Recheck immutable releases enabled before publication", "publication"),
         ("Re-resolve immutable tag before publication", "publication"),
+        ("Verify protected branch and exact required checks before publication", "publication"),
     ],
 )
 def test_promotion_rejects_remote_preconditions_before_auditor_wait(
@@ -270,6 +272,17 @@ def test_promotion_rejects_remote_preconditions_before_auditor_wait(
     stale = remove_named_step(workflow, name).replace(marker, step[0] + marker, 1)
     _, errors = both_contract_errors(stale)
     assert any("in order" in error for error in errors)
+
+
+def test_promotion_requires_exact_workflow_identity_and_checks_before_publication() -> None:
+    workflow = promotion_workflow().replace(
+        '          --sha "$RELEASE_SHA"\n      - name: Revalidate signed tag governance immediately before publication',
+        '          --sha "$RELEASE_SHA" --required-check "CodeQL python"\n'
+        '      - name: Revalidate signed tag governance immediately before publication',
+        1,
+    )
+    _, errors = both_contract_errors(workflow)
+    assert any("publication-time branch governance" in error and "allowlisted" in error for error in errors)
 
 
 def test_promotion_requires_post_wait_tag_comparison() -> None:

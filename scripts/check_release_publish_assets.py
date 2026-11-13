@@ -422,6 +422,10 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
         if snippet not in workflow:
             errors.append(f"promotion workflow missing {label}: {snippet}")
     steps = workflow_step_blocks(block)
+    branch_governance_steps = (
+        "Verify protected branch and exact required checks before draft creation",
+        "Verify protected branch and exact required checks before publication",
+    )
     ordered = [
         (
             "check_release_maturity.py",
@@ -490,6 +494,12 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "Require unused release namespace including drafts",
         ),
         (
+            "python scripts/check_repository_governance.py",
+            "draft-time branch governance and exact required checks",
+            "run",
+            branch_governance_steps[0],
+        ),
+        (
             "check_release_tag_governance.py",
             "mutation-bound tag governance proof",
             "run",
@@ -542,6 +552,12 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "publication-time immutable release setting proof",
             "run",
             "Recheck immutable releases enabled before publication",
+        ),
+        (
+            "python scripts/check_repository_governance.py",
+            "publication-time branch governance and exact required checks",
+            "run",
+            branch_governance_steps[1],
         ),
         (
             "check_release_tag_governance.py",
@@ -729,6 +745,18 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
     command_contracts["Recheck immutable releases enabled before publication"] = command_contracts[
         "Require immutable releases enabled before any mutation"
     ]
+    for name in branch_governance_steps:
+        command_contracts[name] = (
+            ('--repository "$GITHUB_REPOSITORY"', '--branch "$DEFAULT_BRANCH"', '--sha "$RELEASE_SHA"'),
+            (),
+            frozenset({"--repository", "--branch", "--sha"}),
+        )
+        step = next((step for step in steps if step_name_is(step, name)), "")
+        if not {
+            "DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}",
+            "GH_TOKEN: ${{ secrets.ROW_RELEASE_IMMUTABILITY_TOKEN }}",
+        } <= {line.strip() for line in step.splitlines()}:
+            errors.append(f"promotion must use the default branch and repository read token for {name}")
     draft_tokens, forbidden, draft_flags = command_contracts["Revalidate signed tag governance at mutation boundary"]
     command_contracts["Revalidate signed tag governance immediately before publication"] = (
         tuple(token.replace("release-governance-draft", "release-governance-publish")

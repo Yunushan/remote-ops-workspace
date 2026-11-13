@@ -268,6 +268,15 @@ jobs:
           python scripts/check_release_remote_preconditions.py namespace
           --repository "$GITHUB_REPOSITORY"
           --tag "$RELEASE_TAG"
+      - name: Verify protected branch and exact required checks before draft creation
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ secrets.ROW_RELEASE_IMMUTABILITY_TOKEN }}
+        run: >-
+          python scripts/check_repository_governance.py
+          --repository "$GITHUB_REPOSITORY"
+          --branch "$DEFAULT_BRANCH"
+          --sha "$RELEASE_SHA"
       - name: Revalidate signed tag governance at mutation boundary
         run: >-
           python scripts/check_release_tag_governance.py
@@ -405,6 +414,15 @@ jobs:
           python scripts/check_release_remote_preconditions.py immutable
           --repository "$GITHUB_REPOSITORY"
           --tag "$RELEASE_TAG"
+      - name: Verify protected branch and exact required checks before publication
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ secrets.ROW_RELEASE_IMMUTABILITY_TOKEN }}
+        run: >-
+          python scripts/check_repository_governance.py
+          --repository "$GITHUB_REPOSITORY"
+          --branch "$DEFAULT_BRANCH"
+          --sha "$RELEASE_SHA"
       - name: Revalidate signed tag governance immediately before publication
         env:
           DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}

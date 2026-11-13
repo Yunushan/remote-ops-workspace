@@ -34,14 +34,13 @@ workflow was added cannot be promoted retroactively under the same-tag and
 same-source-SHA policy; create a new release tag from a commit containing the
 workflows instead of dispatching from `main` or weakening source provenance.
 
-After all four target workflows produce finalized accepted records for that
-immutable tag, review and append those records on the trusted default branch.
-The standard release assets publish automatically when the matching tag is
-pushed. Only then manually dispatch `.github/workflows/release.yml` from the
-trusted default branch with `release_tag` set to the immutable tag and
-`include_protected_platform_evidence=true`. The protected lane validates the
-branch-held accepted registry and checks out the immutable release tag; do not
-retag or rebuild from the controller branch.
+Pushing the production tag starts `release.yml`, which builds and seals the
+signed candidate inventory. Collect all four protected-target records from
+that same tag. Review and finalize the records, then include the registry in
+the signed compliance bundle. Dispatch `release-promotion.yml` from the same
+tag with the sealed candidate inventory and the exact evidence commit SHA.
+Follow the [production promotion sequence](PRODUCTION_READINESS.md#final-promotion-sequence)
+for the remaining review inputs and the post-publication audit.
 
 Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle matching runner for
@@ -148,9 +147,9 @@ matches.
 The same release source workflow run URL cannot carry conflicting accepted run
 attempts across protected-platform records for one release; that ambiguity is
 aggregate evidence only and cannot complete the parity block.
-The release workflow's `accepted-platform-evidence-assets` job must keep only
-read permissions for repository content and Actions artifacts; no write-scoped
-GitHub permission is acceptable for importing protected-platform evidence.
+The import step in `release-promotion.yml` uses read access to repository
+contents and Actions artifacts. The promotion job later uses release write
+access to create and publish the verified draft.
 The downloaded source artifact must contain exactly the expected release and
 review-bundle files at artifact root; extra files, private raw logs and nested
 builder output directories are rejected before anything is copied into the

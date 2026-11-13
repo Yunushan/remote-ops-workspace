@@ -1,0 +1,12 @@
+{
+  "package": "Microsoft.NETFramework.ReferenceAssemblies.net40",
+  "version": "1.0.3",
+  "url": "https://api.nuget.org/v3-flatcontainer/microsoft.netframework.referenceassemblies.net40/1.0.3/microsoft.netframework.referenceassemblies.net40.1.0.3.nupkg",
+  "sha256": "54d6e20a1b61caf79395d6d71d091265e81f5a5705ac4ae52af45ca143c3c694",
+  "assemblies": {
+    "mscorlib.dll": "f7a62c9392d6762f5b46c76149173e2f265d6ad05aae54290ff40573ab32190e",
+    "System.dll": "b6dc62e2437b39f48b5c3368e0d14f86cf00fbf0c76d2685026aafca7e9b50f7",
+    "System.Drawing.dll": "a8a134b773bdb25be802c76e3f4990b87c663748e8a71a596de62cd197aaab33",
+    "System.Windows.Forms.dll": "204e5165c79151c134121b602cf47d0009e3763de92f88b07896ca67fd5c83af"
+  }
+}

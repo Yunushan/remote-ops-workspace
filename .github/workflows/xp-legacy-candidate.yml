@@ -2,7 +2,12 @@ name: XP legacy candidate
 
 on:
   push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
     paths:
+      - ".github/workflows/xp-legacy-candidate.yml"
       - "legacy/xp_host/**"
       - "scripts/make_windows_xp_legacy.ps1"
       - "scripts/check_platform_promotion_artifacts.py"
@@ -10,6 +15,7 @@ on:
       - "pyproject.toml"
   pull_request:
     paths:
+      - ".github/workflows/xp-legacy-candidate.yml"
       - "legacy/xp_host/**"
       - "scripts/make_windows_xp_legacy.ps1"
       - "scripts/check_platform_promotion_artifacts.py"
@@ -42,11 +48,23 @@ jobs:
           python-version: "3.12"
       - name: Build Windows XP legacy candidate
         shell: pwsh
-        run: ./scripts/make_windows_xp_legacy.ps1 -Arch ${{ matrix.arch }}
+        run: |
+          $actual = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:GITHUB_SHA) {
+            throw "The XP build checkout does not match the workflow source SHA."
+          }
+          ./scripts/make_windows_xp_legacy.ps1 -Arch ${{ matrix.arch }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: windows-xp-legacy-candidate-${{ matrix.arch }}
+          name: windows-xp-legacy-candidate-${{ matrix.arch }}-${{ github.run_attempt }}
           path: native-dist/windows-xp/${{ matrix.arch }}/*
           if-no-files-found: error
           include-hidden-files: false
           retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-xp-build-inputs-${{ matrix.arch }}-${{ github.run_attempt }}
+          path: build/native/windows-xp/${{ matrix.arch }}/xp-build-inputs.json
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 90

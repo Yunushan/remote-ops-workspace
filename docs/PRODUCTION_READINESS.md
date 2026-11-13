@@ -89,6 +89,13 @@ run the full exact-artifact compliance checker before creating or uploading a
 GitHub Release. A reviewer signature
 over an unused lock is insufficient.
 
+The XP candidate workflow builds the WinForms companion against the tracked
+.NET Framework 4 reference package. It keeps an attempt-scoped build receipt
+with the compiler version and digest, reference digests, and hashes of the
+source, executable, archive, and native manifest. XP production compliance
+still needs an audit that links this receipt to the exact published package
+and the independent review of its contents and runtime prerequisites.
+
 The policy-only preflight therefore withholds the production-signed publication
 lane today. Once the tracked policy and locks are independently approved, the
 tag run builds and retains the exact signed/notarized candidate artifacts and

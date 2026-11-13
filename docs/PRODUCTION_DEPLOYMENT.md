@@ -346,9 +346,11 @@ allows read, write and delete opens of a control file and denies the same opens
 of the private canary. Separate x86 and x64 jobs compare the ctypes structure
 layouts against the installed Windows SDK. The NTFS drill uses the real
 workspace-home selection and stage lock, interrupts the staging transaction
-before its final journal write, then checks recovery and tamper refusal with
-public fixture bytes. Authenticated end-to-end updater qualification is still
-required before enabling production staging.
+before its final journal write, then verifies recovery and tamper refusal. It
+uses the real Ed25519 verifier with an ephemeral key, checks rejection under a
+different key, and verifies the complete fixture asset set after recovery.
+Production updater qualification still requires signed artifacts, trusted
+transport, an installation and rollback.
 
 HTTPS uses certificate and hostname verification, TLS 1.2 or later,
 credential-free requests, disabled environment proxies, identity encoding and a

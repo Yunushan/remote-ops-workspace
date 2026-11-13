@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -152,21 +155,78 @@ def qualify(parent: Path, observed: list[str], account: str, password: str, cont
         observed.append("token-unchanged-and-stage-clean")
 
 
+def signed_fixture():
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from remote_ops_workspace import __version__
+    from remote_ops_workspace import update_channel as channel
+
+    signer = Ed25519PrivateKey.generate()
+    manifest_url = "https://publisher.invalid/manifest.json"
+    organization = "windows-ntfs-fixture"
+    update_channel = "ci-canary"
+    target = "windows-x64"
+    assets = {"canary.bin": CANARY, "second-canary.bin": b"ROW second canary\n"}
+    version = __version__.split(".")
+    version[-1] = str(int(version[-1]) + 1)
+    manifest = {
+        "schema": channel.MOBA_PROFESSIONAL_UPDATE_MANIFEST_SCHEMA,
+        "organization": organization,
+        "channel": update_channel,
+        "version": ".".join(version),
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "update_url": manifest_url,
+        "artifacts": [
+            {"target": target, "name": name, "file": name, "url": f"https://publisher.invalid/{name}",
+             "sha256": hashlib.sha256(body).hexdigest(), "size_bytes": len(body)}
+            for name, body in assets.items()
+        ],
+    }
+    payload = channel.canonical_update_manifest_payload(manifest)
+    manifest["signature"] = {
+        "algorithm": "ed25519",
+        "value": base64.b64encode(signer.sign(payload)).decode("ascii"),
+        "payload_sha256": hashlib.sha256(payload).hexdigest(),
+    }
+    policy = {
+        "schema": channel.POLICY_SCHEMA,
+        "enabled": True,
+        "manifest_url": manifest_url,
+        "organization": organization,
+        "channel": update_channel,
+        "selected_target": target,
+        "approved_targets": [target],
+        "allowed_origins": ["https://publisher.invalid"],
+        "limits": {
+            "manifest_bytes": 8192, "asset_bytes": 1024, "total_asset_bytes": 2048,
+            "asset_count": 2, "http_timeout_seconds": 2, "operation_timeout_seconds": 30,
+            "redirects": 0, "maximum_age_seconds": 3600, "future_skew_seconds": 0,
+        },
+    }
+
+    def trust(key):
+        public_key = base64.b64encode(key.public_key().public_bytes_raw()).decode("ascii")
+        return channel.UpdatePolicy(json.dumps({**policy, "public_key": f"ed25519:{public_key}"}).encode("utf-8"))
+
+    return json.dumps(manifest).encode("utf-8"), assets, trust(signer), trust(Ed25519PrivateKey.generate())
+
+
 def qualify_staging(parent: Path, observed: list[str]) -> None:
+    from remote_ops_workspace import update_channel as channel
     from remote_ops_workspace import update_staging as staging
     from remote_ops_workspace.paths import data_dir
     from remote_ops_workspace.state_lock import exclusive_file_lock
     from remote_ops_workspace.windows_private_storage import windows_update_boundary
 
-    # This fixture exercises the storage transaction using an external byte
-    # binding. It has no publisher key, installer, or network dependency.
-    manifest = b'{"purpose":"public NTFS staging test"}'
-    asset_name = "canary.bin"
-    manifest_digest = hashlib.sha256(manifest).hexdigest()
-    binding = staging.AssetSetBinding(
-        manifest_digest,
-        (staging.StageBinding(manifest_digest, asset_name, hashlib.sha256(CANARY).hexdigest(), len(CANARY)),),
-    )
+    raw, assets, policy, wrong_policy = signed_fixture()
+    manifest = channel.authenticate_manifest(raw, policy)
+    try:
+        channel.authenticate_manifest(raw, wrong_policy)
+    except channel.UpdateError as exc:
+        require(exc.args == ("manifest-authentication-refused",), "wrong-fixture-key-refusal")
+    else:
+        raise ValueError("wrong-fixture-key-accepted")
+    observed.append("real-ed25519-accepted-and-wrong-key-refused")
 
     class SimulatedInterruption(Exception):
         pass
@@ -180,7 +240,7 @@ def qualify_staging(parent: Path, observed: list[str]) -> None:
     def transaction(transaction_type, guard):
         def lease(path):
             return exclusive_file_lock(path, timeout_seconds=5, _private_guard=guard)
-        return transaction_type(Path(guard.path), binding, exclusive_lease=lease, private_guard=guard)
+        return transaction_type(Path(guard.path), manifest.binding, exclusive_lease=lease, private_guard=guard)
 
     with tempfile.TemporaryDirectory(prefix="row-stage-ntfs-", dir=parent) as scratch:
         root = Path(scratch) / "stage"
@@ -190,7 +250,7 @@ def qualify_staging(parent: Path, observed: list[str]) -> None:
             observed.append("default-home-and-stage-boundary")
             operation = transaction(InterruptedTransaction, guard)
             try:
-                operation.prepare(manifest, {asset_name: [CANARY]})
+                operation.prepare(raw, {name: [body] for name, body in assets.items()})
             except SimulatedInterruption:
                 observed.append("staging-interrupted-before-commit")
             else:
@@ -199,13 +259,19 @@ def qualify_staging(parent: Path, observed: list[str]) -> None:
         # Reacquire every native guard and the lock as a later invocation does.
         with windows_update_boundary(root, home) as guard:
             operation = transaction(staging.AssetSetTransaction, guard)
-            result = operation.recover()
-            require(result["phase"] == "staged" and result["transaction_id"] == binding.transaction_id,
+            saved = channel._read_stage_manifest(root, policy.settings["limits"]["manifest_bytes"], guard)
+            require(saved == raw, "staging-recovery-manifest-changed")
+            recovered_manifest = channel.authenticate_manifest(saved, policy)
+            recovered = operation.recover()
+            require(recovered["phase"] == "staged" and recovered["transaction_id"] == recovered_manifest.binding.transaction_id,
                     "staging-recovery-binding-mismatch")
+            result = channel._verify_complete(operation, recovered_manifest, policy, time.monotonic() + 30)
+            require(result["authenticity_checked"] is True and result["artifact_count"] == len(assets),
+                    "staging-complete-verifier-mismatch")
             require(result["install_permitted"] is False, "staging-install-unexpectedly-permitted")
-            observed.append("interrupted-stage-recovered")
+            observed.append("signed-interrupted-stage-recovered")
 
-            asset = root / asset_name
+            asset = root / next(iter(assets))
             with asset.open("r+b") as stream:
                 stream.write(b"X")
                 stream.flush()
@@ -256,6 +322,8 @@ FAILURE_CODES = frozenset({
     "windows-required", "local-fixed-volume-required", "persistent-local-acl-required",
     "unexpected-row-home-override", "expected-staging-interruption-missing", "staging-recovery-binding-mismatch",
     "staging-install-unexpectedly-permitted", "unexpected-staging-refusal",
+    "wrong-fixture-key-refusal", "wrong-fixture-key-accepted", "manifest-authentication-refused",
+    "staging-recovery-manifest-changed", "staging-complete-verifier-mismatch",
     "tampered-stage-recovered", "stage-io-refused", "stage-changed",
     "incomplete-stage", "unexpected-stage-entry", "interrupted-partial-stage",
     "stage-must-be-outside-home", "default-home-selection-mismatch",

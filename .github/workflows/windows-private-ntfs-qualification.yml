@@ -12,6 +12,9 @@ on:
       - 'src/remote_ops_workspace/paths.py'
       - 'src/remote_ops_workspace/state_lock.py'
       - 'src/remote_ops_workspace/update_staging.py'
+      - 'src/remote_ops_workspace/update_channel.py'
+      - 'src/remote_ops_workspace/moba_customizer.py'
+      - 'requirements-locks/windows-x64.txt'
   push:
     branches: [main]
     paths:
@@ -23,6 +26,9 @@ on:
       - 'src/remote_ops_workspace/paths.py'
       - 'src/remote_ops_workspace/state_lock.py'
       - 'src/remote_ops_workspace/update_staging.py'
+      - 'src/remote_ops_workspace/update_channel.py'
+      - 'src/remote_ops_workspace/moba_customizer.py'
+      - 'requirements-locks/windows-x64.txt'
 
 permissions:
   contents: read
@@ -37,7 +43,7 @@ jobs:
       github.repository == 'Yunushan/remote-ops-workspace' &&
       (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: windows-2025-vs2026
-    timeout-minutes: 8
+    timeout-minutes: 12
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
       SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -54,7 +60,18 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $observed -cne $env:SOURCE_SHA) { throw 'Unexpected source commit' }
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.14.7'
+      - name: Install hash-locked verifier dependencies
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $lock = Get-Content -LiteralPath requirements-locks/windows-x64.txt -Raw
+          $blocks = [regex]::Matches($lock, '(?m)^(?:cryptography|cffi|pycparser)==[^\r\n]+(?:\r?\n[ ]+--hash=sha256:[^\r\n]+)+')
+          if ($blocks.Count -ne 3) { throw 'Expected three hash-locked verifier dependencies' }
+          $verifier = Join-Path $env:RUNNER_TEMP 'row-ntfs-verifier-requirements.txt'
+          $blocks.Value | Set-Content -LiteralPath $verifier -Encoding ascii
+          python -I -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple --requirement $verifier
+          if ($LASTEXITCODE -ne 0) { throw 'Hash-locked verifier dependency install failed' }
       - name: Exercise private storage on NTFS
         id: storage
         shell: pwsh
@@ -84,7 +101,7 @@ jobs:
             $env:ROW_NTFS_TEST_ACCOUNT = $name
             $env:ROW_NTFS_TEST_PASSWORD = $password
             $env:ROW_NTFS_TEST_CONTROL = $control
-            python -I -S -B scripts/check_windows_private_ntfs.py --output (Join-Path $env:RUNNER_TEMP 'row-private-ntfs-result.json')
+            python -I -B scripts/check_windows_private_ntfs.py --output (Join-Path $env:RUNNER_TEMP 'row-private-ntfs-result.json')
             if ($LASTEXITCODE -ne 0) { throw 'Windows private storage checks failed' }
           } finally {
             Remove-Item Env:ROW_NTFS_TEST_ACCOUNT,Env:ROW_NTFS_TEST_PASSWORD,Env:ROW_NTFS_TEST_CONTROL -ErrorAction SilentlyContinue

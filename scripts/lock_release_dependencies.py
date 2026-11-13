@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -73,7 +74,10 @@ def compile_lock(uv: Path, config: dict, target: str, spec: dict, *, system_cert
         command.extend(["--only-binary", ":all:", "--no-binary", ",".join(sources)])
     else:
         command.append("--no-build")
-    subprocess.run(command, cwd=ROOT, check=True)
+    environment = os.environ.copy()
+    if spec["platform"].endswith("-apple-darwin"):
+        environment["MACOSX_DEPLOYMENT_TARGET"] = config["macos_deployment_target"]
+    subprocess.run(command, cwd=ROOT, env=environment, check=True)
     contents = output.read_text(encoding="utf-8")
     if not re.search(r"(?m)^\w[\w.-]*==", contents) or "--hash=sha256:" not in contents:
         raise ValueError(f"resolver produced an empty or unhashed lock for {target}")

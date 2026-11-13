@@ -7,12 +7,13 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import sys
-import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 CANARY = b"ROW public Windows NTFS qualification canary\n"
@@ -166,21 +167,37 @@ def observe_refused_fixture(storage, native, parent: Path, report: dict):
         raise
 
 
+@contextmanager
+def private_fixture(storage, native, parent: Path, prefix: str):
+    # Windows CPython's temporary-directory ACL includes an OWNER RIGHTS ACE.
+    # Create the disposable parent with the same owner-only descriptor as a
+    # private stage. Existing ancestors still pass the normal product guard.
+    path = parent / f"{prefix}{uuid4().hex}"
+    created = False
+    try:
+        with storage.private_stage_guard(path, create=True, _native=native):
+            created = True
+            yield path
+    finally:
+        if created:
+            shutil.rmtree(path)
+
+
 def qualify(parent: Path, observed: list[str], account: str, password: str, control: Path, report: dict) -> None:
     from remote_ops_workspace import windows_private_storage as storage
 
     native = storage._Native()
     user = native.token_user()
     observed.append("process-token")
-    with tempfile.TemporaryDirectory(prefix="row-private-ntfs-", dir=parent) as scratch:
-        stage = Path(scratch) / "stage"
+    with (
+        observe_refused_fixture(storage, native, parent, report),
+        private_fixture(storage, native, parent, "row-private-ntfs-") as scratch,
+    ):
+        stage = scratch / "stage"
         partial = stage / "canary.part"
         final = stage / "canary.bin"
         alias = stage / "canary.link"
-        with (
-            observe_refused_fixture(storage, native, Path(scratch), report),
-            storage.private_stage_guard(stage, create=True, _native=native) as guard,
-        ):
+        with storage.private_stage_guard(stage, create=True, _native=native) as guard:
             observed.append("exclusive-private-directory")
             with partial.open("xb") as writer:
                 handle = storage.descriptor_handle(writer.fileno())
@@ -282,9 +299,9 @@ def signed_fixture():
 def qualify_staging(parent: Path, observed: list[str]) -> None:
     from remote_ops_workspace import update_channel as channel
     from remote_ops_workspace import update_staging as staging
+    from remote_ops_workspace import windows_private_storage as storage
     from remote_ops_workspace.paths import data_dir
     from remote_ops_workspace.state_lock import exclusive_file_lock
-    from remote_ops_workspace.windows_private_storage import windows_update_boundary
 
     raw, assets, policy, wrong_policy = signed_fixture()
     manifest = channel.authenticate_manifest(raw, policy)
@@ -310,11 +327,11 @@ def qualify_staging(parent: Path, observed: list[str]) -> None:
             return exclusive_file_lock(path, timeout_seconds=5, _private_guard=guard)
         return transaction_type(Path(guard.path), manifest.binding, exclusive_lease=lease, private_guard=guard)
 
-    with tempfile.TemporaryDirectory(prefix="row-stage-ntfs-", dir=parent) as scratch:
-        root = Path(scratch) / "stage"
+    with private_fixture(storage, storage._Native(), parent, "row-stage-ntfs-") as scratch:
+        root = scratch / "stage"
         require(not os.environ.get("ROW_HOME"), "unexpected-row-home-override")
         home = data_dir()
-        with windows_update_boundary(root, home, create=True) as guard:
+        with storage.windows_update_boundary(root, home, create=True) as guard:
             observed.append("default-home-and-stage-boundary")
             operation = transaction(InterruptedTransaction, guard)
             try:
@@ -325,7 +342,7 @@ def qualify_staging(parent: Path, observed: list[str]) -> None:
                 raise ValueError("expected-staging-interruption-missing")
 
         # Reacquire every native guard and the lock as a later invocation does.
-        with windows_update_boundary(root, home) as guard:
+        with storage.windows_update_boundary(root, home) as guard:
             operation = transaction(staging.AssetSetTransaction, guard)
             saved = channel._read_stage_manifest(root, policy.settings["limits"]["manifest_bytes"], guard)
             require(saved == raw, "staging-recovery-manifest-changed")

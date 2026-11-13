@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import shutil
 import struct
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -53,3 +56,28 @@ def test_native_builder_checks_launcher_before_packaging() -> None:
     text = Path("scripts/make_linux_native.sh").read_text(encoding="utf-8")
     check = 'scripts/check_linux_native_elf.py --target "$APPIMAGE_ARCH" --executable "$ROW_BIN"'
     assert text.index('ROW_BIN="$PY_DIST/row"') < text.index(check) < text.index('PKGROOT="$BUILD_DIR/pkgroot"')
+
+
+@pytest.mark.skipif(sys.platform != "linux" or shutil.which("bash") is None, reason="requires Linux Bash")
+def test_legacy_smoke_refuses_wrong_launcher_before_execution(tmp_path: Path) -> None:
+    source = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+    start = source.index("verify_row() {\n")
+    end = source.index("\n}\n", start) + 3
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    shutil.copyfile("scripts/check_linux_native_elf.py", scripts / "check_linux_native_elf.py")
+    executable = tmp_path / "row"
+    executable.write_text("#!/bin/sh\ntouch launched\necho 1.0.27\n", encoding="utf-8")
+    executable.chmod(0o755)
+    probe = (
+        "set -euo pipefail\n" + source[start:end]
+        + '\nTARGET=linux-i386 APPIMAGE_ARCH=i686 VERSION=1.0.27\n'
+        + 'run_row_command() { "$1" --version; }\n'
+        + 'verify_row ./row direct fixture deb/usr/bin/row install\n'
+    )
+    result = subprocess.run(
+        ["bash", "-c", probe], cwd=tmp_path, capture_output=True, text=True, timeout=30, check=False,
+    )
+    assert result.returncode != 0
+    assert "Linux native architecture check failed" in result.stderr
+    assert not (tmp_path / "launched").exists()

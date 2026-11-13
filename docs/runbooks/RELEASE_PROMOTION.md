@@ -41,6 +41,30 @@ promotion target.
    Run the [aggregate gate with the required release inputs](../PRODUCTION_READINESS.md#final-promotion-sequence)
    from the tagged checkout and require `production readiness: 100/100 gates passed`.
 
+## Capture the signed tag ruleset proof
+
+The independent governance auditor runs this command on their own system.
+Their Ed25519 public key must already be enrolled in the tagged release
+policy. Set `GH_TOKEN` in the auditor's environment to a GitHub credential
+that can read the repository and see the bypass actors on its tag rulesets.
+Install the verifier dependencies from
+`requirements-locks/release-verifier-linux-x86_64.txt` on the matching Linux
+x64 Python environment.
+
+```bash
+python scripts/capture_release_tag_governance.py \
+  --repository "<owner/repo>" --tag "<tag>" --sha "<release-sha>" \
+  --auditor-identity "<auditor identity>" --key-id "<enrolled key ID>" \
+  --private-key "<auditor-local Ed25519 PEM>" --out-dir "<new output directory>"
+```
+
+The command reads the exact tag and its policy from GitHub, checks active tag
+rulesets for update and deletion protection with no bypass actors, and checks
+the tag again before signing. Keep the private key on the auditor's system.
+Transfer `tag-governance-attestation.json` and its detached
+`tag-governance-attestation.sig.json` together. The tagged policy determines
+their short validity window.
+
 ## Verify a published artifact
 
 Keep the file's published name. Set `release_tag` and `release_sha` to the

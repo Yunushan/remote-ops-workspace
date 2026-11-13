@@ -15,7 +15,7 @@
     "macos-x64",
     "macos-arm64",
     "linux-x86_64",
-    "linux-aarch64",
+    "linux-arm64",
     "linux-i386",
     "linux-armhf",
     "windows-xp-native-x86",

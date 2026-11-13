@@ -357,6 +357,28 @@ def test_current_compliance_policy_is_deliberately_fail_closed() -> None:
     assert any("no trusted Ed25519 approver key" in error for error in errors)
 
 
+def test_compliance_maps_all_native_manifests_for_a_future_release_tag() -> None:
+    checker = _load_checker()
+    matrix = json.loads(Path("configs/release_matrix.json").read_bytes())
+    policy = json.loads(Path("configs/release_compliance_policy.json").read_bytes())
+    tag = "v2.3.4"
+
+    manifests = checker.expected_native_manifest_names(matrix, tag)
+    assert manifests
+    assert all(f"-{tag}-" in name for name in manifests)
+    targets = {checker.target_for_manifest(name, matrix=matrix, tag=tag) for name in manifests}
+    assert targets == set(policy["production_targets"]) - checker.XP_TARGETS
+    standard_targets = {
+        target
+        for job in matrix["default_github_release"]["native_jobs"]
+        for target in job["platform_target_ids"]
+    }
+    assert standard_targets == checker.RUNTIME_REPORT_ARTIFACT_NAMES.keys()
+    for target in targets:
+        checker.producer_for_target(target, release_workflow="", extended_workflow="")
+    assert checker.RUNTIME_REPORT_ARTIFACT_NAMES["linux-arm64"] == "release-runtime-linux-aarch64"
+
+
 def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> None:
     checker = _load_checker()
 

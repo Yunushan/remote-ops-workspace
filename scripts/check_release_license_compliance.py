@@ -26,6 +26,13 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from check_release_publish_assets import normalize_version  # noqa: E402
+from release_candidate_inventory import RUNTIME_REPORT_ARTIFACT_NAMES  # noqa: E402
+
 POLICY_PATH = ROOT / "configs" / "release_compliance_policy.json"
 TOOLCHAIN_PATH = ROOT / "configs" / "release_toolchain.json"
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
@@ -620,8 +627,6 @@ def check_evidence(
     verify_review_window: bool = True,
     published_audit: bool = False,
 ) -> list[str]:
-    from release_candidate_inventory import RUNTIME_TARGETS
-
     errors: list[str] = []
     expected_scalars = {
         "schema_version": 1,
@@ -767,7 +772,7 @@ def check_evidence(
                 ))
             continue
         profile = profile_for_manifest(name)
-        if target in RUNTIME_TARGETS:
+        if target in RUNTIME_REPORT_ARTIFACT_NAMES:
             realized = inventory.get("realized_environment")
             sealed = runtime_reports.get(target)
             if (
@@ -991,7 +996,7 @@ def expected_native_manifest_names(
         for pattern in patterns:
             if not isinstance(pattern, str) or not pattern.endswith("-native-manifest.json"):
                 continue
-            normalized = pattern.replace("1.0.24", version)
+            normalized = normalize_version(pattern, version)
             match = re.search(r"<([^>]+)>", normalized)
             if match is None:
                 names.add(normalized)
@@ -1004,7 +1009,7 @@ def expected_native_manifest_names(
             continue
         for pattern in patterns:
             if isinstance(pattern, str) and pattern.endswith("-native-manifest.json"):
-                names.add(pattern.replace("1.0.24", version))
+                names.add(normalize_version(pattern, version))
     if isinstance(protected_registry, dict):
         for entry in protected_registry.get("accepted_evidence", []):
             if not isinstance(entry, dict) or entry.get("release_tag") != tag:
@@ -1098,7 +1103,7 @@ def target_for_manifest(name: str, *, matrix: dict[str, Any], tag: str) -> str:
             for pattern in patterns:
                 if not isinstance(pattern, str) or not pattern.endswith("-native-manifest.json"):
                     continue
-                normalized = pattern.replace("1.0.24", version)
+                normalized = normalize_version(pattern, version)
                 match = re.search(r"<([^>]+)>", normalized)
                 if match is None:
                     continue
@@ -1113,7 +1118,7 @@ def target_for_manifest(name: str, *, matrix: dict[str, Any], tag: str) -> str:
             if (
                 isinstance(pattern, str)
                 and pattern.endswith("-native-manifest.json")
-                and pattern.replace("1.0.24", version) == name
+                and normalize_version(pattern, version) == name
             ):
                 return target["platform_target_id"]
     xp_match = re.fullmatch(
@@ -1590,7 +1595,7 @@ def producer_for_target(
         "macos-x64": ("macos-native", "x64"),
         "macos-arm64": ("macos-native", "arm64"),
         "linux-x86_64": ("linux-native", "x86_64"),
-        "linux-aarch64": ("linux-native", "aarch64"),
+        "linux-arm64": ("linux-native", "aarch64"),
     }
     if target in standard:
         job, arch = standard[target]

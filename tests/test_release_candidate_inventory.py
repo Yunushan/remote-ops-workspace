@@ -82,7 +82,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         "release-macos-gui-smoke-x64",
         "release-macos-gui-smoke-arm64",
     )
-    runtime = tuple(f"release-runtime-{target}" for target in sorted(candidate.RUNTIME_TARGETS))
+    runtime = tuple(sorted(candidate.RUNTIME_REPORT_ARTIFACT_NAMES.values()))
     names = [*standard, *smoke, *runtime]
     if condition == "missing-installer":
         names.remove("release-source-python")
@@ -170,7 +170,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     assert {record["name"] for record in records} == set(standard)
     assert {path.name for path in root.iterdir()} == {f"{name}.txt" for name in standard}
     assert len(downloads) == len(archives) and set(downloads) == set(archives)
-    assert set(inventory["runtime_reports"]) == candidate.RUNTIME_TARGETS
+    assert inventory["runtime_reports"].keys() == candidate.RUNTIME_REPORT_ARTIFACT_NAMES.keys()
     for report in inventory["runtime_reports"].values():
         assert report["sha256"] == hashlib.sha256(raw_report).hexdigest()
         assert report["size_bytes"] == len(raw_report)

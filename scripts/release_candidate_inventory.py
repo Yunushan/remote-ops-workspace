@@ -46,11 +46,15 @@ GUI_SMOKE_ARTIFACT_NAMES = (
     "release-macos-gui-smoke-x64",
     "release-macos-gui-smoke-arm64",
 )
-RUNTIME_TARGETS = frozenset(
-    name.removeprefix("release-").replace("-native-", "-")
-    for name in EXPECTED_ARTIFACT_NAMES
-    if "-native-" in name
-)
+RUNTIME_REPORT_ARTIFACT_NAMES = {
+    "windows-x86": "release-runtime-windows-x86",
+    "windows-x64": "release-runtime-windows-x64",
+    "windows-arm64": "release-runtime-windows-arm64",
+    "macos-x64": "release-runtime-macos-x64",
+    "macos-arm64": "release-runtime-macos-arm64",
+    "linux-x86_64": "release-runtime-linux-x86_64",
+    "linux-arm64": "release-runtime-linux-aarch64",
+}
 RUNTIME_REPORT_NAME = "candidate-pip-inspect.json"
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
@@ -275,8 +279,10 @@ def stage(
         raise ValueError("GitHub run artifact listing must contain an artifacts list")
     by_name = unique_artifacts(raw_artifacts)
     actual_names = set(by_name)
-    runtime_names = {f"release-runtime-{target}" for target in RUNTIME_TARGETS}
-    expected_names = set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES) | runtime_names
+    expected_names = (
+        set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES)
+        | set(RUNTIME_REPORT_ARTIFACT_NAMES.values())
+    )
     if actual_names != expected_names:
         raise ValueError(
             "staged run artifact names must be exact; "
@@ -292,8 +298,8 @@ def stage(
         positive_int(evidence.get("size_in_bytes"), f"GUI smoke artifact {name} size")
     build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
     runtime_reports = {
-        target: seal_runtime_report(client, by_name[f"release-runtime-{target}"], target, run_id, release_sha)
-        for target in sorted(RUNTIME_TARGETS)
+        target: seal_runtime_report(client, by_name[name], name, run_id, release_sha)
+        for target, name in sorted(RUNTIME_REPORT_ARTIFACT_NAMES.items())
     }
     records = materialize_records(client, build_artifacts, assets_root)
     inventory = {
@@ -313,14 +319,13 @@ def stage(
 
 
 def seal_runtime_report(
-    client: GitHubClient, artifact: dict[str, Any], target: str, run_id: int, release_sha: str,
+    client: GitHubClient, artifact: dict[str, Any], name: str, run_id: int, release_sha: str,
 ) -> dict[str, Any]:
-    name = f"release-runtime-{target}"
     artifact_id = positive_int(artifact.get("id"), f"artifact {name} id")
     digest = normalize_digest(artifact.get("digest"), f"artifact {name} archive digest")
     size = positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
     if size > MAX_JSON_BYTES:
-        raise ValueError(f"runtime report archive for {target} exceeds the size limit")
+        raise ValueError(f"{name} archive exceeds the size limit")
     check_artifact_metadata(
         artifact, artifact_id=artifact_id, name=name, digest=digest,
         run_id=run_id, release_sha=release_sha,
@@ -331,7 +336,7 @@ def seal_runtime_report(
             f"actions/artifacts/{artifact_id}/zip", archive, max_bytes=MAX_JSON_BYTES,
         )
         if downloaded_digest != digest or archive.stat().st_size != size:
-            raise ValueError(f"runtime report archive for {target} does not match GitHub")
+            raise ValueError(f"{name} archive does not match GitHub")
         with zipfile.ZipFile(archive) as bundle:
             members = bundle.infolist()
             if (
@@ -339,14 +344,14 @@ def seal_runtime_report(
                 or stat.S_ISLNK(members[0].external_attr >> 16)
                 or not 0 < members[0].file_size <= MAX_JSON_BYTES
             ):
-                raise ValueError(f"runtime report archive for {target} must contain one bounded pip inspect report")
+                raise ValueError(f"{name} archive must contain one bounded pip inspect report")
             report = bundle.read(members[0])
     value = json.loads(report)
     if (
         not isinstance(value, dict) or value.get("version") != "1"
         or not isinstance(value.get("installed"), list) or not value["installed"]
     ):
-        raise ValueError(f"runtime report for {target} must be a non-empty pip inspect v1 inventory")
+        raise ValueError(f"{name} must be a non-empty pip inspect v1 inventory")
     return {
         "artifact_id": artifact_id,
         "archive_digest": digest,
@@ -611,7 +616,7 @@ def validate_inventory(
     if names != set(EXPECTED_ARTIFACT_NAMES):
         raise ValueError("approved candidate inventory must contain the exact standard artifact names")
     reports = value.get("runtime_reports")
-    if not isinstance(reports, dict) or set(reports) != RUNTIME_TARGETS:
+    if not isinstance(reports, dict) or reports.keys() != RUNTIME_REPORT_ARTIFACT_NAMES.keys():
         raise ValueError("approved candidate inventory must contain all native runtime reports")
     for target, report in reports.items():
         if (

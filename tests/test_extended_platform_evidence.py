@@ -463,11 +463,12 @@ def test_extended_platform_evidence_requires_builder_release_context() -> None:
 
 def test_extended_platform_evidence_requires_release_tag_env_for_native_build() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "      RELEASE_TAG: ${{ inputs.release_tag }}\n",
-        "",
-        1,
-    )
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-i386-native-evidence")
+    assert block
+    modified = block.replace("      RELEASE_TAG: ${{ inputs.release_tag }}\n", "", 1)
+    assert modified != block
+    workflow = workflow.replace(block, modified, 1)
 
     errors = checker.check_extended_platform_evidence(workflow)
 

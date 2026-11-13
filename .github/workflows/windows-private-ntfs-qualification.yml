@@ -6,12 +6,14 @@ on:
     paths:
       - '.github/workflows/windows-private-ntfs-qualification.yml'
       - 'scripts/check_windows_private_ntfs.py'
+      - 'scripts/check_windows_private_sdk_layout.py'
       - 'src/remote_ops_workspace/windows_private_storage.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/windows-private-ntfs-qualification.yml'
       - 'scripts/check_windows_private_ntfs.py'
+      - 'scripts/check_windows_private_sdk_layout.py'
       - 'src/remote_ops_workspace/windows_private_storage.py'
 
 permissions:
@@ -58,3 +60,67 @@ jobs:
           path: ${{ runner.temp }}/row-private-ntfs-result.json
           if-no-files-found: error
           retention-days: 14
+
+  windows-sdk-layout:
+    if: >-
+      github.repository == 'Yunushan/remote-ops-workspace' &&
+      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            pointer-bits: 64
+          - arch: x86
+            pointer-bits: 32
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 8
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SDK_POINTER_BITS: ${{ matrix.pointer-bits }}
+      SDK_TARGET: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.arch }}
+      - name: Compare ctypes layout against the installed Windows SDK
+        shell: pwsh
+        run: |
+          $observed = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $observed -cne $env:SOURCE_SHA) { throw 'Unexpected source commit' }
+          $probeDir = Join-Path $env:RUNNER_TEMP 'row-private-sdk'
+          New-Item -Path $probeDir -ItemType Directory -ErrorAction Stop | Out-Null
+          python -I -S -B scripts/check_windows_private_sdk_layout.py --write-probe (Join-Path $probeDir 'probe.c')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not generate the SDK probe' }
+
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs) { throw 'Could not locate the MSVC toolchain' }
+          $devCmd = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
+          $compile = Join-Path $probeDir 'compile.cmd'
+          @"
+          @echo off
+          call "$devCmd" -no_logo -arch=$env:SDK_TARGET -host_arch=x64
+          if errorlevel 1 exit /b 1
+          cl.exe /nologo /W4 /WX probe.c /Fe:probe.exe
+          if errorlevel 1 exit /b 1
+          probe.exe > sdk-layout.json
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $compile -Encoding ascii
+          Push-Location -LiteralPath $probeDir
+          try {
+            cmd.exe /d /c compile.cmd
+            if ($LASTEXITCODE -ne 0) { throw 'SDK layout probe failed' }
+          } finally {
+            Pop-Location
+          }
+
+          python -I -S -B scripts/check_windows_private_sdk_layout.py --compare (Join-Path $probeDir 'sdk-layout.json') --pointer-bits $env:SDK_POINTER_BITS
+          if ($LASTEXITCODE -ne 0) { throw 'SDK layout comparison failed' }

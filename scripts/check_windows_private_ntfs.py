@@ -5,13 +5,17 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import ipaddress
 import json
 import os
 import shutil
+import ssl
 import sys
+import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
@@ -243,14 +247,14 @@ def qualify(parent: Path, observed: list[str], account: str, password: str, cont
         observed.append("token-unchanged-and-stage-clean")
 
 
-def signed_fixture():
+def signed_fixture(origin: str = "https://publisher.invalid"):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     from remote_ops_workspace import __version__
     from remote_ops_workspace import update_channel as channel
 
     signer = Ed25519PrivateKey.generate()
-    manifest_url = "https://publisher.invalid/manifest.json"
+    manifest_url = f"{origin}/manifest.json"
     organization = "windows-ntfs-fixture"
     update_channel = "ci-canary"
     target = "windows-x64"
@@ -265,7 +269,7 @@ def signed_fixture():
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "update_url": manifest_url,
         "artifacts": [
-            {"target": target, "name": name, "file": name, "url": f"https://publisher.invalid/{name}",
+            {"target": target, "name": name, "file": name, "url": f"{origin}/{name}",
              "sha256": hashlib.sha256(body).hexdigest(), "size_bytes": len(body)}
             for name, body in assets.items()
         ],
@@ -284,7 +288,7 @@ def signed_fixture():
         "channel": update_channel,
         "selected_target": target,
         "approved_targets": [target],
-        "allowed_origins": ["https://publisher.invalid"],
+        "allowed_origins": [origin],
         "limits": {
             "manifest_bytes": 8192, "asset_bytes": 1024, "total_asset_bytes": 2048,
             "asset_count": 2, "http_timeout_seconds": 2, "operation_timeout_seconds": 30,
@@ -373,40 +377,99 @@ def qualify_staging(parent: Path, observed: list[str]) -> None:
             observed.append("tampered-stage-refused")
 
 
+@contextmanager
+def serve_https_fixture(scratch: Path, bodies: dict[str, bytes], requested: list[str]):
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            requested.append(self.path)
+            if self.path not in bodies:
+                self.send_error(404)
+                return
+            body = bodies[self.path]
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "ROW NTFS HTTPS fixture")])
+    now = datetime.now(timezone.utc)
+    certificate = (
+        x509.CertificateBuilder().subject_name(name).issuer_name(name)
+        .public_key(key.public_key()).serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5)).not_valid_after(now + timedelta(minutes=10))
+        .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), critical=False)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    cert_path = scratch / "https-certificate.pem"
+    key_path = scratch / "https-private-key.pem"
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption(),
+    ))
+    server_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_tls.minimum_version = ssl.TLSVersion.TLSv1_2
+    server_tls.load_cert_chain(cert_path, key_path)
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        server.socket = server_tls.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"https://127.0.0.1:{server.server_port}", cert_path
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+
+
 def qualify_staging_entrypoints(parent: Path, observed: list[str]) -> None:
     from remote_ops_workspace import update_channel as channel
     from remote_ops_workspace import windows_private_storage as storage
     from remote_ops_workspace.paths import data_dir
 
-    raw, assets, fixture_policy, _wrong_policy = signed_fixture()
-    manifest_url = fixture_policy.settings["manifest_url"]
-    bodies = {manifest_url: raw, **{f"https://publisher.invalid/{name}": body for name, body in assets.items()}}
+    bodies: dict[str, bytes] = {}
     requested: list[str] = []
-
-    def fixture_chunks(url, _settings, _deadline, maximum, expected=None):
-        body = bodies[url]
-        require(len(body) <= maximum and (expected is None or len(body) == expected),
-                "entrypoint-fixture-length-mismatch")
-        requested.append(url)
-        yield body
+    default_context = ssl.create_default_context
 
     native = storage._Native()
     with private_fixture(storage, native, parent, "row-entrypoint-ntfs-") as scratch:
-        policy_path = scratch / "policy.json"
-        with storage.private_stage_guard(scratch, _native=native) as guard:
-            with os.fdopen(guard.create_private_file(policy_path), "wb") as stream:
-                stream.write(fixture_policy.document)
-                stream.flush()
-                os.fsync(stream.fileno())
         stage = scratch / "stage"
-        with (
-            patch.object(channel, "_WINDOWS_PRIVATE_STAGE_QUALIFIED", True),
-            patch.object(channel, "_chunks", fixture_chunks),
-        ):
-            policy = channel.load_update_policy(policy_path)
-            require(policy.digest == fixture_policy.digest, "entrypoint-policy-digest-mismatch")
-            staged = channel.stage_update(policy, stage, current_home=data_dir())
-            require(requested == list(bodies), "entrypoint-fixture-request-mismatch")
+        refused_stage = scratch / "untrusted-stage"
+        with patch.object(channel, "_WINDOWS_PRIVATE_STAGE_QUALIFIED", True):
+            with serve_https_fixture(scratch, bodies, requested) as (origin, cert_path):
+                raw, assets, fixture_policy, _wrong_policy = signed_fixture(origin)
+                bodies.update({"/manifest.json": raw, **{f"/{name}": body for name, body in assets.items()}})
+                policy_path = scratch / "policy.json"
+                with storage.private_stage_guard(scratch, _native=native) as guard:
+                    with os.fdopen(guard.create_private_file(policy_path), "wb") as stream:
+                        stream.write(fixture_policy.document)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                policy = channel.load_update_policy(policy_path)
+                require(policy.digest == fixture_policy.digest, "entrypoint-policy-digest-mismatch")
+                try:
+                    channel.stage_update(policy, refused_stage, current_home=data_dir())
+                except channel.UpdateError as exc:
+                    require(
+                        exc.args == ("https-transport-refused",) and not requested
+                        and all(not (refused_stage / name).exists() for name in assets),
+                        "entrypoint-untrusted-tls-refusal-mismatch",
+                    )
+                else:
+                    raise ValueError("entrypoint-untrusted-tls-accepted")
+                # Add the disposable certificate to this SSL context only.
+                # The real opener, hostname verification and streaming stay active.
+                with patch.object(channel.ssl, "create_default_context", lambda: default_context(cafile=str(cert_path))):
+                    staged = channel.stage_update(policy, stage, current_home=data_dir())
+                require(requested == list(bodies), "entrypoint-fixture-request-mismatch")
             recovered = channel.recover_update(policy, stage, current_home=data_dir())
             require(requested == list(bodies), "entrypoint-recovery-requested-network")
             require(
@@ -419,7 +482,10 @@ def qualify_staging_entrypoints(parent: Path, observed: list[str]) -> None:
             )
             for name, body in assets.items():
                 require((stage / name).read_bytes() == body, "entrypoint-staged-bytes-mismatch")
-    observed.append("windows-policy-stage-and-recovery-entrypoints")
+    observed.extend((
+        "windows-policy-stage-and-recovery-entrypoints",
+        "windows-verified-https-stage-and-offline-recovery",
+    ))
 
 
 def main() -> int:
@@ -463,7 +529,8 @@ def main() -> int:
 
 FAILURE_CODES = frozenset({
     "windows-required", "local-fixed-volume-required", "persistent-local-acl-required",
-    "entrypoint-fixture-length-mismatch", "entrypoint-policy-digest-mismatch",
+    "entrypoint-untrusted-tls-refusal-mismatch", "entrypoint-untrusted-tls-accepted",
+    "entrypoint-policy-digest-mismatch",
     "entrypoint-fixture-request-mismatch", "entrypoint-recovery-requested-network",
     "entrypoint-stage-recovery-mismatch", "entrypoint-staged-bytes-mismatch",
     "private-staging-platform-unqualified", "windows-policy-input-refused",

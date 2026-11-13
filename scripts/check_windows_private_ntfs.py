@@ -101,7 +101,72 @@ def check_other_identity(native, private: Path, control: Path, account: str, pas
             open_for_access(native, private, access, denied=True)
 
 
-def qualify(parent: Path, observed: list[str], account: str, password: str, control: Path) -> None:
+def observe_parent_refusal(storage, native, path: Path, report: dict) -> None:
+    """Summarize the first refused ancestor without exposing its path or SIDs."""
+    user = native.token_user()
+    trusted = (user, storage.SYSTEM_SID, storage.ADMINISTRATORS_SID)
+    rights = {
+        "add-file": 0x2,
+        "add-subdirectory": 0x4,
+        "write-extended-attributes": 0x10,
+        "delete-child": 0x40,
+        "write-attributes": 0x100,
+        "delete": 0x10000,
+        "write-dacl": 0x40000,
+        "write-owner": 0x80000,
+        "generic-all": 0x10000000,
+        "generic-write": 0x40000000,
+    }
+    for index, ancestor in enumerate(storage._ancestors(path)):
+        handle = native.open_directory(ancestor)
+        try:
+            snapshot = native.snapshot(handle)
+            try:
+                storage._candidate_parent(snapshot, user, volume_root=index == 0)
+            except storage.PrivateStorageError as exc:
+                if exc.args not in (("untrusted-parent-write-access",), ("unqualified-parent-owner",)):
+                    return
+                owner_classes = {
+                    storage.SYSTEM_SID: "system",
+                    storage.ADMINISTRATORS_SID: "administrators",
+                    storage.TRUSTED_INSTALLER_SID: "trusted-installer",
+                    user: "current-user",
+                }
+                blocking = [
+                    ace for ace in snapshot.aces
+                    if ace.kind == 0 and not ace.flags & 0x08 and ace.sid not in trusted
+                    and ace.mask & (storage.MUTATE & ~4)
+                ]
+                report["parent_refusal"] = {
+                    "ancestor_index": index,
+                    "reason": exc.args[0],
+                    "owner": owner_classes.get(snapshot.owner, "other"),
+                    "blocking_grants": len(blocking),
+                    "inherited_blocking_grants": sum(bool(ace.flags & 0x10) for ace in blocking),
+                    "blocking_rights": [
+                        name for name, mask in rights.items()
+                        if mask & (storage.MUTATE & ~4) and any(ace.mask & mask for ace in blocking)
+                    ],
+                }
+                return
+        finally:
+            native.close(handle)
+
+
+@contextmanager
+def observe_refused_fixture(storage, native, parent: Path, report: dict):
+    try:
+        yield
+    except storage.PrivateStorageError as exc:
+        if exc.args in (("untrusted-parent-write-access",), ("unqualified-parent-owner",)):
+            try:
+                observe_parent_refusal(storage, native, parent, report)
+            except (OSError, storage.PrivateStorageError):
+                report["parent_observation"] = "unavailable"
+        raise
+
+
+def qualify(parent: Path, observed: list[str], account: str, password: str, control: Path, report: dict) -> None:
     from remote_ops_workspace import windows_private_storage as storage
 
     native = storage._Native()
@@ -112,7 +177,10 @@ def qualify(parent: Path, observed: list[str], account: str, password: str, cont
         partial = stage / "canary.part"
         final = stage / "canary.bin"
         alias = stage / "canary.link"
-        with storage.private_stage_guard(stage, create=True, _native=native) as guard:
+        with (
+            observe_refused_fixture(storage, native, Path(scratch), report),
+            storage.private_stage_guard(stage, create=True, _native=native) as guard,
+        ):
             observed.append("exclusive-private-directory")
             with partial.open("xb") as writer:
                 handle = storage.descriptor_handle(writer.fileno())
@@ -303,7 +371,7 @@ def main() -> int:
         # Runner temp can be on a service-owned volume or under an untrusted
         # ancestor. Use the actual token's LocalAppData for the disposable stage.
         parent = Path(native.known_folder("local"))
-        qualify(parent, observed, account, password, control)
+        qualify(parent, observed, account, password, control, result)
         qualify_staging(parent, observed)
     except (KeyError, OSError, RuntimeError, ValueError) as exc:
         # Report fixed check names or an OS error number only. Never emit paths,

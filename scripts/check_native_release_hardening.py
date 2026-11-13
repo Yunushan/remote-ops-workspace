@@ -359,7 +359,7 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     }.items():
         if snippet not in preflight:
             errors.append(f"release-preflight missing {label}: {snippet}")
-    if "workflow_dispatch:" in workflow or "allow_unsigned_preview:" in workflow:
+    if "allow_unsigned_preview:" in workflow:
         errors.append("production candidate workflow must not expose an unsigned-preview input")
     if "softprops/action-gh-release" in workflow or "UNSIGNED PREVIEW" in workflow:
         errors.append("production candidate workflow must not own preview publication")

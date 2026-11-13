@@ -188,6 +188,9 @@ namespace and a tag that resolves to the exact qualified source.
 2. Push the immutable production source tag after signing, dependency locks,
    and policy prerequisites are configured. The tag push starts `release.yml`,
    which builds and seals the signed and notarized candidate bytes.
+   If the build fails before sealing, dispatch a fresh run with
+   `gh workflow run release.yml --repo <owner>/<repo> --ref <tag>`.
+   Use the same immutable tag and submit the new sealed inventory for review.
 3. Dispatch `.github/workflows/extended-platform-evidence.yml` for Linux i386
    and armhf and `.github/workflows/xp-native-evidence.yml` for both XP targets.
    Select the production tag as the workflow ref and as the `release_tag` input

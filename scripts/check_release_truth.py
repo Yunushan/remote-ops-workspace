@@ -312,15 +312,14 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     promotion = strip_unquoted_comments(read(".github/workflows/release-promotion.yml"))
     certification = strip_unquoted_comments(read(".github/workflows/release-certification.yml"))
     errors: list[str] = []
-    if "workflow_dispatch:" in build:
-        errors.append("candidate release build must be tag-push-only")
     for snippet, label in {
         '      - "v*"': "v* tag trigger",
+        "  workflow_dispatch:\n\npermissions:": "manual exact-tag candidate recovery trigger",
         "group: release-candidate-${{ github.repository }}-${{ github.ref_name }}": (
             "repository/tag candidate concurrency"
         ),
         "cancel-in-progress: false": "non-cancelling candidate concurrency",
-        "RELEASE_TAG: ${{ github.ref_name }}": "tag-push release tag binding",
+        "RELEASE_TAG: ${{ github.ref_name }}": "source-ref release tag binding",
     }.items():
         if snippet not in build:
             errors.append(f"candidate build workflow missing {label}: {snippet}")
@@ -334,17 +333,21 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     errors.extend(check_checkout_step(preflight, job="release-preflight"))
     for snippet, label in {
         "timeout-minutes: 100": "bounded preflight timeout",
+        "if: ${{ github.ref_type == 'tag' }}": "tag-only preflight job",
         "release_sha: ${{ steps.release-source.outputs.sha }}": "frozen source SHA output",
         "candidate_build_ready: ${{ steps.signing-readiness.outputs.candidate_build_ready }}": (
             "candidate readiness output"
         ),
         'python-version: "3.14.7"': "exact release Python",
-        'test "$GITHUB_EVENT_NAME" = "push"': "push-only event guard",
+        '[[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]': (
+            "candidate event guard"
+        ),
         'test "$GITHUB_REF_TYPE" = "tag"': "tag type guard",
         'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"': "exact tag ref guard",
         'test "$GITHUB_RUN_ATTEMPT" = "1"': "rerun refusal",
         'tag_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"': "peeled tag resolution",
         'test "$tag_sha" = "$release_sha"': "tag/source equality",
+        'test "$GITHUB_SHA" = "$release_sha"': "event/source equality",
         RELEASE_VERSION_GATE_COMMAND: "release version gate",
         'python scripts/check_release_maturity.py --release-tag "$RELEASE_TAG"': (
             "production maturity gate"

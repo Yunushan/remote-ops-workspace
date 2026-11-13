@@ -545,7 +545,8 @@ def test_release_workflow_withholds_production_but_retains_prerelease_preview() 
     promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     preview = Path(".github/workflows/unsigned-preview.yml").read_text(encoding="utf-8")
 
-    assert "workflow_dispatch:" not in workflow
+    assert "allow_unsigned_preview:" not in workflow
+    assert "  workflow_dispatch:\n\npermissions:" in workflow
     assert "softprops/action-gh-release" not in workflow
     assert "seal-release-candidate:" in workflow
     assert "check_release_license_compliance.py" in promotion

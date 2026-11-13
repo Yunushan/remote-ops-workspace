@@ -49,10 +49,10 @@ def test_release_truth_baseline_passes() -> None:
     assert checker.main() == 0
 
 
-def test_candidate_build_is_tag_push_only_and_never_publishes() -> None:
+def test_candidate_build_supports_exact_tag_recovery_and_never_publishes() -> None:
     checker = load_script("check_release_truth")
     workflow = build_workflow()
-    assert "workflow_dispatch:" not in workflow
+    assert "  workflow_dispatch:\n" in workflow
     assert "softprops/action-gh-release" not in workflow
     assert "seal-release-candidate:" in workflow
 
@@ -60,6 +60,14 @@ def test_candidate_build_is_tag_push_only_and_never_publishes() -> None:
         workflow.replace('      - "v*"\n', "", 1)
     )
     assert any("v* tag trigger" in error for error in errors)
+    errors = checker.check_release_preflight(
+        workflow.replace("  workflow_dispatch:\n", "", 1)
+    )
+    assert any("manual exact-tag candidate recovery trigger" in error for error in errors)
+    errors = checker.check_release_preflight(
+        workflow.replace("    if: ${{ github.ref_type == 'tag' }}\n", "", 1)
+    )
+    assert any("tag-only preflight job" in error for error in errors)
 
 
 def test_candidate_build_requires_active_maturity_gate() -> None:

@@ -16,6 +16,7 @@ from check_release_license_compliance import (
     read_json_object,
     verify_tag_governance_signature,
 )
+from fetch_release_tag_governance import promotion_transaction, require_transaction
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -26,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--sha", required=True)
+    parser.add_argument("--operation", choices=("create-draft", "publish"))
+    parser.add_argument("--run-id", type=int)
+    parser.add_argument("--run-attempt", type=int)
+    parser.add_argument("--draft-id", type=int)
     args = parser.parse_args(argv)
     try:
         _, policy = read_json_object(args.policy, "release compliance policy")
@@ -38,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(governance, dict) or governance.get("state") != "enforced":
             raise ValueError("tag governance attestation policy is not enforced")
         verify_tag_governance_signature(attestation_bytes, signature, policy)
+        if any(value is not None for value in (args.operation, args.run_id, args.run_attempt, args.draft_id)):
+            require_transaction(
+                attestation,
+                promotion_transaction(args.run_id, args.run_attempt, args.operation, args.draft_id),
+            )
         errors = check_tag_governance_attestation(
             attestation,
             policy=policy,

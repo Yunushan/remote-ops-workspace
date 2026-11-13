@@ -449,8 +449,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
         "steps.create-draft.outputs.release-id": "numeric draft identity",
         "gh api --method PATCH": "numeric publication",
         "target_commitish: $sha": "exact-SHA defensive draft target",
-        "--tag-governance-attestation": "signed out-of-band tag governance proof",
-        "--tag-governance-signature": "independent tag governance signature",
+        "--audit-redistribution-only": "separate exact-byte compliance audit",
         "check_release_tag_governance.py": "just-in-time signed tag governance revalidation",
         "Re-resolve immutable tag after publication": "post-publication tag race check",
         "Require same numeric release becomes immutable": "same-ID immutable poll",
@@ -526,8 +525,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 "--evidence-root ",
                 "--candidate-inventory ",
                 "--protected-platform-registry ",
-                "--tag-governance-attestation ",
-                "--tag-governance-signature ",
+                "--audit-redistribution-only",
             ),
             ("--check-policy-only",),
             frozenset(
@@ -543,8 +541,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                     "--evidence-root",
                     "--candidate-inventory",
                     "--protected-platform-registry",
-                    "--tag-governance-attestation",
-                    "--tag-governance-signature",
+                    "--audit-redistribution-only",
                 }
             ),
         ),
@@ -559,15 +556,18 @@ def check_promotion_truth(workflow: str) -> list[str]:
         "Revalidate signed tag governance at mutation boundary": (
             (
                 "--policy configs/release_compliance_policy.json",
-                '--attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"',
-                '--signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"',
+                '--attestation release-governance-draft/tag-governance-attestation.json',
+                '--signature release-governance-draft/tag-governance-attestation.sig.json',
                 '--repository "$GITHUB_REPOSITORY"',
                 '--tag "$RELEASE_TAG"',
                 '--sha "$RELEASE_SHA"',
+                '--run-id "$GITHUB_RUN_ID"',
+                '--run-attempt "$GITHUB_RUN_ATTEMPT"',
+                "--operation create-draft",
             ),
             ("--help", "--dry-run", "--check-policy-only"),
             frozenset(
-                {"--policy", "--attestation", "--signature", "--repository", "--tag", "--sha"}
+                {"--policy", "--attestation", "--signature", "--repository", "--tag", "--sha", "--run-id", "--run-attempt", "--operation"}
             ),
         ),
         "Require unused release namespace including drafts": (
@@ -579,9 +579,35 @@ def check_promotion_truth(workflow: str) -> list[str]:
             frozenset({"--repository", "--tag"}),
         ),
     }
+    draft_tokens, forbidden, draft_flags = command_contracts["Revalidate signed tag governance at mutation boundary"]
     command_contracts["Revalidate signed tag governance immediately before publication"] = (
-        command_contracts["Revalidate signed tag governance at mutation boundary"]
+        tuple(token.replace("release-governance-draft", "release-governance-publish")
+              .replace("--operation create-draft", "--operation publish") for token in draft_tokens)
+        + ('--draft-id "$DRAFT_RELEASE_ID"',),
+        forbidden,
+        draft_flags | {"--draft-id"},
     )
+    for operation, output, stage in (
+        ("create-draft", "release-governance-draft", "draft creation"),
+        ("publish", "release-governance-publish", "publication"),
+    ):
+        tokens = (
+            "--policy configs/release_compliance_policy.json",
+            '--repository "$GITHUB_REPOSITORY"',
+            '--tag "$RELEASE_TAG"',
+            '--sha "$RELEASE_SHA"',
+            '--run-id "$GITHUB_RUN_ID"',
+            '--run-attempt "$GITHUB_RUN_ATTEMPT"',
+            f"--operation {operation}",
+            f"--out-dir {output}",
+        )
+        flags = {"--policy", "--repository", "--tag", "--sha", "--run-id", "--run-attempt", "--operation", "--out-dir"}
+        if operation == "publish":
+            tokens += ('--draft-id "$DRAFT_RELEASE_ID"',)
+            flags.add("--draft-id")
+        command_contracts[f"Fetch fresh signed governance for {stage}"] = (
+            tokens, ("--help",), frozenset(flags),
+        )
     for token, label, kind, step_name in (
         (
             "check_release_maturity.py",
@@ -620,6 +646,12 @@ def check_promotion_truth(workflow: str) -> list[str]:
             "Attest exact signed tag governance inputs",
         ),
         (
+            "fetch_release_tag_governance.py",
+            "fresh independently signed governance for draft creation",
+            "run",
+            "Fetch fresh signed governance for draft creation",
+        ),
+        (
             "check_release_tag_governance.py",
             "mutation-bound tag governance proof",
             "run",
@@ -648,6 +680,12 @@ def check_promotion_truth(workflow: str) -> list[str]:
             "draft provenance",
             "run",
             "Verify complete numeric-ID draft transaction",
+        ),
+        (
+            "fetch_release_tag_governance.py",
+            "fresh independently signed governance for publication",
+            "run",
+            "Fetch fresh signed governance for publication",
         ),
         (
             "check_release_tag_governance.py",

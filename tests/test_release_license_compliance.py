@@ -354,6 +354,20 @@ def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> No
     assert checker.main(_positive_fixture(tmp_path, checker)) == 0
 
 
+def test_redistribution_only_audit_still_requires_independent_approval(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker)
+    for flag in ("--tag-governance-attestation", "--tag-governance-signature"):
+        index = args.index(flag)
+        del args[index:index + 2]
+    assert checker.main(args) == 1
+    assert checker.main([*args, "--audit-redistribution-only"]) == 0
+
+    approval = Path(args[args.index("--evidence") + 1])
+    approval.write_bytes(approval.read_bytes() + b"\n")
+    assert checker.main([*args, "--audit-redistribution-only"]) == 1
+
+
 def test_signed_evidence_still_rejects_local_artifact_drift(tmp_path: Path) -> None:
     checker = _load_checker()
     args = _positive_fixture(tmp_path, checker)
@@ -420,7 +434,7 @@ def test_release_workflow_withholds_production_but_retains_prerelease_preview() 
     assert "softprops/action-gh-release" not in workflow
     assert "seal-release-candidate:" in workflow
     assert "check_release_license_compliance.py" in promotion
-    assert "--tag-governance-attestation" in promotion
+    assert "--audit-redistribution-only" in promotion
     assert "prerelease: false" in promotion
     assert "PREVIEW_TAG: unsigned-preview-${{ github.run_id }}" in preview
     assert "prerelease: true" in preview

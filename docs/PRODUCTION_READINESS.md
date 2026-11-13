@@ -100,11 +100,13 @@ Only after that external step is complete may the operator dispatch
 `release-promotion.yml` from the same tag, supplying the exact candidate run,
 inventory artifact ID/digest, and immutable evidence commit SHA. Its protected
 `release-compliance-review` job checks out the untrusted transport branch as
-data and authenticates all of it through the tag-pinned Ed25519 policy. It then performs the full audit,
-attests the complete inventory and both signed tag-governance inputs, creates a draft,
+data and authenticates all of it through the tag-pinned Ed25519 policy. It then performs the full
+redistribution audit, attests the complete inventory, obtains a fresh signed governance proof
+for draft creation, creates a draft,
 verifies every draft byte and attestation against its own tag-bound invocation,
-rechecks the tag and the short-lived governance proof, and promotes the draft once.
-The proof must still be current immediately before draft creation and publication.
+obtains a fresh publication proof for the numeric draft, and promotes that draft once.
+The workflow rechecks each proof immediately before its mutation. The auditor follows
+the [tag ruleset capture procedure](runbooks/RELEASE_PROMOTION.md#capture-the-signed-tag-ruleset-proof).
 `release.yml` builds candidates
 and never publishes. The `unsigned-preview.yml` branch lane publishes source/Python assets
 under a unique non-`v*` tag. The separate `versioned-unsigned-release.yml` lane
@@ -212,8 +214,8 @@ the accepted records with the release identity, live GitHub reviews and run
 attempts, and SHA-256 hashes of the same downloaded assets checked by the
 release provenance gate.
 
-Use the exact tag-governance proof and detached signature from the promotion's
-evidence commit for the aggregate. It verifies their signatures and attested
+Use the exact publication proof and detached signature retained by the promotion
+for the aggregate. It verifies their signatures and attested
 digests alongside the published files. All must share a completed, successful
 promotion attempt. The live immutable release's publication time must fall
 within that attempt and the independently signed governance window. The

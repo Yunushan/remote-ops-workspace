@@ -55,15 +55,26 @@ x64 Python environment.
 python scripts/capture_release_tag_governance.py \
   --repository "<owner/repo>" --tag "<tag>" --sha "<release-sha>" \
   --auditor-identity "<auditor identity>" --key-id "<enrolled key ID>" \
-  --private-key "<auditor-local Ed25519 PEM>" --out-dir "<new output directory>"
+  --private-key "<auditor-local Ed25519 PEM>" --out-dir "<new output directory>" \
+  --run-id "<promotion run ID>" --run-attempt "<attempt>" --operation create-draft
 ```
 
 The command reads the exact tag and its policy from GitHub, checks active tag
 rulesets for update and deletion protection with no bypass actors, and checks
 the tag again before signing. Keep the private key on the auditor's system.
-Transfer `tag-governance-attestation.json` and its detached
-`tag-governance-attestation.sig.json` together. The tagged policy determines
-their short validity window.
+Wait for the promotion job to print the proof ref. From a separate auditor
+checkout, put `tag-governance-attestation.json` and its detached
+`tag-governance-attestation.sig.json` at the root of one data-only commit.
+Push that commit to the exact ref printed by the command and the workflow.
+The workflow reads both files from the same commit. It waits up to 15 minutes
+for the ref to appear and then checks the signature and the short validity
+window.
+
+After upload and draft verification, capture a second proof with
+`--operation publish --draft-id "<numeric draft ID>"` and a new output
+directory. Push its two files together to the new printed ref. Keep the exact
+publication proof and signature for the aggregate audit. The workflow also
+retains a copy as `production-tag-governance-<run ID>-<attempt>`.
 
 ## Verify a published artifact
 

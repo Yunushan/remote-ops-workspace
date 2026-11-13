@@ -24,6 +24,7 @@ from check_release_provenance import run_gh_json
 from check_repository_governance import fetch_tag_rulesets, protected_tag_ruleset_ids
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from fetch_release_tag_governance import promotion_transaction, proof_ref
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,6 +36,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--key-id", required=True)
     parser.add_argument("--private-key", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
+    parser.add_argument("--operation", choices=("create-draft", "publish"))
+    parser.add_argument("--run-id", type=int)
+    parser.add_argument("--run-attempt", type=int)
+    parser.add_argument("--draft-id", type=int)
     args = parser.parse_args(argv)
     try:
         capture(args)
@@ -55,6 +60,9 @@ def capture(args: argparse.Namespace) -> None:
         raise ValueError("auditor identity must contain only printable characters")
     if not os.environ.get("GH_TOKEN"):
         raise ValueError("GH_TOKEN is required for the independent auditor's GitHub access")
+    transaction = None
+    if any(value is not None for value in (args.operation, args.run_id, args.run_attempt, args.draft_id)):
+        transaction = promotion_transaction(args.run_id, args.run_attempt, args.operation, args.draft_id)
 
     def fetch(endpoint: str) -> dict[str, Any]:
         data = run_gh_json(
@@ -74,6 +82,32 @@ def capture(args: argparse.Namespace) -> None:
             raise ValueError("live release tag does not point to the requested commit")
 
     require_tag()
+    if transaction is not None:
+        run = fetch(f"actions/runs/{transaction['run_id']}/attempts/{transaction['run_attempt']}")
+        if (
+            run.get("id") != transaction["run_id"]
+            or run.get("run_attempt") != transaction["run_attempt"]
+            or run.get("status") != "in_progress"
+            or run.get("event") != "workflow_dispatch"
+            or run.get("head_branch") != tag
+            or run.get("head_sha") != sha
+            or run.get("path") not in {
+                ".github/workflows/release-promotion.yml",
+                f".github/workflows/release-promotion.yml@refs/tags/{tag}",
+                f".github/workflows/release-promotion.yml@{tag}",
+            }
+        ):
+            raise ValueError("auditor proof requires the live exact-tag promotion run attempt")
+        if args.operation == "publish":
+            draft = fetch(f"releases/{args.draft_id}")
+            if (
+                draft.get("id") != args.draft_id
+                or draft.get("draft") is not True
+                or draft.get("prerelease") is not False
+                or draft.get("tag_name") != tag
+                or draft.get("target_commitish") != sha
+            ):
+                raise ValueError("auditor publication proof requires the exact unpublished draft")
     policy_text, errors = fetch_tagged_file(fetch, sha, "configs/release_compliance_policy.json")
     if errors or policy_text is None:
         raise ValueError("; ".join(errors) or "exact release policy is missing")
@@ -95,7 +129,7 @@ def capture(args: argparse.Namespace) -> None:
         raise ValueError("; ".join(errors))
     require_tag()
 
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": 1,
         "decision": "approved",
         "source": "github-rulesets-api",
@@ -110,6 +144,8 @@ def capture(args: argparse.Namespace) -> None:
         "observed_at": utc_text(observed),
         "expires_at": utc_text(observed + timedelta(seconds=lifetime)),
     }
+    if transaction is not None:
+        payload["promotion_transaction"] = transaction
     errors = check_tag_governance_attestation(payload, policy=policy, repository=repository, tag=tag, sha=sha)
     if errors:
         raise ValueError("; ".join(errors))
@@ -128,6 +164,8 @@ def capture(args: argparse.Namespace) -> None:
     ):
         with (args.out_dir / name).open("xb") as output:
             output.write(data)
+    if transaction is not None:
+        print(f"Proof ref: {proof_ref(transaction)}")
 
 
 def utc_text(timestamp: datetime) -> str:

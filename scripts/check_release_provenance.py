@@ -44,6 +44,7 @@ from check_release_publish_assets import (  # noqa: E402
     MATRIX_PATH,
     expected_release_assets,
 )
+from fetch_release_tag_governance import promotion_transaction, require_transaction  # noqa: E402
 
 PREDICATE_TYPE = "https://slsa.dev/provenance/v1"
 RELEASE_WORKFLOW = ".github/workflows/release-promotion.yml"
@@ -87,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
         draft_transaction = draft_values[0] is not None
         if draft_transaction and any(value < 1 for value in draft_values):
             raise ValueError("draft release id, run id, and attempt must be positive")
+        if args.recheck_draft_bytes and not draft_transaction:
+            raise ValueError("--recheck-draft-bytes requires the exact draft transaction")
         current_values = (
             args.current_transaction_run_id,
             args.current_transaction_run_attempt,
@@ -160,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         if errors:
             raise RuntimeError("; ".join(errors))
+        if args.recheck_draft_bytes:
+            print(f"Verified {len(local_assets)} unchanged draft assets against the local inventory")
+            return 0
 
         invocations_by_asset: dict[str, set[RunInvocation]] = {}
         for name in sorted(local_assets):
@@ -309,6 +315,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--published-release-id", type=int)
     parser.add_argument("--draft-transaction-run-id", type=int)
     parser.add_argument("--draft-transaction-run-attempt", type=int)
+    parser.add_argument("--recheck-draft-bytes", action="store_true")
     parser.add_argument("--current-transaction-run-id", type=int)
     parser.add_argument("--current-transaction-run-attempt", type=int)
     parser.add_argument("--governance-attestation", type=Path)
@@ -363,7 +370,20 @@ def verified_governance_invocations(
         if errors:
             raise ValueError("; ".join(errors))
         proofs[label] = invocations
-    return common_run_invocations(proofs)
+    common = common_run_invocations(proofs)
+    matching = set()
+    for invocation in common:
+        try:
+            require_transaction(
+                attestation,
+                promotion_transaction(invocation.run_id, invocation.attempt, "publish", release.get("id")),
+            )
+        except ValueError:
+            continue
+        matching.add(invocation)
+    if not matching:
+        raise ValueError("governance proof and signature must bind the published release and promotion attempt")
+    return matching
 
 
 def check_publication_in_run(release: dict[str, Any], run: dict[str, Any]) -> list[str]:

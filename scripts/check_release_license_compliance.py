@@ -70,20 +70,29 @@ def main(argv: list[str] | None = None) -> int:
                 "fully hashed platform locks, and mandatory workflow enforcement are present"
             )
             return 0
-        missing = [
-            flag
-            for flag, value in {
-                "--assets-dir": args.assets_dir,
-                "--repository": args.repository,
-                "--tag": args.tag,
-                "--sha": args.sha,
-                "--evidence": args.evidence,
-                "--signature": args.signature,
-                "--protected-platform-registry": args.protected_platform_registry,
-                "--candidate-inventory": args.candidate_inventory,
+        check_live_governance = not (args.audit_redistribution_only or args.verify_published_release)
+        if args.audit_redistribution_only and (
+            args.tag_governance_attestation is not None or args.tag_governance_signature is not None
+        ):
+            raise ValueError("redistribution-only audit does not take governance proof files")
+        required = {
+            "--assets-dir": args.assets_dir,
+            "--repository": args.repository,
+            "--tag": args.tag,
+            "--sha": args.sha,
+            "--evidence": args.evidence,
+            "--signature": args.signature,
+            "--protected-platform-registry": args.protected_platform_registry,
+            "--candidate-inventory": args.candidate_inventory,
+        }
+        if not args.audit_redistribution_only:
+            required.update({
                 "--tag-governance-attestation": args.tag_governance_attestation,
                 "--tag-governance-signature": args.tag_governance_signature,
-            }.items()
+            })
+        missing = [
+            flag
+            for flag, value in required.items()
             if value is None
         ]
         if missing:
@@ -96,24 +105,9 @@ def main(argv: list[str] | None = None) -> int:
         assert args.assets_dir is not None
         assert args.protected_platform_registry is not None
         assert args.candidate_inventory is not None
-        assert args.tag_governance_attestation is not None
-        assert args.tag_governance_signature is not None
         evidence_bytes, evidence = read_json_object(args.evidence, "release compliance evidence")
         _, signature = read_json_object(args.signature, "release compliance signature")
         verify_evidence_signature(evidence_bytes, signature, policy)
-        governance_bytes, governance = read_json_object(
-            args.tag_governance_attestation,
-            "tag governance attestation",
-        )
-        _, governance_signature = read_json_object(
-            args.tag_governance_signature,
-            "tag governance signature",
-        )
-        verify_tag_governance_signature(
-            governance_bytes,
-            governance_signature,
-            policy,
-        )
         evidence_root = args.evidence_root or args.evidence.parent
         errors = check_evidence(
             evidence,
@@ -130,7 +124,14 @@ def main(argv: list[str] | None = None) -> int:
             tag=tag,
             sha=sha,
         )
-        if not args.verify_published_release:
+        if check_live_governance:
+            assert args.tag_governance_attestation is not None
+            assert args.tag_governance_signature is not None
+            governance_bytes, governance = read_json_object(
+                args.tag_governance_attestation, "tag governance attestation",
+            )
+            _, governance_signature = read_json_object(args.tag_governance_signature, "tag governance signature")
+            verify_tag_governance_signature(governance_bytes, governance_signature, policy)
             errors.extend(
                 check_tag_governance_attestation(
                     governance,
@@ -143,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         if errors:
             raise RuntimeError("; ".join(dict.fromkeys(errors)))
         if args.verify_published_release:
+            assert args.tag_governance_attestation is not None
+            assert args.tag_governance_signature is not None
             from check_release_provenance import main as verify_release_provenance
 
             if verify_release_provenance([
@@ -168,6 +171,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check-policy-only", action="store_true")
+    mode.add_argument(
+        "--audit-redistribution-only",
+        action="store_true",
+        help="audit independently signed redistribution evidence before separate mutation-bound governance checks",
+    )
     parser.add_argument("--assets-dir", type=Path)
     parser.add_argument("--repository")
     parser.add_argument("--tag")
@@ -457,8 +465,6 @@ def check_policy(
         "--evidence-root",
         "--protected-platform-registry",
         "--candidate-inventory",
-        "--tag-governance-attestation",
-        "--tag-governance-signature",
     )
     publish_block = workflow_job_block(active_promotion_workflow, "promote-production-release")
     if not publish_block:
@@ -487,6 +493,10 @@ def check_policy(
         if any(
             command_starts_python_script(command, "check_release_license_compliance.py")
             and all(token in command for token in required_publish_tokens[1:])
+            and (
+                "--audit-redistribution-only" in command
+                or all(flag in command for flag in ("--tag-governance-attestation", "--tag-governance-signature"))
+            )
             for command in executable_run_commands(step)
         )
     ]

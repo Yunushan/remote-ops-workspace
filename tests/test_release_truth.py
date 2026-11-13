@@ -107,9 +107,8 @@ def test_mandatory_compliance_step_rejects_conditions_and_continue_on_error(
 @pytest.mark.parametrize("suffix", [" &", " || :", " --check-policy-only", " --help", " --dry-run"])
 def test_compliance_command_rejects_backgrounding_and_downgrades(suffix: str) -> None:
     workflow = promotion_workflow().replace(
-        '          --tag-governance-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"',
-        '          --tag-governance-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"'
-        + suffix,
+        "          --audit-redistribution-only",
+        "          --audit-redistribution-only" + suffix,
         1,
     )
     truth_errors, asset_errors = both_contract_errors(workflow)
@@ -195,8 +194,9 @@ def test_promotion_requires_exact_tag_sha_and_signed_pinned_evidence() -> None:
     workflow = promotion_workflow()
     assert 'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"' in workflow
     assert "target_commitish: $sha" in workflow
-    assert "--tag-governance-attestation" in workflow
-    assert "--tag-governance-signature" in workflow
+    assert "--audit-redistribution-only" in workflow
+    assert "--governance-attestation release-governance-publish/tag-governance-attestation.json" in workflow
+    assert "--governance-signature release-governance-publish/tag-governance-attestation.sig.json" in workflow
     assert "--evidence-registry" in workflow
     assert "Re-resolve immutable tag after publication" in workflow
 
@@ -215,8 +215,8 @@ def test_promotion_requires_fresh_governance_check_before_publication() -> None:
 
 def test_promotion_attests_both_governance_inputs() -> None:
     workflow = promotion_workflow().replace(
-        "${{ env.RELEASE_SHA }}/tag-governance-attestation.sig.json",
-        "${{ env.RELEASE_SHA }}/other.json",
+        "            release-governance-publish/tag-governance-attestation.sig.json",
+        "            release-governance-publish/other.json",
         1,
     )
 

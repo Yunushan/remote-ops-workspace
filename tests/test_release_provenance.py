@@ -567,7 +567,7 @@ def test_certificate_bound_release_run_must_be_exact_and_successful() -> None:
         ("2026-11-01T12:02:00Z", 1, None),
         ("2026-11-01T12:05:00Z", 1, "tag governance attestation has expired"),
         ("2026-11-01T11:59:59Z", 1, "observed_at must not be in the future"),
-        ("2026-11-01T12:02:00Z", 2, "governance proof and release assets must share"),
+        ("2026-11-01T12:02:00Z", 2, "governance proof and signature must bind"),
     ],
 )
 def test_published_governance_uses_live_time_and_common_signed_attempt(
@@ -596,6 +596,12 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
             "auditor": {"kind": "github-app", "identity": "fixture-auditor"},
             "observed_at": "2026-11-01T12:00:00Z",
             "expires_at": "2026-11-01T12:05:00Z",
+            "promotion_transaction": {
+                "run_id": 123,
+                "run_attempt": 1,
+                "operation": "publish",
+                "draft_release_id": 77,
+            },
         }),
         encoding="utf-8",
     )

@@ -3112,6 +3112,13 @@ def check_record_source_artifact_zip_bytes(
     errors: list[str] = []
     artifact_record = source_artifact_record_for_run(target, record, source_artifacts_by_run)
     if isinstance(artifact_record, dict):
+        expected_digest = artifact_record.get("digest")
+        actual_digest = f"sha256:{hashlib.sha256(archive_bytes).hexdigest()}"
+        if expected_digest != actual_digest:
+            errors.append(
+                f"{target} source workflow artifact {artifact_name} digest "
+                f"must match downloaded ZIP digest {actual_digest}, got {expected_digest!r}"
+            )
         artifact_size = artifact_record.get("size_in_bytes")
         if (
             isinstance(artifact_size, int)

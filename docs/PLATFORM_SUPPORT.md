@@ -164,8 +164,11 @@ Source artifact inventory checks bind `workflow_run.id`,
 `workflow_run.head_repository_id` from exact source-run metadata, reject
 artifact `created_at` values outside the exact source run creation/start/update window
 from exact source-run timestamps, require artifact `expires_at` to be present
-and later than the artifact create/update timestamps, and compare the finalized public record asset to canonical
-accepted-record JSON bytes before a published release can pass the live audit.
+and later than the artifact create/update timestamps, and verify the SHA-256 of
+the raw Actions archive against the artifact's GitHub digest before checking
+its file inventory. The verifier also compares the finalized public record
+asset to canonical accepted-record JSON bytes before a published release can
+pass the live audit.
 The live remote audit
 (`python scripts/check_platform_release_evidence_remote.py`) also requires each
 published protected-platform release asset to expose a positive GitHub release

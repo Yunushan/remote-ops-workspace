@@ -2451,10 +2451,13 @@ def test_remote_release_audit_verifies_source_artifact_zip_contents(tmp_path: Pa
     helpers = _load_platform_verified_evidence_helpers()
     record = helpers._linux_record("linux-i386")
     source_artifact_zip = _source_artifact_zip_for(checker, record)
+    source_zip_bytes = next(iter(source_artifact_zip.values()))
     source_artifacts = _source_artifacts_for(
         record,
-        size_in_bytes=len(next(iter(source_artifact_zip.values()))),
+        size_in_bytes=len(source_zip_bytes),
     )
+    artifact = next(iter(source_artifacts.values()))["artifacts"][0]
+    artifact["digest"] = f"sha256:{hashlib.sha256(source_zip_bytes).hexdigest()}"
     registry = _registry_with(record)
     promotion = checker.read_json(checker.PROMOTION_PATH)
     required_assets = checker.required_release_assets_by_target(
@@ -2479,6 +2482,40 @@ def test_remote_release_audit_verifies_source_artifact_zip_contents(tmp_path: Pa
     )
 
     assert errors == []
+
+
+@pytest.mark.parametrize("reported_comment", [None, b"original"])
+def test_remote_release_audit_requires_exact_archive_digest(reported_comment: bytes | None) -> None:
+    checker = _load_checker()
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source_artifact_zip = _source_artifact_zip_for(checker, record)
+    source_zip_bytes = next(iter(source_artifact_zip.values()))
+    downloaded = io.BytesIO(source_zip_bytes)
+    with zipfile.ZipFile(downloaded, "a") as archive:
+        archive.comment = b"modified"
+    downloaded_bytes = downloaded.getvalue()
+    source_artifacts = _source_artifacts_for(record, size_in_bytes=len(downloaded_bytes))
+    artifact = next(iter(source_artifacts.values()))["artifacts"][0]
+    if reported_comment is not None:
+        reported = io.BytesIO(source_zip_bytes)
+        with zipfile.ZipFile(reported, "a") as archive:
+            archive.comment = reported_comment
+        assert len(reported.getvalue()) == len(downloaded_bytes)
+        artifact["digest"] = f"sha256:{hashlib.sha256(reported.getvalue()).hexdigest()}"
+
+    errors = checker.check_record_source_artifact_zip_bytes(
+        "linux-i386",
+        record,
+        source_artifacts_by_run=source_artifacts,
+        source_artifact_bytes_by_run={next(iter(source_artifact_zip)): downloaded_bytes},
+    )
+
+    assert errors == [
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        f"digest must match downloaded ZIP digest sha256:{hashlib.sha256(downloaded_bytes).hexdigest()}, "
+        f"got {artifact.get('digest')!r}"
+    ]
 
 
 def test_remote_release_audit_rejects_source_artifact_zip_size_drift(tmp_path: Path) -> None:

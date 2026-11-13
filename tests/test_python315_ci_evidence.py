@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from io import BytesIO
+from urllib.error import HTTPError
+
 import pytest
 
 from scripts import check_python315_ci_evidence as evidence
@@ -141,6 +144,46 @@ def test_urls_bind_workflow_sha_branch_run_and_attempt() -> None:
     assert "event=push" in runs_url
     assert jobs_url.endswith("/actions/runs/123/attempts/2/jobs?per_page=20&page=3")
     assert "filter=" not in jobs_url
+
+
+def test_actions_request_retries_transient_server_errors(monkeypatch) -> None:
+    url = "https://api.github.test/actions"
+    first_error = HTTPError(url, 502, "Bad Gateway", {}, BytesIO())
+    second_error = HTTPError(url, 503, "Service Unavailable", {}, BytesIO())
+    responses = iter([first_error, second_error, BytesIO(b'{"jobs": []}')])
+    requested: list[str] = []
+    sleeps: list[int] = []
+
+    def open_response(request, *, timeout):
+        assert timeout == 30
+        requested.append(request.full_url)
+        response = next(responses)
+        if isinstance(response, HTTPError):
+            raise response
+        return response
+
+    monkeypatch.setattr(evidence, "urlopen", open_response)
+    monkeypatch.setattr(evidence.time, "sleep", sleeps.append)
+
+    assert evidence.fetch_json(url, token="fixture") == {"jobs": []}
+    assert requested == [url, url, url]
+    assert sleeps == [1, 2]
+    assert first_error.fp.closed and second_error.fp.closed
+
+
+@pytest.mark.parametrize(("status", "expected_sleeps"), [(403, []), (503, [1, 2])])
+def test_actions_request_fails_after_allowed_attempts(monkeypatch, status, expected_sleeps) -> None:
+    sleeps: list[int] = []
+
+    def refuse_request(request, *, timeout):
+        raise HTTPError(request.full_url, status, "GitHub API error", {}, BytesIO())
+
+    monkeypatch.setattr(evidence, "urlopen", refuse_request)
+    monkeypatch.setattr(evidence.time, "sleep", sleeps.append)
+
+    with pytest.raises(RuntimeError, match=f"HTTP {status}"):
+        evidence.fetch_json("https://api.github.test/actions", token="fixture")
+    assert sleeps == expected_sleeps
 
 
 def test_waits_for_missing_then_queued_exact_sha_run_until_success() -> None:

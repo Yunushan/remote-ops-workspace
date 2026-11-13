@@ -19,6 +19,8 @@ EXPECTED_JOB_NAMES = (EXPECTED_JOB_NAME, "Native Windows readiness")
 # Attempt responses include every job step. Smaller pages avoid server errors
 # observed when GitHub assembles the full matrix into one response.
 JOBS_PAGE_SIZE = 20
+RETRYABLE_HTTP_STATUS = frozenset({500, 502, 503, 504})
+REQUEST_RETRY_DELAYS = (1, 2)
 MAX_WAIT_SECONDS = 7200.0
 MAX_POLL_INTERVAL_SECONDS = 300.0
 WAITABLE_RUN_STATUSES = frozenset({"in_progress", "pending", "queued", "requested", "waiting"})
@@ -76,16 +78,22 @@ def fetch_json(url: str, *, token: str) -> dict[str, Any]:
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    try:
-        with urlopen(request, timeout=30) as response:
-            value = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        raise RuntimeError(f"GitHub Actions request failed with HTTP {exc.code}") from exc
-    except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"GitHub Actions request failed: {exc}") from exc
-    if not isinstance(value, dict):
-        raise RuntimeError("GitHub Actions response must be a JSON object")
-    return value
+    for delay in (*REQUEST_RETRY_DELAYS, None):
+        try:
+            with urlopen(request, timeout=30) as response:
+                value = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            exc.close()
+            if delay is None or exc.code not in RETRYABLE_HTTP_STATUS:
+                raise RuntimeError(f"GitHub Actions request failed with HTTP {exc.code}") from exc
+            time.sleep(delay)
+            continue
+        except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"GitHub Actions request failed: {exc}") from exc
+        if not isinstance(value, dict):
+            raise RuntimeError("GitHub Actions response must be a JSON object")
+        return value
+    raise AssertionError("GitHub Actions request must return or fail on its final attempt")
 
 
 def select_exact_push_run(

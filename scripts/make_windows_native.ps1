@@ -59,9 +59,9 @@ function Sign-NativeArtifact([string]$ArtifactPath) {
   if ($LASTEXITCODE -ne 0) {
     throw "Authenticode signing failed for $ArtifactPath"
   }
-  & $SignTool.Source verify /pa /all $ArtifactPath
+  & $SignTool.Source verify /pa /all /tw $ArtifactPath
   if ($LASTEXITCODE -ne 0) {
-    throw "Authenticode verification failed for $ArtifactPath"
+    throw "Authenticode signature or timestamp verification failed for $ArtifactPath"
   }
 }
 

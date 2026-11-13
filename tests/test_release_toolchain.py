@@ -14,6 +14,20 @@ def test_release_toolchain_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_release_signing_refuses_missing_timestamp_or_package_verification() -> None:
+    checker = _load_release_toolchain_checker()
+    windows = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+    macos = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
+    assert checker.check_native_signing_verification(windows, macos) == []
+    errors = checker.check_native_signing_verification(windows.replace(" /tw ", " ", 1), macos)
+    assert any("timestamp verification" in error for error in errors)
+    for package in ("DMG", "PKG"):
+        command = f'xcrun stapler validate "${package}"'
+        assert command in macos
+        errors = checker.check_native_signing_verification(windows, macos.replace(command, f"# {command}", 1))
+        assert any("verify both final packages" in error for error in errors)
+
+
 def test_release_toolchain_pins_exact_native_python_patch_in_every_release_job() -> None:
     manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")

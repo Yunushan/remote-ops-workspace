@@ -183,10 +183,18 @@ if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" == "1" ]]; then
   SIGNED_PKG="$BUILD_DIR/$(basename "$PKG").signed"
   productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" "$PKG" "$SIGNED_PKG"
   mv "$SIGNED_PKG" "$PKG"
+  codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" \
+    --identifier io.github.remoteopsworkspace.app.diskimage "$DMG"
   xcrun notarytool submit "$PKG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" --wait
   xcrun stapler staple "$PKG"
+  xcrun stapler validate "$PKG"
+  pkgutil --check-signature "$PKG"
+  spctl --assess --type install --verbose=2 "$PKG"
   xcrun notarytool submit "$DMG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" --wait
   xcrun stapler staple "$DMG"
+  xcrun stapler validate "$DMG"
+  codesign --verify --strict --verbose=2 "$DMG"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
 fi
 
 "$PYTHON_BIN" - "$ROOT" "$VERSION" "$DMG" "$PKG" "$ARTIFACT_ARCH" "$OUT_DIR" "${ROW_REQUIRE_RELEASE_SIGNING:-0}" <<'PY'

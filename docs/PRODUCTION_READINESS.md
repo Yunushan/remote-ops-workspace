@@ -57,6 +57,12 @@ values or writing them into logs:
   `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`,
   `ROW_MACOS_NOTARY_ISSUER`.
 
+The Windows builder requires successful Authenticode verification with a
+timestamp for each signed executable and MSI. The macOS builder signs the DMG
+with Developer ID Application and the PKG with Developer ID Installer. It
+validates both stapled notarization tickets and checks both final packages
+against Gatekeeper policy before generating their signed-build manifests.
+
 Enable [GitHub immutable releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
 before production promotion. Give the `release-compliance-review` environment a
 `ROW_RELEASE_IMMUTABILITY_TOKEN` scoped to this repository with Administration,

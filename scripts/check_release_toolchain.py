@@ -38,6 +38,10 @@ def main() -> int:
         errors.extend(check_linux_appimagetool_script(toolchain))
         errors.extend(check_windows_native_smoke())
         errors.extend(check_native_release_tag_guards())
+        errors.extend(check_native_signing_verification(
+            (ROOT / "scripts/make_windows_native.ps1").read_text(encoding="utf-8"),
+            (ROOT / "scripts/make_macos_native.sh").read_text(encoding="utf-8"),
+        ))
     if errors:
         for error in errors:
             print(f"release toolchain: {error}", file=sys.stderr)
@@ -677,6 +681,37 @@ def check_native_release_tag_guards() -> list[str]:
                 errors.append(
                     f"{relative} missing workflow-dispatch-safe release tag guard: {snippet}"
                 )
+    return errors
+
+
+def check_native_signing_verification(windows: str, macos: str) -> list[str]:
+    errors: list[str] = []
+    windows = strip_unquoted_comments(windows)
+    if not re.search(
+        r"(?m)^  & \$SignTool.Source verify /pa /all /tw \$ArtifactPath\n  if \(\$LASTEXITCODE -ne 0\) \{",
+        windows,
+    ):
+        errors.append("Windows production signing must require successful Authenticode and timestamp verification")
+
+    macos = strip_unquoted_comments(macos)
+    commands = (
+        'productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" "$PKG" "$SIGNED_PKG"',
+        'codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY"',
+        'xcrun notarytool submit "$PKG"',
+        'xcrun stapler staple "$PKG"',
+        'xcrun stapler validate "$PKG"',
+        'pkgutil --check-signature "$PKG"',
+        'spctl --assess --type install --verbose=2 "$PKG"',
+        'xcrun notarytool submit "$DMG"',
+        'xcrun stapler staple "$DMG"',
+        'xcrun stapler validate "$DMG"',
+        'codesign --verify --strict --verbose=2 "$DMG"',
+        'spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"',
+        'production_signing = sys.argv[7] == "1"',
+    )
+    positions = [macos.find(command) for command in commands]
+    if any(position < 0 for position in positions) or positions != sorted(positions):
+        errors.append("macOS must sign, notarize, staple and verify both final packages before recording signing metadata")
     return errors
 
 

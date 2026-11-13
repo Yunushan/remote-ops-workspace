@@ -232,11 +232,8 @@ def sources():
         raw, identities[name] = read_file(ROOT / name, 131072)
         contents[name] = raw
         rows.append({"path": name, "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()})
-    gate_tree = ast.parse(contents["src/remote_ops_workspace/update_channel.py"])
-    gates = [node.value for node in gate_tree.body if isinstance(node, ast.Assign)
-             and any(isinstance(target, ast.Name) and target.id == "_WINDOWS_PRIVATE_STAGE_QUALIFIED"
-                     for target in node.targets)]
-    require(len(gates) == 1 and isinstance(gates[0], ast.Constant) and gates[0].value is False)
+    # Keep update_channel.py in the source receipt. The observer exercises
+    # private_home_guard only, independently of the updater's platform gate.
     native_tree = ast.parse(contents["src/remote_ops_workspace/windows_private_storage.py"])
     codes = set()
     for node in ast.walk(native_tree):

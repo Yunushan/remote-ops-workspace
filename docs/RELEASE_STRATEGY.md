@@ -432,6 +432,9 @@ scaffolding only; any remaining `TODO`, `placeholder`, `replace with real` or
 evidence validation. Its output directory must be plain non-symlink without
 symlinked parent directories; `xp-evidence.json`, `xp-smoke-evidence/` and
 generated smoke files must be plain non-symlink paths.
+On each XP test host, capture `bin\row-xp-host.exe --loopback-dry-run` in
+`xp-smoke-proof/loopback_profile_dry_run.txt`. Use the output only when the
+command exits successfully and includes `loopback TCP round trip: passed`.
 The XP evidence JSON must be bundled with per-smoke evidence files for
 `cli_launch`, `gui_or_legacy_host_ui_launch`, `loopback_profile_dry_run`,
 `artifact_manifest_validation`, `legacy_crypto_profile_scoped` and

@@ -297,7 +297,12 @@ def main() -> int:
         account = os.environ.pop("ROW_NTFS_TEST_ACCOUNT")
         password = os.environ.pop("ROW_NTFS_TEST_PASSWORD")
         control = Path(os.environ.pop("ROW_NTFS_TEST_CONTROL"))
-        parent = Path(os.environ["RUNNER_TEMP"])
+        from remote_ops_workspace import windows_private_storage as storage
+
+        native = storage._Native()
+        # Runner temp can be on a service-owned volume or under an untrusted
+        # ancestor. Use the actual token's LocalAppData for the disposable stage.
+        parent = Path(native.known_folder("local"))
         qualify(parent, observed, account, password, control)
         qualify_staging(parent, observed)
     except (KeyError, OSError, RuntimeError, ValueError) as exc:

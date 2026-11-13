@@ -73,7 +73,10 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
             if target.startswith("source-"):
                 job, arch = "source-and-python", None
             else:
-                _, job, arch = compliance.producer_for_target(target, release_workflow=workflow, extended_workflow="")
+                release_target = "linux-arm64" if target == "linux-aarch64" else target
+                _, job, arch = compliance.producer_for_target(
+                    release_target, release_workflow=workflow, extended_workflow="",
+                )
             block = compliance.workflow_job_block(workflow, job)
             if arch is not None and not compliance.matrix_row_binds_lock(block, arch, lock):
                 errors.append(f"{name} {target} matrix does not bind its reviewed lock")

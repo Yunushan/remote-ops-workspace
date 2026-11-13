@@ -21,7 +21,7 @@ not close a native-host or release-trust requirement by itself.
 | Third-party redistribution and realized runtime | An independently signed approval binds the exact native manifest and artifact hashes, the complete `pip inspect` environment, component classifications, packaged license-file extraction scans, and a per-platform fully hashed lock actually consumed by the mandatory tagged build workflow. GUI bundles additionally identify the PyQt/Qt channel and bind either both commercial licenses or the open-source application-license review, corresponding source, and relink mechanism | `python scripts/check_release_license_compliance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha> --evidence <approval.json> --signature <approval.sig.json> --evidence-root <evidence-bundle>` |
 | Production signing | Windows Authenticode and macOS Developer ID/notarization proofs are present | release environment signing readiness and native manifest signing metadata |
 | Protected platform parity | Finalized, release-bound accepted records for Linux i386, Linux armhf, Windows XP x86 and Windows XP x64, including real host smoke and release-byte provenance | `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>` and the asset-backed protected-goal gate |
-| Strict MobaXterm depth | Eight accepted records from a pinned registry commit on protected `main`, bound to the release SHA, reviewed workflow attempts and published artifact hashes | `python scripts/check_release_mobaxterm_parity.py --repository <owner/repo> --tag <tag> --sha <release-sha> --registry-commit <commit> --assets-dir <release-assets>` |
+| Strict MobaXterm depth | Eight accepted records from a pinned registry commit on protected `main`, bound to the release SHA, reviewed workflow attempts and published artifact hashes | `python scripts/check_release_mobaxterm_parity.py --repository <owner/repo> --tag <tag> --sha <release-sha> --registry-commit <commit> --assets-dir <release-assets> --evidence-root <reviewed-evidence>` |
 | Repository governance | Required checks (including the stable `Python 3.15 readiness` and `Native Windows readiness` aggregates), conversation resolution, linear history, and no force-push/deletion are enabled on `main`; every required check is bound in branch protection to the configured GitHub App and resolves through that app's exact check suite to a successful `push` run of `.github/workflows/ci.yml` or `.github/workflows/codeql.yml` at the release SHA; an active, applicable tag ruleset prevents update and deletion of the exact release tag without bypass actors; pull-request approvals and signed commits remain optional controls | `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-sha> --release-tag <tag>` (live GitHub branch-protection, check-run, check-suite, Actions-run, and inherited tag-ruleset APIs, not a local manifest). Add `--require-review --require-signed-commits` for the stricter policy. |
 
 The protected-platform gate must report `4/4` accepted targets and the strict
@@ -266,6 +266,7 @@ make production-readiness \
   RELEASE_PLATFORM_EVIDENCE_REGISTRY="<signed-bundle-platform_verified_evidence.json>" \
   RELEASE_PLATFORM_SOURCE_ARCHIVES="<capture-directory>/archives" \
   RELEASE_MOBAXTERM_REGISTRY_COMMIT="<merged-parity-registry-commit-sha>" \
+  RELEASE_MOBAXTERM_EVIDENCE_ROOT="<reviewed-parity-evidence-directory>" \
   RELEASE_TAG_GOVERNANCE_ATTESTATION="<tag-governance-attestation.json>" \
   RELEASE_TAG_GOVERNANCE_SIGNATURE="<tag-governance-attestation.sig.json>"
 ```
@@ -285,6 +286,13 @@ digests alongside the published files. All must share a completed, successful
 promotion attempt. The live immutable release's publication time must fall
 within that attempt and the independently signed governance window. The
 operator audit can run after the governance window has expired.
+
+Retain the exact reviewed article files in a separate directory under
+`<reviewed-parity-evidence-directory>/<article-id>/`, with the article document
+named `evidence.json`. Generate the candidate using that file and its article
+directory as `--assets-dir`. The strict gate checks the directory's exact file
+inventory and hashes, runs the article validator again, and compares its
+results with the reviewed summary.
 
 The target prints `production readiness: 100/100 gates passed` only after the
 production metadata, tag/SHA/checkout equality, and clean-tree checks; the full local pytest, Ruff, mypy, CLI, and real-GUI

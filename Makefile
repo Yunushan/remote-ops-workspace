@@ -11,6 +11,7 @@ RELEASE_CANDIDATE_INVENTORY ?=
 RELEASE_PLATFORM_EVIDENCE_REGISTRY ?=
 RELEASE_PLATFORM_SOURCE_ARCHIVES ?=
 RELEASE_MOBAXTERM_REGISTRY_COMMIT ?=
+RELEASE_MOBAXTERM_EVIDENCE_ROOT ?=
 RELEASE_TAG_GOVERNANCE_ATTESTATION ?=
 RELEASE_TAG_GOVERNANCE_SIGNATURE ?=
 
@@ -46,6 +47,7 @@ production-readiness:
 	@test -n "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" || (echo "RELEASE_PLATFORM_EVIDENCE_REGISTRY=<signed protected-platform registry JSON> is required" >&2; exit 2)
 	@test -n "$(RELEASE_PLATFORM_SOURCE_ARCHIVES)" || (echo "RELEASE_PLATFORM_SOURCE_ARCHIVES=<retained original Actions ZIP directory> is required" >&2; exit 2)
 	@test -n "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" || (echo "RELEASE_MOBAXTERM_REGISTRY_COMMIT=<reviewed parity registry commit on main> is required" >&2; exit 2)
+	@test -n "$(RELEASE_MOBAXTERM_EVIDENCE_ROOT)" || (echo "RELEASE_MOBAXTERM_EVIDENCE_ROOT=<reviewed parity evidence directory> is required" >&2; exit 2)
 	@test -n "$(RELEASE_TAG_GOVERNANCE_ATTESTATION)" || (echo "RELEASE_TAG_GOVERNANCE_ATTESTATION=<short-lived signed tag ruleset snapshot JSON> is required" >&2; exit 2)
 	@test -n "$(RELEASE_TAG_GOVERNANCE_SIGNATURE)" || (echo "RELEASE_TAG_GOVERNANCE_SIGNATURE=<detached tag-governance Ed25519 signature JSON> is required" >&2; exit 2)
 	@tag_sha="$$(git rev-parse --verify "$(RELEASE_TAG)^{commit}" 2>/dev/null)" && release_sha="$$(git rev-parse --verify "$(RELEASE_SHA)^{commit}" 2>/dev/null)" && test "$$tag_sha" = "$$release_sha" || (echo "RELEASE_SHA must resolve to the commit tagged by RELEASE_TAG" >&2; exit 2)
@@ -57,7 +59,7 @@ production-readiness:
 	python scripts/check_platform_verified_evidence.py --registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --require-goal-targets --require-review-bundles --release-tag "$(RELEASE_TAG)"
 	python scripts/check_release_publish_assets.py --assets-dir "$(RELEASE_ASSETS_DIR)" --tag "$(RELEASE_TAG)" --repository "$(RELEASE_REPOSITORY)" --evidence-registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --require-platform-goal-targets --native-release-channel production-signed
 	python scripts/check_release_license_compliance.py --assets-dir "$(RELEASE_ASSETS_DIR)" --tag "$(RELEASE_TAG)" --repository "$(RELEASE_REPOSITORY)" --sha "$(RELEASE_SHA)" --evidence "$(RELEASE_LICENSE_EVIDENCE)" --signature "$(RELEASE_LICENSE_SIGNATURE)" --evidence-root "$(RELEASE_LICENSE_EVIDENCE_ROOT)" --candidate-inventory "$(RELEASE_CANDIDATE_INVENTORY)" --protected-platform-registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --platform-source-archives "$(RELEASE_PLATFORM_SOURCE_ARCHIVES)" --tag-governance-attestation "$(RELEASE_TAG_GOVERNANCE_ATTESTATION)" --tag-governance-signature "$(RELEASE_TAG_GOVERNANCE_SIGNATURE)" --verify-published-release
-	python scripts/check_release_mobaxterm_parity.py --repository "$(RELEASE_REPOSITORY)" --tag "$(RELEASE_TAG)" --sha "$(RELEASE_SHA)" --registry-commit "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" --assets-dir "$(RELEASE_ASSETS_DIR)"
+	python scripts/check_release_mobaxterm_parity.py --repository "$(RELEASE_REPOSITORY)" --tag "$(RELEASE_TAG)" --sha "$(RELEASE_SHA)" --registry-commit "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" --assets-dir "$(RELEASE_ASSETS_DIR)" --evidence-root "$(RELEASE_MOBAXTERM_EVIDENCE_ROOT)"
 	python scripts/check_repository_governance.py --repository "$(RELEASE_REPOSITORY)" --branch main --sha "$(RELEASE_SHA)" --release-tag "$(RELEASE_TAG)"
 	@head_sha="$$(git rev-parse --verify "HEAD^{commit}" 2>/dev/null)" && release_sha="$$(git rev-parse --verify "$(RELEASE_SHA)^{commit}" 2>/dev/null)" && test "$$head_sha" = "$$release_sha" || (echo "the current checkout HEAD changed during the production-readiness audit" >&2; exit 2)
 	python scripts/check_repository_cleanup.py --require-clean

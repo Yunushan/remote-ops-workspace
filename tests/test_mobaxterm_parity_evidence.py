@@ -269,7 +269,11 @@ def reviewed_release(tmp_path, monkeypatch):
     repository = "example/remote-ops-workspace"
     tag = "v1.0.2"
     name = "remote-ops-workspace-v1.0.2-windows-x64.msi"
-    asset = tmp_path / name
+    assets_dir = tmp_path / "published"
+    evidence_root = tmp_path / "reviewed"
+    assets_dir.mkdir()
+    evidence_root.mkdir()
+    asset = assets_dir / name
     asset.write_bytes(b"published release asset bytes")
     digest = hashlib.sha256(asset.read_bytes()).hexdigest()
 
@@ -291,6 +295,13 @@ def reviewed_release(tmp_path, monkeypatch):
                 "workflow_run_url": record["release_source"]["workflow_run_url"],
                 "run_attempt": 2,
             }
+        article_root = evidence_root / article
+        article_root.mkdir()
+        evidence = article_root / "evidence.json"
+        evidence.write_bytes(b'{"fixture":true}')
+        evidence_digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
+        record["evidence_file_sha256"] = evidence_digest
+        record["evidence_assets_sha256"] = {"evidence.json": evidence_digest}
         records.append(record)
     registry = {"schema_version": 2, "policy": _policy(), "accepted_evidence": records}
 
@@ -313,6 +324,7 @@ def reviewed_release(tmp_path, monkeypatch):
             "state": "APPROVED",
             "html_url": records[0]["acceptance_review"]["review_url"],
             "submitted_at": "2026-08-23T12:34:56Z",
+            "body": "\n".join(release_parity.review_acceptance_line(record) for record in records),
             "user": {"login": "release-reviewer"},
         },
     }
@@ -338,21 +350,33 @@ def reviewed_release(tmp_path, monkeypatch):
         return responses[resource]
 
     monkeypatch.setattr(release_parity, "github_object", github_object)
+    validator_calls = []
+
+    def validate(evidence, *, assets_dir):
+        article = assets_dir.name
+        assert evidence == assets_dir / "evidence.json"
+        validator_calls.append(article)
+        summary = next(row["validation_summary"]["summary"] for row in records if row["article_id"] == article)
+        return SimpleNamespace(to_dict=lambda: {"passed": True, "summary": summary})
+
+    monkeypatch.setattr(release_parity, "VALIDATORS", dict.fromkeys(release_parity.ARTICLE_SPECS, validate))
     args = {
         "repository": repository,
         "tag": tag,
         "release_sha": release_sha,
         "registry_commit": registry_commit,
-        "assets_dir": tmp_path,
+        "assets_dir": assets_dir,
+        "evidence_root": evidence_root,
     }
     return SimpleNamespace(
         args=args, asset=asset, records=records, responses=responses,
-        on_main=on_main, run=run, review=review,
+        on_main=on_main, run=run, review=review, validator_calls=validator_calls,
     )
 
 
 def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_release) -> None:
     assert release_parity.audit_release(**reviewed_release.args) == []
+    assert set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
 
 
 def test_certification_rejects_registry_commit_outside_main(reviewed_release) -> None:
@@ -391,6 +415,92 @@ def test_certification_checks_live_attempt_and_review(
     errors = release_parity.audit_release(**reviewed_release.args)
 
     assert any(expected_error in error for error in errors)
+
+
+def test_finalizer_prints_the_same_review_line_before_acceptance(reviewed_release, tmp_path, capsys) -> None:
+    record = reviewed_release.records[0]
+    candidate = {key: value for key, value in record.items()
+                 if key not in {"release_source", "acceptance_review", "release_asset_bytes"}}
+    candidate["status"] = "candidate"
+    candidate_path = tmp_path / "candidate.json"
+    candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
+    source = record["release_source"]
+
+    assert _load_finalizer().main([
+        "--candidate-record", str(candidate_path), "--repository", source["repository"],
+        "--source-head-sha", source["head_sha"], "--tag-source-head-sha", source["tag_source_head_sha"],
+        "--workflow-run-url", source["workflow_run_url"], "--run-attempt", str(source["run_attempt"]),
+        "--print-review-line",
+    ]) == 0
+    assert capsys.readouterr().out.strip() == release_parity.review_acceptance_line(record)
+
+
+def test_certification_rejects_review_body_that_only_accepts_another_article(reviewed_release) -> None:
+    review = reviewed_release.responses[reviewed_release.review]
+    other = reviewed_release.records[-1]
+    review["body"] = release_parity.review_acceptance_line(other)
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == len(reviewed_release.records) - 1
+    assert all("does not explicitly accept this exact article evidence" in error for error in errors)
+
+
+def test_certification_rejects_changed_evidence_after_approval(reviewed_release) -> None:
+    reviewed_release.records[0]["evidence_file_sha256"] = "2" * 64
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == 1
+    assert "does not explicitly accept this exact article evidence" in errors[0]
+
+
+def test_certification_rejects_unrelated_comment_with_matching_author(reviewed_release) -> None:
+    review = reviewed_release.responses[reviewed_release.review]
+    comment_url = "https://github.com/example/remote-ops-workspace/issues/42#issuecomment-99"
+    reviewed_release.responses["issues/comments/99"] = {
+        "id": 99, "html_url": comment_url, "created_at": review["submitted_at"],
+        "user": review["user"], "body": "Thanks for putting this together.",
+    }
+    for record in reviewed_release.records:
+        record["acceptance_review"]["review_url"] = comment_url
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == len(reviewed_release.records)
+    assert all("does not explicitly accept this exact article evidence" in error for error in errors)
+
+
+@pytest.mark.parametrize(("edit", "expected"), [
+    ("changed", "SHA-256 differs"),
+    ("missing", "files are missing"),
+    ("extra", "unexpected file"),
+])
+def test_certification_checks_exact_reviewed_evidence_files(reviewed_release, edit, expected) -> None:
+    article = reviewed_release.records[0]["article_id"]
+    root = reviewed_release.args["evidence_root"] / article
+    evidence = root / "evidence.json"
+    if edit == "changed":
+        evidence.write_bytes(b"changed evidence")
+    elif edit == "missing":
+        evidence.unlink()
+    else:
+        (root / "unexpected.txt").write_text("unreviewed", encoding="utf-8")
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == 1
+    assert expected in errors[0]
+    assert article not in reviewed_release.validator_calls
+
+
+def test_certification_refuses_evidence_when_the_article_validator_fails(reviewed_release, monkeypatch) -> None:
+    article = reviewed_release.records[0]["article_id"]
+    monkeypatch.setitem(release_parity.VALIDATORS, article,
+                        lambda *_args, **_kwargs: SimpleNamespace(to_dict=lambda: {"passed": False}))
+    errors = release_parity.audit_release(**reviewed_release.args)
+    assert len(errors) == 1
+    assert "article validator did not pass" in errors[0]
 
 
 def _load_checker():

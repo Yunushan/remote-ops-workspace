@@ -118,6 +118,58 @@ def test_generator_rechecks_exact_input_bytes_before_writing_receipt(
     assert receipt_path.read_bytes() == before
 
 
+@pytest.mark.parametrize(("relative", "error"), [
+    ("requirements-release.txt", "release inputs differ from the previous receipt"),
+    ("requirements-locks/windows-x64-bootstrap.txt", "unselected locks differ from the previous receipt"),
+])
+def test_partial_resolution_refuses_unverified_existing_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    relative: str, error: str,
+) -> None:
+    resolver = _checker().resolver
+    root = _release_checkout(tmp_path)
+    _use_checkout(monkeypatch, resolver, root)
+    path = root / relative
+    path.write_bytes(path.read_bytes() + b"\n")
+    receipt_path = root / "requirements-locks/resolution.json"
+    before = receipt_path.read_bytes()
+
+    def forbidden_resolution(*args, **kwargs):
+        raise AssertionError("the resolver must not run for unverified inputs or unselected locks")
+
+    monkeypatch.setattr(resolver.subprocess, "run", forbidden_resolution)
+    assert resolver.main(["--uv", str(root / "unused"), "--target", "windows-x86"]) == 1
+    assert error in capsys.readouterr().err
+    assert receipt_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(("relative", "error"), [
+    ("requirements-release.txt", "release inputs changed during resolution"),
+    ("requirements-locks/windows-x64-bootstrap.txt", "unselected locks differ from the previous receipt"),
+])
+def test_partial_resolution_refuses_changes_during_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    relative: str, error: str,
+) -> None:
+    resolver = _checker().resolver
+    root = _release_checkout(tmp_path)
+    _use_checkout(monkeypatch, resolver, root)
+    uv = root / "uv"
+    uv.touch()
+    monkeypatch.setattr(resolver.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout="uv 0.12.21\n"))
+    path = root / relative
+
+    def changed_bytes(*args, **kwargs):
+        path.write_bytes(path.read_bytes() + b"\n")
+
+    monkeypatch.setattr(resolver, "compile_lock", changed_bytes)
+    receipt_path = root / "requirements-locks/resolution.json"
+    before = receipt_path.read_bytes()
+    assert resolver.main(["--uv", str(uv), "--target", "windows-x86"]) == 1
+    assert error in capsys.readouterr().err
+    assert receipt_path.read_bytes() == before
+
+
 def test_generator_writes_lf_receipt_bound_to_original_lf_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -128,9 +180,41 @@ def test_generator_writes_lf_receipt_bound_to_original_lf_bytes(
     uv = root / "uv"
     uv.write_bytes(b"unused test resolver")
     monkeypatch.setattr(resolver.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout="uv 0.12.21\n"))
-    monkeypatch.setattr(resolver, "compile_lock", lambda *args, **kwargs: None)
+    selected = root / "requirements-locks/windows-x86.txt"
+    receipt_path = root / "requirements-locks/resolution.json"
+    before = json.loads(receipt_path.read_bytes())
+
+    def refresh_selected(*args, **kwargs):
+        selected.write_bytes(selected.read_bytes() + b"\n")
+
+    monkeypatch.setattr(resolver, "compile_lock", refresh_selected)
     assert resolver.main(["--uv", str(uv), "--target", "windows-x86"]) == 0
-    assert b"\r" not in (root / "requirements-locks/resolution.json").read_bytes()
+    assert b"\r" not in receipt_path.read_bytes()
+    before["lock_sha256"][selected.name] = hashlib.sha256(selected.read_bytes()).hexdigest()
+    assert json.loads(receipt_path.read_bytes()) == before
+    assert checker.check_locks(root, workflows={}) == []
+
+
+def test_full_resolution_can_refresh_changed_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _checker()
+    resolver = checker.resolver
+    root = _release_checkout(tmp_path)
+    _use_checkout(monkeypatch, resolver, root)
+    uv = root / "uv"
+    uv.touch()
+    constraints = root / "requirements-release.txt"
+    constraints.write_bytes(constraints.read_bytes() + b"\n")
+    monkeypatch.setattr(resolver.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout="uv 0.12.21\n"))
+    resolved = []
+
+    def record_target(uv, config, target, spec, *, system_certs):
+        resolved.append(f"{target}.txt")
+
+    monkeypatch.setattr(resolver, "compile_lock", record_target)
+    assert resolver.main(["--uv", str(uv)]) == 0
+    assert sorted(resolved) == sorted(path.name for path in (root / "requirements-locks").glob("*.txt"))
     assert checker.check_locks(root, workflows={}) == []
 
 

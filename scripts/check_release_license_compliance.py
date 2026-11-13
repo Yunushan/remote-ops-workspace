@@ -130,17 +130,30 @@ def main(argv: list[str] | None = None) -> int:
             tag=tag,
             sha=sha,
         )
-        errors.extend(
-            check_tag_governance_attestation(
-                governance,
-                policy=policy,
-                repository=repository,
-                tag=tag,
-                sha=sha,
+        if not args.verify_published_release:
+            errors.extend(
+                check_tag_governance_attestation(
+                    governance,
+                    policy=policy,
+                    repository=repository,
+                    tag=tag,
+                    sha=sha,
+                )
             )
-        )
         if errors:
             raise RuntimeError("; ".join(dict.fromkeys(errors)))
+        if args.verify_published_release:
+            from check_release_provenance import main as verify_release_provenance
+
+            if verify_release_provenance([
+                "--assets-dir", str(args.assets_dir),
+                "--repository", repository,
+                "--tag", tag,
+                "--sha", sha,
+                "--governance-attestation", str(args.tag_governance_attestation),
+                "--governance-signature", str(args.tag_governance_signature),
+            ]):
+                raise RuntimeError("published release provenance and governance verification failed")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"release license compliance: {exc}", file=sys.stderr)
         return 1
@@ -153,7 +166,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check-policy-only", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check-policy-only", action="store_true")
     parser.add_argument("--assets-dir", type=Path)
     parser.add_argument("--repository")
     parser.add_argument("--tag")
@@ -164,6 +178,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-inventory", type=Path)
     parser.add_argument("--tag-governance-attestation", type=Path)
     parser.add_argument("--tag-governance-signature", type=Path)
+    mode.add_argument(
+        "--verify-published-release",
+        action="store_true",
+        help="require the immutable release and verify governance at its authenticated publication time",
+    )
     parser.add_argument(
         "--evidence-root",
         type=Path,
@@ -772,7 +791,8 @@ def check_tag_governance_attestation(
         "tag_deletion_blocked": True,
     }
     for field, value in expected.items():
-        if attestation.get(field) != value:
+        actual = attestation.get(field)
+        if type(actual) is not type(value) or actual != value:
             errors.append(f"tag governance attestation {field} must be {value!r}")
     if attestation.get("bypass_actors") != []:
         errors.append("tag governance attestation must prove an empty bypass actor set")

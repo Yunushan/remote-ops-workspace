@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 def _load_checker():
@@ -556,3 +559,119 @@ def test_certificate_bound_release_run_must_be_exact_and_successful() -> None:
         tag="v1.2.3",
     )
     assert any("conclusion must be 'success'" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("published_at", "signature_attempt", "expected_error"),
+    [
+        ("2026-11-01T12:02:00Z", 1, None),
+        ("2026-11-01T12:05:00Z", 1, "tag governance attestation has expired"),
+        ("2026-11-01T11:59:59Z", 1, "observed_at must not be in the future"),
+        ("2026-11-01T12:02:00Z", 2, "governance proof and release assets must share"),
+    ],
+)
+def test_published_governance_uses_live_time_and_common_signed_attempt(
+    tmp_path: Path, monkeypatch, capsys, published_at: str, signature_attempt: int, expected_error: str | None
+) -> None:
+    checker = _load_checker()
+    repository, tag, sha = "example/project", "v1.2.3", "a" * 40
+    root = tmp_path / "release-assets"
+    root.mkdir()
+    asset = root / "release.bin"
+    asset.write_bytes(b"release asset")
+    release = {**_release(checker, root, repository, tag), "published_at": published_at}
+    attestation = tmp_path / "governance.json"
+    attestation.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "decision": "approved",
+            "source": "github-rulesets-api",
+            "repository": repository,
+            "release_tag": tag,
+            "release_sha": sha,
+            "tag_update_blocked": True,
+            "tag_deletion_blocked": True,
+            "bypass_actors": [],
+            "ruleset_ids": [42],
+            "auditor": {"kind": "github-app", "identity": "fixture-auditor"},
+            "observed_at": "2026-11-01T12:00:00Z",
+            "expires_at": "2026-11-01T12:05:00Z",
+        }),
+        encoding="utf-8",
+    )
+    signer = Ed25519PrivateKey.generate()
+    signature = tmp_path / "governance.sig.json"
+    signature.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "algorithm": "ed25519",
+            "key_id": "auditor",
+            "signature": base64.b64encode(signer.sign(attestation.read_bytes())).decode(),
+        }),
+        encoding="utf-8",
+    )
+    policy = tmp_path / "policy.json"
+    policy.write_text(
+        json.dumps({
+            "tag_governance_attestation": {
+                "state": "enforced",
+                "max_validity_seconds": 300,
+                "trusted_ed25519_keys": [{
+                    "key_id": "auditor",
+                    "public_key": base64.b64encode(signer.public_key().public_bytes_raw()).decode(),
+                }],
+            },
+        }),
+        encoding="utf-8",
+    )
+    run = {
+        "id": 123,
+        "run_attempt": 1,
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": "success",
+        "path": f"{checker.RELEASE_WORKFLOW}@refs/tags/{tag}",
+        "event": "workflow_dispatch",
+        "head_branch": tag,
+        "repository": {"full_name": repository},
+        "head_repository": {"full_name": repository},
+        "run_started_at": "2026-11-01T12:00:30Z",
+        "updated_at": "2026-11-01T12:04:00Z",
+    }
+
+    def gh_api(args: list[str], _label: str, _timeout: int):
+        endpoint = args[-1]
+        if endpoint in {f"repos/{repository}/releases/tags/{tag}", f"repos/{repository}/releases/77"}:
+            return release
+        if endpoint == f"repos/{repository}/releases/77/assets?per_page=100":
+            return [release["assets"]]
+        assert endpoint == f"repos/{repository}/actions/runs/123/attempts/1"
+        return run
+
+    def attestation_api(path: Path, **_kwargs):
+        return _attestation(
+            checker, repository=repository, sha=sha, tag=tag, digest=checker.sha256_file(path),
+            attempt=signature_attempt if path == signature else 1,
+        )
+
+    monkeypatch.setattr(checker, "POLICY_PATH", policy)
+    monkeypatch.setattr(checker, "expected_release_assets", lambda *_args, **_kwargs: {asset.name})
+    monkeypatch.setattr(checker, "run_gh_json", gh_api)
+    monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+    args = [
+        "--assets-dir", str(root), "--repository", repository, "--sha", sha, "--tag", tag,
+        "--governance-attestation", str(attestation), "--governance-signature", str(signature),
+    ]
+
+    if expected_error:
+        assert checker.main(args) == 1
+        assert expected_error in capsys.readouterr().err
+    else:
+        assert checker.main(args) == 0
+        assert checker.main([
+            *args, "--published-release-id", "77",
+            "--current-transaction-run-id", "123", "--current-transaction-run-attempt", "1",
+        ]) == 0
+        run["run_started_at"] = "2026-11-01T12:03:00Z"
+        assert checker.main(args) == 1
+        assert "release publication time falls outside" in capsys.readouterr().err

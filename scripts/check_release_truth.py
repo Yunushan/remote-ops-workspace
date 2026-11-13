@@ -579,6 +579,9 @@ def check_promotion_truth(workflow: str) -> list[str]:
             frozenset({"--repository", "--tag"}),
         ),
     }
+    command_contracts["Revalidate signed tag governance immediately before publication"] = (
+        command_contracts["Revalidate signed tag governance at mutation boundary"]
+    )
     for token, label, kind, step_name in (
         (
             "check_release_maturity.py",
@@ -611,6 +614,12 @@ def check_promotion_truth(workflow: str) -> list[str]:
             "Attest every certified release asset",
         ),
         (
+            "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+            "signed tag governance inputs attestation",
+            "uses",
+            "Attest exact signed tag governance inputs",
+        ),
+        (
             "check_release_tag_governance.py",
             "mutation-bound tag governance proof",
             "run",
@@ -639,6 +648,12 @@ def check_promotion_truth(workflow: str) -> list[str]:
             "draft provenance",
             "run",
             "Verify complete numeric-ID draft transaction",
+        ),
+        (
+            "check_release_tag_governance.py",
+            "publication-bound tag governance proof",
+            "run",
+            "Revalidate signed tag governance immediately before publication",
         ),
         (
             "gh api --method PATCH",

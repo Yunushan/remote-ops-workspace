@@ -406,6 +406,12 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
         '--current-transaction-run-id "$GITHUB_RUN_ID"': (
             "in-progress exact invocation verification"
         ),
+        '--governance-attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"': (
+            "published governance proof binding"
+        ),
+        '--governance-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"': (
+            "published governance signature binding"
+        ),
     }
     for snippet, label in required.items():
         if snippet not in workflow:
@@ -437,12 +443,6 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "Audit signed exact-byte redistribution and resolver evidence",
         ),
         (
-            "check_release_tag_governance.py",
-            "mutation-bound tag governance proof",
-            "run",
-            "Revalidate signed tag governance at mutation boundary",
-        ),
-        (
             "check_release_remote_preconditions.py immutable",
             "immutable release setting proof",
             "run",
@@ -461,6 +461,18 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "Attest every certified release asset",
         ),
         (
+            ATTEST_RELEASE_ASSETS_ACTION,
+            "signed tag governance inputs attestation",
+            "uses",
+            "Attest exact signed tag governance inputs",
+        ),
+        (
+            "check_release_tag_governance.py",
+            "mutation-bound tag governance proof",
+            "run",
+            "Revalidate signed tag governance at mutation boundary",
+        ),
+        (
             'gh api --method POST "repos/',
             "create-only numeric draft",
             "run",
@@ -471,6 +483,12 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "draft byte/provenance verification",
             "run",
             "Verify complete numeric-ID draft transaction",
+        ),
+        (
+            "check_release_tag_governance.py",
+            "publication-bound tag governance proof",
+            "run",
+            "Revalidate signed tag governance immediately before publication",
         ),
         (
             'gh api --method PATCH "repos/',
@@ -601,6 +619,9 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             frozenset({"--repository", "--tag"}),
         ),
     }
+    command_contracts["Revalidate signed tag governance immediately before publication"] = (
+        command_contracts["Revalidate signed tag governance at mutation boundary"]
+    )
     for token, label, kind, step_name in ordered:
         if kind == "uses":
             indexes.append(
@@ -627,6 +648,22 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
         errors.append(
             "promotion must gate, materialize, audit, attest, create draft, verify, publish, and reverify in order"
         )
+    for proof, mutation in (
+        ("Revalidate signed tag governance at mutation boundary", "Create new draft by numeric API identity"),
+        ("Revalidate signed tag governance immediately before publication", "Publish verified draft by numeric ID once"),
+    ):
+        mutation_index = next((index for index, step in enumerate(steps) if step_name_is(step, mutation)), -1)
+        if mutation_index <= 0 or not step_name_is(steps[mutation_index - 1], proof):
+            errors.append(f"promotion must revalidate tag governance immediately before {mutation}")
+    governance_subjects = (
+        "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/tag-governance-attestation.json",
+        "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/tag-governance-attestation.sig.json",
+    )
+    governance_step = next(
+        (step for step in steps if step_name_is(step, "Attest exact signed tag governance inputs")), ""
+    )
+    if not all(subject in governance_step for subject in governance_subjects):
+        errors.append("promotion must attest both exact signed tag governance inputs")
     return errors
 
 def check_source_and_python_job(workflow: str) -> list[str]:

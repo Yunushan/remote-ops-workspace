@@ -23,6 +23,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -32,6 +33,13 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+from check_release_license_compliance import (  # noqa: E402
+    POLICY_PATH,
+    check_tag_governance_attestation,
+    parse_timestamp,
+    read_json_object,
+    verify_tag_governance_signature,
+)
 from check_release_publish_assets import (  # noqa: E402
     MATRIX_PATH,
     expected_release_assets,
@@ -95,6 +103,12 @@ def main(argv: list[str] | None = None) -> int:
         single_asset = args.asset is not None
         if single_asset and (draft_transaction or current_transaction):
             raise ValueError("--asset requires a completed published release, outside a transaction")
+        governance_paths = (args.governance_attestation, args.governance_signature)
+        verify_governance = any(path is not None for path in governance_paths)
+        if verify_governance and (
+            None in governance_paths or draft_transaction or single_asset
+        ):
+            raise ValueError("governance verification requires both proof files and a complete published release")
         if args.published_release_id is not None and args.published_release_id < 1:
             raise ValueError("published release id must be positive")
         repository = normalize_repository(args.repository)
@@ -169,6 +183,21 @@ def main(argv: list[str] | None = None) -> int:
             invocations_by_asset[name] = invocations
 
         common = common_run_invocations(invocations_by_asset)
+        if verify_governance:
+            assert args.governance_attestation is not None
+            assert args.governance_signature is not None
+            proof_invocations = verified_governance_invocations(
+                args.governance_attestation,
+                args.governance_signature,
+                release=release,
+                repository=repository,
+                tag=tag,
+                sha=sha,
+            )
+            common.intersection_update(proof_invocations)
+            if not common:
+                errors.append("governance proof and release assets must share the same promotion attempt")
+
         if not common:
             errors.append(
                 "certified release assets do not share one certificate-bound release workflow "
@@ -213,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         successful: list[RunInvocation] = []
+        publication_errors: list[str] = []
         for invocation in sorted(common, reverse=True):
             payload = run_gh_json(
                 [
@@ -230,9 +260,13 @@ def main(argv: list[str] | None = None) -> int:
                 sha=sha,
                 tag=tag,
             )
+            if verify_governance and not run_errors:
+                run_errors = check_publication_in_run(release, payload)
+                publication_errors.extend(run_errors)
             if not run_errors:
                 successful.append(invocation)
         if common and not successful:
+            errors.extend(publication_errors)
             errors.append(
                 "no common certificate-bound release workflow run attempt completed successfully "
                 f"for exact source SHA {sha}"
@@ -277,7 +311,68 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--draft-transaction-run-attempt", type=int)
     parser.add_argument("--current-transaction-run-id", type=int)
     parser.add_argument("--current-transaction-run-attempt", type=int)
+    parser.add_argument("--governance-attestation", type=Path)
+    parser.add_argument("--governance-signature", type=Path)
     return parser.parse_args(argv)
+
+
+def verified_governance_invocations(
+    attestation_path: Path,
+    signature_path: Path,
+    *,
+    release: dict[str, Any],
+    repository: str,
+    tag: str,
+    sha: str,
+) -> set[RunInvocation]:
+    _, policy = read_json_object(POLICY_PATH, "release compliance policy")
+    attestation_bytes, attestation = read_json_object(attestation_path, "tag governance attestation")
+    signature_bytes, signature = read_json_object(signature_path, "tag governance signature")
+    governance_policy = policy.get("tag_governance_attestation")
+    if not isinstance(governance_policy, dict) or governance_policy.get("state") != "enforced":
+        raise ValueError("tag governance attestation policy is not enforced")
+    verify_tag_governance_signature(attestation_bytes, signature, policy)
+    published_at = parse_timestamp(release.get("published_at"), "GitHub release published_at")
+    if published_at > datetime.now(timezone.utc):
+        raise ValueError("GitHub release published_at must not be in the future")
+    errors = check_tag_governance_attestation(
+        attestation,
+        policy=policy,
+        repository=repository,
+        tag=tag,
+        sha=sha,
+        now=published_at,
+    )
+    if errors:
+        raise ValueError("; ".join(errors))
+
+    proofs: dict[str, set[RunInvocation]] = {}
+    for label, path, data in (
+        ("tag governance attestation", attestation_path, attestation_bytes),
+        ("tag governance signature", signature_path, signature_bytes),
+    ):
+        payload = verify_attestation(path, repository=repository, sha=sha, tag=tag)
+        invocations, errors = verified_run_invocations(
+            payload,
+            asset_name=label,
+            asset_sha256=hashlib.sha256(data).hexdigest(),
+            repository=repository,
+            sha=sha,
+            tag=tag,
+        )
+        if errors:
+            raise ValueError("; ".join(errors))
+        proofs[label] = invocations
+    return common_run_invocations(proofs)
+
+
+def check_publication_in_run(release: dict[str, Any], run: dict[str, Any]) -> list[str]:
+    published_at = parse_timestamp(release.get("published_at"), "GitHub release published_at")
+    run_started_at = parse_timestamp(run.get("run_started_at"), "GitHub run run_started_at")
+    run_updated_at = parse_timestamp(run.get("updated_at"), "GitHub run updated_at")
+    if not run_started_at <= published_at <= run_updated_at:
+        return ["release publication time falls outside the common successful promotion attempt"]
+    return []
 
 
 def normalize_repository(value: str) -> str:

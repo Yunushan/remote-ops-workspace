@@ -52,6 +52,9 @@ def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
         ("complete", ""),
         ("missing-installer", "missing=.*release-source-python"),
         ("missing-smoke", "missing=.*release-macos-gui-smoke-x64"),
+        ("missing-runtime", "missing=.*release-runtime-windows-x86"),
+        ("wrong-runtime-run", "is not bound to the approved build run and SHA"),
+        ("bad-runtime-report", "must be a non-empty pip inspect v1 inventory"),
         ("unknown-artifact", "unexpected=.*unexpected-build"),
         ("expired-smoke", "GUI smoke artifact release-macos-gui-smoke-x64 must be unexpired"),
     ],
@@ -79,19 +82,27 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         "release-macos-gui-smoke-x64",
         "release-macos-gui-smoke-arm64",
     )
-    names = [*standard, *smoke]
+    runtime = tuple(f"release-runtime-{target}" for target in sorted(candidate.RUNTIME_TARGETS))
+    names = [*standard, *smoke, *runtime]
     if condition == "missing-installer":
         names.remove("release-source-python")
     if condition == "missing-smoke":
         names.remove("release-macos-gui-smoke-x64")
+    if condition == "missing-runtime":
+        names.remove("release-runtime-windows-x86")
     if condition == "unknown-artifact":
         names.append("unexpected-build")
     artifacts = []
     archives: dict[int, bytes] = {}
+    raw_report = b'{"version":"1","installed":[{"metadata":{"name":"pip","version":"26.3"}}]}'
     for artifact_id, name in enumerate(names, start=1):
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, "w") as archive:
-            archive.writestr(f"{name}.txt", f"bytes from {name}")
+            if name in runtime:
+                body = b"{}" if condition == "bad-runtime-report" else raw_report
+                archive.writestr(candidate.RUNTIME_REPORT_NAME, body)
+            else:
+                archive.writestr(f"{name}.txt", f"bytes from {name}")
         data = stream.getvalue()
         artifacts.append({
             "id": artifact_id,
@@ -99,8 +110,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "digest": f"sha256:{hashlib.sha256(data).hexdigest()}",
             "expired": condition == "expired-smoke" and name == "release-macos-gui-smoke-x64",
             "size_in_bytes": len(data),
+            "workflow_run": {"id": 99 if condition == "wrong-runtime-run" else 123, "head_sha": sha},
         })
-        if name in standard:
+        if name in standard or name in runtime:
             archives[artifact_id] = data
     downloads: list[int] = []
 
@@ -119,11 +131,12 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             assert endpoint == "actions/runs/123/artifacts?per_page=100"
             return {"artifacts": artifacts}
 
-        def download(self, endpoint: str, destination: Path) -> str:
+        def download(self, endpoint: str, destination: Path, *, max_bytes: int = candidate.MAX_ARCHIVE_BYTES) -> str:
             artifact_id = int(endpoint.split("/")[2])
             assert endpoint == f"actions/artifacts/{artifact_id}/zip"
             downloads.append(artifact_id)
             data = archives[artifact_id]
+            assert len(data) <= max_bytes
             destination.write_bytes(data)
             return f"sha256:{hashlib.sha256(data).hexdigest()}"
 
@@ -144,7 +157,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     if error:
         with pytest.raises(ValueError, match=error):
             seal()
-        assert downloads == []
+        assert len(downloads) == (1 if condition == "bad-runtime-report" else 0)
         assert not output.exists()
         return
 
@@ -157,6 +170,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     assert {record["name"] for record in records} == set(standard)
     assert {path.name for path in root.iterdir()} == {f"{name}.txt" for name in standard}
     assert len(downloads) == len(archives) and set(downloads) == set(archives)
+    assert set(inventory["runtime_reports"]) == candidate.RUNTIME_TARGETS
+    for report in inventory["runtime_reports"].values():
+        assert report["sha256"] == hashlib.sha256(raw_report).hexdigest()
+        assert report["size_bytes"] == len(raw_report)
+    inventory["runtime_reports"]["windows-x86"]["artifact_id"] = records[0]["id"]
+    with pytest.raises(ValueError, match="runtime report windows-x86 artifact id is duplicated"):
+        candidate.validate_inventory(
+            inventory, repository="example/project", release_tag=tag, release_sha=sha,
+            run_id=123, run_attempt=1,
+        )
 
 
 def redirect_error(url: str, location: str) -> urllib.error.HTTPError:

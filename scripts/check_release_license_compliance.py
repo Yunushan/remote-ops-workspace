@@ -620,6 +620,8 @@ def check_evidence(
     verify_review_window: bool = True,
     published_audit: bool = False,
 ) -> list[str]:
+    from release_candidate_inventory import RUNTIME_TARGETS
+
     errors: list[str] = []
     expected_scalars = {
         "schema_version": 1,
@@ -640,6 +642,7 @@ def check_evidence(
         return [*errors, f"compliance evidence root must be a real directory: {evidence_root}"]
 
     candidate_record = evidence.get("candidate_inventory")
+    runtime_reports: dict[str, Any] = {}
     if not isinstance(candidate_record, dict) or not valid_evidence_record(candidate_record):
         errors.append("compliance evidence candidate_inventory record is invalid")
     else:
@@ -665,6 +668,11 @@ def check_evidence(
             errors.append(
                 "compliance candidate inventory input must be the signed bundle file"
             )
+        else:
+            _, sealed_candidate = read_json_object(bound_candidate, "sealed release candidate inventory")
+            reports = sealed_candidate.get("runtime_reports")
+            if isinstance(reports, dict):
+                runtime_reports = reports
 
     registry_record = evidence.get("protected_platform_registry")
     protected_registry: dict[str, Any] = {}
@@ -759,6 +767,15 @@ def check_evidence(
                 ))
             continue
         profile = profile_for_manifest(name)
+        if target in RUNTIME_TARGETS:
+            realized = inventory.get("realized_environment")
+            sealed = runtime_reports.get(target)
+            if (
+                not valid_evidence_record(realized)
+                or not isinstance(sealed, dict)
+                or any(realized[key] != sealed.get(key) for key in ("sha256", "size_bytes"))
+            ):
+                errors.append(f"{target} pip inspect evidence must match the exact sealed build report")
         enforcement = policy.get("build_lock_enforcement")
         locks = enforcement.get("platform_locks") if isinstance(enforcement, dict) else None
         expected_lock = locks.get(target) if isinstance(locks, dict) else None

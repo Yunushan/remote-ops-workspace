@@ -27,7 +27,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BUILD_WORKFLOW = ".github/workflows/release.yml"
 CANDIDATE_INVENTORY_ARTIFACT = "release-candidate-inventory"
 EXPECTED_ARTIFACT_NAMES = (
@@ -46,6 +46,12 @@ GUI_SMOKE_ARTIFACT_NAMES = (
     "release-macos-gui-smoke-x64",
     "release-macos-gui-smoke-arm64",
 )
+RUNTIME_TARGETS = frozenset(
+    name.removeprefix("release-").replace("-native-", "-")
+    for name in EXPECTED_ARTIFACT_NAMES
+    if "-native-" in name
+)
+RUNTIME_REPORT_NAME = "candidate-pip-inspect.json"
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -171,7 +177,9 @@ class GitHubClient:
             raise RuntimeError(f"GitHub API {endpoint} did not return an object")
         return value
 
-    def download(self, endpoint: str, destination: Path) -> str:
+    def download(
+        self, endpoint: str, destination: Path, *, max_bytes: int = MAX_ARCHIVE_BYTES,
+    ) -> str:
         if destination.exists():
             raise ValueError(f"download destination already exists: {destination}")
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -179,13 +187,13 @@ class GitHubClient:
         size = 0
         with self._open(endpoint, allow_redirect=True) as response:
             length = response.headers.get("Content-Length")
-            if length and int(length) > MAX_ARCHIVE_BYTES:
-                raise RuntimeError(f"GitHub artifact exceeds {MAX_ARCHIVE_BYTES} bytes")
+            if length and int(length) > max_bytes:
+                raise RuntimeError(f"GitHub artifact exceeds {max_bytes} bytes")
             with destination.open("xb") as output:
                 while chunk := response.read(1024 * 1024):
                     size += len(chunk)
-                    if size > MAX_ARCHIVE_BYTES:
-                        raise RuntimeError(f"GitHub artifact exceeds {MAX_ARCHIVE_BYTES} bytes")
+                    if size > max_bytes:
+                        raise RuntimeError(f"GitHub artifact exceeds {max_bytes} bytes")
                     digest.update(chunk)
                     output.write(chunk)
         return f"sha256:{digest.hexdigest()}"
@@ -267,7 +275,8 @@ def stage(
         raise ValueError("GitHub run artifact listing must contain an artifacts list")
     by_name = unique_artifacts(raw_artifacts)
     actual_names = set(by_name)
-    expected_names = set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES)
+    runtime_names = {f"release-runtime-{target}" for target in RUNTIME_TARGETS}
+    expected_names = set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES) | runtime_names
     if actual_names != expected_names:
         raise ValueError(
             "staged run artifact names must be exact; "
@@ -282,6 +291,10 @@ def stage(
             raise ValueError(f"GUI smoke artifact {name} must be unexpired")
         positive_int(evidence.get("size_in_bytes"), f"GUI smoke artifact {name} size")
     build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
+    runtime_reports = {
+        target: seal_runtime_report(client, by_name[f"release-runtime-{target}"], target, run_id, release_sha)
+        for target in sorted(RUNTIME_TARGETS)
+    }
     records = materialize_records(client, build_artifacts, assets_root)
     inventory = {
         "schema_version": SCHEMA_VERSION,
@@ -293,9 +306,53 @@ def stage(
         "build_run_id": run_id,
         "build_run_attempt": run_attempt,
         "artifacts": records,
+        "runtime_reports": runtime_reports,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
+
+
+def seal_runtime_report(
+    client: GitHubClient, artifact: dict[str, Any], target: str, run_id: int, release_sha: str,
+) -> dict[str, Any]:
+    name = f"release-runtime-{target}"
+    artifact_id = positive_int(artifact.get("id"), f"artifact {name} id")
+    digest = normalize_digest(artifact.get("digest"), f"artifact {name} archive digest")
+    size = positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
+    if size > MAX_JSON_BYTES:
+        raise ValueError(f"runtime report archive for {target} exceeds the size limit")
+    check_artifact_metadata(
+        artifact, artifact_id=artifact_id, name=name, digest=digest,
+        run_id=run_id, release_sha=release_sha,
+    )
+    with tempfile.TemporaryDirectory(prefix="row-runtime-report-") as temporary:
+        archive = Path(temporary) / "report.zip"
+        downloaded_digest = client.download(
+            f"actions/artifacts/{artifact_id}/zip", archive, max_bytes=MAX_JSON_BYTES,
+        )
+        if downloaded_digest != digest or archive.stat().st_size != size:
+            raise ValueError(f"runtime report archive for {target} does not match GitHub")
+        with zipfile.ZipFile(archive) as bundle:
+            members = bundle.infolist()
+            if (
+                len(members) != 1 or members[0].filename != RUNTIME_REPORT_NAME
+                or stat.S_ISLNK(members[0].external_attr >> 16)
+                or not 0 < members[0].file_size <= MAX_JSON_BYTES
+            ):
+                raise ValueError(f"runtime report archive for {target} must contain one bounded pip inspect report")
+            report = bundle.read(members[0])
+    value = json.loads(report)
+    if (
+        not isinstance(value, dict) or value.get("version") != "1"
+        or not isinstance(value.get("installed"), list) or not value["installed"]
+    ):
+        raise ValueError(f"runtime report for {target} must be a non-empty pip inspect v1 inventory")
+    return {
+        "artifact_id": artifact_id,
+        "archive_digest": digest,
+        "sha256": hashlib.sha256(report).hexdigest(),
+        "size_bytes": len(report),
+    }
 
 
 def promote(
@@ -553,6 +610,22 @@ def validate_inventory(
         records.append(item)
     if names != set(EXPECTED_ARTIFACT_NAMES):
         raise ValueError("approved candidate inventory must contain the exact standard artifact names")
+    reports = value.get("runtime_reports")
+    if not isinstance(reports, dict) or set(reports) != RUNTIME_TARGETS:
+        raise ValueError("approved candidate inventory must contain all native runtime reports")
+    for target, report in reports.items():
+        if (
+            not isinstance(report, dict) or set(report) != {"artifact_id", "archive_digest", "sha256", "size_bytes"}
+            or DIGEST_RE.fullmatch(f'sha256:{report["sha256"]}') is None
+        ):
+            raise ValueError(f"approved candidate runtime report for {target} is invalid")
+        report_id = positive_int(report["artifact_id"], f"runtime report {target} artifact id")
+        if report_id in ids:
+            raise ValueError(f"runtime report {target} artifact id is duplicated")
+        ids.add(report_id)
+        normalize_digest(report["archive_digest"], f"runtime report {target} archive digest")
+        if positive_int(report["size_bytes"], f"runtime report {target} size") > MAX_JSON_BYTES:
+            raise ValueError(f"runtime report {target} exceeds the size limit")
     return sorted(records, key=lambda item: item["name"])
 
 

@@ -120,8 +120,11 @@ to demonstrate the behavior of those exact files on each target OS.
 The policy-only preflight therefore withholds the production-signed publication
 lane today. Once the tracked policy and locks are independently approved, the
 tag run builds and retains the exact signed/notarized candidate artifacts and
-seals their numeric artifact identities and archive digests. A reviewer
-downloads those exact run artifacts, signs their complete evidence inventory,
+seals their numeric artifact identities and archive digests. The inventory
+also records the SHA-256 and size of each standard native target's
+`candidate-pip-inspect.json`, captured with the Python interpreter used for
+packaging. A reviewer downloads those exact run artifacts, uses the sealed
+report bytes in the signed evidence, signs their complete evidence inventory,
 and places the evidence, detached signature, and hash-bound bundle under
 `releases/<tag>/<sha>/` on the data-only `release-compliance-evidence` branch.
 Only after that external step is complete may the operator dispatch

@@ -58,7 +58,7 @@ def _component(root: Path, name: str, version: str, origin: str) -> dict:
     }
 
 
-def _positive_fixture(tmp_path: Path, checker) -> list[str]:
+def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool = False) -> list[str]:
     assets = tmp_path / "assets"
     evidence_root = tmp_path / "evidence"
     assets.mkdir()
@@ -239,7 +239,15 @@ def _positive_fixture(tmp_path: Path, checker) -> list[str]:
     candidate_inventory = _write_record(
         evidence_root,
         "release-candidate-inventory.json",
-        b'{"schema_version":1}\n',
+        json.dumps({
+            "schema_version": 2,
+            "runtime_reports": {
+                "windows-x86": {
+                    "sha256": "f" * 64 if different_runtime_report else realized["sha256"],
+                    "size_bytes": realized["size_bytes"],
+                },
+            },
+        }).encode(),
         reference="attested exact-tag candidate inventory",
     )
     evidence = {
@@ -353,6 +361,14 @@ def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> No
     checker = _load_checker()
 
     assert checker.main(_positive_fixture(tmp_path, checker)) == 0
+
+
+def test_signed_approval_rejects_runtime_report_from_another_build(tmp_path: Path, capsys) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, different_runtime_report=True)
+
+    assert checker.main(args) == 1
+    assert "windows-x86 pip inspect evidence must match the exact sealed build report" in capsys.readouterr().err
 
 
 def test_redistribution_only_audit_still_requires_independent_approval(tmp_path: Path) -> None:

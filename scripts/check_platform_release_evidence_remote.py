@@ -1247,7 +1247,7 @@ def _fetch_transport_fallback(
 
 
 def fetch_json(url: str, *, timeout: float) -> tuple[dict[str, Any] | None, list[str]]:
-    request = Request(url, headers=github_api_headers())
+    request = github_request(url)
     try:
         with urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
@@ -1281,7 +1281,7 @@ def read_bytes_file(path: object, label: str = "byte fixture") -> tuple[bytes | 
 
 
 def fetch_bytes(url: str, *, timeout: float) -> tuple[bytes | None, list[str]]:
-    request = Request(url, headers=github_api_headers())
+    request = github_request(url)
     try:
         with urlopen(request, timeout=timeout) as response:
             return response.read(), []
@@ -1323,13 +1323,13 @@ def http_error_header(exc: HTTPError, name: str) -> str | None:
     return str(value).strip() if value is not None else None
 
 
-def github_api_headers() -> dict[str, str]:
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": "Codex"}
+def github_request(url: str) -> Request:
+    request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "Codex"})
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-        headers["X-GitHub-Api-Version"] = "2022-11-28"
-    return headers
+    if token and url.startswith((f"{GITHUB_API}/", "https://github.com/")):
+        request.add_unredirected_header("Authorization", f"Bearer {token}")
+        request.add_unredirected_header("X-GitHub-Api-Version", "2022-11-28")
+    return request
 
 
 def is_lower_git_sha(value: Any) -> bool:

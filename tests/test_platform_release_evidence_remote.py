@@ -4,12 +4,12 @@ import hashlib
 import importlib.util
 import io
 import json
-import os
 import sys
 import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler
 
 import pytest
 
@@ -4808,21 +4808,33 @@ def test_live_source_artifact_byte_loader_rejects_padded_archive_url_before_fetc
     ) in errors
 
 
-def test_github_api_headers_use_environment_token() -> None:
+@pytest.mark.parametrize("host", ["api.github.com", "github.com"])
+def test_github_request_uses_token_only_on_the_initial_request(host: str, monkeypatch) -> None:
     checker = _load_checker()
-    original_gh_token = os.environ.get("GH_TOKEN")
-    original_github_token = os.environ.get("GITHUB_TOKEN")
-    try:
-        os.environ["GH_TOKEN"] = "secret-token"
-        os.environ.pop("GITHUB_TOKEN", None)
+    monkeypatch.setenv("GH_TOKEN", "secret-token")
+    request = checker.github_request(f"https://{host}/example/artifact.zip")
+    artifact_url = "https://productionresults.example.com/artifact.zip"
 
-        headers = checker.github_api_headers()
-    finally:
-        _restore_env("GH_TOKEN", original_gh_token)
-        _restore_env("GITHUB_TOKEN", original_github_token)
+    redirected = HTTPRedirectHandler().redirect_request(
+        request, None, 302, "Found", {}, artifact_url
+    )
 
-    assert headers["Authorization"] == "Bearer secret-token"
-    assert headers["X-GitHub-Api-Version"] == "2022-11-28"
+    assert request.get_header("Authorization") == "Bearer secret-token"
+    assert request.get_header("X-github-api-version") == "2022-11-28"
+    assert redirected is not None
+    assert redirected.full_url == artifact_url
+    assert redirected.get_header("Authorization") is None
+    assert checker.github_request(artifact_url).get_header("Authorization") is None
+
+
+def test_github_request_without_token(monkeypatch) -> None:
+    checker = _load_checker()
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    request = checker.github_request("https://api.github.com/repos/example/project")
+
+    assert request.get_header("Authorization") is None
 
 
 def test_fetch_json_rate_limit_error_mentions_authenticated_live_audit(monkeypatch) -> None:
@@ -4944,13 +4956,6 @@ def test_fetch_bytes_rate_limit_error_mentions_authenticated_live_audit(monkeypa
     assert "GitHub API rate limit exceeded during live release evidence audit" in errors[0]
     assert "GH_TOKEN or GITHUB_TOKEN" in errors[0]
     assert "contents:read and actions:read" in errors[0]
-
-
-def _restore_env(name: str, value: str | None) -> None:
-    if value is None:
-        os.environ.pop(name, None)
-    else:
-        os.environ[name] = value
 
 
 def _release_with_assets(asset_names: list[str]) -> dict[str, Any]:

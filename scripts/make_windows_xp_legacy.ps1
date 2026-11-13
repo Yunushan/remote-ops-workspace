@@ -100,7 +100,7 @@ if (!$ReferencePackage) {
 $References = @(Get-ReferenceAssemblyPaths $LockedReferences (Resolve-Path -LiteralPath $ReferencePackage).Path (Join-Path $BuildDir "references"))
 $ReferenceOptions = @($References | ForEach-Object { "/reference:$_" })
 $CompilerHash = Get-Sha256 $Compiler
-$Source = (Get-Content -Raw $SourceTemplate).Replace("@VERSION@", $Version)
+$Source = ([System.IO.File]::ReadAllText($SourceTemplate)).Replace("`r`n", "`n").Replace("@VERSION@", $Version)
 Write-Utf8NoBom -Path $GeneratedSource -Content $Source
 $SourceHash = Get-Sha256 $GeneratedSource
 $HostExe = Join-Path $StageDir "bin\row-xp-host.exe"

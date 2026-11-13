@@ -11,6 +11,7 @@ REQUIRED_FILES = (
     Path("legacy") / "xp_host" / "net40-references.json",
     Path("scripts") / "make_windows_xp_legacy.ps1",
     Path("scripts") / "check_platform_promotion_artifacts.py",
+    Path("scripts") / "check_xp_candidate_build_inputs.py",
 )
 
 
@@ -61,6 +62,10 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
     for snippet, label in required_snippets.items():
         if snippet not in text:
             errors.append(f"legacy candidate workflow missing {label}: {snippet}")
+    verify = text.find("python scripts/check_xp_candidate_build_inputs.py")
+    upload = text.find("uses: actions/upload-artifact@")
+    if verify < 0 or upload < verify:
+        errors.append("legacy candidate workflow must verify build evidence before upload")
     if "softprops/action-gh-release" in text or "gh release" in text:
         errors.append("legacy candidate workflow must not publish a release or claim XP-host proof")
     return errors

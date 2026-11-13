@@ -92,9 +92,13 @@ over an unused lock is insufficient.
 The XP candidate workflow builds the WinForms companion against the tracked
 .NET Framework 4 reference package. It keeps an attempt-scoped build receipt
 with the compiler version and digest, reference digests, and hashes of the
-source, executable, archive, and native manifest. XP production compliance
-still needs an audit that links this receipt to the exact published package
-and the independent review of its contents and runtime prerequisites.
+source, executable, archive, and native manifest. The builder runs
+`scripts/check_xp_candidate_build_inputs.py` before uploading the candidate
+and receipt. The checker compares the tagged source and reference lock to the
+receipt and inspects the ZIP for the expected executable architecture and
+packaged license files. XP production compliance still needs to authenticate
+the hosted run and independently review the exact package and its runtime
+prerequisites.
 
 The policy-only preflight therefore withholds the production-signed publication
 lane today. Once the tracked policy and locks are independently approved, the

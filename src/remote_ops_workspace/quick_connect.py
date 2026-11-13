@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from operator import itemgetter
 from urllib.parse import urlparse
 
 from .models import Profile
@@ -106,7 +107,7 @@ def profile_quick_connect_matches(
             detail=profile.display_target,
             profile_name=profile.name,
         )
-        for _score, _name, profile in sorted(scored)[:limit]
+        for _score, _name, profile in sorted(scored, key=itemgetter(0, 1))[:limit]
     ]
 
 
@@ -178,8 +179,14 @@ def quick_connect_parsed_endpoint_candidate(
 
 
 def quick_connect_url_candidate(url: str) -> QuickConnectCandidate | None:
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError:
+        return None
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    if not parsed.hostname or port == 0:
         return None
     profile = Profile(
         name=quick_connect_profile_name(parsed.scheme, parsed.netloc),

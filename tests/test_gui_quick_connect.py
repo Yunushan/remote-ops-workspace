@@ -103,6 +103,11 @@ def test_quick_connect_rejects_malformed_endpoints_without_raising() -> None:
     assert quick_connect_parsed_endpoint_candidate("ssh", None, None, None) is None
     assert quick_connect_url_candidate("ssh://host.example") is None
     assert quick_connect_url_candidate("https:///missing-host") is None
+    assert parse_quick_connect_profile("https://[broken") is None
+    assert parse_quick_connect_profile("http [broken") is None
+    assert parse_quick_connect_profile("https://host.example:99999") is None
+    assert parse_quick_connect_profile("https://user@:443") is None
+    assert parse_quick_connect_profile("https://host.example:0") is None
 
 
 def test_quick_connect_explicit_web_and_protocol_defaults() -> None:
@@ -162,3 +167,14 @@ def test_saved_profile_matches_rank_every_operator_search_route() -> None:
         "group-route",
         "tag-route",
     ]
+
+
+def test_saved_profiles_with_case_distinct_names_keep_their_tie_order() -> None:
+    profiles = [
+        Profile(name="edge", protocol="ssh", host="one.example.invalid"),
+        Profile(name="Edge", protocol="ssh", host="two.example.invalid"),
+    ]
+
+    matches = profile_quick_connect_matches("EDGE", profiles, limit=2)
+
+    assert [candidate.profile_name for candidate in matches] == ["edge", "Edge"]

@@ -13,6 +13,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -372,6 +373,55 @@ def qualify_staging(parent: Path, observed: list[str]) -> None:
             observed.append("tampered-stage-refused")
 
 
+def qualify_staging_entrypoints(parent: Path, observed: list[str]) -> None:
+    from remote_ops_workspace import update_channel as channel
+    from remote_ops_workspace import windows_private_storage as storage
+    from remote_ops_workspace.paths import data_dir
+
+    raw, assets, fixture_policy, _wrong_policy = signed_fixture()
+    manifest_url = fixture_policy.settings["manifest_url"]
+    bodies = {manifest_url: raw, **{f"https://publisher.invalid/{name}": body for name, body in assets.items()}}
+    requested: list[str] = []
+
+    def fixture_chunks(url, _settings, _deadline, maximum, expected=None):
+        body = bodies[url]
+        require(len(body) <= maximum and (expected is None or len(body) == expected),
+                "entrypoint-fixture-length-mismatch")
+        requested.append(url)
+        yield body
+
+    native = storage._Native()
+    with private_fixture(storage, native, parent, "row-entrypoint-ntfs-") as scratch:
+        policy_path = scratch / "policy.json"
+        with storage.private_stage_guard(scratch, _native=native) as guard:
+            with os.fdopen(guard.create_private_file(policy_path), "wb") as stream:
+                stream.write(fixture_policy.document)
+                stream.flush()
+                os.fsync(stream.fileno())
+        stage = scratch / "stage"
+        with (
+            patch.object(channel, "_WINDOWS_PRIVATE_STAGE_QUALIFIED", True),
+            patch.object(channel, "_chunks", fixture_chunks),
+        ):
+            policy = channel.load_update_policy(policy_path)
+            require(policy.digest == fixture_policy.digest, "entrypoint-policy-digest-mismatch")
+            staged = channel.stage_update(policy, stage, current_home=data_dir())
+            require(requested == list(bodies), "entrypoint-fixture-request-mismatch")
+            recovered = channel.recover_update(policy, stage, current_home=data_dir())
+            require(requested == list(bodies), "entrypoint-recovery-requested-network")
+            require(
+                staged == recovered
+                and staged["phase"] == "authenticated-staged"
+                and staged["artifact_count"] == len(assets)
+                and staged["windows_dacl_metadata_verified"] is True
+                and staged["install_permitted"] is False,
+                "entrypoint-stage-recovery-mismatch",
+            )
+            for name, body in assets.items():
+                require((stage / name).read_bytes() == body, "entrypoint-staged-bytes-mismatch")
+    observed.append("windows-policy-stage-and-recovery-entrypoints")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -392,6 +442,7 @@ def main() -> int:
         parent = Path(native.known_folder("local"))
         qualify(parent, observed, account, password, control, result)
         qualify_staging(parent, observed)
+        qualify_staging_entrypoints(parent, observed)
     except (KeyError, OSError, RuntimeError, ValueError) as exc:
         # Report fixed check names or an OS error number only. Never emit paths,
         # tokens, descriptors, environment values or runner error text.
@@ -412,6 +463,11 @@ def main() -> int:
 
 FAILURE_CODES = frozenset({
     "windows-required", "local-fixed-volume-required", "persistent-local-acl-required",
+    "entrypoint-fixture-length-mismatch", "entrypoint-policy-digest-mismatch",
+    "entrypoint-fixture-request-mismatch", "entrypoint-recovery-requested-network",
+    "entrypoint-stage-recovery-mismatch", "entrypoint-staged-bytes-mismatch",
+    "private-staging-platform-unqualified", "windows-policy-input-refused",
+    "windows-private-boundary-refused", "update-stage-refused", "update-stage-io-refused",
     "unexpected-row-home-override", "expected-staging-interruption-missing", "staging-recovery-binding-mismatch",
     "staging-install-unexpectedly-permitted", "unexpected-staging-refusal",
     "wrong-fixture-key-refusal", "wrong-fixture-key-accepted", "manifest-authentication-refused",

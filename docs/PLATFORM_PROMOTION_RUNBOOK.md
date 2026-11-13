@@ -47,7 +47,7 @@ Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle matching runner for
 Linux i386, Linux armhf, and the modern `xp-evidence` collector. It intentionally
 reports only sanitized counts, not runner names. This command needs `GH_TOKEN`
-or `GITHUB_TOKEN` with repository Administration read access.
+or `GITHUB_TOKEN` with repository administration read access.
 
 Before dispatching the evidence workflows, configure the `platform-evidence`
 GitHub environment to allow only `v*` tags, with no deployment branch rule.

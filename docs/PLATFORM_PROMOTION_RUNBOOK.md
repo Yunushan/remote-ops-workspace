@@ -222,9 +222,10 @@ Both targets compile CFFI and need a native C toolchain and libffi headers.
 Armhf also compiles the PyInstaller bootloader, needs its native C and zlib
 development tools, and needs glibc 2.31 or newer for the pinned crypto wheels.
 i386 compiles bcrypt and cryptography and needs a native
-Rust toolchain, OpenSSL headers and the reviewed Cargo dependencies from the
-upstream source archives' `Cargo.lock` files provisioned in the builder's Cargo
-cache. The i386 workflow disables Cargo network access during compilation. The
+`i686-unknown-linux-gnu` Rust toolchain and OpenSSL headers. The workflow
+verifies both source archives against the i386 Python lock, then runs
+`cargo fetch --locked` against their upstream `Cargo.lock` files in a new
+job-local cache. The build backends use locked, offline Cargo commands. The
 Python lock hashes cover the Python distributions and build backends. Host
 toolchains and the resulting native binaries still require review and smoke
 evidence from the matching builders.

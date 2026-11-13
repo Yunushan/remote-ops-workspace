@@ -13,6 +13,18 @@ def test_extended_platform_evidence_workflow_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    for required in ('MATURIN_PEP517_ARGS: "--locked --offline"', "python3 scripts/prepare_protected_linux_cargo.py"):
+        changed = workflow.replace(required, f"# {required}", 1)
+        errors = checker.check_extended_platform_evidence(changed)
+        assert any(
+            "linux-i386-native-evidence must install the protected Linux locks" in error
+            for error in errors
+        )
+
+
 def test_extended_platform_evidence_requires_runner_readiness_preflight() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(

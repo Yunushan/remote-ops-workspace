@@ -408,6 +408,10 @@ def check_policy(
         )
 
         errors.extend(check_windows_xp_legacy_candidate_workflow(xp_workflow))
+    if LINUX_TARGETS.intersection(locks):
+        from check_extended_platform_evidence import check_extended_platform_evidence
+
+        errors.extend(check_extended_platform_evidence(extended_workflow))
     for target, raw_path in locks.items():
         if not safe_relative_path(raw_path):
             errors.append(f"release compliance lock for {target} has an unsafe path")

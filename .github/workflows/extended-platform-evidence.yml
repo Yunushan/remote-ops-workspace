@@ -123,14 +123,22 @@ jobs:
       - name: Create isolated release environment
         env:
           CARGO_NET_OFFLINE: "true"
+          MATURIN_NO_INSTALL_RUST: "true"
+          MATURIN_PEP517_ARGS: "--locked --offline"
         run: |
           set -euo pipefail
           python3 scripts/check_protected_linux_build_inputs.py --target linux-i386
+          CARGO_HOME="$(mktemp -d "$RUNNER_TEMP/row-protected-linux-cargo.XXXXXXXX")"
+          export CARGO_HOME
+          trap 'rm -rf -- "$CARGO_HOME"' EXIT
+          python3 scripts/prepare_protected_linux_cargo.py
+          install -m 0700 scripts/protected_linux_cargo.sh "$CARGO_HOME/locked-cargo"
+          export CARGO="$CARGO_HOME/locked-cargo"
           python3 -m venv --clear .venv-native
           . .venv-native/bin/activate
           python -m pip install --require-hashes --force-reinstall --only-binary=:all: --requirement requirements-locks/protected-linux/linux-i386-bootstrap.txt
-          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=cffi --requirement requirements-locks/protected-linux/linux-32bit-cffi.txt
-          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=bcrypt,cffi,cryptography,pyftpdlib --requirement requirements-locks/protected-linux/linux-i386.txt
+          python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cffi --requirement requirements-locks/protected-linux/linux-32bit-cffi.txt
+          python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=bcrypt,cffi,cryptography,pyftpdlib --requirement requirements-locks/protected-linux/linux-i386.txt
           python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
       - name: Build Linux i386 native artifacts
         run: |
@@ -282,8 +290,8 @@ jobs:
           python3 -m venv --clear .venv-native
           . .venv-native/bin/activate
           python -m pip install --require-hashes --force-reinstall --only-binary=:all: --requirement requirements-locks/protected-linux/linux-armhf-bootstrap.txt
-          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=cffi --requirement requirements-locks/protected-linux/linux-32bit-cffi.txt
-          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=cffi,pyftpdlib,pyinstaller --requirement requirements-locks/protected-linux/linux-armhf.txt
+          python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cffi --requirement requirements-locks/protected-linux/linux-32bit-cffi.txt
+          python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cffi,pyftpdlib,pyinstaller --requirement requirements-locks/protected-linux/linux-armhf.txt
           python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
       - name: Build Linux armhf native artifacts
         run: |

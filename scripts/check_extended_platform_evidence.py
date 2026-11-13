@@ -30,6 +30,8 @@ WORKFLOW_SCRIPT_DEPENDENCIES = (
     Path("scripts") / "check_extended_platform_dispatch_inputs.py",
     Path("scripts") / "check_extended_platform_builder.py",
     Path("scripts") / "check_protected_linux_build_inputs.py",
+    Path("scripts") / "prepare_protected_linux_cargo.py",
+    Path("scripts") / "protected_linux_cargo.sh",
     Path("scripts") / "make_linux_native.sh",
     Path("scripts") / "smoke_linux_native.sh",
     Path("scripts") / "check_platform_promotion_artifacts.py",
@@ -246,15 +248,25 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     source_packages = (
         "bcrypt,cffi,cryptography,pyftpdlib" if target == "linux-i386" else "cffi,pyftpdlib,pyinstaller"
     )
+    cargo_commands = (
+        'CARGO_HOME="$(mktemp -d "$RUNNER_TEMP/row-protected-linux-cargo.XXXXXXXX")"',
+        "export CARGO_HOME",
+        """trap 'rm -rf -- "$CARGO_HOME"' EXIT""",
+        "python3 scripts/prepare_protected_linux_cargo.py",
+        'install -m 0700 scripts/protected_linux_cargo.sh "$CARGO_HOME/locked-cargo"',
+        'export CARGO="$CARGO_HOME/locked-cargo"',
+    ) if target == "linux-i386" else ()
     lock_commands = (
         f"python3 scripts/check_protected_linux_build_inputs.py --target {target}",
+        *cargo_commands,
         "python3 -m venv --clear .venv-native",
         ". .venv-native/bin/activate",
         f"python -m pip install --require-hashes --force-reinstall --only-binary=:all: "
         f"--requirement {NATIVE_LOCK_DIR}/{target}-bootstrap.txt",
-        f"python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=cffi "
+        "python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cffi "
         f"--requirement {NATIVE_LOCK_DIR}/linux-32bit-cffi.txt",
-        f"python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary={source_packages} "
+        "python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: "
+        f"--no-binary={source_packages} "
         f"--requirement {NATIVE_LOCK_DIR}/{target}.txt",
         'python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"',
     )
@@ -365,7 +377,11 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         if snippet not in block:
             errors.append(f"{job} missing {label}: {snippet}")
     install_step = re.search(r"(?ms)^      - name: Create isolated release environment\n(.*?)(?=^      - |\Z)", block)
-    expected_env = '        env:\n          CARGO_NET_OFFLINE: "true"\n' if target == "linux-i386" else ""
+    expected_env = (
+        '        env:\n          CARGO_NET_OFFLINE: "true"\n          MATURIN_NO_INSTALL_RUST: "true"\n'
+        '          MATURIN_PEP517_ARGS: "--locked --offline"\n'
+        if target == "linux-i386" else ""
+    )
     expected_install_step = (
         expected_env + "        run: |\n          set -euo pipefail\n          "
         + "\n          ".join(lock_commands) + "\n"

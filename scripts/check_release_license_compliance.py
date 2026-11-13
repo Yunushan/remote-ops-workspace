@@ -16,8 +16,10 @@ import base64
 import binascii
 import hashlib
 import json
+import os
 import re
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -30,7 +32,9 @@ MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 PROMOTION_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release-promotion.yml"
 EXTENDED_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "extended-platform-evidence.yml"
-XP_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "xp-native-evidence.yml"
+XP_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "xp-legacy-candidate.yml"
+XP_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
+XP_LOCK = "legacy/xp_host/net40-references.json"
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
@@ -369,14 +373,10 @@ def check_policy(
             else EXTENDED_WORKFLOW_PATH.read_text(encoding="utf-8")
         ).splitlines()
     )
-    active_xp_workflow = "\n".join(
-        line.split("#", 1)[0]
-        for line in (
-            xp_workflow
-            if xp_workflow is not None
-            else XP_WORKFLOW_PATH.read_text(encoding="utf-8")
-        ).splitlines()
-    )
+    if XP_TARGETS.intersection(locks):
+        from check_windows_xp_legacy_candidate_workflow import check_windows_xp_legacy_candidate_workflow
+
+        errors.extend(check_windows_xp_legacy_candidate_workflow(xp_workflow))
     for target, raw_path in locks.items():
         if not safe_relative_path(raw_path):
             errors.append(f"release compliance lock for {target} has an unsafe path")
@@ -390,6 +390,10 @@ def check_policy(
         if path_error:
             errors.append(path_error)
             continue
+        if target in XP_TARGETS:
+            if raw_path != XP_LOCK:
+                errors.append(f"{target} must use the tracked .NET Framework 4 reference lock")
+            continue
         _, lock_errors = read_fully_hashed_lock(
             policy_root,
             {"file": raw_path},
@@ -400,7 +404,6 @@ def check_policy(
             target,
             release_workflow=active_workflow,
             extended_workflow=active_extended_workflow,
-            xp_workflow=active_xp_workflow,
         )
         job_block = workflow_job_block(producer_workflow, job)
         if matrix_arch is not None and not matrix_row_binds_lock(
@@ -476,10 +479,7 @@ def check_policy(
         for index, step in enumerate(publish_steps)
         if isinstance(verifier_lock, str)
         and any(
-            re.match(r"^(?:python|python3)\s+-m\s+pip\s+install(?:\s|$)", command)
-            and "--require-hashes" in command
-            and verifier_lock in command
-            and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
+            installs_hashed_requirements(command, (verifier_lock,))
             for command in executable_run_commands(step)
         )
     ]
@@ -696,6 +696,11 @@ def check_evidence(
                 protected_registry = {}
 
     expected_names = expected_native_manifest_names(matrix, tag, protected_registry)
+    xp_targets = XP_TARGETS.intersection(policy["production_targets"])
+    expected_names.update(
+        f"remote-ops-workspace-{tag}-windows-xp-{target.rsplit('-', 1)[-1]}-native-manifest.json"
+        for target in xp_targets
+    )
     actual_paths = {
         path.name: path
         for path in assets_dir.iterdir()
@@ -734,8 +739,17 @@ def check_evidence(
         inventory_hash = hashlib.sha256(canonical_json(inventory)).hexdigest()
         if record.get("inventory_sha256") != inventory_hash:
             errors.append(f"signed compliance record for {name} inventory_sha256 is invalid")
-        profile = profile_for_manifest(name)
         target = target_for_manifest(name, matrix=matrix, tag=tag)
+        if target in XP_TARGETS:
+            if target not in xp_targets:
+                errors.append(f"XP target {target} has no approved .NET build policy")
+            else:
+                errors.extend(check_xp_inventory(
+                    inventory, target=target, assets_dir=assets_dir, evidence_root=evidence_root,
+                    repository=repository, tag=tag, sha=sha,
+                ))
+            continue
+        profile = profile_for_manifest(name)
         enforcement = policy.get("build_lock_enforcement")
         locks = enforcement.get("platform_locks") if isinstance(enforcement, dict) else None
         expected_lock = locks.get(target) if isinstance(locks, dict) else None
@@ -762,6 +776,71 @@ def check_evidence(
             )
         )
     return errors
+
+
+def check_xp_inventory(
+    inventory: dict[str, Any],
+    *,
+    target: str,
+    assets_dir: Path,
+    evidence_root: Path,
+    repository: str,
+    tag: str,
+    sha: str,
+) -> list[str]:
+    """Bind the independent XP decision to the .NET build and release bytes."""
+    from check_xp_candidate_run import verify_candidate
+    from release_candidate_inventory import GitHubClient, positive_int
+
+    required = {
+        "profile", "run_id", "run_attempt", "candidate_artifact", "receipt_artifact",
+        "redistribution_review",
+    }
+    if set(inventory) != required or inventory.get("profile") != "xp-dotnet-framework-v4":
+        return [f"{target} requires an exact XP .NET Framework 4 inventory"]
+    paths: dict[str, Path] = {}
+    errors: list[str] = []
+    for name in ("candidate_artifact", "receipt_artifact", "redistribution_review"):
+        label = f"{target} {name}"
+        record = inventory[name]
+        if not valid_evidence_record(record):
+            errors.append(f"{label} record is invalid")
+            continue
+        errors.extend(check_evidence_file(record, evidence_root, label))
+        path, path_error = secure_regular_file(evidence_root, record["file"], label)
+        if path_error:
+            errors.append(path_error)
+        elif path is not None:
+            paths[name] = path
+    if errors:
+        return errors
+    if len({path.resolve(strict=True) for path in paths.values()}) != 3:
+        return [f"{target} candidate, receipt and review must use distinct evidence files"]
+    review = inventory["redistribution_review"]
+    if (
+        review.get("decision") != "approved"
+        or review.get("runtime_prerequisite") != ".NET Framework 4"
+        or review.get("runtime_redistributed") is not False
+    ):
+        return [f"{target} requires an independent approval of the package and host-provided .NET runtime"]
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        return [f"{target} requires a GitHub Actions read token to authenticate the .NET build"]
+    try:
+        verify_candidate(
+            GitHubClient(repository, token),
+            repository=repository, tag=tag, sha=sha, arch=target.rsplit("-", 1)[-1],
+            run_id=positive_int(inventory["run_id"], "XP build run ID"),
+            attempt=positive_int(inventory["run_attempt"], "XP build run attempt"),
+            candidate=paths["candidate_artifact"],
+            candidate_id=positive_int(inventory["candidate_artifact"].get("artifact_id"), "XP candidate artifact ID"),
+            receipt=paths["receipt_artifact"],
+            receipt_id=positive_int(inventory["receipt_artifact"].get("artifact_id"), "XP receipt artifact ID"),
+            assets_dir=assets_dir,
+        )
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError, zipfile.BadZipFile) as exc:
+        return [f"{target} build evidence: {exc}"]
+    return []
 
 
 def check_review_window(evidence: dict[str, Any], *, now: datetime | None) -> list[str]:
@@ -956,8 +1035,6 @@ def native_manifest_entries(
 
 def profile_for_manifest(name: str) -> str:
     if "-windows-x86-native-manifest.json" in name:
-        return "minimal-cli"
-    if re.search(r"-windows-xp-(?:x86|x64)-native-manifest\.json$", name):
         return "minimal-cli"
     if "-linux-" in name:
         return "secure-cli"
@@ -1472,7 +1549,6 @@ def producer_for_target(
     *,
     release_workflow: str,
     extended_workflow: str,
-    xp_workflow: str,
 ) -> tuple[str, str, str | None]:
     standard = {
         "windows-x86": ("windows-native", "x86"),
@@ -1490,8 +1566,6 @@ def producer_for_target(
         return extended_workflow, "linux-i386-native-evidence", None
     if target == "linux-armhf":
         return extended_workflow, "linux-armhf-native-evidence", None
-    if target in {"windows-xp-native-x86", "windows-xp-native-x64"}:
-        return xp_workflow, "xp-native-evidence", None
     raise ValueError(f"release compliance target has no exact producer mapping: {target}")
 
 
@@ -1514,19 +1588,31 @@ def matrix_row_lock(job_block: str, arch: str, key: str) -> str | None:
     return match.group(1) if match is not None else None
 
 
-def xp_target_step_binds_lock(job_block: str, target: str, lock_path: str) -> bool:
-    condition = re.compile(
-        rf"(?m)^\s*if:\s*\$\{{\{{\s*inputs\.target\s*==\s*['\"]{re.escape(target)}['\"]\s*\}}\}}\s*$"
+def installs_hashed_requirements(command: str, lock_paths: tuple[str, ...]) -> bool:
+    """Recognize a direct hashed pip install of one approved requirements file."""
+    invocation = re.match(r"^(?:python|python3)\s+-m\s+pip\s+install\s+", command)
+    if invocation is None:
+        return False
+    arguments = command[invocation.end():]
+    paths = []
+    for path in lock_paths:
+        if path in ("${{ matrix.lock }}", "${{ matrix.bootstrap_lock }}"):
+            paths.append(re.escape(f'"{path}"'))
+        elif re.fullmatch(r"[A-Za-z0-9_./-]+", path) is not None:
+            escaped = re.escape(path)
+            paths.extend((escaped, f'"{escaped}"', f"'{escaped}'"))
+    if not paths:
+        return False
+    # Match the complete argument list so extra requirements and shell
+    # operators cannot turn an approved lock install into a different command.
+    requirement = r"(?:--requirement(?:=|\s+)|-r\s+)(?:" + "|".join(paths) + r")"
+    flag = (
+        r"(?:--require-hashes|--no-build-isolation|--no-cache-dir|"
+        r"--force-reinstall|--only-binary=:all:|--no-binary=[A-Za-z0-9_,.-]+)"
     )
-    for step in workflow_step_blocks(job_block):
-        if condition.search(step) is None:
-            continue
-        if any(
-            lock_path in command and "--require-hashes" in command
-            for command in executable_run_commands(step)
-        ):
-            return True
-    return False
+    return "--require-hashes" in arguments.split() and re.fullmatch(
+        rf"(?:{flag}\s+)*{requirement}(?:\s+{flag})*", arguments
+    ) is not None
 
 
 def check_native_job_lock_usage(
@@ -1560,29 +1646,15 @@ def check_native_job_lock_usage(
     lock_indexes = [
         index
         for index, command in pip_commands
-        if "--require-hashes" in command
-        and any(token in command for token in lock_tokens)
-        and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
+        if installs_hashed_requirements(command, lock_tokens)
     ]
     if lock_path not in job_block or not lock_indexes:
         errors.append(
             f"release workflow {job} job does not consume {target} lock {lock_path} "
             "with executable pip --require-hashes"
         )
-    if target.startswith("windows-xp-native-") and not xp_target_step_binds_lock(
-        job_block,
-        target,
-        lock_path,
-    ):
-        errors.append(
-            f"release workflow {job} has no target-conditional hashed lock install for {target}"
-        )
     for _, command in pip_commands:
-        uses_lock = (
-            "--require-hashes" in command
-            and any(token in command for token in (*lock_tokens, *bootstrap_tokens))
-            and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
-        )
+        uses_lock = installs_hashed_requirements(command, (*lock_tokens, *bootstrap_tokens))
         if "--no-deps" not in command and not uses_lock:
             errors.append(
                 f"release workflow {job} has a dependency-resolving pip install outside "

@@ -83,11 +83,39 @@ must retain the hashed resolver locks, raw `pip inspect` captures, extracted
 license/notice files from every native artifact, and referenced legal/source or
 commercial-license review records. The checker reads and hashes those files; a
 path/digest claim without the referenced bytes fails. For each production
-target, the tagged `release.yml` build job must consume the tracked lock with
+Python target, its tagged build job must consume the tracked lock with
 `pip --require-hashes`. The separate `release-promotion.yml` promotion job must
 run the full exact-artifact compliance checker before creating or uploading a
 GitHub Release. A reviewer signature
 over an unused lock is insufficient.
+
+The XP candidate workflow builds the WinForms companion against the tracked
+.NET Framework 4 reference package. It keeps an attempt-scoped build receipt
+with the compiler version and digest, reference digests, and hashes of the
+source, executable, archive, and native manifest. The builder runs
+`scripts/check_xp_candidate_build_inputs.py` before uploading the candidate
+and receipt. The checker compares the tagged source and reference lock to the
+receipt and inspects the ZIP for the expected executable architecture and
+packaged license files. With the exact tagged commit checked out, run
+`scripts/check_xp_candidate_run.py` for each architecture. It checks the
+live tag and successful candidate attempt, compares the downloaded candidate
+and receipt ZIPs to their GitHub artifact IDs and digests, and verifies that
+the candidate files match the files staged for release. The command requires
+the two original Actions ZIPs and an Actions read token. Independent review
+of the exact package and its runtime prerequisites is still required. For
+each XP manifest, the signed inventory uses profile `xp-dotnet-framework-v4`.
+It supplies `run_id` and `run_attempt`, plus hash-bound
+`candidate_artifact`, `receipt_artifact` and `redistribution_review` records.
+Both artifact records include their numeric GitHub `artifact_id`. The review
+record binds the independent decision, the `.NET Framework 4` prerequisite
+and `runtime_redistributed: false`. Promotion repeats the live candidate check
+for both XP architectures using the signed records.
+Release-tag pushes build both XP candidates in the protected `release`
+environment. They use the Windows certificate and RFC 3161 timestamp
+settings above, and verify the signed executable before creating the
+archive. The XP build receipt and native manifest bind the resulting
+signature metadata to the candidate bytes. The XP host tests still have
+to demonstrate the behavior of those exact files on each target OS.
 
 The policy-only preflight therefore withholds the production-signed publication
 lane today. Once the tracked policy and locks are independently approved, the

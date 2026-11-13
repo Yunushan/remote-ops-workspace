@@ -30,6 +30,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import check_platform_release_evidence_remote as platform_evidence  # noqa: E402
 from check_release_publish_assets import normalize_version  # noqa: E402
 from release_candidate_inventory import RUNTIME_REPORT_ARTIFACT_NAMES  # noqa: E402
 
@@ -136,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
             sha=sha,
             verify_review_window=not args.verify_published_release,
             published_audit=args.verify_published_release,
+            platform_source_archives=args.platform_source_archives,
         )
         if check_live_governance:
             assert args.tag_governance_attestation is not None
@@ -214,6 +216,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--evidence-root",
         type=Path,
         help="root containing resolver locks, extracted license files, and review records",
+    )
+    parser.add_argument(
+        "--platform-source-archives",
+        type=Path,
+        help="directory of original protected-platform Actions ZIPs retained for a published audit",
     )
     parser.add_argument("--policy", type=Path, default=POLICY_PATH)
     parser.add_argument("--policy-root", type=Path)
@@ -626,6 +633,7 @@ def check_evidence(
     now: datetime | None = None,
     verify_review_window: bool = True,
     published_audit: bool = False,
+    platform_source_archives: Path | None = None,
 ) -> list[str]:
     errors: list[str] = []
     expected_scalars = {
@@ -716,6 +724,21 @@ def check_evidence(
                 errors.append("compliance protected platform registry must contain an object")
                 protected_registry = {}
 
+    platform_targets = platform_evidence.PROTECTED_GOAL_TARGETS if platform_source_archives else tuple(
+        target for target in platform_evidence.PROTECTED_GOAL_TARGETS if target in policy["production_targets"]
+    )
+    if platform_targets:
+        errors.extend(check_protected_source_capture(
+            evidence.get("protected_platform_sources"),
+            evidence_root=evidence_root,
+            registry=protected_registry,
+            targets=platform_targets,
+            repository=repository,
+            tag=tag,
+            sha=sha,
+            published_audit=published_audit,
+            archives_dir=platform_source_archives,
+        ))
     expected_names = expected_native_manifest_names(matrix, tag, protected_registry)
     xp_targets = XP_TARGETS.intersection(policy["production_targets"])
     expected_names.update(
@@ -807,6 +830,121 @@ def check_evidence(
             )
         )
     return errors
+
+
+def check_protected_source_capture(
+    captures: Any,
+    *,
+    evidence_root: Path,
+    registry: dict[str, Any],
+    targets: tuple[str, ...],
+    repository: str,
+    tag: str,
+    sha: str,
+    published_audit: bool,
+    archives_dir: Path | None,
+) -> list[str]:
+    if not isinstance(captures, dict) or set(captures) != set(targets):
+        return ["signed protected_platform_sources must contain exactly the protected targets"]
+    errors = platform_evidence.remote_registry_preflight_errors(
+        registry, release_tag=tag, required_targets=targets,
+    )
+    if errors:
+        return errors
+    records = platform_evidence.accepted_records_by_target(registry, release_tag=tag, targets=targets)
+    runs: dict[str, Any] = {}
+    inventories: dict[str, Any] = {}
+    archives: dict[str, bytes] = {}
+    for target, record in sorted(records.items()):
+        source = record["release_asset_source"]
+        run_url = source["workflow_run_url"]
+        if platform_evidence.repository_from_run_url(run_url) != repository or source["head_sha"] != sha:
+            errors.append(f"{target} source capture must bind the exact release repository and SHA")
+            continue
+        capture = captures[target]
+        if not isinstance(capture, dict) or set(capture) != {"run", "artifacts"}:
+            errors.append(f"{target} source capture must contain run and artifacts evidence files")
+            continue
+        run, run_errors = read_signed_source_metadata(capture["run"], evidence_root, f"{target} run")
+        inventory, inventory_errors = read_signed_source_metadata(
+            capture["artifacts"], evidence_root, f"{target} artifacts",
+        )
+        errors.extend(run_errors)
+        errors.extend(inventory_errors)
+        if run is None or inventory is None:
+            continue
+        runs[run_url] = run
+        inventories[run_url] = inventory
+        errors.extend(platform_evidence.check_source_run_record(target, run, record, exact_attempt=True))
+        errors.extend(platform_evidence.check_record_source_artifact(
+            target, record, inventories, source_runs_by_run=runs,
+        ))
+    if errors:
+        return errors
+
+    if published_audit:
+        if archives_dir is None:
+            return ["published audit requires --platform-source-archives for the original Actions ZIPs"]
+        for target, record in sorted(records.items()):
+            path, path_error = secure_regular_file(archives_dir, f"{target}.zip", f"{target} source ZIP")
+            if path_error:
+                errors.append(path_error)
+                continue
+            assert path is not None
+            archives[record["release_asset_source"]["workflow_run_url"]] = path.read_bytes()
+        if errors:
+            return errors
+        return platform_evidence.audit_published_platform_evidence(
+            repository, tag, registry, targets, runs, inventories, archives,
+        )
+
+    live_runs, live_inventories, archives, errors = platform_evidence.load_live_source_evidence(
+        repository, tag, registry, targets,
+    )
+    for target, record in sorted(records.items()):
+        run_url = record["release_asset_source"]["workflow_run_url"]
+        live_run = live_runs.get(run_url)
+        if live_run is None or any(
+            runs[run_url].get(key) != live_run.get(key)
+            for key in ("id", "run_attempt", "created_at", "run_started_at", "updated_at")
+        ):
+            errors.append(f"{target} signed source run must match the live GitHub attempt")
+        errors.extend(platform_evidence.check_record_source_run(
+            target, record, {}, source_runs_by_run=live_runs,
+        ))
+        errors.extend(platform_evidence.check_record_source_artifact(
+            target, record, live_inventories, source_runs_by_run=live_runs,
+        ))
+        signed_artifact = platform_evidence.source_artifact_record_for_run(target, record, inventories)
+        live_artifact = platform_evidence.source_artifact_record_for_run(target, record, live_inventories)
+        if signed_artifact is None or live_artifact is None or any(
+            signed_artifact.get(key) != live_artifact.get(key)
+            for key in (
+                "id", "node_id", "digest", "size_in_bytes", "created_at",
+                "updated_at", "expires_at", "workflow_run",
+            )
+        ):
+            errors.append(f"{target} signed source artifact must match the live GitHub artifact")
+        errors.extend(platform_evidence.check_record_source_artifact_zip_bytes(
+            target, record, source_artifacts_by_run=live_inventories,
+            source_artifact_bytes_by_run=archives,
+        ))
+    return errors
+
+
+def read_signed_source_metadata(
+    record: Any, root: Path, label: str,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    if not valid_evidence_record(record):
+        return None, [f"{label} signed evidence file record is invalid"]
+    path, error = secure_regular_file(root, record["file"], label)
+    if error:
+        return None, [error]
+    assert path is not None
+    raw, data = read_json_object(path, label)
+    if len(raw) != record["size_bytes"] or hashlib.sha256(raw).hexdigest() != record["sha256"]:
+        return None, [f"{label} does not match the signed evidence file size and SHA-256"]
+    return data, []
 
 
 def check_xp_inventory(

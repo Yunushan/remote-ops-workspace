@@ -89,6 +89,26 @@ run the full exact-artifact compliance checker before creating or uploading a
 GitHub Release. A reviewer signature
 over an unused lock is insufficient.
 
+After the four protected host runs succeed and their finalized records are
+assembled, capture the GitHub run and artifact inventory while the original
+Actions archives are still available:
+
+```bash
+python scripts/check_platform_release_evidence_remote.py \
+  --repository <owner>/<repo> --release-tag <tag> \
+  --registry <finalized-platform-registry.json> --require-goal-targets \
+  --capture-source-evidence <new-capture-directory>
+```
+
+Copy the generated `protected-platform-sources/` directory into the signed
+evidence bundle. Include the generated `protected_platform_sources` field
+in the exact approval JSON before signing it. Keep the generated `archives/`
+directory in release evidence storage with the approved bundle. Promotion
+compares the signed source metadata with live GitHub records and verifies
+each original ZIP against GitHub's digest and the finalized record. The
+completed-release audit verifies the retained ZIPs against the same signed
+digests and checks the immutable release and its published files live.
+
 The XP candidate workflow builds the WinForms companion against the tracked
 .NET Framework 4 reference package. It keeps an attempt-scoped build receipt
 with the compiler version and digest, reference digests, and hashes of the
@@ -212,8 +232,8 @@ namespace and a tag that resolves to the exact qualified source.
 7. Dispatch `release-promotion.yml` from the same tag with the candidate run,
    numeric inventory artifact ID, archive digest, and evidence commit SHA. Once
    its protected job passes and publishes, download the complete release inventory.
-8. Run the certified-inventory provenance check and the protected-platform remote
-   byte-provenance audit. The provenance check requires one common, successful,
+8. Run the published compliance audit with the signed bundle and retained
+   protected-platform source archives. The provenance check requires one common, successful,
    certificate-bound `release-promotion.yml` run attempt dispatched from the exact
    tag at the exact release SHA; a main-branch dispatch, green run for another commit, and unattested or locally
    substituted bytes do not count.
@@ -242,6 +262,7 @@ make production-readiness \
   RELEASE_LICENSE_EVIDENCE_ROOT="<evidence-bundle-dir>" \
   RELEASE_CANDIDATE_INVENTORY="<sealed-candidate-inventory.json>" \
   RELEASE_PLATFORM_EVIDENCE_REGISTRY="<signed-bundle-platform_verified_evidence.json>" \
+  RELEASE_PLATFORM_SOURCE_ARCHIVES="<capture-directory>/archives" \
   RELEASE_MOBAXTERM_REGISTRY_COMMIT="<merged-parity-registry-commit-sha>" \
   RELEASE_TAG_GOVERNANCE_ATTESTATION="<tag-governance-attestation.json>" \
   RELEASE_TAG_GOVERNANCE_SIGNATURE="<tag-governance-attestation.sig.json>"

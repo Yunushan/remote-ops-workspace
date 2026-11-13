@@ -2484,6 +2484,88 @@ def test_remote_release_audit_verifies_source_artifact_zip_contents(tmp_path: Pa
     assert errors == []
 
 
+def test_retained_source_capture_supports_published_audit_after_actions_expiry(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    checker = _load_checker()
+    import check_release_license_compliance as compliance
+
+    monkeypatch.setattr(compliance, "platform_evidence", checker)
+
+    helpers = _load_platform_verified_evidence_helpers()
+    target, tag, repository = "linux-i386", "v1.0.2", "example/remote-ops-workspace"
+    record = helpers._linux_record(target)
+    source = record["release_asset_source"]
+    run_url = source["workflow_run_url"]
+    source_zips = _source_artifact_zip_for(checker, record)
+    zip_bytes = source_zips[run_url]
+    registry = _registry_with(record)
+    runs = _source_runs_for(record)
+    inventories = _source_artifacts_for(record, size_in_bytes=len(zip_bytes))
+    artifact = inventories[run_url]["artifacts"][0]
+    artifact["digest"] = f"sha256:{hashlib.sha256(zip_bytes).hexdigest()}"
+    release_bytes = _bind_release_asset_bytes(checker, record)
+    release_bytes[record["finalized_record_release_asset_url"]] = checker.canonical_public_record_bytes(record)
+    required = checker.required_release_assets_by_target(
+        checker.read_json(checker.PROMOTION_PATH), release_tag=tag, targets=(target,),
+    )
+    release = _release_with_record_assets(
+        checker, record, sorted(required[target]), release_asset_bytes=release_bytes,
+    )
+    release["immutable"] = True
+    tag_ref = {"ref": f"refs/tags/{tag}", "object": {"type": "commit", "sha": source["head_sha"]}}
+    base = f"https://api.github.com/repos/{repository}"
+    run_id = run_url.rsplit("/", 1)[-1]
+    run_endpoint = f"{base}/actions/runs/{run_id}"
+    live_json = {
+        f"{run_endpoint}/attempts/{source['run_attempt']}": runs[run_url],
+        f"{run_endpoint}/artifacts?per_page=100": inventories[run_url],
+    }
+    live_bytes = {artifact["archive_download_url"]: zip_bytes}
+    monkeypatch.setattr(checker, "fetch_json", lambda url, **_kw: (live_json[url], []))
+    monkeypatch.setattr(checker, "fetch_bytes", lambda url, **_kw: (live_bytes[url], []))
+    monkeypatch.setattr(checker, "PROTECTED_GOAL_TARGETS", (target,))
+    registry_file = tmp_path / "registry.json"
+    registry_file.write_text(json.dumps(registry), encoding="utf-8")
+    destination = tmp_path / "captured"
+    assert checker.main([
+        "--repository", repository, "--release-tag", tag, "--registry", str(registry_file),
+        "--require-goal-targets", "--capture-source-evidence", str(destination),
+    ]) == 0
+    signed_fields = json.loads((destination / "protected-platform-sources.json").read_bytes())
+    capture = signed_fields["protected_platform_sources"]
+    arguments = {
+        "evidence_root": destination, "registry": registry, "targets": (target,),
+        "repository": repository, "tag": tag, "sha": source["head_sha"],
+        "archives_dir": destination / "archives",
+    }
+    assert compliance.check_protected_source_capture(capture, **arguments, published_audit=False) == []
+    original_digest = artifact["digest"]
+    artifact["digest"] = f"sha256:{'0' * 64}"
+    assert f"{target} signed source artifact must match the live GitHub artifact" in (
+        compliance.check_protected_source_capture(capture, **arguments, published_audit=False)
+    )
+    artifact["digest"] = original_digest
+
+    live_json.clear()
+    live_json.update({
+        f"{base}/releases/tags/{tag}": release,
+        f"{base}/git/ref/tags/{tag}": tag_ref,
+    })
+    live_bytes.clear()
+    live_bytes.update(release_bytes)
+    assert compliance.check_protected_source_capture(capture, **arguments, published_audit=True) == []
+    retained_zip = destination / "archives" / f"{target}.zip"
+    retained_zip.write_bytes(zip_bytes + b"modified")
+    errors = compliance.check_protected_source_capture(capture, **arguments, published_audit=True)
+    assert any("digest must match downloaded ZIP digest" in error for error in errors)
+    metadata = destination / capture[target]["run"]["file"]
+    metadata.write_bytes(metadata.read_bytes() + b" ")
+    assert compliance.check_protected_source_capture(capture, **arguments, published_audit=True) == [
+        f"{target} run does not match the signed evidence file size and SHA-256"
+    ]
+
+
 @pytest.mark.parametrize("reported_comment", [None, b"original"])
 def test_remote_release_audit_requires_exact_archive_digest(reported_comment: bytes | None) -> None:
     checker = _load_checker()

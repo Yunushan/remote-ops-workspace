@@ -10,6 +10,7 @@ import shutil
 import ssl
 import subprocess
 import sys
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -108,10 +109,20 @@ def main(argv: list[str] | None = None) -> int:
         release_tag=args.release_tag,
         required_targets=required_targets,
     )
-    if registry_errors and not args.require_goal_targets:
+    if registry_errors and (not args.require_goal_targets or args.capture_source_evidence is not None):
         for error in dict.fromkeys(registry_errors):
             print(f"platform release evidence remote: {error}", file=sys.stderr)
         return 1
+    if args.capture_source_evidence is not None:
+        assert args.repository is not None
+        errors = capture_live_source_evidence(
+            args.repository, args.release_tag, registry, args.capture_source_evidence,
+        )
+        for error in dict.fromkeys(errors):
+            print(f"platform release evidence capture: {error}", file=sys.stderr)
+        if not errors:
+            print(f"Verified protected-platform source evidence retained in {args.capture_source_evidence}")
+        return int(bool(errors))
     release, release_errors = load_release_data(args)
     source_runs, source_run_errors = load_source_runs(args, registry, required_targets)
     workflow_runs, workflow_errors = load_workflow_runs(args, registry, required_targets)
@@ -172,6 +183,123 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def load_live_source_evidence(
+    repository: str,
+    release_tag: str,
+    registry: dict[str, Any],
+    targets: tuple[str, ...],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, bytes], list[str]]:
+    args = parse_args([
+        "--repository", repository, "--release-tag", release_tag,
+        "--require-source-runs", "--require-source-artifact-bytes",
+    ])
+    runs, run_errors = load_source_runs(args, registry, targets)
+    artifacts, artifact_errors = load_source_artifacts(args, registry, targets)
+    archives, archive_errors = load_source_artifact_bytes(args, registry, targets, artifacts)
+    return runs, artifacts, archives, [*run_errors, *artifact_errors, *archive_errors]
+
+
+def capture_live_source_evidence(
+    repository: str, release_tag: str, registry: dict[str, Any], destination: Path,
+) -> list[str]:
+    targets = PROTECTED_GOAL_TARGETS
+    records = accepted_records_by_target(registry, release_tag=release_tag, targets=targets)
+    runs, inventories, archives, errors = load_live_source_evidence(
+        repository, release_tag, registry, targets,
+    )
+    for target, record in sorted(records.items()):
+        run_url = record["release_asset_source"]["workflow_run_url"]
+        if repository_from_run_url(run_url) != repository:
+            errors.append(f"{target} source capture must use the requested repository")
+        errors.extend(check_record_source_run(target, record, {}, source_runs_by_run=runs))
+        errors.extend(check_record_source_artifact(target, record, inventories, source_runs_by_run=runs))
+        errors.extend(check_record_source_artifact_zip_bytes(
+            target, record, source_artifacts_by_run=inventories, source_artifact_bytes_by_run=archives,
+        ))
+    if errors:
+        return errors
+    try:
+        destination.mkdir(mode=0o700)
+        with tempfile.TemporaryDirectory(dir=destination, prefix=".capture-") as temporary:
+            staging = Path(temporary)
+            bundle = staging / "protected-platform-sources"
+            archive_dir = staging / "archives"
+            bundle.mkdir()
+            archive_dir.mkdir()
+            signed_files: dict[str, Any] = {}
+            for target, record in sorted(records.items()):
+                run_url = record["release_asset_source"]["workflow_run_url"]
+                signed_files[target] = {}
+                for name, data in (("run", runs[run_url]), ("artifacts", inventories[run_url])):
+                    filename = f"{target}-{name}.json"
+                    raw = (json.dumps(data, sort_keys=True, indent=2) + "\n").encode("utf-8")
+                    (bundle / filename).write_bytes(raw)
+                    signed_files[target][name] = {
+                        "file": f"{bundle.name}/{filename}",
+                        "reference": run_url,
+                        "size_bytes": len(raw),
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                    }
+                (archive_dir / f"{target}.zip").write_bytes(archives[run_url])
+            manifest = staging / "protected-platform-sources.json"
+            manifest.write_text(
+                json.dumps({"protected_platform_sources": signed_files}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            bundle.rename(destination / bundle.name)
+            archive_dir.rename(destination / archive_dir.name)
+            manifest.rename(destination / manifest.name)
+    except OSError as exc:
+        return [f"could not retain protected-platform evidence in {destination}: {exc}"]
+    return []
+
+
+def audit_published_platform_evidence(
+    repository: str,
+    release_tag: str,
+    registry: dict[str, Any],
+    targets: tuple[str, ...],
+    runs: dict[str, Any],
+    artifacts: dict[str, Any],
+    archives: dict[str, bytes],
+) -> list[str]:
+    args = parse_args([
+        "--repository", repository, "--release-tag", release_tag,
+        "--require-final-record-bytes", "--require-release-asset-bytes",
+        "--require-tag-source-head",
+    ])
+    release, release_errors = load_release_data(args)
+    final_records, final_errors = load_final_record_bytes(args, registry, targets)
+    release_assets, asset_errors = load_release_asset_bytes(args, registry, targets)
+    tag_ref, tag_object, tag_errors = load_release_tag_data(args)
+    errors = [*release_errors, *final_errors, *asset_errors, *tag_errors]
+    if release is None:
+        return errors
+    if release.get("immutable") is not True:
+        errors.append(f"remote release {release_tag} must be immutable")
+    errors.extend(check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=read_json(PROMOTION_PATH),
+        release=release,
+        workflow_runs_by_workflow={},
+        source_runs_by_run=runs,
+        source_artifacts_by_run=artifacts,
+        source_artifact_bytes_by_run=archives,
+        final_record_bytes_by_url=final_records,
+        release_asset_bytes_by_url=release_assets,
+        tag_ref=tag_ref,
+        tag_object=tag_object,
+        release_tag=release_tag,
+        required_targets=targets,
+        require_source_runs=True,
+        require_source_artifact_bytes=True,
+        require_final_record_bytes=True,
+        require_release_asset_bytes=True,
+        require_tag_source_head=True,
+    ))
+    return errors
+
+
 def remote_registry_preflight_errors(
     registry: dict[str, Any],
     *,
@@ -199,6 +327,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.27")
     parser.add_argument("--registry", type=Path, default=EVIDENCE_PATH)
     parser.add_argument("--promotion", type=Path, default=PROMOTION_PATH)
+    parser.add_argument(
+        "--capture-source-evidence",
+        type=Path,
+        metavar="NEW_DIRECTORY",
+        help="retain live exact-run metadata and original Actions ZIPs for all protected targets",
+    )
     parser.add_argument(
         "--release-json",
         type=Path,
@@ -341,6 +475,13 @@ def strict_arg_errors(args: argparse.Namespace) -> list[str]:
     errors.extend(repository_errors)
     if repository is not None:
         args.repository = repository
+    if args.capture_source_evidence is not None:
+        errors.extend(check_local_fixture_path(args.capture_source_evidence, "source capture directory"))
+        if not args.repository or not args.require_goal_targets:
+            errors.append("--capture-source-evidence requires --repository and --require-goal-targets")
+        if args.capture_source_evidence.exists():
+            errors.append("--capture-source-evidence requires a new directory")
+        return errors
     if args.require_goal_targets:
         missing_goal_flags = [
             flag

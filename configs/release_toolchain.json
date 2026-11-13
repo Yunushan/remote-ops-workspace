@@ -44,7 +44,7 @@
     },
     {
       "name": "setuptools",
-      "version": "84.2.0",
+      "version": "84.2.1",
       "purpose": "Pinned build backend dependency."
     },
     {
@@ -64,7 +64,7 @@
     },
     {
       "name": "maturin",
-      "version": "1.15.0",
+      "version": "1.16.0",
       "purpose": "Pinned PEP 517 backend for the Windows ARM64 cryptography source build."
     },
     {

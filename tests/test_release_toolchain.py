@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -116,10 +117,13 @@ def test_windows_toolchain_checks_preinstalled_engine_and_replacement(
 def test_release_toolchain_checker_requires_pinned_python_build_backend() -> None:
     checker = _load_release_toolchain_checker()
     toolchain = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
-    pyproject = Path("pyproject.toml").read_text(encoding="utf-8").replace(
-        'requires = ["setuptools==84.2.0", "wheel==0.48.0"]',
+    pyproject, replacements = re.subn(
+        r'(?m)^requires = \["setuptools==[^"]+", "wheel==[^"]+"\]$',
         'requires = ["setuptools>=77", "wheel"]',
+        Path("pyproject.toml").read_text(encoding="utf-8"),
+        count=1,
     )
+    assert replacements == 1
 
     errors = checker.check_python_build_backend(toolchain, pyproject)
 

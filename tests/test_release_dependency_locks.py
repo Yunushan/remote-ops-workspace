@@ -23,6 +23,29 @@ def test_complete_modern_locks_are_consumed_without_mutable_resolution() -> None
     assert _checker().check_locks() == []
 
 
+def test_macos_lock_resolution_uses_the_native_installer_minimum(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    resolver = _checker().resolver
+    config = json.loads(resolver.CONFIG.read_text(encoding="utf-8"))
+    minimum = config["macos_deployment_target"]
+    installer = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
+    assert f'MACOS_MINIMUM_VERSION="{minimum}.0"' in installer
+    monkeypatch.setenv("MACOSX_DEPLOYMENT_TARGET", "13.0")
+    _use_checkout(monkeypatch, resolver, _release_checkout(tmp_path))
+    observed = {}
+
+    def capture(command, *, cwd, env, check):
+        output = Path(command[command.index("--output-file") + 1])
+        observed[output.stem] = env["MACOSX_DEPLOYMENT_TARGET"]
+        output.write_text(f"sample==1.0 --hash=sha256:{'a' * 64}\n", encoding="utf-8")
+
+    monkeypatch.setattr(resolver.subprocess, "run", capture)
+    for target in ("macos-x64", "macos-arm64", "windows-x64"):
+        resolver.compile_lock(Path("uv"), config, target, config["targets"][target], system_certs=False)
+    assert observed == {"macos-x64": minimum, "macos-arm64": minimum, "windows-x64": "13.0"}
+
+
 def _release_checkout(tmp_path: Path) -> Path:
     (tmp_path / "configs").mkdir()
     shutil.copyfile("configs/release_dependency_locks.json", tmp_path / "configs/release_dependency_locks.json")

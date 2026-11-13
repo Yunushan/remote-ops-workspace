@@ -8,6 +8,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -352,6 +353,56 @@ def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> No
     checker = _load_checker()
 
     assert checker.main(_positive_fixture(tmp_path, checker)) == 0
+
+
+@pytest.mark.parametrize("arch", ["x86", "x64"])
+def test_xp_compliance_authenticates_signed_build_evidence(
+    tmp_path: Path, monkeypatch, arch: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    import check_xp_candidate_run
+
+    checker = _load_checker()
+    candidate = _write_record(tmp_path, "candidate.zip", b"candidate", artifact_id=42, reference="candidate")
+    receipt = _write_record(tmp_path, "receipt.zip", b"receipt", artifact_id=43, reference="receipt")
+    review = _write_record(
+        tmp_path, "review.txt", b"XP redistribution review", reference="review",
+        decision="approved", runtime_prerequisite=".NET Framework 4", runtime_redistributed=False,
+    )
+    inventory = {
+        "profile": "xp-dotnet-framework-v4",
+        "run_id": 100,
+        "run_attempt": 1,
+        "candidate_artifact": candidate,
+        "receipt_artifact": receipt,
+        "redistribution_review": review,
+    }
+    options = {
+        "target": f"windows-xp-native-{arch}", "assets_dir": tmp_path, "evidence_root": tmp_path,
+        "repository": "example/project", "tag": "v1.2.3", "sha": "1" * 40,
+    }
+    calls = []
+
+    def verify(_client, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(check_xp_candidate_run, "verify_candidate", verify)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    assert "requires a GitHub Actions read token" in checker.check_xp_inventory(inventory, **options)[0]
+    monkeypatch.setenv("GH_TOKEN", "test-only")
+    assert checker.check_xp_inventory(inventory, **options) == []
+    assert len(calls) == 1
+    assert calls[0]["arch"] == arch
+    assert calls[0]["candidate_id"] == 42
+    assert calls[0]["receipt_id"] == 43
+
+    review["runtime_redistributed"] = True
+    assert "requires an independent approval" in checker.check_xp_inventory(inventory, **options)[0]
+    review["runtime_redistributed"] = False
+    (tmp_path / "receipt.zip").write_bytes(b"mutate!")
+    assert "sha256 does not match" in checker.check_xp_inventory(inventory, **options)[0]
+    assert len(calls) == 1
 
 
 def test_signed_evidence_still_rejects_local_artifact_drift(tmp_path: Path) -> None:

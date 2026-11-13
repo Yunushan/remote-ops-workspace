@@ -2222,8 +2222,8 @@ def test_remote_release_audit_requires_source_run_endpoint_metadata(tmp_path: Pa
     source_runs = _source_runs_for(record)
     run = next(iter(source_runs.values()))
     run["workflowUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/workflows/999"
-    run["jobsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/jobs"
-    run["logsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/logs"
+    run["jobsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs"
+    run["logsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/2/logs"
     run["artifactsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/artifacts"
     run["checkSuiteUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/check-suites/1"
 
@@ -2246,13 +2246,13 @@ def test_remote_release_audit_requires_source_run_endpoint_metadata(tmp_path: Pa
     ) in errors
     assert (
         "linux-i386 source workflow run jobs_url must be "
-        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs', "
-        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/jobs'"
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/1/jobs', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs'"
     ) in errors
     assert (
         "linux-i386 source workflow run logs_url must be "
-        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/logs', "
-        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/logs'"
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/1/logs', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/2/logs'"
     ) in errors
     assert (
         "linux-i386 source workflow run artifacts_url must be "
@@ -5137,6 +5137,10 @@ def _source_runs_for(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
     check_suite_id = 998877
     workflow = str(source["workflow"])
     repository = _repository_from_run_url(run_url)
+    attempt_url = (
+        f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/"
+        f"attempts/{source['run_attempt']}"
+    )
     return {
         run_url: {
             "id": run_id,
@@ -5146,8 +5150,8 @@ def _source_runs_for(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "runNumber": 77,
             "workflowId": workflow_id,
             "workflowUrl": f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_id}",
-            "jobsUrl": f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/jobs",
-            "logsUrl": f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/logs",
+            "jobsUrl": f"{attempt_url}/jobs",
+            "logsUrl": f"{attempt_url}/logs",
             "artifactsUrl": f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/artifacts",
             "checkSuiteId": check_suite_id,
             "checkSuiteUrl": f"https://api.github.com/repos/{repository}/check-suites/{check_suite_id}",

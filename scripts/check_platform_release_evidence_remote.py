@@ -2549,10 +2549,6 @@ def workflow_runs_api_url(repository: str, workflow: str, release_tag: str) -> s
     )
 
 
-def source_run_child_api_url(repository: str, run_id: str | int, endpoint: str) -> str:
-    return f"{source_run_api_url(repository, run_id)}/{quote(endpoint, safe='')}"
-
-
 def source_run_attempt_api_url(repository: str, run_id: str, run_attempt: int) -> str:
     return (
         f"{source_run_api_url(repository, run_id)}"
@@ -2596,7 +2592,7 @@ def check_record_source_run(
         ]
     exact_run = exact_source_run_document(run_url, source_runs_by_run or {})
     if isinstance(exact_run, dict):
-        return check_source_run_record(target, exact_run, record)
+        return check_source_run_record(target, exact_run, record, exact_attempt=True)
     if source_runs_by_run and not workflow_runs_by_workflow:
         return [f"{target} exact source workflow run metadata missing for {run_url}"]
     runs_document = workflow_runs_by_workflow.get(workflow)
@@ -2637,6 +2633,8 @@ def check_source_run_record(
     target: str,
     run: dict[str, Any],
     record: dict[str, Any],
+    *,
+    exact_attempt: bool = False,
 ) -> list[str]:
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
@@ -2691,21 +2689,23 @@ def check_source_run_record(
                 f"{target} source workflow run workflow_url must be {expected_workflow_url!r}, "
                 f"got {workflow_url!r}"
             )
+    expected_attempt = source.get("run_attempt")
     if expected_repository and expected_run_id_int is not None:
-        for field, camel_field, endpoint in (
-            ("jobs_url", "jobsUrl", "jobs"),
-            ("logs_url", "logsUrl", "logs"),
-            ("artifacts_url", "artifactsUrl", "artifacts"),
-        ):
-            expected_endpoint_url = source_run_child_api_url(
-                expected_repository,
-                expected_run_id_int,
-                endpoint,
+        run_api_url = source_run_api_url(expected_repository, expected_run_id_int)
+        jobs_logs_api_url = run_api_url
+        if exact_attempt and positive_int(expected_attempt):
+            jobs_logs_api_url = source_run_attempt_api_url(
+                expected_repository, expected_run_id, expected_attempt
             )
+        for field, camel_field, expected_url in (
+            ("jobs_url", "jobsUrl", f"{jobs_logs_api_url}/jobs"),
+            ("logs_url", "logsUrl", f"{jobs_logs_api_url}/logs"),
+            ("artifacts_url", "artifactsUrl", f"{run_api_url}/artifacts"),
+        ):
             endpoint_url = first_present(run, field, camel_field)
-            if endpoint_url != expected_endpoint_url:
+            if endpoint_url != expected_url:
                 errors.append(
-                    f"{target} source workflow run {field} must be {expected_endpoint_url!r}, "
+                    f"{target} source workflow run {field} must be {expected_url!r}, "
                     f"got {endpoint_url!r}"
                 )
     check_suite_id = first_present(run, "check_suite_id", "checkSuiteId")
@@ -2755,7 +2755,6 @@ def check_source_run_record(
             f"{target} source workflow run head_sha must match accepted record {expected_head}, "
             f"got {actual_head!r}"
         )
-    expected_attempt = source.get("run_attempt")
     actual_attempt = first_present(run, "run_attempt", "attempt")
     if not isinstance(actual_attempt, int) or isinstance(actual_attempt, bool) or actual_attempt <= 0:
         errors.append(

@@ -75,6 +75,7 @@ def main(
     argv: list[str] | None = None,
     *,
     check_published_at: Callable[[datetime], list[str]] | None = None,
+    audited_inputs: dict[Path, str] | None = None,
 ) -> int:
     args = parse_args(argv)
     try:
@@ -118,6 +119,8 @@ def main(
             raise ValueError("governance verification requires both proof files and a complete published release")
         if check_published_at is not None and (not verify_governance or current_transaction):
             raise ValueError("publication-time checks require a completed release with verified governance")
+        if audited_inputs is not None and (not verify_governance or current_transaction):
+            raise ValueError("audited input checks require a completed release with verified governance")
         if args.published_release_id is not None and args.published_release_id < 1:
             raise ValueError("published release id must be positive")
         repository = normalize_repository(args.repository)
@@ -209,6 +212,19 @@ def main(
             common.intersection_update(proof_invocations)
             if not common:
                 errors.append("governance proof and release assets must share the same promotion attempt")
+        for path, digest in (audited_inputs or {}).items():
+            invocations, attestation_errors = verified_run_invocations(
+                verify_attestation(path, repository=repository, sha=sha, tag=tag),
+                asset_name="signed redistribution approval input",
+                asset_sha256=digest,
+                repository=repository,
+                sha=sha,
+                tag=tag,
+            )
+            errors.extend(attestation_errors)
+            common.intersection_update(invocations)
+            if not common:
+                errors.append("signed redistribution approval must share the successful promotion attempt")
 
         if not common:
             errors.append(

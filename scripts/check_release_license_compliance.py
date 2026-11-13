@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         assert args.protected_platform_registry is not None
         assert args.candidate_inventory is not None
         evidence_bytes, evidence = read_json_object(args.evidence, "release compliance evidence")
-        _, signature = read_json_object(args.signature, "release compliance signature")
+        signature_bytes, signature = read_json_object(args.signature, "release compliance signature")
         verify_evidence_signature(evidence_bytes, signature, policy)
         evidence_root = args.evidence_root or args.evidence.parent
         errors = check_evidence(
@@ -128,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
             tag=tag,
             sha=sha,
             verify_review_window=not args.verify_published_release,
+            published_audit=args.verify_published_release,
         )
         if check_live_governance:
             assert args.tag_governance_attestation is not None
@@ -160,7 +161,13 @@ def main(argv: list[str] | None = None) -> int:
                 "--sha", sha,
                 "--governance-attestation", str(args.tag_governance_attestation),
                 "--governance-signature", str(args.tag_governance_signature),
-            ], check_published_at=lambda published_at: check_review_window(evidence, now=published_at)):
+            ],
+                check_published_at=lambda published_at: check_review_window(evidence, now=published_at),
+                audited_inputs={
+                    args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
+                    args.signature: hashlib.sha256(signature_bytes).hexdigest(),
+                },
+            ):
                 raise RuntimeError("published release provenance and governance verification failed")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"release license compliance: {exc}", file=sys.stderr)
@@ -611,6 +618,7 @@ def check_evidence(
     sha: str,
     now: datetime | None = None,
     verify_review_window: bool = True,
+    published_audit: bool = False,
 ) -> list[str]:
     errors: list[str] = []
     expected_scalars = {
@@ -747,6 +755,7 @@ def check_evidence(
                 errors.extend(check_xp_inventory(
                     inventory, target=target, assets_dir=assets_dir, evidence_root=evidence_root,
                     repository=repository, tag=tag, sha=sha,
+                    published_audit=published_audit,
                 ))
             continue
         profile = profile_for_manifest(name)
@@ -787,9 +796,10 @@ def check_xp_inventory(
     repository: str,
     tag: str,
     sha: str,
+    published_audit: bool = False,
 ) -> list[str]:
     """Bind the independent XP decision to the .NET build and release bytes."""
-    from check_xp_candidate_run import verify_candidate
+    from check_xp_candidate_run import verify_candidate, verify_candidate_bytes
     from release_candidate_inventory import GitHubClient, positive_int
 
     required = {
@@ -824,20 +834,26 @@ def check_xp_inventory(
     ):
         return [f"{target} requires an independent approval of the package and host-provided .NET runtime"]
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not token:
+    if not published_audit and not token:
         return [f"{target} requires a GitHub Actions read token to authenticate the .NET build"]
     try:
-        verify_candidate(
-            GitHubClient(repository, token),
+        candidate_id = positive_int(inventory["candidate_artifact"].get("artifact_id"), "XP candidate artifact ID")
+        receipt_id = positive_int(inventory["receipt_artifact"].get("artifact_id"), "XP receipt artifact ID")
+        if candidate_id == receipt_id:
+            raise ValueError("XP candidate and receipt must have distinct artifact IDs")
+        candidate_args = dict(
             repository=repository, tag=tag, sha=sha, arch=target.rsplit("-", 1)[-1],
             run_id=positive_int(inventory["run_id"], "XP build run ID"),
             attempt=positive_int(inventory["run_attempt"], "XP build run attempt"),
             candidate=paths["candidate_artifact"],
-            candidate_id=positive_int(inventory["candidate_artifact"].get("artifact_id"), "XP candidate artifact ID"),
             receipt=paths["receipt_artifact"],
-            receipt_id=positive_int(inventory["receipt_artifact"].get("artifact_id"), "XP receipt artifact ID"),
             assets_dir=assets_dir,
         )
+        if published_audit:
+            verify_candidate_bytes(**candidate_args)
+        else:
+            assert token is not None
+            verify_candidate(GitHubClient(repository, token), candidate_id=candidate_id, receipt_id=receipt_id, **candidate_args)
     except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError, zipfile.BadZipFile) as exc:
         return [f"{target} build evidence: {exc}"]
     return []

@@ -116,6 +116,14 @@ was valid at the publication time authenticated by GitHub and the successful
 promotion run. The live promotion workflow checks that the approval is still
 valid immediately before each release mutation.
 
+Retain the signed approval, its detached signature and the exact review
+bundle, including the two original XP evidence ZIPs per architecture.
+Promotion verifies their live Actions artifact identities and attests the
+approval and signature. Later certification checks those attestations
+against the same successful promotion attempt as the release assets. The
+retained XP files are checked against the signed digests and published
+package bytes after the Actions archives expire.
+
 Both versioned publication workflows report the numeric release ID if an error
 occurs after draft creation. Once the failed run ends, inspect that release and
 match its tag and transaction marker to the failed run. If it is still a draft,

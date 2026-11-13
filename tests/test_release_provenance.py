@@ -674,6 +674,26 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert expected_error in capsys.readouterr().err
     else:
         assert checker.main(args) == 0
+        approved = tmp_path / "release-evidence.json"
+        approved.write_bytes(b"exact signed redistribution approval")
+        approved_sig = tmp_path / "release-evidence.sig.json"
+        approved_sig.write_bytes(b"detached signature")
+        inputs = {path: checker.sha256_file(path) for path in (approved, approved_sig)}
+        assert checker.main(args, audited_inputs=inputs) == 0
+        assert checker.main(args, audited_inputs={**inputs, approved_sig: "b" * 64}) == 1
+
+        def mismatched_input_attempt(path: Path, **kwargs):
+            if path == approved_sig:
+                return _attestation(
+                    checker, repository=repository, sha=sha, tag=tag,
+                    digest=checker.sha256_file(path), attempt=2,
+                )
+            return attestation_api(path, **kwargs)
+
+        monkeypatch.setattr(checker, "verify_attestation", mismatched_input_attempt)
+        assert checker.main(args, audited_inputs=inputs) == 1
+        assert "signed redistribution approval must share" in capsys.readouterr().err
+        monkeypatch.setattr(checker, "verify_attestation", attestation_api)
         publication_times = []
 
         def check_approval(published):

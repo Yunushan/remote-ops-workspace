@@ -444,6 +444,12 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
         ),
         (
             ATTEST_RELEASE_ASSETS_ACTION,
+            "audited redistribution approval attestation",
+            "uses",
+            "Attest the audited redistribution approval",
+        ),
+        (
+            ATTEST_RELEASE_ASSETS_ACTION,
             "final inventory attestation",
             "uses",
             "Attest every certified release asset",

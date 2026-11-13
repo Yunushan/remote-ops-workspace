@@ -422,9 +422,14 @@ def test_xp_compliance_authenticates_signed_build_evidence(
         calls.append(kwargs)
 
     monkeypatch.setattr(check_xp_candidate_run, "verify_candidate", verify)
+    published_calls = []
+    monkeypatch.setattr(check_xp_candidate_run, "verify_candidate_bytes", lambda **kwargs: published_calls.append(kwargs))
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     assert "requires a GitHub Actions read token" in checker.check_xp_inventory(inventory, **options)[0]
+    assert checker.check_xp_inventory(inventory, **options, published_audit=True) == []
+    assert len(published_calls) == 1
+    assert published_calls[0]["arch"] == arch
     monkeypatch.setenv("GH_TOKEN", "test-only")
     assert checker.check_xp_inventory(inventory, **options) == []
     assert len(calls) == 1

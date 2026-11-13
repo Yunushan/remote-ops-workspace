@@ -641,6 +641,12 @@ def check_promotion_truth(workflow: str) -> list[str]:
         ),
         (
             "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+            "audited redistribution approval attestation",
+            "uses",
+            "Attest the audited redistribution approval",
+        ),
+        (
+            "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
             "asset attestation",
             "uses",
             "Attest every certified release asset",

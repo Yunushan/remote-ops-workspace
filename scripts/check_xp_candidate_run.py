@@ -83,6 +83,8 @@ def verify_archive(
 
 
 def extract_expected(path: Path, dest: Path, limits: dict[str, int]) -> None:
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= ENTRY_LIMIT:
+        raise ValueError(f"{path.name} must be a bounded regular ZIP file")
     with zipfile.ZipFile(path) as bundle:
         members = bundle.infolist()
         if len(members) != len(limits) or {item.filename for item in members} != set(limits):
@@ -139,6 +141,26 @@ def verify_candidate(
             client, path, artifact_id=artifact_id, name=f"windows-xp-{prefix}-{arch}-{attempt}",
             run_id=run_id, sha=sha, started=started, ended=ended,
         )
+    verify_candidate_bytes(
+        repository=repository, tag=tag, sha=sha, arch=arch, run_id=run_id,
+        attempt=attempt, candidate=candidate, receipt=receipt, assets_dir=assets_dir,
+    )
+    check_tag(client, tag, sha)
+
+
+def verify_candidate_bytes(
+    *,
+    repository: str,
+    tag: str,
+    sha: str,
+    arch: str,
+    run_id: int,
+    attempt: int,
+    candidate: Path,
+    receipt: Path,
+    assets_dir: Path,
+) -> None:
+    """Compare retained review bytes to the source and exact release files."""
     base = f"remote-ops-workspace-{tag}-windows-xp-{arch}-native"
     limits = {
         f"{base}.zip": ENTRY_LIMIT,
@@ -166,7 +188,6 @@ def verify_candidate(
                 or sha256_file(path) != sha256_file(extracted / name)
             ):
                 raise ValueError(f"{name} does not match the authenticated XP candidate")
-    check_tag(client, tag, sha)
 
 
 def main() -> int:

@@ -44,8 +44,8 @@ concurrency:
 
 jobs:
   promote-production-release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     environment: release-compliance-review
     permissions:
       actions: read
@@ -182,6 +182,14 @@ jobs:
           --evidence-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"
           --require-platform-goal-targets
           --native-release-channel production-signed
+      - name: Install native archive inspector
+        run: bash scripts/install_native_archive_inspector.sh
+      - name: Verify notices in the exact native packages
+        timeout-minutes: 20
+        run: >-
+          python scripts/check_packaged_release_notices.py
+          --assets-dir release-assets
+          --tag "$RELEASE_TAG"
       - name: Audit signed exact-byte redistribution and resolver evidence
         env:
           GH_TOKEN: ${{ github.token }}

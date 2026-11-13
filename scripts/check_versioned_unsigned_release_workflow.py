@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "versioned-unsigned-release.yml"
+ARCHIVE_INSPECTOR_PATH = ROOT / "scripts" / "install_native_archive_inspector.sh"
 FROZEN_REF = "ref: ${{ needs.release-preflight.outputs.release_sha }}"
 
 
@@ -47,11 +48,25 @@ def _require_step(
             errors.append(f"{name} missing {snippet}")
 
 
+def check_native_archive_inspector(script: str | None = None) -> list[str]:
+    active = _active_text(script if script is not None else ARCHIVE_INSPECTOR_PATH.read_text(encoding="utf-8"))
+    snippets = (
+        "set -euo pipefail",
+        "bash scripts/install_ci_ubuntu_packages.sh p7zip-full squashfs-tools rpm2cpio cpio msitools",
+        "https://codeload.github.com/dscho/innoextract/legacy.tar.gz/376a13e7c41cc5528b6088d0dd16ec1b323a8d37",
+        "16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede",
+        "sha256sum --check --strict",
+        'cmake --build "$inspector_source/build" --parallel 2',
+        'sudo install -m 755 "$inspector_source/build/innoextract" /usr/local/bin/innoextract',
+    )
+    return [f"native archive inspector missing {snippet}" for snippet in snippets if snippet not in active]
+
+
 def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> list[str]:
     """Validate the release boundary and complete unsigned asset path."""
     raw = workflow if workflow is not None else WORKFLOW_PATH.read_text(encoding="utf-8")
     text = _active_text(raw)
-    errors: list[str] = []
+    errors = check_native_archive_inspector()
 
     event = re.search(r"(?ms)^on:\n(.*?)(?=^[A-Za-z][^:\n]*:\n|\Z)", text)
     if not event or not re.fullmatch(r"\s*workflow_dispatch:\s*", event.group(1)):
@@ -299,10 +314,7 @@ def check_versioned_unsigned_release_workflow(workflow: str | None = None) -> li
             errors.append("unsigned publication must preserve releases after failure")
         _require_step(
             errors, publish, "Install native archive inspector",
-            ("bash scripts/install_ci_ubuntu_packages.sh", "msitools", "cpio", "p7zip-full", "cmake --build",
-             "https://codeload.github.com/dscho/innoextract/legacy.tar.gz/376a13e7c41cc5528b6088d0dd16ec1b323a8d37",
-             "16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede",
-             "sha256sum --check --strict", "/usr/local/bin/innoextract"),
+            ("run: bash scripts/install_native_archive_inspector.sh",),
         )
         if "runs-on: ubuntu-24.04" not in publish:
             errors.append("archive inspector build requires the pinned Ubuntu 24.04 toolchain")

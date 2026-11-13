@@ -160,8 +160,11 @@ inventory artifact ID/digest, and immutable evidence commit SHA. Its protected
 `release-compliance-review` job checks that the tagged commit is on the
 default branch and that the exact commit has successful required CI.
 It checks out the untrusted transport branch as data, authenticates the
-evidence through the tag-pinned Ed25519 policy, and performs the full
-redistribution audit, attests the complete inventory, obtains a fresh signed governance proof
+evidence through the tag-pinned Ed25519 policy and performs the full
+redistribution audit. It also opens each exact standard and protected Linux
+package with format-specific archive readers to verify the tagged third-party
+notices and required PyQt/Qt materials. It then attests the complete
+inventory, obtains a fresh signed governance proof
 for draft creation, creates a draft,
 verifies every draft byte and attestation against its own tag-bound invocation,
 obtains a fresh publication proof for the numeric draft, and promotes that draft once.

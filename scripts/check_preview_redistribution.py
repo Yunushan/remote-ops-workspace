@@ -66,6 +66,16 @@ BUILD_TARGETS = {
 }
 
 
+def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> None:
+    """Compare the packaged files against the expected SHA-256 digests."""
+    for filename, digest in expected.items():
+        embedded = embedded_file_bytes(package, filename)
+        if embedded is None:
+            raise ValueError(f"{package.name} does not contain {filename}")
+        if hashlib.sha256(embedded).hexdigest() != digest:
+            raise ValueError(f"{package.name} contains different bytes for {filename}")
+
+
 def expected_native_assets(tag: str) -> set[str]:
     matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
     names: set[str] = set()
@@ -771,13 +781,9 @@ def audit(
         required = ["third_party_notices"]
         if GUI_TARGET.search(package.name):
             required += ["pyqt6_gplv3", "qt_lgplv3", "qt_relink_instructions"]
-        for key in required:
-            expected_name = materials[key][0].name
-            embedded = embedded_file_bytes(package, expected_name)
-            if embedded is None:
-                raise ValueError(f"{package.name} does not contain {expected_name}")
-            if hashlib.sha256(embedded).hexdigest() != materials[key][1]:
-                raise ValueError(f"{package.name} contains different bytes for {expected_name}")
+        check_packaged_legal_material(
+            package, {materials[key][0].name: materials[key][1] for key in required},
+        )
     return {
         "schema_version": 1,
         "kind": "unsigned-preview-redistribution-material-check",

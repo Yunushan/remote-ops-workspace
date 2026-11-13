@@ -251,6 +251,12 @@ def test_promotion_requires_immutable_release_setting_at_publication() -> None:
     assert any("publication-time immutable release setting proof" in error for error in asset_errors)
 
 
+def test_promotion_requires_exact_package_notices_audit() -> None:
+    workflow = remove_named_step(promotion_workflow(), "Verify notices in the exact native packages")
+    _, errors = both_contract_errors(workflow)
+    assert any("exact package notices audit" in error for error in errors)
+
+
 @pytest.mark.parametrize(
     ("name", "wait_for"),
     [

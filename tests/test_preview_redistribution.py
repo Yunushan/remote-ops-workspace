@@ -40,6 +40,29 @@ def test_native_package_inventory_matches_real_release_matrix() -> None:
     }
 
 
+def test_production_notices_cover_protected_linux_and_require_exact_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+
+    tag = "v2.3.4"
+    names = notices.expected_production_packages(tag)
+    assert len(names) == 29
+    assert f"remote-ops-workspace-{tag}-linux-i386.deb" in names
+    assert f"remote-ops-workspace-{tag}-linux-armv7hl.rpm" in names
+    package = tmp_path / f"remote-ops-workspace-{tag}-windows-x86-native.zip"
+    material = ROOT / "redistribution-evidence" / "THIRD_PARTY_NOTICES.md"
+    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+    assert notices.verify_notices(tmp_path, tag) == 1
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("docs/THIRD_PARTY_NOTICES.md", b"Different bytes")
+    with pytest.raises(ValueError, match="contains different bytes"):
+        notices.verify_notices(tmp_path, tag)
+
+
 def test_missing_evidence_fails_before_native_publication(tmp_path: Path) -> None:
     module = checker()
     with pytest.raises(ValueError, match="preview evidence manifest.*missing"):

@@ -386,6 +386,7 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
         'test "$GITHUB_RUN_ATTEMPT" = "1"': "promotion rerun refusal",
         "ref: ${{ inputs.evidence_commit_sha }}": "exact evidence checkout",
         "release_candidate_inventory.py promote": "exact artifact-ID rehydration",
+        "runs-on: ubuntu-24.04": "pinned Ubuntu archive inspection toolchain",
         "Verify attestation and download exact candidate artifact IDs": (
             "in-process build-run-bound candidate attestation validation"
         ),
@@ -444,6 +445,18 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "complete production asset inventory",
             "run",
             "Validate complete production asset inventory",
+        ),
+        (
+            "bash scripts/install_native_archive_inspector.sh",
+            "native archive inspector",
+            "run",
+            "Install native archive inspector",
+        ),
+        (
+            "python scripts/check_packaged_release_notices.py",
+            "exact package notices audit",
+            "run",
+            "Verify notices in the exact native packages",
         ),
         (
             "check_release_license_compliance.py",
@@ -580,6 +593,12 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
     ]
     indexes: list[int] = []
     command_contracts = {
+        "Install native archive inspector": ((), (), frozenset()),
+        "Verify notices in the exact native packages": (
+            ("--assets-dir release-assets", '--tag "$RELEASE_TAG"'),
+            (),
+            frozenset({"--assets-dir", "--tag"}),
+        ),
         "Verify final immutable release and complete exact-tag provenance": (
             (
                 "python scripts/check_release_provenance.py",
@@ -2417,6 +2436,8 @@ def command_executes_token(command: str, token: str) -> bool:
     normalized = command.strip()
     if not normalized or normalized.startswith(("!", "(", "{")):
         return False
+    if token == "bash scripts/install_native_archive_inspector.sh":
+        return normalized == token
     if token.startswith("gh "):
         return normalized.startswith(token)
     script_match = re.search(r"([A-Za-z0-9_]+\.py)(.*)", token)

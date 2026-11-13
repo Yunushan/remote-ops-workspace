@@ -346,18 +346,24 @@ def seal_runtime_report(
             ):
                 raise ValueError(f"{name} archive must contain one bounded pip inspect report")
             report = bundle.read(members[0])
-    value = json.loads(report)
-    if (
-        not isinstance(value, dict) or value.get("version") != "1"
-        or not isinstance(value.get("installed"), list) or not value["installed"]
-    ):
-        raise ValueError(f"{name} must be a non-empty pip inspect v1 inventory")
+    validate_runtime_report(report, name)
     return {
         "artifact_id": artifact_id,
         "archive_digest": digest,
         "sha256": hashlib.sha256(report).hexdigest(),
         "size_bytes": len(report),
     }
+
+
+def validate_runtime_report(report: bytes, label: str) -> None:
+    if not 0 < len(report) <= MAX_JSON_BYTES:
+        raise ValueError(f"{label} pip inspect report exceeds the allowed size or is empty")
+    value = json.loads(report)
+    if (
+        not isinstance(value, dict) or value.get("version") != "1"
+        or not isinstance(value.get("installed"), list) or not value["installed"]
+    ):
+        raise ValueError(f"{label} must be a non-empty pip inspect v1 inventory")
 
 
 def promote(

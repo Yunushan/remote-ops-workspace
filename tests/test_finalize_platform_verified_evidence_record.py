@@ -2555,7 +2555,7 @@ def test_finalize_platform_verified_evidence_record_rejects_boolean_manifest_sch
 
     errors = finalizer.check_bundle_manifest_records(manifest)
 
-    assert "review bundle manifest schema_version must be 1" in errors
+    assert "review bundle manifest schema_version must be 1 or 2" in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_extra_manifest_file_record_metadata() -> None:

@@ -43,6 +43,11 @@ from make_platform_verified_evidence_record import (  # noqa: E402
 from make_platform_verified_evidence_record import (  # noqa: E402
     check_text_output_path as check_base_text_output_path,
 )
+from release_candidate_inventory import (  # noqa: E402
+    MAX_JSON_BYTES,
+    RUNTIME_REPORT_NAME,
+    validate_runtime_report,
+)
 
 SHA256_HEX_RE = re.compile(r"[0-9a-f]{64}")
 GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -503,6 +508,19 @@ def check_bundle_manifest_records(manifest: dict[str, Any]) -> list[str]:
                 errors.append(f"review bundle manifest {key} must be an object")
             else:
                 errors.extend(check_manifest_record_metadata(key, record, require_concrete_file=True))
+        if manifest.get("schema_version") == 2:
+            runtime_report = manifest.get("runtime_report")
+            if not isinstance(runtime_report, dict):
+                errors.append("review bundle manifest runtime_report must be an object")
+            else:
+                errors.extend(check_manifest_record_metadata(
+                    "runtime_report", runtime_report, require_concrete_file=True,
+                ))
+                if runtime_report.get("file") != RUNTIME_REPORT_NAME:
+                    errors.append(f"review bundle runtime_report must use {RUNTIME_REPORT_NAME}")
+                size = runtime_report.get("size_bytes")
+                if isinstance(size, int) and size > MAX_JSON_BYTES:
+                    errors.append("review bundle runtime_report exceeds the size limit")
         smoke_evidence = manifest.get("smoke_evidence")
         if not isinstance(smoke_evidence, list) or not smoke_evidence:
             errors.append("review bundle manifest smoke_evidence must be a non-empty list")
@@ -580,6 +598,10 @@ def check_bundle_manifest_top_level_keys(
     expected_keys = BUNDLE_MANIFEST_KEYS_BY_TYPE.get(bundle_type)
     if expected_keys is None:
         return errors
+    schema_version = manifest.get("schema_version")
+    version_two = bundle_type == "extended-linux-native-evidence" and schema_version == 2
+    if version_two:
+        expected_keys = expected_keys | {"runtime_report"}
     keys: set[str] = set()
     for key in manifest:
         if not isinstance(key, str):
@@ -592,9 +614,9 @@ def check_bundle_manifest_top_level_keys(
         errors.append(f"review bundle manifest missing fields: {missing}")
     if unexpected:
         errors.append(f"review bundle manifest has unexpected fields: {unexpected}")
-    schema_version = manifest.get("schema_version")
-    if schema_version != 1 or isinstance(schema_version, bool):
-        errors.append("review bundle manifest schema_version must be 1")
+    if type(schema_version) is not int or (schema_version != 1 and not version_two):
+        versions = "1 or 2" if bundle_type == "extended-linux-native-evidence" else "1"
+        errors.append(f"review bundle manifest schema_version must be {versions}")
     return errors
 
 
@@ -1257,6 +1279,12 @@ def check_archive_record_hashes(
 ) -> list[str]:
     errors: list[str] = []
     for name, record in expected_archive_records(manifest_path, manifest):
+        if (
+            name == RUNTIME_REPORT_NAME and name in archive.namelist()
+            and not 0 < archive.getinfo(name).file_size <= MAX_JSON_BYTES
+        ):
+            errors.append("review bundle archive runtime report must have a positive, bounded size")
+            continue
         data = read_archive_entry_bytes(
             archive,
             name,
@@ -1277,6 +1305,11 @@ def check_archive_record_hashes(
             )
         elif sha256_bytes(data) != expected_sha:
             errors.append(f"review bundle archive entry SHA-256 mismatch: {name}")
+        if name == RUNTIME_REPORT_NAME:
+            try:
+                validate_runtime_report(data, "review bundle archive runtime report")
+            except ValueError as exc:
+                errors.append(str(exc))
     return errors
 
 
@@ -1567,6 +1600,8 @@ def expected_archive_records(manifest_path: Path, manifest: dict[str, Any]) -> l
     if bundle_type == "extended-linux-native-evidence":
         for key in ("builder_evidence", "candidate_record"):
             append_manifest_record(records, manifest.get(key))
+        if manifest.get("schema_version") == 2:
+            append_manifest_record(records, manifest.get("runtime_report"))
         for item in manifest.get("smoke_evidence", []):
             append_manifest_record(records, item)
         for item in manifest.get("artifacts", []):

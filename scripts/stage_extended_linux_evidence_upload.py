@@ -563,6 +563,8 @@ def review_bundle_manifest_file_records(manifest: dict[str, Any]) -> list[Any]:
     bundle_type = raw_bundle_type if isinstance(raw_bundle_type, str) else ""
     if bundle_type == "extended-linux-native-evidence":
         records.extend([manifest.get("builder_evidence"), manifest.get("candidate_record")])
+        if manifest.get("schema_version") == 2:
+            records.append(manifest.get("runtime_report"))
         records.extend(manifest.get("smoke_evidence", []))
         records.extend(manifest.get("artifacts", []))
     elif bundle_type == "windows-xp-native-host-evidence":

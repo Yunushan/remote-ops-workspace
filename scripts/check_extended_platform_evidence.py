@@ -291,7 +291,11 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         '--source-head-sha "$SOURCE_HEAD_SHA"': "builder source head SHA evidence",
         "python3 -m venv .venv-native": "isolated release virtual environment",
         'python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"': "pinned release dependency installation",
-        "bash scripts/make_linux_native.sh": "native Linux artifact build",
+        (
+            "python -m pip check\n"
+            f'          python -X utf8 -m pip inspect --local > "{evidence_dir}/candidate-pip-inspect.json"\n'
+            f"          TARGET_ARCH={runner} PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh"
+        ): "dependency check and runtime report from the exact native build environment",
         f'mkdir -p native-dist/linux "{assets_dir}"': "raw build output and target/release promotion staging directories",
         f'mkdir -p "{assets_dir}"': "target-scoped Linux artifact staging directory",
         smoke_command_snippet: "native installer smoke evidence capture",
@@ -322,6 +326,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f'--out "{assets_dir}/{record_name}"': "candidate evidence record output",
         f"python scripts/make_extended_linux_evidence_bundle.py \\\n            --target {target}": "review evidence bundle generation",
         f'--smoke-evidence "{evidence_dir}/{smoke_name}"': "review bundle smoke evidence input",
+        f'--runtime-report "{evidence_dir}/candidate-pip-inspect.json"': "review bundle runtime evidence input",
         f'--candidate-record "{assets_dir}/{record_name}"': "candidate record bundle input",
         f'--out-dir "{assets_dir}"': "target/release scoped review bundle output directory",
         f'python scripts/finalize_platform_verified_evidence_record.py \\\n            --candidate-record "{assets_dir}/{record_name}"': "finalized evidence record generation",

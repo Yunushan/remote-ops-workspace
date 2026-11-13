@@ -31,8 +31,14 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import check_platform_release_evidence_remote as platform_evidence  # noqa: E402
+from check_platform_verified_evidence import LINUX_TARGETS  # noqa: E402
 from check_release_publish_assets import normalize_version  # noqa: E402
-from release_candidate_inventory import RUNTIME_REPORT_ARTIFACT_NAMES  # noqa: E402
+from release_candidate_inventory import (  # noqa: E402
+    MAX_JSON_BYTES,
+    RUNTIME_REPORT_ARTIFACT_NAMES,
+    RUNTIME_REPORT_NAME,
+    validate_runtime_report,
+)
 
 POLICY_PATH = ROOT / "configs" / "release_compliance_policy.json"
 TOOLCHAIN_PATH = ROOT / "configs" / "release_toolchain.json"
@@ -729,6 +735,9 @@ def check_evidence(
     platform_targets = platform_evidence.PROTECTED_GOAL_TARGETS if platform_source_archives else tuple(
         target for target in platform_evidence.PROTECTED_GOAL_TARGETS if target in policy["production_targets"]
     )
+    protected_records = platform_evidence.accepted_records_by_target(
+        protected_registry, release_tag=tag, targets=platform_targets,
+    )
     if platform_targets:
         errors.extend(check_protected_source_capture(
             evidence.get("protected_platform_sources"),
@@ -806,6 +815,10 @@ def check_evidence(
                 or any(realized[key] != sealed.get(key) for key in ("sha256", "size_bytes"))
             ):
                 errors.append(f"{target} pip inspect evidence must match the exact sealed build report")
+        elif target in LINUX_TARGETS:
+            errors.extend(check_protected_linux_runtime_report(
+                target, tag, protected_records.get(target), assets_dir, inventory.get("realized_environment"),
+            ))
         enforcement = policy.get("build_lock_enforcement")
         locks = enforcement.get("platform_locks") if isinstance(enforcement, dict) else None
         expected_lock = locks.get(target) if isinstance(locks, dict) else None
@@ -832,6 +845,71 @@ def check_evidence(
             )
         )
     return errors
+
+
+def check_protected_linux_runtime_report(
+    target: str,
+    tag: str,
+    record: dict[str, Any] | None,
+    assets_dir: Path,
+    realized: Any,
+) -> list[str]:
+    review_bundle = record.get("review_bundle") if record is not None else None
+    manifest_record = review_bundle.get("manifest") if isinstance(review_bundle, dict) else None
+    label = f"{target} accepted Linux review bundle manifest"
+    if not isinstance(manifest_record, dict):
+        return [f"{label} is missing"]
+    path, error = secure_regular_file(assets_dir, manifest_record.get("file"), label)
+    if error:
+        return [error]
+    assert path is not None
+    size = path.stat().st_size
+    if not 0 < size <= MAX_JSON_BYTES or size != manifest_record.get("size_bytes"):
+        return [f"{label} size must match the signed registry"]
+    raw, manifest = read_json_object(path, label)
+    if hashlib.sha256(raw).hexdigest() != manifest_record.get("sha256"):
+        return [f"{label} SHA-256 must match the signed registry"]
+    runtime_report = manifest.get("runtime_report")
+    if (
+        manifest.get("schema_version") != 2
+        or manifest.get("bundle_type") != "extended-linux-native-evidence"
+        or manifest.get("target") != target
+        or manifest.get("release_tag") != tag
+        or not isinstance(runtime_report, dict)
+        or runtime_report.get("file") != RUNTIME_REPORT_NAME
+        or not valid_evidence_record(realized)
+        or not all(realized[key] == runtime_report.get(key) for key in ("sha256", "size_bytes"))
+    ):
+        return [f"{target} pip inspect evidence must match the exact accepted native build report"]
+    assert isinstance(review_bundle, dict)
+    archive_record = review_bundle.get("archive")
+    label = f"{target} accepted Linux review bundle archive"
+    if not isinstance(archive_record, dict):
+        return [f"{label} is missing"]
+    archive_path, error = secure_regular_file(assets_dir, archive_record.get("file"), label)
+    if error:
+        return [error]
+    assert archive_path is not None
+    if (
+        archive_path.stat().st_size != archive_record.get("size_bytes")
+        or sha256_file(archive_path) != archive_record.get("sha256")
+    ):
+        return [f"{label} size and SHA-256 must match the signed registry"]
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            reports = [entry for entry in archive.infolist() if entry.filename == RUNTIME_REPORT_NAME]
+            if (
+                len(reports) != 1 or not 0 < reports[0].file_size <= MAX_JSON_BYTES
+                or reports[0].file_size != realized["size_bytes"]
+            ):
+                return [f"{label} must contain exactly one bounded matching pip inspect report"]
+            report = archive.read(reports[0])
+        validate_runtime_report(report, label)
+    except (NotImplementedError, OSError, RuntimeError, ValueError, zipfile.BadZipFile) as exc:
+        return [f"{label} pip inspect report could not be read: {exc}"]
+    if hashlib.sha256(report).hexdigest() != realized["sha256"]:
+        return [f"{label} pip inspect report SHA-256 must match the signed evidence"]
+    return []
 
 
 def check_protected_source_capture(

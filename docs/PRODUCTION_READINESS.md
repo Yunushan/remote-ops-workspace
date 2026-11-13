@@ -223,7 +223,11 @@ namespace and a tag that resolves to the exact qualified source.
 3. Dispatch `.github/workflows/extended-platform-evidence.yml` for Linux i386
    and armhf and `.github/workflows/xp-native-evidence.yml` for both XP targets.
    Select the production tag as the workflow ref and as the `release_tag` input
-   so the evidence runs bind to the tagged commit.
+   so the evidence runs bind to the tagged commit. The Linux builders run
+   `pip check` and retain the raw `pip inspect --local` report inside their
+   version 2 review ZIP. Use that report verbatim as the signed Linux
+   `realized_environment` evidence. The report records installed dependencies.
+   Production still requires approved fully hashed locks consumed by the builders.
 4. Run the target-specific local preflight, bundle packer, finalizer, and staged
    upload commands from `docs/PLATFORM_PROMOTION_RUNBOOK.md`.
 5. Put the finalized records in the protected-platform registry for the signed

@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -45,6 +46,39 @@ def _license_record(root: Path, name: str) -> dict:
         f"license for {name}\n".encode(),
         path=f"docs/third-party/{name}.txt",
     )
+
+
+def test_protected_linux_runtime_report_must_match_signed_review_bundle(tmp_path: Path) -> None:
+    checker = _load_checker()
+    target = "linux-armhf"
+    tag = "v1.2.3"
+    report = b'{"version":"1","installed":[{"metadata":{"name":"pip","version":"26.3"}}]}\n'
+    realized = _write_record(tmp_path, checker.RUNTIME_REPORT_NAME, report, reference="signed fixture")
+    manifest = {
+        "schema_version": 2,
+        "bundle_type": "extended-linux-native-evidence",
+        "target": target,
+        "release_tag": tag,
+        "runtime_report": {key: realized[key] for key in ("file", "size_bytes", "sha256")},
+    }
+    archive_path = tmp_path / "review.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(checker.RUNTIME_REPORT_NAME, report)
+    record = {"review_bundle": {
+        "manifest": _write_record(tmp_path, "review.json", json.dumps(manifest).encode()),
+        "archive": _write_record(tmp_path, archive_path.name, archive_path.read_bytes()),
+    }}
+    assert checker.check_protected_linux_runtime_report(target, tag, record, tmp_path, realized) == []
+
+    changed_report = report.replace(b"26.3", b"26.4")
+    changed = _write_record(tmp_path, checker.RUNTIME_REPORT_NAME, changed_report, reference="signed fixture")
+    errors = checker.check_protected_linux_runtime_report(target, tag, record, tmp_path, changed)
+    assert any("exact accepted native build report" in error for error in errors)
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(checker.RUNTIME_REPORT_NAME, changed_report)
+    errors = checker.check_protected_linux_runtime_report(target, tag, record, tmp_path, realized)
+    assert any("archive size and SHA-256 must match" in error for error in errors)
 
 
 def _component(root: Path, name: str, version: str, origin: str) -> dict:

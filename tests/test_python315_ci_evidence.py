@@ -139,7 +139,7 @@ def test_urls_bind_workflow_sha_branch_run_and_attempt() -> None:
     assert f"head_sha={SHA}" in runs_url
     assert "branch=main" in runs_url
     assert "event=push" in runs_url
-    assert jobs_url.endswith("/actions/runs/123/attempts/2/jobs?per_page=100&page=3")
+    assert jobs_url.endswith("/actions/runs/123/attempts/2/jobs?per_page=20&page=3")
     assert "filter=" not in jobs_url
 
 
@@ -200,26 +200,26 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
             "status": "completed",
             "conclusion": "success",
         }
-        for index in range(1, 149)
+        for index in range(1, 29)
     ]
     python_readiness = {
-        "id": 149,
+        "id": 29,
         "name": "Python 3.15 readiness",
         "status": "completed",
         "conclusion": "success",
     }
     native_windows_readiness = {
-        "id": 150,
+        "id": 30,
         "name": "Native Windows readiness",
         "status": "completed",
         "conclusion": "success",
     }
     pages = {
-        1: {"total_count": 150, "jobs": ordinary_jobs[:100]},
+        1: {"total_count": 30, "jobs": ordinary_jobs[:20]},
         2: {
-            "total_count": 150,
+            "total_count": 30,
             "jobs": [
-                *ordinary_jobs[100:],
+                *ordinary_jobs[20:],
                 python_readiness,
                 native_windows_readiness,
             ],
@@ -234,14 +234,14 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
     payload = evidence.collect_paginated_attempt_jobs(fetch_page)
 
     assert requested_pages == [1, 2]
-    assert payload["total_count"] == 150
-    assert len(payload["jobs"]) == 150
+    assert payload["total_count"] == 30
+    assert len(payload["jobs"]) == 30
     assert evidence.validate_readiness_job(payload) == []
 
 
 def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:
     truncated = {
-        "total_count": 101,
+        "total_count": 21,
         "jobs": [
             {
                 "id": index,
@@ -249,7 +249,7 @@ def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:
                 "status": "completed",
                 "conclusion": "success",
             }
-            for index in range(1, 100)
+            for index in range(1, 20)
         ],
     }
     with pytest.raises(RuntimeError, match="ended before total_count"):
@@ -257,7 +257,7 @@ def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:
 
     pages = {
         1: {
-            "total_count": 101,
+            "total_count": 21,
             "jobs": [
                 {
                     "id": index,
@@ -265,14 +265,14 @@ def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:
                     "status": "completed",
                     "conclusion": "success",
                 }
-                for index in range(1, 101)
+                for index in range(1, 21)
             ],
         },
         2: {
-            "total_count": 102,
+            "total_count": 22,
             "jobs": [
                 {
-                    "id": 101,
+                    "id": 21,
                     "name": "Python 3.15 readiness",
                     "status": "completed",
                     "conclusion": "success",

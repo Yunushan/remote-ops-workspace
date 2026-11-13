@@ -16,7 +16,9 @@ from urllib.request import Request, urlopen
 EXPECTED_WORKFLOW_PATH = ".github/workflows/ci.yml"
 EXPECTED_JOB_NAME = "Python 3.15 readiness"
 EXPECTED_JOB_NAMES = (EXPECTED_JOB_NAME, "Native Windows readiness")
-JOBS_PAGE_SIZE = 100
+# Attempt responses include every job step. Smaller pages avoid server errors
+# observed when GitHub assembles the full matrix into one response.
+JOBS_PAGE_SIZE = 20
 MAX_WAIT_SECONDS = 7200.0
 MAX_POLL_INTERVAL_SECONDS = 300.0
 WAITABLE_RUN_STATUSES = frozenset({"in_progress", "pending", "queued", "requested", "waiting"})

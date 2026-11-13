@@ -657,7 +657,13 @@ def project_actual_source(harness, monkeypatch):
     filename = Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "windows_private_storage.py"
     tree = ast.parse(filename.read_text(encoding="utf-8"), filename=str(filename))
     selected_names = {"PrivateStorageError", "PrivatePathMissing", "_require", "_sid", "Ace", "Snapshot", "_ancestors", "_Native", "descriptor_handle"}
-    constants = {"FILE_ALL_ACCESS", "DACL_PROTECTED", "MAX_DESCRIPTOR", "MAX_ACES"}
+    constants = {
+        "FILE_ALL_ACCESS",
+        "READ_CONTROL_AND_ATTRIBUTES_AND_DATA",
+        "DACL_PROTECTED",
+        "MAX_DESCRIPTOR",
+        "MAX_ACES",
+    }
     nodes = []
     observed = set()
     for node in tree.body:

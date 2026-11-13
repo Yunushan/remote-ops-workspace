@@ -1,8 +1,8 @@
-"""Source proposal: retained Windows directory handles and exact owner DACLs.
+"""Retained Windows directory handles and exact owner DACLs.
 
 No ctypes/DLL/security API is imported or called until the real native provider
-is constructed. The updater integration is guarded by a false qualification gate.
-Genuine Windows ABI, default-parent and other-identity denial remain unqualified.
+is constructed. The updater admits the qualified Windows x64 interpreter and
+checks the live NTFS and path boundaries before accessing policy or stage bytes.
 """
 from __future__ import annotations
 

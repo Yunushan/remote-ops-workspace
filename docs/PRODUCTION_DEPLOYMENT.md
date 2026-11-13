@@ -313,11 +313,10 @@ refused. The real cross-process `exclusive_file_lock` covers the stage and all
 revalidation. POSIX metadata checks do not protect against a compromised
 same-user process or privileged host.
 
-The Windows private-storage adapter is implemented in source but remains
-unqualified. Its production qualification flag is false: policy loading, new
-staging and recovery refuse before policy bytes, root creation, lock bytes or
-payload. The disabled example does not enable it. Mocked SDK declarations and
-ownership fixtures are source evidence, not genuine Windows ACL or ABI evidence.
+Windows x64 Python can use authenticated staging and recovery on a local NTFS
+volume when the private-storage checks pass. Other Windows Python architectures
+refuse before policy bytes, root creation, lock bytes or payload. The disabled
+example still needs operator-configured trust settings.
 
 The Windows source requires the current process token and refuses an impersonated
 thread. It retains local NTFS ancestor and named-file handles without delete
@@ -335,8 +334,8 @@ current/default Roaming and Local known-folder observations and any `APPDATA`
 selection. The stage stays outside the observed home. Conservative ancestor
 owner/write checks can refuse ordinary system-drive ancestry, including an
 unqualified TrustedInstaller owner or raw grants to other identities. These
-checks remain enforced; actual default-path compatibility and independent
-unprivileged-identity denial still require genuine disposable Windows evidence.
+checks apply to each invocation. The hosted qualification exercised the actual
+default-path selection and denial for a separate unprivileged identity.
 
 The Windows private NTFS qualification workflow uses a disposable hosted runner
 and a public canary. It exercises exclusive stage creation, writes under an
@@ -349,8 +348,9 @@ workspace-home selection and stage lock, interrupts the staging transaction
 before its final journal write, then verifies recovery and tamper refusal. It
 uses the real Ed25519 verifier with an ephemeral key, checks rejection under a
 different key, and verifies the complete fixture asset set after recovery.
-Production updater qualification still requires signed artifacts, trusted
-transport, an installation and rollback.
+The public staging entry points fetch the signed fixture over verified
+loopback HTTPS and recover it offline. Production updater qualification still
+requires signed release artifacts, an installation and rollback.
 
 HTTPS uses certificate and hostname verification, TLS 1.2 or later,
 credential-free requests, disabled environment proxies, identity encoding and a
@@ -373,8 +373,7 @@ signatures/installer adapters, a trusted version floor and target closure, a
 complete offline encrypted pre-upgrade state snapshot, writer quiescence, crash
 recovery and an actual prior-binary plus encrypted-state restore/decrypt drill.
 Reinstalling an older binary alone cannot roll back a migrated vault. These
-requirements, genuine Windows storage qualification and genuine hosted update
-tests remain mandatory; this proposal confers no production readiness points.
+requirements need end-to-end evidence on the supported deployment targets.
 
 RDP, VNC, X2Go, SPICE, serial, and other protocol sessions delegate to native
 system clients. Treat `row doctor` as a post-install preflight, then deploy the

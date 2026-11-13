@@ -443,45 +443,44 @@ def qualify_staging_entrypoints(parent: Path, observed: list[str]) -> None:
     with private_fixture(storage, native, parent, "row-entrypoint-ntfs-") as scratch:
         stage = scratch / "stage"
         refused_stage = scratch / "untrusted-stage"
-        with patch.object(channel, "_WINDOWS_PRIVATE_STAGE_QUALIFIED", True):
-            with serve_https_fixture(scratch, bodies, requested) as (origin, cert_path):
-                raw, assets, fixture_policy, _wrong_policy = signed_fixture(origin)
-                bodies.update({"/manifest.json": raw, **{f"/{name}": body for name, body in assets.items()}})
-                policy_path = scratch / "policy.json"
-                with storage.private_stage_guard(scratch, _native=native) as guard:
-                    with os.fdopen(guard.create_private_file(policy_path), "wb") as stream:
-                        stream.write(fixture_policy.document)
-                        stream.flush()
-                        os.fsync(stream.fileno())
-                policy = channel.load_update_policy(policy_path)
-                require(policy.digest == fixture_policy.digest, "entrypoint-policy-digest-mismatch")
-                try:
-                    channel.stage_update(policy, refused_stage, current_home=data_dir())
-                except channel.UpdateError as exc:
-                    require(
-                        exc.args == ("https-transport-refused",) and not requested
-                        and all(not (refused_stage / name).exists() for name in assets),
-                        "entrypoint-untrusted-tls-refusal-mismatch",
-                    )
-                else:
-                    raise ValueError("entrypoint-untrusted-tls-accepted")
-                # Add the disposable certificate to this SSL context only.
-                # The real opener, hostname verification and streaming stay active.
-                with patch.object(channel.ssl, "create_default_context", lambda: default_context(cafile=str(cert_path))):
-                    staged = channel.stage_update(policy, stage, current_home=data_dir())
-                require(requested == list(bodies), "entrypoint-fixture-request-mismatch")
-            recovered = channel.recover_update(policy, stage, current_home=data_dir())
-            require(requested == list(bodies), "entrypoint-recovery-requested-network")
-            require(
-                staged == recovered
-                and staged["phase"] == "authenticated-staged"
-                and staged["artifact_count"] == len(assets)
-                and staged["windows_dacl_metadata_verified"] is True
-                and staged["install_permitted"] is False,
-                "entrypoint-stage-recovery-mismatch",
-            )
-            for name, body in assets.items():
-                require((stage / name).read_bytes() == body, "entrypoint-staged-bytes-mismatch")
+        with serve_https_fixture(scratch, bodies, requested) as (origin, cert_path):
+            raw, assets, fixture_policy, _wrong_policy = signed_fixture(origin)
+            bodies.update({"/manifest.json": raw, **{f"/{name}": body for name, body in assets.items()}})
+            policy_path = scratch / "policy.json"
+            with storage.private_stage_guard(scratch, _native=native) as guard:
+                with os.fdopen(guard.create_private_file(policy_path), "wb") as stream:
+                    stream.write(fixture_policy.document)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            policy = channel.load_update_policy(policy_path)
+            require(policy.digest == fixture_policy.digest, "entrypoint-policy-digest-mismatch")
+            try:
+                channel.stage_update(policy, refused_stage, current_home=data_dir())
+            except channel.UpdateError as exc:
+                require(
+                    exc.args == ("https-transport-refused",) and not requested
+                    and all(not (refused_stage / name).exists() for name in assets),
+                    "entrypoint-untrusted-tls-refusal-mismatch",
+                )
+            else:
+                raise ValueError("entrypoint-untrusted-tls-accepted")
+            # Add the disposable certificate to this SSL context only.
+            # The real opener, hostname verification and streaming stay active.
+            with patch.object(channel.ssl, "create_default_context", lambda: default_context(cafile=str(cert_path))):
+                staged = channel.stage_update(policy, stage, current_home=data_dir())
+            require(requested == list(bodies), "entrypoint-fixture-request-mismatch")
+        recovered = channel.recover_update(policy, stage, current_home=data_dir())
+        require(requested == list(bodies), "entrypoint-recovery-requested-network")
+        require(
+            staged == recovered
+            and staged["phase"] == "authenticated-staged"
+            and staged["artifact_count"] == len(assets)
+            and staged["windows_dacl_metadata_verified"] is True
+            and staged["install_permitted"] is False,
+            "entrypoint-stage-recovery-mismatch",
+        )
+        for name, body in assets.items():
+            require((stage / name).read_bytes() == body, "entrypoint-staged-bytes-mismatch")
     observed.extend((
         "windows-policy-stage-and-recovery-entrypoints",
         "windows-verified-https-stage-and-offline-recovery",

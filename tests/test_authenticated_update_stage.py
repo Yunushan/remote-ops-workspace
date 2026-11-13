@@ -3,7 +3,7 @@
 Synthetic zero public-key bytes and signature stubs confer no publisher authority.
 Transaction fixtures use isolated temporary files, a supplied mock lease and an
 explicit synthetic private boundary. Neither metadata nor a mock is native ACL
-qualification; the production Windows qualification flag remains false.
+qualification.
 """
 from __future__ import annotations
 
@@ -462,6 +462,7 @@ def test_real_cross_process_lease_adapter_receives_exact_checked_budget(monkeypa
 def test_windows_stage_refused_before_network_or_mutation(monkeypatch, tmp_path):
     reached = []
     monkeypatch.setattr(channel, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(channel, "_WINDOWS_PRIVATE_STAGE_QUALIFIED", False)
     monkeypatch.setattr(channel, "_chunks", lambda *_args: reached.append(True))
     with pytest.raises(channel.UpdateError, match="private-staging-platform-unqualified"):
         channel.stage_update(policy(), tmp_path, current_home=tmp_path / "home")

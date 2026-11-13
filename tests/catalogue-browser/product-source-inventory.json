@@ -333,8 +333,8 @@
     },
     {
       "path": "src/remote_ops_workspace/windows_private_storage.py",
-      "sha256": "2695c7f23ee875851348aabd113d42bcc48764ee92e45a04fb65b65b29564e56",
-      "size": 37430
+      "sha256": "2fc10e71697a9cb0abb6897c205a4a59714491c6e081e9d05a088af145e376a3",
+      "size": 37742
     },
     {
       "path": "src/remote_ops_workspace/workspace_backup.py",

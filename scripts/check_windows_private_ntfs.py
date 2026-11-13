@@ -24,9 +24,10 @@ def require(condition: bool, code: str) -> None:
         raise ValueError(code)
 
 
-def require_delete_sharing(native, path: Path, *, blocked: bool) -> None:
+def require_delete_sharing(native, path: Path, *, blocked: bool, directory: bool = False) -> None:
     # An explicit DELETE open isolates the sharing check from rename semantics.
-    handle = native.kernel.CreateFileW(str(path), 0x00010000, 0x07, None, 3, 0, None)
+    flags = 0x02000000 if directory else 0
+    handle = native.kernel.CreateFileW(str(path), 0x00010000, 0x07, None, 3, flags, None)
     if handle == native.c.c_void_p(-1).value:
         require(blocked and native.c.get_last_error() == 32, "unexpected-delete-open-error")
         return
@@ -199,6 +200,7 @@ def qualify(parent: Path, observed: list[str], account: str, password: str, cont
         alias = stage / "canary.link"
         with storage.private_stage_guard(stage, create=True, _native=native) as guard:
             observed.append("exclusive-private-directory")
+            require_delete_sharing(native, stage, blocked=True, directory=True)
             with os.fdopen(guard.create_private_file(partial), "wb") as writer:
                 handle = storage.descriptor_handle(writer.fileno())
                 with guard.private_file(handle, partial) as written:

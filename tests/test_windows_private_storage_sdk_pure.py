@@ -890,11 +890,11 @@ def test_sdk_directory_entry_enumerator_closes_without_reading_file_payload(sdk,
 
 
 @pytest.mark.parametrize("directory,flags", [(True, 0x02200000), (False, 0x00200000)])
-def test_sdk_opens_read_control_attributes_without_delete_sharing(sdk, directory, flags):
+def test_sdk_opens_data_and_metadata_without_delete_sharing(sdk, directory, flags):
     sdk.allow("GetDriveTypeW", lambda root: 3 if root == "C:\\" else pytest.fail("wrong drive root"))
 
     def open_file(*arguments):
-        assert arguments == (DIRECTORY_PATH if directory else FILE_PATH, 0x20080, 3, None, 3, flags, None)
+        assert arguments == (DIRECTORY_PATH if directory else FILE_PATH, 0x20081, 3, None, 3, flags, None)
         assert not arguments[2] & 4 and not arguments[1] & 0x40000000
         return 77
 

@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 FILE_ALL_ACCESS = 0x001F01FF
+READ_CONTROL_AND_ATTRIBUTES_AND_DATA = 0x00020081
 DACL_PRESENT = 0x0004
 DACL_PROTECTED = 0x1000
 DIRECTORY = 0x10
@@ -327,7 +328,10 @@ class _Native:
 
     def open_directory(self, path):
         _require(self.kernel.GetDriveTypeW(ntpath.splitdrive(path)[0] + "\\") == 3, "local-fixed-volume-required")
-        handle = self.kernel.CreateFileW(path, 0x00020080, 0x03, None, 3, 0x02200000, None)
+        # List-directory access makes this handle participate in the share check.
+        handle = self.kernel.CreateFileW(
+            path, READ_CONTROL_AND_ATTRIBUTES_AND_DATA, 0x03, None, 3, 0x02200000, None,
+        )
         if handle in (None, self.c.c_void_p(-1).value):
             if self.c.get_last_error() in (2, 3):
                 raise PrivatePathMissing("native-directory-missing")
@@ -335,7 +339,10 @@ class _Native:
         return handle
 
     def open_file(self, path):
-        handle = self.kernel.CreateFileW(path, 0x00020080, 0x03, None, 3, 0x00200000, None)
+        # A metadata-only handle can allow DELETE even without FILE_SHARE_DELETE.
+        handle = self.kernel.CreateFileW(
+            path, READ_CONTROL_AND_ATTRIBUTES_AND_DATA, 0x03, None, 3, 0x00200000, None,
+        )
         _require(handle not in (None, self.c.c_void_p(-1).value), "native-file-open-refused")
         return handle
 

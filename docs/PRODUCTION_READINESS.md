@@ -227,7 +227,9 @@ namespace and a tag that resolves to the exact qualified source.
    `pip check` and retain the raw `pip inspect --local` report inside their
    version 2 review ZIP. Use that report verbatim as the signed Linux
    `realized_environment` evidence. The report records installed dependencies.
-   Production still requires approved fully hashed locks consumed by the builders.
+   The builders use the target-specific candidate locks in
+   `requirements-locks/protected-linux/`. Production requires the independent
+   reviewer to approve the exact lock bytes and the native build outputs.
 4. Run the target-specific local preflight, bundle packer, finalizer, and staged
    upload commands from `docs/PLATFORM_PROMOTION_RUNBOOK.md`.
 5. Put the finalized records in the protected-platform registry for the signed

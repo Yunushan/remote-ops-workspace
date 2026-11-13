@@ -209,6 +209,25 @@ uploaded. The workflow artifact upload must set `if-no-files-found: error`,
 `include-hidden-files: false` and `retention-days: 90` so missing source files
 fail, hidden scratch/private files stay excluded and source evidence remains
 available for release import.
+
+Provision the exact CPython patch from `configs/release_toolchain.json` as
+`python3` on each protected Linux builder. The workflow checks and consumes the
+hash-locked inputs under `requirements-locks/protected-linux/` and retains the
+raw `pip inspect --local` report in the review ZIP. For a local rehearsal,
+capture the same report immediately before building and pass it to the bundler
+with `--runtime-report`. Use the checked-in workflow's install commands for
+the matching architecture.
+
+Both targets compile CFFI and need a native C toolchain and libffi headers.
+Armhf also compiles the PyInstaller bootloader, needs its native C and zlib
+development tools, and needs glibc 2.31 or newer for the pinned crypto wheels.
+i386 compiles bcrypt and cryptography and needs a native
+Rust toolchain, OpenSSL headers and the reviewed Cargo dependencies from the
+upstream source archives' `Cargo.lock` files provisioned in the builder's Cargo
+cache. The i386 workflow disables Cargo network access during compilation. The
+Python lock hashes cover the Python distributions and build backends. Host
+toolchains and the resulting native binaries still require review and smoke
+evidence from the matching builders.
 Strict promotion also requires each accepted record to include the review bundle
 manifest, review bundle archive and review bundle SHA-256 sidecar digests
 created by `python scripts/finalize_platform_verified_evidence_record.py`.

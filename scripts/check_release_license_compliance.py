@@ -47,6 +47,8 @@ WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 PROMOTION_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release-promotion.yml"
 EXTENDED_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "extended-platform-evidence.yml"
 XP_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "xp-legacy-candidate.yml"
+PROTECTED_LINUX_LOCK_DIR = "requirements-locks/protected-linux"
+PROTECTED_LINUX_CFFI_LOCK = f"{PROTECTED_LINUX_LOCK_DIR}/linux-32bit-cffi.txt"
 XP_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
 XP_LOCK = "legacy/xp_host/net40-references.json"
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -435,6 +437,14 @@ def check_policy(
             extended_workflow=active_extended_workflow,
         )
         job_block = workflow_job_block(producer_workflow, job)
+        native_bootstrap_lock = None
+        source_bootstrap_lock = None
+        if target in LINUX_TARGETS:
+            expected_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}.txt"
+            if raw_path != expected_lock:
+                errors.append(f"{target} must consume the tracked protected Linux lock {expected_lock}")
+            native_bootstrap_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}-bootstrap.txt"
+            source_bootstrap_lock = PROTECTED_LINUX_CFFI_LOCK
         if matrix_arch is not None and not matrix_row_binds_lock(
             job_block,
             matrix_arch,
@@ -454,8 +464,9 @@ def check_policy(
                 bootstrap_lock_path=(
                     matrix_row_lock(job_block, matrix_arch, "bootstrap_lock")
                     if matrix_arch is not None
-                    else None
+                    else native_bootstrap_lock
                 ),
+                source_bootstrap_lock_path=source_bootstrap_lock,
                 lock_root=policy_root,
             )
         )
@@ -1879,6 +1890,7 @@ def check_native_job_lock_usage(
     *,
     allow_matrix_lock: bool = False,
     bootstrap_lock_path: str | None = None,
+    source_bootstrap_lock_path: str | None = None,
     lock_root: Path = ROOT,
 ) -> list[str]:
     errors: list[str] = []
@@ -1890,20 +1902,29 @@ def check_native_job_lock_usage(
     ]
     lock_tokens = (lock_path, "${{ matrix.lock }}") if allow_matrix_lock else (lock_path,)
     bootstrap_tokens: tuple[str, ...] = ()
-    if bootstrap_lock_path is not None:
-        bootstrap_errors = check_bootstrap_lock_subset(lock_root, lock_path, bootstrap_lock_path)
-        errors.extend(bootstrap_errors)
-        if not bootstrap_errors:
-            bootstrap_tokens = (
-                (bootstrap_lock_path, "${{ matrix.bootstrap_lock }}")
-                if allow_matrix_lock
-                else (bootstrap_lock_path,)
-            )
     lock_indexes = [
         index
         for index, command in pip_commands
         if installs_hashed_requirements(command, lock_tokens)
     ]
+    for bootstrap, matrix_token in (
+        (bootstrap_lock_path, "${{ matrix.bootstrap_lock }}" if allow_matrix_lock else None),
+        (source_bootstrap_lock_path, None),
+    ):
+        if bootstrap is None:
+            continue
+        bootstrap_errors = check_bootstrap_lock_subset(lock_root, lock_path, bootstrap)
+        errors.extend(bootstrap_errors)
+        if not bootstrap_errors:
+            allowed = (bootstrap, matrix_token) if matrix_token else (bootstrap,)
+            bootstrap_tokens += allowed
+            if source_bootstrap_lock_path is not None and (
+                not lock_indexes or not any(
+                    index < lock_indexes[0] and installs_hashed_requirements(command, allowed)
+                    for index, command in pip_commands
+                )
+            ):
+                errors.append(f"{target} must install {bootstrap} before its final hashed lock")
     if lock_path not in job_block or not lock_indexes:
         errors.append(
             f"release workflow {job} job does not consume {target} lock {lock_path} "

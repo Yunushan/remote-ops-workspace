@@ -1,0 +1,17 @@
+# Linux i386 wheel-only build backend lock; CPython 3.14.7.
+# Candidate dependency inputs. Hashes are from the pinned PyPI releases.
+# Native execution and independent redistribution approval are still required.
+maturin==1.16.0 \
+    --hash=sha256:399fadcd4af39532a173e010240c34930eacc1bb1746bb179863481c68bcf1ab
+packaging==26.3 \
+    --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pip==26.3 \
+    --hash=sha256:f3b60b20ffaadd4415ed7957212a38ac63fa4c5fa375bd0f4a797777940fad13
+semantic-version==2.10.0 \
+    --hash=sha256:de78a3b8e0feda74cabc54aab2da702113e33ac9d9eb9d2389bcf1f58b7d9177
+setuptools==84.2.1 \
+    --hash=sha256:ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2
+setuptools-rust==1.13.0 \
+    --hash=sha256:666439c4d90e968bb625bcf87ec0aa02b4f49e599d2f5dc255c633a04e8eca99
+wheel==0.48.0 \
+    --hash=sha256:3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab

@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "extended-platform-evidence.yml"
+NATIVE_LOCK_DIR = "requirements-locks/protected-linux"
 LINUX_TARGET_ARTIFACTS = {
     "linux-i386": (
         "remote-ops-workspace-${RELEASE_TAG}-linux-i386.deb",
@@ -28,6 +29,7 @@ LINUX_TARGET_ARTIFACTS = {
 WORKFLOW_SCRIPT_DEPENDENCIES = (
     Path("scripts") / "check_extended_platform_dispatch_inputs.py",
     Path("scripts") / "check_extended_platform_builder.py",
+    Path("scripts") / "check_protected_linux_build_inputs.py",
     Path("scripts") / "make_linux_native.sh",
     Path("scripts") / "smoke_linux_native.sh",
     Path("scripts") / "check_platform_promotion_artifacts.py",
@@ -241,6 +243,21 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     source_artifact_name = f"extended-linux-evidence-{target}-${{RELEASE_TAG}}"
     action_upload_dir = f"platform-evidence-upload/{target}/${{{{ inputs.release_tag }}}}"
     action_source_artifact_name = f"extended-linux-evidence-{target}-${{{{ inputs.release_tag }}}}"
+    source_packages = (
+        "bcrypt,cffi,cryptography,pyftpdlib" if target == "linux-i386" else "cffi,pyftpdlib,pyinstaller"
+    )
+    lock_commands = (
+        f"python3 scripts/check_protected_linux_build_inputs.py --target {target}",
+        "python3 -m venv --clear .venv-native",
+        ". .venv-native/bin/activate",
+        f"python -m pip install --require-hashes --force-reinstall --only-binary=:all: "
+        f"--requirement {NATIVE_LOCK_DIR}/{target}-bootstrap.txt",
+        f"python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=cffi "
+        f"--requirement {NATIVE_LOCK_DIR}/linux-32bit-cffi.txt",
+        f"python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary={source_packages} "
+        f"--requirement {NATIVE_LOCK_DIR}/{target}.txt",
+        'python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"',
+    )
     stage_upload_snippet = (
         "python scripts/stage_extended_linux_evidence_upload.py \\\n"
         f"            --target {target} \\\n"
@@ -289,8 +306,6 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f'--out "{evidence_dir}/{builder_identity_name}"': "builder identity output",
         '            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \\\n': "builder workflow run-attempt evidence",
         '--source-head-sha "$SOURCE_HEAD_SHA"': "builder source head SHA evidence",
-        "python3 -m venv .venv-native": "isolated release virtual environment",
-        'python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"': "pinned release dependency installation",
         (
             "python -m pip check\n"
             f'          python -X utf8 -m pip inspect --local > "{evidence_dir}/candidate-pip-inspect.json"\n'
@@ -349,6 +364,14 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"{job} missing {label}: {snippet}")
+    install_step = re.search(r"(?ms)^      - name: Create isolated release environment\n(.*?)(?=^      - |\Z)", block)
+    expected_env = '        env:\n          CARGO_NET_OFFLINE: "true"\n' if target == "linux-i386" else ""
+    expected_install_step = (
+        expected_env + "        run: |\n          set -euo pipefail\n          "
+        + "\n          ".join(lock_commands) + "\n"
+    )
+    if install_step is None or install_step[1] != expected_install_step:
+        errors.append(f"{job} must install the protected Linux locks in one unconditional build setup step")
     errors.extend(check_checkout_step(block, job=job))
     errors.extend(check_run_shell_safety(block, job=job))
     arch_label = target.removeprefix("linux-")

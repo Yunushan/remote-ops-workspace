@@ -32,6 +32,13 @@ MODERN_TARGETS = {
 }
 
 
+def check_protected_linux_locks(root: Path) -> list[str]:
+    from check_protected_linux_build_inputs import TARGETS, check_lock_inputs
+
+    toolchain = json.loads((root / "configs/release_toolchain.json").read_bytes())
+    return [error for target in TARGETS for error in check_lock_inputs(root, target, toolchain)]
+
+
 def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> list[str]:
     errors: list[str] = []
     config = json.loads((root / "configs/release_dependency_locks.json").read_text(encoding="utf-8"))
@@ -98,14 +105,14 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
 
 def main() -> int:
     try:
-        errors = check_locks()
+        errors = check_locks() + check_protected_linux_locks(ROOT)
     except (OSError, ValueError, KeyError) as exc:
         errors = [str(exc)]
     for error in errors:
         print(f"release dependency locks: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("modern release dependency locks and workflow consumption passed; native evidence and independent approval remain separate")
+    print("release dependency locks and workflow consumption passed")
     return 0
 
 

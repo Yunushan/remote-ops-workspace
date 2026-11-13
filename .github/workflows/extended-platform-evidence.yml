@@ -121,11 +121,17 @@ jobs:
             --source-head-sha "$SOURCE_HEAD_SHA" \
             --out "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json"
       - name: Create isolated release environment
+        env:
+          CARGO_NET_OFFLINE: "true"
         run: |
           set -euo pipefail
-          python3 -m venv .venv-native
+          python3 scripts/check_protected_linux_build_inputs.py --target linux-i386
+          python3 -m venv --clear .venv-native
           . .venv-native/bin/activate
-          python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
+          python -m pip install --require-hashes --force-reinstall --only-binary=:all: --requirement requirements-locks/protected-linux/linux-i386-bootstrap.txt
+          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=cffi --requirement requirements-locks/protected-linux/linux-32bit-cffi.txt
+          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=bcrypt,cffi,cryptography,pyftpdlib --requirement requirements-locks/protected-linux/linux-i386.txt
+          python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
       - name: Build Linux i386 native artifacts
         run: |
           set -euo pipefail
@@ -272,9 +278,13 @@ jobs:
       - name: Create isolated release environment
         run: |
           set -euo pipefail
-          python3 -m venv .venv-native
+          python3 scripts/check_protected_linux_build_inputs.py --target linux-armhf
+          python3 -m venv --clear .venv-native
           . .venv-native/bin/activate
-          python -m pip install --constraint requirements-release.txt pip setuptools wheel ".[security,package]"
+          python -m pip install --require-hashes --force-reinstall --only-binary=:all: --requirement requirements-locks/protected-linux/linux-armhf-bootstrap.txt
+          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=cffi --requirement requirements-locks/protected-linux/linux-32bit-cffi.txt
+          python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=cffi,pyftpdlib,pyinstaller --requirement requirements-locks/protected-linux/linux-armhf.txt
+          python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
       - name: Build Linux armhf native artifacts
         run: |
           set -euo pipefail

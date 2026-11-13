@@ -445,6 +445,8 @@ jobs:
           --current-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
           --governance-attestation release-governance-publish/tag-governance-attestation.json
           --governance-signature release-governance-publish/tag-governance-attestation.sig.json
+          --redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"
+          --redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
       - name: Verify published release notes
         env:
           GH_TOKEN: ${{ github.token }}

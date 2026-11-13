@@ -119,8 +119,17 @@ def main(
             raise ValueError("governance verification requires both proof files and a complete published release")
         if check_published_at is not None and (not verify_governance or current_transaction):
             raise ValueError("publication-time checks require a completed release with verified governance")
-        if audited_inputs is not None and (not verify_governance or current_transaction):
-            raise ValueError("audited input checks require a completed release with verified governance")
+        approval_paths = (args.redistribution_evidence, args.redistribution_signature)
+        if any(path is not None for path in approval_paths):
+            if not current_transaction or not verify_governance or audited_inputs is not None or None in approval_paths:
+                raise ValueError("explicit redistribution inputs require both files and the current published transaction")
+            audited_inputs = {}
+            for path in approval_paths:
+                assert path is not None
+                data, _ = read_json_object(path, "signed redistribution approval input")
+                audited_inputs[path] = hashlib.sha256(data).hexdigest()
+        if audited_inputs is not None and not verify_governance:
+            raise ValueError("audited input checks require verified governance")
         if args.published_release_id is not None and args.published_release_id < 1:
             raise ValueError("published release id must be positive")
         repository = normalize_repository(args.repository)
@@ -347,6 +356,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--current-transaction-run-attempt", type=int)
     parser.add_argument("--governance-attestation", type=Path)
     parser.add_argument("--governance-signature", type=Path)
+    parser.add_argument("--redistribution-evidence", type=Path)
+    parser.add_argument("--redistribution-signature", type=Path)
     return parser.parse_args(argv)
 
 

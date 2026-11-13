@@ -545,6 +545,14 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 }
             ),
         ),
+        "Verify final immutable release and complete exact-tag provenance": (
+            (
+                '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
+                '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
+            ),
+            (),
+            None,
+        ),
         "Require immutable releases enabled before any mutation": (
             (
                 "--repository \"$GITHUB_REPOSITORY\"",

@@ -675,9 +675,9 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
     else:
         assert checker.main(args) == 0
         approved = tmp_path / "release-evidence.json"
-        approved.write_bytes(b"exact signed redistribution approval")
+        approved.write_bytes(b'{"decision":"approved"}')
         approved_sig = tmp_path / "release-evidence.sig.json"
-        approved_sig.write_bytes(b"detached signature")
+        approved_sig.write_bytes(b'{"signature":"fixture"}')
         inputs = {path: checker.sha256_file(path) for path in (approved, approved_sig)}
         assert checker.main(args, audited_inputs=inputs) == 0
         assert checker.main(args, audited_inputs={**inputs, approved_sig: "b" * 64}) == 1
@@ -712,10 +712,19 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert publication_times == ["2026-11-01T12:02:00+00:00"]
         assert checker.main(args, check_published_at=lambda _published: ["approval expired at publication"]) == 1
         assert "approval expired at publication" in capsys.readouterr().err
-        assert checker.main([
+        current_args = [
             *args, "--published-release-id", "77",
             "--current-transaction-run-id", "123", "--current-transaction-run-attempt", "1",
-        ]) == 0
+        ]
+        assert checker.main(current_args) == 0
+        approval_args = ["--redistribution-evidence", str(approved), "--redistribution-signature", str(approved_sig)]
+        assert checker.main([*current_args, *approval_args]) == 0
+        assert checker.main([*current_args, *approval_args[:2]]) == 1
+        assert checker.main([*args, *approval_args]) == 1
+        monkeypatch.setattr(checker, "verify_attestation", mismatched_input_attempt)
+        assert checker.main([*current_args, *approval_args]) == 1
+        assert "signed redistribution approval must share" in capsys.readouterr().err
+        monkeypatch.setattr(checker, "verify_attestation", attestation_api)
         run["run_started_at"] = "2026-11-01T12:03:00Z"
         assert checker.main(args, check_published_at=check_approval) == 1
         assert publication_times == ["2026-11-01T12:02:00+00:00"]

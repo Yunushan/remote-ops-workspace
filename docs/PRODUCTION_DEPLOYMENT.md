@@ -344,9 +344,11 @@ owner-only ACL, retained-handle delete sharing, rename identity, and hard-link
 refusal. It also uses a temporary standard local account to prove that Windows
 allows read, write and delete opens of a control file and denies the same opens
 of the private canary. Separate x86 and x64 jobs compare the ctypes structure
-layouts against the installed Windows SDK. These checks cover storage primitives.
-End-to-end updater qualification is still required before enabling production
-staging.
+layouts against the installed Windows SDK. The NTFS drill uses the real
+workspace-home selection and stage lock, interrupts the staging transaction
+before its final journal write, then checks recovery and tamper refusal with
+public fixture bytes. Authenticated end-to-end updater qualification is still
+required before enabling production staging.
 
 HTTPS uses certificate and hostname verification, TLS 1.2 or later,
 credential-free requests, disabled environment proxies, identity encoding and a

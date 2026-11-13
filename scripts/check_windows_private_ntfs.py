@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -151,6 +152,73 @@ def qualify(parent: Path, observed: list[str], account: str, password: str, cont
         observed.append("token-unchanged-and-stage-clean")
 
 
+def qualify_staging(parent: Path, observed: list[str]) -> None:
+    from remote_ops_workspace import update_staging as staging
+    from remote_ops_workspace.paths import data_dir
+    from remote_ops_workspace.state_lock import exclusive_file_lock
+    from remote_ops_workspace.windows_private_storage import windows_update_boundary
+
+    # This fixture exercises the storage transaction using an external byte
+    # binding. It has no publisher key, installer, or network dependency.
+    manifest = b'{"purpose":"public NTFS staging test"}'
+    asset_name = "canary.bin"
+    manifest_digest = hashlib.sha256(manifest).hexdigest()
+    binding = staging.AssetSetBinding(
+        manifest_digest,
+        (staging.StageBinding(manifest_digest, asset_name, hashlib.sha256(CANARY).hexdigest(), len(CANARY)),),
+    )
+
+    class SimulatedInterruption(Exception):
+        pass
+
+    class InterruptedTransaction(staging.AssetSetTransaction):
+        def _publish_phase(self, phase):
+            if phase == "staged":
+                raise SimulatedInterruption
+            super()._publish_phase(phase)
+
+    def transaction(transaction_type, guard):
+        def lease(path):
+            return exclusive_file_lock(path, timeout_seconds=5, _private_guard=guard)
+        return transaction_type(Path(guard.path), binding, exclusive_lease=lease, private_guard=guard)
+
+    with tempfile.TemporaryDirectory(prefix="row-stage-ntfs-", dir=parent) as scratch:
+        root = Path(scratch) / "stage"
+        require(not os.environ.get("ROW_HOME"), "unexpected-row-home-override")
+        home = data_dir()
+        with windows_update_boundary(root, home, create=True) as guard:
+            observed.append("default-home-and-stage-boundary")
+            operation = transaction(InterruptedTransaction, guard)
+            try:
+                operation.prepare(manifest, {asset_name: [CANARY]})
+            except SimulatedInterruption:
+                observed.append("staging-interrupted-before-commit")
+            else:
+                raise ValueError("expected-staging-interruption-missing")
+
+        # Reacquire every native guard and the lock as a later invocation does.
+        with windows_update_boundary(root, home) as guard:
+            operation = transaction(staging.AssetSetTransaction, guard)
+            result = operation.recover()
+            require(result["phase"] == "staged" and result["transaction_id"] == binding.transaction_id,
+                    "staging-recovery-binding-mismatch")
+            require(result["install_permitted"] is False, "staging-install-unexpectedly-permitted")
+            observed.append("interrupted-stage-recovered")
+
+            asset = root / asset_name
+            with asset.open("r+b") as stream:
+                stream.write(b"X")
+                stream.flush()
+                os.fsync(stream.fileno())
+            try:
+                operation.recover()
+            except staging.StagingError as exc:
+                require(exc.args == ("staged-byte-mismatch",), "unexpected-staging-refusal")
+            else:
+                raise ValueError("tampered-stage-recovered")
+            observed.append("tampered-stage-refused")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -163,7 +231,9 @@ def main() -> int:
         account = os.environ.pop("ROW_NTFS_TEST_ACCOUNT")
         password = os.environ.pop("ROW_NTFS_TEST_PASSWORD")
         control = Path(os.environ.pop("ROW_NTFS_TEST_CONTROL"))
-        qualify(Path(os.environ["RUNNER_TEMP"]), observed, account, password, control)
+        parent = Path(os.environ["RUNNER_TEMP"])
+        qualify(parent, observed, account, password, control)
+        qualify_staging(parent, observed)
     except (KeyError, OSError, RuntimeError, ValueError) as exc:
         # Report fixed check names or an OS error number only. Never emit paths,
         # tokens, descriptors, environment values or runner error text.
@@ -184,6 +254,12 @@ def main() -> int:
 
 FAILURE_CODES = frozenset({
     "windows-required", "local-fixed-volume-required", "persistent-local-acl-required",
+    "unexpected-row-home-override", "expected-staging-interruption-missing", "staging-recovery-binding-mismatch",
+    "staging-install-unexpectedly-permitted", "unexpected-staging-refusal",
+    "tampered-stage-recovered", "stage-io-refused", "stage-changed",
+    "incomplete-stage", "unexpected-stage-entry", "interrupted-partial-stage",
+    "stage-must-be-outside-home", "default-home-selection-mismatch",
+    "redirected-default-home-refused", "redirected-default-local-refused",
     "unexpected-other-identity-open-error", "private-file-access-granted-to-other-identity",
     "other-identity-logon-failed", "other-identity-token-size-invalid",
     "other-identity-token-read-failed", "other-identity-matches-owner", "other-identity-elevated",

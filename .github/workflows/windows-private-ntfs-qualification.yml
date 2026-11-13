@@ -8,6 +8,10 @@ on:
       - 'scripts/check_windows_private_ntfs.py'
       - 'scripts/check_windows_private_sdk_layout.py'
       - 'src/remote_ops_workspace/windows_private_storage.py'
+      - 'src/remote_ops_workspace/file_safety.py'
+      - 'src/remote_ops_workspace/paths.py'
+      - 'src/remote_ops_workspace/state_lock.py'
+      - 'src/remote_ops_workspace/update_staging.py'
   push:
     branches: [main]
     paths:
@@ -15,6 +19,10 @@ on:
       - 'scripts/check_windows_private_ntfs.py'
       - 'scripts/check_windows_private_sdk_layout.py'
       - 'src/remote_ops_workspace/windows_private_storage.py'
+      - 'src/remote_ops_workspace/file_safety.py'
+      - 'src/remote_ops_workspace/paths.py'
+      - 'src/remote_ops_workspace/state_lock.py'
+      - 'src/remote_ops_workspace/update_staging.py'
 
 permissions:
   contents: read
@@ -50,7 +58,7 @@ jobs:
       - name: Exercise private storage on NTFS
         id: storage
         shell: pwsh
-        timeout-minutes: 2
+        timeout-minutes: 4
         run: |
           $ErrorActionPreference = 'Stop'
           $name = 'rowntfs' + [guid]::NewGuid().ToString('N').Substring(0, 12)

@@ -7,6 +7,25 @@ import sys
 from pathlib import Path
 
 
+def test_runner_inventory_requires_protected_administration_read_token() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "    environment: platform-evidence\n",
+        "",
+        1,
+    ).replace(
+        "GH_TOKEN: ${{ secrets.ROW_PLATFORM_RUNNER_INVENTORY_TOKEN }}",
+        "GH_TOKEN: ${{ github.token }}",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("missing tag-restricted runner inventory environment" in error for error in errors)
+    assert any("missing Administration read token for runner inventory" in error for error in errors)
+
+
 def test_extended_platform_evidence_workflow_passes_current_tree() -> None:
     checker = _load_script("check_extended_platform_evidence")
 

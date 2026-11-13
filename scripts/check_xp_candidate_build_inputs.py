@@ -81,6 +81,13 @@ def check_build_inputs(
     base = f"remote-ops-workspace-{tag}-windows-xp-{arch}-native"
     archive = assets_dir / f"{base}.zip"
     manifest = assets_dir / f"{base}-manifest.json"
+    signed = source_ref == f"refs/tags/{tag}"
+    expected_signing = {
+        "release_channel": "production-signed" if signed else "unsigned-preview",
+        "production_trusted": signed,
+        "authenticode_verified": signed,
+        "timestamped": signed,
+    }
     expected = {
         "schema_version": 1,
         "target": target,
@@ -98,12 +105,22 @@ def check_build_inputs(
         "generated_source_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
         "archive_sha256": sha256_file(archive),
         "native_manifest_sha256": sha256_file(manifest),
+        "signing": expected_signing,
     }
     if set(receipt) != set(expected) | {"compiler", "executable_sha256"}:
         errors.append("build receipt fields must match the expected schema")
     for key, value in expected.items():
         if type(receipt.get(key)) is not type(value) or receipt[key] != value:
             errors.append(f"build receipt {key} does not match the expected input")
+    manifest_records = json.loads(manifest.read_bytes(), object_pairs_hook=unique_object)
+    if (
+        not isinstance(manifest_records, list) or len(manifest_records) != 1
+        or not isinstance(manifest_records[0], dict)
+        or not signing_matches(manifest_records[0].get("signing"), expected_signing)
+    ):
+        errors.append("XP native manifest signing metadata does not match the release channel")
+    if not signing_matches(receipt.get("signing"), expected_signing):
+        errors.append("XP build receipt must record exact signing metadata for its release channel")
     compiler = receipt.get("compiler")
     if not (
         isinstance(compiler, dict)
@@ -114,8 +131,15 @@ def check_build_inputs(
         and lowercase_sha256_hex(compiler["sha256"])
     ):
         errors.append("build receipt compiler observation is invalid")
-    errors.extend(check_package(archive, arch, receipt.get("executable_sha256"), root))
+    errors.extend(check_package(archive, arch, receipt.get("executable_sha256"), root, signed=signed))
     return errors
+
+
+def signing_matches(value: Any, expected: dict[str, Any]) -> bool:
+    return (
+        isinstance(value, dict) and set(value) == set(expected)
+        and all(type(value[key]) is type(item) and value[key] == item for key, item in expected.items())
+    )
 
 
 def matches_pe_architecture(executable: bytes, arch: str) -> bool:
@@ -131,7 +155,22 @@ def matches_pe_architecture(executable: bytes, arch: str) -> bool:
     )
 
 
-def check_package(archive: Path, arch: str, executable_sha256: Any, root: Path) -> list[str]:
+def has_pe_certificate_table(executable: bytes, arch: str) -> bool:
+    optional = int.from_bytes(executable[60:64], "little") + 24
+    directories = optional + (96 if arch == "x86" else 112)
+    table = directories + 4 * 8
+    count = int.from_bytes(executable[directories - 4:directories], "little")
+    offset = int.from_bytes(executable[table:table + 4], "little")
+    size = int.from_bytes(executable[table + 4:table + 8], "little")
+    if not (count >= 5 and table + 8 <= offset and size >= 8 and offset + size <= len(executable)):
+        return False
+    length = int.from_bytes(executable[offset:offset + 4], "little")
+    return 8 < length <= size and executable[offset + 4:offset + 8] == b"\x00\x02\x02\x00"
+
+
+def check_package(
+    archive: Path, arch: str, executable_sha256: Any, root: Path, *, signed: bool,
+) -> list[str]:
     with zipfile.ZipFile(archive) as package:
         files = {entry.filename: entry for entry in package.infolist() if not entry.is_dir()}
         if set(files) != PACKAGE_FILES:
@@ -144,6 +183,8 @@ def check_package(archive: Path, arch: str, executable_sha256: Any, root: Path) 
             errors.append("build receipt executable digest does not match the XP archive")
         if not matches_pe_architecture(executable, arch):
             errors.append(f"XP archive executable does not have the expected {arch} PE headers")
+        elif signed and not has_pe_certificate_table(executable, arch):
+            errors.append("XP release executable is missing an embedded Authenticode certificate table")
         for name in ("LICENSE", "NOTICE"):
             packaged = package.read(files[f"docs/{name}"]).replace(b"\r\n", b"\n")
             if packaged != (root / name).read_bytes().replace(b"\r\n", b"\n"):

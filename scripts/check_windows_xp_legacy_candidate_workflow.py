@@ -42,6 +42,11 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
     required_snippets = {
         'branches:\n      - "**"': "branch push trigger",
         'tags:\n      - "v*"': "release tag trigger",
+        "name: Windows XP signed candidate (${{ matrix.arch }})": "signed candidate matrix",
+        "if: ${{ github.ref_type != 'tag' }}": "non-tag candidate job",
+        "if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}": "tag-only signing job",
+        "environment: release": "protected release environment",
+        "ROW_XP_REQUIRE_SIGNING:": "tag signing requirement",
         "runs-on: windows-2025-vs2026": "modern Windows builder",
         "arch: [x86, x64]": "x86/x64 matrix",
         "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "checkout",

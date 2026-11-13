@@ -134,11 +134,14 @@ def test_xp_candidate_authenticates_archive_bytes(tmp_path, monkeypatch, change,
     ("change", "expected"),
     [
         ("", ""),
+        ("preview", ""),
         ("attempt", "build receipt run_attempt does not match"),
         ("archive", "build receipt archive_sha256 does not match"),
         ("reference", "build receipt reference_assemblies does not match"),
         ("executable", "build receipt executable digest does not match"),
         ("architecture", "does not have the expected x64 PE headers"),
+        ("unsigned", "missing an embedded Authenticode certificate table"),
+        ("signing", "build receipt must record exact signing metadata"),
         ("extra", "must contain exactly the executable"),
     ],
 )
@@ -152,11 +155,16 @@ def test_build_receipt_matches_exact_xp_candidate(
     base = f"remote-ops-workspace-{tag}-windows-xp-x64-native"
     archive = assets / f"{base}.zip"
     manifest = assets / f"{base}-manifest.json"
-    exe = bytearray(90)
+    exe = bytearray(272)
     exe[:2] = b"MZ"
     exe[60:64] = (64).to_bytes(4, "little")
     exe[64:70] = b"PE\0\0\x64\x86"
     exe[88:90] = b"\x0b\x02"
+    exe[196:200] = (16).to_bytes(4, "little")
+    if change not in {"unsigned", "preview"}:
+        exe[232:236] = (256).to_bytes(4, "little")
+        exe[236:240] = (16).to_bytes(4, "little")
+        exe[256:264] = b"\x10\0\0\0\0\x02\x02\0"
     if change == "architecture":
         exe[68:70] = b"\x4c\x01"
     with zipfile.ZipFile(archive, "w") as bundle:
@@ -166,12 +174,20 @@ def test_build_receipt_matches_exact_xp_candidate(
             bundle.writestr(f"docs/{name}", (checker.ROOT / name).read_bytes())
         if change == "extra":
             bundle.writestr("bin/extra.dll", "unexpected runtime")
+    signed = change != "preview"
+    signing = {
+        "release_channel": "production-signed" if signed else "unsigned-preview",
+        "production_trusted": signed,
+        "authenticode_verified": signed,
+        "timestamped": signed,
+    }
     manifest.write_text(json.dumps([{
         "file": archive.name,
         "architecture": "x64",
         "format": "zip",
         "size_bytes": archive.stat().st_size,
         "sha256": digest(archive.read_bytes()),
+        "signing": signing,
     }]), encoding="utf-8")
     (assets / f"{base}-SHA256SUMS.txt").write_text(
         f"{digest(archive.read_bytes())}  {archive.name}\n"
@@ -180,7 +196,7 @@ def test_build_receipt_matches_exact_xp_candidate(
     identity = {
         "repository": "example/project",
         "tag": tag,
-        "source_ref": f"refs/tags/{tag}",
+        "source_ref": f"refs/tags/{tag}" if signed else "refs/heads/test",
         "source_sha": "1" * 40,
         "run_id": "100",
         "run_attempt": "1",
@@ -203,12 +219,14 @@ def test_build_receipt_matches_exact_xp_candidate(
         "executable_sha256": digest(exe),
         "archive_sha256": digest(archive.read_bytes()),
         "native_manifest_sha256": digest(manifest.read_bytes()),
+        "signing": signing,
     }
     corrupt = {
         "attempt": ("run_attempt", "2"),
         "archive": ("archive_sha256", "3" * 64),
         "reference": ("reference_assemblies", {}),
         "executable": ("executable_sha256", "4" * 64),
+        "signing": ("signing", {**signing, "timestamped": False}),
     }
     if change in corrupt:
         key, replacement = corrupt[change]

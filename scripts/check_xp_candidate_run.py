@@ -115,7 +115,7 @@ def verify_candidate(
     run = client.json(f"actions/runs/{run_id}/attempts/{attempt}")
     check_run(run, repository=repository, tag=tag, sha=sha, run_id=run_id, attempt=attempt)
     jobs = client.json(f"actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100")["jobs"]
-    matching_jobs = [job for job in jobs if job.get("name") == f"Windows XP legacy candidate ({arch})"]
+    matching_jobs = [job for job in jobs if job.get("name") == f"Windows XP signed candidate ({arch})"]
     if len(matching_jobs) != 1:
         raise ValueError(f"XP build attempt must contain one {arch} candidate job")
     job = matching_jobs[0]

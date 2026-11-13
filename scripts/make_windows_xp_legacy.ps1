@@ -44,6 +44,47 @@ function Get-Sha256([string]$Path) {
   return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
 }
 
+function Sign-XpExecutable([string]$Path) {
+  foreach ($Name in @("ROW_WINDOWS_CERTIFICATE_BASE64", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL")) {
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))) {
+      throw "XP release signing requires $Name in the protected release environment."
+    }
+  }
+  $SignTool = (Get-Command signtool.exe -CommandType Application -ErrorAction SilentlyContinue).Source
+  if (!$SignTool) {
+    $Sdk = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+    $SignTool = Get-ChildItem -LiteralPath $Sdk -Directory |
+      Where-Object { $_.Name -match '^10\.0\.\d+\.\d+$' } |
+      Sort-Object { [version]$_.Name } -Descending |
+      ForEach-Object { Join-Path $_.FullName "x64\signtool.exe" } |
+      Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+      Select-Object -First 1
+  }
+  if (!$SignTool) {
+    throw "XP release signing requires signtool.exe."
+  }
+  $Timestamp = [uri]$env:ROW_WINDOWS_TIMESTAMP_URL
+  if (!$Timestamp.IsAbsoluteUri -or $Timestamp.Scheme -notin @("http", "https") -or !$Timestamp.Host -or $Timestamp.UserInfo) {
+    throw "XP release timestamping requires a credential-free HTTP or HTTPS URL."
+  }
+  $Certificate = Join-Path $env:RUNNER_TEMP "row-xp-$Arch-$([guid]::NewGuid()).pfx"
+  try {
+    [System.IO.File]::WriteAllBytes($Certificate, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
+    & $SignTool sign /q /fd SHA256 /td SHA256 /tr $Timestamp.AbsoluteUri /f $Certificate /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $Path
+    if ($LASTEXITCODE -ne 0) {
+      throw "XP executable Authenticode signing failed."
+    }
+    & $SignTool verify /pa /all /tw $Path
+    if ($LASTEXITCODE -ne 0) {
+      throw "XP executable Authenticode or timestamp verification failed."
+    }
+  } finally {
+    if (Test-Path -LiteralPath $Certificate) {
+      Remove-Item -LiteralPath $Certificate -Force
+    }
+  }
+}
+
 function Get-ReferenceAssemblyPaths($Lock, [string]$Package, [string]$Directory) {
   if ((Get-Sha256 $Package) -cne $Lock.sha256) {
     throw ".NET Framework 4 reference package digest mismatch."
@@ -124,6 +165,20 @@ foreach ($Path in $References) {
   }
 }
 
+$Signed = $env:ROW_XP_REQUIRE_SIGNING -eq "1"
+if ($env:GITHUB_EVENT_NAME -eq "push" -and $env:GITHUB_REF_TYPE -eq "tag" -and !$Signed) {
+  throw "An XP release tag must produce signed candidates."
+}
+if ($Signed) {
+  Sign-XpExecutable $HostExe
+}
+$Signing = [ordered]@{
+  release_channel = if ($Signed) { "production-signed" } else { "unsigned-preview" }
+  production_trusted = $Signed
+  authenticode_verified = $Signed
+  timestamped = $Signed
+}
+
 $VersionOutput = & $HostExe --version
 if ($LASTEXITCODE -ne 0 -or ($VersionOutput -join "`n") -notmatch [regex]::Escape($Version)) {
   throw "XP legacy host --version smoke failed"
@@ -171,6 +226,7 @@ $Manifest = @(
     size_bytes = (Get-Item -LiteralPath $NativeZip).Length
     sha256 = Get-Sha256 -Path $NativeZip
     build_stack = "dotnet-framework-v4-winforms"
+    signing = $Signing
     current_python_pyqt6_stack = $false
     legacy_compatibility_profile = "isolated-opt-in"
   }
@@ -210,6 +266,7 @@ $BuildInputs = [ordered]@{
   reference_assemblies = $LockedReferences.assemblies
   generated_source_sha256 = $SourceHash
   executable_sha256 = Get-Sha256 $HostExe
+  signing = $Signing
   archive_sha256 = Get-Sha256 $NativeZip
   native_manifest_sha256 = Get-Sha256 $ManifestPath
 }

@@ -166,6 +166,8 @@ jobs:
           --require-platform-goal-targets
           --native-release-channel production-signed
       - name: Audit signed exact-byte redistribution and resolver evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >-
           python scripts/check_release_license_compliance.py
           --policy configs/release_compliance_policy.json

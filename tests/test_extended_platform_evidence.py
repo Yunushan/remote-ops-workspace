@@ -910,6 +910,9 @@ def test_extended_platform_dispatch_input_validator_rejects_release_tag_ref_mism
 
 def test_extended_platform_builder_accepts_matching_i386(monkeypatch) -> None:
     checker = _load_script("check_extended_platform_builder")
+    monkeypatch.setenv("ROW_LINUX_CVE_PATCH_REVIEWED", "true")
+    monkeypatch.setenv("ROW_LINUX_SECURITY_UPDATE_CHANNEL", "debian-bookworm-security-updates")
+    monkeypatch.setenv("ROW_LINUX_CVE_REVIEW_REFERENCE", "debian-bookworm-cve-review-2026-11")
     monkeypatch.setattr(checker.sys, "platform", "linux")
     monkeypatch.setattr(checker.sys, "version_info", (3, 12, 0))
     monkeypatch.setattr(checker, "normalized_machine", lambda: "i686")
@@ -953,6 +956,9 @@ def test_extended_platform_builder_rejects_interactive_sudo(monkeypatch) -> None
 
 def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monkeypatch) -> None:
     checker = _load_script("check_extended_platform_builder")
+    monkeypatch.setenv("ROW_LINUX_CVE_PATCH_REVIEWED", "true")
+    monkeypatch.setenv("ROW_LINUX_SECURITY_UPDATE_CHANNEL", "debian-bookworm-security-updates")
+    monkeypatch.setenv("ROW_LINUX_CVE_REVIEW_REFERENCE", "debian-bookworm-cve-review-2026-11")
     for name in (
         "GITHUB_ACTIONS",
         "GITHUB_SHA",
@@ -1041,6 +1047,9 @@ def test_extended_platform_builder_writes_identity_evidence(tmp_path: Path, monk
     assert data["required_tools"]["dpkg-deb"] == "/usr/bin/dpkg-deb"
     assert data["required_tools"]["rpm"] == "/usr/bin/rpm"
     assert data["sudo_non_interactive"] is True
+    assert data["security_patch_evidence"]["cve_patch_reviewed"] is True
+    assert data["security_patch_evidence"]["security_update_channel"] == "debian-bookworm-security-updates"
+    assert data["security_patch_evidence"]["cve_review_reference"] == "debian-bookworm-cve-review-2026-11"
 
 
 def test_extended_platform_builder_rejects_symlinked_identity_output(

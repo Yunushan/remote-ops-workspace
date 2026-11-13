@@ -193,8 +193,9 @@ def test_linux_smoke_binds_security_lines_to_builder_evidence() -> None:
     script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
 
     assert "openssl version | tr '[:upper:]' '[:lower:]'" in script
-    assert 'SMOKE_SECURITY_UPDATE_CHANNEL="distribution-security-updates"' in script
-    assert 'SMOKE_CVE_REVIEW_REFERENCE="distribution-security-tracker-and-release-notes"' in script
+    assert 'SMOKE_SECURITY_UPDATE_CHANNEL="${ROW_LINUX_SECURITY_UPDATE_CHANNEL:-}"' in script
+    assert 'SMOKE_CVE_REVIEW_REFERENCE="${ROW_LINUX_CVE_REVIEW_REFERENCE:-}"' in script
+    assert 'if [[ "${ROW_LINUX_CVE_PATCH_REVIEWED:-}" != "true" ]]; then' in script
     assert 'BUILDER_SECURITY_UPDATE_CHANNEL="$value"' in script
     assert 'BUILDER_CVE_REVIEW_REFERENCE="$value"' in script
     assert "SMOKE_SECURITY_UPDATE_CHANNEL" in script

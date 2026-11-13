@@ -11,8 +11,8 @@ WORKFLOW_RUN_URL=""
 WORKFLOW_RUN_ATTEMPT=""
 SOURCE_HEAD_SHA=""
 BUILDER_EVIDENCE=""
-SMOKE_SECURITY_UPDATE_CHANNEL="distribution-security-updates"
-SMOKE_CVE_REVIEW_REFERENCE="distribution-security-tracker-and-release-notes"
+SMOKE_SECURITY_UPDATE_CHANNEL="${ROW_LINUX_SECURITY_UPDATE_CHANNEL:-}"
+SMOKE_CVE_REVIEW_REFERENCE="${ROW_LINUX_CVE_REVIEW_REFERENCE:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -354,6 +354,10 @@ PY
   require_builder_match "security_patch_evidence.openssl_cli_version" "$BUILDER_OPENSSL_CLI_VERSION" "$SMOKE_OPENSSL_CLI_VERSION"
   require_builder_value "security_patch_evidence.security_update_channel" "$BUILDER_SECURITY_UPDATE_CHANNEL"
   require_builder_value "security_patch_evidence.cve_review_reference" "$BUILDER_CVE_REVIEW_REFERENCE"
+  if [[ "${ROW_LINUX_CVE_PATCH_REVIEWED:-}" != "true" ]]; then
+    echo "target $TARGET requires an explicit CVE patch review" >&2
+    exit 2
+  fi
   require_builder_match "security_patch_evidence.security_update_channel" "$BUILDER_SECURITY_UPDATE_CHANNEL" "$SMOKE_SECURITY_UPDATE_CHANNEL"
   require_builder_match "security_patch_evidence.cve_review_reference" "$BUILDER_CVE_REVIEW_REFERENCE" "$SMOKE_CVE_REVIEW_REFERENCE"
 fi
@@ -433,8 +437,10 @@ echo "native installer smoke kernel release: $SMOKE_KERNEL_RELEASE"
 echo "native installer smoke glibc version: $SMOKE_GLIBC_VERSION"
 echo "native installer smoke python ssl openssl: $SMOKE_PYTHON_SSL_OPENSSL"
 echo "native installer smoke openssl cli version: $SMOKE_OPENSSL_CLI_VERSION"
-echo "native installer smoke security update channel: $SMOKE_SECURITY_UPDATE_CHANNEL"
-echo "native installer smoke CVE review reference: $SMOKE_CVE_REVIEW_REFERENCE"
+if [[ -n "$TARGET" ]]; then
+  echo "native installer smoke security update channel: $SMOKE_SECURITY_UPDATE_CHANNEL"
+  echo "native installer smoke CVE review reference: $SMOKE_CVE_REVIEW_REFERENCE"
+fi
 echo "native installer smoke TLS minimum modern profiles: TLS 1.2"
 echo "native installer smoke TLS preferred modern profiles: TLS 1.3"
 echo "native installer smoke legacy compatibility profile: isolated-opt-in"

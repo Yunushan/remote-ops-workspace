@@ -275,6 +275,15 @@ def check_linux_smoke_source_binding(script: Path, text: str) -> list[str]:
         "require_builder_match \"security_patch_evidence.cve_review_reference\"": (
             "builder evidence CVE review reference match"
         ),
+        'SMOKE_SECURITY_UPDATE_CHANNEL="${ROW_LINUX_SECURITY_UPDATE_CHANNEL:-}"': (
+            "host security update channel input"
+        ),
+        'SMOKE_CVE_REVIEW_REFERENCE="${ROW_LINUX_CVE_REVIEW_REFERENCE:-}"': (
+            "host CVE review reference input"
+        ),
+        'if [[ "${ROW_LINUX_CVE_PATCH_REVIEWED:-}" != "true" ]]; then': (
+            "explicit host CVE review requirement"
+        ),
         "openssl version | tr '[:upper:]' '[:lower:]'": "builder-compatible OpenSSL CLI normalization",
         'SMOKE_OBSERVED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"': (
             "UTC observation timestamp capture"

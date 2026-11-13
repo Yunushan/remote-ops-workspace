@@ -415,6 +415,7 @@ def test_builder_security_patch_evidence_accepts_update_and_advisory_namespaces(
     # discovery; keep it deterministic on developer machines without the CLI.
     evidence["python_ssl_openssl"] = "OpenSSL test-runtime"
     evidence["openssl_cli_version"] = "OpenSSL test-cli"
+    evidence["cve_patch_reviewed"] = True
     evidence["security_update_channel"] = "ubuntu-security-updates-usn-2026-07"
     evidence["cve_review_reference"] = "vendor-cve-advisory-review-2026-07"
     monkeypatch.setattr(builder, "security_patch_evidence", lambda: evidence)
@@ -422,6 +423,30 @@ def test_builder_security_patch_evidence_accepts_update_and_advisory_namespaces(
     errors = builder.check_security_patch_evidence("linux-i386")
 
     assert not errors
+
+
+def test_builder_security_patch_evidence_requires_explicit_host_review(monkeypatch) -> None:
+    builder = _load_builder()
+    monkeypatch.setattr(builder, "command_output", lambda _command: "openssl 3.0.13")
+    monkeypatch.delenv("ROW_LINUX_CVE_PATCH_REVIEWED", raising=False)
+    monkeypatch.delenv("ROW_LINUX_SECURITY_UPDATE_CHANNEL", raising=False)
+    monkeypatch.delenv("ROW_LINUX_CVE_REVIEW_REFERENCE", raising=False)
+
+    errors = builder.check_security_patch_evidence("linux-i386")
+    assert "linux-i386 builder CVE patch review evidence must be true" in errors
+    assert "linux-i386 builder security update channel evidence must be set" in errors
+    assert "linux-i386 builder CVE review reference evidence must be set" in errors
+
+    monkeypatch.setenv("ROW_LINUX_CVE_PATCH_REVIEWED", "true")
+    monkeypatch.setenv("ROW_LINUX_SECURITY_UPDATE_CHANNEL", "distribution-security-updates")
+    monkeypatch.setenv("ROW_LINUX_CVE_REVIEW_REFERENCE", "distribution-security-tracker-and-release-notes")
+    errors = builder.check_security_patch_evidence("linux-i386")
+    assert len(errors) == 2
+    assert all("must name concrete non-placeholder provenance" in error for error in errors)
+
+    monkeypatch.setenv("ROW_LINUX_SECURITY_UPDATE_CHANNEL", "debian-bookworm-security-updates")
+    monkeypatch.setenv("ROW_LINUX_CVE_REVIEW_REFERENCE", "debian-bookworm-cve-review-2026-11")
+    assert builder.check_security_patch_evidence("linux-i386") == []
 
 
 def _load_builder():

@@ -450,10 +450,7 @@ def check_policy(
         for index, step in enumerate(publish_steps)
         if isinstance(verifier_lock, str)
         and any(
-            re.match(r"^(?:python|python3)\s+-m\s+pip\s+install(?:\s|$)", command)
-            and "--require-hashes" in command
-            and verifier_lock in command
-            and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
+            installs_hashed_requirements(command, (verifier_lock,))
             for command in executable_run_commands(step)
         )
     ]
@@ -1489,11 +1486,38 @@ def xp_target_step_binds_lock(job_block: str, target: str, lock_path: str) -> bo
         if condition.search(step) is None:
             continue
         if any(
-            lock_path in command and "--require-hashes" in command
+            installs_hashed_requirements(command, (lock_path,))
             for command in executable_run_commands(step)
         ):
             return True
     return False
+
+
+def installs_hashed_requirements(command: str, lock_paths: tuple[str, ...]) -> bool:
+    """Recognize a direct hashed pip install of one approved requirements file."""
+    invocation = re.match(r"^(?:python|python3)\s+-m\s+pip\s+install\s+", command)
+    if invocation is None:
+        return False
+    arguments = command[invocation.end():]
+    paths = []
+    for path in lock_paths:
+        if path in ("${{ matrix.lock }}", "${{ matrix.bootstrap_lock }}"):
+            paths.append(re.escape(f'"{path}"'))
+        elif re.fullmatch(r"[A-Za-z0-9_./-]+", path) is not None:
+            escaped = re.escape(path)
+            paths.extend((escaped, f'"{escaped}"', f"'{escaped}'"))
+    if not paths:
+        return False
+    # Match the complete argument list so extra requirements and shell
+    # operators cannot turn an approved lock install into a different command.
+    requirement = r"(?:--requirement(?:=|\s+)|-r\s+)(?:" + "|".join(paths) + r")"
+    flag = (
+        r"(?:--require-hashes|--no-build-isolation|--no-cache-dir|"
+        r"--force-reinstall|--only-binary=:all:|--no-binary=[A-Za-z0-9_,.-]+)"
+    )
+    return "--require-hashes" in arguments.split() and re.fullmatch(
+        rf"(?:{flag}\s+)*{requirement}(?:\s+{flag})*", arguments
+    ) is not None
 
 
 def check_native_job_lock_usage(
@@ -1527,9 +1551,7 @@ def check_native_job_lock_usage(
     lock_indexes = [
         index
         for index, command in pip_commands
-        if "--require-hashes" in command
-        and any(token in command for token in lock_tokens)
-        and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
+        if installs_hashed_requirements(command, lock_tokens)
     ]
     if lock_path not in job_block or not lock_indexes:
         errors.append(
@@ -1545,11 +1567,7 @@ def check_native_job_lock_usage(
             f"release workflow {job} has no target-conditional hashed lock install for {target}"
         )
     for _, command in pip_commands:
-        uses_lock = (
-            "--require-hashes" in command
-            and any(token in command for token in (*lock_tokens, *bootstrap_tokens))
-            and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
-        )
+        uses_lock = installs_hashed_requirements(command, (*lock_tokens, *bootstrap_tokens))
         if "--no-deps" not in command and not uses_lock:
             errors.append(
                 f"release workflow {job} has a dependency-resolving pip install outside "

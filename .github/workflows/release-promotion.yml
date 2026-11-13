@@ -240,6 +240,8 @@ jobs:
           --policy configs/release_compliance_policy.json
           --attestation release-governance-draft/tag-governance-attestation.json
           --signature release-governance-draft/tag-governance-attestation.sig.json
+          --redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"
+          --redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
           --repository "$GITHUB_REPOSITORY"
           --tag "$RELEASE_TAG"
           --sha "$RELEASE_SHA"
@@ -377,6 +379,8 @@ jobs:
           --policy configs/release_compliance_policy.json
           --attestation release-governance-publish/tag-governance-attestation.json
           --signature release-governance-publish/tag-governance-attestation.sig.json
+          --redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"
+          --redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
           --repository "$GITHUB_REPOSITORY"
           --tag "$RELEASE_TAG"
           --sha "$RELEASE_SHA"

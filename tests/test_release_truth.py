@@ -213,6 +213,19 @@ def test_promotion_requires_fresh_governance_check_before_publication() -> None:
     assert any("publication-bound tag governance proof" in error for error in asset_errors)
 
 
+@pytest.mark.parametrize("index", [0, 1])
+def test_promotion_requires_signed_redistribution_at_both_mutations(index: int) -> None:
+    workflow = promotion_workflow()
+    flag = next(line for line in workflow.splitlines() if "--redistribution-signature" in line)
+    matches = [match.start() for match in re.finditer(re.escape(flag + "\n"), workflow)]
+    assert len(matches) == 2
+    start = matches[index]
+    changed = workflow[:start] + workflow[start + len(flag) + 1:]
+    truth_errors, asset_errors = both_contract_errors(changed)
+    assert truth_errors
+    assert asset_errors
+
+
 def test_promotion_requires_immutable_release_setting_at_publication() -> None:
     workflow = remove_named_step(
         promotion_workflow(),

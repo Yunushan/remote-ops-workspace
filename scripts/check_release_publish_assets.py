@@ -641,6 +641,8 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                 "--policy configs/release_compliance_policy.json",
                 '--attestation release-governance-draft/tag-governance-attestation.json',
                 '--signature release-governance-draft/tag-governance-attestation.sig.json',
+                '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
+                '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
                 "--repository \"$GITHUB_REPOSITORY\"",
                 "--tag \"$RELEASE_TAG\"",
                 "--sha \"$RELEASE_SHA\"",
@@ -650,7 +652,7 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             ),
             ("--help", "--dry-run", "--check-policy-only"),
             frozenset(
-                {"--policy", "--attestation", "--signature", "--repository", "--tag", "--sha", "--run-id", "--run-attempt", "--operation"}
+                {"--policy", "--attestation", "--signature", "--repository", "--tag", "--sha", "--run-id", "--run-attempt", "--operation", "--redistribution-evidence", "--redistribution-signature"}
             ),
         ),
         "Require unused release namespace including drafts": (

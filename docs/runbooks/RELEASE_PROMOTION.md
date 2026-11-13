@@ -68,7 +68,8 @@ checkout, put `tag-governance-attestation.json` and its detached
 Push that commit to the exact ref printed by the command and the workflow.
 The workflow reads both files from the same commit. It waits up to 15 minutes
 for the ref to appear and then checks the signature and the short validity
-window.
+window. The workflow also revalidates the signed redistribution approval and
+its expiry immediately before creating the draft and before publishing it.
 
 After upload and draft verification, capture a second proof with
 `--operation publish --draft-id "<numeric draft ID>"` and a new output

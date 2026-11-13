@@ -368,6 +368,27 @@ def test_redistribution_only_audit_still_requires_independent_approval(tmp_path:
     assert checker.main([*args, "--audit-redistribution-only"]) == 1
 
 
+def test_mutation_boundary_refuses_expired_signed_redistribution_approval(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker)
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    from check_release_tag_governance import recheck_redistribution_approval
+
+    def option(name):
+        return args[args.index(name) + 1]
+
+    evidence = Path(option("--evidence"))
+    signature = Path(option("--signature"))
+    policy_bytes, policy = checker.read_json_object(Path(option("--policy")), "fixture policy")
+    identity = (option("--repository"), option("--tag"), option("--sha"))
+    assert recheck_redistribution_approval(evidence, signature, policy_bytes, policy, *identity) == []
+
+    errors = recheck_redistribution_approval(
+        evidence, signature, policy_bytes, policy, *identity, now=datetime(2099, 1, 1, tzinfo=UTC),
+    )
+    assert "compliance evidence approval has expired" in errors
+
+
 def test_signed_evidence_still_rejects_local_artifact_drift(tmp_path: Path) -> None:
     checker = _load_checker()
     args = _positive_fixture(tmp_path, checker)

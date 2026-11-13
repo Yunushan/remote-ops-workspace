@@ -51,7 +51,41 @@ jobs:
         id: storage
         shell: pwsh
         timeout-minutes: 2
-        run: python -I -S -B scripts/check_windows_private_ntfs.py --output (Join-Path $env:RUNNER_TEMP 'row-private-ntfs-result.json')
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'rowntfs' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+          $password = 'Aa9!' + [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
+          $control = Join-Path $env:RUNNER_TEMP "$name.control"
+          $user = $null
+          $createdControl = $false
+          try {
+            $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
+            $user = New-LocalUser -Name $name -Password $securePassword
+            $usersGroup = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+            $members = @(Get-LocalGroupMember -SID $usersGroup)
+            if ($user.SID -notin $members.SID) {
+              Add-LocalGroupMember -SID $usersGroup -Member $user
+            }
+            $controlFile = [System.IO.File]::Open($control, 'CreateNew', 'Write', 'None')
+            $createdControl = $true
+            $controlFile.Dispose()
+            $acl = Get-Acl -LiteralPath $control
+            $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($user.SID, 'Modify', 'Allow')
+            $acl.AddAccessRule($rule)
+            Set-Acl -LiteralPath $control -AclObject $acl
+            $env:ROW_NTFS_TEST_ACCOUNT = $name
+            $env:ROW_NTFS_TEST_PASSWORD = $password
+            $env:ROW_NTFS_TEST_CONTROL = $control
+            python -I -S -B scripts/check_windows_private_ntfs.py --output (Join-Path $env:RUNNER_TEMP 'row-private-ntfs-result.json')
+            if ($LASTEXITCODE -ne 0) { throw 'Windows private storage checks failed' }
+          } finally {
+            Remove-Item Env:ROW_NTFS_TEST_ACCOUNT,Env:ROW_NTFS_TEST_PASSWORD,Env:ROW_NTFS_TEST_CONTROL -ErrorAction SilentlyContinue
+            try {
+              if ($user) { Remove-LocalUser -SID $user.SID }
+            } finally {
+              if ($createdControl) { Remove-Item -LiteralPath $control }
+            }
+          }
       - name: Retain bounded qualification result
         if: ${{ !cancelled() && (steps.storage.outcome == 'success' || steps.storage.outcome == 'failure') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

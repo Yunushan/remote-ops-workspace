@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,7 +29,75 @@ def require_delete_sharing(native, path: Path, *, blocked: bool) -> None:
     require(not blocked, "delete-access-granted-with-held-handle")
 
 
-def qualify(parent: Path, observed: list[str]) -> None:
+def open_for_access(native, path: Path, access: int, *, denied: bool) -> None:
+    handle = native.kernel.CreateFileW(str(path), access, 0x07, None, 3, 0, None)
+    if handle == native.c.c_void_p(-1).value:
+        require(denied and native.c.get_last_error() == 5, "unexpected-other-identity-open-error")
+        return
+    native.close(handle)
+    require(not denied, "private-file-access-granted-to-other-identity")
+
+
+def token_sid(native, token) -> bytes:
+    c, w = native.c, native.w
+    required = w.DWORD()
+    size_probe = native.advapi.GetTokenInformation(token, 1, None, 0, c.byref(required))
+    require(not size_probe and c.get_last_error() == 122 and c.sizeof(c.c_void_p) <= required.value <= 4096,
+            "other-identity-token-size-invalid")
+    info = c.create_string_buffer(required.value)
+    require(bool(native.advapi.GetTokenInformation(token, 1, info, len(info), c.byref(required))),
+            "other-identity-token-read-failed")
+    pointer = c.cast(info, c.POINTER(c.c_void_p))[0]
+    return native._copy_sid(pointer, c.addressof(info), c.addressof(info) + len(info))
+
+
+@contextmanager
+def other_identity(native, account: str, password: str):
+    c, w = native.c, native.w
+    api = native.advapi
+    native._api(api, "LogonUserW", [w.LPCWSTR, w.LPCWSTR, w.LPCWSTR, w.DWORD, w.DWORD, c.POINTER(w.HANDLE)], w.BOOL)
+    native._api(api, "ImpersonateLoggedOnUser", [w.HANDLE], w.BOOL)
+    native._api(api, "RevertToSelf", [], w.BOOL)
+    token = w.HANDLE()
+    # Interactive logon authenticates locally and gives a primary token.
+    require(bool(api.LogonUserW(account, ".", password, 2, 0, c.byref(token))), "other-identity-logon-failed")
+    try:
+        owner = native.token_user()
+        sid = token_sid(native, token)
+        require(sid != owner, "other-identity-matches-owner")
+        required = w.DWORD()
+        elevated = w.DWORD()
+        require(bool(api.GetTokenInformation(token, 20, c.byref(elevated), c.sizeof(elevated), c.byref(required)))
+                and elevated.value == 0, "other-identity-elevated")
+        require(bool(api.ImpersonateLoggedOnUser(token)), "other-identity-impersonation-failed")
+        try:
+            thread_token = w.HANDLE()
+            require(bool(api.OpenThreadToken(native.kernel.GetCurrentThread(), 0x0008, True, c.byref(thread_token))),
+                    "other-identity-thread-token-missing")
+            try:
+                require(token_sid(native, thread_token) == sid, "other-identity-thread-token-mismatch")
+            finally:
+                native.close(thread_token)
+            yield
+        finally:
+            if not api.RevertToSelf():
+                # A failed revert must never let the remaining probe run.
+                os._exit(125)
+        require(native.token_user() == owner, "other-identity-revert-failed")
+    finally:
+        native.close(token)
+
+
+def check_other_identity(native, private: Path, control: Path, account: str, password: str) -> None:
+    # These opens exercise NTFS with the real logon token. No private bytes
+    # are read or written. Keep sharing unrestricted to isolate the DACL check.
+    with other_identity(native, account, password):
+        for access in (0x80000000, 0x40000000, 0x00010000):
+            open_for_access(native, control, access, denied=False)
+            open_for_access(native, private, access, denied=True)
+
+
+def qualify(parent: Path, observed: list[str], account: str, password: str, control: Path) -> None:
     from remote_ops_workspace import windows_private_storage as storage
 
     native = storage._Native()
@@ -60,6 +129,8 @@ def qualify(parent: Path, observed: list[str]) -> None:
                 require(final.read_bytes() == CANARY, "staged-canary-differs")
             require(guard.verify_entries(maximum=2) == 1, "unexpected-stage-entry-count")
             observed.append("published-file-identity-and-bytes")
+            check_other_identity(native, final, control, account, password)
+            observed.append("other-identity-read-write-delete-denied")
 
             os.link(final, alias)
             try:
@@ -89,7 +160,10 @@ def main() -> int:
     result = {"status": "failed", "observed": observed}
     try:
         require(os.name == "nt", "windows-required")
-        qualify(Path(os.environ["RUNNER_TEMP"]), observed)
+        account = os.environ.pop("ROW_NTFS_TEST_ACCOUNT")
+        password = os.environ.pop("ROW_NTFS_TEST_PASSWORD")
+        control = Path(os.environ.pop("ROW_NTFS_TEST_CONTROL"))
+        qualify(Path(os.environ["RUNNER_TEMP"]), observed, account, password, control)
     except (KeyError, OSError, RuntimeError, ValueError) as exc:
         # Report fixed check names or an OS error number only. Never emit paths,
         # tokens, descriptors, environment values or runner error text.
@@ -110,6 +184,11 @@ def main() -> int:
 
 FAILURE_CODES = frozenset({
     "windows-required", "local-fixed-volume-required", "persistent-local-acl-required",
+    "unexpected-other-identity-open-error", "private-file-access-granted-to-other-identity",
+    "other-identity-logon-failed", "other-identity-token-size-invalid",
+    "other-identity-token-read-failed", "other-identity-matches-owner", "other-identity-elevated",
+    "other-identity-impersonation-failed", "other-identity-revert-failed",
+    "other-identity-thread-token-missing", "other-identity-thread-token-mismatch",
     "native-private-storage-refused", "native-security-descriptor-refused",
     "native-directory-open-refused", "native-directory-missing", "native-file-open-refused",
     "unqualified-parent-owner", "untrusted-parent-write-access", "native-held-edge-refused",

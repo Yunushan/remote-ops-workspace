@@ -341,8 +341,11 @@ unprivileged-identity denial still require genuine disposable Windows evidence.
 The Windows private NTFS qualification workflow uses a disposable hosted runner
 and a public canary. It exercises exclusive stage creation, writes under an
 owner-only ACL, retained-handle delete sharing, rename identity, and hard-link
-refusal. The bounded result identifies which checks ran. Separate Windows
-identity testing and SDK ABI verification are required before enabling production
+refusal. It also uses a temporary standard local account to prove that Windows
+allows read, write and delete opens of a control file and denies the same opens
+of the private canary. Separate x86 and x64 jobs compare the ctypes structure
+layouts against the installed Windows SDK. These checks cover storage primitives.
+End-to-end updater qualification is still required before enabling production
 staging.
 
 HTTPS uses certificate and hostname verification, TLS 1.2 or later,

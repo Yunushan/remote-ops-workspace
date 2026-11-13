@@ -2,6 +2,7 @@
   "schema_version": 1,
   "resolver": {"name": "uv", "version": "0.12.21", "index": "https://pypi.org/simple"},
   "python_version": "3.14.7",
+  "macos_deployment_target": "14.4",
   "constraints": "requirements-release.txt",
   "evidence_scope": "Resolved dependency inputs. Native installation, source-build toolchains, exact artifact inventory and independent approval require separate verification.",
   "targets": {

@@ -301,6 +301,17 @@ def test_promotion_rejects_automatic_release_deletion() -> None:
     assert "promotion workflow must preserve releases after failure" in checker.check_promotion_truth(changed)
 
 
+def test_promotion_requires_qualified_default_branch_source() -> None:
+    checker = load_script("check_release_truth")
+    workflow = promotion_workflow()
+    changed = workflow.replace('git merge-base --is-ancestor "$RELEASE_SHA"', "git merge-base --is-ancestor HEAD")
+    assert "promotion source gate must bind the release SHA to the live default branch" in (
+        checker.check_promotion_truth(changed)
+    )
+    changed = workflow.replace("python scripts/check_python315_ci_evidence.py", "echo check_python315_ci_evidence.py")
+    assert any("exact default-branch CI evidence" in error for error in checker.check_promotion_truth(changed))
+
+
 def test_completed_certification_is_separate_from_in_progress_transaction() -> None:
     workflow = (ROOT / ".github/workflows/release-certification.yml").read_text(
         encoding="utf-8"

@@ -462,6 +462,33 @@ def check_promotion_truth(workflow: str) -> list[str]:
     for snippet, label in required.items():
         if snippet not in workflow:
             errors.append(f"promotion workflow missing {label}: {snippet}")
+    source_step = workflow_step_block(block, "name: Require release source on the protected default branch")
+    expected_branch = "DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"
+    source_commands = executable_step_commands(source_step)
+    if (
+        expected_branch not in source_step
+        or step_is_suppressed(source_step)
+        or step_has_dead_code_construct(source_step)
+        or not literal_run_is_fail_closed(source_step)
+        or source_commands[-2:] != [
+            'git fetch --no-tags origin "refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"',
+            'git merge-base --is-ancestor "$RELEASE_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"',
+        ]
+    ):
+        errors.append("promotion source gate must bind the release SHA to the live default branch")
+    ci_step = workflow_step_block(block, "name: Require successful exact release source CI")
+    if expected_branch not in ci_step:
+        errors.append("promotion exact CI gate must use the repository default branch")
+    errors.extend(require_active_step(
+        block, PYTHON315_CI_EVIDENCE_COMMAND,
+        label="exact default-branch CI evidence",
+        kind="run",
+        step_name="Require successful exact release source CI",
+        required_tokens=(
+            '--repository "$GITHUB_REPOSITORY"', '--branch "$DEFAULT_BRANCH"', '--sha "$RELEASE_SHA"',
+        ),
+        allowed_flags=frozenset({"--repository", "--branch", "--sha"}),
+    ))
     report = workflow_step_block(block, "name: Report the release ID after failure")
     report_requirements = (
         "failure() && steps.create-draft.outputs.release-id != ''",

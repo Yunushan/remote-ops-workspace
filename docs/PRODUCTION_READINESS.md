@@ -153,8 +153,10 @@ and places the evidence, detached signature, and hash-bound bundle under
 Only after that external step is complete may the operator dispatch
 `release-promotion.yml` from the same tag, supplying the exact candidate run,
 inventory artifact ID/digest, and immutable evidence commit SHA. Its protected
-`release-compliance-review` job checks out the untrusted transport branch as
-data and authenticates all of it through the tag-pinned Ed25519 policy. It then performs the full
+`release-compliance-review` job checks that the tagged commit is on the
+default branch and that the exact commit has successful required CI.
+It checks out the untrusted transport branch as data, authenticates the
+evidence through the tag-pinned Ed25519 policy, and performs the full
 redistribution audit, attests the complete inventory, obtains a fresh signed governance proof
 for draft creation, creates a draft,
 verifies every draft byte and attestation against its own tag-bound invocation,

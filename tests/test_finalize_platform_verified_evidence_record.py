@@ -2995,6 +2995,8 @@ def _xp_host_probe_lines(target: str, os_identity: dict[str, Any]) -> str:
 
 
 def _xp_security_smoke_lines(smoke_id: str) -> str:
+    if smoke_id == "loopback_profile_dry_run":
+        return "loopback TCP round trip: passed\n"
     if smoke_id == "legacy_crypto_profile_scoped":
         return (
             "legacy compatibility profile: isolated-opt-in\n"

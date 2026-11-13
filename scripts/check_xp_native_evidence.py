@@ -1423,6 +1423,12 @@ def check_smoke_evidence_binding(
     wmic_os_captions = xp_smoke_line_values(text, "xp smoke wmic os caption")
     wmic_os_csdversions = xp_smoke_line_values(text, "xp smoke wmic os csdversion")
     errors: list[str] = []
+    if smoke_id == "loopback_profile_dry_run":
+        results = xp_smoke_line_values(text, "loopback TCP round trip")
+        if results != ["passed"]:
+            errors.append(
+                f"{target} smoke result {smoke_id} must contain exactly one passing TCP round trip"
+            )
     if targets != [target]:
         errors.append(
             f"{target} smoke result {smoke_id} evidence_file target binding must be {[target]}, got {targets}"

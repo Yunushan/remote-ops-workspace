@@ -268,8 +268,12 @@ def test_rpm_license_bytes_are_read_from_cpio_without_extracting_paths(tmp_path:
     assert [call.args[0][0] for call in run.call_args_list] == ["rpm2cpio", "cpio", "cpio"]
 
 
-def test_pkg_license_bytes_are_read_from_nested_gzip_cpio_payload(tmp_path: Path) -> None:
+@pytest.mark.parametrize("payload_parts", [("Payload",), ("remote-ops-workspace-component.pkg", "Payload")])
+def test_pkg_license_bytes_are_read_from_gzip_cpio_payload(
+    tmp_path: Path, payload_parts: tuple[str, ...],
+) -> None:
     module = checker()
+    payload_path = str(Path(*payload_parts))
     pkg_path = tmp_path / "remote-ops-workspace-v1.0.27-macos-arm64.pkg"
     pkg_path.write_bytes(b"xar fixture")
     cpio_payload = b"old ASCII CPIO payload"
@@ -278,7 +282,10 @@ def test_pkg_license_bytes_are_read_from_nested_gzip_cpio_payload(tmp_path: Path
 
     def inspect(command: list[str], **kwargs: object) -> SimpleNamespace:
         if command[0] == "7z":
-            assert command == ["7z", "x", "-so", "-txar", str(pkg_path), "Payload"]
+            if command[1] == "l":
+                assert command == ["7z", "l", "-slt", "-ba", "-txar", str(pkg_path)]
+                return SimpleNamespace(returncode=0, stdout=f"Path = {payload_path}\n", stderr="")
+            assert command == ["7z", "x", "-so", "-spd", "-txar", str(pkg_path), payload_path]
             return SimpleNamespace(returncode=0, stdout=gzip.compress(cpio_payload), stderr=b"")
         assert kwargs["input"] == cpio_payload
         if command == ["cpio", "-it"]:
@@ -296,10 +303,32 @@ def test_pkg_rejects_invalid_compressed_payload(tmp_path: Path) -> None:
     pkg_path.write_bytes(b"xar fixture")
     with patch.object(
         module.subprocess, "run",
-        return_value=SimpleNamespace(returncode=0, stdout=b"not gzip", stderr=b""),
+        side_effect=[
+            SimpleNamespace(returncode=0, stdout="Path = Payload\n", stderr=""),
+            SimpleNamespace(returncode=0, stdout=b"not gzip", stderr=b""),
+        ],
     ):
         with pytest.raises(ValueError, match="cannot decompress.*CPIO payload"):
             module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md")
+
+
+@pytest.mark.parametrize("payload_paths", [
+    [],
+    ["unrelated.pkg/Payload"],
+    ["Payload", "remote-ops-workspace-component.pkg/Payload"],
+])
+def test_pkg_rejects_missing_unrelated_or_ambiguous_payload(
+    tmp_path: Path, payload_paths: list[str],
+) -> None:
+    module = checker()
+    pkg_path = tmp_path / "installer.pkg"
+    listing = "".join(f"Path = {Path(path)}\n" for path in payload_paths)
+    with patch.object(
+        module.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=listing, stderr=""),
+    ) as run:
+        with pytest.raises(ValueError, match="must contain one expected XAR payload"):
+            module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md")
+    run.assert_called_once()
 
 
 def test_dmg_reads_only_the_regular_license_member_to_stdout(tmp_path: Path) -> None:

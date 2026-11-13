@@ -408,7 +408,7 @@ def check_policy(
         )
 
         errors.extend(check_windows_xp_legacy_candidate_workflow(xp_workflow))
-    if LINUX_TARGETS.intersection(locks):
+    if LINUX_TARGETS.keys() & locks.keys():
         from check_extended_platform_evidence import check_extended_platform_evidence
 
         errors.extend(check_extended_platform_evidence(extended_workflow))

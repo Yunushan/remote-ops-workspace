@@ -22,9 +22,9 @@ import hashlib
 import html
 import io
 import json
-import mmap
 import re
 import stat
+import struct
 import subprocess
 import sys
 import tarfile
@@ -443,38 +443,53 @@ def check_builder_inventories(
 
 
 def appimage_squashfs_offset(archive: Path) -> int:
-    """Find the one SquashFS image appended to a Type 2 AppImage."""
-    candidates: set[int] = set()
-    if archive.stat().st_size:
-        with archive.open("rb") as stream:
-            with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as image:
-                for magic in (b"hsqs", b"sqsh"):
-                    cursor = 0
-                    while (offset := image.find(magic, cursor)) >= 0:
-                        candidates.add(offset)
-                        cursor = offset + 1
-    if not candidates:
-        raise ValueError(f"cannot find an embedded SquashFS filesystem in {archive.name}")
-
-    valid_offsets: list[int] = []
-    for offset in sorted(candidates):
-        try:
-            result = subprocess.run(
-                ["unsquashfs", "-s", "-offset", str(offset), str(archive)],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-            raise ValueError(f"cannot inspect {archive.name} with unsquashfs: {exc}") from exc
-        if result.returncode == 0:
-            valid_offsets.append(offset)
-            if len(valid_offsets) > 1:
-                raise ValueError(f"{archive.name} contains multiple valid SquashFS filesystems")
-    if len(valid_offsets) != 1:
-        raise ValueError(f"cannot locate a valid SquashFS filesystem in {archive.name}")
-    return valid_offsets[0]
+    """Read the Type 2 runtime's ELF payload offset without running the image."""
+    file_size = archive.stat().st_size
+    with archive.open("rb") as stream:
+        ident = stream.read(16)
+        if len(ident) != 16 or ident[:4] != b"\x7fELF" or ident[8:11] != b"AI\x02":
+            raise ValueError(f"{archive.name} is missing a Type 2 AppImage ELF header")
+        formats = {
+            1: ("16sHHIIIIIHHHHHH", "IIIIIIIIII"),
+            2: ("16sHHIQQQIHHHHHH", "IIQQQQIIQQ"),
+        }
+        endian = {1: "<", 2: ">"}.get(ident[5])
+        if ident[4] not in formats or endian is None:
+            raise ValueError(f"{archive.name} has an unsupported ELF class or byte order")
+        header_format, section_format = formats[ident[4]]
+        header = struct.Struct(endian + header_format)
+        section = struct.Struct(endian + section_format)
+        stream.seek(0)
+        raw_header = stream.read(header.size)
+        if len(raw_header) != header.size:
+            raise ValueError(f"{archive.name} has a truncated ELF header")
+        fields = header.unpack(raw_header)
+        section_table_offset = fields[6]
+        section_entry_size, section_count = fields[11:13]
+        section_table_end = section_table_offset + section_entry_size * section_count
+        if (
+            section_table_offset < header.size or section_entry_size != section.size
+            or section_count == 0 or section_table_end > file_size
+        ):
+            raise ValueError(f"{archive.name} has an invalid ELF section table")
+        stream.seek(section_table_end - section_entry_size)
+        raw_section = stream.read(section.size)
+        if len(raw_section) != section.size:
+            raise ValueError(f"{archive.name} has a truncated ELF section table")
+        last_section_offset, last_section_size = section.unpack(raw_section)[4:6]
+        offset = max(section_table_end, last_section_offset + last_section_size)
+        # The Type 2 runtime opens the payload at this boundary. A valid
+        # filesystem elsewhere in the file cannot stand in for that payload.
+        if offset + 96 > file_size:
+            raise ValueError(f"{archive.name} has no SquashFS payload at the ELF boundary")
+        stream.seek(offset)
+        superblock = stream.read(96)
+        if len(superblock) != 96 or superblock[:4] != b"hsqs":
+            raise ValueError(f"{archive.name} has no SquashFS payload at the ELF boundary")
+        bytes_used = struct.unpack_from("<Q", superblock, 40)[0]
+        if not 96 <= bytes_used <= file_size - offset:
+            raise ValueError(f"{archive.name} has an invalid SquashFS payload size")
+        return offset
 
 
 def cpio_embedded_file_bytes(payload: bytes, archive: Path, wanted: str) -> bytes | None:

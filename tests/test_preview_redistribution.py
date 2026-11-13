@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import stat
+import struct
 import tarfile
 import zipfile
 from pathlib import Path
@@ -260,18 +261,25 @@ def test_deb_license_bytes_are_read_from_filesystem_tar_without_extraction(tmp_p
     )
 
 
-def test_appimage_license_bytes_come_from_the_validated_squashfs_offset(tmp_path: Path) -> None:
+@pytest.mark.parametrize("elf_class", [1, 2])
+def test_appimage_license_bytes_come_from_the_runtime_squashfs_offset(tmp_path: Path, elf_class: int) -> None:
     module = checker()
     appimage = tmp_path / "remote-ops-workspace-v1.0.27-linux-aarch64.AppImage"
-    prefix = b"\x7fELF" + b"unrelated hsqs marker"
-    squashfs_offset = len(prefix) + 11
-    appimage.write_bytes(prefix + b"\x00" * 11 + b"hsqs" + b"\x00" * 64)
+    ident = b"\x7fELF" + bytes((elf_class, 1, 1, 0)) + b"AI\x02" + bytes(5)
+    header = struct.Struct("<16sHHIIIIIHHHHHH" if elf_class == 1 else "<16sHHIQQQIHHHHHH")
+    section_size = 40 if elf_class == 1 else 64
+    padding = b"hsqs" + bytes(92)
+    table_offset = header.size + len(padding)
+    elf = header.pack(ident, 2, 3, 1, 0, 0, table_offset, 0, header.size, 0, 0, section_size, 1, 0)
+    squashfs_offset = table_offset + section_size
+    superblock = bytearray(96)
+    superblock[:4] = b"hsqs"
+    struct.pack_into("<Q", superblock, 40, len(superblock))
+    appimage.write_bytes(elf + padding + bytes(section_size) + superblock)
     payload = b"Third party release notices from AppImage\n"
 
     def inspect(command: list[str], **_kwargs: object) -> SimpleNamespace:
-        if command[1] == "-s":
-            offset = int(command[command.index("-offset") + 1])
-            return SimpleNamespace(returncode=int(offset != squashfs_offset), stdout="", stderr="")
+        assert int(command[command.index("-offset") + 1]) == squashfs_offset
         destination = Path(command[command.index("-d") + 1])
         destination.mkdir()
         (destination / "usr" / "share" / "doc").mkdir(parents=True)
@@ -281,12 +289,14 @@ def test_appimage_license_bytes_come_from_the_validated_squashfs_offset(tmp_path
     with patch.object(module.subprocess, "run", side_effect=inspect) as run:
         assert module.embedded_file_bytes(appimage, "THIRD_PARTY_NOTICES.md") == payload
 
-    inspected_offsets = [
-        int(call.args[0][call.args[0].index("-offset") + 1])
-        for call in run.call_args_list if call.args[0][1] == "-s"
-    ]
-    assert inspected_offsets == [prefix.index(b"hsqs"), squashfs_offset]
-    assert run.call_args_list[-1].args[0][0:2] == ["unsquashfs", "-d"]
+    assert run.call_count == 1
+    assert run.call_args.args[0][0:2] == ["unsquashfs", "-d"]
+
+    appimage.write_bytes(elf + padding + bytes(section_size + 96) + superblock)
+    with patch.object(module.subprocess, "run") as run:
+        with pytest.raises(ValueError, match="no SquashFS payload at the ELF boundary"):
+            module.embedded_file_bytes(appimage, "THIRD_PARTY_NOTICES.md")
+        run.assert_not_called()
 
 
 def test_rpm_license_bytes_are_read_from_cpio_without_extracting_paths(tmp_path: Path) -> None:

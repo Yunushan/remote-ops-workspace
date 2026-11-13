@@ -71,7 +71,11 @@ class RunInvocation:
         )
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    check_published_at: Callable[[datetime], list[str]] | None = None,
+) -> int:
     args = parse_args(argv)
     try:
         draft_values = (
@@ -112,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
             None in governance_paths or draft_transaction or single_asset
         ):
             raise ValueError("governance verification requires both proof files and a complete published release")
+        if check_published_at is not None and (not verify_governance or current_transaction):
+            raise ValueError("publication-time checks require a completed release with verified governance")
         if args.published_release_id is not None and args.published_release_id < 1:
             raise ValueError("published release id must be positive")
         repository = normalize_repository(args.repository)
@@ -279,6 +285,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         if errors:
             raise RuntimeError("; ".join(dict.fromkeys(errors)))
+        if check_published_at is not None:
+            published_at = parse_timestamp(release.get("published_at"), "GitHub release published_at")
+            errors = check_published_at(published_at)
+            if errors:
+                raise RuntimeError("; ".join(dict.fromkeys(errors)))
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"release provenance: {exc}", file=sys.stderr)
         return 1

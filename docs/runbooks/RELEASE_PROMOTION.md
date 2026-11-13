@@ -111,6 +111,11 @@ file before opening the installer.
 
 ## Recover a failed publication
 
+The completed-release audit checks whether the signed redistribution approval
+was valid at the publication time authenticated by GitHub and the successful
+promotion run. The live promotion workflow checks that the approval is still
+valid immediately before each release mutation.
+
 Both versioned publication workflows report the numeric release ID if an error
 occurs after draft creation. Once the failed run ends, inspect that release and
 match its tag and transaction marker to the failed run. If it is still a draft,

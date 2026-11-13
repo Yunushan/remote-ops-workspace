@@ -123,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
             repository=repository,
             tag=tag,
             sha=sha,
+            verify_review_window=not args.verify_published_release,
         )
         if check_live_governance:
             assert args.tag_governance_attestation is not None
@@ -155,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
                 "--sha", sha,
                 "--governance-attestation", str(args.tag_governance_attestation),
                 "--governance-signature", str(args.tag_governance_signature),
-            ]):
+            ], check_published_at=lambda published_at: check_review_window(evidence, now=published_at)):
                 raise RuntimeError("published release provenance and governance verification failed")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"release license compliance: {exc}", file=sys.stderr)
@@ -609,6 +610,7 @@ def check_evidence(
     tag: str,
     sha: str,
     now: datetime | None = None,
+    verify_review_window: bool = True,
 ) -> list[str]:
     errors: list[str] = []
     expected_scalars = {
@@ -622,7 +624,8 @@ def check_evidence(
     for key, expected in expected_scalars.items():
         if evidence.get(key) != expected:
             errors.append(f"compliance evidence {key} must be {expected!r}")
-    errors.extend(check_review_window(evidence, now=now))
+    if verify_review_window:
+        errors.extend(check_review_window(evidence, now=now))
     if assets_dir.is_symlink() or not assets_dir.is_dir():
         return [*errors, f"release asset directory must be a real directory: {assets_dir}"]
     if path_is_reparse(evidence_root) or not evidence_root.is_dir():

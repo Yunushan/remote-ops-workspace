@@ -395,7 +395,9 @@ def check_policy(
         ).splitlines()
     )
     if XP_TARGETS.intersection(locks):
-        from check_windows_xp_legacy_candidate_workflow import check_windows_xp_legacy_candidate_workflow
+        from check_windows_xp_legacy_candidate_workflow import (
+            check_windows_xp_legacy_candidate_workflow,
+        )
 
         errors.extend(check_windows_xp_legacy_candidate_workflow(xp_workflow))
     for target, raw_path in locks.items():

@@ -172,7 +172,7 @@ def test_mobaxterm_generator_emits_candidate_and_has_no_registry_append(tmp_path
 
         @staticmethod
         def to_dict() -> dict[str, object]:
-            return {"passed": True, "errors": [], "summary": {"real": True}}
+            return {"passed": True, "errors": [], "summary": {"release_target": "windows-x64"}}
 
     generator.VALIDATORS["professional-deployment"] = lambda *_args, **_kwargs: PassingValidation()
     errors, record = generator.build_evidence_record(
@@ -414,6 +414,18 @@ def reviewed_release(tmp_path, monkeypatch):
 def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_release) -> None:
     assert release_parity.audit_release(**reviewed_release.args) == []
     assert set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
+
+
+@pytest.mark.parametrize("observed_target", ["linux-x86_64", None])
+def test_parity_evidence_for_each_article_must_bind_its_tested_target(reviewed_release, observed_target) -> None:
+    checker = _load_checker()
+    for record in reviewed_release.records:
+        article = record["article_id"]
+        record["validation_summary"]["summary"]["release_target"] = observed_target
+        candidate = dict(record, status="candidate")
+        error = f"{article} validation summary release_target must match record release_target"
+        assert error in checker.check_candidate_record(candidate)
+        assert error in checker.check_record(record)
 
 
 def test_certification_rejects_registry_commit_outside_main(reviewed_release) -> None:

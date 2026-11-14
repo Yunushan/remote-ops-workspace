@@ -75,6 +75,52 @@ def test_candidate_zip_rejects_non_regular_members(tmp_path: Path) -> None:
     assert not destination.exists()
 
 
+@pytest.mark.parametrize("existing_root", [False, True])
+def test_candidate_staging_can_retry_after_a_later_archive_fails(
+    tmp_path: Path, existing_root: bool,
+) -> None:
+    root = tmp_path / "assets"
+    if existing_root:
+        root.mkdir()
+    artifacts = {}
+    archives = {}
+    for artifact_id, name in enumerate(("first", "second"), start=1):
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            archive.writestr(f"{name}.txt", name)
+        raw = stream.getvalue()
+        artifacts[name] = {
+            "id": artifact_id,
+            "digest": f"sha256:{hashlib.sha256(raw).hexdigest()}",
+            "size_in_bytes": len(raw),
+            "expired": False,
+        }
+        archives[f"actions/artifacts/{artifact_id}/zip"] = raw
+
+    class BuildRun:
+        def download(self, endpoint: str, destination: Path) -> str:
+            raw = archives[endpoint]
+            destination.write_bytes(raw)
+            return f"sha256:{hashlib.sha256(raw).hexdigest()}"
+
+    client = BuildRun()
+    second_digest = artifacts["second"]["digest"]
+    artifacts["second"]["digest"] = "sha256:" + "0" * 64
+    with pytest.raises(ValueError, match="artifact second raw ZIP digest"):
+        candidate.materialize_records(client, artifacts, root)
+
+    assert list(tmp_path.iterdir()) == ([root] if existing_root else [])
+    if existing_root:
+        assert not list(root.iterdir())
+    artifacts["second"]["digest"] = second_digest
+    assert [record["name"] for record in candidate.materialize_records(client, artifacts, root)] == [
+        "first", "second",
+    ]
+    assert {path.name: path.read_text() for path in root.iterdir()} == {
+        "first.txt": "first", "second.txt": "second",
+    }
+
+
 def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
     workflow = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
     expected = set()

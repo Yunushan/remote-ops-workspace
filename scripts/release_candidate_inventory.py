@@ -516,16 +516,37 @@ def materialize_records(
     *,
     expected_records: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    if assets_root.exists():
-        if assets_root.is_symlink() or not assets_root.is_dir() or any(assets_root.iterdir()):
-            raise ValueError("assets root must be absent or an empty regular directory")
-    else:
-        assets_root.mkdir(parents=True)
+    if assets_root.is_symlink() or (
+        assets_root.exists() and (not assets_root.is_dir() or any(assets_root.iterdir()))
+    ):
+        raise ValueError("assets root must be absent or an empty regular directory")
     expected_by_name = (
         {record["name"]: record for record in expected_records}
         if expected_records is not None
         else None
     )
+    if expected_by_name is not None and set(artifacts) != set(expected_by_name):
+        raise ValueError("live candidate artifact names do not match approved inventory")
+
+    assets_root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".row-release-staging-", dir=assets_root.parent) as temporary:
+        staged_root = Path(temporary) / "assets"
+        staged_root.mkdir()
+        records = materialize_candidate_files(client, artifacts, staged_root, expected_by_name)
+        if assets_root.is_symlink():
+            raise ValueError("assets root became a symlink during staging")
+        if assets_root.exists():
+            assets_root.rmdir()
+        staged_root.rename(assets_root)
+    return records
+
+
+def materialize_candidate_files(
+    client: GitHubClient,
+    artifacts: dict[str, dict[str, Any]],
+    staged_root: Path,
+    expected_by_name: dict[str, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     global_files: dict[str, str] = {}
     for name in sorted(artifacts):
@@ -556,7 +577,7 @@ def materialize_records(
                         f"{global_files[folded]!r}, {name!r}"
                     )
                 global_files[folded] = name
-                shutil.copyfile(extracted_root / relative, assets_root / relative)
+                shutil.copyfile(extracted_root / relative, staged_root / relative)
         record = {
             "id": artifact_id,
             "name": name,
@@ -567,8 +588,6 @@ def materialize_records(
         if expected_by_name is not None and record != expected_by_name.get(name):
             raise ValueError(f"artifact {name} bytes/metadata do not match approved inventory")
         records.append(record)
-    if expected_by_name is not None and set(artifacts) != set(expected_by_name):
-        raise ValueError("live candidate artifact names do not match approved inventory")
     return records
 
 

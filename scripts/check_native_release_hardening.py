@@ -377,6 +377,9 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     windows = workflow_job_block(workflow, "windows-native")
     if 'throw "Production candidate Windows builds require protected release signing"' not in windows:
         errors.append("windows-native must fail closed when release signing is unavailable")
+    windows_smoke = workflow_step_block(windows, "name: Run Windows native installer smoke tests")
+    if not re.search(r"(?m)^\s+run: .*smoke_windows_native\.ps1 .* -RequireReleaseSigning\s*$", windows_smoke):
+        errors.append("windows-native must reverify the signed installers before running smoke tests")
     macos = workflow_job_block(workflow, "macos-native")
     if "Production candidate macOS builds require protected release signing" not in macos:
         errors.append("macos-native must fail closed when release signing is unavailable")

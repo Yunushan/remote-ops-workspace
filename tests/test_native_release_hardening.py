@@ -107,6 +107,13 @@ def test_production_tag_push_must_fail_when_signing_is_incomplete() -> None:
     assert message in checker.check_signing_readiness_gate(workflow.replace(refusal, "              :\n            fi", 1))
 
 
+def test_windows_production_smoke_requires_signed_installers() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    errors = checker.check_signing_readiness_gate(workflow.replace(" -RequireReleaseSigning", "", 1))
+    assert "windows-native must reverify the signed installers before running smoke tests" in errors
+
+
 def test_release_smoke_must_not_receive_windows_signing_password() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")

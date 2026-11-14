@@ -426,7 +426,7 @@ jobs:
       - name: Run Windows native installer smoke tests
         shell: powershell
         timeout-minutes: 20
-        run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows"
+        run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows" -RequireReleaseSigning
       - name: Retain Windows candidate runtime inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

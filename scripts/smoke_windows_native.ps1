@@ -2,7 +2,8 @@ param(
   [string]$Dist = "native-dist\windows",
   [ValidateSet("x86", "x64", "arm64")]
   [string]$Arch = "x64",
-  [string]$Version = ""
+  [string]$Version = "",
+  [switch]$RequireReleaseSigning
 )
 
 $ErrorActionPreference = "Stop"
@@ -477,6 +478,17 @@ $Msi = Join-Path $OutDir "remote-ops-workspace-v$Version-windows-$Arch.msi"
 foreach ($Artifact in @($NativeZip, $SetupExe, $Msi)) {
   if (!(Test-Path $Artifact)) {
     throw "native installer smoke artifact missing: $Artifact"
+  }
+}
+
+if ($RequireReleaseSigning) {
+  . (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
+  $SignTool = Find-WindowsSignTool
+  foreach ($Installer in @($SetupExe, $Msi)) {
+    & $SignTool verify /pa /all /tw $Installer
+    if ($LASTEXITCODE -ne 0) {
+      throw "native installer smoke requires valid Authenticode and timestamp: $Installer"
+    }
   }
 }
 

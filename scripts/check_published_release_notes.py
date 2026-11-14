@@ -18,6 +18,9 @@ from urllib.request import Request, urlopen
 TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 CHANNELS = {"production-signed", "unsigned-preview"}
+SUPPORT_HEADING = "## Support boundaries"
+PROTECTED_EVIDENCE_PREFIX = "- Protected platform evidence accepted for this source is "
+COMPLETE_PROTECTED_EVIDENCE = f"{PROTECTED_EVIDENCE_PREFIX}4/4 targets; missing: none."
 
 
 def check_release_notes(payload: object, *, tag: str, channel: str) -> list[str]:
@@ -63,10 +66,20 @@ def check_notes_body(body: object, *, tag: str, channel: str) -> list[str]:
     for marker, label in (
         (f"# {tag}", "release tag heading"),
         (required_marker, "release channel marker"),
-        ("## Support boundaries", "support-boundary section"),
+        (SUPPORT_HEADING, "support-boundary section"),
     ):
         if not any(line == marker or line.startswith(f"{marker} ") for line in lines):
             errors.append(f"published release body missing {label}: {marker}")
+    if channel == "production-signed":
+        support_lines: list[str] = []
+        in_support_section = False
+        for line in lines:
+            if line.startswith(("# ", "## ")):
+                in_support_section = line == SUPPORT_HEADING
+            if in_support_section and line.startswith(PROTECTED_EVIDENCE_PREFIX):
+                support_lines.append(line)
+        if support_lines != [COMPLETE_PROTECTED_EVIDENCE]:
+            errors.append("production-signed support boundaries must report exactly 4/4 accepted protected targets")
     return errors
 
 

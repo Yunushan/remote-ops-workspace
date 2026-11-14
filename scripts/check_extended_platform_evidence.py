@@ -28,6 +28,7 @@ LINUX_TARGET_ARTIFACTS = {
 WORKFLOW_SCRIPT_DEPENDENCIES = (
     Path("scripts") / "check_extended_platform_dispatch_inputs.py",
     Path("scripts") / "check_extended_platform_builder.py",
+    Path("scripts") / "check_linux_native_elf.py",
     Path("scripts") / "make_linux_native.sh",
     Path("scripts") / "smoke_linux_native.sh",
     Path("scripts") / "check_platform_promotion_artifacts.py",

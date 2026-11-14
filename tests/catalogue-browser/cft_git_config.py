@@ -19,6 +19,7 @@ ATTRIBUTES = (
     '*.md text eol=lf', '*.yml text eol=lf', '*.yaml text eol=lf',
     '*.json text eol=lf', 'requirements-release.txt text eol=lf',
     'requirements-locks/*.txt text eol=lf',
+    'requirements-locks/protected-linux/*.txt text eol=lf',
     'requirements-locks/inputs/*.in text eol=lf',
     'redistribution-evidence/*.txt text eol=lf', '*.png binary',
 )

@@ -4,12 +4,12 @@ import hashlib
 import importlib.util
 import io
 import json
-import os
 import sys
 import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler
 
 import pytest
 
@@ -2222,8 +2222,8 @@ def test_remote_release_audit_requires_source_run_endpoint_metadata(tmp_path: Pa
     source_runs = _source_runs_for(record)
     run = next(iter(source_runs.values()))
     run["workflowUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/workflows/999"
-    run["jobsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/jobs"
-    run["logsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/logs"
+    run["jobsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs"
+    run["logsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/2/logs"
     run["artifactsUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/artifacts"
     run["checkSuiteUrl"] = "https://api.github.com/repos/example/remote-ops-workspace/check-suites/1"
 
@@ -2246,13 +2246,13 @@ def test_remote_release_audit_requires_source_run_endpoint_metadata(tmp_path: Pa
     ) in errors
     assert (
         "linux-i386 source workflow run jobs_url must be "
-        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs', "
-        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/jobs'"
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/1/jobs', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs'"
     ) in errors
     assert (
         "linux-i386 source workflow run logs_url must be "
-        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/logs', "
-        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/logs'"
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/1/logs', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/2/logs'"
     ) in errors
     assert (
         "linux-i386 source workflow run artifacts_url must be "
@@ -2451,10 +2451,8 @@ def test_remote_release_audit_verifies_source_artifact_zip_contents(tmp_path: Pa
     helpers = _load_platform_verified_evidence_helpers()
     record = helpers._linux_record("linux-i386")
     source_artifact_zip = _source_artifact_zip_for(checker, record)
-    source_artifacts = _source_artifacts_for(
-        record,
-        size_in_bytes=len(next(iter(source_artifact_zip.values()))),
-    )
+    source_zip_bytes = next(iter(source_artifact_zip.values()))
+    source_artifacts = _source_artifacts_for_zip(record, source_zip_bytes)
     registry = _registry_with(record)
     promotion = checker.read_json(checker.PROMOTION_PATH)
     required_assets = checker.required_release_assets_by_target(
@@ -2481,13 +2479,137 @@ def test_remote_release_audit_verifies_source_artifact_zip_contents(tmp_path: Pa
     assert errors == []
 
 
-def test_remote_release_audit_rejects_source_artifact_zip_size_drift(tmp_path: Path) -> None:
+def test_retained_source_capture_supports_published_audit_after_actions_expiry(
+    tmp_path: Path, monkeypatch,
+) -> None:
     checker = _load_checker()
+    import check_release_license_compliance as compliance
+
+    monkeypatch.setattr(compliance, "platform_evidence", checker)
+
+    helpers = _load_platform_verified_evidence_helpers()
+    target, tag, repository = "linux-i386", "v1.0.2", "example/remote-ops-workspace"
+    record = helpers._linux_record(target)
+    source = record["release_asset_source"]
+    run_url = source["workflow_run_url"]
+    source_zips = _source_artifact_zip_for(checker, record)
+    zip_bytes = source_zips[run_url]
+    registry = _registry_with(record)
+    runs = _source_runs_for(record)
+    inventories = _source_artifacts_for(record, size_in_bytes=len(zip_bytes))
+    artifact = inventories[run_url]["artifacts"][0]
+    artifact["digest"] = f"sha256:{hashlib.sha256(zip_bytes).hexdigest()}"
+    release_bytes = _bind_release_asset_bytes(checker, record)
+    release_bytes[record["finalized_record_release_asset_url"]] = checker.canonical_public_record_bytes(record)
+    required = checker.required_release_assets_by_target(
+        checker.read_json(checker.PROMOTION_PATH), release_tag=tag, targets=(target,),
+    )
+    release = _release_with_record_assets(
+        checker, record, sorted(required[target]), release_asset_bytes=release_bytes,
+    )
+    release["immutable"] = True
+    tag_ref = {"ref": f"refs/tags/{tag}", "object": {"type": "commit", "sha": source["head_sha"]}}
+    base = f"https://api.github.com/repos/{repository}"
+    run_id = run_url.rsplit("/", 1)[-1]
+    run_endpoint = f"{base}/actions/runs/{run_id}"
+    live_json = {
+        f"{run_endpoint}/attempts/{source['run_attempt']}": runs[run_url],
+        f"{run_endpoint}/artifacts?per_page=100": inventories[run_url],
+    }
+    live_bytes = {artifact["archive_download_url"]: zip_bytes}
+    monkeypatch.setattr(checker, "fetch_json", lambda url, **_kw: (live_json[url], []))
+    monkeypatch.setattr(checker, "fetch_bytes", lambda url, **_kw: (live_bytes[url], []))
+    monkeypatch.setattr(checker, "PROTECTED_GOAL_TARGETS", (target,))
+    registry_file = tmp_path / "registry.json"
+    registry_file.write_text(json.dumps(registry), encoding="utf-8")
+    destination = tmp_path / "captured"
+    assert checker.main([
+        "--repository", repository, "--release-tag", tag, "--registry", str(registry_file),
+        "--require-goal-targets", "--capture-source-evidence", str(destination),
+    ]) == 0
+    signed_fields = json.loads((destination / "protected-platform-sources.json").read_bytes())
+    capture = signed_fields["protected_platform_sources"]
+    arguments = {
+        "evidence_root": destination, "registry": registry, "targets": (target,),
+        "repository": repository, "tag": tag, "sha": source["head_sha"],
+        "archives_dir": destination / "archives",
+    }
+    assert compliance.check_protected_source_capture(capture, **arguments, published_audit=False) == []
+    original_digest = artifact["digest"]
+    artifact["digest"] = f"sha256:{'0' * 64}"
+    assert f"{target} signed source artifact must match the live GitHub artifact" in (
+        compliance.check_protected_source_capture(capture, **arguments, published_audit=False)
+    )
+    artifact["digest"] = original_digest
+
+    live_json.clear()
+    live_json.update({
+        f"{base}/releases/tags/{tag}": release,
+        f"{base}/git/ref/tags/{tag}": tag_ref,
+    })
+    live_bytes.clear()
+    live_bytes.update(release_bytes)
+    assert compliance.check_protected_source_capture(capture, **arguments, published_audit=True) == []
+    retained_zip = destination / "archives" / f"{target}.zip"
+    retained_zip.write_bytes(zip_bytes + b"modified")
+    errors = compliance.check_protected_source_capture(capture, **arguments, published_audit=True)
+    assert any("digest must match downloaded ZIP digest" in error for error in errors)
+    metadata = destination / capture[target]["run"]["file"]
+    metadata.write_bytes(metadata.read_bytes() + b" ")
+    assert compliance.check_protected_source_capture(capture, **arguments, published_audit=True) == [
+        f"{target} run does not match the signed evidence file size and SHA-256"
+    ]
+
+
+@pytest.mark.parametrize("reported_comment", [None, b"original"])
+def test_remote_release_audit_requires_exact_archive_digest(
+    reported_comment: bytes | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker, "source_artifact_zip_file_bytes", _reject_unverified_zip_parse)
     helpers = _load_platform_verified_evidence_helpers()
     record = helpers._linux_record("linux-i386")
     source_artifact_zip = _source_artifact_zip_for(checker, record)
     source_zip_bytes = next(iter(source_artifact_zip.values()))
-    source_artifacts = _source_artifacts_for(record, size_in_bytes=len(source_zip_bytes) + 1)
+    downloaded = io.BytesIO(source_zip_bytes)
+    with zipfile.ZipFile(downloaded, "a") as archive:
+        archive.comment = b"modified"
+    downloaded_bytes = downloaded.getvalue()
+    source_artifacts = _source_artifacts_for(record, size_in_bytes=len(downloaded_bytes))
+    artifact = next(iter(source_artifacts.values()))["artifacts"][0]
+    if reported_comment is not None:
+        reported = io.BytesIO(source_zip_bytes)
+        with zipfile.ZipFile(reported, "a") as archive:
+            archive.comment = reported_comment
+        assert len(reported.getvalue()) == len(downloaded_bytes)
+        artifact["digest"] = f"sha256:{hashlib.sha256(reported.getvalue()).hexdigest()}"
+
+    errors = checker.check_record_source_artifact_zip_bytes(
+        "linux-i386",
+        record,
+        source_artifacts_by_run=source_artifacts,
+        source_artifact_bytes_by_run={next(iter(source_artifact_zip)): downloaded_bytes},
+    )
+
+    assert errors == [
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        f"digest must match downloaded ZIP digest sha256:{hashlib.sha256(downloaded_bytes).hexdigest()}, "
+        f"got {artifact.get('digest')!r}"
+    ]
+
+
+def test_remote_release_audit_rejects_source_artifact_zip_size_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker, "source_artifact_zip_file_bytes", _reject_unverified_zip_parse)
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source_artifact_zip = _source_artifact_zip_for(checker, record)
+    source_zip_bytes = next(iter(source_artifact_zip.values()))
+    source_artifacts = _source_artifacts_for_zip(record, source_zip_bytes)
+    next(iter(source_artifacts.values()))["artifacts"][0]["size_in_bytes"] += 1
     registry = _registry_with(record)
     promotion = checker.read_json(checker.PROMOTION_PATH)
     required_assets = checker.required_release_assets_by_target(
@@ -2573,6 +2695,33 @@ def test_remote_release_audit_rejects_source_artifact_zip_byte_alias_ambiguity()
     ]
 
 
+@pytest.mark.parametrize("metadata_is_ambiguous", [False, True])
+def test_remote_release_audit_requires_unambiguous_zip_metadata(
+    metadata_is_ambiguous: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker, "source_artifact_zip_file_bytes", _reject_unverified_zip_parse)
+    helpers = _load_platform_verified_evidence_helpers()
+    record = helpers._linux_record("linux-i386")
+    source_artifact_zip = _source_artifact_zip_for(checker, record)
+    run_url, archive_bytes = next(iter(source_artifact_zip.items()))
+    inventory = {}
+    if metadata_is_ambiguous:
+        inventory = _source_artifacts_for_zip(record, archive_bytes)
+        inventory[run_url.rsplit("/", 1)[-1]] = inventory[run_url]
+
+    assert checker.check_record_source_artifact_zip_bytes(
+        "linux-i386",
+        record,
+        source_artifacts_by_run=inventory,
+        source_artifact_bytes_by_run=source_artifact_zip,
+    ) == [
+        "linux-i386 source workflow artifact extended-linux-evidence-linux-i386-v1.0.2 "
+        "ZIP metadata is missing or ambiguous"
+    ]
+
+
 def test_remote_release_audit_rejects_source_artifact_zip_content_drift(tmp_path: Path) -> None:
     checker = _load_checker()
     helpers = _load_platform_verified_evidence_helpers()
@@ -2599,7 +2748,7 @@ def test_remote_release_audit_rejects_source_artifact_zip_content_drift(tmp_path
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, drifted_zip),
         source_artifact_bytes_by_run={
             str(source["workflow_run_url"]): drifted_zip,
         },
@@ -2640,15 +2789,17 @@ def test_remote_release_audit_rejects_source_artifact_zip_case_colliding_files(t
     source = record["release_asset_source"]
     assert isinstance(source, dict)
 
+    archive_bytes = _zip_named_bytes(source_file_bytes)
+
     errors = checker.check_remote_platform_release_evidence(
         registry=registry,
         promotion=promotion,
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_named_bytes(source_file_bytes),
+            str(source["workflow_run_url"]): archive_bytes,
         },
         release_tag="v1.0.2",
         required_targets=("linux-i386",),
@@ -2683,15 +2834,17 @@ def test_remote_release_audit_rejects_source_artifact_zip_byte_drift(tmp_path: P
     target_file = sorted(source_file_bytes)[0]
     source_file_bytes[target_file] = b"tampered source artifact bytes\n"
 
+    archive_bytes = _zip_named_bytes(source_file_bytes)
+
     errors = checker.check_remote_platform_release_evidence(
         registry=registry,
         promotion=promotion,
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_named_bytes(source_file_bytes),
+            str(source["workflow_run_url"]): archive_bytes,
         },
         release_tag="v1.0.2",
         required_targets=("linux-i386",),
@@ -2722,12 +2875,14 @@ def test_remote_release_audit_rejects_malformed_source_artifact_digest() -> None
     source = record["release_asset_source"]
     assert isinstance(source, dict)
 
+    archive_bytes = _zip_named_bytes(source_file_bytes)
+
     errors = checker.check_record_source_artifact_zip_bytes(
         target,
         record,
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_named_bytes(source_file_bytes),
+            str(source["workflow_run_url"]): archive_bytes,
         },
     )
 
@@ -2757,15 +2912,17 @@ def test_remote_release_audit_rejects_nested_source_artifact_zip_entries(tmp_pat
     source = record["release_asset_source"]
     assert isinstance(source, dict)
 
+    archive_bytes = _zip_bytes(["nested/proof.txt"])
+
     errors = checker.check_remote_platform_release_evidence(
         registry=registry,
         promotion=promotion,
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_bytes(["nested/proof.txt"]),
+            str(source["workflow_run_url"]): archive_bytes,
         },
         release_tag="v1.0.2",
         required_targets=("linux-i386",),
@@ -2800,15 +2957,17 @@ def test_remote_release_audit_rejects_source_artifact_zip_directory_entries(
     source = record["release_asset_source"]
     assert isinstance(source, dict)
 
+    archive_bytes = _zip_with_directory_entry("nested/")
+
     errors = checker.check_remote_platform_release_evidence(
         registry=registry,
         promotion=promotion,
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_with_directory_entry("nested/"),
+            str(source["workflow_run_url"]): archive_bytes,
         },
         release_tag="v1.0.2",
         required_targets=("linux-i386",),
@@ -2837,15 +2996,17 @@ def test_remote_release_audit_rejects_source_artifact_zip_symlink_entries(tmp_pa
     source = record["release_asset_source"]
     assert isinstance(source, dict)
 
+    archive_bytes = _zip_with_symlink_entry("proof.txt")
+
     errors = checker.check_remote_platform_release_evidence(
         registry=registry,
         promotion=promotion,
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_with_symlink_entry("proof.txt"),
+            str(source["workflow_run_url"]): archive_bytes,
         },
         release_tag="v1.0.2",
         required_targets=("linux-i386",),
@@ -2876,15 +3037,17 @@ def test_remote_release_audit_rejects_source_artifact_zip_encrypted_entries(
     source = record["release_asset_source"]
     assert isinstance(source, dict)
 
+    archive_bytes = _zip_with_encrypted_entry("proof.txt")
+
     errors = checker.check_remote_platform_release_evidence(
         registry=registry,
         promotion=promotion,
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_with_encrypted_entry("proof.txt"),
+            str(source["workflow_run_url"]): archive_bytes,
         },
         release_tag="v1.0.2",
         required_targets=("linux-i386",),
@@ -2915,15 +3078,17 @@ def test_remote_release_audit_rejects_source_artifact_zip_special_file_entries(
     source = record["release_asset_source"]
     assert isinstance(source, dict)
 
+    archive_bytes = _zip_with_mode_entry("proof.txt", 0o010666)
+
     errors = checker.check_remote_platform_release_evidence(
         registry=registry,
         promotion=promotion,
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_with_mode_entry("proof.txt", 0o010666),
+            str(source["workflow_run_url"]): archive_bytes,
         },
         release_tag="v1.0.2",
         required_targets=("linux-i386",),
@@ -2954,15 +3119,17 @@ def test_remote_release_audit_rejects_source_artifact_zip_executable_file_entrie
     source = record["release_asset_source"]
     assert isinstance(source, dict)
 
+    archive_bytes = _zip_with_mode_entry("proof.txt", 0o100755)
+
     errors = checker.check_remote_platform_release_evidence(
         registry=registry,
         promotion=promotion,
         release=release,
         source_runs_by_run=_source_runs_for(record),
         workflow_runs_by_workflow={},
-        source_artifacts_by_run=_source_artifacts_for(record),
+        source_artifacts_by_run=_source_artifacts_for_zip(record, archive_bytes),
         source_artifact_bytes_by_run={
-            str(source["workflow_run_url"]): _zip_with_mode_entry("proof.txt", 0o100755),
+            str(source["workflow_run_url"]): archive_bytes,
         },
         release_tag="v1.0.2",
         required_targets=("linux-i386",),
@@ -4771,21 +4938,33 @@ def test_live_source_artifact_byte_loader_rejects_padded_archive_url_before_fetc
     ) in errors
 
 
-def test_github_api_headers_use_environment_token() -> None:
+@pytest.mark.parametrize("host", ["api.github.com", "github.com"])
+def test_github_request_uses_token_only_on_the_initial_request(host: str, monkeypatch) -> None:
     checker = _load_checker()
-    original_gh_token = os.environ.get("GH_TOKEN")
-    original_github_token = os.environ.get("GITHUB_TOKEN")
-    try:
-        os.environ["GH_TOKEN"] = "secret-token"
-        os.environ.pop("GITHUB_TOKEN", None)
+    monkeypatch.setenv("GH_TOKEN", "secret-token")
+    request = checker.github_request(f"https://{host}/example/artifact.zip")
+    artifact_url = "https://productionresults.example.com/artifact.zip"
 
-        headers = checker.github_api_headers()
-    finally:
-        _restore_env("GH_TOKEN", original_gh_token)
-        _restore_env("GITHUB_TOKEN", original_github_token)
+    redirected = HTTPRedirectHandler().redirect_request(
+        request, None, 302, "Found", {}, artifact_url
+    )
 
-    assert headers["Authorization"] == "Bearer secret-token"
-    assert headers["X-GitHub-Api-Version"] == "2022-11-28"
+    assert request.get_header("Authorization") == "Bearer secret-token"
+    assert request.get_header("X-github-api-version") == "2022-11-28"
+    assert redirected is not None
+    assert redirected.full_url == artifact_url
+    assert redirected.get_header("Authorization") is None
+    assert checker.github_request(artifact_url).get_header("Authorization") is None
+
+
+def test_github_request_without_token(monkeypatch) -> None:
+    checker = _load_checker()
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    request = checker.github_request("https://api.github.com/repos/example/project")
+
+    assert request.get_header("Authorization") is None
 
 
 def test_fetch_json_rate_limit_error_mentions_authenticated_live_audit(monkeypatch) -> None:
@@ -4907,13 +5086,6 @@ def test_fetch_bytes_rate_limit_error_mentions_authenticated_live_audit(monkeypa
     assert "GitHub API rate limit exceeded during live release evidence audit" in errors[0]
     assert "GH_TOKEN or GITHUB_TOKEN" in errors[0]
     assert "contents:read and actions:read" in errors[0]
-
-
-def _restore_env(name: str, value: str | None) -> None:
-    if value is None:
-        os.environ.pop(name, None)
-    else:
-        os.environ[name] = value
 
 
 def _release_with_assets(asset_names: list[str]) -> dict[str, Any]:
@@ -5100,6 +5272,10 @@ def _source_runs_for(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
     check_suite_id = 998877
     workflow = str(source["workflow"])
     repository = _repository_from_run_url(run_url)
+    attempt_url = (
+        f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/"
+        f"attempts/{source['run_attempt']}"
+    )
     return {
         run_url: {
             "id": run_id,
@@ -5109,8 +5285,8 @@ def _source_runs_for(record: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "runNumber": 77,
             "workflowId": workflow_id,
             "workflowUrl": f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_id}",
-            "jobsUrl": f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/jobs",
-            "logsUrl": f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/logs",
+            "jobsUrl": f"{attempt_url}/jobs",
+            "logsUrl": f"{attempt_url}/logs",
             "artifactsUrl": f"https://api.github.com/repos/{repository}/actions/runs/{run_id}/artifacts",
             "checkSuiteId": check_suite_id,
             "checkSuiteUrl": f"https://api.github.com/repos/{repository}/check-suites/{check_suite_id}",
@@ -5170,6 +5346,17 @@ def _source_artifacts_for(record: dict[str, Any], *, size_in_bytes: int = 4096) 
             ],
         }
     }
+
+
+def _source_artifacts_for_zip(record: dict[str, Any], archive_bytes: bytes) -> dict[str, dict[str, Any]]:
+    inventory = _source_artifacts_for(record, size_in_bytes=len(archive_bytes))
+    artifact = next(iter(inventory.values()))["artifacts"][0]
+    artifact["digest"] = f"sha256:{hashlib.sha256(archive_bytes).hexdigest()}"
+    return inventory
+
+
+def _reject_unverified_zip_parse(_: bytes) -> None:
+    pytest.fail("the ZIP parser was called before archive metadata verification passed")
 
 
 def _source_artifact_zip_for(checker: Any, record: dict[str, Any]) -> dict[str, bytes]:

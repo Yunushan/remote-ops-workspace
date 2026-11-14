@@ -22,8 +22,10 @@ import hashlib
 import html
 import io
 import json
-import mmap
+import os
 import re
+import stat
+import struct
 import subprocess
 import sys
 import tarfile
@@ -47,6 +49,7 @@ NATIVE_PACKAGE = re.compile(
     r"(?:-native)?(?:-setup)?\.(?:zip|tar\.gz|exe|msi|dmg|pkg|deb|rpm|AppImage)$"
 )
 GUI_TARGET = re.compile(r"-(?:windows-(?:x64|arm64)|macos-(?:x64|arm64))(?:-|\.)")
+MAX_LICENSE_BYTES = 4 * 1024 * 1024
 REQUIRED_RECORDS = {
     "third_party_notices": "THIRD_PARTY_NOTICES.md",
     "pyqt6_gplv3": "PyQt6-GPL-3.0.txt",
@@ -64,6 +67,16 @@ BUILD_TARGETS = {
     "linux-x86_64": ("linux-amd64", "linux-x86_64"),
     "linux-aarch64": ("linux-arm64", "linux-aarch64"),
 }
+
+
+def check_packaged_legal_material(package: Path, expected: dict[str, str]) -> None:
+    """Compare the packaged files against the expected SHA-256 digests."""
+    for filename, digest in expected.items():
+        embedded = embedded_file_bytes(package, filename)
+        if embedded is None:
+            raise ValueError(f"{package.name} does not contain {filename}")
+        if len(embedded) > MAX_LICENSE_BYTES or hashlib.sha256(embedded).hexdigest() != digest:
+            raise ValueError(f"{package.name} contains different bytes for {filename}")
 
 
 def expected_native_assets(tag: str) -> set[str]:
@@ -431,38 +444,53 @@ def check_builder_inventories(
 
 
 def appimage_squashfs_offset(archive: Path) -> int:
-    """Find the one SquashFS image appended to a Type 2 AppImage."""
-    candidates: set[int] = set()
-    if archive.stat().st_size:
-        with archive.open("rb") as stream:
-            with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as image:
-                for magic in (b"hsqs", b"sqsh"):
-                    cursor = 0
-                    while (offset := image.find(magic, cursor)) >= 0:
-                        candidates.add(offset)
-                        cursor = offset + 1
-    if not candidates:
-        raise ValueError(f"cannot find an embedded SquashFS filesystem in {archive.name}")
-
-    valid_offsets: list[int] = []
-    for offset in sorted(candidates):
-        try:
-            result = subprocess.run(
-                ["unsquashfs", "-s", "-offset", str(offset), str(archive)],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-            raise ValueError(f"cannot inspect {archive.name} with unsquashfs: {exc}") from exc
-        if result.returncode == 0:
-            valid_offsets.append(offset)
-            if len(valid_offsets) > 1:
-                raise ValueError(f"{archive.name} contains multiple valid SquashFS filesystems")
-    if len(valid_offsets) != 1:
-        raise ValueError(f"cannot locate a valid SquashFS filesystem in {archive.name}")
-    return valid_offsets[0]
+    """Read the Type 2 runtime's ELF payload offset without running the image."""
+    file_size = archive.stat().st_size
+    with archive.open("rb") as stream:
+        ident = stream.read(16)
+        if len(ident) != 16 or ident[:4] != b"\x7fELF" or ident[8:11] != b"AI\x02":
+            raise ValueError(f"{archive.name} is missing a Type 2 AppImage ELF header")
+        formats = {
+            1: ("16sHHIIIIIHHHHHH", "IIIIIIIIII"),
+            2: ("16sHHIQQQIHHHHHH", "IIQQQQIIQQ"),
+        }
+        endian = {1: "<", 2: ">"}.get(ident[5])
+        if ident[4] not in formats or endian is None:
+            raise ValueError(f"{archive.name} has an unsupported ELF class or byte order")
+        header_format, section_format = formats[ident[4]]
+        header = struct.Struct(endian + header_format)
+        section = struct.Struct(endian + section_format)
+        stream.seek(0)
+        raw_header = stream.read(header.size)
+        if len(raw_header) != header.size:
+            raise ValueError(f"{archive.name} has a truncated ELF header")
+        fields = header.unpack(raw_header)
+        section_table_offset = fields[6]
+        section_entry_size, section_count = fields[11:13]
+        section_table_end = section_table_offset + section_entry_size * section_count
+        if (
+            section_table_offset < header.size or section_entry_size != section.size
+            or section_count == 0 or section_table_end > file_size
+        ):
+            raise ValueError(f"{archive.name} has an invalid ELF section table")
+        stream.seek(section_table_end - section_entry_size)
+        raw_section = stream.read(section.size)
+        if len(raw_section) != section.size:
+            raise ValueError(f"{archive.name} has a truncated ELF section table")
+        last_section_offset, last_section_size = section.unpack(raw_section)[4:6]
+        offset = max(section_table_end, last_section_offset + last_section_size)
+        # The Type 2 runtime opens the payload at this boundary. A valid
+        # filesystem elsewhere in the file cannot stand in for that payload.
+        if offset + 96 > file_size:
+            raise ValueError(f"{archive.name} has no SquashFS payload at the ELF boundary")
+        stream.seek(offset)
+        superblock = stream.read(96)
+        if len(superblock) != 96 or superblock[:4] != b"hsqs":
+            raise ValueError(f"{archive.name} has no SquashFS payload at the ELF boundary")
+        bytes_used = struct.unpack_from("<Q", superblock, 40)[0]
+        if not 96 <= bytes_used <= file_size - offset:
+            raise ValueError(f"{archive.name} has an invalid SquashFS payload size")
+        return offset
 
 
 def cpio_embedded_file_bytes(payload: bytes, archive: Path, wanted: str) -> bytes | None:
@@ -538,10 +566,30 @@ def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
 
 
 def pkg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read an installed file from pkgbuild's gzip CPIO payload inside XAR."""
+    """Read the single component payload in a macOS installer."""
+    try:
+        listing = subprocess.run(
+            ["7z", "l", "-slt", "-ba", "-txar", str(archive)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot list {archive.name} XAR payload: {exc}") from exc
+    if listing.returncode != 0:
+        raise ValueError(f"cannot list {archive.name} XAR payload (exit {listing.returncode})")
+    payloads = [
+        path for line in listing.stdout.splitlines()
+        if line.startswith("Path = ")
+        and (path := line.removeprefix("Path = ")).rsplit(os.sep, 1)[-1] == "Payload"
+    ]
+    wrapped_payload = os.sep.join(("remote-ops-workspace-component.pkg", "Payload"))
+    if payloads not in (["Payload"], [wrapped_payload]):
+        raise ValueError(f"{archive.name} must contain one expected XAR payload")
     try:
         result = subprocess.run(
-            ["7z", "x", "-so", "-txar", str(archive), "Payload"],
+            ["7z", "x", "-so", "-spd", "-txar", str(archive), payloads[0]],
             capture_output=True,
             timeout=300,
             check=False,
@@ -612,7 +660,9 @@ def extracted_file_bytes(destination: Path, wanted: str) -> bytes | None:
         if path.is_file() and not path.is_symlink()
         and path.resolve().is_relative_to(resolved_destination)
     ]
-    return matches[0].read_bytes() if len(matches) == 1 else None
+    if len(matches) != 1 or matches[0].stat().st_size > MAX_LICENSE_BYTES:
+        return None
+    return matches[0].read_bytes()
 
 
 def windows_installer_file_bytes(archive: Path, wanted: str) -> bytes | None:
@@ -660,36 +710,52 @@ def deb_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
         )
     try:
         with tarfile.open(fileobj=io.BytesIO(result.stdout), mode="r:*") as package:
-            matches = [
-                member for member in package.getmembers()
-                if member.isfile() and PurePosixPath(member.name).name == wanted
-            ]
-            if len(matches) != 1:
-                return None
-            stream = package.extractfile(matches[0])
-            return stream.read() if stream else None
+            return tar_notice_bytes(package, wanted)
     except tarfile.TarError as exc:
         raise ValueError(f"cannot read {archive.name} filesystem tar stream: {exc}") from exc
 
 
+def tar_notice_bytes(package: tarfile.TarFile, wanted: str) -> bytes | None:
+    matches = [member for member in package if PurePosixPath(member.name).name == wanted]
+    if len(matches) != 1:
+        return None
+    member = matches[0]
+    path = PurePosixPath(member.name)
+    if not member.isfile() or path.is_absolute() or ".." in path.parts or member.size > MAX_LICENSE_BYTES:
+        return None
+    stream = package.extractfile(member)
+    if stream is None:
+        return None
+    with stream:
+        return stream.read()
+
+
 def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
     """Read the actual installed file from each native package format."""
-    if zipfile.is_zipfile(archive):
+    name = archive.name.lower()
+    if name.endswith(".zip"):
         with zipfile.ZipFile(archive) as package:
             matches = [
-                name for name in package.namelist()
-                if PurePosixPath(name.replace("\\", "/")).name == wanted
+                item for item in package.infolist()
+                if PurePosixPath(item.filename.replace("\\", "/")).name.casefold() == wanted.casefold()
             ]
             if len(matches) != 1:
                 return None
-            return package.read(matches[0])
-    if tarfile.is_tarfile(archive):
-        with tarfile.open(archive, "r:*") as package:
-            matches = [member for member in package.getmembers() if member.isfile() and Path(member.name).name == wanted]
-            if len(matches) != 1:
+            item = matches[0]
+            path = PurePosixPath(item.filename.replace("\\", "/"))
+            mode = stat.S_IFMT(item.external_attr >> 16)
+            if (
+                path.name != wanted or path.is_absolute() or ".." in path.parts or ":" in path.parts[0]
+                or item.is_dir() or mode not in (0, stat.S_IFREG) or item.flag_bits & 1
+                or item.file_size > MAX_LICENSE_BYTES
+            ):
                 return None
-            stream = package.extractfile(matches[0])
-            return stream.read() if stream else None
+            return package.read(item)
+    if name.endswith(".tar.gz"):
+        with tarfile.open(archive, "r:gz") as package:
+            return tar_notice_bytes(package, wanted)
+    if zipfile.is_zipfile(archive) or tarfile.is_tarfile(archive):
+        raise ValueError(f"{archive.name} is a ZIP or TAR with a different package extension")
     if archive.suffix.lower() == ".rpm":
         return rpm_embedded_file_bytes(archive, wanted)
     if archive.suffix.lower() == ".deb":
@@ -720,30 +786,8 @@ def embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
                     f"cannot extract {archive.name} with unsquashfs (exit {result.returncode})"
                     + (f": {detail}" if detail else "")
                 )
-            resolved_destination = destination.resolve()
-            matches = [
-                path for path in destination.rglob(wanted)
-                if path.is_file() and not path.is_symlink()
-                and path.resolve().is_relative_to(resolved_destination)
-            ]
-            if len(matches) != 1:
-                return None
-            return matches[0].read_bytes()
-    with tempfile.TemporaryDirectory(prefix="row-license-extract-") as temp:
-        destination = Path(temp)
-        try:
-            result = subprocess.run(
-                ["7z", "x", "-y", f"-o{destination}", str(archive)],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                check=False,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-            raise ValueError(f"cannot inspect {archive.name} with 7z: {exc}") from exc
-        if result.returncode != 0:
-            raise ValueError(f"cannot extract {archive.name} with 7z (exit {result.returncode})")
-        return extracted_file_bytes(destination, wanted)
+            return extracted_file_bytes(destination, wanted)
+    raise ValueError(f"unsupported native package extension for {archive.name}")
 
 
 def audit(
@@ -771,13 +815,9 @@ def audit(
         required = ["third_party_notices"]
         if GUI_TARGET.search(package.name):
             required += ["pyqt6_gplv3", "qt_lgplv3", "qt_relink_instructions"]
-        for key in required:
-            expected_name = materials[key][0].name
-            embedded = embedded_file_bytes(package, expected_name)
-            if embedded is None:
-                raise ValueError(f"{package.name} does not contain {expected_name}")
-            if hashlib.sha256(embedded).hexdigest() != materials[key][1]:
-                raise ValueError(f"{package.name} contains different bytes for {expected_name}")
+        check_packaged_legal_material(
+            package, {materials[key][0].name: materials[key][1] for key in required},
+        )
     return {
         "schema_version": 1,
         "kind": "unsigned-preview-redistribution-material-check",

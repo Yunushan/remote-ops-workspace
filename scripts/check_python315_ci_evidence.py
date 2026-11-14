@@ -16,7 +16,11 @@ from urllib.request import Request, urlopen
 EXPECTED_WORKFLOW_PATH = ".github/workflows/ci.yml"
 EXPECTED_JOB_NAME = "Python 3.15 readiness"
 EXPECTED_JOB_NAMES = (EXPECTED_JOB_NAME, "Native Windows readiness")
-JOBS_PAGE_SIZE = 100
+# Attempt responses include every job step. Smaller pages avoid server errors
+# observed when GitHub assembles the full matrix into one response.
+JOBS_PAGE_SIZE = 20
+RETRYABLE_HTTP_STATUS = frozenset({500, 502, 503, 504})
+REQUEST_RETRY_DELAYS = (1, 2)
 MAX_WAIT_SECONDS = 7200.0
 MAX_POLL_INTERVAL_SECONDS = 300.0
 WAITABLE_RUN_STATUSES = frozenset({"in_progress", "pending", "queued", "requested", "waiting"})
@@ -74,16 +78,22 @@ def fetch_json(url: str, *, token: str) -> dict[str, Any]:
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    try:
-        with urlopen(request, timeout=30) as response:
-            value = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        raise RuntimeError(f"GitHub Actions request failed with HTTP {exc.code}") from exc
-    except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"GitHub Actions request failed: {exc}") from exc
-    if not isinstance(value, dict):
-        raise RuntimeError("GitHub Actions response must be a JSON object")
-    return value
+    for delay in (*REQUEST_RETRY_DELAYS, None):
+        try:
+            with urlopen(request, timeout=30) as response:
+                value = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            exc.close()
+            if delay is None or exc.code not in RETRYABLE_HTTP_STATUS:
+                raise RuntimeError(f"GitHub Actions request failed with HTTP {exc.code}") from exc
+            time.sleep(delay)
+            continue
+        except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"GitHub Actions request failed: {exc}") from exc
+        if not isinstance(value, dict):
+            raise RuntimeError("GitHub Actions response must be a JSON object")
+        return value
+    raise AssertionError("GitHub Actions request must return or fail on its final attempt")
 
 
 def select_exact_push_run(
@@ -174,7 +184,7 @@ def wait_for_successful_exact_push_run(
         sleep_fn(delay)
 
 
-def validate_readiness_job(payload: dict[str, Any]) -> list[str]:
+def validate_readiness_job(payload: dict[str, Any], *, run: dict[str, Any]) -> list[str]:
     raw_jobs = payload.get("jobs")
     if not isinstance(raw_jobs, list):
         return ["workflow-jobs response must contain jobs"]
@@ -205,6 +215,14 @@ def validate_readiness_job(payload: dict[str, Any]) -> list[str]:
             )
             continue
         job = matches[0]
+        for field, expected in (
+            ("run_id", run["id"]),
+            ("run_attempt", run["run_attempt"]),
+            ("head_sha", str(run["head_sha"]).lower()),
+        ):
+            actual = job.get(field)
+            if type(actual) is not type(expected) or actual != expected:
+                errors.append(f"{expected_name} {field} must match the selected CI run")
         if job.get("status") != "completed":
             errors.append(
                 f"{expected_name} status must be completed, got {job.get('status')!r}"
@@ -404,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
                     token=token,
                 )
             )
-        job_errors = validate_readiness_job(jobs_payload)
+        job_errors = validate_readiness_job(jobs_payload, run=run)
         if job_errors:
             raise RuntimeError("; ".join(job_errors))
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the live GitHub release carries the generated boundary-aware notes."""
+"""Verify boundary-aware release notes before or after publication."""
 
 from __future__ import annotations
 
@@ -45,7 +45,11 @@ def check_release_notes(payload: object, *, tag: str, channel: str) -> list[str]
     elif channel == "production-signed" and "UNSIGNED PREVIEW" in name:
         errors.append("production-signed release name must not say UNSIGNED PREVIEW")
 
-    body = payload.get("body")
+    return errors + check_notes_body(payload.get("body"), tag=tag, channel=channel)
+
+
+def check_notes_body(body: object, *, tag: str, channel: str) -> list[str]:
+    errors: list[str] = []
     if not isinstance(body, str) or not body.strip():
         errors.append("published release body must contain boundary-aware release notes")
         return errors
@@ -55,12 +59,13 @@ def check_release_notes(payload: object, *, tag: str, channel: str) -> list[str]
         if channel == "production-signed"
         else "**Channel: unsigned preview.**"
     )
+    lines = body.splitlines()
     for marker, label in (
         (f"# {tag}", "release tag heading"),
         (required_marker, "release channel marker"),
         ("## Support boundaries", "support-boundary section"),
     ):
-        if marker not in body:
+        if not any(line == marker or line.startswith(f"{marker} ") for line in lines):
             errors.append(f"published release body missing {label}: {marker}")
     return errors
 
@@ -116,35 +121,42 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repository", required=True, help="GitHub repository in owner/name form")
     parser.add_argument("--tag", required=True, help="release tag, for example v1.0.27")
     parser.add_argument("--channel", choices=sorted(CHANNELS), required=True)
-    parser.add_argument("--release-json", type=Path, help="offline GitHub release JSON fixture")
+    source = parser.add_mutually_exclusive_group()
+    source.add_argument("--release-json", type=Path, help="offline GitHub release JSON fixture")
+    source.add_argument("--notes-file", type=Path, help="generated Markdown notes before publication")
     parser.add_argument("--timeout", type=float, default=30.0)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    label = "generated release notes" if args.notes_file is not None else "published release notes"
     if not REPOSITORY_RE.fullmatch(args.repository):
-        print("published release notes: repository must be owner/name", file=sys.stderr)
+        print(f"{label}: repository must be owner/name", file=sys.stderr)
         return 2
     if not TAG_RE.fullmatch(args.tag):
-        print("published release notes: tag must be vX.Y.Z", file=sys.stderr)
+        print(f"{label}: tag must be vX.Y.Z", file=sys.stderr)
         return 2
     try:
-        payload = load_release_json(
-            repository=args.repository,
-            tag=args.tag,
-            release_json=args.release_json,
-            timeout=args.timeout,
-        )
+        if args.notes_file is not None:
+            body = args.notes_file.read_text(encoding="utf-8")
+            errors = check_notes_body(body, tag=args.tag, channel=args.channel)
+        else:
+            payload = load_release_json(
+                repository=args.repository,
+                tag=args.tag,
+                release_json=args.release_json,
+                timeout=args.timeout,
+            )
+            errors = check_release_notes(payload, tag=args.tag, channel=args.channel)
     except (OSError, json.JSONDecodeError, RuntimeError) as exc:
-        print(f"published release notes: {exc}", file=sys.stderr)
+        print(f"{label}: {exc}", file=sys.stderr)
         return 1
-    errors = check_release_notes(payload, tag=args.tag, channel=args.channel)
     if errors:
         for error in errors:
-            print(f"published release notes: {error}", file=sys.stderr)
+            print(f"{label}: {error}", file=sys.stderr)
         return 1
-    print("published release notes passed")
+    print(f"{label} passed")
     return 0
 
 

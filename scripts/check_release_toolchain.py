@@ -38,6 +38,14 @@ def main() -> int:
         errors.extend(check_linux_appimagetool_script(toolchain))
         errors.extend(check_windows_native_smoke())
         errors.extend(check_native_release_tag_guards())
+        errors.extend(check_windows_timestamp_digest(
+            (ROOT / "scripts/make_windows_native.ps1").read_text(encoding="utf-8"),
+            (ROOT / "scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8"),
+        ))
+        errors.extend(check_native_signing_verification(
+            (ROOT / "scripts/make_windows_native.ps1").read_text(encoding="utf-8"),
+            (ROOT / "scripts/make_macos_native.sh").read_text(encoding="utf-8"),
+        ))
     if errors:
         for error in errors:
             print(f"release toolchain: {error}", file=sys.stderr)
@@ -384,11 +392,9 @@ def check_workflow(
         ),
         'if ("${{ matrix.arch }}" -eq "x86")': "explicit Windows x86 compatibility branch",
         'if [[ "${{ matrix.arch }}" == "x64" ]]': "explicit Intel macOS source-build branch",
-        "python -m pip uninstall -y bcrypt cryptography truststore": (
-            "Windows x86 backend exclusion"
-        ),
         "find_spec('bcrypt') is None": "Windows x86 bcrypt absence assertion",
         "find_spec('cryptography') is None": "Windows x86 backend absence assertion",
+        "find_spec('truststore') is None": "Windows x86 truststore absence assertion",
         '--no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"': (
             "maintained Intel macOS cryptography source build"
         ),
@@ -677,6 +683,58 @@ def check_native_release_tag_guards() -> list[str]:
                 errors.append(
                     f"{relative} missing workflow-dispatch-safe release tag guard: {snippet}"
                 )
+    return errors
+
+
+def check_windows_timestamp_digest(windows: str, xp: str) -> list[str]:
+    errors: list[str] = []
+    for name, source in (("Windows native", windows), ("Windows XP", xp)):
+        signing_commands = re.findall(
+            r"(?m)^ *& \$SignTool sign [^\n]+",
+            strip_unquoted_comments(source),
+        )
+        if len(signing_commands) != 1 or not re.search(
+            r" /fd SHA256 /tr \S+ /td SHA256 ", signing_commands[0],
+        ):
+            errors.append(f"{name} signing must select SHA256 after the RFC 3161 timestamp URL")
+    return errors
+
+
+def check_native_signing_verification(windows: str, macos: str) -> list[str]:
+    errors: list[str] = []
+    windows = strip_unquoted_comments(windows)
+    if not re.search(
+        r"(?m)^  & \$SignTool verify /pa /all /tw \$ArtifactPath\n  if \(\$LASTEXITCODE -ne 0\) \{",
+        windows,
+    ):
+        errors.append("Windows production signing must require successful Authenticode and timestamp verification")
+    for artifact, sign, copy in (
+        ("RowExe", "\nSign-NativeArtifact $RowExe\n", "\nCopy-Item $RowExe "),
+        ("RowGuiExe", "\nif ($BuildGuiLauncher) {\n  Sign-NativeArtifact $RowGuiExe\n}", "\n  Copy-Item $RowGuiExe "),
+    ):
+        signing, staging = windows.find(sign), windows.find(copy)
+        if not 0 <= signing < staging:
+            errors.append(f"Windows production signing must sign ${artifact} before copying it into the packages")
+
+    macos = strip_unquoted_comments(macos)
+    commands = (
+        'productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} "$PKG" "$SIGNED_PKG"',
+        'codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY"',
+        'xcrun notarytool submit "$PKG"',
+        'xcrun stapler staple "$PKG"',
+        'xcrun stapler validate "$PKG"',
+        'pkgutil --check-signature "$PKG"',
+        'spctl --assess --type install --verbose=2 "$PKG"',
+        'xcrun notarytool submit "$DMG"',
+        'xcrun stapler staple "$DMG"',
+        'xcrun stapler validate "$DMG"',
+        'codesign --verify --strict --verbose=2 "$DMG"',
+        'spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"',
+        'production_signing = sys.argv[7] == "1"',
+    )
+    positions = [macos.find(command) for command in commands]
+    if any(position < 0 for position in positions) or positions != sorted(positions):
+        errors.append("macOS must sign, notarize, staple and verify both final packages before recording signing metadata")
     return errors
 
 

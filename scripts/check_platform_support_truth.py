@@ -12,6 +12,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from remote_ops_workspace import __version__  # noqa: E402
 from remote_ops_workspace.features import coverage_report  # noqa: E402
 
 PLATFORM_TARGETS_PATH = ROOT / "configs" / "platform_targets.json"
@@ -33,20 +34,20 @@ PROTECTED_RELEASE_SOURCE_WORKFLOWS = {
 }
 PROTECTED_LINUX_CATALOG_ASSETS = {
     "linux-i386": {
-        "remote-ops-workspace-v1.0.27-linux-i386.deb",
-        "remote-ops-workspace-v1.0.27-linux-i686.rpm",
-        "remote-ops-workspace-v1.0.27-linux-i686.AppImage",
-        "remote-ops-workspace-v1.0.27-linux-i686-native.tar.gz",
-        "remote-ops-workspace-v1.0.27-linux-i686-native-manifest.json",
-        "remote-ops-workspace-v1.0.27-linux-i686-native-SHA256SUMS.txt",
+        f"remote-ops-workspace-v{__version__}-linux-i386.deb",
+        f"remote-ops-workspace-v{__version__}-linux-i686.rpm",
+        f"remote-ops-workspace-v{__version__}-linux-i686.AppImage",
+        f"remote-ops-workspace-v{__version__}-linux-i686-native.tar.gz",
+        f"remote-ops-workspace-v{__version__}-linux-i686-native-manifest.json",
+        f"remote-ops-workspace-v{__version__}-linux-i686-native-SHA256SUMS.txt",
     },
     "linux-armhf": {
-        "remote-ops-workspace-v1.0.27-linux-armhf.deb",
-        "remote-ops-workspace-v1.0.27-linux-armv7hl.rpm",
-        "remote-ops-workspace-v1.0.27-linux-armhf.AppImage",
-        "remote-ops-workspace-v1.0.27-linux-armhf-native.tar.gz",
-        "remote-ops-workspace-v1.0.27-linux-armhf-native-manifest.json",
-        "remote-ops-workspace-v1.0.27-linux-armhf-native-SHA256SUMS.txt",
+        f"remote-ops-workspace-v{__version__}-linux-armhf.deb",
+        f"remote-ops-workspace-v{__version__}-linux-armv7hl.rpm",
+        f"remote-ops-workspace-v{__version__}-linux-armhf.AppImage",
+        f"remote-ops-workspace-v{__version__}-linux-armhf-native.tar.gz",
+        f"remote-ops-workspace-v{__version__}-linux-armhf-native-manifest.json",
+        f"remote-ops-workspace-v{__version__}-linux-armhf-native-SHA256SUMS.txt",
     },
 }
 PROTECTED_READINESS_GATE_COMMANDS = {

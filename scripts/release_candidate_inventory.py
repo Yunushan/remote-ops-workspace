@@ -23,11 +23,11 @@ import tempfile
 import urllib.error
 import urllib.request
 import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 BUILD_WORKFLOW = ".github/workflows/release.yml"
 CANDIDATE_INVENTORY_ARTIFACT = "release-candidate-inventory"
 EXPECTED_ARTIFACT_NAMES = (
@@ -46,10 +46,22 @@ GUI_SMOKE_ARTIFACT_NAMES = (
     "release-macos-gui-smoke-x64",
     "release-macos-gui-smoke-arm64",
 )
+RUNTIME_REPORT_ARTIFACT_NAMES = {
+    "windows-x86": "release-runtime-windows-x86",
+    "windows-x64": "release-runtime-windows-x64",
+    "windows-arm64": "release-runtime-windows-arm64",
+    "macos-x64": "release-runtime-macos-x64",
+    "macos-arm64": "release-runtime-macos-arm64",
+    "linux-x86_64": "release-runtime-linux-x86_64",
+    "linux-arm64": "release-runtime-linux-aarch64",
+}
+RUNTIME_REPORT_NAME = "candidate-pip-inspect.json"
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 DIGEST_RE = re.compile(r"sha256:([0-9a-f]{64})")
+WINDOWS_DEVICE_NAME_RE = re.compile(r"(?:con|prn|aux|nul|conin\$|conout\$|(?:com|lpt)[1-9¹²³])", re.I)
+UNSAFE_FILENAME_RE = re.compile(r'[\x00-\x1f\x7f<>:"/\\|?*]')
 RUN_URI_RE = re.compile(
     r"https://github\.com/([^/]+/[^/]+)/actions/runs/([1-9]\d*)/attempts/([1-9]\d*)"
 )
@@ -89,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "stage":
             if run_attempt != 1:
                 raise ValueError(
-                    "candidate staging refuses rerun attempts; create a fresh tag build run"
+                    "candidate staging refuses rerun attempts; dispatch a fresh build from the release tag"
                 )
             stage(
                 client,
@@ -171,7 +183,9 @@ class GitHubClient:
             raise RuntimeError(f"GitHub API {endpoint} did not return an object")
         return value
 
-    def download(self, endpoint: str, destination: Path) -> str:
+    def download(
+        self, endpoint: str, destination: Path, *, max_bytes: int = MAX_ARCHIVE_BYTES,
+    ) -> str:
         if destination.exists():
             raise ValueError(f"download destination already exists: {destination}")
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -179,13 +193,13 @@ class GitHubClient:
         size = 0
         with self._open(endpoint, allow_redirect=True) as response:
             length = response.headers.get("Content-Length")
-            if length and int(length) > MAX_ARCHIVE_BYTES:
-                raise RuntimeError(f"GitHub artifact exceeds {MAX_ARCHIVE_BYTES} bytes")
+            if length and int(length) > max_bytes:
+                raise RuntimeError(f"GitHub artifact exceeds {max_bytes} bytes")
             with destination.open("xb") as output:
                 while chunk := response.read(1024 * 1024):
                     size += len(chunk)
-                    if size > MAX_ARCHIVE_BYTES:
-                        raise RuntimeError(f"GitHub artifact exceeds {MAX_ARCHIVE_BYTES} bytes")
+                    if size > max_bytes:
+                        raise RuntimeError(f"GitHub artifact exceeds {max_bytes} bytes")
                     digest.update(chunk)
                     output.write(chunk)
         return f"sha256:{digest.hexdigest()}"
@@ -221,21 +235,17 @@ class GitHubClient:
                 try:
                     return opener.open(redirected_request, timeout=120)
                 except urllib.error.HTTPError as redirect_exc:
-                    if redirect_exc.code in {301, 302, 303, 307, 308}:
-                        second_location = redirect_exc.headers.get("Location")
-                        redirect_exc.close()
+                    status = redirect_exc.code
+                    redirect_exc.close()
+                    if status in {301, 302, 303, 307, 308}:
                         raise RuntimeError(
                             "GitHub artifact download returned an unexpected second redirect"
-                            + (f": {second_location}" if second_location else "")
                         ) from None
-                    detail = redirect_exc.read(2000).decode("utf-8", errors="replace")
                     raise RuntimeError(
-                        f"GitHub artifact download failed with HTTP {redirect_exc.code}: {detail}"
-                    ) from redirect_exc
-                except urllib.error.URLError as redirect_exc:
-                    raise RuntimeError(
-                        f"GitHub artifact download failed: {redirect_exc.reason}"
-                    ) from redirect_exc
+                        f"GitHub artifact download failed with HTTP {status}"
+                    ) from None
+                except urllib.error.URLError:
+                    raise RuntimeError("GitHub artifact download failed to connect") from None
             detail = exc.read(2000).decode("utf-8", errors="replace")
             raise RuntimeError(f"GitHub API {url} failed with HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
@@ -265,23 +275,43 @@ def stage(
     raw_artifacts = listing.get("artifacts")
     if not isinstance(raw_artifacts, list):
         raise ValueError("GitHub run artifact listing must contain an artifacts list")
+    total_count = listing.get("total_count")
+    if type(total_count) is not int or total_count != len(raw_artifacts):
+        raise ValueError("GitHub run artifact listing is incomplete or has an invalid total count")
     by_name = unique_artifacts(raw_artifacts)
     actual_names = set(by_name)
-    expected_names = set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES)
+    expected_names = (
+        set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES)
+        | set(RUNTIME_REPORT_ARTIFACT_NAMES.values())
+    )
     if actual_names != expected_names:
         raise ValueError(
             "staged run artifact names must be exact; "
             f"missing={sorted(expected_names - actual_names)}, "
             f"unexpected={sorted(actual_names - expected_names)}"
         )
-    # The workflow retains GUI smoke diagnostics alongside the release builds.
-    # Only the standard build archives feed the signed publication inventory.
-    for name in GUI_SMOKE_ARTIFACT_NAMES:
-        evidence = by_name[name]
-        if evidence.get("expired") is not False:
-            raise ValueError(f"GUI smoke artifact {name} must be unexpired")
-        positive_int(evidence.get("size_in_bytes"), f"GUI smoke artifact {name} size")
+    artifact_ids: set[int] = set()
+    for name, artifact in by_name.items():
+        artifact_id = positive_int(artifact.get("id"), f"artifact {name} id")
+        if artifact_id in artifact_ids:
+            raise ValueError(f"run artifact ID is duplicated: {artifact_id}")
+        artifact_ids.add(artifact_id)
+        check_artifact_metadata(
+            artifact,
+            artifact_id=artifact_id,
+            name=name,
+            digest=normalize_digest(artifact.get("digest"), f"artifact {name} digest"),
+            run_id=run_id,
+            release_sha=release_sha,
+        )
+        positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
+
+    # GUI smoke archives must belong to this build, but are not release assets.
     build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
+    runtime_reports = {
+        target: seal_runtime_report(client, by_name[name], name, run_id, release_sha)
+        for target, name in sorted(RUNTIME_REPORT_ARTIFACT_NAMES.items())
+    }
     records = materialize_records(client, build_artifacts, assets_root)
     inventory = {
         "schema_version": SCHEMA_VERSION,
@@ -293,9 +323,54 @@ def stage(
         "build_run_id": run_id,
         "build_run_attempt": run_attempt,
         "artifacts": records,
+        "runtime_reports": runtime_reports,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
+
+
+def seal_runtime_report(
+    client: GitHubClient, artifact: dict[str, Any], name: str, run_id: int, release_sha: str,
+) -> dict[str, Any]:
+    artifact_id = positive_int(artifact.get("id"), f"artifact {name} id")
+    digest = normalize_digest(artifact.get("digest"), f"artifact {name} archive digest")
+    size = positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
+    if size > MAX_JSON_BYTES:
+        raise ValueError(f"{name} archive exceeds the size limit")
+    check_artifact_metadata(
+        artifact, artifact_id=artifact_id, name=name, digest=digest,
+        run_id=run_id, release_sha=release_sha,
+    )
+    with tempfile.TemporaryDirectory(prefix="row-runtime-report-") as temporary:
+        archive = Path(temporary) / "report.zip"
+        downloaded_digest = client.download(
+            f"actions/artifacts/{artifact_id}/zip", archive, max_bytes=MAX_JSON_BYTES,
+        )
+        if downloaded_digest != digest or archive.stat().st_size != size:
+            raise ValueError(f"{name} archive does not match GitHub")
+        unpacked = Path(temporary) / "unpacked"
+        extract_archive(
+            archive, unpacked, max_expanded_bytes=MAX_JSON_BYTES, only_name=RUNTIME_REPORT_NAME,
+        )
+        report = (unpacked / RUNTIME_REPORT_NAME).read_bytes()
+    validate_runtime_report(report, name)
+    return {
+        "artifact_id": artifact_id,
+        "archive_digest": digest,
+        "sha256": hashlib.sha256(report).hexdigest(),
+        "size_bytes": len(report),
+    }
+
+
+def validate_runtime_report(report: bytes, label: str) -> None:
+    if not 0 < len(report) <= MAX_JSON_BYTES:
+        raise ValueError(f"{label} pip inspect report exceeds the allowed size or is empty")
+    value = json.loads(report)
+    if (
+        not isinstance(value, dict) or value.get("version") != "1"
+        or not isinstance(value.get("installed"), list) or not value["installed"]
+    ):
+        raise ValueError(f"{label} must be a non-empty pip inspect v1 inventory")
 
 
 def promote(
@@ -328,21 +403,23 @@ def promote(
         run_id=run_id,
         release_sha=release_sha,
     )
+    pointer_size = positive_int(pointer.get("size_in_bytes"), "candidate inventory ZIP size")
+    if pointer_size > MAX_JSON_BYTES:
+        raise ValueError("candidate inventory ZIP exceeds the size limit")
     with tempfile.TemporaryDirectory(prefix="row-candidate-inventory-") as temporary:
         extracted = Path(temporary)
         pointer_zip = extracted / "candidate-inventory.zip"
         actual_digest = client.download(
-            f"actions/artifacts/{inventory_artifact_id}/zip", pointer_zip
+            f"actions/artifacts/{inventory_artifact_id}/zip", pointer_zip, max_bytes=MAX_JSON_BYTES,
         )
-        if actual_digest != inventory_archive_digest:
+        if actual_digest != inventory_archive_digest or pointer_zip.stat().st_size != pointer_size:
             raise ValueError(
-                "candidate inventory raw ZIP digest does not match the pinned input"
+                "candidate inventory raw ZIP digest or size does not match GitHub and the pinned input"
             )
         unpacked = extracted / "unpacked"
-        files = extract_archive(pointer_zip, unpacked)
-        if [item["path"] for item in files] != ["release-candidate-inventory.json"]:
-            raise ValueError("candidate inventory artifact must contain only release-candidate-inventory.json")
-        staged_bytes = (unpacked / "release-candidate-inventory.json").read_bytes()
+        inventory_name = "release-candidate-inventory.json"
+        extract_archive(pointer_zip, unpacked, max_expanded_bytes=MAX_JSON_BYTES, only_name=inventory_name)
+        staged_bytes = (unpacked / inventory_name).read_bytes()
     if not approved_inventory.is_file() or approved_inventory.is_symlink():
         raise ValueError("approved candidate inventory must be a regular non-symlink file")
     approved_bytes = approved_inventory.read_bytes()
@@ -358,6 +435,7 @@ def promote(
         run_id=run_id,
         run_attempt=run_attempt,
         inventory_sha256=hashlib.sha256(approved_bytes).hexdigest(),
+        build_event=run["event"],
     )
     inventory = json.loads(approved_bytes)
     records = validate_inventory(
@@ -396,13 +474,14 @@ def check_build_run(
     expected = {
         "id": run_id,
         "run_attempt": run_attempt,
-        "event": "push",
         "head_branch": release_tag,
         "head_sha": release_sha,
     }
     for key, value in expected.items():
         if run.get(key) != value:
             raise ValueError(f"candidate build run {key} must be {value!r}, got {run.get(key)!r}")
+    if run.get("event") not in ("push", "workflow_dispatch"):
+        raise ValueError("candidate build run event must be push or workflow_dispatch")
     if not workflow_path_matches(run.get("path"), BUILD_WORKFLOW, release_tag):
         raise ValueError(
             f"candidate build run path must identify {BUILD_WORKFLOW!r} at tag {release_tag!r}"
@@ -448,22 +527,44 @@ def materialize_records(
     *,
     expected_records: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    if assets_root.exists():
-        if assets_root.is_symlink() or not assets_root.is_dir() or any(assets_root.iterdir()):
-            raise ValueError("assets root must be absent or an empty regular directory")
-    else:
-        assets_root.mkdir(parents=True)
+    if assets_root.is_symlink() or (
+        assets_root.exists() and (not assets_root.is_dir() or any(assets_root.iterdir()))
+    ):
+        raise ValueError("assets root must be absent or an empty regular directory")
     expected_by_name = (
         {record["name"]: record for record in expected_records}
         if expected_records is not None
         else None
     )
+    if expected_by_name is not None and set(artifacts) != set(expected_by_name):
+        raise ValueError("live candidate artifact names do not match approved inventory")
+
+    assets_root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".row-release-staging-", dir=assets_root.parent) as temporary:
+        staged_root = Path(temporary) / "assets"
+        staged_root.mkdir()
+        records = materialize_candidate_files(client, artifacts, staged_root, expected_by_name)
+        if assets_root.is_symlink():
+            raise ValueError("assets root became a symlink during staging")
+        if assets_root.exists():
+            assets_root.rmdir()
+        staged_root.rename(assets_root)
+    return records
+
+
+def materialize_candidate_files(
+    client: GitHubClient,
+    artifacts: dict[str, dict[str, Any]],
+    staged_root: Path,
+    expected_by_name: dict[str, dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     global_files: dict[str, str] = {}
     for name in sorted(artifacts):
         item = artifacts[name]
         artifact_id = positive_int(item.get("id"), f"artifact {name} id")
         digest = normalize_digest(item.get("digest"), f"artifact {name} digest")
+        archive_size = positive_int(item.get("size_in_bytes"), f"artifact {name} size")
         if item.get("expired") is not False:
             raise ValueError(f"artifact {name} must be unexpired")
         with tempfile.TemporaryDirectory(prefix="row-release-artifact-") as temporary:
@@ -474,12 +575,12 @@ def materialize_records(
                 raise ValueError(
                     f"artifact {name} raw ZIP digest must be {digest}, got {actual_digest}"
                 )
+            if archive.stat().st_size != archive_size:
+                raise ValueError(f"artifact {name} raw ZIP size must match GitHub metadata")
             extracted_root = temporary_root / "unpacked"
             files = extract_archive(archive, extracted_root)
             for file_record in files:
                 relative = file_record["path"]
-                if not safe_name(relative):
-                    raise ValueError(f"artifact {name} must contain release files at ZIP root: {relative!r}")
                 folded = relative.casefold()
                 if folded in global_files:
                     raise ValueError(
@@ -487,19 +588,17 @@ def materialize_records(
                         f"{global_files[folded]!r}, {name!r}"
                     )
                 global_files[folded] = name
-                shutil.copyfile(extracted_root / relative, assets_root / relative)
+                shutil.copyfile(extracted_root / relative, staged_root / relative)
         record = {
             "id": artifact_id,
             "name": name,
             "archive_digest": digest,
-            "size_in_bytes": positive_int(item.get("size_in_bytes"), f"artifact {name} size"),
+            "size_in_bytes": archive_size,
             "files": files,
         }
         if expected_by_name is not None and record != expected_by_name.get(name):
             raise ValueError(f"artifact {name} bytes/metadata do not match approved inventory")
         records.append(record)
-    if expected_by_name is not None and set(artifacts) != set(expected_by_name):
-        raise ValueError("live candidate artifact names do not match approved inventory")
     return records
 
 
@@ -553,6 +652,22 @@ def validate_inventory(
         records.append(item)
     if names != set(EXPECTED_ARTIFACT_NAMES):
         raise ValueError("approved candidate inventory must contain the exact standard artifact names")
+    reports = value.get("runtime_reports")
+    if not isinstance(reports, dict) or reports.keys() != RUNTIME_REPORT_ARTIFACT_NAMES.keys():
+        raise ValueError("approved candidate inventory must contain all native runtime reports")
+    for target, report in reports.items():
+        if (
+            not isinstance(report, dict) or set(report) != {"artifact_id", "archive_digest", "sha256", "size_bytes"}
+            or DIGEST_RE.fullmatch(f'sha256:{report["sha256"]}') is None
+        ):
+            raise ValueError(f"approved candidate runtime report for {target} is invalid")
+        report_id = positive_int(report["artifact_id"], f"runtime report {target} artifact id")
+        if report_id in ids:
+            raise ValueError(f"runtime report {target} artifact id is duplicated")
+        ids.add(report_id)
+        normalize_digest(report["archive_digest"], f"runtime report {target} archive digest")
+        if positive_int(report["size_bytes"], f"runtime report {target} size") > MAX_JSON_BYTES:
+            raise ValueError(f"runtime report {target} exceeds the size limit")
     return sorted(records, key=lambda item: item["name"])
 
 
@@ -585,6 +700,7 @@ def verify_candidate_attestation(
     run_id: int,
     run_attempt: int,
     inventory_sha256: str,
+    build_event: str,
 ) -> None:
     command = [
         "gh",
@@ -628,6 +744,7 @@ def verify_candidate_attestation(
         run_id=run_id,
         run_attempt=run_attempt,
         inventory_sha256=inventory_sha256,
+        build_event=build_event,
     )
 
 
@@ -640,6 +757,7 @@ def check_candidate_attestation_payload(
     run_id: int,
     run_attempt: int,
     inventory_sha256: str,
+    build_event: str,
 ) -> None:
     if not isinstance(payload, list) or not payload:
         raise ValueError("candidate inventory attestation verification returned no results")
@@ -663,7 +781,7 @@ def check_candidate_attestation_payload(
             continue
         if certificate_value(certificate, "runnerEnvironment") != "github-hosted":
             continue
-        if certificate_value(certificate, "buildTrigger", "githubWorkflowTrigger") != "push":
+        if certificate_value(certificate, "buildTrigger", "githubWorkflowTrigger") != build_event:
             continue
         invocation = certificate_value(certificate, "runInvocationURI", "runnerInvocationURI")
         match = RUN_URI_RE.fullmatch(invocation) if isinstance(invocation, str) else None
@@ -704,34 +822,42 @@ def statement_has_digest(statement: Any, digest: str) -> bool:
     )
 
 
-def extract_archive(archive: Path, destination: Path) -> list[dict[str, Any]]:
-    destination.mkdir(parents=True, exist_ok=True)
+def extract_archive(
+    archive: Path, destination: Path, *,
+    max_expanded_bytes: int = MAX_EXPANDED_BYTES,
+    only_name: str | None = None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     names: set[str] = set()
     expanded = 0
     with zipfile.ZipFile(archive) as bundle:
         members = bundle.infolist()
+        if not members:
+            raise ValueError("artifact ZIP must contain files")
         if len(members) > MAX_MEMBERS:
             raise ValueError(f"artifact ZIP exceeds {MAX_MEMBERS} members")
+        if only_name is not None and [member.orig_filename for member in members] != [only_name]:
+            raise ValueError(f"artifact ZIP must contain only {only_name}")
         for member in members:
-            path = PurePosixPath(member.filename)
-            if member.is_dir():
-                continue
-            if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
-                raise ValueError(f"artifact ZIP contains unsafe path: {member.filename!r}")
+            name = member.orig_filename
+            if name != member.filename or not safe_name(name):
+                raise ValueError(f"artifact ZIP must contain safe files at ZIP root: {name!r}")
             mode = (member.external_attr >> 16) & 0xFFFF
-            if stat.S_ISLNK(mode):
-                raise ValueError(f"artifact ZIP contains symlink: {member.filename!r}")
-            normalized = path.as_posix()
-            folded = normalized.casefold()
+            if stat.S_IFMT(mode) not in (0, stat.S_IFREG) or member.external_attr & 0x10:
+                raise ValueError(f"artifact ZIP contains non-regular entry: {name!r}")
+            if member.flag_bits & 1:
+                raise ValueError(f"artifact ZIP contains encrypted entry: {name!r}")
+            folded = name.casefold()
             if folded in names:
-                raise ValueError(f"artifact ZIP contains duplicate/case-colliding path: {normalized!r}")
+                raise ValueError(f"artifact ZIP contains duplicate/case-colliding path: {name!r}")
             names.add(folded)
             expanded += member.file_size
-            if expanded > MAX_EXPANDED_BYTES:
-                raise ValueError(f"artifact ZIP expands beyond {MAX_EXPANDED_BYTES} bytes")
-            target = destination.joinpath(*path.parts)
-            target.parent.mkdir(parents=True, exist_ok=True)
+            if expanded > max_expanded_bytes:
+                raise ValueError(f"artifact ZIP expands beyond {max_expanded_bytes} bytes")
+        destination.mkdir(parents=True, exist_ok=True)
+        for member in members:
+            name = member.filename
+            target = destination / name
             digest = hashlib.sha256()
             size = 0
             with bundle.open(member) as source, target.open("xb") as output:
@@ -740,10 +866,8 @@ def extract_archive(archive: Path, destination: Path) -> list[dict[str, Any]]:
                     size += len(chunk)
                     output.write(chunk)
             if size != member.file_size:
-                raise ValueError(f"artifact ZIP size changed while extracting {normalized!r}")
-            records.append({"path": normalized, "size": size, "sha256": digest.hexdigest()})
-    if not records:
-        raise ValueError("artifact ZIP must contain files")
+                raise ValueError(f"artifact ZIP size changed while extracting {name!r}")
+            records.append({"path": name, "size": size, "sha256": digest.hexdigest()})
     return sorted(records, key=lambda item: item["path"].casefold())
 
 
@@ -800,9 +924,9 @@ def safe_name(value: Any) -> bool:
         isinstance(value, str)
         and bool(value)
         and value.strip() == value
-        and value not in {".", ".."}
-        and "/" not in value
-        and "\\" not in value
+        and not value.endswith(".")
+        and UNSAFE_FILENAME_RE.search(value) is None
+        and WINDOWS_DEVICE_NAME_RE.fullmatch(value.partition(".")[0].rstrip(" ")) is None
     )
 
 

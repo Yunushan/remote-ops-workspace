@@ -5,6 +5,7 @@ This checks build inputs; it does not approve redistribution or certify native h
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -30,6 +31,13 @@ MODERN_TARGETS = {
     "macos-x64", "macos-arm64", "linux-x86_64", "linux-aarch64",
     "release-verifier-linux-x86_64",
 }
+
+
+def check_protected_linux_locks(root: Path) -> list[str]:
+    from check_protected_linux_build_inputs import TARGETS, check_lock_inputs
+
+    toolchain = json.loads((root / "configs/release_toolchain.json").read_bytes())
+    return [error for target in TARGETS for error in check_lock_inputs(root, target, toolchain)]
 
 
 def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> list[str]:
@@ -66,6 +74,41 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
     if workflows is None:
         workflows = {name: (root / ".github/workflows" / name).read_text(encoding="utf-8") for name in ("release.yml", "versioned-unsigned-release.yml")}
     for name, workflow in workflows.items():
+        if name == "release.yml":
+            for job in ("source-and-python", "windows-native", "macos-native", "linux-native"):
+                block = compliance.workflow_job_block(workflow, job)
+                commands = compliance.executable_run_commands(block)
+                before_install = next(
+                    (index for index, command in enumerate(commands) if command.startswith("python -m pip install ")),
+                    len(commands),
+                )
+                if job == "windows-native":
+                    null_device = "nul"
+                    venv_command = "python -m venv $ReleaseVenv"
+                else:
+                    null_device = "/dev/null"
+                    venv_command = 'python -m venv "$RUNNER_TEMP/release-venv"'
+                lines = block.splitlines()
+                if (
+                    venv_command not in commands[:before_install]
+                    or f'      PIP_CONFIG_FILE: "{null_device}"' not in lines
+                    or '      PIP_REQUIRE_VIRTUALENV: "1"' not in lines
+                ):
+                    errors.append(f"{name} {job} must create an isolated Python environment before installing its lock")
+                capture = "python -X utf8 -m pip inspect --local > candidate-pip-inspect.json"
+                verify = "python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json"
+                if job == "source-and-python":
+                    verify += " --lock requirements-locks/source-linux-x86_64.txt"
+                else:
+                    verify += ' --lock "$RELEASE_DEPENDENCY_LOCK"'
+                    if '          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}' not in lines:
+                        errors.append(f"{name} {job} must verify its installed inventory against the matrix lock")
+                if (
+                    capture not in commands
+                    or verify not in commands
+                    or not before_install < commands.index(capture) < commands.index(verify)
+                ):
+                    errors.append(f"{name} {job} must verify its installed inventory against the build lock")
         for target, row in targets.items():
             if target.startswith("release-verifier-"):
                 continue
@@ -73,7 +116,10 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
             if target.startswith("source-"):
                 job, arch = "source-and-python", None
             else:
-                _, job, arch = compliance.producer_for_target(target, release_workflow=workflow, extended_workflow="", xp_workflow="")
+                release_target = "linux-arm64" if target == "linux-aarch64" else target
+                _, job, arch = compliance.producer_for_target(
+                    release_target, release_workflow=workflow, extended_workflow="",
+                )
             block = compliance.workflow_job_block(workflow, job)
             if arch is not None and not compliance.matrix_row_binds_lock(block, arch, lock):
                 errors.append(f"{name} {target} matrix does not bind its reviewed lock")
@@ -93,16 +139,50 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
     return errors
 
 
-def main() -> int:
+def check_runtime_report(report: Path, lock: Path) -> list[str]:
+    realized, report_errors = compliance.read_pip_inspect(
+        report.parent, {"file": report.name}, "release runtime report",
+    )
+    pinned, lock_errors = compliance.read_fully_hashed_lock(
+        lock.parent, {"file": lock.name}, "release dependency lock",
+    )
+    if report_errors or lock_errors:
+        return report_errors + lock_errors
+    if realized.pop("remote-ops-workspace", None) is None:
+        return ["release runtime report is missing the installed remote-ops-workspace project"]
+    missing = sorted(pinned.keys() - realized.keys())
+    unexpected = sorted(realized.keys() - pinned.keys())
+    mismatched = sorted(name for name in pinned.keys() & realized.keys() if pinned[name] != realized[name])
+    if missing or unexpected or mismatched:
+        return [
+            f"runtime distributions differ from {lock.name}: "
+            f"missing={missing}, unexpected={unexpected}, version-mismatched={mismatched}"
+        ]
+    return []
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--runtime-report", type=Path)
+    parser.add_argument("--lock", type=Path)
+    args = parser.parse_args(argv)
+    if (args.runtime_report is None) != (args.lock is None):
+        parser.error("--runtime-report and --lock must be supplied together")
     try:
-        errors = check_locks()
+        if args.runtime_report is not None:
+            errors = check_runtime_report(args.runtime_report, args.lock)
+        else:
+            errors = check_locks() + check_protected_linux_locks(ROOT)
     except (OSError, ValueError, KeyError) as exc:
         errors = [str(exc)]
     for error in errors:
         print(f"release dependency locks: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("modern release dependency locks and workflow consumption passed; native evidence and independent approval remain separate")
+    if args.runtime_report is not None:
+        print("installed release dependencies exactly match the hashed lock")
+    else:
+        print("release dependency locks and workflow consumption passed")
     return 0
 
 

@@ -188,6 +188,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Windows project installation failed" }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { throw "Windows release dependency consistency check failed" }
+      - name: Verify candidate runtime against its dependency lock
+        shell: bash
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          report="$RUNNER_TEMP/candidate-pip-inspect.json"
+          python -X utf8 -m pip inspect --local > "$report"
+          python scripts/check_release_dependency_locks.py --runtime-report "$report" --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Install Windows installer toolchains
         shell: powershell
         run: |
@@ -359,6 +367,14 @@ jobs:
           python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[desktop,security,package,servers]"
           python -m pip check
           EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+      - name: Verify candidate runtime against its dependency lock
+        shell: bash
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          report="$RUNNER_TEMP/candidate-pip-inspect.json"
+          python -X utf8 -m pip inspect --local > "$report"
+          python scripts/check_release_dependency_locks.py --runtime-report "$report" --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Build macOS DMG and PKG installers
         id: native-build
         run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
@@ -476,6 +492,14 @@ jobs:
           python -m pip --isolated install --index-url https://pypi.org/simple --no-deps --no-build-isolation ".[security,package,servers]"
           python -m pip check
           python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.2'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+      - name: Verify candidate runtime against its dependency lock
+        shell: bash
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          report="$RUNNER_TEMP/candidate-pip-inspect.json"
+          python -X utf8 -m pip inspect --local > "$report"
+          python scripts/check_release_dependency_locks.py --runtime-report "$report" --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Build Linux DEB, RPM and AppImage packages
         id: native-build
         env:

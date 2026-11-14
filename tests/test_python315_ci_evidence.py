@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from io import BytesIO
+from urllib.error import HTTPError
+
 import pytest
 
 from scripts import check_python315_ci_evidence as evidence
@@ -32,12 +35,18 @@ def _jobs(*, conclusion: str = "success") -> dict:
     jobs = [
         {
             "id": 456,
+            "run_id": 123,
+            "run_attempt": 1,
+            "head_sha": SHA,
             "name": "Python 3.15 readiness",
             "status": "completed",
             "conclusion": conclusion,
         },
         {
             "id": 457,
+            "run_id": 123,
+            "run_attempt": 1,
+            "head_sha": SHA,
             "name": "Native Windows readiness",
             "status": "completed",
             "conclusion": conclusion,
@@ -56,7 +65,7 @@ def test_exact_successful_push_run_and_readiness_job_pass() -> None:
 
     assert errors == []
     assert run is not None and run["id"] == 123
-    assert evidence.validate_readiness_job(_jobs()) == []
+    assert evidence.validate_readiness_job(_jobs(), run=run) == []
 
 
 def test_latest_matching_run_must_succeed() -> None:
@@ -91,16 +100,21 @@ def test_pull_request_or_wrong_sha_cannot_satisfy_release_evidence() -> None:
 
 
 def test_readiness_job_must_be_unique_and_successful() -> None:
-    failed = evidence.validate_readiness_job(_jobs(conclusion="skipped"))
+    run = _runs()["workflow_runs"][0]
+    failed = evidence.validate_readiness_job(_jobs(conclusion="skipped"), run=run)
     duplicate = _jobs()
     duplicate["jobs"].append(dict(duplicate["jobs"][0], id=789))
     duplicate["total_count"] = len(duplicate["jobs"])
 
     assert any("conclusion must be success" in error for error in failed)
-    assert any("expected exactly one" in error for error in evidence.validate_readiness_job(duplicate))
+    assert any(
+        "expected exactly one" in error
+        for error in evidence.validate_readiness_job(duplicate, run=run)
+    )
 
 
 def test_native_windows_readiness_job_is_required_and_must_succeed() -> None:
+    run = _runs()["workflow_runs"][0]
     missing = _jobs()
     missing["jobs"] = [
         job for job in missing["jobs"] if job["name"] != "Native Windows readiness"
@@ -111,12 +125,29 @@ def test_native_windows_readiness_job_is_required_and_must_succeed() -> None:
 
     assert any(
         "expected exactly one 'Native Windows readiness'" in error
-        for error in evidence.validate_readiness_job(missing)
+        for error in evidence.validate_readiness_job(missing, run=run)
     )
     assert any(
         "Native Windows readiness conclusion must be success" in error
-        for error in evidence.validate_readiness_job(failed)
+        for error in evidence.validate_readiness_job(failed, run=run)
     )
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("run_id", 124),
+    ("run_attempt", 2),
+    ("run_attempt", True),
+    ("head_sha", "b" * 40),
+    ("head_sha", None),
+])
+def test_successful_readiness_jobs_must_bind_the_selected_run(field, value) -> None:
+    run = _runs()["workflow_runs"][0]
+    jobs = _jobs()
+    jobs["jobs"][1][field] = value
+
+    assert evidence.validate_readiness_job(jobs, run=run) == [
+        f"Native Windows readiness {field} must match the selected CI run",
+    ]
 
 
 def test_urls_bind_workflow_sha_branch_run_and_attempt() -> None:
@@ -139,8 +170,48 @@ def test_urls_bind_workflow_sha_branch_run_and_attempt() -> None:
     assert f"head_sha={SHA}" in runs_url
     assert "branch=main" in runs_url
     assert "event=push" in runs_url
-    assert jobs_url.endswith("/actions/runs/123/attempts/2/jobs?per_page=100&page=3")
+    assert jobs_url.endswith("/actions/runs/123/attempts/2/jobs?per_page=20&page=3")
     assert "filter=" not in jobs_url
+
+
+def test_actions_request_retries_transient_server_errors(monkeypatch) -> None:
+    url = "https://api.github.test/actions"
+    first_error = HTTPError(url, 502, "Bad Gateway", {}, BytesIO())
+    second_error = HTTPError(url, 503, "Service Unavailable", {}, BytesIO())
+    responses = iter([first_error, second_error, BytesIO(b'{"jobs": []}')])
+    requested: list[str] = []
+    sleeps: list[int] = []
+
+    def open_response(request, *, timeout):
+        assert timeout == 30
+        requested.append(request.full_url)
+        response = next(responses)
+        if isinstance(response, HTTPError):
+            raise response
+        return response
+
+    monkeypatch.setattr(evidence, "urlopen", open_response)
+    monkeypatch.setattr(evidence.time, "sleep", sleeps.append)
+
+    assert evidence.fetch_json(url, token="fixture") == {"jobs": []}
+    assert requested == [url, url, url]
+    assert sleeps == [1, 2]
+    assert first_error.fp.closed and second_error.fp.closed
+
+
+@pytest.mark.parametrize(("status", "expected_sleeps"), [(403, []), (503, [1, 2])])
+def test_actions_request_fails_after_allowed_attempts(monkeypatch, status, expected_sleeps) -> None:
+    sleeps: list[int] = []
+
+    def refuse_request(request, *, timeout):
+        raise HTTPError(request.full_url, status, "GitHub API error", {}, BytesIO())
+
+    monkeypatch.setattr(evidence, "urlopen", refuse_request)
+    monkeypatch.setattr(evidence.time, "sleep", sleeps.append)
+
+    with pytest.raises(RuntimeError, match=f"HTTP {status}"):
+        evidence.fetch_json("https://api.github.test/actions", token="fixture")
+    assert sleeps == expected_sleeps
 
 
 def test_waits_for_missing_then_queued_exact_sha_run_until_success() -> None:
@@ -200,26 +271,32 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
             "status": "completed",
             "conclusion": "success",
         }
-        for index in range(1, 149)
+        for index in range(1, 29)
     ]
     python_readiness = {
-        "id": 149,
+        "id": 29,
+        "run_id": 123,
+        "run_attempt": 1,
+        "head_sha": SHA,
         "name": "Python 3.15 readiness",
         "status": "completed",
         "conclusion": "success",
     }
     native_windows_readiness = {
-        "id": 150,
+        "id": 30,
+        "run_id": 123,
+        "run_attempt": 1,
+        "head_sha": SHA,
         "name": "Native Windows readiness",
         "status": "completed",
         "conclusion": "success",
     }
     pages = {
-        1: {"total_count": 150, "jobs": ordinary_jobs[:100]},
+        1: {"total_count": 30, "jobs": ordinary_jobs[:20]},
         2: {
-            "total_count": 150,
+            "total_count": 30,
             "jobs": [
-                *ordinary_jobs[100:],
+                *ordinary_jobs[20:],
                 python_readiness,
                 native_windows_readiness,
             ],
@@ -234,14 +311,14 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
     payload = evidence.collect_paginated_attempt_jobs(fetch_page)
 
     assert requested_pages == [1, 2]
-    assert payload["total_count"] == 150
-    assert len(payload["jobs"]) == 150
-    assert evidence.validate_readiness_job(payload) == []
+    assert payload["total_count"] == 30
+    assert len(payload["jobs"]) == 30
+    assert evidence.validate_readiness_job(payload, run=_runs()["workflow_runs"][0]) == []
 
 
 def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:
     truncated = {
-        "total_count": 101,
+        "total_count": 21,
         "jobs": [
             {
                 "id": index,
@@ -249,7 +326,7 @@ def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:
                 "status": "completed",
                 "conclusion": "success",
             }
-            for index in range(1, 100)
+            for index in range(1, 20)
         ],
     }
     with pytest.raises(RuntimeError, match="ended before total_count"):
@@ -257,7 +334,7 @@ def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:
 
     pages = {
         1: {
-            "total_count": 101,
+            "total_count": 21,
             "jobs": [
                 {
                     "id": index,
@@ -265,14 +342,14 @@ def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:
                     "status": "completed",
                     "conclusion": "success",
                 }
-                for index in range(1, 101)
+                for index in range(1, 21)
             ],
         },
         2: {
-            "total_count": 102,
+            "total_count": 22,
             "jobs": [
                 {
-                    "id": 101,
+                    "id": 21,
                     "name": "Python 3.15 readiness",
                     "status": "completed",
                     "conclusion": "success",

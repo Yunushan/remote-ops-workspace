@@ -7,10 +7,55 @@ import sys
 from pathlib import Path
 
 
+def test_runner_inventory_requires_protected_administration_read_token() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "    environment: platform-evidence\n",
+        "",
+        1,
+    ).replace(
+        "GH_TOKEN: ${{ secrets.ROW_PLATFORM_RUNNER_INVENTORY_TOKEN }}",
+        "GH_TOKEN: ${{ github.token }}",
+        1,
+    )
+
+    errors = checker.check_extended_platform_evidence(workflow)
+
+    assert any("missing tag-restricted runner inventory environment" in error for error in errors)
+    assert any("missing Administration read token for runner inventory" in error for error in errors)
+
+
 def test_extended_platform_evidence_workflow_passes_current_tree() -> None:
     checker = _load_script("check_extended_platform_evidence")
 
     assert checker.main() == 0
+
+
+def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    for required in ('MATURIN_PEP517_ARGS: "--locked --offline"', "python3 scripts/prepare_protected_linux_cargo.py"):
+        changed = workflow.replace(required, f"# {required}", 1)
+        errors = checker.check_extended_platform_evidence(changed)
+        assert any(
+            "linux-i386-native-evidence must install the protected Linux locks" in error
+            for error in errors
+        )
+
+
+def test_extended_platform_evidence_requires_exact_runtime_lock_before_packaging() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    for target in ("linux-i386", "linux-armhf"):
+        job = f"{target}-native-evidence"
+        block = checker.workflow_job_block(workflow, job)
+        assert block
+        lock_arg = f"--lock requirements-locks/protected-linux/{target}.txt"
+        assert lock_arg in block
+        changed = block.replace(lock_arg, "--lock requirements-locks/linux-x86_64.txt", 1)
+        errors = checker.check_extended_platform_evidence(workflow.replace(block, changed, 1))
+        assert f"{job} must validate the exact runtime lock before building native artifacts" in errors
 
 
 def test_extended_platform_evidence_requires_runner_readiness_preflight() -> None:
@@ -444,11 +489,12 @@ def test_extended_platform_evidence_requires_builder_release_context() -> None:
 
 def test_extended_platform_evidence_requires_release_tag_env_for_native_build() -> None:
     checker = _load_script("check_extended_platform_evidence")
-    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(
-        "      RELEASE_TAG: ${{ inputs.release_tag }}\n",
-        "",
-        1,
-    )
+    workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "linux-i386-native-evidence")
+    assert block
+    modified = block.replace("      RELEASE_TAG: ${{ inputs.release_tag }}\n", "", 1)
+    assert modified != block
+    workflow = workflow.replace(block, modified, 1)
 
     errors = checker.check_extended_platform_evidence(workflow)
 

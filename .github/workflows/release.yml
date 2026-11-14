@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,6 +23,7 @@ concurrency:
 
 jobs:
   release-preflight:
+    if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     timeout-minutes: 100
     environment: release
@@ -34,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ github.ref }}
           persist-credentials: false
           clean: true
           fetch-depth: 0
@@ -42,13 +44,15 @@ jobs:
         id: release-source
         shell: bash
         run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           release_sha="$(git rev-parse HEAD)"
-          tag_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          tag_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
           if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "Release source did not resolve to a full lowercase commit SHA: $release_sha" >&2
             exit 1
           fi
           test "$tag_sha" = "$release_sha"
+          test "$GITHUB_SHA" = "$release_sha"
           echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "RELEASE_SHA=$release_sha" >> "$GITHUB_ENV"
       - name: Require trusted release source
@@ -56,7 +60,7 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          test "$GITHUB_EVENT_NAME" = "push"
+          [[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]
           test "$GITHUB_REF_TYPE" = "tag"
           test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
           test "$GITHUB_REF_NAME" = "$RELEASE_TAG"
@@ -71,21 +75,6 @@ jobs:
         run: python scripts/check_release_version.py --release-tag "$RELEASE_TAG"
       - name: Require production maturity metadata
         run: python scripts/check_release_maturity.py --release-tag "$RELEASE_TAG"
-      - name: Run release preflight verifier
-        run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
-      - name: Require successful Python 3.15 and native Windows CI evidence for release source
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python scripts/check_python315_ci_evidence.py
-          --repository "${{ github.repository }}"
-          --branch "$DEFAULT_BRANCH"
-          --sha "$RELEASE_SHA"
-          --wait-seconds 5400
-          --poll-interval-seconds 15
-      - name: Report protected platform readiness requirements
-        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --show-requirements
       - name: Detect release signing readiness
         id: signing-readiness
         shell: bash
@@ -104,17 +93,19 @@ jobs:
           windows_ready=true
           for name in ROW_WINDOWS_CERTIFICATE_BASE64 ROW_WINDOWS_CERTIFICATE_PASSWORD ROW_WINDOWS_TIMESTAMP_URL; do
             if [[ -z "${!name}" ]]; then
+              echo "::notice::Missing release signing input: $name"
               windows_ready=false
             fi
           done
           macos_ready=true
           for name in ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_SIGN_IDENTITY ROW_MACOS_INSTALLER_SIGN_IDENTITY ROW_MACOS_NOTARY_KEY_BASE64 ROW_MACOS_NOTARY_KEY_ID ROW_MACOS_NOTARY_ISSUER; do
             if [[ -z "${!name}" ]]; then
+              echo "::notice::Missing release signing input: $name"
               macos_ready=false
             fi
           done
           signed_native_ready=false
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" && "$windows_ready" == true && "$macos_ready" == true ]]; then
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" && "$windows_ready" == true && "$macos_ready" == true ]]; then
             signed_native_ready=true
           fi
           candidate_build_ready=$signed_native_ready
@@ -125,9 +116,31 @@ jobs:
             echo "candidate_build_ready=$candidate_build_ready"
           } >> "$GITHUB_OUTPUT"
           if [[ "$signed_native_ready" != true ]]; then
+            if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+              echo "::error::Production tag push requires Windows signing and macOS signing and notarization credentials."
+              exit 1
+            fi
             echo "::notice::Exact-tag candidate staging is withheld because protected Windows/macOS release signing is incomplete."
             echo "::notice::Use unsigned-preview.yml for a uniquely tagged non-v* prerelease; release.yml never creates or mutates a GitHub Release."
           fi
+      - name: Require independently approved production release policy
+        run: python scripts/check_release_license_compliance.py --check-policy-only
+      - name: Run release preflight verifier
+        run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
+      - name: Require successful Python 3.15 and native Windows CI evidence for release source
+        if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_python315_ci_evidence.py
+          --repository "${{ github.repository }}"
+          --branch "$DEFAULT_BRANCH"
+          --sha "$RELEASE_SHA"
+          --wait-seconds 5400
+          --poll-interval-seconds 15
+      - name: Report protected platform readiness requirements
+        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --show-requirements
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean
 
@@ -136,6 +149,9 @@ jobs:
     if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      PIP_CONFIG_FILE: "/dev/null"
+      PIP_REQUIRE_VIRTUALENV: "1"
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -150,12 +166,20 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
+      - name: Create isolated release build environment
+        run: |
+          python -m venv "$RUNNER_TEMP/release-venv"
+          printf "%s\n" "$RUNNER_TEMP/release-venv/bin" >> "$GITHUB_PATH"
       - name: Install release build tools
         run: |
           python -m pip install --require-hashes --only-binary=:all: --requirement requirements-locks/source-linux-x86_64-bootstrap.txt
           python -m pip install --require-hashes --no-build-isolation --only-binary=:all: --no-binary=pyftpdlib --requirement requirements-locks/source-linux-x86_64.txt
           python -m pip install --no-deps --no-build-isolation ".[desktop,security,package,servers]"
           python -m pip check
+      - name: Verify source build environment before generating the SBOM
+        run: |
+          python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+          python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock requirements-locks/source-linux-x86_64.txt
       - name: Build source and Python package assets
         run: python scripts/make_release.py
       - name: Validate source and Python package assets
@@ -225,6 +249,9 @@ jobs:
     needs: release-preflight
     if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}
     environment: release
+    env:
+      PIP_CONFIG_FILE: "nul"
+      PIP_REQUIRE_VIRTUALENV: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -261,16 +288,22 @@ jobs:
         with:
           python-version: "3.14.7"
           architecture: ${{ matrix.python-architecture }}
+      - name: Create isolated release build environment
+        shell: powershell
+        run: |
+          $ReleaseVenv = Join-Path $env:RUNNER_TEMP "release-venv"
+          python -m venv $ReleaseVenv
+          if ($LASTEXITCODE -ne 0) { throw "Release virtual environment creation failed" }
+          (Join-Path $ReleaseVenv "Scripts") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Install Python packaging dependencies
         shell: powershell
         run: |
           $ExpectedOpenSsl = ""
           if ("${{ matrix.arch }}" -eq "x86") {
-            python -m pip uninstall -y bcrypt cryptography truststore
             python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed x86 runtime installation failed" }
             $ExpectedCryptography = ""
-            python -c "import importlib.util; assert importlib.util.find_spec('bcrypt') is None; assert importlib.util.find_spec('cryptography') is None; print('bcrypt=unavailable cryptography=unavailable security-backends=fail-closed')"
+            python -c "import importlib.util; assert importlib.util.find_spec('bcrypt') is None; assert importlib.util.find_spec('cryptography') is None; assert importlib.util.find_spec('truststore') is None; print('bcrypt=unavailable cryptography=unavailable security-backends=fail-closed')"
           } elseif ("${{ matrix.arch }}" -eq "arm64") {
             if (-not $env:VCPKG_INSTALLATION_ROOT) {
               throw "windows-11-arm runner did not provide VCPKG_INSTALLATION_ROOT"
@@ -324,6 +357,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Windows project installation failed" }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { throw "Windows release dependency consistency check failed" }
+      - name: Capture Windows candidate runtime inventory
+        shell: bash
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+          python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Install Windows installer toolchains
         shell: powershell
         run: |
@@ -355,7 +395,7 @@ jobs:
           Split-Path -Parent $InnoCompiler | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           Write-Host "Verified Inno Setup compiler $InnoVersion at $InnoCompiler"
           dotnet tool install --global wix --version 5.0.2
-      - name: Prepare Windows release signing certificate
+      - name: Build Windows EXE and MSI installers
         shell: powershell
         env:
           ROW_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.ROW_WINDOWS_CERTIFICATE_BASE64 }}
@@ -370,19 +410,30 @@ jobs:
               throw "Protected release environment is missing $Name"
             }
           }
-          $CertificatePath = Join-Path $env:RUNNER_TEMP "remote-ops-release-signing.pfx"
-          [System.IO.File]::WriteAllBytes($CertificatePath, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
-          Add-Content $env:GITHUB_ENV "ROW_REQUIRE_RELEASE_SIGNING=1"
-          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_CERTIFICATE_PATH=$CertificatePath"
-          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_CERTIFICATE_PASSWORD=$env:ROW_WINDOWS_CERTIFICATE_PASSWORD"
-          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_TIMESTAMP_URL=$env:ROW_WINDOWS_TIMESTAMP_URL"
-      - name: Build Windows EXE and MSI installers
-        shell: powershell
-        run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
+          $CertificatePath = Join-Path $env:RUNNER_TEMP "row-release-$([guid]::NewGuid()).pfx"
+          try {
+            [System.IO.File]::WriteAllBytes($CertificatePath, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
+            Remove-Item -LiteralPath Env:ROW_WINDOWS_CERTIFICATE_BASE64
+            $env:ROW_REQUIRE_RELEASE_SIGNING = "1"
+            $env:ROW_WINDOWS_CERTIFICATE_PATH = $CertificatePath
+            .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
+            if ($LASTEXITCODE -ne 0) { throw "Signed Windows installer build failed" }
+          } finally {
+            if (Test-Path -LiteralPath $CertificatePath) {
+              Remove-Item -LiteralPath $CertificatePath -Force -ErrorAction Stop
+            }
+          }
       - name: Run Windows native installer smoke tests
         shell: powershell
         timeout-minutes: 20
-        run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows"
+        run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows" -RequireReleaseSigning
+      - name: Retain Windows candidate runtime inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-runtime-windows-${{ matrix.arch }}
+          path: candidate-pip-inspect.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Retain installed Windows GUI workflow evidence
         if: ${{ always() && matrix.arch != 'x86' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -401,6 +452,9 @@ jobs:
     needs: release-preflight
     if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}
     environment: release
+    env:
+      PIP_CONFIG_FILE: "/dev/null"
+      PIP_REQUIRE_VIRTUALENV: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -429,6 +483,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
+      - name: Create isolated release build environment
+        run: |
+          python -m venv "$RUNNER_TEMP/release-venv"
+          printf "%s\n" "$RUNNER_TEMP/release-venv/bin" >> "$GITHUB_PATH"
       - name: Install Python packaging dependencies
         run: |
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
@@ -443,7 +501,14 @@ jobs:
           python -m pip install --no-deps --no-build-isolation ".[desktop,security,package,servers]"
           python -m pip check
           EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
-      - name: Prepare macOS release signing keychain
+      - name: Capture macOS candidate runtime inventory
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+          python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
+      - name: Build macOS DMG and PKG installers
+        shell: bash
         env:
           ROW_MACOS_CERTIFICATE_BASE64: ${{ secrets.ROW_MACOS_CERTIFICATE_BASE64 }}
           ROW_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_MACOS_CERTIFICATE_PASSWORD }}
@@ -460,28 +525,45 @@ jobs:
           for name in ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_SIGN_IDENTITY ROW_MACOS_INSTALLER_SIGN_IDENTITY ROW_MACOS_NOTARY_KEY_BASE64 ROW_MACOS_NOTARY_KEY_ID ROW_MACOS_NOTARY_ISSUER; do
             test -n "${!name}" || { echo "Protected release environment is missing $name" >&2; exit 1; }
           done
-          keychain="$RUNNER_TEMP/remote-ops-release.keychain-db"
-          certificate="$RUNNER_TEMP/remote-ops-release.p12"
-          notary_key="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s' "$ROW_MACOS_CERTIFICATE_BASE64" | base64 --decode > "$certificate"
-          printf '%s' "$ROW_MACOS_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key"
+          signing_dir="$(mktemp -d "$RUNNER_TEMP/row-macos-signing.XXXXXXXX")"
+          keychain="$signing_dir/release.keychain-db"
+          certificate="$signing_dir/release.p12"
+          notary_key="$signing_dir/AuthKey.p8"
+          cleanup_signing_material() {
+            local status=$?
+            trap - EXIT
+            if [[ -f "$keychain" ]]; then
+              security delete-keychain "$keychain" || status=1
+            fi
+            rm -f -- "$certificate" "$notary_key" || status=1
+            rmdir -- "$signing_dir" || status=1
+            exit "$status"
+          }
+          trap cleanup_signing_material EXIT
+          (
+            umask 077
+            printf '%s' "$ROW_MACOS_CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+            printf '%s' "$ROW_MACOS_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key"
+          )
           security create-keychain -p "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
           security import "$certificate" -k "$keychain" -P "$ROW_MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
-          security list-keychain -d user -s "$keychain"
-          xcrun notarytool store-credentials "remote-ops-notary" --key "$notary_key" --key-id "$ROW_MACOS_NOTARY_KEY_ID" --issuer "$ROW_MACOS_NOTARY_ISSUER"
-          {
-            echo "ROW_REQUIRE_RELEASE_SIGNING=1"
-            echo "ROW_MACOS_SIGN_IDENTITY=$ROW_MACOS_SIGN_IDENTITY"
-            echo "ROW_MACOS_INSTALLER_SIGN_IDENTITY=$ROW_MACOS_INSTALLER_SIGN_IDENTITY"
-            echo "ROW_MACOS_NOTARY_PROFILE=remote-ops-notary"
-          } >> "$GITHUB_ENV"
-      - name: Build macOS DMG and PKG installers
-        run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" bash scripts/make_macos_native.sh
+          xcrun notarytool store-credentials "remote-ops-notary" --keychain "$keychain" --key "$notary_key" --key-id "$ROW_MACOS_NOTARY_KEY_ID" --issuer "$ROW_MACOS_NOTARY_ISSUER"
+          rm -f -- "$certificate" "$notary_key"
+          unset ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_NOTARY_KEY_BASE64
+          ROW_REQUIRE_RELEASE_SIGNING=1 ROW_MACOS_SIGNING_KEYCHAIN="$keychain" ROW_MACOS_NOTARY_PROFILE=remote-ops-notary \
+            EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/make_macos_native.sh
       - name: Run macOS native installer smoke tests
-        run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
+        run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos --require-release-signing
+      - name: Retain macOS candidate runtime inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-runtime-macos-${{ matrix.arch }}
+          path: candidate-pip-inspect.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Retain installed macOS GUI workflow evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -499,6 +581,9 @@ jobs:
   linux-native:
     needs: release-preflight
     if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}
+    env:
+      PIP_CONFIG_FILE: "/dev/null"
+      PIP_REQUIRE_VIRTUALENV: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -533,6 +618,10 @@ jobs:
           python-version: "3.14.7"
       - name: Install Linux packaging toolchains
         run: bash scripts/install_ci_ubuntu_packages.sh rpm
+      - name: Create isolated release build environment
+        run: |
+          python -m venv "$RUNNER_TEMP/release-venv"
+          printf "%s\n" "$RUNNER_TEMP/release-venv/bin" >> "$GITHUB_PATH"
       - name: Install Python packaging dependencies
         run: |
           python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"
@@ -540,15 +629,28 @@ jobs:
           python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
           python -m pip check
           python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.2'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
+      - name: Capture Linux candidate runtime inventory
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+          python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Build Linux DEB, RPM and AppImage packages
         env:
           APPIMAGETOOL_VERSION: "1.9.1"
           APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
           APPIMAGE_RUNTIME_VERSION: "20251108"
           APPIMAGE_RUNTIME_SHA256: ${{ matrix.appimage_runtime_sha256 }}
-        run: TARGET_ARCH="${{ matrix.arch }}" bash scripts/make_linux_native.sh
+        run: TARGET_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/make_linux_native.sh
       - name: Run Linux native installer smoke tests
         run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
+      - name: Retain Linux candidate runtime inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-runtime-linux-${{ matrix.arch }}
+          path: candidate-pip-inspect.json
+          if-no-files-found: error
+          retention-days: 90
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-linux-native-${{ matrix.arch }}
@@ -583,10 +685,11 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: |
-          test "$GITHUB_EVENT_NAME" = "push"
+          [[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]
           test "$GITHUB_REF_TYPE" = "tag"
           test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
           test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$GITHUB_SHA" = "$EXPECTED_RELEASE_SHA"
           test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:

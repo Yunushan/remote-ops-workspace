@@ -16,21 +16,41 @@ import base64
 import binascii
 import hashlib
 import json
+import os
 import re
 import sys
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+import check_platform_release_evidence_remote as platform_evidence  # noqa: E402
+from check_platform_verified_evidence import LINUX_TARGETS  # noqa: E402
+from check_release_publish_assets import normalize_version  # noqa: E402
+from release_candidate_inventory import (  # noqa: E402
+    MAX_JSON_BYTES,
+    RUNTIME_REPORT_ARTIFACT_NAMES,
+    RUNTIME_REPORT_NAME,
+    validate_runtime_report,
+)
+
 POLICY_PATH = ROOT / "configs" / "release_compliance_policy.json"
 TOOLCHAIN_PATH = ROOT / "configs" / "release_toolchain.json"
 MATRIX_PATH = ROOT / "configs" / "release_matrix.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 PROMOTION_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release-promotion.yml"
 EXTENDED_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "extended-platform-evidence.yml"
-XP_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "xp-native-evidence.yml"
+XP_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "xp-legacy-candidate.yml"
+PROTECTED_LINUX_LOCK_DIR = "requirements-locks/protected-linux"
+PROTECTED_LINUX_CFFI_LOCK = f"{PROTECTED_LINUX_LOCK_DIR}/linux-32bit-cffi.txt"
+XP_TARGETS = {"windows-xp-native-x86", "windows-xp-native-x64"}
+XP_LOCK = "legacy/xp_host/net40-references.json"
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
@@ -70,20 +90,29 @@ def main(argv: list[str] | None = None) -> int:
                 "fully hashed platform locks, and mandatory workflow enforcement are present"
             )
             return 0
-        missing = [
-            flag
-            for flag, value in {
-                "--assets-dir": args.assets_dir,
-                "--repository": args.repository,
-                "--tag": args.tag,
-                "--sha": args.sha,
-                "--evidence": args.evidence,
-                "--signature": args.signature,
-                "--protected-platform-registry": args.protected_platform_registry,
-                "--candidate-inventory": args.candidate_inventory,
+        check_live_governance = not (args.audit_redistribution_only or args.verify_published_release)
+        if args.audit_redistribution_only and (
+            args.tag_governance_attestation is not None or args.tag_governance_signature is not None
+        ):
+            raise ValueError("redistribution-only audit does not take governance proof files")
+        required = {
+            "--assets-dir": args.assets_dir,
+            "--repository": args.repository,
+            "--tag": args.tag,
+            "--sha": args.sha,
+            "--evidence": args.evidence,
+            "--signature": args.signature,
+            "--protected-platform-registry": args.protected_platform_registry,
+            "--candidate-inventory": args.candidate_inventory,
+        }
+        if not args.audit_redistribution_only:
+            required.update({
                 "--tag-governance-attestation": args.tag_governance_attestation,
                 "--tag-governance-signature": args.tag_governance_signature,
-            }.items()
+            })
+        missing = [
+            flag
+            for flag, value in required.items()
             if value is None
         ]
         if missing:
@@ -96,24 +125,9 @@ def main(argv: list[str] | None = None) -> int:
         assert args.assets_dir is not None
         assert args.protected_platform_registry is not None
         assert args.candidate_inventory is not None
-        assert args.tag_governance_attestation is not None
-        assert args.tag_governance_signature is not None
         evidence_bytes, evidence = read_json_object(args.evidence, "release compliance evidence")
-        _, signature = read_json_object(args.signature, "release compliance signature")
+        signature_bytes, signature = read_json_object(args.signature, "release compliance signature")
         verify_evidence_signature(evidence_bytes, signature, policy)
-        governance_bytes, governance = read_json_object(
-            args.tag_governance_attestation,
-            "tag governance attestation",
-        )
-        _, governance_signature = read_json_object(
-            args.tag_governance_signature,
-            "tag governance signature",
-        )
-        verify_tag_governance_signature(
-            governance_bytes,
-            governance_signature,
-            policy,
-        )
         evidence_root = args.evidence_root or args.evidence.parent
         errors = check_evidence(
             evidence,
@@ -129,18 +143,49 @@ def main(argv: list[str] | None = None) -> int:
             repository=repository,
             tag=tag,
             sha=sha,
+            verify_review_window=not args.verify_published_release,
+            published_audit=args.verify_published_release,
+            platform_source_archives=args.platform_source_archives,
         )
-        errors.extend(
-            check_tag_governance_attestation(
-                governance,
-                policy=policy,
-                repository=repository,
-                tag=tag,
-                sha=sha,
+        if check_live_governance:
+            assert args.tag_governance_attestation is not None
+            assert args.tag_governance_signature is not None
+            governance_bytes, governance = read_json_object(
+                args.tag_governance_attestation, "tag governance attestation",
             )
-        )
+            _, governance_signature = read_json_object(args.tag_governance_signature, "tag governance signature")
+            verify_tag_governance_signature(governance_bytes, governance_signature, policy)
+            errors.extend(
+                check_tag_governance_attestation(
+                    governance,
+                    policy=policy,
+                    repository=repository,
+                    tag=tag,
+                    sha=sha,
+                )
+            )
         if errors:
             raise RuntimeError("; ".join(dict.fromkeys(errors)))
+        if args.verify_published_release:
+            assert args.tag_governance_attestation is not None
+            assert args.tag_governance_signature is not None
+            from check_release_provenance import main as verify_release_provenance
+
+            if verify_release_provenance([
+                "--assets-dir", str(args.assets_dir),
+                "--repository", repository,
+                "--tag", tag,
+                "--sha", sha,
+                "--governance-attestation", str(args.tag_governance_attestation),
+                "--governance-signature", str(args.tag_governance_signature),
+            ],
+                check_published_at=lambda published_at: check_review_window(evidence, now=published_at),
+                audited_inputs={
+                    args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
+                    args.signature: hashlib.sha256(signature_bytes).hexdigest(),
+                },
+            ):
+                raise RuntimeError("published release provenance and governance verification failed")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"release license compliance: {exc}", file=sys.stderr)
         return 1
@@ -153,7 +198,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check-policy-only", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check-policy-only", action="store_true")
+    mode.add_argument(
+        "--audit-redistribution-only",
+        action="store_true",
+        help="audit independently signed redistribution evidence before separate mutation-bound governance checks",
+    )
     parser.add_argument("--assets-dir", type=Path)
     parser.add_argument("--repository")
     parser.add_argument("--tag")
@@ -164,10 +215,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-inventory", type=Path)
     parser.add_argument("--tag-governance-attestation", type=Path)
     parser.add_argument("--tag-governance-signature", type=Path)
+    mode.add_argument(
+        "--verify-published-release",
+        action="store_true",
+        help="require the immutable release and verify governance at its authenticated publication time",
+    )
     parser.add_argument(
         "--evidence-root",
         type=Path,
         help="root containing resolver locks, extracted license files, and review records",
+    )
+    parser.add_argument(
+        "--platform-source-archives",
+        type=Path,
+        help="directory of original protected-platform Actions ZIPs retained for a published audit",
     )
     parser.add_argument("--policy", type=Path, default=POLICY_PATH)
     parser.add_argument("--policy-root", type=Path)
@@ -341,14 +402,16 @@ def check_policy(
             else EXTENDED_WORKFLOW_PATH.read_text(encoding="utf-8")
         ).splitlines()
     )
-    active_xp_workflow = "\n".join(
-        line.split("#", 1)[0]
-        for line in (
-            xp_workflow
-            if xp_workflow is not None
-            else XP_WORKFLOW_PATH.read_text(encoding="utf-8")
-        ).splitlines()
-    )
+    if XP_TARGETS.intersection(locks):
+        from check_windows_xp_legacy_candidate_workflow import (
+            check_windows_xp_legacy_candidate_workflow,
+        )
+
+        errors.extend(check_windows_xp_legacy_candidate_workflow(xp_workflow))
+    if LINUX_TARGETS.keys() & locks.keys():
+        from check_extended_platform_evidence import check_extended_platform_evidence
+
+        errors.extend(check_extended_platform_evidence(extended_workflow))
     for target, raw_path in locks.items():
         if not safe_relative_path(raw_path):
             errors.append(f"release compliance lock for {target} has an unsafe path")
@@ -362,6 +425,10 @@ def check_policy(
         if path_error:
             errors.append(path_error)
             continue
+        if target in XP_TARGETS:
+            if raw_path != XP_LOCK:
+                errors.append(f"{target} must use the tracked .NET Framework 4 reference lock")
+            continue
         _, lock_errors = read_fully_hashed_lock(
             policy_root,
             {"file": raw_path},
@@ -372,9 +439,16 @@ def check_policy(
             target,
             release_workflow=active_workflow,
             extended_workflow=active_extended_workflow,
-            xp_workflow=active_xp_workflow,
         )
         job_block = workflow_job_block(producer_workflow, job)
+        native_bootstrap_lock = None
+        source_bootstrap_lock = None
+        if target in LINUX_TARGETS:
+            expected_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}.txt"
+            if raw_path != expected_lock:
+                errors.append(f"{target} must consume the tracked protected Linux lock {expected_lock}")
+            native_bootstrap_lock = f"{PROTECTED_LINUX_LOCK_DIR}/{target}-bootstrap.txt"
+            source_bootstrap_lock = PROTECTED_LINUX_CFFI_LOCK
         if matrix_arch is not None and not matrix_row_binds_lock(
             job_block,
             matrix_arch,
@@ -394,8 +468,9 @@ def check_policy(
                 bootstrap_lock_path=(
                     matrix_row_lock(job_block, matrix_arch, "bootstrap_lock")
                     if matrix_arch is not None
-                    else None
+                    else native_bootstrap_lock
                 ),
+                source_bootstrap_lock_path=source_bootstrap_lock,
                 lock_root=policy_root,
             )
         )
@@ -438,8 +513,6 @@ def check_policy(
         "--evidence-root",
         "--protected-platform-registry",
         "--candidate-inventory",
-        "--tag-governance-attestation",
-        "--tag-governance-signature",
     )
     publish_block = workflow_job_block(active_promotion_workflow, "promote-production-release")
     if not publish_block:
@@ -450,10 +523,7 @@ def check_policy(
         for index, step in enumerate(publish_steps)
         if isinstance(verifier_lock, str)
         and any(
-            re.match(r"^(?:python|python3)\s+-m\s+pip\s+install(?:\s|$)", command)
-            and "--require-hashes" in command
-            and verifier_lock in command
-            and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
+            installs_hashed_requirements(command, (verifier_lock,))
             for command in executable_run_commands(step)
         )
     ]
@@ -468,6 +538,10 @@ def check_policy(
         if any(
             command_starts_python_script(command, "check_release_license_compliance.py")
             and all(token in command for token in required_publish_tokens[1:])
+            and (
+                "--audit-redistribution-only" in command
+                or all(flag in command for flag in ("--tag-governance-attestation", "--tag-governance-signature"))
+            )
             for command in executable_run_commands(step)
         )
     ]
@@ -580,6 +654,9 @@ def check_evidence(
     tag: str,
     sha: str,
     now: datetime | None = None,
+    verify_review_window: bool = True,
+    published_audit: bool = False,
+    platform_source_archives: Path | None = None,
 ) -> list[str]:
     errors: list[str] = []
     expected_scalars = {
@@ -593,13 +670,15 @@ def check_evidence(
     for key, expected in expected_scalars.items():
         if evidence.get(key) != expected:
             errors.append(f"compliance evidence {key} must be {expected!r}")
-    errors.extend(check_review_window(evidence, now=now))
+    if verify_review_window:
+        errors.extend(check_review_window(evidence, now=now))
     if assets_dir.is_symlink() or not assets_dir.is_dir():
         return [*errors, f"release asset directory must be a real directory: {assets_dir}"]
     if path_is_reparse(evidence_root) or not evidence_root.is_dir():
         return [*errors, f"compliance evidence root must be a real directory: {evidence_root}"]
 
     candidate_record = evidence.get("candidate_inventory")
+    runtime_reports: dict[str, Any] = {}
     if not isinstance(candidate_record, dict) or not valid_evidence_record(candidate_record):
         errors.append("compliance evidence candidate_inventory record is invalid")
     else:
@@ -625,6 +704,11 @@ def check_evidence(
             errors.append(
                 "compliance candidate inventory input must be the signed bundle file"
             )
+        else:
+            _, sealed_candidate = read_json_object(bound_candidate, "sealed release candidate inventory")
+            reports = sealed_candidate.get("runtime_reports")
+            if isinstance(reports, dict):
+                runtime_reports = reports
 
     registry_record = evidence.get("protected_platform_registry")
     protected_registry: dict[str, Any] = {}
@@ -663,7 +747,30 @@ def check_evidence(
                 errors.append("compliance protected platform registry must contain an object")
                 protected_registry = {}
 
+    platform_targets = platform_evidence.PROTECTED_GOAL_TARGETS if platform_source_archives else tuple(
+        target for target in platform_evidence.PROTECTED_GOAL_TARGETS if target in policy["production_targets"]
+    )
+    protected_records = platform_evidence.accepted_records_by_target(
+        protected_registry, release_tag=tag, targets=platform_targets,
+    )
+    if platform_targets:
+        errors.extend(check_protected_source_capture(
+            evidence.get("protected_platform_sources"),
+            evidence_root=evidence_root,
+            registry=protected_registry,
+            targets=platform_targets,
+            repository=repository,
+            tag=tag,
+            sha=sha,
+            published_audit=published_audit,
+            archives_dir=platform_source_archives,
+        ))
     expected_names = expected_native_manifest_names(matrix, tag, protected_registry)
+    xp_targets = XP_TARGETS.intersection(policy["production_targets"])
+    expected_names.update(
+        f"remote-ops-workspace-{tag}-windows-xp-{target.rsplit('-', 1)[-1]}-native-manifest.json"
+        for target in xp_targets
+    )
     actual_paths = {
         path.name: path
         for path in assets_dir.iterdir()
@@ -702,8 +809,31 @@ def check_evidence(
         inventory_hash = hashlib.sha256(canonical_json(inventory)).hexdigest()
         if record.get("inventory_sha256") != inventory_hash:
             errors.append(f"signed compliance record for {name} inventory_sha256 is invalid")
-        profile = profile_for_manifest(name)
         target = target_for_manifest(name, matrix=matrix, tag=tag)
+        if target in XP_TARGETS:
+            if target not in xp_targets:
+                errors.append(f"XP target {target} has no approved .NET build policy")
+            else:
+                errors.extend(check_xp_inventory(
+                    inventory, target=target, assets_dir=assets_dir, evidence_root=evidence_root,
+                    repository=repository, tag=tag, sha=sha,
+                    published_audit=published_audit,
+                ))
+            continue
+        profile = profile_for_manifest(name)
+        if target in RUNTIME_REPORT_ARTIFACT_NAMES:
+            realized = inventory.get("realized_environment")
+            sealed = runtime_reports.get(target)
+            if (
+                not valid_evidence_record(realized)
+                or not isinstance(sealed, dict)
+                or any(realized[key] != sealed.get(key) for key in ("sha256", "size_bytes"))
+            ):
+                errors.append(f"{target} pip inspect evidence must match the exact sealed build report")
+        elif target in LINUX_TARGETS:
+            errors.extend(check_protected_linux_runtime_report(
+                target, tag, protected_records.get(target), assets_dir, inventory.get("realized_environment"),
+            ))
         enforcement = policy.get("build_lock_enforcement")
         locks = enforcement.get("platform_locks") if isinstance(enforcement, dict) else None
         expected_lock = locks.get(target) if isinstance(locks, dict) else None
@@ -730,6 +860,258 @@ def check_evidence(
             )
         )
     return errors
+
+
+def check_protected_linux_runtime_report(
+    target: str,
+    tag: str,
+    record: dict[str, Any] | None,
+    assets_dir: Path,
+    realized: Any,
+) -> list[str]:
+    review_bundle = record.get("review_bundle") if record is not None else None
+    manifest_record = review_bundle.get("manifest") if isinstance(review_bundle, dict) else None
+    label = f"{target} accepted Linux review bundle manifest"
+    if not isinstance(manifest_record, dict):
+        return [f"{label} is missing"]
+    path, error = secure_regular_file(assets_dir, manifest_record.get("file"), label)
+    if error:
+        return [error]
+    assert path is not None
+    size = path.stat().st_size
+    if not 0 < size <= MAX_JSON_BYTES or size != manifest_record.get("size_bytes"):
+        return [f"{label} size must match the signed registry"]
+    raw, manifest = read_json_object(path, label)
+    if hashlib.sha256(raw).hexdigest() != manifest_record.get("sha256"):
+        return [f"{label} SHA-256 must match the signed registry"]
+    runtime_report = manifest.get("runtime_report")
+    if (
+        manifest.get("schema_version") != 2
+        or manifest.get("bundle_type") != "extended-linux-native-evidence"
+        or manifest.get("target") != target
+        or manifest.get("release_tag") != tag
+        or not isinstance(runtime_report, dict)
+        or runtime_report.get("file") != RUNTIME_REPORT_NAME
+        or not valid_evidence_record(realized)
+        or not all(realized[key] == runtime_report.get(key) for key in ("sha256", "size_bytes"))
+    ):
+        return [f"{target} pip inspect evidence must match the exact accepted native build report"]
+    assert isinstance(review_bundle, dict)
+    archive_record = review_bundle.get("archive")
+    label = f"{target} accepted Linux review bundle archive"
+    if not isinstance(archive_record, dict):
+        return [f"{label} is missing"]
+    archive_path, error = secure_regular_file(assets_dir, archive_record.get("file"), label)
+    if error:
+        return [error]
+    assert archive_path is not None
+    if (
+        archive_path.stat().st_size != archive_record.get("size_bytes")
+        or sha256_file(archive_path) != archive_record.get("sha256")
+    ):
+        return [f"{label} size and SHA-256 must match the signed registry"]
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            reports = [entry for entry in archive.infolist() if entry.filename == RUNTIME_REPORT_NAME]
+            if (
+                len(reports) != 1 or not 0 < reports[0].file_size <= MAX_JSON_BYTES
+                or reports[0].file_size != realized["size_bytes"]
+            ):
+                return [f"{label} must contain exactly one bounded matching pip inspect report"]
+            report = archive.read(reports[0])
+        validate_runtime_report(report, label)
+    except (NotImplementedError, OSError, RuntimeError, ValueError, zipfile.BadZipFile) as exc:
+        return [f"{label} pip inspect report could not be read: {exc}"]
+    if hashlib.sha256(report).hexdigest() != realized["sha256"]:
+        return [f"{label} pip inspect report SHA-256 must match the signed evidence"]
+    return []
+
+
+def check_protected_source_capture(
+    captures: Any,
+    *,
+    evidence_root: Path,
+    registry: dict[str, Any],
+    targets: tuple[str, ...],
+    repository: str,
+    tag: str,
+    sha: str,
+    published_audit: bool,
+    archives_dir: Path | None,
+) -> list[str]:
+    if not isinstance(captures, dict) or set(captures) != set(targets):
+        return ["signed protected_platform_sources must contain exactly the protected targets"]
+    errors = platform_evidence.remote_registry_preflight_errors(
+        registry, release_tag=tag, required_targets=targets,
+    )
+    if errors:
+        return errors
+    records = platform_evidence.accepted_records_by_target(registry, release_tag=tag, targets=targets)
+    runs: dict[str, Any] = {}
+    inventories: dict[str, Any] = {}
+    archives: dict[str, bytes] = {}
+    for target, record in sorted(records.items()):
+        source = record["release_asset_source"]
+        run_url = source["workflow_run_url"]
+        if platform_evidence.repository_from_run_url(run_url) != repository or source["head_sha"] != sha:
+            errors.append(f"{target} source capture must bind the exact release repository and SHA")
+            continue
+        capture = captures[target]
+        if not isinstance(capture, dict) or set(capture) != {"run", "artifacts"}:
+            errors.append(f"{target} source capture must contain run and artifacts evidence files")
+            continue
+        run, run_errors = read_signed_source_metadata(capture["run"], evidence_root, f"{target} run")
+        inventory, inventory_errors = read_signed_source_metadata(
+            capture["artifacts"], evidence_root, f"{target} artifacts",
+        )
+        errors.extend(run_errors)
+        errors.extend(inventory_errors)
+        if run is None or inventory is None:
+            continue
+        runs[run_url] = run
+        inventories[run_url] = inventory
+        errors.extend(platform_evidence.check_source_run_record(target, run, record, exact_attempt=True))
+        errors.extend(platform_evidence.check_record_source_artifact(
+            target, record, inventories, source_runs_by_run=runs,
+        ))
+    if errors:
+        return errors
+
+    if published_audit:
+        if archives_dir is None:
+            return ["published audit requires --platform-source-archives for the original Actions ZIPs"]
+        for target, record in sorted(records.items()):
+            path, path_error = secure_regular_file(archives_dir, f"{target}.zip", f"{target} source ZIP")
+            if path_error:
+                errors.append(path_error)
+                continue
+            assert path is not None
+            archives[record["release_asset_source"]["workflow_run_url"]] = path.read_bytes()
+        if errors:
+            return errors
+        return platform_evidence.audit_published_platform_evidence(
+            repository, tag, registry, targets, runs, inventories, archives,
+        )
+
+    live_runs, live_inventories, archives, errors = platform_evidence.load_live_source_evidence(
+        repository, tag, registry, targets,
+    )
+    for target, record in sorted(records.items()):
+        run_url = record["release_asset_source"]["workflow_run_url"]
+        live_run = live_runs.get(run_url)
+        if live_run is None or any(
+            runs[run_url].get(key) != live_run.get(key)
+            for key in ("id", "run_attempt", "created_at", "run_started_at", "updated_at")
+        ):
+            errors.append(f"{target} signed source run must match the live GitHub attempt")
+        errors.extend(platform_evidence.check_record_source_run(
+            target, record, {}, source_runs_by_run=live_runs,
+        ))
+        errors.extend(platform_evidence.check_record_source_artifact(
+            target, record, live_inventories, source_runs_by_run=live_runs,
+        ))
+        signed_artifact = platform_evidence.source_artifact_record_for_run(target, record, inventories)
+        live_artifact = platform_evidence.source_artifact_record_for_run(target, record, live_inventories)
+        if signed_artifact is None or live_artifact is None or any(
+            signed_artifact.get(key) != live_artifact.get(key)
+            for key in (
+                "id", "node_id", "digest", "size_in_bytes", "created_at",
+                "updated_at", "expires_at", "workflow_run",
+            )
+        ):
+            errors.append(f"{target} signed source artifact must match the live GitHub artifact")
+        errors.extend(platform_evidence.check_record_source_artifact_zip_bytes(
+            target, record, source_artifacts_by_run=live_inventories,
+            source_artifact_bytes_by_run=archives,
+        ))
+    return errors
+
+
+def read_signed_source_metadata(
+    record: Any, root: Path, label: str,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    if not valid_evidence_record(record):
+        return None, [f"{label} signed evidence file record is invalid"]
+    path, error = secure_regular_file(root, record["file"], label)
+    if error:
+        return None, [error]
+    assert path is not None
+    raw, data = read_json_object(path, label)
+    if len(raw) != record["size_bytes"] or hashlib.sha256(raw).hexdigest() != record["sha256"]:
+        return None, [f"{label} does not match the signed evidence file size and SHA-256"]
+    return data, []
+
+
+def check_xp_inventory(
+    inventory: dict[str, Any],
+    *,
+    target: str,
+    assets_dir: Path,
+    evidence_root: Path,
+    repository: str,
+    tag: str,
+    sha: str,
+    published_audit: bool = False,
+) -> list[str]:
+    """Bind the independent XP decision to the .NET build and release bytes."""
+    from check_xp_candidate_run import verify_candidate, verify_candidate_bytes
+    from release_candidate_inventory import GitHubClient, positive_int
+
+    required = {
+        "profile", "run_id", "run_attempt", "candidate_artifact", "receipt_artifact",
+        "redistribution_review",
+    }
+    if set(inventory) != required or inventory.get("profile") != "xp-dotnet-framework-v4":
+        return [f"{target} requires an exact XP .NET Framework 4 inventory"]
+    paths: dict[str, Path] = {}
+    errors: list[str] = []
+    for name in ("candidate_artifact", "receipt_artifact", "redistribution_review"):
+        label = f"{target} {name}"
+        record = inventory[name]
+        if not valid_evidence_record(record):
+            errors.append(f"{label} record is invalid")
+            continue
+        errors.extend(check_evidence_file(record, evidence_root, label))
+        path, path_error = secure_regular_file(evidence_root, record["file"], label)
+        if path_error:
+            errors.append(path_error)
+        elif path is not None:
+            paths[name] = path
+    if errors:
+        return errors
+    if len({path.resolve(strict=True) for path in paths.values()}) != 3:
+        return [f"{target} candidate, receipt and review must use distinct evidence files"]
+    review = inventory["redistribution_review"]
+    if (
+        review.get("decision") != "approved"
+        or review.get("runtime_prerequisite") != ".NET Framework 4"
+        or review.get("runtime_redistributed") is not False
+    ):
+        return [f"{target} requires an independent approval of the package and host-provided .NET runtime"]
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not published_audit and not token:
+        return [f"{target} requires a GitHub Actions read token to authenticate the .NET build"]
+    try:
+        candidate_id = positive_int(inventory["candidate_artifact"].get("artifact_id"), "XP candidate artifact ID")
+        receipt_id = positive_int(inventory["receipt_artifact"].get("artifact_id"), "XP receipt artifact ID")
+        if candidate_id == receipt_id:
+            raise ValueError("XP candidate and receipt must have distinct artifact IDs")
+        candidate_args = dict(
+            repository=repository, tag=tag, sha=sha, arch=target.rsplit("-", 1)[-1],
+            run_id=positive_int(inventory["run_id"], "XP build run ID"),
+            attempt=positive_int(inventory["run_attempt"], "XP build run attempt"),
+            candidate=paths["candidate_artifact"],
+            receipt=paths["receipt_artifact"],
+            assets_dir=assets_dir,
+        )
+        if published_audit:
+            verify_candidate_bytes(**candidate_args)
+        else:
+            assert token is not None
+            verify_candidate(GitHubClient(repository, token), candidate_id=candidate_id, receipt_id=receipt_id, **candidate_args)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, RuntimeError, zipfile.BadZipFile) as exc:
+        return [f"{target} build evidence: {exc}"]
+    return []
 
 
 def check_review_window(evidence: dict[str, Any], *, now: datetime | None) -> list[str]:
@@ -772,7 +1154,8 @@ def check_tag_governance_attestation(
         "tag_deletion_blocked": True,
     }
     for field, value in expected.items():
-        if attestation.get(field) != value:
+        actual = attestation.get(field)
+        if type(actual) is not type(value) or actual != value:
             errors.append(f"tag governance attestation {field} must be {value!r}")
     if attestation.get("bypass_actors") != []:
         errors.append("tag governance attestation must prove an empty bypass actor set")
@@ -846,7 +1229,7 @@ def expected_native_manifest_names(
         for pattern in patterns:
             if not isinstance(pattern, str) or not pattern.endswith("-native-manifest.json"):
                 continue
-            normalized = pattern.replace("1.0.24", version)
+            normalized = normalize_version(pattern, version)
             match = re.search(r"<([^>]+)>", normalized)
             if match is None:
                 names.add(normalized)
@@ -859,7 +1242,7 @@ def expected_native_manifest_names(
             continue
         for pattern in patterns:
             if isinstance(pattern, str) and pattern.endswith("-native-manifest.json"):
-                names.add(pattern.replace("1.0.24", version))
+                names.add(normalize_version(pattern, version))
     if isinstance(protected_registry, dict):
         for entry in protected_registry.get("accepted_evidence", []):
             if not isinstance(entry, dict) or entry.get("release_tag") != tag:
@@ -924,8 +1307,6 @@ def native_manifest_entries(
 def profile_for_manifest(name: str) -> str:
     if "-windows-x86-native-manifest.json" in name:
         return "minimal-cli"
-    if re.search(r"-windows-xp-(?:x86|x64)-native-manifest\.json$", name):
-        return "minimal-cli"
     if "-linux-" in name:
         return "secure-cli"
     if any(token in name for token in ("-windows-x64-", "-windows-arm64-", "-macos-")):
@@ -955,7 +1336,7 @@ def target_for_manifest(name: str, *, matrix: dict[str, Any], tag: str) -> str:
             for pattern in patterns:
                 if not isinstance(pattern, str) or not pattern.endswith("-native-manifest.json"):
                     continue
-                normalized = pattern.replace("1.0.24", version)
+                normalized = normalize_version(pattern, version)
                 match = re.search(r"<([^>]+)>", normalized)
                 if match is None:
                     continue
@@ -970,7 +1351,7 @@ def target_for_manifest(name: str, *, matrix: dict[str, Any], tag: str) -> str:
             if (
                 isinstance(pattern, str)
                 and pattern.endswith("-native-manifest.json")
-                and pattern.replace("1.0.24", version) == name
+                and normalize_version(pattern, version) == name
             ):
                 return target["platform_target_id"]
     xp_match = re.fullmatch(
@@ -1439,7 +1820,6 @@ def producer_for_target(
     *,
     release_workflow: str,
     extended_workflow: str,
-    xp_workflow: str,
 ) -> tuple[str, str, str | None]:
     standard = {
         "windows-x86": ("windows-native", "x86"),
@@ -1448,7 +1828,7 @@ def producer_for_target(
         "macos-x64": ("macos-native", "x64"),
         "macos-arm64": ("macos-native", "arm64"),
         "linux-x86_64": ("linux-native", "x86_64"),
-        "linux-aarch64": ("linux-native", "aarch64"),
+        "linux-arm64": ("linux-native", "aarch64"),
     }
     if target in standard:
         job, arch = standard[target]
@@ -1457,8 +1837,6 @@ def producer_for_target(
         return extended_workflow, "linux-i386-native-evidence", None
     if target == "linux-armhf":
         return extended_workflow, "linux-armhf-native-evidence", None
-    if target in {"windows-xp-native-x86", "windows-xp-native-x64"}:
-        return xp_workflow, "xp-native-evidence", None
     raise ValueError(f"release compliance target has no exact producer mapping: {target}")
 
 
@@ -1481,19 +1859,31 @@ def matrix_row_lock(job_block: str, arch: str, key: str) -> str | None:
     return match.group(1) if match is not None else None
 
 
-def xp_target_step_binds_lock(job_block: str, target: str, lock_path: str) -> bool:
-    condition = re.compile(
-        rf"(?m)^\s*if:\s*\$\{{\{{\s*inputs\.target\s*==\s*['\"]{re.escape(target)}['\"]\s*\}}\}}\s*$"
+def installs_hashed_requirements(command: str, lock_paths: tuple[str, ...]) -> bool:
+    """Recognize a direct hashed pip install of one approved requirements file."""
+    invocation = re.match(r"^(?:python|python3)\s+-m\s+pip\s+install\s+", command)
+    if invocation is None:
+        return False
+    arguments = command[invocation.end():]
+    paths = []
+    for path in lock_paths:
+        if path in ("${{ matrix.lock }}", "${{ matrix.bootstrap_lock }}"):
+            paths.append(re.escape(f'"{path}"'))
+        elif re.fullmatch(r"[A-Za-z0-9_./-]+", path) is not None:
+            escaped = re.escape(path)
+            paths.extend((escaped, f'"{escaped}"', f"'{escaped}'"))
+    if not paths:
+        return False
+    # Match the complete argument list so extra requirements and shell
+    # operators cannot turn an approved lock install into a different command.
+    requirement = r"(?:--requirement(?:=|\s+)|-r\s+)(?:" + "|".join(paths) + r")"
+    flag = (
+        r"(?:--require-hashes|--no-build-isolation|--no-cache-dir|"
+        r"--force-reinstall|--only-binary=:all:|--no-binary=[A-Za-z0-9_,.-]+)"
     )
-    for step in workflow_step_blocks(job_block):
-        if condition.search(step) is None:
-            continue
-        if any(
-            lock_path in command and "--require-hashes" in command
-            for command in executable_run_commands(step)
-        ):
-            return True
-    return False
+    return "--require-hashes" in arguments.split() and re.fullmatch(
+        rf"(?:{flag}\s+)*{requirement}(?:\s+{flag})*", arguments
+    ) is not None
 
 
 def check_native_job_lock_usage(
@@ -1504,6 +1894,7 @@ def check_native_job_lock_usage(
     *,
     allow_matrix_lock: bool = False,
     bootstrap_lock_path: str | None = None,
+    source_bootstrap_lock_path: str | None = None,
     lock_root: Path = ROOT,
 ) -> list[str]:
     errors: list[str] = []
@@ -1515,41 +1906,36 @@ def check_native_job_lock_usage(
     ]
     lock_tokens = (lock_path, "${{ matrix.lock }}") if allow_matrix_lock else (lock_path,)
     bootstrap_tokens: tuple[str, ...] = ()
-    if bootstrap_lock_path is not None:
-        bootstrap_errors = check_bootstrap_lock_subset(lock_root, lock_path, bootstrap_lock_path)
-        errors.extend(bootstrap_errors)
-        if not bootstrap_errors:
-            bootstrap_tokens = (
-                (bootstrap_lock_path, "${{ matrix.bootstrap_lock }}")
-                if allow_matrix_lock
-                else (bootstrap_lock_path,)
-            )
     lock_indexes = [
         index
         for index, command in pip_commands
-        if "--require-hashes" in command
-        and any(token in command for token in lock_tokens)
-        and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
+        if installs_hashed_requirements(command, lock_tokens)
     ]
+    for bootstrap, matrix_token in (
+        (bootstrap_lock_path, "${{ matrix.bootstrap_lock }}" if allow_matrix_lock else None),
+        (source_bootstrap_lock_path, None),
+    ):
+        if bootstrap is None:
+            continue
+        bootstrap_errors = check_bootstrap_lock_subset(lock_root, lock_path, bootstrap)
+        errors.extend(bootstrap_errors)
+        if not bootstrap_errors:
+            allowed = (bootstrap, matrix_token) if matrix_token else (bootstrap,)
+            bootstrap_tokens += allowed
+            if source_bootstrap_lock_path is not None and (
+                not lock_indexes or not any(
+                    index < lock_indexes[0] and installs_hashed_requirements(command, allowed)
+                    for index, command in pip_commands
+                )
+            ):
+                errors.append(f"{target} must install {bootstrap} before its final hashed lock")
     if lock_path not in job_block or not lock_indexes:
         errors.append(
             f"release workflow {job} job does not consume {target} lock {lock_path} "
             "with executable pip --require-hashes"
         )
-    if target.startswith("windows-xp-native-") and not xp_target_step_binds_lock(
-        job_block,
-        target,
-        lock_path,
-    ):
-        errors.append(
-            f"release workflow {job} has no target-conditional hashed lock install for {target}"
-        )
     for _, command in pip_commands:
-        uses_lock = (
-            "--require-hashes" in command
-            and any(token in command for token in (*lock_tokens, *bootstrap_tokens))
-            and re.search(r"(?:--requirement(?:=|\s)|(?:^|\s)-r(?:\s|$))", command)
-        )
+        uses_lock = installs_hashed_requirements(command, (*lock_tokens, *bootstrap_tokens))
         if "--no-deps" not in command and not uses_lock:
             errors.append(
                 f"release workflow {job} has a dependency-resolving pip install outside "

@@ -1,0 +1,7 @@
+# Linux i386 and armhf CFFI source bootstrap; CPython 3.14.7.
+# Candidate dependency inputs. Hashes are from the pinned PyPI releases.
+# Native execution and independent redistribution approval are still required.
+cffi==2.1.1 \
+    --hash=sha256:dd31f52ea1086513bb9df30f8fcee9b8918323ae067a3d5b78bc826a000712be
+pycparser==3.11 \
+    --hash=sha256:51d5a8ba2be0bbe440b99d2112604c95bbbc3c2748a64260186c541e1729cd80

@@ -49,6 +49,16 @@ VALIDATORS: dict[str, Validator] = {
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    evidence_root = args.assets_dir or args.evidence.parent
+    if args.out and (
+        args.out.absolute().is_relative_to(evidence_root.absolute())
+        or args.out.resolve().is_relative_to(evidence_root.resolve())
+    ):
+        print(
+            "mobaxterm parity evidence record: --out must be outside the reviewed evidence directory",
+            file=sys.stderr,
+        )
+        return 1
     errors, record = build_evidence_record(args)
     if errors:
         for error in errors:
@@ -78,7 +88,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--release-asset-url",
         action="append",
         default=[],
-        help="GitHub release asset URL for the artifact carrying this evidence",
+        help="GitHub release asset URL for a published artifact verified by this article",
     )
     parser.add_argument(
         "--artifact",
@@ -86,7 +96,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=[],
         help="artifact digest source as release-file-name=local-path",
     )
-    parser.add_argument("--out", type=Path, help="write the generated record to this file")
+    parser.add_argument("--out", type=Path, help="write the candidate outside the reviewed evidence directory")
     return parser.parse_args(argv)
 
 

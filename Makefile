@@ -9,7 +9,9 @@ RELEASE_LICENSE_SIGNATURE ?=
 RELEASE_LICENSE_EVIDENCE_ROOT ?=
 RELEASE_CANDIDATE_INVENTORY ?=
 RELEASE_PLATFORM_EVIDENCE_REGISTRY ?=
+RELEASE_PLATFORM_SOURCE_ARCHIVES ?=
 RELEASE_MOBAXTERM_REGISTRY_COMMIT ?=
+RELEASE_MOBAXTERM_EVIDENCE_ROOT ?=
 RELEASE_TAG_GOVERNANCE_ATTESTATION ?=
 RELEASE_TAG_GOVERNANCE_SIGNATURE ?=
 
@@ -43,23 +45,26 @@ production-readiness:
 	@test -n "$(RELEASE_LICENSE_EVIDENCE_ROOT)" || (echo "RELEASE_LICENSE_EVIDENCE_ROOT=<closed-world evidence bundle directory> is required" >&2; exit 2)
 	@test -n "$(RELEASE_CANDIDATE_INVENTORY)" || (echo "RELEASE_CANDIDATE_INVENTORY=<signed exact build-candidate inventory JSON> is required" >&2; exit 2)
 	@test -n "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" || (echo "RELEASE_PLATFORM_EVIDENCE_REGISTRY=<signed protected-platform registry JSON> is required" >&2; exit 2)
+	@test -n "$(RELEASE_PLATFORM_SOURCE_ARCHIVES)" || (echo "RELEASE_PLATFORM_SOURCE_ARCHIVES=<retained original Actions ZIP directory> is required" >&2; exit 2)
 	@test -n "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" || (echo "RELEASE_MOBAXTERM_REGISTRY_COMMIT=<reviewed parity registry commit on main> is required" >&2; exit 2)
+	@test -n "$(RELEASE_MOBAXTERM_EVIDENCE_ROOT)" || (echo "RELEASE_MOBAXTERM_EVIDENCE_ROOT=<reviewed parity evidence directory> is required" >&2; exit 2)
 	@test -n "$(RELEASE_TAG_GOVERNANCE_ATTESTATION)" || (echo "RELEASE_TAG_GOVERNANCE_ATTESTATION=<short-lived signed tag ruleset snapshot JSON> is required" >&2; exit 2)
 	@test -n "$(RELEASE_TAG_GOVERNANCE_SIGNATURE)" || (echo "RELEASE_TAG_GOVERNANCE_SIGNATURE=<detached tag-governance Ed25519 signature JSON> is required" >&2; exit 2)
-	@tag_sha="$$(git rev-parse --verify "$(RELEASE_TAG)^{commit}" 2>/dev/null)" && release_sha="$$(git rev-parse --verify "$(RELEASE_SHA)^{commit}" 2>/dev/null)" && test "$$tag_sha" = "$$release_sha" || (echo "RELEASE_SHA must resolve to the commit tagged by RELEASE_TAG" >&2; exit 2)
-	@head_sha="$$(git rev-parse --verify "HEAD^{commit}" 2>/dev/null)" && release_sha="$$(git rev-parse --verify "$(RELEASE_SHA)^{commit}" 2>/dev/null)" && test "$$head_sha" = "$$release_sha" || (echo "the current checkout HEAD must equal RELEASE_SHA" >&2; exit 2)
+	@tag_sha="$$(git rev-parse --verify --end-of-options "refs/tags/$(RELEASE_TAG)^{commit}" 2>/dev/null)" && test "$$tag_sha" = "$(RELEASE_SHA)" || (echo "RELEASE_SHA must be the full commit SHA tagged by RELEASE_TAG" >&2; exit 2)
+	@head_sha="$$(git rev-parse --verify "HEAD^{commit}" 2>/dev/null)" && test "$$head_sha" = "$(RELEASE_SHA)" || (echo "the current checkout HEAD must equal RELEASE_SHA" >&2; exit 2)
 	python scripts/check_repository_cleanup.py --require-clean
+	python scripts/check_release_version.py --release-tag "$(RELEASE_TAG)"
 	python scripts/check_release_maturity.py --release-tag "$(RELEASE_TAG)"
 	python scripts/verify.py --production-quality
 	python scripts/check_python315_ci_evidence.py --repository "$(RELEASE_REPOSITORY)" --branch main --sha "$(RELEASE_SHA)"
 	python scripts/check_platform_verified_evidence.py --registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --require-goal-targets --require-review-bundles --release-tag "$(RELEASE_TAG)"
 	python scripts/check_release_publish_assets.py --assets-dir "$(RELEASE_ASSETS_DIR)" --tag "$(RELEASE_TAG)" --repository "$(RELEASE_REPOSITORY)" --evidence-registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --require-platform-goal-targets --native-release-channel production-signed
-	python scripts/check_release_license_compliance.py --assets-dir "$(RELEASE_ASSETS_DIR)" --tag "$(RELEASE_TAG)" --repository "$(RELEASE_REPOSITORY)" --sha "$(RELEASE_SHA)" --evidence "$(RELEASE_LICENSE_EVIDENCE)" --signature "$(RELEASE_LICENSE_SIGNATURE)" --evidence-root "$(RELEASE_LICENSE_EVIDENCE_ROOT)" --candidate-inventory "$(RELEASE_CANDIDATE_INVENTORY)" --protected-platform-registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --tag-governance-attestation "$(RELEASE_TAG_GOVERNANCE_ATTESTATION)" --tag-governance-signature "$(RELEASE_TAG_GOVERNANCE_SIGNATURE)"
-	python scripts/check_release_provenance.py --assets-dir "$(RELEASE_ASSETS_DIR)" --tag "$(RELEASE_TAG)" --repository "$(RELEASE_REPOSITORY)" --sha "$(RELEASE_SHA)"
-	python scripts/check_release_mobaxterm_parity.py --repository "$(RELEASE_REPOSITORY)" --tag "$(RELEASE_TAG)" --sha "$(RELEASE_SHA)" --registry-commit "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" --assets-dir "$(RELEASE_ASSETS_DIR)"
+	python scripts/check_release_license_compliance.py --assets-dir "$(RELEASE_ASSETS_DIR)" --tag "$(RELEASE_TAG)" --repository "$(RELEASE_REPOSITORY)" --sha "$(RELEASE_SHA)" --evidence "$(RELEASE_LICENSE_EVIDENCE)" --signature "$(RELEASE_LICENSE_SIGNATURE)" --evidence-root "$(RELEASE_LICENSE_EVIDENCE_ROOT)" --candidate-inventory "$(RELEASE_CANDIDATE_INVENTORY)" --protected-platform-registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --platform-source-archives "$(RELEASE_PLATFORM_SOURCE_ARCHIVES)" --tag-governance-attestation "$(RELEASE_TAG_GOVERNANCE_ATTESTATION)" --tag-governance-signature "$(RELEASE_TAG_GOVERNANCE_SIGNATURE)" --verify-published-release
+	python scripts/check_release_mobaxterm_parity.py --repository "$(RELEASE_REPOSITORY)" --tag "$(RELEASE_TAG)" --sha "$(RELEASE_SHA)" --registry-commit "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" --assets-dir "$(RELEASE_ASSETS_DIR)" --evidence-root "$(RELEASE_MOBAXTERM_EVIDENCE_ROOT)"
 	python scripts/check_repository_governance.py --repository "$(RELEASE_REPOSITORY)" --branch main --sha "$(RELEASE_SHA)" --release-tag "$(RELEASE_TAG)"
-	python scripts/check_platform_release_evidence_remote.py --repository "$(RELEASE_REPOSITORY)" --registry "$(RELEASE_PLATFORM_EVIDENCE_REGISTRY)" --release-tag "$(RELEASE_TAG)" --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head
-	@head_sha="$$(git rev-parse --verify "HEAD^{commit}" 2>/dev/null)" && release_sha="$$(git rev-parse --verify "$(RELEASE_SHA)^{commit}" 2>/dev/null)" && test "$$head_sha" = "$$release_sha" || (echo "the current checkout HEAD changed during the production-readiness audit" >&2; exit 2)
+	python scripts/check_published_release_notes.py --repository "$(RELEASE_REPOSITORY)" --tag "$(RELEASE_TAG)" --channel production-signed
+	@tag_sha="$$(git rev-parse --verify --end-of-options "refs/tags/$(RELEASE_TAG)^{commit}" 2>/dev/null)" && test "$$tag_sha" = "$(RELEASE_SHA)" || (echo "the local release tag changed during the production-readiness audit" >&2; exit 2)
+	@head_sha="$$(git rev-parse --verify "HEAD^{commit}" 2>/dev/null)" && test "$$head_sha" = "$(RELEASE_SHA)" || (echo "the current checkout HEAD changed during the production-readiness audit" >&2; exit 2)
 	python scripts/check_repository_cleanup.py --require-clean
 	@echo "production readiness: 100/100 gates passed"
 

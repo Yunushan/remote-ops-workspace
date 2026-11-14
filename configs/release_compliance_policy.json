@@ -15,16 +15,28 @@
     "macos-x64",
     "macos-arm64",
     "linux-x86_64",
-    "linux-aarch64",
+    "linux-arm64",
     "linux-i386",
     "linux-armhf",
     "windows-xp-native-x86",
     "windows-xp-native-x64"
   ],
   "build_lock_enforcement": {
-    "state": "blocked-no-platform-locks",
-    "fully_hashed": false,
-    "platform_locks": {}
+    "state": "enforced",
+    "fully_hashed": true,
+    "platform_locks": {
+      "windows-x86": "requirements-locks/windows-x86.txt",
+      "windows-x64": "requirements-locks/windows-x64.txt",
+      "windows-arm64": "requirements-locks/windows-arm64.txt",
+      "macos-x64": "requirements-locks/macos-x64.txt",
+      "macos-arm64": "requirements-locks/macos-arm64.txt",
+      "linux-x86_64": "requirements-locks/linux-x86_64.txt",
+      "linux-arm64": "requirements-locks/linux-aarch64.txt",
+      "linux-i386": "requirements-locks/protected-linux/linux-i386.txt",
+      "linux-armhf": "requirements-locks/protected-linux/linux-armhf.txt",
+      "windows-xp-native-x86": "legacy/xp_host/net40-references.json",
+      "windows-xp-native-x64": "legacy/xp_host/net40-references.json"
+    }
   },
   "verifier_bootstrap": {
     "state": "enforced",
@@ -63,7 +75,7 @@
   },
   "unresolved_release_blockers": [
     "No independent redistribution/compliance approver key has been enrolled.",
-    "Modern platform resolver inputs are fully hashed and enforced; Linux i386/armhf and XP native targets still lack complete reviewed platform locks and realized dependency evidence.",
+    "Modern platform resolver inputs are fully hashed and enforced. Linux i386 and armhf have candidate locks and a build inventory capture path and still need native validation and independent approval. XP still needs qualified build receipts, signed package review, and real host evidence.",
     "No closed-world extraction inventory currently proves every CPython, PyInstaller, Python package, Qt, OpenSSL, and other native component actually redistributed in every installer.",
     "No reviewed PyQt/Qt distribution channel and matching commercial-license evidence or open-source corresponding-source/relink evidence is recorded.",
     "No trusted out-of-band auditor key or short-lived signed proof establishes that the exact release tag blocks updates and deletion with no bypass actors."

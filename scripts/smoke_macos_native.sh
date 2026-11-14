@@ -6,6 +6,7 @@ cd "$ROOT"
 DIST="native-dist/macos"
 ARCH=""
 VERSION=""
+REQUIRE_RELEASE_SIGNING=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,6 +21,10 @@ while [[ $# -gt 0 ]]; do
     --version)
       VERSION="$2"
       shift 2
+      ;;
+    --require-release-signing)
+      REQUIRE_RELEASE_SIGNING=true
+      shift
       ;;
     *)
       echo "unknown argument: $1" >&2
@@ -68,6 +73,15 @@ for artifact in "$DMG" "$PKG"; do
     exit 1
   fi
 done
+
+if [[ "$REQUIRE_RELEASE_SIGNING" == true ]]; then
+  xcrun stapler validate "$DMG"
+  codesign --verify --strict --verbose=2 "$DMG"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+  xcrun stapler validate "$PKG"
+  pkgutil --check-signature "$PKG"
+  spctl --assess --type install --verbose=2 "$PKG"
+fi
 
 rm -rf "$SMOKE_ROOT"
 mkdir -p "$MOUNT_DIR" "$DMG_APP_DIR"
@@ -200,6 +214,25 @@ cleanup
 trap - EXIT
 
 echo "native installer smoke: PKG install"
+pkgutil --expand "$PKG" "$SMOKE_ROOT/pkg-expanded"
+python3 - "$SMOKE_ROOT/pkg-expanded/Distribution" "$APP_ID" <<'PY'
+import sys
+from xml.etree import ElementTree
+
+distribution_path, app_id = sys.argv[1:]
+distribution = ElementTree.parse(distribution_path)
+supported = distribution.findall("./volume-check/allowed-os-versions/os-version")
+if len(supported) != 1 or supported[0].attrib not in ({"min": "14.4"}, {"min": "14.4.0"}):
+    raise SystemExit("PKG distribution must require macOS 14.4 or later")
+packages = [
+    (package.get("id"), package.text.strip().removeprefix("#"))
+    for package in distribution.findall("pkg-ref")
+    if package.text and package.text.strip()
+]
+if packages != [(app_id, "remote-ops-workspace-component.pkg")]:
+    raise SystemExit("PKG distribution must reference the expected application component")
+print("native installer smoke PKG distribution: macOS 14.4 minimum")
+PY
 sudo installer -pkg "$PKG" -target /
 if [[ ! -d "$PKG_APP" ]]; then
   echo "PKG install did not create $PKG_APP" >&2

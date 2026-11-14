@@ -359,7 +359,14 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     }.items():
         if snippet not in preflight:
             errors.append(f"release-preflight missing {label}: {snippet}")
-    if "workflow_dispatch:" in workflow or "allow_unsigned_preview:" in workflow:
+    signing = workflow_step_block(preflight, "name: Detect release signing readiness")
+    if (
+        'if [[ "$signed_native_ready" != true ]]; then' not in signing
+        or 'if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then' not in signing
+        or '              exit 1\n            fi' not in signing
+    ):
+        errors.append("release-preflight must fail a production tag push when signing is unavailable")
+    if "allow_unsigned_preview:" in workflow:
         errors.append("production candidate workflow must not expose an unsigned-preview input")
     if "softprops/action-gh-release" in workflow or "UNSIGNED PREVIEW" in workflow:
         errors.append("production candidate workflow must not own preview publication")
@@ -370,9 +377,33 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     windows = workflow_job_block(workflow, "windows-native")
     if 'throw "Production candidate Windows builds require protected release signing"' not in windows:
         errors.append("windows-native must fail closed when release signing is unavailable")
+    windows_smoke = workflow_step_block(windows, "name: Run Windows native installer smoke tests")
+    if not re.search(r"(?m)^\s+run: .*smoke_windows_native\.ps1 .* -RequireReleaseSigning\s*$", windows_smoke):
+        errors.append("windows-native must reverify the signed installers before running smoke tests")
     macos = workflow_job_block(workflow, "macos-native")
     if "Production candidate macOS builds require protected release signing" not in macos:
         errors.append("macos-native must fail closed when release signing is unavailable")
+    macos_smoke = workflow_step_block(macos, "name: Run macOS native installer smoke tests")
+    if not re.search(r"(?m)^\s+run: bash scripts/smoke_macos_native\.sh .* --require-release-signing\s*$", macos_smoke):
+        errors.append("macos-native must reverify final signatures and stapled tickets before smoke tests")
+    for job, block, build_step in (
+        ("windows-native", windows, "Build Windows EXE and MSI installers"),
+        ("macos-native", macos, "Build macOS DMG and PKG installers"),
+    ):
+        build = workflow_step_block(block, f"name: {build_step}")
+        if "GITHUB_ENV" in build or "secrets.ROW_" in block.replace(build, "", 1):
+            errors.append(f"{job} signing credentials must be scoped to its build step")
+    windows_build = workflow_step_block(windows, "name: Build Windows EXE and MSI installers")
+    if "} finally {" not in windows_build or "Remove-Item -LiteralPath $CertificatePath" not in windows_build:
+        errors.append("windows-native must remove its signing certificate when the build exits")
+    macos_build = workflow_step_block(macos, "name: Build macOS DMG and PKG installers")
+    if (
+        "trap cleanup_signing_material EXIT" not in macos_build
+        or 'security delete-keychain "$keychain"' not in macos_build
+        or 'store-credentials "remote-ops-notary" --keychain "$keychain"' not in macos_build
+        or 'ROW_MACOS_SIGNING_KEYCHAIN="$keychain"' not in macos_build
+    ):
+        errors.append("macos-native must bind notarization to a temporary keychain and delete it when the build exits")
     preview = (ROOT / ".github" / "workflows" / "unsigned-preview.yml").read_text(
         encoding="utf-8"
     )

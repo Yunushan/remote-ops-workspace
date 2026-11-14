@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from remote_ops_workspace import __version__
 from remote_ops_workspace.features import coverage_report
 
 
@@ -94,14 +95,14 @@ def test_platform_support_truth_rejects_missing_protected_linux_checksum_asset()
     targets = _load_json("configs/platform_targets.json")
     rows = {item["id"]: item for item in targets["release_architectures"]}
     rows["linux-i386"]["assets"].remove(
-        "remote-ops-workspace-v1.0.27-linux-i686-native-SHA256SUMS.txt"
+        f"remote-ops-workspace-v{__version__}-linux-i686-native-SHA256SUMS.txt"
     )
 
     errors = checker.check_platform_catalog(targets)
 
     assert (
         "platform target linux-i386 assets must include protected promotion artifacts: "
-        "['remote-ops-workspace-v1.0.27-linux-i686-native-SHA256SUMS.txt']"
+        f"['remote-ops-workspace-v{__version__}-linux-i686-native-SHA256SUMS.txt']"
     ) in errors
 
 
@@ -529,7 +530,7 @@ def test_platform_support_truth_requires_published_release_audit_docs() -> None:
             "artifact `created_at` values outside the exact source run creation/start/update window",
             "stale artifact timestamps",
         )
-        .replace("canonical\naccepted-record JSON bytes", "accepted record metadata")
+        .replace("canonical accepted-record JSON bytes", "accepted record metadata")
     )
 
     errors = checker.check_platform_docs(docs, coverage_report())

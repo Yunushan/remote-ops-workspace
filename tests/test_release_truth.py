@@ -49,10 +49,37 @@ def test_release_truth_baseline_passes() -> None:
     assert checker.main() == 0
 
 
-def test_candidate_build_is_tag_push_only_and_never_publishes() -> None:
+def test_release_docs_follow_project_version_and_reject_stale_asset_arches(monkeypatch) -> None:
+    checker = load_script("check_release_truth")
+    version_errors: list[str] = []
+    version = checker.read_project_version(ROOT / "pyproject.toml", version_errors)
+    assert version is not None and not version_errors
+    tag = f"v{version}"
+    next_tag = "v99.0.0"
+    original_read = checker.read
+
+    monkeypatch.setattr(checker, "read_project_version", lambda _path, _errors: next_tag[1:])
+    assert any("candidate-v99.0.0-yellow" in error for error in checker.check_release_docs())
+
+    monkeypatch.setattr(checker, "read", lambda path: original_read(path).replace(tag, next_tag))
+    assert checker.check_release_docs() == []
+
+    stale_pattern = f"remote-ops-workspace-{next_tag}-linux-<i386|amd64|armhf|arm64>.deb"
+    monkeypatch.setattr(
+        checker,
+        "read",
+        lambda path: original_read(path).replace(tag, next_tag)
+        + (f"\n{stale_pattern}\n" if path == "docs/PLATFORM_SUPPORT.md" else ""),
+    )
+    assert checker.check_release_docs() == [
+        f"release docs still advertise stale default artifact pattern: {stale_pattern}"
+    ]
+
+
+def test_candidate_build_supports_exact_tag_recovery_and_never_publishes() -> None:
     checker = load_script("check_release_truth")
     workflow = build_workflow()
-    assert "workflow_dispatch:" not in workflow
+    assert "  workflow_dispatch:\n" in workflow
     assert "softprops/action-gh-release" not in workflow
     assert "seal-release-candidate:" in workflow
 
@@ -60,6 +87,14 @@ def test_candidate_build_is_tag_push_only_and_never_publishes() -> None:
         workflow.replace('      - "v*"\n', "", 1)
     )
     assert any("v* tag trigger" in error for error in errors)
+    errors = checker.check_release_preflight(
+        workflow.replace("  workflow_dispatch:\n", "", 1)
+    )
+    assert any("manual exact-tag candidate recovery trigger" in error for error in errors)
+    errors = checker.check_release_preflight(
+        workflow.replace("    if: ${{ github.ref_type == 'tag' }}\n", "", 1)
+    )
+    assert any("tag-only preflight job" in error for error in errors)
 
 
 def test_candidate_build_requires_active_maturity_gate() -> None:
@@ -70,6 +105,18 @@ def test_candidate_build_requires_active_maturity_gate() -> None:
         1,
     )
     assert any("production maturity gate" in error for error in checker.check_release_preflight(workflow))
+
+
+def test_candidate_and_promotion_reject_checkout_using_an_unqualified_tag() -> None:
+    checker = load_script("check_release_truth")
+    build = build_workflow().replace("ref: ${{ github.ref }}", "ref: ${{ env.RELEASE_TAG }}", 1)
+    assert any("full triggering Git ref" in error for error in checker.check_release_preflight(build))
+    promotion = promotion_workflow().replace(
+        'git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}"',
+        'git rev-parse "${RELEASE_TAG}^{commit}"',
+        1,
+    )
+    assert any("full tag ref resolution" in error for error in checker.check_promotion_truth(promotion))
 
 
 def test_run_source_never_interpolates_untrusted_context_directly() -> None:
@@ -107,9 +154,8 @@ def test_mandatory_compliance_step_rejects_conditions_and_continue_on_error(
 @pytest.mark.parametrize("suffix", [" &", " || :", " --check-policy-only", " --help", " --dry-run"])
 def test_compliance_command_rejects_backgrounding_and_downgrades(suffix: str) -> None:
     workflow = promotion_workflow().replace(
-        '          --tag-governance-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"',
-        '          --tag-governance-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"'
-        + suffix,
+        "          --audit-redistribution-only",
+        "          --audit-redistribution-only" + suffix,
         1,
     )
     truth_errors, asset_errors = both_contract_errors(workflow)
@@ -195,10 +241,150 @@ def test_promotion_requires_exact_tag_sha_and_signed_pinned_evidence() -> None:
     workflow = promotion_workflow()
     assert 'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"' in workflow
     assert "target_commitish: $sha" in workflow
-    assert "--tag-governance-attestation" in workflow
-    assert "--tag-governance-signature" in workflow
+    assert "--audit-redistribution-only" in workflow
+    assert "--governance-attestation release-governance-publish/tag-governance-attestation.json" in workflow
+    assert "--governance-signature release-governance-publish/tag-governance-attestation.sig.json" in workflow
     assert "--evidence-registry" in workflow
     assert "Re-resolve immutable tag after publication" in workflow
+
+
+def test_promotion_requires_fresh_governance_check_before_publication() -> None:
+    workflow = remove_named_step(
+        promotion_workflow(),
+        "Revalidate signed tag governance immediately before publication",
+    )
+
+    truth_errors, asset_errors = both_contract_errors(workflow)
+
+    assert any("publication-bound tag governance proof" in error for error in truth_errors)
+    assert any("publication-bound tag governance proof" in error for error in asset_errors)
+
+
+def test_promotion_requires_full_release_notes_validation_before_draft_creation() -> None:
+    checker = load_script("check_release_truth")
+    workflow = remove_named_step(
+        promotion_workflow(), "Verify generated production release notes before creating a draft",
+    )
+    errors = checker.check_promotion_truth(workflow)
+    assert any("pre-publication production release notes verification" in error for error in errors)
+    assert any("before creating a draft" in error for error in errors)
+
+
+def test_promotion_requires_bounded_post_publication_immutability_read() -> None:
+    checker = load_script("check_release_truth")
+    workflow = promotion_workflow()
+    message = "promotion must confirm the exact published release becomes immutable with bounded read retries"
+    assert message not in checker.check_promotion_truth(workflow)
+    assert message in checker.check_promotion_truth(workflow.replace("--retry 3 --retry-max-time 25", "", 1))
+    assert message in checker.check_promotion_truth(workflow.replace(".id == $id and .tag_name == $tag", "true", 1))
+
+
+@pytest.mark.parametrize(
+    ("step_name", "label"),
+    [
+        ("Revalidate signed tag governance at mutation boundary", "mutation-bound tag governance proof"),
+        ("Revalidate signed tag governance immediately before publication", "publication-bound tag governance proof"),
+        ("Verify final immutable release and complete exact-tag provenance", "final in-run"),
+    ],
+)
+def test_promotion_requires_signed_redistribution(step_name: str, label: str) -> None:
+    workflow = promotion_workflow()
+    step = re.search(rf"(?ms)^      - name: {re.escape(step_name)}\n.*?(?=^      - |\Z)", workflow)
+    assert step is not None
+    changed_step, count = re.subn(r"(?m)^ +--redistribution-signature .+\n", "", step[0])
+    assert count == 1
+    changed = workflow[:step.start()] + changed_step + workflow[step.end():]
+    truth_errors, asset_errors = both_contract_errors(changed)
+    assert any(label in error and "missing required exact arguments" in error for error in truth_errors)
+    assert any(label in error and "missing required exact arguments" in error for error in asset_errors)
+
+
+def test_promotion_requires_immutable_release_setting_at_publication() -> None:
+    workflow = remove_named_step(
+        promotion_workflow(),
+        "Recheck immutable releases enabled before publication",
+    )
+    truth_errors, asset_errors = both_contract_errors(workflow)
+    assert any("publication-time immutable release setting proof" in error for error in truth_errors)
+    assert any("publication-time immutable release setting proof" in error for error in asset_errors)
+
+
+def test_promotion_requires_exact_package_notices_audit() -> None:
+    workflow = remove_named_step(promotion_workflow(), "Verify notices in the exact native packages")
+    _, errors = both_contract_errors(workflow)
+    assert any("exact package notices audit" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("name", "wait_for"),
+    [
+        ("Require unused release namespace including drafts", "draft creation"),
+        ("Re-resolve immutable tag immediately before mutation", "draft creation"),
+        ("Verify protected branch and exact required checks before draft creation", "draft creation"),
+        ("Recheck immutable releases enabled before publication", "publication"),
+        ("Re-resolve immutable tag before publication", "publication"),
+        ("Verify protected branch and exact required checks before publication", "publication"),
+    ],
+)
+def test_promotion_rejects_remote_preconditions_before_auditor_wait(
+    name: str, wait_for: str
+) -> None:
+    workflow = promotion_workflow()
+    step = re.search(rf"(?ms)^      - name: {re.escape(name)}\n.*?(?=^      - |\Z)", workflow)
+    assert step is not None
+    marker = f"      - name: Fetch fresh signed governance for {wait_for}\n"
+    stale = remove_named_step(workflow, name).replace(marker, step[0] + marker, 1)
+    _, errors = both_contract_errors(stale)
+    assert any("in order" in error for error in errors)
+
+
+def test_promotion_requires_exact_workflow_identity_and_checks_before_publication() -> None:
+    workflow = promotion_workflow().replace(
+        '          --sha "$RELEASE_SHA"\n      - name: Reverify draft bytes after waiting for the auditor',
+        '          --sha "$RELEASE_SHA" --required-check "CodeQL python"\n'
+        '      - name: Reverify draft bytes after waiting for the auditor',
+        1,
+    )
+    _, errors = both_contract_errors(workflow)
+    assert any("publication-time branch governance" in error and "allowlisted" in error for error in errors)
+
+
+def test_promotion_rechecks_draft_at_the_publication_boundary() -> None:
+    workflow = promotion_workflow()
+    recheck = "Reverify draft bytes after waiting for the auditor"
+    signing_proof = "Revalidate signed tag governance immediately before publication"
+    message = "promotion must recheck the complete draft immediately before publication governance"
+    assert message not in both_contract_errors(workflow)[1]
+    old_boundary = workflow.replace(
+        f"      - name: {signing_proof}\n",
+        "      - name: Unrelated publication delay\n        run: sleep 1\n"
+        f"      - name: {signing_proof}\n",
+        1,
+    )
+    assert message in both_contract_errors(old_boundary)[1]
+    assert message in both_contract_errors(remove_named_step(workflow, recheck))[1]
+
+
+def test_promotion_requires_post_wait_tag_comparison() -> None:
+    workflow = promotion_workflow().replace(
+        """          test "$(git rev-parse 'refs/tags/row-release-final-candidate^{commit}')" = "$RELEASE_SHA"\n""",
+        "",
+        1,
+    )
+    _, errors = both_contract_errors(workflow)
+    assert any("must fetch and compare the exact source tag" in error for error in errors)
+
+
+def test_promotion_attests_both_governance_inputs() -> None:
+    workflow = promotion_workflow().replace(
+        "            release-governance-publish/tag-governance-attestation.sig.json",
+        "            release-governance-publish/other.json",
+        1,
+    )
+
+    _, errors = both_contract_errors(workflow)
+
+    assert "promotion must attest both exact signed tag governance inputs" in errors
 
 
 def test_promotion_rejects_automatic_release_deletion() -> None:
@@ -206,6 +392,57 @@ def test_promotion_rejects_automatic_release_deletion() -> None:
     workflow = promotion_workflow()
     changed = workflow + '          gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"\n'
     assert "promotion workflow must preserve releases after failure" in checker.check_promotion_truth(changed)
+
+
+def test_promotion_captures_release_id_before_rejecting_draft_response() -> None:
+    checker = load_script("check_release_truth")
+    capture = '          echo "release-id=$release_id" >> "$GITHUB_OUTPUT"\n'
+    response_check = '          jq -e \'.draft == true and .prerelease == false\' "$response" >/dev/null\n'
+    workflow = promotion_workflow()
+    assert workflow.count(capture) == workflow.count(response_check) == 1
+    late_capture = workflow.replace(capture, "", 1).replace(response_check, response_check + capture, 1)
+    message = "promotion must capture the validated release ID before checking the draft response"
+
+    assert message not in checker.check_promotion_truth(workflow)
+    assert message in checker.check_promotion_truth(late_capture)
+    assert message in checker.check_promotion_truth(workflow.replace(capture, "", 1))
+
+
+def test_production_candidate_refuses_unapproved_release_policy() -> None:
+    checker = load_script("check_release_truth")
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    name = "Require independently approved production release policy"
+    assert checker.check_release_preflight(workflow) == []
+    signing_index = workflow.index("      - name: Detect release signing readiness")
+    policy_index = workflow.index(f"      - name: {name}")
+    assert signing_index < policy_index
+    without_policy = remove_named_step(workflow, name)
+    assert any("independently approved production release policy" in error
+               for error in checker.check_release_preflight(without_policy))
+    mutable_policy = workflow.replace("--check-policy-only", "--check-policy-only --policy-root /tmp")
+    assert any("independently approved production release policy" in error and "allowlisted" in error
+               for error in checker.check_release_preflight(mutable_policy))
+
+
+def test_promotion_recovers_draft_id_for_the_exact_interrupted_attempt() -> None:
+    checker = load_script("check_release_truth")
+    workflow = promotion_workflow()
+    marker = "$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
+    message = "promotion workflow must recover and report the release ID for its exact failed attempt"
+    assert message not in checker.check_promotion_truth(workflow)
+    assert message in checker.check_promotion_truth(workflow.replace(marker, "$RELEASE_TAG:$RELEASE_SHA", 1))
+    assert message in checker.check_promotion_truth(workflow.replace("index($marker) != null", "true", 1))
+
+
+def test_promotion_requires_qualified_default_branch_source() -> None:
+    checker = load_script("check_release_truth")
+    workflow = promotion_workflow()
+    changed = workflow.replace('git merge-base --is-ancestor "$RELEASE_SHA"', "git merge-base --is-ancestor HEAD")
+    assert "promotion source gate must bind the release SHA to the live default branch" in (
+        checker.check_promotion_truth(changed)
+    )
+    changed = workflow.replace("python scripts/check_python315_ci_evidence.py", "echo check_python315_ci_evidence.py")
+    assert any("exact default-branch CI evidence" in error for error in checker.check_promotion_truth(changed))
 
 
 def test_completed_certification_is_separate_from_in_progress_transaction() -> None:
@@ -216,3 +453,69 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     assert 'test "$PROMOTION_STATUS" = "completed"' in workflow
     assert "check_release_provenance.py" in workflow
     assert "--current-transaction-run-id" not in workflow
+    checker = load_script("check_release_truth")
+    assert checker.check_certification_truth(workflow) == []
+    changed = workflow.replace('run-id: ${{ env.PROMOTION_RUN_ID }}', 'run-id: ${{ github.run_id }}', 1)
+    assert checker.check_certification_truth(changed) == [
+        "release certification governance proof missing exact artifact source run",
+    ]
+    changed = workflow.replace("production-redistribution-approval-", "other-")
+    assert any("attempt-specific redistribution approval" in error for error in checker.check_certification_truth(changed))
+
+
+@pytest.mark.parametrize(
+    ("find", "replacement", "message"),
+    [
+        (
+            '--completed-promotion-run-attempt "$PROMOTION_RUN_ATTEMPT"',
+            '--completed-promotion-run-attempt "$GITHUB_RUN_ATTEMPT"',
+            "must run the exact immutable publication audit unconditionally",
+        ),
+        (
+            "      - name: Verify completed promotion, immutable numeric release and every attested byte\n",
+            "      - name: Verify completed promotion, immutable numeric release and every attested byte\n"
+            "        continue-on-error: true\n",
+            "must run the exact immutable publication audit unconditionally",
+        ),
+        (
+            "      - name: Verify published production release notes\n",
+            "      - name: Verify published production release notes\n        if: ${{ false }}\n",
+            "must run the production release notes audit unconditionally",
+        ),
+        (
+            "      - name: Download governance proof from the triggering promotion attempt\n",
+            "      - name: Download governance proof from the triggering promotion attempt\n"
+            "        if: ${{ false }}\n",
+            "governance proof download must stage the proof unconditionally",
+        ),
+    ],
+)
+def test_certification_requires_executable_exact_audits(find, replacement, message) -> None:
+    checker = load_script("check_release_truth")
+    workflow = (ROOT / ".github/workflows/release-certification.yml").read_text(encoding="utf-8")
+    assert find in workflow
+    assert f"release certification {message}" in checker.check_certification_truth(
+        workflow.replace(find, replacement, 1)
+    )
+
+
+@pytest.mark.parametrize("name", ["promotion", "certification"])
+def test_release_verifier_rejects_unisolated_python_environment(name: str) -> None:
+    checker = load_script("check_release_truth")
+    workflow = (ROOT / f".github/workflows/release-{name}.yml").read_text(encoding="utf-8")
+    check = getattr(checker, f"check_{name}_truth")
+    message = f"{name} must install the hash-locked compliance verifier in an isolated Python environment"
+    assert message not in check(workflow)
+    assert message in check(remove_named_step(workflow, "Create isolated compliance verifier environment"))
+
+
+def test_certification_verifies_source_before_installing_dependencies() -> None:
+    checker = load_script("check_release_truth")
+    workflow = (ROOT / ".github/workflows/release-certification.yml").read_text(encoding="utf-8")
+    name = "Verify checkout against the live release tag and default branch"
+    message = "release certification must verify live tag and default-branch ancestry before installing dependencies"
+    assert message not in checker.check_certification_truth(workflow)
+    assert message in checker.check_certification_truth(remove_named_step(workflow, name))
+    late = workflow.replace("name: Install hash-locked compliance verifier", "name: Delayed dependency install", 1)
+    late = late.replace(f"      - name: {name}\n", f"      - name: Install hash-locked compliance verifier\n        run: echo misplaced\n      - name: {name}\n", 1)
+    assert message in checker.check_certification_truth(late)

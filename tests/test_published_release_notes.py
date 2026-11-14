@@ -64,3 +64,21 @@ def test_published_release_notes_main_accepts_offline_fixture(tmp_path: Path) ->
         )
         == 0
     )
+
+
+def test_generated_production_notes_use_the_published_body_contract(tmp_path: Path) -> None:
+    checker = _load_checker()
+    notes = tmp_path / "release-notes.md"
+    args = [
+        "--repository", "Yunushan/remote-ops-workspace", "--tag", "v2.0.0",
+        "--channel", "production-signed", "--notes-file", str(notes),
+    ]
+    content = "# v2.0.0\n\n**Channel: production-signed.** Windows installers are signed.\n\n## Support boundaries\n"
+    notes.write_text(content, encoding="utf-8")
+    assert checker.main(args) == 0
+    notes.write_text(content.replace("production-signed", "unsigned preview"), encoding="utf-8")
+    assert checker.main(args) == 1
+    notes.write_text(content.replace("# v2.0.0", "# v2.0.01"), encoding="utf-8")
+    assert checker.main(args) == 1
+    notes.write_text(content.replace("## Support boundaries", "Text mentioning ## Support boundaries"), encoding="utf-8")
+    assert checker.main(args) == 1

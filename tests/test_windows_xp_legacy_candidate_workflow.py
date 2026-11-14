@@ -53,6 +53,15 @@ def test_signed_candidate_requires_protected_release_environment() -> None:
     assert any("missing protected release environment" in error for error in errors)
 
 
+def test_legacy_candidate_cancels_superseded_branches_and_preserves_tag_builds() -> None:
+    checker = _load_checker()
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    for replacement in ("true", "false"):
+        changed = workflow.replace("cancel-in-progress: ${{ github.ref_type != 'tag' }}", f"cancel-in-progress: {replacement}")
+        errors = checker.check_windows_xp_legacy_candidate_workflow(changed)
+        assert any("missing superseded branch cancellation with signed tag protection" in error for error in errors)
+
+
 def _load_checker():
     module_path = Path("scripts/check_windows_xp_legacy_candidate_workflow.py")
     spec = importlib.util.spec_from_file_location("check_windows_xp_legacy_candidate_workflow", module_path)

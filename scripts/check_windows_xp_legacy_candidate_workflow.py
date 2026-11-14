@@ -43,6 +43,8 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
     required_snippets = {
         'branches:\n      - "**"': "branch push trigger",
         'tags:\n      - "v*"': "release tag trigger",
+        "group: xp-legacy-candidate-${{ github.event.pull_request.number || github.ref }}": "PR or ref concurrency group",
+        "cancel-in-progress: ${{ github.ref_type != 'tag' }}": "superseded branch cancellation with signed tag protection",
         "name: Windows XP signed candidate (${{ matrix.arch }})": "signed candidate matrix",
         "if: ${{ github.ref_type != 'tag' }}": "non-tag candidate job",
         "if: ${{ github.ref_type == 'tag' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}": "tag-only signing job",

@@ -443,6 +443,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
     block = workflow_job_block(workflow, "promote-production-release")
     if not block:
         return ["promotion workflow missing promote-production-release job"]
+    errors.extend(check_isolated_compliance_verifier(block, "promotion"))
     required = {
         "workflow_dispatch:": "dispatch trigger",
         "build_run_id:": "build run ID input",
@@ -456,7 +457,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
         "release-compliance-evidence": "evidence branch ancestry proof",
         "release_candidate_inventory.py promote": "numeric artifact-ID promotion",
         "Verify attestation and download exact candidate artifact IDs": "build-run attestation binding",
-        "--require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt": (
+        "--require-hashes --only-binary=:all: --requirement requirements-locks/release-verifier-linux-x86_64.txt": (
             "hashed compliance verifier"
         ),
         "--candidate-inventory": "signed candidate inventory binding",
@@ -846,11 +847,32 @@ def check_promotion_truth(workflow: str) -> list[str]:
     return errors
 
 
+def check_isolated_compliance_verifier(block: str, job: str) -> list[str]:
+    setup = workflow_step_block(block, "name: Create isolated compliance verifier environment")
+    install = workflow_step_block(block, "name: Install hash-locked compliance verifier")
+    if (
+        not setup or not install
+        or block.find(setup) + len(setup) != block.find(install)
+        or step_is_suppressed(setup) or step_is_suppressed(install)
+        or 'python -m venv "$RUNNER_TEMP/release-verifier-venv"' not in executable_step_commands(setup)
+        or 'printf "%s\\n" "$RUNNER_TEMP/release-verifier-venv/bin" >> "$GITHUB_PATH"' not in setup
+        or 'PIP_CONFIG_FILE: "/dev/null"' not in install
+        or 'PIP_REQUIRE_VIRTUALENV: "1"' not in install
+        or executable_step_commands(install) != [
+            "python -m pip install --require-hashes --only-binary=:all: "
+            "--requirement requirements-locks/release-verifier-linux-x86_64.txt",
+        ]
+    ):
+        return [f"{job} must install the hash-locked compliance verifier in an isolated Python environment"]
+    return []
+
+
 def check_certification_truth(workflow: str) -> list[str]:
     errors: list[str] = []
     block = workflow_job_block(workflow, "certify-completed-promotion")
     if not block:
         return ["release certification workflow missing completed-promotion job"]
+    errors.extend(check_isolated_compliance_verifier(block, "certification"))
     for snippet, label in {
         "workflow_run:": "post-completion trigger",
         "- release-promotion": "promotion workflow selection",

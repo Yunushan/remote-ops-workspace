@@ -402,6 +402,16 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     assert any("attempt-specific redistribution approval" in error for error in checker.check_certification_truth(changed))
 
 
+@pytest.mark.parametrize("name", ["promotion", "certification"])
+def test_release_verifier_rejects_unisolated_python_environment(name: str) -> None:
+    checker = load_script("check_release_truth")
+    workflow = (ROOT / f".github/workflows/release-{name}.yml").read_text(encoding="utf-8")
+    check = getattr(checker, f"check_{name}_truth")
+    message = f"{name} must install the hash-locked compliance verifier in an isolated Python environment"
+    assert message not in check(workflow)
+    assert message in check(remove_named_step(workflow, "Create isolated compliance verifier environment"))
+
+
 def test_certification_verifies_source_before_installing_dependencies() -> None:
     checker = load_script("check_release_truth")
     workflow = (ROOT / ".github/workflows/release-certification.yml").read_text(encoding="utf-8")

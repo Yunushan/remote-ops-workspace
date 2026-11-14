@@ -171,8 +171,17 @@ jobs:
           python scripts/check_platform_verified_evidence.py --registry "$PLATFORM_EVIDENCE_REGISTRY" --require-goal-targets --require-review-bundles --release-tag "$RELEASE_TAG"
           python scripts/import_platform_evidence_artifacts.py --registry "$PLATFORM_EVIDENCE_REGISTRY" --release-tag "$RELEASE_TAG" --release-head-sha "$RELEASE_SHA" --require-goal-targets --out-dir release-assets --verify-source-run --repository "$GITHUB_REPOSITORY"
           python scripts/check_platform_review_bundle_artifacts.py --registry "$PLATFORM_EVIDENCE_REGISTRY" --bundle-dir release-assets --require-goal-targets --release-tag "$RELEASE_TAG" --require-final-record-assets
+      - name: Create isolated compliance verifier environment
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/release-verifier-venv"
+          printf "%s\n" "$RUNNER_TEMP/release-verifier-venv/bin" >> "$GITHUB_PATH"
       - name: Install hash-locked compliance verifier
-        run: python -m pip install --require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt
+        env:
+          PIP_CONFIG_FILE: "/dev/null"
+          PIP_REQUIRE_VIRTUALENV: "1"
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all: --requirement requirements-locks/release-verifier-linux-x86_64.txt
       - name: Validate complete production asset inventory
         run: >-
           python scripts/check_release_publish_assets.py

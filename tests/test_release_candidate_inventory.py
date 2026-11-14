@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import re
+import stat
 import sys
 import urllib.error
 import zipfile
@@ -18,6 +19,60 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import release_candidate_inventory as candidate  # noqa: E402
+
+
+@pytest.mark.parametrize("name", ["parent/file", "../escape", "..\\escape", "C:escape", "empty/"])
+def test_candidate_zip_rejects_non_root_entries_before_writing(
+    tmp_path: Path, name: str,
+) -> None:
+    source = tmp_path / "candidate.zip"
+    destination = tmp_path / "unpacked"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("installer.exe", b"fixture")
+        archive.writestr(name, b"")
+
+    with pytest.raises(ValueError, match="at ZIP root"):
+        candidate.extract_archive(source, destination)
+
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("bad_entry", "options", "expected"),
+    [
+        ("INSTALLER.EXE", {}, "case-colliding"),
+        ("inventory.json", {"only_name": "installer.exe"}, "must contain only"),
+        ("other.exe", {"max_expanded_bytes": 8}, "expands beyond"),
+    ],
+)
+def test_candidate_zip_rejects_invalid_inventory_before_writing(
+    tmp_path: Path, bad_entry: str, options: dict, expected: str,
+) -> None:
+    source = tmp_path / "candidate.zip"
+    destination = tmp_path / "unpacked"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("installer.exe", b"fixture")
+        archive.writestr(bad_entry, b"fixture")
+
+    with pytest.raises(ValueError, match=expected):
+        candidate.extract_archive(source, destination, **options)
+
+    assert not destination.exists()
+
+
+def test_candidate_zip_rejects_non_regular_members(tmp_path: Path) -> None:
+    source = tmp_path / "candidate.zip"
+    destination = tmp_path / "unpacked"
+    member = zipfile.ZipInfo("installer.exe")
+    member.create_system = 3
+    member.external_attr = (stat.S_IFLNK | 0o777) << 16
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr(member, "outside")
+
+    with pytest.raises(ValueError, match="non-regular"):
+        candidate.extract_archive(source, destination)
+
+    assert not destination.exists()
 
 
 def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:

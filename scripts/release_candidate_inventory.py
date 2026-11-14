@@ -23,7 +23,7 @@ import tempfile
 import urllib.error
 import urllib.request
 import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
@@ -396,21 +396,23 @@ def promote(
         run_id=run_id,
         release_sha=release_sha,
     )
+    pointer_size = positive_int(pointer.get("size_in_bytes"), "candidate inventory ZIP size")
+    if pointer_size > MAX_JSON_BYTES:
+        raise ValueError("candidate inventory ZIP exceeds the size limit")
     with tempfile.TemporaryDirectory(prefix="row-candidate-inventory-") as temporary:
         extracted = Path(temporary)
         pointer_zip = extracted / "candidate-inventory.zip"
         actual_digest = client.download(
-            f"actions/artifacts/{inventory_artifact_id}/zip", pointer_zip
+            f"actions/artifacts/{inventory_artifact_id}/zip", pointer_zip, max_bytes=MAX_JSON_BYTES,
         )
-        if actual_digest != inventory_archive_digest:
+        if actual_digest != inventory_archive_digest or pointer_zip.stat().st_size != pointer_size:
             raise ValueError(
-                "candidate inventory raw ZIP digest does not match the pinned input"
+                "candidate inventory raw ZIP digest or size does not match GitHub and the pinned input"
             )
         unpacked = extracted / "unpacked"
-        files = extract_archive(pointer_zip, unpacked)
-        if [item["path"] for item in files] != ["release-candidate-inventory.json"]:
-            raise ValueError("candidate inventory artifact must contain only release-candidate-inventory.json")
-        staged_bytes = (unpacked / "release-candidate-inventory.json").read_bytes()
+        inventory_name = "release-candidate-inventory.json"
+        extract_archive(pointer_zip, unpacked, max_expanded_bytes=MAX_JSON_BYTES, only_name=inventory_name)
+        staged_bytes = (unpacked / inventory_name).read_bytes()
     if not approved_inventory.is_file() or approved_inventory.is_symlink():
         raise ValueError("approved candidate inventory must be a regular non-symlink file")
     approved_bytes = approved_inventory.read_bytes()
@@ -534,6 +536,7 @@ def materialize_records(
         item = artifacts[name]
         artifact_id = positive_int(item.get("id"), f"artifact {name} id")
         digest = normalize_digest(item.get("digest"), f"artifact {name} digest")
+        archive_size = positive_int(item.get("size_in_bytes"), f"artifact {name} size")
         if item.get("expired") is not False:
             raise ValueError(f"artifact {name} must be unexpired")
         with tempfile.TemporaryDirectory(prefix="row-release-artifact-") as temporary:
@@ -544,12 +547,12 @@ def materialize_records(
                 raise ValueError(
                     f"artifact {name} raw ZIP digest must be {digest}, got {actual_digest}"
                 )
+            if archive.stat().st_size != archive_size:
+                raise ValueError(f"artifact {name} raw ZIP size must match GitHub metadata")
             extracted_root = temporary_root / "unpacked"
             files = extract_archive(archive, extracted_root)
             for file_record in files:
                 relative = file_record["path"]
-                if not safe_name(relative):
-                    raise ValueError(f"artifact {name} must contain release files at ZIP root: {relative!r}")
                 folded = relative.casefold()
                 if folded in global_files:
                     raise ValueError(
@@ -562,7 +565,7 @@ def materialize_records(
             "id": artifact_id,
             "name": name,
             "archive_digest": digest,
-            "size_in_bytes": positive_int(item.get("size_in_bytes"), f"artifact {name} size"),
+            "size_in_bytes": archive_size,
             "files": files,
         }
         if expected_by_name is not None and record != expected_by_name.get(name):
@@ -793,34 +796,44 @@ def statement_has_digest(statement: Any, digest: str) -> bool:
     )
 
 
-def extract_archive(archive: Path, destination: Path) -> list[dict[str, Any]]:
-    destination.mkdir(parents=True, exist_ok=True)
+def extract_archive(
+    archive: Path, destination: Path, *,
+    max_expanded_bytes: int = MAX_EXPANDED_BYTES,
+    only_name: str | None = None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     names: set[str] = set()
     expanded = 0
     with zipfile.ZipFile(archive) as bundle:
         members = bundle.infolist()
+        if not members:
+            raise ValueError("artifact ZIP must contain files")
         if len(members) > MAX_MEMBERS:
             raise ValueError(f"artifact ZIP exceeds {MAX_MEMBERS} members")
+        if only_name is not None and [member.orig_filename for member in members] != [only_name]:
+            raise ValueError(f"artifact ZIP must contain only {only_name}")
         for member in members:
-            path = PurePosixPath(member.filename)
-            if member.is_dir():
-                continue
-            if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
-                raise ValueError(f"artifact ZIP contains unsafe path: {member.filename!r}")
+            name = member.orig_filename
+            if name != member.filename or not safe_name(name) or ":" in name or any(
+                ord(char) < 32 or ord(char) == 127 for char in name
+            ):
+                raise ValueError(f"artifact ZIP must contain safe files at ZIP root: {name!r}")
             mode = (member.external_attr >> 16) & 0xFFFF
-            if stat.S_ISLNK(mode):
-                raise ValueError(f"artifact ZIP contains symlink: {member.filename!r}")
-            normalized = path.as_posix()
-            folded = normalized.casefold()
+            if stat.S_IFMT(mode) not in (0, stat.S_IFREG) or member.external_attr & 0x10:
+                raise ValueError(f"artifact ZIP contains non-regular entry: {name!r}")
+            if member.flag_bits & 1:
+                raise ValueError(f"artifact ZIP contains encrypted entry: {name!r}")
+            folded = name.casefold()
             if folded in names:
-                raise ValueError(f"artifact ZIP contains duplicate/case-colliding path: {normalized!r}")
+                raise ValueError(f"artifact ZIP contains duplicate/case-colliding path: {name!r}")
             names.add(folded)
             expanded += member.file_size
-            if expanded > MAX_EXPANDED_BYTES:
-                raise ValueError(f"artifact ZIP expands beyond {MAX_EXPANDED_BYTES} bytes")
-            target = destination.joinpath(*path.parts)
-            target.parent.mkdir(parents=True, exist_ok=True)
+            if expanded > max_expanded_bytes:
+                raise ValueError(f"artifact ZIP expands beyond {max_expanded_bytes} bytes")
+        destination.mkdir(parents=True, exist_ok=True)
+        for member in members:
+            name = member.filename
+            target = destination / name
             digest = hashlib.sha256()
             size = 0
             with bundle.open(member) as source, target.open("xb") as output:
@@ -829,10 +842,8 @@ def extract_archive(archive: Path, destination: Path) -> list[dict[str, Any]]:
                     size += len(chunk)
                     output.write(chunk)
             if size != member.file_size:
-                raise ValueError(f"artifact ZIP size changed while extracting {normalized!r}")
-            records.append({"path": normalized, "size": size, "sha256": digest.hexdigest()})
-    if not records:
-        raise ValueError("artifact ZIP must contain files")
+                raise ValueError(f"artifact ZIP size changed while extracting {name!r}")
+            records.append({"path": name, "size": size, "sha256": digest.hexdigest()})
     return sorted(records, key=lambda item: item["path"].casefold())
 
 

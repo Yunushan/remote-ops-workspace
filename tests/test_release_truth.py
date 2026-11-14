@@ -400,3 +400,15 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     ]
     changed = workflow.replace("production-redistribution-approval-", "other-")
     assert any("attempt-specific redistribution approval" in error for error in checker.check_certification_truth(changed))
+
+
+def test_certification_verifies_source_before_installing_dependencies() -> None:
+    checker = load_script("check_release_truth")
+    workflow = (ROOT / ".github/workflows/release-certification.yml").read_text(encoding="utf-8")
+    name = "Verify checkout against the live release tag and default branch"
+    message = "release certification must verify live tag and default-branch ancestry before installing dependencies"
+    assert message not in checker.check_certification_truth(workflow)
+    assert message in checker.check_certification_truth(remove_named_step(workflow, name))
+    late = workflow.replace("name: Install hash-locked compliance verifier", "name: Delayed dependency install", 1)
+    late = late.replace(f"      - name: {name}\n", f"      - name: Install hash-locked compliance verifier\n        run: echo misplaced\n      - name: {name}\n", 1)
+    assert message in checker.check_certification_truth(late)

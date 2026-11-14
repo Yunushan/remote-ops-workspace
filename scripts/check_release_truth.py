@@ -871,6 +871,26 @@ def check_certification_truth(workflow: str) -> list[str]:
     }.items():
         if snippet not in workflow:
             errors.append(f"release certification workflow missing {label}: {snippet}")
+    trust_name = "Verify checkout against the live release tag and default branch"
+    trust = workflow_step_block(block, f"name: {trust_name}")
+    expected = [
+        'test "$(git rev-parse HEAD)" = "$RELEASE_SHA"',
+        'git check-ref-format --branch "$DEFAULT_BRANCH" >/dev/null',
+        'git fetch --no-tags origin "refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"',
+        'git merge-base --is-ancestor "$RELEASE_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"',
+        'git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-release-certification"',
+        """test "$(git rev-parse 'refs/tags/row-release-certification^{commit}')" = "$RELEASE_SHA" """.rstrip(),
+    ]
+    if (
+        executable_step_commands(trust) != ["set -euo pipefail", *expected]
+        or "DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}" not in trust
+        or step_is_suppressed(trust)
+        or not literal_run_is_fail_closed(trust)
+        or not 0 <= block.find("name: Check out exact promoted source SHA")
+            < block.find(f"name: {trust_name}")
+            < block.find("name: Install hash-locked compliance verifier")
+    ):
+        errors.append("release certification must verify live tag and default-branch ancestry before installing dependencies")
     for proof in ("governance proof", "redistribution approval"):
         step = workflow_step_block(block, f"name: Download {proof} from the triggering promotion attempt")
         if "run-id: ${{ env.PROMOTION_RUN_ID }}" not in step:

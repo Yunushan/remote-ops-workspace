@@ -40,10 +40,10 @@ jobs:
   evidence-runner-readiness:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    environment: platform-evidence
     outputs:
       ready: ${{ steps.runner-readiness.outputs.ready }}
     permissions:
-      actions: read
       contents: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -56,9 +56,18 @@ jobs:
       - id: runner-readiness
         name: Check evidence runner availability
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.ROW_PLATFORM_RUNNER_INVENTORY_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || "$GITHUB_REF" != "refs/tags/$RELEASE_TAG" ]]; then
+            echo "::error::Dispatch this workflow from the exact release tag."
+            exit 1
+          fi
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::Set ROW_PLATFORM_RUNNER_INVENTORY_TOKEN in the platform-evidence environment with repository Administration read access."
+            exit 1
+          fi
           python scripts/check_platform_evidence_runner_readiness.py \
             --repository "${{ github.repository }}" \
             --target "${{ inputs.target }}" \

@@ -33,19 +33,27 @@ the registry schema and any accepted records honest while leaving missing
 articles visible; `--require-complete` is the hard gate for claiming every
 article has accepted product-depth evidence.
 
-Evidence creation and acceptance are deliberately separate. Run
-`python scripts/make_mobaxterm_parity_evidence_record.py` to validate an
-article bundle and emit a `status=candidate` record; that command has no
-registry-append path and cannot label its own output accepted. After a human
-review, download every referenced asset from the published GitHub release and
-run `python scripts/finalize_mobaxterm_parity_evidence_record.py` with the exact
-repository, resolved tag/source SHA, Actions run URL and attempt, review URL,
-reviewer and downloaded asset paths. Finalization re-hashes those published
-bytes, requires them to match the candidate artifact hashes, and only then can
-write or append an accepted schema-v2 record. The registry checker fails closed
-on any repository/tag/SHA/run-attempt/reviewer/release-byte provenance drift.
-These fields do not replace the external review, exact GitHub run and published
-release; they record and bind those externally obtained facts.
+Put each article's reviewed files in its own `<article-id>/` directory, with
+the article document named `evidence.json`. Download the referenced assets
+from the published GitHub release. Run
+`python scripts/make_mobaxterm_parity_evidence_record.py` with that article
+directory as `--assets-dir`. Save the candidate JSON outside the article
+directory so the reviewed file set stays intact.
+
+Pass the candidate, repository, exact source and resolved tag SHA, and the
+successful Actions run URL and attempt to
+`python scripts/finalize_mobaxterm_parity_evidence_record.py --print-review-line`.
+Have the reviewer include the resulting `ROW parity acceptance` line verbatim
+on its own line in the GitHub review for those exact bytes. Certification
+compares the review's live URL, author, timestamp and acceptance line with the
+record. A pull-request review must have GitHub's `APPROVED` state.
+
+After review, rerun the finalizer with the same inputs, the review URL, login
+and UTC timestamp, and one `--published-release-asset name=path` for each
+download. Save the accepted JSON outside the article directory. Finalization
+re-hashes the published assets and binds the matching bytes to the accepted
+schema-v2 record. Use `--append-registry` together with `--out` when adding a
+reviewed record to the registry.
 
 For production certification, merge the reviewed registry into protected
 `main` after the published release is available and retain the full commit

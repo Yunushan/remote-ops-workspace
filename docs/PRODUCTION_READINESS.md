@@ -291,7 +291,10 @@ namespace and a tag that resolves to the exact qualified source.
    published bytes referenced by each record and merge the reviewed registry
    into protected `main`. Retain the full SHA of that registry commit.
 10. Run the aggregate certification gate from the tagged checkout with the
-    downloaded release assets and the pinned evidence inputs.
+    downloaded release assets and the pinned evidence inputs. The final
+    audit rechecks the live release notes because GitHub allows edits to
+    release notes after immutable publication.
+    [GitHub immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
 
 Until every gate above is proven, the release must remain an explicitly labeled
 preview or a default release with the protected targets outside its support

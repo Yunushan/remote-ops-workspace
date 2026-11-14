@@ -75,6 +75,13 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
     assert target.index("scripts/check_repository_governance.py") < target.index(
         'echo "production readiness: 100/100 gates passed"'
     )
+    published_notes_check = (
+        'python scripts/check_published_release_notes.py --repository "$(RELEASE_REPOSITORY)" '
+        '--tag "$(RELEASE_TAG)" --channel production-signed'
+    )
+    assert target.index("--verify-published-release") < target.index(
+        published_notes_check
+    ) < target.rindex(tag_resolution)
     assert target.index("--verify-published-release") < target.index(
         'echo "production readiness: 100/100 gates passed"'
     )

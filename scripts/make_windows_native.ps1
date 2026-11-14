@@ -55,7 +55,7 @@ function Sign-NativeArtifact([string]$ArtifactPath) {
   if (!$SignTool) {
     throw "Production signing requires signtool.exe"
   }
-  & $SignTool.Source sign /fd SHA256 /td SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL /f $env:ROW_WINDOWS_CERTIFICATE_PATH /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $ArtifactPath
+  & $SignTool.Source sign /fd SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL /td SHA256 /f $env:ROW_WINDOWS_CERTIFICATE_PATH /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $ArtifactPath
   if ($LASTEXITCODE -ne 0) {
     throw "Authenticode signing failed for $ArtifactPath"
   }

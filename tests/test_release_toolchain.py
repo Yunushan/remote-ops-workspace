@@ -28,6 +28,26 @@ def test_release_signing_refuses_missing_timestamp_or_package_verification() -> 
         assert any("verify both final packages" in error for error in errors)
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_windows_authenticode_requires_timestamp_digest_after_url(legacy: bool) -> None:
+    checker = _load_release_toolchain_checker()
+    windows = Path("scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+    xp = Path("scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8")
+    assert checker.check_windows_timestamp_digest(windows, xp) == []
+
+    if legacy:
+        xp = xp.replace("/tr $Timestamp.AbsoluteUri /td SHA256", "/td SHA256 /tr $Timestamp.AbsoluteUri")
+    else:
+        windows = windows.replace(
+            "/tr $env:ROW_WINDOWS_TIMESTAMP_URL /td SHA256",
+            "/td SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL",
+        )
+    target = "Windows XP" if legacy else "Windows native"
+    assert checker.check_windows_timestamp_digest(windows, xp) == [
+        f"{target} signing must select SHA256 after the RFC 3161 timestamp URL",
+    ]
+
+
 def test_release_toolchain_pins_exact_native_python_patch_in_every_release_job() -> None:
     manifest = json.loads(Path("configs/release_toolchain.json").read_text(encoding="utf-8"))
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")

@@ -38,6 +38,10 @@ def main() -> int:
         errors.extend(check_linux_appimagetool_script(toolchain))
         errors.extend(check_windows_native_smoke())
         errors.extend(check_native_release_tag_guards())
+        errors.extend(check_windows_timestamp_digest(
+            (ROOT / "scripts/make_windows_native.ps1").read_text(encoding="utf-8"),
+            (ROOT / "scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8"),
+        ))
         errors.extend(check_native_signing_verification(
             (ROOT / "scripts/make_windows_native.ps1").read_text(encoding="utf-8"),
             (ROOT / "scripts/make_macos_native.sh").read_text(encoding="utf-8"),
@@ -679,6 +683,20 @@ def check_native_release_tag_guards() -> list[str]:
                 errors.append(
                     f"{relative} missing workflow-dispatch-safe release tag guard: {snippet}"
                 )
+    return errors
+
+
+def check_windows_timestamp_digest(windows: str, xp: str) -> list[str]:
+    errors: list[str] = []
+    for name, source in (("Windows native", windows), ("Windows XP", xp)):
+        signing_commands = re.findall(
+            r"(?m)^ *& \$SignTool(?:\.Source)? sign [^\n]+",
+            strip_unquoted_comments(source),
+        )
+        if len(signing_commands) != 1 or not re.search(
+            r" /fd SHA256 /tr \S+ /td SHA256 ", signing_commands[0],
+        ):
+            errors.append(f"{name} signing must select SHA256 after the RFC 3161 timestamp URL")
     return errors
 
 

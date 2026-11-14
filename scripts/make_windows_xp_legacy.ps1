@@ -70,7 +70,7 @@ function Sign-XpExecutable([string]$Path) {
   $Certificate = Join-Path $env:RUNNER_TEMP "row-xp-$Arch-$([guid]::NewGuid()).pfx"
   try {
     [System.IO.File]::WriteAllBytes($Certificate, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
-    & $SignTool sign /q /fd SHA256 /td SHA256 /tr $Timestamp.AbsoluteUri /f $Certificate /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $Path
+    & $SignTool sign /q /fd SHA256 /tr $Timestamp.AbsoluteUri /td SHA256 /f $Certificate /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $Path
     if ($LASTEXITCODE -ne 0) {
       throw "XP executable Authenticode signing failed."
     }

@@ -41,6 +41,29 @@ promotion target.
    Run the [aggregate gate with the required release inputs](../PRODUCTION_READINESS.md#final-promotion-sequence)
    from the tagged checkout and require `production readiness: 100/100 gates passed`.
 
+## Dispatch production promotion
+
+Copy the tag, build run ID, numeric inventory artifact ID and
+`sha256:` archive digest from the successful candidate run's **Report promotion
+coordinates** step. Use the full commit SHA containing the independent approval
+and evidence bundle on `release-compliance-evidence`. Set the shell variables
+below to those values before dispatching:
+
+```bash
+gh workflow run release-promotion.yml \
+  --repo "$release_repository" --ref "$release_tag" \
+  -f release_tag="$release_tag" \
+  -f build_run_id="$build_run_id" \
+  -f build_run_attempt=1 \
+  -f candidate_inventory_artifact_id="$candidate_inventory_artifact_id" \
+  -f candidate_inventory_archive_digest="$candidate_inventory_archive_digest" \
+  -f evidence_commit_sha="$evidence_commit_sha"
+```
+
+The workflow checks that the dispatch ref and the release tag resolve to the
+same source commit. If the candidate must be rebuilt, obtain a fresh approval
+for the replacement inventory and use its new run ID, artifact ID and digest.
+
 ## Capture the signed tag ruleset proof
 
 The independent governance auditor runs this command on their own system.

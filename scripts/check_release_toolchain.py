@@ -388,11 +388,9 @@ def check_workflow(
         ),
         'if ("${{ matrix.arch }}" -eq "x86")': "explicit Windows x86 compatibility branch",
         'if [[ "${{ matrix.arch }}" == "x64" ]]': "explicit Intel macOS source-build branch",
-        "python -m pip uninstall -y bcrypt cryptography truststore": (
-            "Windows x86 backend exclusion"
-        ),
         "find_spec('bcrypt') is None": "Windows x86 bcrypt absence assertion",
         "find_spec('cryptography') is None": "Windows x86 backend absence assertion",
+        "find_spec('truststore') is None": "Windows x86 truststore absence assertion",
         '--no-build-isolation --only-binary=:all: --no-binary=cryptography,pyftpdlib --requirement "${{ matrix.lock }}"': (
             "maintained Intel macOS cryptography source build"
         ),

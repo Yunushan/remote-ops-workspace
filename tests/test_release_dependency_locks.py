@@ -187,6 +187,15 @@ def test_mutable_project_resolution_cannot_hide_after_hashed_dependencies() -> N
     assert any("dependency-resolving pip install outside" in error for error in errors)
 
 
+def test_signed_native_release_requires_isolated_python_before_lock_install() -> None:
+    checker = _checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace("python -m venv ", "python -m venv --system-site-packages ")
+    errors = checker.check_locks(workflows={"release.yml": workflow})
+    for job in ("windows-native", "macos-native", "linux-native"):
+        assert f"release.yml {job} must create an isolated Python environment before installing its lock" in errors
+
+
 def test_bootstrap_requires_exact_versions_and_reviewed_artifact_hashes(tmp_path: Path) -> None:
     checker = _checker().compliance
     final = tmp_path / "final.txt"

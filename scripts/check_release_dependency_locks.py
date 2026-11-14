@@ -73,6 +73,27 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
     if workflows is None:
         workflows = {name: (root / ".github/workflows" / name).read_text(encoding="utf-8") for name in ("release.yml", "versioned-unsigned-release.yml")}
     for name, workflow in workflows.items():
+        if name == "release.yml":
+            for job in ("windows-native", "macos-native", "linux-native"):
+                block = compliance.workflow_job_block(workflow, job)
+                commands = compliance.executable_run_commands(block)
+                before_install = next(
+                    (index for index, command in enumerate(commands) if command.startswith("python -m pip install ")),
+                    len(commands),
+                )
+                if job == "windows-native":
+                    null_device = "nul"
+                    venv_command = "python -m venv $ReleaseVenv"
+                else:
+                    null_device = "/dev/null"
+                    venv_command = 'python -m venv "$RUNNER_TEMP/release-venv"'
+                lines = block.splitlines()
+                if (
+                    venv_command not in commands[:before_install]
+                    or f'      PIP_CONFIG_FILE: "{null_device}"' not in lines
+                    or '      PIP_REQUIRE_VIRTUALENV: "1"' not in lines
+                ):
+                    errors.append(f"{name} {job} must create an isolated Python environment before installing its lock")
         for target, row in targets.items():
             if target.startswith("release-verifier-"):
                 continue

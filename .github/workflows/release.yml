@@ -229,6 +229,9 @@ jobs:
     needs: release-preflight
     if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}
     environment: release
+    env:
+      PIP_CONFIG_FILE: "nul"
+      PIP_REQUIRE_VIRTUALENV: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -265,16 +268,22 @@ jobs:
         with:
           python-version: "3.14.7"
           architecture: ${{ matrix.python-architecture }}
+      - name: Create isolated release build environment
+        shell: powershell
+        run: |
+          $ReleaseVenv = Join-Path $env:RUNNER_TEMP "release-venv"
+          python -m venv $ReleaseVenv
+          if ($LASTEXITCODE -ne 0) { throw "Release virtual environment creation failed" }
+          (Join-Path $ReleaseVenv "Scripts") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Install Python packaging dependencies
         shell: powershell
         run: |
           $ExpectedOpenSsl = ""
           if ("${{ matrix.arch }}" -eq "x86") {
-            python -m pip uninstall -y bcrypt cryptography truststore
             python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.lock }}"
             if ($LASTEXITCODE -ne 0) { throw "Hashed x86 runtime installation failed" }
             $ExpectedCryptography = ""
-            python -c "import importlib.util; assert importlib.util.find_spec('bcrypt') is None; assert importlib.util.find_spec('cryptography') is None; print('bcrypt=unavailable cryptography=unavailable security-backends=fail-closed')"
+            python -c "import importlib.util; assert importlib.util.find_spec('bcrypt') is None; assert importlib.util.find_spec('cryptography') is None; assert importlib.util.find_spec('truststore') is None; print('bcrypt=unavailable cryptography=unavailable security-backends=fail-closed')"
           } elseif ("${{ matrix.arch }}" -eq "arm64") {
             if (-not $env:VCPKG_INSTALLATION_ROOT) {
               throw "windows-11-arm runner did not provide VCPKG_INSTALLATION_ROOT"
@@ -415,6 +424,9 @@ jobs:
     needs: release-preflight
     if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}
     environment: release
+    env:
+      PIP_CONFIG_FILE: "/dev/null"
+      PIP_REQUIRE_VIRTUALENV: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -443,6 +455,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
+      - name: Create isolated release build environment
+        run: |
+          python -m venv "$RUNNER_TEMP/release-venv"
+          printf "%s\n" "$RUNNER_TEMP/release-venv/bin" >> "$GITHUB_PATH"
       - name: Install Python packaging dependencies
         run: |
           if [[ "${{ matrix.arch }}" == "x64" ]]; then
@@ -522,6 +538,9 @@ jobs:
   linux-native:
     needs: release-preflight
     if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}
+    env:
+      PIP_CONFIG_FILE: "/dev/null"
+      PIP_REQUIRE_VIRTUALENV: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -556,6 +575,10 @@ jobs:
           python-version: "3.14.7"
       - name: Install Linux packaging toolchains
         run: bash scripts/install_ci_ubuntu_packages.sh rpm
+      - name: Create isolated release build environment
+        run: |
+          python -m venv "$RUNNER_TEMP/release-venv"
+          printf "%s\n" "$RUNNER_TEMP/release-venv/bin" >> "$GITHUB_PATH"
       - name: Install Python packaging dependencies
         run: |
           python -m pip install --require-hashes --only-binary=:all: --requirement "${{ matrix.bootstrap_lock }}"

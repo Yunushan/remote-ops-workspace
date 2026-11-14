@@ -367,6 +367,7 @@ jobs:
           --draft-release-id "$DRAFT_RELEASE_ID"
           --draft-transaction-run-id "$GITHUB_RUN_ID"
           --draft-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
+          --draft-release-notes release-notes.md
       - name: Fetch fresh signed governance for publication
         timeout-minutes: 17
         env:
@@ -411,6 +412,7 @@ jobs:
           --draft-release-id "$DRAFT_RELEASE_ID"
           --draft-transaction-run-id "$GITHUB_RUN_ID"
           --draft-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
+          --draft-release-notes release-notes.md
           --recheck-draft-bytes
       - name: Re-resolve immutable tag before publication
         shell: bash

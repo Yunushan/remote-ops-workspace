@@ -94,6 +94,8 @@ def main(
         draft_transaction = draft_values[0] is not None
         if draft_transaction and any(value < 1 for value in draft_values):
             raise ValueError("draft release id, run id, and attempt must be positive")
+        if args.draft_release_notes is not None and not draft_transaction:
+            raise ValueError("--draft-release-notes requires the exact draft transaction")
         if args.recheck_draft_bytes and not draft_transaction:
             raise ValueError("--recheck-draft-bytes requires the exact draft transaction")
         current_values = (
@@ -204,6 +206,15 @@ def main(
         )
         if errors:
             raise RuntimeError("; ".join(errors))
+        if draft_transaction:
+            expected_notes = (
+                args.draft_release_notes.read_text(encoding="utf-8")
+                if args.draft_release_notes is not None else None
+            )
+            check_draft_release_body(
+                release, tag, sha, args.draft_transaction_run_id, args.draft_transaction_run_attempt,
+                expected_notes,
+            )
         if args.recheck_draft_bytes:
             print(f"Verified {len(local_assets)} unchanged draft assets against the local inventory")
             return 0
@@ -379,6 +390,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--published-release-id", type=int)
     parser.add_argument("--draft-transaction-run-id", type=int)
     parser.add_argument("--draft-transaction-run-attempt", type=int)
+    parser.add_argument("--draft-release-notes", type=Path)
     parser.add_argument("--recheck-draft-bytes", action="store_true")
     parser.add_argument("--current-transaction-run-id", type=int)
     parser.add_argument("--current-transaction-run-attempt", type=int)
@@ -609,6 +621,22 @@ def release_identity_errors(
     if require_immutable and release.get("immutable") is not True:
         errors.append("published production release must have GitHub immutable releases enabled")
     return errors
+
+
+def check_draft_release_body(
+    release: dict[str, Any],
+    tag: str,
+    sha: str,
+    run_id: int,
+    run_attempt: int,
+    expected_notes: str | None,
+) -> None:
+    marker = f"<!-- remote-ops-release-transaction:{tag}:{sha}:{run_id}:{run_attempt} -->"
+    body = release.get("body")
+    if not isinstance(body, str) or body.splitlines().count(marker) != 1:
+        raise ValueError("draft release notes must bind the exact promotion run attempt")
+    if expected_notes is not None and body != f"{expected_notes}\n{marker}\n":
+        raise ValueError("draft release notes differ from the generated promotion notes")
 
 
 def check_release_asset_bytes(

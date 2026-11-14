@@ -323,6 +323,58 @@ def test_complete_inventory_rejects_unapproved_asset_on_a_later_api_page(
     assert calls == [["api", endpoint], pages]
 
 
+@pytest.mark.parametrize(
+    ("change", "expected_error"),
+    [
+        ("none", None),
+        ("attempt", "must bind the exact promotion run attempt"),
+        ("duplicate", "must bind the exact promotion run attempt"),
+        ("notes", "differ from the generated promotion notes"),
+    ],
+)
+def test_recheck_draft_requires_original_notes_and_run_marker(
+    tmp_path: Path, monkeypatch, capsys, change: str, expected_error: str | None,
+) -> None:
+    checker = _load_checker()
+    repository, tag, sha = "example/project", "v1.2.3", "a" * 40
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "installer.bin").write_bytes(b"installer")
+    notes = tmp_path / "release-notes.md"
+    original_notes = "Support boundaries\n"
+    notes.write_text(original_notes, encoding="utf-8")
+    marker = f"<!-- remote-ops-release-transaction:{tag}:{sha}:123:1 -->"
+    body = f"{original_notes}\n{marker}\n"
+    if change == "attempt":
+        body = body.replace(":123:1", ":123:2")
+    elif change == "duplicate":
+        body += marker + "\n"
+    elif change == "notes":
+        body = body.replace("Support boundaries", "Edited notes")
+    release = _release(checker, assets, repository, tag)
+    release.update(draft=True, immutable=False, body=body)
+
+    def fake_run(args: list[str], _label: str, _timeout: int):
+        if args == ["api", f"repos/{repository}/releases/77"]:
+            return release
+        if args == ["api", "--paginate", "--slurp", f"repos/{repository}/releases/77/assets?per_page=100"]:
+            return [release["assets"]]
+        raise AssertionError(f"unexpected GitHub CLI arguments: {args}")
+
+    monkeypatch.setattr(checker, "run_gh_json", fake_run)
+    monkeypatch.setattr(checker, "expected_release_assets", lambda _matrix, *, tag: {"installer.bin"})
+    result = checker.main([
+        "--assets-dir", str(assets), "--repository", repository, "--tag", tag, "--sha", sha,
+        "--draft-release-id", "77", "--draft-transaction-run-id", "123",
+        "--draft-transaction-run-attempt", "1", "--draft-release-notes", str(notes), "--recheck-draft-bytes",
+    ])
+    output = capsys.readouterr()
+    if expected_error:
+        assert result == 1 and expected_error in output.err
+    else:
+        assert result == 0 and "unchanged draft assets" in output.out
+
+
 def test_verified_attestation_binds_digest_source_ref_and_run_attempt() -> None:
     checker = _load_checker()
     repository = "example/project"

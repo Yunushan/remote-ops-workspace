@@ -323,6 +323,8 @@ with the failed Actions attempt. Inspect the numeric release after that run
 ends. If it is still a draft, remove that draft and dispatch a new run for the
 same tag. Use the workflow to publish so it can verify the complete inventory
 and provenance before promotion.
+Promotion checks the exact generated release notes and run marker along with
+its draft assets before publication.
 If GitHub already shows a published release, retain it and investigate the
 failed check before using the release or claiming certification.
 

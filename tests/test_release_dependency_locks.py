@@ -196,6 +196,41 @@ def test_signed_native_release_requires_isolated_python_before_lock_install() ->
         assert f"release.yml {job} must create an isolated Python environment before installing its lock" in errors
 
 
+def test_signed_native_runtime_report_must_use_matrix_lock() -> None:
+    checker = _checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace('RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}', 'RELEASE_DEPENDENCY_LOCK: ${{ matrix.bootstrap_lock }}')
+    errors = checker.check_locks(workflows={"release.yml": workflow})
+    for job in ("windows-native", "macos-native", "linux-native"):
+        assert f"release.yml {job} must verify its installed inventory against the matrix lock" in errors
+
+
+def test_signed_native_runtime_report_requires_exact_locked_versions(tmp_path: Path) -> None:
+    checker = _checker()
+    report = tmp_path / "pip-inspect.json"
+    lock = tmp_path / "hashed-lock.txt"
+    lock.write_text(f"setuptools==84.0.0 --hash=sha256:{'a' * 64}\n", encoding="utf-8")
+    project = {"name": "remote_ops_workspace", "version": "1.0.27"}
+    pinned = {"name": "setuptools", "version": "84.0.0"}
+
+    def install(*distributions: dict[str, str]) -> None:
+        payload = {"version": "1", "installed": [{"metadata": item} for item in distributions]}
+        report.write_text(json.dumps(payload), encoding="utf-8")
+
+    install(project, pinned)
+    assert checker.main(["--runtime-report", str(report), "--lock", str(lock)]) == 0
+
+    install(project, {"name": "setuptools", "version": "83.0.0"}, {"name": "wheel", "version": "0.48.0"})
+    errors = checker.check_runtime_report(report, lock)
+    assert len(errors) == 1
+    assert "unexpected=['wheel'], version-mismatched=['setuptools']" in errors[0]
+
+    install(project)
+    assert "missing=['setuptools']" in checker.check_runtime_report(report, lock)[0]
+    install(pinned)
+    assert "missing the installed remote-ops-workspace" in checker.check_runtime_report(report, lock)[0]
+
+
 def test_bootstrap_requires_exact_versions_and_reviewed_artifact_hashes(tmp_path: Path) -> None:
     checker = _checker().compliance
     final = tmp_path / "final.txt"

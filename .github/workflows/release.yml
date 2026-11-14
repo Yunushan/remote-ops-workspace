@@ -339,7 +339,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Windows release dependency consistency check failed" }
       - name: Capture Windows candidate runtime inventory
         shell: bash
-        run: python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+          python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Install Windows installer toolchains
         shell: powershell
         run: |
@@ -474,7 +478,11 @@ jobs:
           python -m pip check
           EXPECTED_CRYPTOGRAPHY="$expected_cryptography" python -c "import os, bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == os.environ['EXPECTED_CRYPTOGRAPHY']; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Capture macOS candidate runtime inventory
-        run: python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+          python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Prepare macOS release signing keychain
         env:
           ROW_MACOS_CERTIFICATE_BASE64: ${{ secrets.ROW_MACOS_CERTIFICATE_BASE64 }}
@@ -587,7 +595,11 @@ jobs:
           python -m pip check
           python -c "import bcrypt, cryptography; from cryptography.hazmat.backends.openssl.backend import backend; assert bcrypt.__version__ == '5.0.0'; assert cryptography.__version__ == '50.0.2'; print(f'bcrypt={bcrypt.__version__} cryptography={cryptography.__version__} openssl={backend.openssl_version_text()}')"
       - name: Capture Linux candidate runtime inventory
-        run: python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+        env:
+          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}
+        run: |
+          python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
+          python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Build Linux DEB, RPM and AppImage packages
         env:
           APPIMAGETOOL_VERSION: "1.9.1"

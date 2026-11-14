@@ -5,6 +5,7 @@ This checks build inputs; it does not approve redistribution or certify native h
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -94,6 +95,18 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
                     or '      PIP_REQUIRE_VIRTUALENV: "1"' not in lines
                 ):
                     errors.append(f"{name} {job} must create an isolated Python environment before installing its lock")
+                capture = 'python -X utf8 -m pip inspect --local > candidate-pip-inspect.json'
+                verify = (
+                    'python scripts/check_release_dependency_locks.py '
+                    '--runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"'
+                )
+                if (
+                    capture not in commands
+                    or verify not in commands
+                    or not before_install < commands.index(capture) < commands.index(verify)
+                    or '          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}' not in lines
+                ):
+                    errors.append(f"{name} {job} must verify its installed inventory against the matrix lock")
         for target, row in targets.items():
             if target.startswith("release-verifier-"):
                 continue
@@ -124,16 +137,50 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
     return errors
 
 
-def main() -> int:
+def check_runtime_report(report: Path, lock: Path) -> list[str]:
+    realized, report_errors = compliance.read_pip_inspect(
+        report.parent, {"file": report.name}, "release runtime report",
+    )
+    pinned, lock_errors = compliance.read_fully_hashed_lock(
+        lock.parent, {"file": lock.name}, "release dependency lock",
+    )
+    if report_errors or lock_errors:
+        return report_errors + lock_errors
+    if realized.pop("remote-ops-workspace", None) is None:
+        return ["release runtime report is missing the installed remote-ops-workspace project"]
+    missing = sorted(pinned.keys() - realized.keys())
+    unexpected = sorted(realized.keys() - pinned.keys())
+    mismatched = sorted(name for name in pinned.keys() & realized.keys() if pinned[name] != realized[name])
+    if missing or unexpected or mismatched:
+        return [
+            f"runtime distributions differ from {lock.name}: "
+            f"missing={missing}, unexpected={unexpected}, version-mismatched={mismatched}"
+        ]
+    return []
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--runtime-report", type=Path)
+    parser.add_argument("--lock", type=Path)
+    args = parser.parse_args(argv)
+    if (args.runtime_report is None) != (args.lock is None):
+        parser.error("--runtime-report and --lock must be supplied together")
     try:
-        errors = check_locks() + check_protected_linux_locks(ROOT)
+        if args.runtime_report is not None:
+            errors = check_runtime_report(args.runtime_report, args.lock)
+        else:
+            errors = check_locks() + check_protected_linux_locks(ROOT)
     except (OSError, ValueError, KeyError) as exc:
         errors = [str(exc)]
     for error in errors:
         print(f"release dependency locks: {error}", file=sys.stderr)
     if errors:
         return 1
-    print("release dependency locks and workflow consumption passed")
+    if args.runtime_report is not None:
+        print("installed release dependencies exactly match the hashed lock")
+    else:
+        print("release dependency locks and workflow consumption passed")
     return 0
 
 

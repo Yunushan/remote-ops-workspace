@@ -401,6 +401,15 @@ def test_release_tag_ruleset_requires_both_update_and_deletion_rules() -> None:
     ]
 
 
+def test_capture_uses_only_rulesets_that_enforce_the_required_operations() -> None:
+    update = {**_tag_rulesets()["rulesets"][0], "rules": [{"type": "update"}]}
+    deletion = {**update, "id": 503, "rules": [{"type": "deletion"}]}
+    unrelated = {**update, "id": 502, "rules": [{"type": "creation"}]}
+    payload = {"rulesets": [deletion, unrelated, update], "total_count": 3}
+
+    assert governance.protected_tag_ruleset_ids(payload, "v1.2.3") == ([501, 503], [])
+
+
 def test_release_tag_ruleset_exclusion_wins_over_include() -> None:
     payload = _tag_rulesets()
     payload["rulesets"][0]["conditions"]["ref_name"]["exclude"] = [

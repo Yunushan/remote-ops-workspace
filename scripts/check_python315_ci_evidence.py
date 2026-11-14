@@ -122,7 +122,7 @@ def select_exact_push_run(
         and str(run.get("head_sha", "")).lower() == expected_sha
         and run.get("head_branch") == branch
         and run.get("event") == "push"
-        and _workflow_path_matches(run.get("path"))
+        and _workflow_path_matches(run.get("path"), branch)
     ]
     if not candidates:
         return None, [
@@ -133,6 +133,13 @@ def select_exact_push_run(
         return None, ["matching CI workflow runs must have positive integer ids"]
     run = max(valid_ids, key=lambda item: int(item["id"]))
     errors: list[str] = []
+    for field in ("repository", "head_repository"):
+        identity = run.get(field)
+        name = identity.get("full_name") if isinstance(identity, dict) else None
+        if not isinstance(name, str) or name.casefold() != repository.casefold():
+            errors.append(f"matching CI workflow run {field}.full_name must match {repository}")
+    if errors:
+        return None, errors
     if not _positive_int(run.get("run_attempt")):
         errors.append("matching CI workflow run must have a positive run_attempt")
     if run.get("status") != "completed":
@@ -321,9 +328,11 @@ def _run_evidence_is_waitable(
     )
 
 
-def _workflow_path_matches(value: Any) -> bool:
-    return isinstance(value, str) and (
-        value == EXPECTED_WORKFLOW_PATH or value.startswith(f"{EXPECTED_WORKFLOW_PATH}@")
+def _workflow_path_matches(value: Any, branch: str) -> bool:
+    return isinstance(value, str) and value in (
+        EXPECTED_WORKFLOW_PATH,
+        f"{EXPECTED_WORKFLOW_PATH}@{branch}",
+        f"{EXPECTED_WORKFLOW_PATH}@refs/heads/{branch}",
     )
 
 

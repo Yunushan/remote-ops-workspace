@@ -24,6 +24,8 @@ def _runs(
             "head_branch": "main",
             "event": "push",
             "path": ".github/workflows/ci.yml@main",
+            "repository": {"full_name": "example/project"},
+            "head_repository": {"full_name": "example/project"},
             "status": status,
             "conclusion": conclusion,
         }
@@ -97,6 +99,40 @@ def test_pull_request_or_wrong_sha_cannot_satisfy_release_evidence() -> None:
 
     assert run is None
     assert any("no .github/workflows/ci.yml push run matches" in error for error in errors)
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("repository", {"full_name": "other/project"}),
+    ("head_repository", {"full_name": "fork/project"}),
+    ("head_repository", None),
+])
+def test_ci_evidence_rejects_a_run_without_the_exact_repository_identity(field, value) -> None:
+    payload = _runs(status="queued", conclusion=None)
+    payload["workflow_runs"][0][field] = value
+    run, errors = evidence.select_exact_push_run(
+        payload, repository="example/project", sha=SHA, branch="main",
+    )
+
+    assert run is None
+    assert errors == [f"matching CI workflow run {field}.full_name must match example/project"]
+
+
+@pytest.mark.parametrize(("path", "matches"), [
+    (".github/workflows/ci.yml", True),
+    (".github/workflows/ci.yml@main", True),
+    (".github/workflows/ci.yml@refs/heads/main", True),
+    (".github/workflows/ci.yml@refs/heads/other", False),
+    (".github/workflows/ci.yml@refs/tags/main", False),
+])
+def test_ci_evidence_binds_workflow_path_to_the_expected_branch(path, matches) -> None:
+    payload = _runs()
+    payload["workflow_runs"][0]["path"] = path
+    run, errors = evidence.select_exact_push_run(
+        payload, repository="Example/Project", sha=SHA, branch="main",
+    )
+
+    assert (run is not None) is matches
+    assert (not errors) is matches
 
 
 def test_readiness_job_must_be_unique_and_successful() -> None:

@@ -20,23 +20,32 @@ For the deployment model, see [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPL
    row workspace backup --out /secure/row-pre-upgrade.enc --offline
    ```
 
-2. Install the new version. For a source install, check out the target tag and
-   reinstall into a fresh virtual environment; do not upgrade in place over a
-   running process.
+2. Install the new version in a fresh virtual environment after closing the
+   running application. The example below uses the source release locks for
+   Linux x86_64. Use the Python patch version recorded at the top of those
+   locks and a new environment directory for each version. Set
+   `target_tag` to the release tag you intend to install.
 
    ```bash
    git fetch --tags
-   git checkout <target-tag>
-   python -m venv .venv-upgrade && . .venv-upgrade/bin/activate
-   python -m pip install --require-hashes -r requirements-locks/linux-x86_64.txt
-   python -m pip install .
+   git checkout --detach "$target_tag"
+   python3.14 -m venv .venv-upgrade
+   . .venv-upgrade/bin/activate
+   export PIP_CONFIG_FILE=/dev/null PIP_REQUIRE_VIRTUALENV=1
+   python -m pip install --require-hashes --only-binary=:all: \
+     --requirement requirements-locks/source-linux-x86_64-bootstrap.txt
+   python -m pip install --require-hashes --no-build-isolation \
+     --only-binary=:all: --no-binary=pyftpdlib \
+     --requirement requirements-locks/source-linux-x86_64.txt
+   python -m pip install --no-deps --no-build-isolation '.[desktop,security,package,servers]'
+   python -m pip check
    ```
 
-   Use the lock file for your platform (for example
-   `requirements-locks/macos-arm64.txt` on Apple silicon or
-   `requirements-locks/windows-x64.txt` on Windows) and consult
-   [`../PYTHON_SUPPORT.md`](../PYTHON_SUPPORT.md) for the supported
-   interpreter.
+   For a native package, verify the downloaded installer before running it.
+   Follow the [release promotion runbook](RELEASE_PROMOTION.md#verify-a-published-artifact)
+   for the verification command. For source builds on other platforms, use
+   the matching bootstrap lock, runtime lock, and install options from the
+   tagged release workflow.
 
 3. Verify before opening the GUI.
 

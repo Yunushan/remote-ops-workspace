@@ -724,6 +724,22 @@ def test_platform_parity_promotion_requires_review_bundle_candidate_record() -> 
     )
 
 
+def test_platform_parity_promotion_requires_native_runtime_reports_in_linux_bundles() -> None:
+    checker = _load_platform_parity_promotion_checker()
+    promotion = _load_json("configs/platform_parity_promotion.json")
+    for target in ("linux-i386", "linux-armhf"):
+        requirements = _promotion_entry(promotion, target)["promotion_to_100_requires"]
+        requirements["review_bundle_command"] = requirements["review_bundle_command"].replace(
+            " --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json",
+            "",
+        )
+
+    errors = checker.check_platform_parity_promotion(promotion=promotion)
+
+    for target in ("linux-i386", "linux-armhf"):
+        assert f"{target} review_bundle_command must bind the native pip inspect report" in errors
+
+
 def test_platform_parity_promotion_requires_target_release_scoped_review_bundle_output() -> None:
     checker = _load_platform_parity_promotion_checker()
     promotion = _load_json("configs/platform_parity_promotion.json")

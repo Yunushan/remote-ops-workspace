@@ -350,6 +350,19 @@ def test_promotion_captures_release_id_before_rejecting_draft_response() -> None
     assert message in checker.check_promotion_truth(workflow.replace(capture, "", 1))
 
 
+def test_production_candidate_refuses_unapproved_release_policy() -> None:
+    checker = load_script("check_release_truth")
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    name = "Require independently approved production release policy"
+    assert checker.check_release_preflight(workflow) == []
+    without_policy = remove_named_step(workflow, name)
+    assert any("independently approved production release policy" in error
+               for error in checker.check_release_preflight(without_policy))
+    mutable_policy = workflow.replace("--check-policy-only", "--check-policy-only --policy-root /tmp")
+    assert any("independently approved production release policy" in error and "allowlisted" in error
+               for error in checker.check_release_preflight(mutable_policy))
+
+
 def test_promotion_recovers_draft_id_for_the_exact_interrupted_attempt() -> None:
     checker = load_script("check_release_truth")
     workflow = promotion_workflow()

@@ -112,7 +112,8 @@ python scripts/check_release_license_compliance.py --check-policy-only
 
 Cut the tag after the policy check and the required CI checks pass. The
 artifact-specific approval uses the resulting tag, commit, and signed
-installer bytes.
+installer bytes. The production candidate job repeats the policy check
+against the tagged source before starting native builds.
 
 ## Prepare the signed redistribution approval
 

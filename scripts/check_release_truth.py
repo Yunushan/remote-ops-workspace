@@ -366,6 +366,19 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     verify_index = preflight.find("scripts/verify.py")
     if min(maturity_index, verify_index) < 0 or maturity_index > verify_index:
         errors.append("release maturity gate must run before the repository verifier")
+    policy_name = "Require independently approved production release policy"
+    errors.extend(require_active_step(
+        preflight,
+        "python scripts/check_release_license_compliance.py",
+        label="independently approved production release policy",
+        kind="run",
+        step_name=policy_name,
+        required_tokens=("--check-policy-only",),
+        allowed_flags=frozenset({"--check-policy-only"}),
+    ))
+    policy_index = preflight.find(f"name: {policy_name}")
+    if not 0 <= maturity_index < policy_index < verify_index:
+        errors.append("release preflight must check the independent policy after maturity and before repository verification")
     for job in (
         "source-and-python",
         "windows-native",

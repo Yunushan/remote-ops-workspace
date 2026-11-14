@@ -540,6 +540,9 @@ $Uninstaller = Get-ChildItem -Path $ExeInstallDir -Filter "unins*.exe" | Select-
 if (!$Uninstaller) {
   throw "EXE uninstall helper was not created"
 }
+if ($RequireReleaseSigning) {
+  Assert-TimestampedAuthenticode $Uninstaller.FullName
+}
 Invoke-SmokeCommand "EXE uninstall" $Uninstaller.FullName @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
 if (Test-Path $ExeRow) {
   throw "EXE uninstall left row.exe behind"

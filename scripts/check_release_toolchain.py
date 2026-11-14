@@ -38,12 +38,17 @@ def main() -> int:
         errors.extend(check_linux_appimagetool_script(toolchain))
         errors.extend(check_windows_native_smoke())
         errors.extend(check_native_release_tag_guards())
+        windows = (ROOT / "scripts/make_windows_native.ps1").read_text(encoding="utf-8")
+        signer = (ROOT / "scripts/sign_windows_artifact.ps1").read_text(encoding="utf-8")
+        smoke = (ROOT / "scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
         errors.extend(check_windows_timestamp_digest(
-            (ROOT / "scripts/make_windows_native.ps1").read_text(encoding="utf-8"),
+            signer,
             (ROOT / "scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8"),
         ))
         errors.extend(check_native_signing_verification(
-            (ROOT / "scripts/make_windows_native.ps1").read_text(encoding="utf-8"),
+            windows,
+            signer,
+            smoke,
             (ROOT / "scripts/make_macos_native.sh").read_text(encoding="utf-8"),
         ))
     if errors:
@@ -700,12 +705,12 @@ def check_windows_timestamp_digest(windows: str, xp: str) -> list[str]:
     return errors
 
 
-def check_native_signing_verification(windows: str, macos: str) -> list[str]:
+def check_native_signing_verification(windows: str, signer: str, smoke: str, macos: str) -> list[str]:
     errors: list[str] = []
     windows = strip_unquoted_comments(windows)
     if not re.search(
-        r"(?m)^  & \$SignTool verify /pa /all /tw \$ArtifactPath\n  if \(\$LASTEXITCODE -ne 0\) \{",
-        windows,
+        r"(?m)^& \$SignTool verify /pa /all /tw \$ArtifactPath\nif \(\$LASTEXITCODE -ne 0\) \{",
+        strip_unquoted_comments(signer),
     ):
         errors.append("Windows production signing must require successful Authenticode and timestamp verification")
     for artifact, sign, copy in (
@@ -715,6 +720,22 @@ def check_native_signing_verification(windows: str, macos: str) -> list[str]:
         signing, staging = windows.find(sign), windows.find(copy)
         if not 0 <= signing < staging:
             errors.append(f"Windows production signing must sign ${artifact} before copying it into the packages")
+    inno_commands = (
+        '$ArtifactSigner = Join-Path $PSScriptRoot "sign_windows_artifact.ps1"',
+        '"SignTool=rowrelease`nSignedUninstaller=yes`nSignedUninstallerDir=$BuildDir"',
+        '/Srowrelease=$q{0}$q -NoLogo -NoProfile -NonInteractive -File $q{1}$q -ArtifactPath $f',
+        "\n$SigningDirectives\n",
+        '& $Iscc @CompilerArgs $Iss',
+        '& $SignTool verify /pa /all /tw $Setup | Out-Host\n    if ($LASTEXITCODE -ne 0) {',
+    )
+    if any(command not in windows for command in inno_commands):
+        errors.append("Windows production signing must use Inno Setup's signed uninstaller and verify the compiled installer")
+    smoke = strip_unquoted_comments(smoke)
+    if (
+        'if ($RequireReleaseSigning) {\n  Assert-TimestampedAuthenticode $Uninstaller.FullName\n}\n'
+        'Invoke-SmokeCommand "EXE uninstall"' not in smoke
+    ):
+        errors.append("Windows production smoke must verify the signed and timestamped uninstaller before running it")
 
     macos = strip_unquoted_comments(macos)
     commands = (

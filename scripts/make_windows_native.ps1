@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
+$ArtifactSigner = Join-Path $PSScriptRoot "sign_windows_artifact.ps1"
 
 function Get-ProjectVersion {
   $Pyproject = Get-Content -Raw (Join-Path $Root "pyproject.toml")
@@ -43,23 +44,8 @@ function Write-NativeChecksums([string]$Version, [string]$OutDir, [string]$Arch,
 }
 
 function Sign-NativeArtifact([string]$ArtifactPath) {
-  if ($env:ROW_REQUIRE_RELEASE_SIGNING -ne "1") {
-    return
-  }
-  foreach ($Name in @("ROW_WINDOWS_CERTIFICATE_PATH", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL")) {
-    $Value = [string](Get-Item -Path "Env:$Name" -ErrorAction SilentlyContinue).Value
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-      throw "Production signing requires environment variable $Name"
-    }
-  }
-  $SignTool = Find-WindowsSignTool
-  & $SignTool sign /fd SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL /td SHA256 /f $env:ROW_WINDOWS_CERTIFICATE_PATH /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $ArtifactPath
-  if ($LASTEXITCODE -ne 0) {
-    throw "Authenticode signing failed for $ArtifactPath"
-  }
-  & $SignTool verify /pa /all /tw $ArtifactPath
-  if ($LASTEXITCODE -ne 0) {
-    throw "Authenticode signature or timestamp verification failed for $ArtifactPath"
+  if ($env:ROW_REQUIRE_RELEASE_SIGNING -eq "1") {
+    & $ArtifactSigner -ArtifactPath $ArtifactPath | Out-Host
   }
 }
 
@@ -138,6 +124,15 @@ Name: "{autodesktop}\Remote Ops Workspace GUI"; Filename: "{app}\bin\row-gui.exe
   $StageEscaped = $Stage.Replace("\", "\\")
   $OutEscaped = $OutDir.Replace("\", "\\")
   $IconEscaped = $IconPath.Replace("\", "\\")
+  $CompilerArgs = @()
+  $SigningDirectives = ""
+  if ($env:ROW_REQUIRE_RELEASE_SIGNING -eq "1") {
+    $PowerShellExe = (Get-Process -Id $PID).Path.Replace('$', '$$')
+    $SignerPath = $ArtifactSigner.Replace('$', '$$')
+    # ISCC logs the callback command. The signer reads credentials from its environment.
+    $CompilerArgs += ('/Srowrelease=$q{0}$q -NoLogo -NoProfile -NonInteractive -File $q{1}$q -ArtifactPath $f' -f $PowerShellExe, $SignerPath)
+    $SigningDirectives = "SignTool=rowrelease`nSignedUninstaller=yes`nSignedUninstallerDir=$BuildDir"
+  }
 
 @"
 [Setup]
@@ -154,6 +149,7 @@ SetupIconFile=$IconEscaped
 Compression=lzma2
 SolidCompression=yes
 $ArchitectureDirectives
+$SigningDirectives
 
 [Files]
 Source: "$StageEscaped\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -170,7 +166,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Filename: "{app}\bin\row.exe"; Parameters: "--version"; Description: "Show installed version"; Flags: postinstall nowait skipifsilent
 "@ | Set-Content -Encoding UTF8 $Iss
 
-  $InnoOutput = & $Iscc $Iss
+  $InnoOutput = & $Iscc @CompilerArgs $Iss
   $InnoExitCode = $LASTEXITCODE
   $InnoOutput | ForEach-Object { Write-Host $_ }
   if ($InnoExitCode -ne 0) {
@@ -179,6 +175,13 @@ Filename: "{app}\bin\row.exe"; Parameters: "--version"; Description: "Show insta
   $Setup = Join-Path $OutDir "$OutputBase.exe"
   if (!(Test-Path $Setup)) {
     throw "Inno Setup did not create $Setup"
+  }
+  if ($env:ROW_REQUIRE_RELEASE_SIGNING -eq "1") {
+    $SignTool = Find-WindowsSignTool
+    & $SignTool verify /pa /all /tw $Setup | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+      throw "Inno Setup output failed Authenticode signature or timestamp verification"
+    }
   }
   return $Setup
 }
@@ -472,7 +475,6 @@ Compress-Archive -Path (Join-Path $PortableStage "*") -DestinationPath $NativeZi
 
 $SetupExe = Build-InnoSetupInstaller -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco
 $Msi = Build-WixMsi -Version $Version -Stage $Stage -OutDir $OutDir -Arch $Arch -IconPath $IconIco
-Sign-NativeArtifact $SetupExe
 Sign-NativeArtifact $Msi
 
 $PortableInstallCommand = if ($BuildGuiLauncher) {

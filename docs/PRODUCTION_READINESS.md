@@ -68,8 +68,11 @@ publicly trusted Windows code-signing certificate, plan a provider integration
 that uses the signing key inside compliant hardware or a signing service.
 Qualify that integration against the staged application executables, the EXE
 and MSI installers for each modern Windows architecture, and the two XP
-executables. Verify Authenticode and the RFC 3161 timestamp on the final bytes
-before creating manifests, and run native smoke with those same signed bytes.
+executables. The EXE build calls the signer during Inno Setup compilation
+to sign the installer, its temporary executables and the uninstaller.
+Verify Authenticode and the RFC 3161 timestamp on the final bytes before
+creating manifests. Native smoke verifies the installed uninstaller before
+running it.
 For the XP targets, record the signing profile and verify that the signed
 executables still run on the two required hosts.
 [CA/Browser Forum code-signing requirements](https://cabforum.org/working-groups/code-signing/requirements/#6274-subscriber-private-key-protection-and-verification) ·

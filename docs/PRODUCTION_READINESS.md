@@ -190,7 +190,8 @@ protected workflows:
   `i386`;
 - a real 32-bit armv7l/armhf Linux builder with labels `self-hosted`, `linux`,
   `armhf`;
-- a modern collector with labels `self-hosted`, `xp-evidence`, plus a real
+- a modern Windows collector with PowerShell 7 and labels
+  `self-hosted`, `windows`, `xp-evidence`, plus a real
   Windows XP SP3 x86 host and a real Windows XP Professional x64 SP2 host for
   `scripts/xp_smoke_runner.cmd`.
 

@@ -91,8 +91,11 @@ jobs:
   xp-native-evidence:
     needs: evidence-runner-readiness
     if: ${{ needs.evidence-runner-readiness.outputs.ready == 'true' }}
-    runs-on: [self-hosted, xp-evidence]
+    runs-on: [self-hosted, windows, xp-evidence]
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
     env:
       ASSETS_DIR: ${{ inputs.assets_dir }}
       EVIDENCE_DIR: ${{ inputs.evidence_dir }}

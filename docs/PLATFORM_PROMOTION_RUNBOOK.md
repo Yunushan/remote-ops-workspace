@@ -38,7 +38,10 @@ verifies the complete draft inventory before publication.
 
 Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle matching runner for
-Linux i386, Linux armhf, and the modern `xp-evidence` collector. It intentionally
+Linux i386, Linux armhf, and the modern `windows`, `xp-evidence` collector.
+Install PowerShell 7 on the collector for the workflow's `pwsh` steps. The
+collector validates and packages smoke evidence captured separately on XP.
+The preflight intentionally
 reports only sanitized counts, not runner names. This command needs `GH_TOKEN`
 or `GITHUB_TOKEN` with repository administration read access; it is an operator
 preflight rather than a release-workflow step because normal release tokens do

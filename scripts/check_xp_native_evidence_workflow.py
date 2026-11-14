@@ -232,8 +232,9 @@ def check_xp_job(workflow: str) -> list[str]:
     required_snippets = {
         "needs: evidence-runner-readiness": "runner readiness preflight dependency",
         "if: ${{ needs.evidence-runner-readiness.outputs.ready == 'true' }}": "runner readiness target guard",
-        "runs-on: [self-hosted, xp-evidence]": "XP evidence self-hosted runner labels",
+        "runs-on: [self-hosted, windows, xp-evidence]": "XP evidence Windows collector labels",
         "timeout-minutes: 60": "bounded XP evidence job timeout",
+        "defaults:\n      run:\n        shell: pwsh": "XP evidence collector PowerShell default",
         "ASSETS_DIR: ${{ inputs.assets_dir }}": "assets directory environment binding",
         "EVIDENCE_DIR: ${{ inputs.evidence_dir }}": "evidence directory environment binding",
         "EVIDENCE_FILE: ${{ inputs.evidence_file }}": "evidence file environment binding",

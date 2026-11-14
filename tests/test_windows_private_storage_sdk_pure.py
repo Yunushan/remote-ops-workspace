@@ -329,6 +329,8 @@ class DLL:
 
 class FakeOS:
     name = "nt"
+    O_RDWR = 2
+    O_BINARY = 32768
 
     def __init__(self):
         self.enumerator = None
@@ -579,8 +581,9 @@ class Harness:
         self.allow("GetAce", ace)
         self.allow("LocalFree", free)
 
-    def creation(self, fault=None):
+    def creation(self, fault=None, *, directory=True):
         self.created = []
+        ace_flags = 3 if directory else 0
 
         def initialize_acl(acl, capacity, revision):
             assert (capacity, revision) == (28, 2) and len(acl) == 28
@@ -588,11 +591,11 @@ class Harness:
             return int(fault != "InitializeAcl")
 
         def add_ace(acl, revision, flags, mask, sid):
-            assert (revision, flags, mask) == (2, 3, 0x001F01FF)
+            assert (revision, flags, mask) == (2, ace_flags, 0x001F01FF)
             assert self.c.string_at(sid, 12) == USER and len(sid) == 13
             address = self.c.addressof(acl)
             self.arena.write(address, struct.pack("<BBHHH", 2, 0, 28, 1, 0))
-            self.arena.write(address + 8, struct.pack("<BBHI", 0, 3, 20, 0x001F01FF) + USER)
+            self.arena.write(address + 8, struct.pack("<BBHI", 0, ace_flags, 20, 0x001F01FF) + USER)
             return int(fault != "AddAccessAllowedAceEx")
 
         def initialize_descriptor(output, revision):
@@ -617,7 +620,8 @@ class Harness:
             return int(fault != "SetSecurityDescriptorControl")
 
         def create(path, attributes):
-            assert path == DIRECTORY_PATH and fields_of(attributes.value) == SDK_ATTRIBUTES_FIELDS
+            assert path == (DIRECTORY_PATH if directory else FILE_PATH)
+            assert fields_of(attributes.value) == SDK_ATTRIBUTES_FIELDS
             assert attributes.value.length == self.c.sizeof(type(attributes.value)) == 24
             assert attributes.value.inherit_handle is False
             descriptor = self.arena.objects[attributes.value.descriptor]
@@ -625,18 +629,27 @@ class Harness:
             assert (descriptor.group, descriptor.sacl) == (0, 0)
             assert self.arena.bytes(descriptor.owner, 12) == USER
             acl_bytes = self.arena.bytes(descriptor.dacl, 28)
-            assert acl_bytes == struct.pack("<BBHHHBBHI", 2, 0, 28, 1, 0, 0, 3, 20, 0x001F01FF) + USER
+            assert acl_bytes == struct.pack("<BBHHHBBHI", 2, 0, 28, 1, 0, 0, ace_flags, 20, 0x001F01FF) + USER
             if fault == "CreateDirectoryW":
                 self.c.last_error = 183  # ERROR_ALREADY_EXISTS still refuses.
                 return 0
             self.created.append(path)
             return 1
 
+        def create_file(path, access, sharing, attributes, disposition, flags, template):
+            assert (access, sharing, disposition, flags, template) == (0xC0000000, 3, 1, 0x00200080, None)
+            if fault in (80, 183, 5):
+                self.c.last_error = fault
+                return INVALID_HANDLE
+            assert create(path, attributes) == 1
+            return 77
+
         for name, callback in (("InitializeAcl", initialize_acl), ("AddAccessAllowedAceEx", add_ace),
                                ("InitializeSecurityDescriptor", initialize_descriptor), ("SetSecurityDescriptorOwner", owner),
                                ("SetSecurityDescriptorDacl", dacl), ("SetSecurityDescriptorControl", control),
                                ("CreateDirectoryW", create)):
             self.allow(name, callback)
+        self.allow("CreateFileW", create_file)
 
 
 def project_actual_source(harness, monkeypatch):
@@ -644,7 +657,13 @@ def project_actual_source(harness, monkeypatch):
     filename = Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "windows_private_storage.py"
     tree = ast.parse(filename.read_text(encoding="utf-8"), filename=str(filename))
     selected_names = {"PrivateStorageError", "PrivatePathMissing", "_require", "_sid", "Ace", "Snapshot", "_ancestors", "_Native", "descriptor_handle"}
-    constants = {"FILE_ALL_ACCESS", "DACL_PROTECTED", "MAX_DESCRIPTOR", "MAX_ACES"}
+    constants = {
+        "FILE_ALL_ACCESS",
+        "READ_CONTROL_AND_ATTRIBUTES_AND_DATA",
+        "DACL_PROTECTED",
+        "MAX_DESCRIPTOR",
+        "MAX_ACES",
+    }
     nodes = []
     observed = set()
     for node in tree.body:
@@ -657,7 +676,7 @@ def project_actual_source(harness, monkeypatch):
     assert observed == selected_names | constants
     module = ModuleType("row_sdk_pure_actual_source")
     monkeypatch.setitem(sys.modules, module.__name__, module)
-    allowed_builtins = {name: getattr(builtins, name) for name in ("__build_class__", "object", "ValueError", "type", "len", "bool", "int", "str", "bytes", "tuple", "list", "range", "all", "any", "ord", "getattr")}
+    allowed_builtins = {name: getattr(builtins, name) for name in ("__build_class__", "object", "BaseException", "FileExistsError", "ValueError", "type", "len", "bool", "int", "str", "bytes", "tuple", "list", "range", "all", "any", "ord", "getattr")}
     allowed_builtins["__import__"] = harness.import_fake
     module.__dict__.update(__builtins__=allowed_builtins, os=harness.os, dataclass=dataclass, contextmanager=contextmanager,
                            ntpath=SimpleNamespace(splitdrive=ntpath.splitdrive, join=ntpath.join),
@@ -877,11 +896,11 @@ def test_sdk_directory_entry_enumerator_closes_without_reading_file_payload(sdk,
 
 
 @pytest.mark.parametrize("directory,flags", [(True, 0x02200000), (False, 0x00200000)])
-def test_sdk_opens_read_control_attributes_without_delete_sharing(sdk, directory, flags):
+def test_sdk_opens_data_and_metadata_without_delete_sharing(sdk, directory, flags):
     sdk.allow("GetDriveTypeW", lambda root: 3 if root == "C:\\" else pytest.fail("wrong drive root"))
 
     def open_file(*arguments):
-        assert arguments == (DIRECTORY_PATH if directory else FILE_PATH, 0x20080, 3, None, 3, flags, None)
+        assert arguments == (DIRECTORY_PATH if directory else FILE_PATH, 0x20081, 3, None, 3, flags, None)
         assert not arguments[2] & 4 and not arguments[1] & 0x40000000
         return 77
 
@@ -934,6 +953,34 @@ def test_sdk_creation_builds_exact_owner_only_protected_noninheritable_attribute
     assert sdk.created == [DIRECTORY_PATH]
     assert sdk.names == ["InitializeAcl", "AddAccessAllowedAceEx", "InitializeSecurityDescriptor", "SetSecurityDescriptorOwner", "SetSecurityDescriptorDacl", "SetSecurityDescriptorControl", "CreateDirectoryW"]
     assert sdk.closed == sdk.freed_com == sdk.freed_local == []
+
+
+@pytest.mark.parametrize("fault", [None, 80, 183, 5, "conversion"])
+def test_sdk_private_file_creation_preserves_owner_acl_and_transfers_handle(sdk, fault):
+    sdk.creation(fault, directory=False)
+    sdk.close_api()
+    converted = []
+
+    def convert(handle, flags):
+        converted.append((handle, flags))
+        if fault == "conversion":
+            raise OSError("conversion refused")
+        return 17
+
+    sdk.crt.open_osfhandle = convert
+    if fault in (80, 183):
+        with pytest.raises(FileExistsError):
+            sdk.native.create_private_file(FILE_PATH, USER)
+    elif fault == 5:
+        with refused(sdk, "native-private-file-create-refused"):
+            sdk.native.create_private_file(FILE_PATH, USER)
+    elif fault == "conversion":
+        with pytest.raises(OSError, match="conversion refused"):
+            sdk.native.create_private_file(FILE_PATH, USER)
+    else:
+        assert sdk.native.create_private_file(FILE_PATH, USER) == 17
+    assert converted == ([(77, 32770)] if fault in (None, "conversion") else [])
+    assert sdk.closed == ([77] if fault == "conversion" else [])
 
 
 @pytest.mark.parametrize("api", ["InitializeAcl", "AddAccessAllowedAceEx", "InitializeSecurityDescriptor", "SetSecurityDescriptorOwner", "SetSecurityDescriptorDacl", "SetSecurityDescriptorControl", "CreateDirectoryW"])

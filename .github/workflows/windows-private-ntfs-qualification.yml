@@ -1,0 +1,185 @@
+name: Windows private NTFS storage qualification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-private-ntfs-qualification.yml'
+      - 'scripts/check_windows_private_ntfs.py'
+      - 'scripts/check_windows_private_sdk_layout.py'
+      - 'src/remote_ops_workspace/windows_private_storage.py'
+      - 'src/remote_ops_workspace/file_safety.py'
+      - 'src/remote_ops_workspace/paths.py'
+      - 'src/remote_ops_workspace/state_lock.py'
+      - 'src/remote_ops_workspace/update_staging.py'
+      - 'src/remote_ops_workspace/update_channel.py'
+      - 'src/remote_ops_workspace/moba_customizer.py'
+      - 'requirements-locks/windows-x64.txt'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-private-ntfs-qualification.yml'
+      - 'scripts/check_windows_private_ntfs.py'
+      - 'scripts/check_windows_private_sdk_layout.py'
+      - 'src/remote_ops_workspace/windows_private_storage.py'
+      - 'src/remote_ops_workspace/file_safety.py'
+      - 'src/remote_ops_workspace/paths.py'
+      - 'src/remote_ops_workspace/state_lock.py'
+      - 'src/remote_ops_workspace/update_staging.py'
+      - 'src/remote_ops_workspace/update_channel.py'
+      - 'src/remote_ops_workspace/moba_customizer.py'
+      - 'requirements-locks/windows-x64.txt'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-private-ntfs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-private-ntfs:
+    if: >-
+      github.repository == 'Yunushan/remote-ops-workspace' &&
+      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 12
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+          clean: true
+      - name: Bind exact source commit
+        shell: pwsh
+        run: |
+          $observed = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $observed -cne $env:SOURCE_SHA) { throw 'Unexpected source commit' }
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.7'
+      - name: Install hash-locked verifier dependencies
+        shell: pwsh
+        timeout-minutes: 2
+        run: |
+          $lock = Get-Content -LiteralPath requirements-locks/windows-x64.txt -Raw
+          $blocks = [regex]::Matches($lock, '(?m)^(?:cryptography|cffi|pycparser)==[^\r\n]+(?:\r?\n[ ]+--hash=sha256:[^\r\n]+)+')
+          if ($blocks.Count -ne 3) { throw 'Expected three hash-locked verifier dependencies' }
+          $verifier = Join-Path $env:RUNNER_TEMP 'row-ntfs-verifier-requirements.txt'
+          $blocks.Value | Set-Content -LiteralPath $verifier -Encoding ascii
+          python -I -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple --requirement $verifier
+          if ($LASTEXITCODE -ne 0) { throw 'Hash-locked verifier dependency install failed' }
+      - name: Exercise private storage on NTFS
+        id: storage
+        shell: pwsh
+        timeout-minutes: 4
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'rowntfs' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+          $password = 'Aa9!' + [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
+          $control = Join-Path $env:RUNNER_TEMP "$name.control"
+          $user = $null
+          $createdControl = $false
+          try {
+            $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
+            $user = New-LocalUser -Name $name -Password $securePassword
+            $usersGroup = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+            $members = @(Get-LocalGroupMember -SID $usersGroup)
+            if ($user.SID -notin $members.SID) {
+              Add-LocalGroupMember -SID $usersGroup -Member $user
+            }
+            $controlFile = [System.IO.File]::Open($control, 'CreateNew', 'Write', 'None')
+            $createdControl = $true
+            $controlFile.Dispose()
+            $acl = Get-Acl -LiteralPath $control
+            $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($user.SID, 'Modify', 'Allow')
+            $acl.AddAccessRule($rule)
+            Set-Acl -LiteralPath $control -AclObject $acl
+            $env:ROW_NTFS_TEST_ACCOUNT = $name
+            $env:ROW_NTFS_TEST_PASSWORD = $password
+            $env:ROW_NTFS_TEST_CONTROL = $control
+            python -I -B scripts/check_windows_private_ntfs.py --output (Join-Path $env:RUNNER_TEMP 'row-private-ntfs-result.json')
+            if ($LASTEXITCODE -ne 0) { throw 'Windows private storage checks failed' }
+          } finally {
+            Remove-Item Env:ROW_NTFS_TEST_ACCOUNT,Env:ROW_NTFS_TEST_PASSWORD,Env:ROW_NTFS_TEST_CONTROL -ErrorAction SilentlyContinue
+            try {
+              if ($user) { Remove-LocalUser -SID $user.SID }
+            } finally {
+              if ($createdControl) { Remove-Item -LiteralPath $control }
+            }
+          }
+      - name: Retain bounded qualification result
+        if: ${{ !cancelled() && (steps.storage.outcome == 'success' || steps.storage.outcome == 'failure') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-private-ntfs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/row-private-ntfs-result.json
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-sdk-layout:
+    if: >-
+      github.repository == 'Yunushan/remote-ops-workspace' &&
+      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            pointer-bits: 64
+          - arch: x86
+            pointer-bits: 32
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 8
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      SDK_POINTER_BITS: ${{ matrix.pointer-bits }}
+      SDK_TARGET: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.arch }}
+      - name: Compare ctypes layout against the installed Windows SDK
+        shell: pwsh
+        run: |
+          $observed = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0 -or $observed -cne $env:SOURCE_SHA) { throw 'Unexpected source commit' }
+          $probeDir = Join-Path $env:RUNNER_TEMP 'row-private-sdk'
+          New-Item -Path $probeDir -ItemType Directory -ErrorAction Stop | Out-Null
+          python -I -S -B scripts/check_windows_private_sdk_layout.py --write-probe (Join-Path $probeDir 'probe.c')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not generate the SDK probe' }
+
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vs) { throw 'Could not locate the MSVC toolchain' }
+          $devCmd = Join-Path $vs 'Common7/Tools/VsDevCmd.bat'
+          $compile = Join-Path $probeDir 'compile.cmd'
+          @"
+          @echo off
+          call "$devCmd" -no_logo -arch=$env:SDK_TARGET -host_arch=x64
+          if errorlevel 1 exit /b 1
+          cl.exe /nologo /W4 /WX probe.c /Fe:probe.exe
+          if errorlevel 1 exit /b 1
+          probe.exe > sdk-layout.json
+          exit /b %errorlevel%
+          "@ | Set-Content -LiteralPath $compile -Encoding ascii
+          Push-Location -LiteralPath $probeDir
+          try {
+            cmd.exe /d /c compile.cmd
+            if ($LASTEXITCODE -ne 0) { throw 'SDK layout probe failed' }
+          } finally {
+            Pop-Location
+          }
+
+          python -I -S -B scripts/check_windows_private_sdk_layout.py --compare (Join-Path $probeDir 'sdk-layout.json') --pointer-bits $env:SDK_POINTER_BITS
+          if ($LASTEXITCODE -ne 0) { throw 'SDK layout comparison failed' }

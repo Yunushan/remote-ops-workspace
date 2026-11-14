@@ -1,8 +1,8 @@
-"""Source proposal: retained Windows directory handles and exact owner DACLs.
+"""Retained Windows directory handles and exact owner DACLs.
 
 No ctypes/DLL/security API is imported or called until the real native provider
-is constructed. The updater integration is guarded by a false qualification gate.
-Genuine Windows ABI, default-parent and other-identity denial remain unqualified.
+is constructed. The updater admits the qualified Windows x64 interpreter and
+checks the live NTFS and path boundaries before accessing policy or stage bytes.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 
 FILE_ALL_ACCESS = 0x001F01FF
+READ_CONTROL_AND_ATTRIBUTES_AND_DATA = 0x00020081
 DACL_PRESENT = 0x0004
 DACL_PROTECTED = 0x1000
 DIRECTORY = 0x10
@@ -327,7 +328,10 @@ class _Native:
 
     def open_directory(self, path):
         _require(self.kernel.GetDriveTypeW(ntpath.splitdrive(path)[0] + "\\") == 3, "local-fixed-volume-required")
-        handle = self.kernel.CreateFileW(path, 0x00020080, 0x03, None, 3, 0x02200000, None)
+        # List-directory access makes this handle participate in the share check.
+        handle = self.kernel.CreateFileW(
+            path, READ_CONTROL_AND_ATTRIBUTES_AND_DATA, 0x03, None, 3, 0x02200000, None,
+        )
         if handle in (None, self.c.c_void_p(-1).value):
             if self.c.get_last_error() in (2, 3):
                 raise PrivatePathMissing("native-directory-missing")
@@ -335,7 +339,10 @@ class _Native:
         return handle
 
     def open_file(self, path):
-        handle = self.kernel.CreateFileW(path, 0x00020080, 0x03, None, 3, 0x00200000, None)
+        # A metadata-only handle can allow DELETE even without FILE_SHARE_DELETE.
+        handle = self.kernel.CreateFileW(
+            path, READ_CONTROL_AND_ATTRIBUTES_AND_DATA, 0x03, None, 3, 0x00200000, None,
+        )
         _require(handle not in (None, self.c.c_void_p(-1).value), "native-file-open-refused")
         return handle
 
@@ -343,6 +350,28 @@ class _Native:
         self._ok(self.kernel.CloseHandle(handle))
 
     def create_private_directory(self, path, user):
+        with self._private_attributes(user, directory=True) as attributes:
+            self._ok(self.kernel.CreateDirectoryW(path, self.c.byref(attributes)))
+
+    def create_private_file(self, path, user):
+        import msvcrt
+
+        with self._private_attributes(user, directory=False) as attributes:
+            handle = self.kernel.CreateFileW(
+                path, 0xC0000000, 0x03, self.c.byref(attributes), 1, 0x00200080, None,
+            )
+        if handle in (None, self.c.c_void_p(-1).value):
+            if self.c.get_last_error() in (80, 183):
+                raise FileExistsError("private file already exists")
+            raise PrivateStorageError("native-private-file-create-refused")
+        try:
+            return msvcrt.open_osfhandle(handle, os.O_RDWR | os.O_BINARY)
+        except BaseException:
+            self.close(handle)
+            raise
+
+    @contextmanager
+    def _private_attributes(self, user, *, directory):
         c, w = self.c, self.w
 
         class Descriptor(c.Structure):
@@ -355,16 +384,13 @@ class _Native:
         sid = c.create_string_buffer(_sid(user))
         acl = c.create_string_buffer(8 + 8 + len(user))
         self._ok(self.advapi.InitializeAcl(acl, len(acl), 2))
-        self._ok(self.advapi.AddAccessAllowedAceEx(acl, 2, 0x03, FILE_ALL_ACCESS, sid))
+        self._ok(self.advapi.AddAccessAllowedAceEx(acl, 2, 0x03 if directory else 0, FILE_ALL_ACCESS, sid))
         descriptor = Descriptor()
         self._ok(self.advapi.InitializeSecurityDescriptor(c.byref(descriptor), 1))
         self._ok(self.advapi.SetSecurityDescriptorOwner(c.byref(descriptor), sid, False))
         self._ok(self.advapi.SetSecurityDescriptorDacl(c.byref(descriptor), True, acl, False))
         self._ok(self.advapi.SetSecurityDescriptorControl(c.byref(descriptor), DACL_PROTECTED, DACL_PROTECTED))
-        attributes = Attributes(c.sizeof(Attributes), c.addressof(descriptor), False)
-        # Exclusive CreateDirectory failure (including already exists) refuses;
-        # no existing root/parent owner or DACL is rewritten.
-        self._ok(self.kernel.CreateDirectoryW(path, c.byref(attributes)))
+        yield Attributes(c.sizeof(Attributes), c.addressof(descriptor), False)
 
     def _information(self, handle):
         c, w = self.c, self.w
@@ -476,6 +502,14 @@ class PrivateDirectoryGuard:
                     pass
         self.verify()
         return count
+
+    def create_private_file(self, expected_path):
+        """Exclusively create an empty direct child with the token's owner SID."""
+        self.verify()
+        paths = _ancestors(expected_path)
+        _require(self.missing_path is None and len(paths) == len(self.opened) + 1
+                 and paths[-2] == self.path, "private-child-containment-refused")
+        return self.native.create_private_file(paths[-1], self.user)
 
     @contextmanager
     def private_file(self, native_handle, expected_path):

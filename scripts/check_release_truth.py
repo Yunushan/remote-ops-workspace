@@ -5,6 +5,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from check_release_version import read_project_version  # noqa: E402
+
 REPOSITORY_URL = "https://github.com/Yunushan/remote-ops-workspace"
 REPOSITORY_CLONE_URL = f"{REPOSITORY_URL}.git"
 
@@ -86,12 +92,12 @@ REQUIRED_DOC_SNIPPETS = (
     "Production/Stable",
     "--require-hashes",
     "unsigned-preview.yml",
-    "remote-ops-workspace-v1.0.27-linux-<amd64|arm64>.deb",
-    "remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.27-macos-<x64|arm64>.dmg",
-    "remote-ops-workspace-v1.0.27-macos-<x64|arm64>.pkg",
+    "remote-ops-workspace-v<project.version>-linux-<amd64|arm64>.deb",
+    "remote-ops-workspace-v<project.version>-linux-<x86_64|aarch64>.rpm",
+    "remote-ops-workspace-v<project.version>-linux-<x86_64|aarch64>.AppImage",
+    "remote-ops-workspace-v<project.version>-linux-<x86_64|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v<project.version>-macos-<x64|arm64>.dmg",
+    "remote-ops-workspace-v<project.version>-macos-<x64|arm64>.pkg",
     "not uploaded by the default GitHub",
     "release_asset_provenance_complete=false",
     "asset-backed protected goal gate",
@@ -145,7 +151,7 @@ REQUIRED_DOC_SNIPPETS = (
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
     "![published preview](https://img.shields.io/badge/published%20preview-v1.0.24-orange)",
-    "![candidate](https://img.shields.io/badge/candidate-v1.0.27-yellow)",
+    "![candidate](https://img.shields.io/badge/candidate-v<project.version>-yellow)",
     "configs/platform_verified_evidence.json",
     "`release-promotion.yml` ayni degismez tag uzerinden baslatilir",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
@@ -237,12 +243,12 @@ STALE_TURKISH_RELEASE_SNIPPETS = (
 )
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
-    "remote-ops-workspace-v1.0.27-linux-<i386|amd64|armhf|arm64>.deb",
-    "remote-ops-workspace-v1.0.27-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.27-linux-<i686|x86_64|armhf|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.27-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
-    "remote-ops-workspace-v1.0.27-macos-<arch>.dmg",
-    "remote-ops-workspace-v1.0.27-macos-<arch>.pkg",
+    "remote-ops-workspace-v<project.version>-linux-<i386|amd64|armhf|arm64>.deb",
+    "remote-ops-workspace-v<project.version>-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
+    "remote-ops-workspace-v<project.version>-linux-<i686|x86_64|armhf|aarch64>.AppImage",
+    "remote-ops-workspace-v<project.version>-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v<project.version>-macos-<arch>.dmg",
+    "remote-ops-workspace-v<project.version>-macos-<arch>.pkg",
 )
 
 STALE_PLATFORM_EVIDENCE_SNIPPETS = (
@@ -1182,6 +1188,9 @@ def strip_unquoted_comments(text: str) -> str:
 
 def check_release_docs() -> list[str]:
     errors: list[str] = []
+    version = read_project_version(ROOT / "pyproject.toml", errors)
+    if version is None:
+        return errors
     readme = normalize_markdown_pipes(read("README.md"))
     release_strategy = normalize_markdown_pipes(read("docs/RELEASE_STRATEGY.md"))
     docs = "\n".join(
@@ -1195,8 +1204,9 @@ def check_release_docs() -> list[str]:
     turkish_readme = normalize_markdown_pipes(read("README.tr.md"))
     readme_release_section = bounded_section(readme, "The release workflow starts", "Release phases:")
     for snippet in REQUIRED_DOC_SNIPPETS:
-        if not contains_snippet(docs, snippet):
-            errors.append(f"release docs missing workflow artifact truth snippet: {snippet}")
+        expected = snippet.replace("<project.version>", version)
+        if not contains_snippet(docs, expected) and not contains_snippet(docs, snippet):
+            errors.append(f"release docs missing workflow artifact truth snippet: {expected}")
     if not readme_release_section:
         errors.append("README.md missing release workflow truth section")
     else:
@@ -1207,14 +1217,16 @@ def check_release_docs() -> list[str]:
         if not contains_snippet(release_strategy, snippet):
             errors.append(f"docs/RELEASE_STRATEGY.md missing pre-release platform import truth snippet: {snippet}")
     for snippet in REQUIRED_TURKISH_DOC_SNIPPETS:
-        if not contains_snippet(turkish_readme, snippet):
-            errors.append(f"README.tr.md missing protected platform evidence truth snippet: {snippet}")
+        expected = snippet.replace("<project.version>", version)
+        if not contains_snippet(turkish_readme, expected):
+            errors.append(f"README.tr.md missing protected platform evidence truth snippet: {expected}")
     for snippet in STALE_TURKISH_RELEASE_SNIPPETS:
         if contains_exact_release_version_snippet(turkish_readme, snippet):
             errors.append(f"README.tr.md still contains stale release truth snippet: {snippet}")
     for snippet in STALE_DEFAULT_ARTIFACT_SNIPPETS:
-        if snippet in docs:
-            errors.append(f"release docs still advertise stale default artifact pattern: {snippet}")
+        for stale in (snippet, snippet.replace("<project.version>", version)):
+            if stale in docs:
+                errors.append(f"release docs still advertise stale default artifact pattern: {stale}")
     for snippet in STALE_PLATFORM_EVIDENCE_SNIPPETS:
         if contains_snippet(docs, snippet):
             errors.append(f"release docs still advertise stale platform evidence workflow guidance: {snippet}")

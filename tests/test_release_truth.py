@@ -49,6 +49,33 @@ def test_release_truth_baseline_passes() -> None:
     assert checker.main() == 0
 
 
+def test_release_docs_follow_project_version_and_reject_stale_asset_arches(monkeypatch) -> None:
+    checker = load_script("check_release_truth")
+    version_errors: list[str] = []
+    version = checker.read_project_version(ROOT / "pyproject.toml", version_errors)
+    assert version is not None and not version_errors
+    tag = f"v{version}"
+    next_tag = "v99.0.0"
+    original_read = checker.read
+
+    monkeypatch.setattr(checker, "read_project_version", lambda _path, _errors: next_tag[1:])
+    assert any("candidate-v99.0.0-yellow" in error for error in checker.check_release_docs())
+
+    monkeypatch.setattr(checker, "read", lambda path: original_read(path).replace(tag, next_tag))
+    assert checker.check_release_docs() == []
+
+    stale_pattern = f"remote-ops-workspace-{next_tag}-linux-<i386|amd64|armhf|arm64>.deb"
+    monkeypatch.setattr(
+        checker,
+        "read",
+        lambda path: original_read(path).replace(tag, next_tag)
+        + (f"\n{stale_pattern}\n" if path == "docs/PLATFORM_SUPPORT.md" else ""),
+    )
+    assert checker.check_release_docs() == [
+        f"release docs still advertise stale default artifact pattern: {stale_pattern}"
+    ]
+
+
 def test_candidate_build_supports_exact_tag_recovery_and_never_publishes() -> None:
     checker = load_script("check_release_truth")
     workflow = build_workflow()

@@ -716,6 +716,7 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
     publish_job = {
         "name": "promote-production-release",
         "run_id": 123,
+        "run_attempt": 1,
         "head_sha": sha,
         "status": "completed",
         "conclusion": "success",
@@ -846,6 +847,8 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
     ("mutation", "error"),
     [
         ("wrong-run", "successful exact-source promotion attempt"),
+        ("wrong-attempt", "successful exact-source promotion attempt"),
+        ("boolean-attempt", "successful exact-source promotion attempt"),
         ("wrong-source", "successful exact-source promotion attempt"),
         ("duplicate-step", "one exact publication step"),
         ("missing-step", "one exact publication step"),
@@ -868,6 +871,7 @@ def test_publication_requires_the_exact_successful_step(monkeypatch, mutation, e
     job = {
         "name": "promote-production-release",
         "run_id": 123,
+        "run_attempt": 1,
         "head_sha": sha,
         "status": "completed",
         "conclusion": "success",
@@ -875,6 +879,10 @@ def test_publication_requires_the_exact_successful_step(monkeypatch, mutation, e
     }
     if mutation == "wrong-run":
         job["run_id"] = 999
+    elif mutation == "wrong-attempt":
+        job["run_attempt"] = 2
+    elif mutation == "boolean-attempt":
+        job["run_attempt"] = True
     elif mutation == "wrong-source":
         job["head_sha"] = "b" * 40
     elif mutation == "duplicate-step":

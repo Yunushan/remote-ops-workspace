@@ -497,7 +497,10 @@ def check_publication_in_run(
         return ["successful promotion attempt must have one exact publication job"]
     job = jobs[0]
     if (
-        job.get("run_id") != invocation.run_id
+        type(job.get("run_id")) is not int
+        or job["run_id"] != invocation.run_id
+        or type(job.get("run_attempt")) is not int
+        or job["run_attempt"] != invocation.attempt
         or job.get("head_sha") != sha
         or job.get("status") != "completed"
         or job.get("conclusion") != "success"

@@ -295,6 +295,15 @@ def stage(
             raise ValueError(f"GUI smoke artifact {name} must be unexpired")
         positive_int(evidence.get("size_in_bytes"), f"GUI smoke artifact {name} size")
     build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
+    for name, artifact in build_artifacts.items():
+        check_artifact_metadata(
+            artifact,
+            artifact_id=positive_int(artifact.get("id"), f"artifact {name} id"),
+            name=name,
+            digest=normalize_digest(artifact.get("digest"), f"artifact {name} digest"),
+            run_id=run_id,
+            release_sha=release_sha,
+        )
     runtime_reports = {
         target: seal_runtime_report(client, by_name[name], name, run_id, release_sha)
         for target, name in sorted(RUNTIME_REPORT_ARTIFACT_NAMES.items())

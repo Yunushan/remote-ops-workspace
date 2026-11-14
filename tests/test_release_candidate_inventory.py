@@ -161,6 +161,7 @@ def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
         ("missing-smoke", "missing=.*release-macos-gui-smoke-x64"),
         ("missing-runtime", "missing=.*release-runtime-windows-x86"),
         ("wrong-runtime-run", "is not bound to the approved build run and SHA"),
+        ("wrong-installer-sha", "artifact release-source-python is not bound to the approved build run and SHA"),
         ("bad-runtime-report", "must be a non-empty pip inspect v1 inventory"),
         ("nonregular-runtime-report", "artifact ZIP contains non-regular entry"),
         ("unknown-artifact", "unexpected=.*unexpected-build"),
@@ -224,7 +225,10 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "digest": f"sha256:{hashlib.sha256(data).hexdigest()}",
             "expired": condition == "expired-smoke" and name == "release-macos-gui-smoke-x64",
             "size_in_bytes": len(data),
-            "workflow_run": {"id": 99 if condition == "wrong-runtime-run" else 123, "head_sha": sha},
+            "workflow_run": {
+                "id": 99 if condition == "wrong-runtime-run" and name in runtime else 123,
+                "head_sha": "b" * 40 if condition == "wrong-installer-sha" and name == standard[0] else sha,
+            },
         })
         if name in standard or name in runtime:
             archives[artifact_id] = data

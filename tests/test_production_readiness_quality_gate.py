@@ -36,9 +36,9 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
         '--evidence-root "$(RELEASE_LICENSE_EVIDENCE_ROOT)"'
     ) in target
     assert (
-        'python scripts/check_release_provenance.py --assets-dir "$(RELEASE_ASSETS_DIR)" '
-        '--tag "$(RELEASE_TAG)" --repository "$(RELEASE_REPOSITORY)" '
-        '--sha "$(RELEASE_SHA)"'
+        '--tag-governance-attestation "$(RELEASE_TAG_GOVERNANCE_ATTESTATION)" '
+        '--tag-governance-signature "$(RELEASE_TAG_GOVERNANCE_SIGNATURE)" '
+        '--verify-published-release'
     ) in target
     assert (
         'python scripts/check_platform_release_evidence_remote.py --repository "$(RELEASE_REPOSITORY)" '
@@ -51,7 +51,7 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
         '--tag "$(RELEASE_TAG)" --sha "$(RELEASE_SHA)" '
         '--registry-commit "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" --assets-dir "$(RELEASE_ASSETS_DIR)"'
     ) in target
-    assert target.index("scripts/check_release_provenance.py") < target.index(
+    assert target.index("scripts/check_release_license_compliance.py") < target.index(
         "scripts/check_release_mobaxterm_parity.py"
     ) < target.index('echo "production readiness: 100/100 gates passed"')
     assert target.index("scripts/check_repository_cleanup.py --require-clean") < target.index(
@@ -69,9 +69,6 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
     assert target.index("scripts/check_repository_governance.py") < target.index(
         'echo "production readiness: 100/100 gates passed"'
     )
-    assert target.index("scripts/check_release_provenance.py") < target.index(
+    assert target.index("--verify-published-release") < target.index(
         'echo "production readiness: 100/100 gates passed"'
-    )
-    assert target.index("scripts/check_release_license_compliance.py") < target.index(
-        "scripts/check_release_provenance.py"
     )

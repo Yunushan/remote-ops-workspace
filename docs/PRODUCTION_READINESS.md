@@ -101,9 +101,11 @@ Only after that external step is complete may the operator dispatch
 inventory artifact ID/digest, and immutable evidence commit SHA. Its protected
 `release-compliance-review` job checks out the untrusted transport branch as
 data and authenticates all of it through the tag-pinned Ed25519 policy. It then performs the full audit,
-attests the complete inventory, creates a draft,
+attests the complete inventory and both signed tag-governance inputs, creates a draft,
 verifies every draft byte and attestation against its own tag-bound invocation,
-rechecks the tag, and promotes the draft once. `release.yml` builds candidates
+rechecks the tag and the short-lived governance proof, and promotes the draft once.
+The proof must still be current immediately before draft creation and publication.
+`release.yml` builds candidates
 and never publishes. The `unsigned-preview.yml` branch lane publishes source/Python assets
 under a unique non-`v*` tag. The separate `versioned-unsigned-release.yml` lane
 may publish the standard downloads under an exact `vX.Y.Z` tag as an explicitly
@@ -209,6 +211,13 @@ the release source and be reachable from protected `main`. The audit compares
 the accepted records with the release identity, live GitHub reviews and run
 attempts, and SHA-256 hashes of the same downloaded assets checked by the
 release provenance gate.
+
+Use the exact tag-governance proof and detached signature from the promotion's
+evidence commit for the aggregate. It verifies their signatures and attested
+digests alongside the published files. All must share a completed, successful
+promotion attempt. The live immutable release's publication time must fall
+within that attempt and the independently signed governance window. The
+operator audit can run after the governance window has expired.
 
 The target prints `production readiness: 100/100 gates passed` only after the
 production metadata, tag/SHA/checkout equality, and clean-tree checks; the full local pytest, Ruff, mypy, CLI, and real-GUI

@@ -201,6 +201,30 @@ def test_promotion_requires_exact_tag_sha_and_signed_pinned_evidence() -> None:
     assert "Re-resolve immutable tag after publication" in workflow
 
 
+def test_promotion_requires_fresh_governance_check_before_publication() -> None:
+    workflow = remove_named_step(
+        promotion_workflow(),
+        "Revalidate signed tag governance immediately before publication",
+    )
+
+    truth_errors, asset_errors = both_contract_errors(workflow)
+
+    assert any("publication-bound tag governance proof" in error for error in truth_errors)
+    assert any("publication-bound tag governance proof" in error for error in asset_errors)
+
+
+def test_promotion_attests_both_governance_inputs() -> None:
+    workflow = promotion_workflow().replace(
+        "${{ env.RELEASE_SHA }}/tag-governance-attestation.sig.json",
+        "${{ env.RELEASE_SHA }}/other.json",
+        1,
+    )
+
+    _, errors = both_contract_errors(workflow)
+
+    assert "promotion must attest both exact signed tag governance inputs" in errors
+
+
 def test_promotion_rejects_automatic_release_deletion() -> None:
     checker = load_script("check_release_truth")
     workflow = promotion_workflow()

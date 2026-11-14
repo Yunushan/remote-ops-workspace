@@ -319,10 +319,19 @@ def redirect_error(url: str, location: str) -> urllib.error.HTTPError:
     return urllib.error.HTTPError(url, 302, "Found", headers, io.BytesIO(b""))
 
 
-def test_artifact_download_strips_auth_and_rejects_second_redirect(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        ("redirect", "GitHub artifact download returned an unexpected second redirect"),
+        ("http", "GitHub artifact download failed with HTTP 403"),
+        ("connection", "GitHub artifact download failed to connect"),
+    ],
+)
+def test_artifact_download_keeps_storage_credentials_out_of_errors(
+    monkeypatch: pytest.MonkeyPatch, failure: str, message: str,
 ) -> None:
     requests: list[object] = []
+    signed_url = "https://objects.githubusercontent.com/candidate.zip?sig=private-capability"
 
     class Opener:
         def open(self, request: object, timeout: int) -> object:
@@ -331,20 +340,25 @@ def test_artifact_download_strips_auth_and_rejects_second_redirect(
             if len(requests) == 1:
                 raise redirect_error(
                     "https://api.github.com/repos/acme/project/actions/artifacts/7/zip",
-                    "https://objects.githubusercontent.com/candidate.zip",
+                    signed_url,
                 )
-            raise redirect_error(
-                "https://objects.githubusercontent.com/candidate.zip",
-                "http://attacker.invalid/candidate.zip",
-            )
+            if failure == "redirect":
+                raise redirect_error(signed_url, signed_url)
+            if failure == "http":
+                raise urllib.error.HTTPError(
+                    signed_url, 403, "Forbidden", Message(), io.BytesIO(signed_url.encode()),
+                )
+            raise urllib.error.URLError(signed_url)
 
     opener = Opener()
     monkeypatch.setattr(candidate.urllib.request, "build_opener", lambda *_: opener)
     client = candidate.GitHubClient("acme/project", "top-secret")
 
-    with pytest.raises(RuntimeError, match="unexpected second redirect"):
+    with pytest.raises(RuntimeError) as error:
         client._open("actions/artifacts/7/zip", allow_redirect=True)
 
+    assert str(error.value) == message
+    assert error.value.__suppress_context__
     assert len(requests) == 2
     first_headers = dict(requests[0].header_items())  # type: ignore[attr-defined]
     second_headers = dict(requests[1].header_items())  # type: ignore[attr-defined]

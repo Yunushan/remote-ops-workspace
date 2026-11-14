@@ -233,21 +233,17 @@ class GitHubClient:
                 try:
                     return opener.open(redirected_request, timeout=120)
                 except urllib.error.HTTPError as redirect_exc:
-                    if redirect_exc.code in {301, 302, 303, 307, 308}:
-                        second_location = redirect_exc.headers.get("Location")
-                        redirect_exc.close()
+                    status = redirect_exc.code
+                    redirect_exc.close()
+                    if status in {301, 302, 303, 307, 308}:
                         raise RuntimeError(
                             "GitHub artifact download returned an unexpected second redirect"
-                            + (f": {second_location}" if second_location else "")
                         ) from None
-                    detail = redirect_exc.read(2000).decode("utf-8", errors="replace")
                     raise RuntimeError(
-                        f"GitHub artifact download failed with HTTP {redirect_exc.code}: {detail}"
-                    ) from redirect_exc
-                except urllib.error.URLError as redirect_exc:
-                    raise RuntimeError(
-                        f"GitHub artifact download failed: {redirect_exc.reason}"
-                    ) from redirect_exc
+                        f"GitHub artifact download failed with HTTP {status}"
+                    ) from None
+                except urllib.error.URLError:
+                    raise RuntimeError("GitHub artifact download failed to connect") from None
             detail = exc.read(2000).decode("utf-8", errors="replace")
             raise RuntimeError(f"GitHub API {url} failed with HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:

@@ -355,6 +355,9 @@ def test_production_candidate_refuses_unapproved_release_policy() -> None:
     workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
     name = "Require independently approved production release policy"
     assert checker.check_release_preflight(workflow) == []
+    signing_index = workflow.index("      - name: Detect release signing readiness")
+    policy_index = workflow.index(f"      - name: {name}")
+    assert signing_index < policy_index
     without_policy = remove_named_step(workflow, name)
     assert any("independently approved production release policy" in error
                for error in checker.check_release_preflight(without_policy))

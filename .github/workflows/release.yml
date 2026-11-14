@@ -75,10 +75,6 @@ jobs:
         run: python scripts/check_release_version.py --release-tag "$RELEASE_TAG"
       - name: Require production maturity metadata
         run: python scripts/check_release_maturity.py --release-tag "$RELEASE_TAG"
-      - name: Require independently approved production release policy
-        run: python scripts/check_release_license_compliance.py --check-policy-only
-      - name: Run release preflight verifier
-        run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
       - name: Detect release signing readiness
         id: signing-readiness
         shell: bash
@@ -97,12 +93,14 @@ jobs:
           windows_ready=true
           for name in ROW_WINDOWS_CERTIFICATE_BASE64 ROW_WINDOWS_CERTIFICATE_PASSWORD ROW_WINDOWS_TIMESTAMP_URL; do
             if [[ -z "${!name}" ]]; then
+              echo "::notice::Missing release signing input: $name"
               windows_ready=false
             fi
           done
           macos_ready=true
           for name in ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_SIGN_IDENTITY ROW_MACOS_INSTALLER_SIGN_IDENTITY ROW_MACOS_NOTARY_KEY_BASE64 ROW_MACOS_NOTARY_KEY_ID ROW_MACOS_NOTARY_ISSUER; do
             if [[ -z "${!name}" ]]; then
+              echo "::notice::Missing release signing input: $name"
               macos_ready=false
             fi
           done
@@ -125,6 +123,10 @@ jobs:
             echo "::notice::Exact-tag candidate staging is withheld because protected Windows/macOS release signing is incomplete."
             echo "::notice::Use unsigned-preview.yml for a uniquely tagged non-v* prerelease; release.yml never creates or mutates a GitHub Release."
           fi
+      - name: Require independently approved production release policy
+        run: python scripts/check_release_license_compliance.py --check-policy-only
+      - name: Run release preflight verifier
+        run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
       - name: Require successful Python 3.15 and native Windows CI evidence for release source
         if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}
         env:

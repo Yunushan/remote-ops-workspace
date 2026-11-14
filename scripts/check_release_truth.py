@@ -377,8 +377,9 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         allowed_flags=frozenset({"--check-policy-only"}),
     ))
     policy_index = preflight.find(f"name: {policy_name}")
-    if not 0 <= maturity_index < policy_index < verify_index:
-        errors.append("release preflight must check the independent policy after maturity and before repository verification")
+    signing_index = preflight.find("name: Detect release signing readiness")
+    if not 0 <= maturity_index < signing_index < policy_index < verify_index:
+        errors.append("release preflight must check maturity, signing readiness, and the independent policy before repository verification")
     for job in (
         "source-and-python",
         "windows-native",

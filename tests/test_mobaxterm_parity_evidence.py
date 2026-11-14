@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import check_release_mobaxterm_parity as release_parity
+from scripts.write_release_notes import moba_counts
 
 
 def test_mobaxterm_parity_evidence_empty_registry_is_valid_but_not_complete() -> None:
@@ -73,6 +74,20 @@ def test_mobaxterm_parity_evidence_accepts_complete_article_record() -> None:
     }
 
     assert checker.check_mobaxterm_parity_evidence(registry=registry) == []
+
+
+def test_release_notes_count_only_valid_parity_articles_for_the_release() -> None:
+    checker = _load_checker()
+    record = _complete_record(checker.ARTICLE_SPECS["professional-deployment"])
+    root = Path(__file__).resolve().parents[1]
+    repository = record["release_source"]["repository"]
+    tag = record["release_tag"]
+    assert moba_counts(root, {"accepted_evidence": [record, dict(record)]}, tag=tag, repository=repository) == (1, 8)
+    assert moba_counts(root, {"accepted_evidence": [record]}, tag="v1.0.3", repository=repository) == (0, 8)
+    assert moba_counts(root, {"accepted_evidence": [record]}, tag=tag, repository="other/project") == (0, 8)
+    incomplete = dict(record)
+    del incomplete["acceptance_review"]
+    assert moba_counts(root, {"accepted_evidence": [incomplete]}, tag=tag, repository=repository) == (0, 8)
 
 
 def test_mobaxterm_parity_evidence_rejects_incomplete_article_record() -> None:

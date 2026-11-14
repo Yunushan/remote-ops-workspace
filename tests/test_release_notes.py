@@ -76,3 +76,19 @@ def test_release_notes_reject_invalid_tag_and_channel(tmp_path: Path) -> None:
             repository="Yunushan/remote-ops-workspace",
             output=tmp_path / "notes.md",
         )
+
+
+def test_release_notes_count_only_accepted_protected_targets() -> None:
+    helper = _load_release_notes()
+    tag = "v2.0.0"
+    base = {"release_tag": tag, "status": "accepted", "readiness_percent": 100.0}
+    registry = {
+        "accepted_evidence": [
+            {**base, "target": "linux-i386"},
+            {**base, "target": "linux-armhf", "readiness_percent": 99.0},
+            {**base, "target": "windows-xp-native-x86", "status": "candidate"},
+            {**base, "target": "windows-xp-native-x64", "release_tag": "v1.0.0"},
+            {**base, "target": "windows-x64"},
+        ],
+    }
+    assert helper.accepted_target_ids(registry, tag=tag) == {"linux-i386"}

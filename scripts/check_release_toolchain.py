@@ -708,6 +708,13 @@ def check_native_signing_verification(windows: str, macos: str) -> list[str]:
         windows,
     ):
         errors.append("Windows production signing must require successful Authenticode and timestamp verification")
+    for artifact, sign, copy in (
+        ("RowExe", "\nSign-NativeArtifact $RowExe\n", "\nCopy-Item $RowExe "),
+        ("RowGuiExe", "\nif ($BuildGuiLauncher) {\n  Sign-NativeArtifact $RowGuiExe\n}", "\n  Copy-Item $RowGuiExe "),
+    ):
+        signing, staging = windows.find(sign), windows.find(copy)
+        if not 0 <= signing < staging:
+            errors.append(f"Windows production signing must sign ${artifact} before copying it into the packages")
 
     macos = strip_unquoted_comments(macos)
     commands = (

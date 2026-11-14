@@ -21,6 +21,10 @@ def test_release_signing_refuses_missing_timestamp_or_package_verification() -> 
     assert checker.check_native_signing_verification(windows, macos) == []
     errors = checker.check_native_signing_verification(windows.replace(" /tw ", " ", 1), macos)
     assert any("timestamp verification" in error for error in errors)
+    for artifact in ("RowExe", "RowGuiExe"):
+        changed = windows.replace(f"Sign-NativeArtifact ${artifact}\n", f"Sign-NativeArtifact ${artifact}Copy\n", 1)
+        errors = checker.check_native_signing_verification(changed, macos)
+        assert f"Windows production signing must sign ${artifact} before copying it into the packages" in errors
     for package in ("DMG", "PKG"):
         command = f'xcrun stapler validate "${package}"'
         assert command in macos

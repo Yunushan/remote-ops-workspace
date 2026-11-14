@@ -418,6 +418,11 @@ if ($BuildGuiLauncher -and !(Test-Path $RowGuiExe)) {
   throw "PyInstaller did not create $RowGuiExe"
 }
 
+# Installer smoke compares the packaged executables with these build outputs.
+Sign-NativeArtifact $RowExe
+if ($BuildGuiLauncher) {
+  Sign-NativeArtifact $RowGuiExe
+}
 New-Item -ItemType Directory -Force (Join-Path $Stage "bin"), (Join-Path $Stage "docs") | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $Stage "docs\licenses") | Out-Null
 Copy-Item $RowExe (Join-Path $Stage "bin\row.exe")
@@ -456,7 +461,6 @@ PyInstaller. $GuiTargetNote $GuiLicenseNote Protocol sessions still depend on Wi
 OpenSSH, MSTSC, PuTTY, VcXsrv, and VNC clients.
 "@ | Set-Content -Encoding UTF8 (Join-Path $Stage "RELEASE_TARGET.md")
 
-Get-ChildItem -Path $Stage -Filter "*.exe" -Recurse | ForEach-Object { Sign-NativeArtifact $_.FullName }
 New-Item -ItemType Directory -Force $PortableStage | Out-Null
 Copy-Item -Path (Join-Path $Stage "*") -Destination $PortableStage -Recurse -Force
 if ($BuildGuiLauncher) {

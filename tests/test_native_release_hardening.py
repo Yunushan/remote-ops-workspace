@@ -181,6 +181,8 @@ def test_macos_dmg_creation_retries_resource_busy_failures() -> None:
     assert "create_macos_dmg()" in script
     assert 'hdiutil detach "/Volumes/$APP_NAME" -force' in script
     assert "for attempt in 1 2 3" in script
+    assert '      return\n    else\n      status=$?\n    fi\n' in script
+    assert '  return "$status"' in script
     assert '$(basename "${dmg%.dmg}").tmp.dmg' in script
 
 

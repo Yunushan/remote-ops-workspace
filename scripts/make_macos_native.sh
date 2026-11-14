@@ -73,9 +73,10 @@ create_macos_dmg() {
   for attempt in 1 2 3; do
     if hdiutil create -volname "$APP_NAME" -srcfolder "$dmg_stage" -format UDZO "$dmg_tmp"; then
       mv "$dmg_tmp" "$dmg"
-      return 0
+      return
+    else
+      status=$?
     fi
-    status=$?
     rm -f "$dmg_tmp"
     hdiutil detach "/Volumes/$APP_NAME" -force >/dev/null 2>&1 || true
     sleep "$((attempt * 3))"

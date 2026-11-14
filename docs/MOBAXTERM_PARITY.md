@@ -254,13 +254,14 @@ reviews, and the downloaded release assets. See the
    resulting deployment evidence. Full parity still needs actual branded
    Windows installer artifacts, a hosted organization update channel and
    accepted passing release evidence from supported targets.
-8. Shared authenticated transport and terminal-screen behavior: the
-   interactive Windows SSH path uses ConPTY when available, but the SFTP
-   browser and monitoring helpers do not reuse that authenticated connection.
-   The transcript renderer also does not implement a complete VT screen. Full
-   parity requires a shared authenticated SSH transport (or equivalently
-   controlled multiplexing), structured connection state, and a real terminal
-   grid with alternate-screen, cursor, color, mode and mouse semantics.
+8. Shared authenticated transport and terminal-screen behavior. On POSIX
+   hosts, the SFTP browser and monitoring can reuse a matching terminal's
+   OpenSSH control socket after it appears. The Windows terminal uses ConPTY
+   when available, and background tools authenticate separately. The renderer
+   implements a bounded transcript and a cursor-addressed alternate screen.
+   Full parity requires evidence of shared authenticated transport, structured
+   connection state and a terminal grid with alternate-screen, cursor, color,
+   mode and mouse semantics.
    The strict evidence catalog tracks this article as
    `shared-authenticated-transport-terminal-grid`. Its dedicated validator is
    `python scripts/check_moba_transport_terminal_evidence.py --evidence

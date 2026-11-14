@@ -39,7 +39,7 @@ TAGGED_RELEASE_SOURCE_JOBS = (
 )
 PROTECTED_PUBLISH_JOB = "publish-protected-platform-evidence"
 RELEASE_TAG_RESOLVER = "RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}"
-TAGGED_RELEASE_REF = "ref: ${{ env.RELEASE_TAG }}"
+TAGGED_RELEASE_REF = "ref: ${{ github.ref }}"
 FROZEN_RELEASE_REF = "ref: ${{ needs.release-preflight.outputs.release_sha }}"
 FROZEN_RELEASE_SHA_ENV = "EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}"
 RELEASE_UPLOAD_TAG_NAME = "tag_name: ${{ env.RELEASE_TAG }}"
@@ -339,6 +339,8 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     if not preflight:
         return [*errors, "candidate build workflow missing release-preflight job"]
     errors.extend(check_checkout_step(preflight, job="release-preflight"))
+    if TAGGED_RELEASE_REF not in workflow_step_block(preflight, "uses: actions/checkout@"):
+        errors.append("release-preflight checkout must use the full triggering Git ref")
     for snippet, label in {
         "timeout-minutes: 100": "bounded preflight timeout",
         "if: ${{ github.ref_type == 'tag' }}": "tag-only preflight job",
@@ -353,7 +355,7 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
         'test "$GITHUB_REF_TYPE" = "tag"': "tag type guard",
         'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"': "exact tag ref guard",
         'test "$GITHUB_RUN_ATTEMPT" = "1"': "rerun refusal",
-        'tag_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"': "peeled tag resolution",
+        'tag_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"': "peeled tag resolution",
         'test "$tag_sha" = "$release_sha"': "tag/source equality",
         'test "$GITHUB_SHA" = "$release_sha"': "event/source equality",
         RELEASE_VERSION_GATE_COMMAND: "release version gate",
@@ -459,6 +461,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
         "candidate_inventory_archive_digest:": "candidate archive digest input",
         "evidence_commit_sha:": "exact evidence commit input",
         'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"': "exact tag dispatch",
+        'release_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"': "full tag ref resolution",
         'test "$GITHUB_RUN_ATTEMPT" = "1"': "promotion rerun refusal",
         "ref: ${{ inputs.evidence_commit_sha }}": "exact evidence checkout",
         "release-compliance-evidence": "evidence branch ancestry proof",
@@ -955,7 +958,7 @@ def check_tagged_source_checkout(job_block: str, *, job: str) -> list[str]:
     expected_ref = TAGGED_RELEASE_REF if job == RELEASE_PREFLIGHT_JOB else FROZEN_RELEASE_REF
     if expected_ref not in checkout:
         if job == RELEASE_PREFLIGHT_JOB:
-            return [f"{job} checkout must resolve the immutable env.RELEASE_TAG source"]
+            return [f"{job} checkout must use the full triggering Git ref"]
         return [f"{job} checkout must use the frozen release-preflight release_sha"]
     return []
 

@@ -107,6 +107,18 @@ def test_candidate_build_requires_active_maturity_gate() -> None:
     assert any("production maturity gate" in error for error in checker.check_release_preflight(workflow))
 
 
+def test_candidate_and_promotion_reject_checkout_using_an_unqualified_tag() -> None:
+    checker = load_script("check_release_truth")
+    build = build_workflow().replace("ref: ${{ github.ref }}", "ref: ${{ env.RELEASE_TAG }}", 1)
+    assert any("full triggering Git ref" in error for error in checker.check_release_preflight(build))
+    promotion = promotion_workflow().replace(
+        'git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}"',
+        'git rev-parse "${RELEASE_TAG}^{commit}"',
+        1,
+    )
+    assert any("full tag ref resolution" in error for error in checker.check_promotion_truth(promotion))
+
+
 def test_run_source_never_interpolates_untrusted_context_directly() -> None:
     checker = load_script("check_release_truth")
     injected = promotion_workflow().replace(

@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ github.ref }}
           persist-credentials: false
           clean: true
           fetch-depth: 0
@@ -46,7 +46,7 @@ jobs:
         run: |
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           release_sha="$(git rev-parse HEAD)"
-          tag_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          tag_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
           if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "Release source did not resolve to a full lowercase commit SHA: $release_sha" >&2
             exit 1

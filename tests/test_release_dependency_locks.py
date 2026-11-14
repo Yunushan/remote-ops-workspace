@@ -192,7 +192,7 @@ def test_signed_native_release_requires_isolated_python_before_lock_install() ->
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     workflow = workflow.replace("python -m venv ", "python -m venv --system-site-packages ")
     errors = checker.check_locks(workflows={"release.yml": workflow})
-    for job in ("windows-native", "macos-native", "linux-native"):
+    for job in ("source-and-python", "windows-native", "macos-native", "linux-native"):
         assert f"release.yml {job} must create an isolated Python environment before installing its lock" in errors
 
 
@@ -203,6 +203,18 @@ def test_signed_native_runtime_report_must_use_matrix_lock() -> None:
     errors = checker.check_locks(workflows={"release.yml": workflow})
     for job in ("windows-native", "macos-native", "linux-native"):
         assert f"release.yml {job} must verify its installed inventory against the matrix lock" in errors
+
+
+def test_source_build_checks_installed_environment_against_exact_source_lock() -> None:
+    checker = _checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "--lock requirements-locks/source-linux-x86_64.txt",
+        "--lock requirements-locks/source-linux-x86_64-bootstrap.txt",
+        1,
+    )
+    errors = checker.check_locks(workflows={"release.yml": workflow})
+    assert "release.yml source-and-python must verify its installed inventory against the build lock" in errors
 
 
 def test_signed_native_runtime_report_requires_exact_locked_versions(tmp_path: Path) -> None:

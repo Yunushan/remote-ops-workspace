@@ -75,7 +75,7 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
         workflows = {name: (root / ".github/workflows" / name).read_text(encoding="utf-8") for name in ("release.yml", "versioned-unsigned-release.yml")}
     for name, workflow in workflows.items():
         if name == "release.yml":
-            for job in ("windows-native", "macos-native", "linux-native"):
+            for job in ("source-and-python", "windows-native", "macos-native", "linux-native"):
                 block = compliance.workflow_job_block(workflow, job)
                 commands = compliance.executable_run_commands(block)
                 before_install = next(
@@ -95,18 +95,20 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
                     or '      PIP_REQUIRE_VIRTUALENV: "1"' not in lines
                 ):
                     errors.append(f"{name} {job} must create an isolated Python environment before installing its lock")
-                capture = 'python -X utf8 -m pip inspect --local > candidate-pip-inspect.json'
-                verify = (
-                    'python scripts/check_release_dependency_locks.py '
-                    '--runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"'
-                )
+                capture = "python -X utf8 -m pip inspect --local > candidate-pip-inspect.json"
+                verify = "python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json"
+                if job == "source-and-python":
+                    verify += " --lock requirements-locks/source-linux-x86_64.txt"
+                else:
+                    verify += ' --lock "$RELEASE_DEPENDENCY_LOCK"'
+                    if '          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}' not in lines:
+                        errors.append(f"{name} {job} must verify its installed inventory against the matrix lock")
                 if (
                     capture not in commands
                     or verify not in commands
                     or not before_install < commands.index(capture) < commands.index(verify)
-                    or '          RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}' not in lines
                 ):
-                    errors.append(f"{name} {job} must verify its installed inventory against the matrix lock")
+                    errors.append(f"{name} {job} must verify its installed inventory against the build lock")
         for target, row in targets.items():
             if target.startswith("release-verifier-"):
                 continue

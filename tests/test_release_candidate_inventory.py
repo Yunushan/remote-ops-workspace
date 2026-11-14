@@ -56,10 +56,12 @@ def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
         ("expired-smoke", "GUI smoke artifact release-macos-gui-smoke-x64 must be unexpired"),
     ],
 )
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
 def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release(
     tmp_path: Path,
     condition: str,
     error: str,
+    event: str,
 ) -> None:
     sha = "a" * 40
     tag = "v1.2.3"
@@ -110,7 +112,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 return {
                     "id": 123,
                     "run_attempt": 1,
-                    "event": "push",
+                    "event": event,
                     "head_branch": tag,
                     "head_sha": sha,
                     "path": ".github/workflows/release.yml",
@@ -157,6 +159,80 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     assert {record["name"] for record in records} == set(standard)
     assert {path.name for path in root.iterdir()} == {f"{name}.txt" for name in standard}
     assert len(downloads) == len(archives) and set(downloads) == set(archives)
+
+
+@pytest.mark.parametrize(
+    ("event", "ref_name", "attempt", "error"),
+    [
+        ("pull_request", "v1.2.3", 1, "event must be"),
+        ("workflow_dispatch", "main", 1, "head_branch must be"),
+        ("workflow_dispatch", "v1.2.3", 2, "attempt must be exactly 1"),
+    ],
+)
+def test_candidate_recovery_rejects_untrusted_runs(
+    event: str, ref_name: str, attempt: int, error: str,
+) -> None:
+    run = {
+        "id": 123,
+        "run_attempt": attempt,
+        "event": event,
+        "head_branch": ref_name,
+        "head_sha": "a" * 40,
+        "path": candidate.BUILD_WORKFLOW,
+        "repository": {"full_name": "example/project"},
+    }
+    with pytest.raises(ValueError, match=error):
+        candidate.check_build_run(
+            run,
+            release_tag="v1.2.3",
+            release_sha="a" * 40,
+            run_id=123,
+            run_attempt=attempt,
+            require_success=False,
+        )
+
+
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
+def test_candidate_attestation_binds_the_build_event(event: str) -> None:
+    repository = "example/project"
+    sha = "a" * 40
+    digest = "b" * 64
+    tag = "v1.2.3"
+    certificate = {
+        "sourceRepositoryURI": f"https://github.com/{repository}",
+        "sourceRepositoryDigest": sha,
+        "sourceRepositoryRef": f"refs/tags/{tag}",
+        "runnerEnvironment": "github-hosted",
+        "buildTrigger": event,
+        "runInvocationURI": f"https://github.com/{repository}/actions/runs/123/attempts/1",
+    }
+    result = [{
+        "verificationResult": {
+            "verifiedTimestamps": [{"uri": "witness"}],
+            "signature": {"certificate": certificate},
+            "statement": {
+                "predicateType": "https://slsa.dev/provenance/v1",
+                "subject": [{"digest": {"sha256": digest}}],
+            },
+        },
+    }]
+
+    def verify() -> None:
+        candidate.check_candidate_attestation_payload(
+            result,
+            repository=repository,
+            release_tag=tag,
+            release_sha=sha,
+            run_id=123,
+            run_attempt=1,
+            inventory_sha256=digest,
+            build_event=event,
+        )
+
+    verify()
+    certificate["buildTrigger"] = "push" if event == "workflow_dispatch" else "workflow_dispatch"
+    with pytest.raises(ValueError, match="lacks a witnessed exact-tag attestation"):
+        verify()
 
 
 def redirect_error(url: str, location: str) -> urllib.error.HTTPError:

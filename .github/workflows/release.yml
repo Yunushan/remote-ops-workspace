@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,6 +23,7 @@ concurrency:
 
 jobs:
   release-preflight:
+    if: ${{ github.ref_type == 'tag' }}
     runs-on: ubuntu-latest
     timeout-minutes: 100
     environment: release
@@ -42,6 +44,7 @@ jobs:
         id: release-source
         shell: bash
         run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           release_sha="$(git rev-parse HEAD)"
           tag_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"
           if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -49,6 +52,7 @@ jobs:
             exit 1
           fi
           test "$tag_sha" = "$release_sha"
+          test "$GITHUB_SHA" = "$release_sha"
           echo "sha=$release_sha" >> "$GITHUB_OUTPUT"
           echo "RELEASE_SHA=$release_sha" >> "$GITHUB_ENV"
       - name: Require trusted release source
@@ -56,7 +60,7 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          test "$GITHUB_EVENT_NAME" = "push"
+          [[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]
           test "$GITHUB_REF_TYPE" = "tag"
           test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
           test "$GITHUB_REF_NAME" = "$RELEASE_TAG"
@@ -114,7 +118,7 @@ jobs:
             fi
           done
           signed_native_ready=false
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" && "$windows_ready" == true && "$macos_ready" == true ]]; then
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" && "$windows_ready" == true && "$macos_ready" == true ]]; then
             signed_native_ready=true
           fi
           candidate_build_ready=$signed_native_ready
@@ -583,10 +587,11 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: |
-          test "$GITHUB_EVENT_NAME" = "push"
+          [[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]
           test "$GITHUB_REF_TYPE" = "tag"
           test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"
           test "$GITHUB_RUN_ATTEMPT" = "1"
+          test "$GITHUB_SHA" = "$EXPECTED_RELEASE_SHA"
           test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:

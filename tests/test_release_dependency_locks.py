@@ -217,12 +217,17 @@ def test_source_build_checks_installed_environment_against_exact_source_lock() -
     assert "release.yml source-and-python must verify its installed inventory against the build lock" in errors
 
 
-def test_signed_native_runtime_report_requires_exact_locked_versions(tmp_path: Path) -> None:
+def test_signed_native_runtime_report_requires_exact_locked_versions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     checker = _checker()
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
     report = tmp_path / "pip-inspect.json"
     lock = tmp_path / "hashed-lock.txt"
     lock.write_text(f"setuptools==84.0.0 --hash=sha256:{'a' * 64}\n", encoding="utf-8")
-    project = {"name": "remote_ops_workspace", "version": "1.0.27"}
+    version = "1.2.3"
+    (tmp_path / "pyproject.toml").write_text(f'[project]\nversion = "{version}"\n', encoding="utf-8")
+    project = {"name": "remote_ops_workspace", "version": version}
     pinned = {"name": "setuptools", "version": "84.0.0"}
 
     def install(*distributions: dict[str, str]) -> None:
@@ -231,6 +236,12 @@ def test_signed_native_runtime_report_requires_exact_locked_versions(tmp_path: P
 
     install(project, pinned)
     assert checker.main(["--runtime-report", str(report), "--lock", str(lock)]) == 0
+
+    stale_version = "1.2.2"
+    install({**project, "version": stale_version}, pinned)
+    assert checker.check_runtime_report(report, lock) == [
+        f"release runtime report lists remote-ops-workspace {stale_version}, expected project version {version}"
+    ]
 
     install(project, {"name": "setuptools", "version": "83.0.0"}, {"name": "wheel", "version": "0.48.0"})
     errors = checker.check_runtime_report(report, lock)

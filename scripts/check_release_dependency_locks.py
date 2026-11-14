@@ -140,6 +140,8 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
 
 
 def check_runtime_report(report: Path, lock: Path) -> list[str]:
+    from check_release_version import read_project_version
+
     realized, report_errors = compliance.read_pip_inspect(
         report.parent, {"file": report.name}, "release runtime report",
     )
@@ -148,8 +150,18 @@ def check_runtime_report(report: Path, lock: Path) -> list[str]:
     )
     if report_errors or lock_errors:
         return report_errors + lock_errors
-    if realized.pop("remote-ops-workspace", None) is None:
+    installed_project = realized.pop("remote-ops-workspace", None)
+    if installed_project is None:
         return ["release runtime report is missing the installed remote-ops-workspace project"]
+    version_errors: list[str] = []
+    expected_project = read_project_version(ROOT / "pyproject.toml", version_errors)
+    if version_errors:
+        return version_errors
+    if installed_project != expected_project:
+        return [
+            f"release runtime report lists remote-ops-workspace {installed_project}, "
+            f"expected project version {expected_project}"
+        ]
     missing = sorted(pinned.keys() - realized.keys())
     unexpected = sorted(realized.keys() - pinned.keys())
     mismatched = sorted(name for name in pinned.keys() & realized.keys() if pinned[name] != realized[name])

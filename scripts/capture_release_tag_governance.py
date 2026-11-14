@@ -20,7 +20,7 @@ from check_release_license_compliance import (
     normalize_tag,
     verify_tag_governance_signature,
 )
-from check_release_provenance import run_gh_json
+from check_release_provenance import check_draft_release_body, run_gh_json
 from check_repository_governance import fetch_tag_rulesets, protected_tag_ruleset_ids
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
@@ -105,9 +105,11 @@ def capture(args: argparse.Namespace) -> None:
                 or draft.get("draft") is not True
                 or draft.get("prerelease") is not False
                 or draft.get("tag_name") != tag
-                or draft.get("target_commitish") != sha
             ):
                 raise ValueError("auditor publication proof requires the exact unpublished draft")
+            check_draft_release_body(
+                draft, tag, sha, transaction["run_id"], transaction["run_attempt"], expected_notes=None,
+            )
     policy_text, errors = fetch_tagged_file(fetch, sha, "configs/release_compliance_policy.json")
     if errors or policy_text is None:
         raise ValueError("; ".join(errors) or "exact release policy is missing")

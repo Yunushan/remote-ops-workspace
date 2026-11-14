@@ -335,15 +335,11 @@ def seal_runtime_report(
         )
         if downloaded_digest != digest or archive.stat().st_size != size:
             raise ValueError(f"{name} archive does not match GitHub")
-        with zipfile.ZipFile(archive) as bundle:
-            members = bundle.infolist()
-            if (
-                len(members) != 1 or members[0].filename != RUNTIME_REPORT_NAME
-                or stat.S_ISLNK(members[0].external_attr >> 16)
-                or not 0 < members[0].file_size <= MAX_JSON_BYTES
-            ):
-                raise ValueError(f"{name} archive must contain one bounded pip inspect report")
-            report = bundle.read(members[0])
+        unpacked = Path(temporary) / "unpacked"
+        extract_archive(
+            archive, unpacked, max_expanded_bytes=MAX_JSON_BYTES, only_name=RUNTIME_REPORT_NAME,
+        )
+        report = (unpacked / RUNTIME_REPORT_NAME).read_bytes()
     validate_runtime_report(report, name)
     return {
         "artifact_id": artifact_id,

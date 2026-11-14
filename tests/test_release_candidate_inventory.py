@@ -162,6 +162,7 @@ def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
         ("missing-runtime", "missing=.*release-runtime-windows-x86"),
         ("wrong-runtime-run", "is not bound to the approved build run and SHA"),
         ("bad-runtime-report", "must be a non-empty pip inspect v1 inventory"),
+        ("nonregular-runtime-report", "artifact ZIP contains non-regular entry"),
         ("unknown-artifact", "unexpected=.*unexpected-build"),
         ("expired-smoke", "GUI smoke artifact release-macos-gui-smoke-x64 must be unexpired"),
     ],
@@ -209,7 +210,11 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         with zipfile.ZipFile(stream, "w") as archive:
             if name in runtime:
                 body = b"{}" if condition == "bad-runtime-report" else raw_report
-                archive.writestr(candidate.RUNTIME_REPORT_NAME, body)
+                report = zipfile.ZipInfo(candidate.RUNTIME_REPORT_NAME)
+                if condition == "nonregular-runtime-report":
+                    report.create_system = 3
+                    report.external_attr = (stat.S_IFIFO | 0o600) << 16
+                archive.writestr(report, body)
             else:
                 archive.writestr(f"{name}.txt", f"bytes from {name}")
         data = stream.getvalue()
@@ -266,7 +271,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     if error:
         with pytest.raises(ValueError, match=error):
             seal()
-        assert len(downloads) == (1 if condition == "bad-runtime-report" else 0)
+        assert len(downloads) == (1 if condition in {"bad-runtime-report", "nonregular-runtime-report"} else 0)
+        assert not root.exists()
         assert not output.exists()
         return
 

@@ -275,6 +275,9 @@ def stage(
     raw_artifacts = listing.get("artifacts")
     if not isinstance(raw_artifacts, list):
         raise ValueError("GitHub run artifact listing must contain an artifacts list")
+    total_count = listing.get("total_count")
+    if type(total_count) is not int or total_count != len(raw_artifacts):
+        raise ValueError("GitHub run artifact listing is incomplete or has an invalid total count")
     by_name = unique_artifacts(raw_artifacts)
     actual_names = set(by_name)
     expected_names = (

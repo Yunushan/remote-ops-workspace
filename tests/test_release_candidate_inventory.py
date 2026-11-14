@@ -165,6 +165,7 @@ def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
         ("bad-runtime-report", "must be a non-empty pip inspect v1 inventory"),
         ("nonregular-runtime-report", "artifact ZIP contains non-regular entry"),
         ("unknown-artifact", "unexpected=.*unexpected-build"),
+        ("incomplete-listing", "artifact listing is incomplete"),
         ("expired-smoke", "GUI smoke artifact release-macos-gui-smoke-x64 must be unexpired"),
     ],
 )
@@ -247,7 +248,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                     "repository": {"full_name": "example/project"},
                 }
             assert endpoint == "actions/runs/123/artifacts?per_page=100"
-            return {"artifacts": artifacts}
+            total_count = len(artifacts) + (1 if condition == "incomplete-listing" else 0)
+            return {"total_count": total_count, "artifacts": artifacts}
 
         def download(self, endpoint: str, destination: Path, *, max_bytes: int = candidate.MAX_ARCHIVE_BYTES) -> str:
             artifact_id = int(endpoint.split("/")[2])

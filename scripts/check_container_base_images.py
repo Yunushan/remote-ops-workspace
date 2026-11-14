@@ -11,7 +11,7 @@ DOCKERIGNORE_PATH = ROOT / ".dockerignore"
 DEPENDABOT_CONFIG_PATH = ROOT / ".github" / "dependabot.yml"
 CI_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 PYTHON_BASE_IMAGE = (
-    "python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de"
+    "python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928"
 )
 FROM_RE = re.compile(r"(?mi)^FROM\s+([^\s]+)")
 DEPENDABOT_DOCKER_ENTRY_RE = re.compile(

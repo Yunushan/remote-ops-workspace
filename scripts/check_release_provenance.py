@@ -341,7 +341,7 @@ def main(
                 sha=sha,
                 tag=tag,
             )
-            if verify_governance and not run_errors:
+            if not run_errors:
                 run_errors = check_publication_in_run(release, invocation, sha)
                 publication_errors.extend(run_errors)
             if not run_errors:

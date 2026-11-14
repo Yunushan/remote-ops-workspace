@@ -180,6 +180,7 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
         ("wrong-tag-commit", "live release tag v1.2.3 must resolve to the attested source commit"),
         ("wrong-source", "source repository digest"),
         ("failed-run", "no common certificate-bound release workflow run attempt completed successfully"),
+        ("wrong-publication-time", "release publication time falls outside the successful publication step"),
     ],
 )
 def test_single_asset_cli_checks_the_exact_published_release(
@@ -194,6 +195,9 @@ def test_single_asset_cli_checks_the_exact_published_release(
     asset = tmp_path / "installer.bin"
     asset.write_bytes(b"tampering" if condition == "wrong-bytes" else b"installer")
     release = _release(checker, published, repository, tag)
+    release["published_at"] = (
+        "2026-11-01T12:03:00Z" if condition == "wrong-publication-time" else "2026-11-01T12:02:00Z"
+    )
     installer, other = release.pop("assets")
     if condition == "mutable":
         release["immutable"] = False
@@ -239,6 +243,25 @@ def test_single_asset_cli_checks_the_exact_published_release(
                 "repository": {"full_name": repository},
                 "head_repository": {"full_name": repository},
             }
+        if args == [
+            "api", "--hostname", "github.com", "--paginate", "--slurp",
+            f"repos/{repository}/actions/runs/123/attempts/2/jobs?per_page=100",
+        ]:
+            return [{"jobs": [{
+                "name": checker.PUBLICATION_JOB,
+                "run_id": 123,
+                "run_attempt": 2,
+                "head_sha": sha,
+                "status": "completed",
+                "conclusion": "success",
+                "steps": [{
+                    "name": checker.PUBLICATION_STEP,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "started_at": "2026-11-01T12:01:59Z",
+                    "completed_at": "2026-11-01T12:02:01Z",
+                }],
+            }]}]
         raise AssertionError(f"unexpected GitHub CLI arguments: {args}")
 
     monkeypatch.setattr(checker, "run_gh_json", fake_run)
@@ -251,7 +274,7 @@ def test_single_asset_cli_checks_the_exact_published_release(
     else:
         assert result == 0
         assert "installer.bin matches immutable v1.2.3" in output.out
-        assert len(calls) == 6
+        assert len(calls) == 7
         assert "--source-digest" in calls[4]
         assert f"refs/tags/{tag}" in calls[4]
 

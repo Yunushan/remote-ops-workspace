@@ -320,9 +320,9 @@ python scripts/check_release_provenance.py \
 
 The verifier compares the file's SHA-256 with the immutable GitHub Release,
 resolves the live release tag to the attested commit, and checks the completed
-promotion run. Use the matching published filename on Windows, macOS, and
-Linux. Verify the platform
-installer signature before installation. See
+promotion run and its successful publish step. Use the matching published
+filename on Windows, macOS, and Linux. Verify the platform installer
+signature before installation. See
 [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPLOYMENT.md).
 
 ## Installer trust boundary (O3)

@@ -35,12 +35,18 @@ def _jobs(*, conclusion: str = "success") -> dict:
     jobs = [
         {
             "id": 456,
+            "run_id": 123,
+            "run_attempt": 1,
+            "head_sha": SHA,
             "name": "Python 3.15 readiness",
             "status": "completed",
             "conclusion": conclusion,
         },
         {
             "id": 457,
+            "run_id": 123,
+            "run_attempt": 1,
+            "head_sha": SHA,
             "name": "Native Windows readiness",
             "status": "completed",
             "conclusion": conclusion,
@@ -59,7 +65,7 @@ def test_exact_successful_push_run_and_readiness_job_pass() -> None:
 
     assert errors == []
     assert run is not None and run["id"] == 123
-    assert evidence.validate_readiness_job(_jobs()) == []
+    assert evidence.validate_readiness_job(_jobs(), run=run) == []
 
 
 def test_latest_matching_run_must_succeed() -> None:
@@ -94,16 +100,21 @@ def test_pull_request_or_wrong_sha_cannot_satisfy_release_evidence() -> None:
 
 
 def test_readiness_job_must_be_unique_and_successful() -> None:
-    failed = evidence.validate_readiness_job(_jobs(conclusion="skipped"))
+    run = _runs()["workflow_runs"][0]
+    failed = evidence.validate_readiness_job(_jobs(conclusion="skipped"), run=run)
     duplicate = _jobs()
     duplicate["jobs"].append(dict(duplicate["jobs"][0], id=789))
     duplicate["total_count"] = len(duplicate["jobs"])
 
     assert any("conclusion must be success" in error for error in failed)
-    assert any("expected exactly one" in error for error in evidence.validate_readiness_job(duplicate))
+    assert any(
+        "expected exactly one" in error
+        for error in evidence.validate_readiness_job(duplicate, run=run)
+    )
 
 
 def test_native_windows_readiness_job_is_required_and_must_succeed() -> None:
+    run = _runs()["workflow_runs"][0]
     missing = _jobs()
     missing["jobs"] = [
         job for job in missing["jobs"] if job["name"] != "Native Windows readiness"
@@ -114,12 +125,29 @@ def test_native_windows_readiness_job_is_required_and_must_succeed() -> None:
 
     assert any(
         "expected exactly one 'Native Windows readiness'" in error
-        for error in evidence.validate_readiness_job(missing)
+        for error in evidence.validate_readiness_job(missing, run=run)
     )
     assert any(
         "Native Windows readiness conclusion must be success" in error
-        for error in evidence.validate_readiness_job(failed)
+        for error in evidence.validate_readiness_job(failed, run=run)
     )
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("run_id", 124),
+    ("run_attempt", 2),
+    ("run_attempt", True),
+    ("head_sha", "b" * 40),
+    ("head_sha", None),
+])
+def test_successful_readiness_jobs_must_bind_the_selected_run(field, value) -> None:
+    run = _runs()["workflow_runs"][0]
+    jobs = _jobs()
+    jobs["jobs"][1][field] = value
+
+    assert evidence.validate_readiness_job(jobs, run=run) == [
+        f"Native Windows readiness {field} must match the selected CI run",
+    ]
 
 
 def test_urls_bind_workflow_sha_branch_run_and_attempt() -> None:
@@ -247,12 +275,18 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
     ]
     python_readiness = {
         "id": 29,
+        "run_id": 123,
+        "run_attempt": 1,
+        "head_sha": SHA,
         "name": "Python 3.15 readiness",
         "status": "completed",
         "conclusion": "success",
     }
     native_windows_readiness = {
         "id": 30,
+        "run_id": 123,
+        "run_attempt": 1,
+        "head_sha": SHA,
         "name": "Native Windows readiness",
         "status": "completed",
         "conclusion": "success",
@@ -279,7 +313,7 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
     assert requested_pages == [1, 2]
     assert payload["total_count"] == 30
     assert len(payload["jobs"]) == 30
-    assert evidence.validate_readiness_job(payload) == []
+    assert evidence.validate_readiness_job(payload, run=_runs()["workflow_runs"][0]) == []
 
 
 def test_rejects_truncated_or_inconsistent_attempt_job_pages() -> None:

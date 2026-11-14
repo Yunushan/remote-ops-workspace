@@ -3159,12 +3159,10 @@ def source_artifact_record_for_run(
     artifact_name = source_values["artifact_name"]
     run_url = source_values["workflow_run_url"]
     run_key = normalize_run_key(run_url)
-    run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
-    document = (
-        source_artifacts_by_run[run_key]
-        if run_key in source_artifacts_by_run
-        else source_artifacts_by_run.get(run_id)
-    )
+    aliases = source_run_aliases(source_artifacts_by_run, run_key)
+    if len(aliases) != 1:
+        return None
+    document = source_artifacts_by_run[aliases[0]]
     if not isinstance(document, dict):
         return None
     artifacts = document.get("artifacts")
@@ -3249,26 +3247,28 @@ def check_record_source_artifact_zip_bytes(
     archive_bytes = source_artifact_bytes_by_run.get(byte_aliases[0]) if byte_aliases else None
     if archive_bytes is None:
         return [f"{target} source workflow artifact ZIP bytes missing for {run_url}"]
-    errors: list[str] = []
     artifact_record = source_artifact_record_for_run(target, record, source_artifacts_by_run)
-    if isinstance(artifact_record, dict):
-        expected_digest = artifact_record.get("digest")
-        actual_digest = f"sha256:{hashlib.sha256(archive_bytes).hexdigest()}"
-        if expected_digest != actual_digest:
-            errors.append(
-                f"{target} source workflow artifact {artifact_name} digest "
-                f"must match downloaded ZIP digest {actual_digest}, got {expected_digest!r}"
-            )
-        artifact_size = artifact_record.get("size_in_bytes")
-        if (
-            isinstance(artifact_size, int)
-            and not isinstance(artifact_size, bool)
-            and artifact_size != len(archive_bytes)
-        ):
-            errors.append(
-                f"{target} source workflow artifact {artifact_name} size_in_bytes "
-                f"must match downloaded ZIP byte length {len(archive_bytes)}, got {artifact_size!r}"
-            )
+    if artifact_record is None:
+        return [
+            f"{target} source workflow artifact {artifact_name} ZIP metadata is missing or ambiguous"
+        ]
+    errors: list[str] = []
+    expected_digest = artifact_record.get("digest")
+    actual_digest = f"sha256:{hashlib.sha256(archive_bytes).hexdigest()}"
+    if expected_digest != actual_digest:
+        errors.append(
+            f"{target} source workflow artifact {artifact_name} digest "
+            f"must match downloaded ZIP digest {actual_digest}, got {expected_digest!r}"
+        )
+    artifact_size = artifact_record.get("size_in_bytes")
+    if not positive_int(artifact_size) or artifact_size != len(archive_bytes):
+        errors.append(
+            f"{target} source workflow artifact {artifact_name} size_in_bytes "
+            f"must match downloaded ZIP byte length {len(archive_bytes)}, got {artifact_size!r}"
+        )
+    if errors:
+        return errors
+
     file_bytes_or_error = source_artifact_zip_file_bytes(archive_bytes)
     if isinstance(file_bytes_or_error, str):
         errors.append(

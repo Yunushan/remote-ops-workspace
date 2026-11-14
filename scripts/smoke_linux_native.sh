@@ -468,7 +468,7 @@ run_row_command() {
       "$row_bin" "$@"
     fi
   elif [[ "$mode" == "appimage" ]]; then
-    APPIMAGE_EXTRACT_AND_RUN=1 "$row_bin" "$@"
+    "$APPIMAGE_LAUNCHER" "$@"
   else
     "$row_bin" "$@"
   fi
@@ -515,6 +515,9 @@ verify_row() {
     echo "expected executable missing: $row_bin" >&2
     exit 1
   fi
+  if [[ -n "${TARGET:-}" ]]; then
+    python3 scripts/check_linux_native_elf.py --target "$APPIMAGE_ARCH" --executable "$row_bin" || return $?
+  fi
   run_row_command "$row_bin" "$mode" "$public_path" "$phase" version --version | grep -F "$VERSION" >/dev/null
   verify_row_runtime_resources "$row_bin" "$mode" "$label" "$public_path" "$phase"
 }
@@ -522,8 +525,7 @@ verify_row() {
 rm -rf "$SMOKE_ROOT"
 mkdir -p "$SMOKE_ROOT/appimage"
 
-# Modern candidate lanes bind every entrypoint. Existing 32-bit legacy smoke
-# retains its separate runtime method and does not claim this byte-binding proof.
+# Modern candidate lanes also bind every entrypoint to its build-time digest.
 BINDING_TARGET=""
 case "$ARCH" in
   x86_64) BINDING_TARGET="linux-x86_64" ;;
@@ -536,16 +538,15 @@ fi
 
 prepare_appimage_probe() {
   local phase="$1"
-  APPIMAGE_ROW="$STAGED_APPIMAGE"
   if [[ -n "$BINDING_TARGET" ]]; then
     python3 scripts/candidate_posix_byte_binding.py check --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
       --path "$STAGED_APPIMAGE" --public-path appimage/runtime.AppImage --stage "$phase" --probe extract --package || return $?
-    local extraction="$SMOKE_ROOT/appimage/$phase"
-    mkdir -p "$extraction"
-    (cd "$extraction" && "$STAGED_APPIMAGE" --appimage-extract >/dev/null) || return $?
-    APPIMAGE_ROW="$extraction/squashfs-root/usr/bin/row"
-    APPIMAGE_LAUNCHER="$extraction/squashfs-root/AppRun"
   fi
+  local extraction="$SMOKE_ROOT/appimage/$phase"
+  mkdir -p "$extraction"
+  (cd "$extraction" && "$STAGED_APPIMAGE" --appimage-extract >/dev/null) || return $?
+  APPIMAGE_ROW="$extraction/squashfs-root/usr/bin/row"
+  APPIMAGE_LAUNCHER="$extraction/squashfs-root/AppRun"
 }
 
 echo "native installer smoke: DEB install"
@@ -587,9 +588,7 @@ prepare_appimage_probe reinstall
 verify_row "$APPIMAGE_ROW" appimage "AppImage upgrade" appimage/usr/bin/row reinstall
 echo "native installer smoke: AppImage uninstall"
 rm -f "$STAGED_APPIMAGE"
-if [[ -n "$BINDING_TARGET" ]]; then
-  rm -rf "$SMOKE_ROOT/appimage/install" "$SMOKE_ROOT/appimage/reinstall"
-fi
+rm -rf "$SMOKE_ROOT/appimage/install" "$SMOKE_ROOT/appimage/reinstall"
 if [[ -e "$STAGED_APPIMAGE" ]]; then
   echo "AppImage uninstall cleanup left staged artifact behind" >&2
   exit 1

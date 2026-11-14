@@ -26,6 +26,35 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+@pytest.mark.parametrize("exit_code", [0, 1, 2])
+def test_xp_candidate_verifies_the_exact_archived_executable(tmp_path, monkeypatch, exit_code) -> None:
+    checker = load_checker(monkeypatch)
+    archive = tmp_path / "candidate.zip"
+    executable = b"fixture executable with a structural certificate table"
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr(checker.EXECUTABLE, executable)
+        package.writestr("README_XP.txt", "XP companion")
+        for name in ("LICENSE", "NOTICE"):
+            package.writestr(f"docs/{name}", (checker.ROOT / name).read_bytes())
+    monkeypatch.setattr(checker, "matches_pe_architecture", lambda *_: True)
+    monkeypatch.setattr(checker, "has_pe_certificate_table", lambda *_: True)
+    tool = tmp_path / "SignTool.exe"
+    calls = []
+
+    def verify(args, *, check, timeout):
+        assert args[:5] == [str(tool), "verify", "/pa", "/all", "/tw"]
+        assert check is False and timeout == 60
+        path = Path(args[5])
+        assert path.name == "row-xp-host.exe" and path.read_bytes() == executable
+        calls.append(path)
+        return checker.subprocess.CompletedProcess(args, exit_code)
+
+    monkeypatch.setattr(checker.subprocess, "run", verify)
+    errors = checker.check_package(archive, "x64", digest(executable), checker.ROOT, signed=True, signtool=tool)
+    assert errors == (["XP archive executable failed Authenticode or timestamp verification"] if exit_code else [])
+    assert len(calls) == 1 and not calls[0].exists()
+
+
 @pytest.mark.parametrize(
     ("change", "expected"),
     [

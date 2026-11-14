@@ -6,7 +6,9 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -54,6 +56,7 @@ def check_build_inputs(
     source_sha: str,
     run_id: str,
     run_attempt: str,
+    signtool: Path | None = None,
     root: Path = ROOT,
 ) -> list[str]:
     if not (
@@ -131,7 +134,9 @@ def check_build_inputs(
         and lowercase_sha256_hex(compiler["sha256"])
     ):
         errors.append("build receipt compiler observation is invalid")
-    errors.extend(check_package(archive, arch, receipt.get("executable_sha256"), root, signed=signed))
+    errors.extend(check_package(
+        archive, arch, receipt.get("executable_sha256"), root, signed=signed, signtool=signtool,
+    ))
     return errors
 
 
@@ -169,7 +174,8 @@ def has_pe_certificate_table(executable: bytes, arch: str) -> bool:
 
 
 def check_package(
-    archive: Path, arch: str, executable_sha256: Any, root: Path, *, signed: bool,
+    archive: Path, arch: str, executable_sha256: Any, root: Path, *,
+    signed: bool, signtool: Path | None = None,
 ) -> list[str]:
     with zipfile.ZipFile(archive) as package:
         files = {entry.filename: entry for entry in package.infolist() if not entry.is_dir()}
@@ -189,6 +195,16 @@ def check_package(
             packaged = package.read(files[f"docs/{name}"]).replace(b"\r\n", b"\n")
             if packaged != (root / name).read_bytes().replace(b"\r\n", b"\n"):
                 errors.append(f"XP archive {name} does not match the source")
+        if signed and signtool is not None and not errors:
+            with tempfile.TemporaryDirectory(prefix="row-xp-authenticode-") as directory:
+                path = Path(directory) / "row-xp-host.exe"
+                path.write_bytes(executable)
+                result = subprocess.run(
+                    [str(signtool), "verify", "/pa", "/all", "/tw", str(path)],
+                    check=False, timeout=60,
+                )
+                if result.returncode != 0:
+                    errors.append("XP archive executable failed Authenticode or timestamp verification")
         return errors
 
 
@@ -198,16 +214,20 @@ def main() -> int:
     parser.add_argument("--assets-dir", type=Path, required=True)
     parser.add_argument("--arch", choices=("x86", "x64"), required=True)
     parser.add_argument("--tag", default=f"v{read_project_version()}")
+    parser.add_argument("--signtool", type=Path, help="Windows SDK SignTool for verifying the archived release executable")
     for option in ("repository", "source-ref", "source-sha", "run-id", "run-attempt"):
         parser.add_argument(f"--{option}", required=True)
     args = parser.parse_args()
     try:
+        if args.source_ref.startswith("refs/tags/") and args.signtool is None:
+            raise ValueError("signed XP build receipt verification requires --signtool")
+        signtool = args.signtool.resolve(strict=True) if args.signtool is not None else None
         errors = check_build_inputs(
             args.receipt, args.assets_dir, repository=args.repository, arch=args.arch,
             tag=args.tag, source_ref=args.source_ref, source_sha=args.source_sha,
-            run_id=args.run_id, run_attempt=args.run_attempt,
+            run_id=args.run_id, run_attempt=args.run_attempt, signtool=signtool,
         )
-    except (OSError, ValueError, KeyError, RuntimeError, zipfile.BadZipFile) as exc:
+    except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired, zipfile.BadZipFile) as exc:
         errors = [str(exc)]
     if errors:
         for error in errors:

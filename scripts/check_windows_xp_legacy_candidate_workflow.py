@@ -83,6 +83,14 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
     upload = text.find("uses: actions/upload-artifact@")
     if verify < 0 or upload < verify:
         errors.append("legacy candidate workflow must verify build evidence before upload")
+    receipt_step = text[text.find("      - name: Verify XP candidate build receipt and archived signature"):upload]
+    if not all(fragment in receipt_step for fragment in (
+        'if ($env:GITHUB_REF_TYPE -eq "tag") {\n'
+        '            . ./scripts/find_windows_signtool.ps1\n'
+        '            $SignatureArgs = @("--signtool", (Find-WindowsSignTool))',
+        '--run-attempt "$env:GITHUB_RUN_ATTEMPT" @SignatureArgs',
+    )):
+        errors.append("legacy candidate workflow must use SignTool on the archived executable before upload")
     if "softprops/action-gh-release" in text or "gh release" in text:
         errors.append("legacy candidate workflow must not publish a release or claim XP-host proof")
     return errors

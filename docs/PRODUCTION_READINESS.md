@@ -149,7 +149,9 @@ source, executable, archive, and native manifest. The builder runs
 `scripts/check_xp_candidate_build_inputs.py` before uploading the candidate
 and receipt. The checker compares the tagged source and reference lock to the
 receipt and inspects the ZIP for the expected executable architecture and
-packaged license files. With the exact tagged commit checked out, run
+packaged license files. For signed builds, it also extracts the executable to
+a temporary directory and verifies its Authenticode signature and timestamp
+with Windows SDK SignTool. With the exact tagged commit checked out, run
 `scripts/check_xp_candidate_run.py` for each architecture. It checks the
 live tag and successful candidate attempt, compares the downloaded candidate
 and receipt ZIPs to their GitHub artifact IDs and digests, and verifies that

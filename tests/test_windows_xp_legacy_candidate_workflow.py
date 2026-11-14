@@ -53,6 +53,15 @@ def test_signed_candidate_requires_protected_release_environment() -> None:
     assert any("missing protected release environment" in error for error in errors)
 
 
+def test_signed_candidate_must_verify_the_archived_executable_before_upload() -> None:
+    checker = _load_checker()
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert not checker.check_windows_xp_legacy_candidate_workflow(workflow)
+    for token in ('@SignatureArgs', ' and archived signature'):
+        errors = checker.check_windows_xp_legacy_candidate_workflow(workflow.replace(token, "", 1))
+        assert any("SignTool on the archived executable before upload" in error for error in errors)
+
+
 def test_legacy_candidate_cancels_superseded_branches_and_preserves_tag_builds() -> None:
     checker = _load_checker()
     workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")

@@ -27,6 +27,7 @@ from release_candidate_inventory import (
 )
 
 WORKFLOW = ".github/workflows/xp-legacy-candidate.yml"
+RECEIPT_STEP = "Verify XP candidate build receipt and archived signature"
 
 
 def check_run(
@@ -132,7 +133,7 @@ def verify_candidate(
     }
     verified_steps = [
         step for step in job.get("steps", [])
-        if step.get("name") == "Verify XP candidate build receipt" and step.get("conclusion") == "success"
+        if step.get("name") == RECEIPT_STEP and step.get("conclusion") == "success"
     ]
     if any(job.get(key) != value for key, value in expected_job.items()) or len(verified_steps) != 1:
         raise ValueError(f"XP {arch} job must successfully verify the receipt before upload")

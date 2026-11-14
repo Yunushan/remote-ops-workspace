@@ -312,12 +312,15 @@ jobs:
           jq -n --arg tag "$RELEASE_TAG" --arg sha "$RELEASE_SHA" --arg marker "$transaction_marker" --rawfile body release-notes.md \
             '{tag_name: $tag, target_commitish: $sha, name: $tag, body: ($body + "\n" + $marker + "\n"), draft: true, prerelease: false}' > "$request"
           gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"
-          release_id="$(jq -er 'select(.draft == true and .prerelease == false) | .id | select(type == "number" and . > 0)' "$response")"
+          release_id="$(jq -er '.id | select(type == "number" and . > 0)' "$response")"
+          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
+          echo "release-id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "GitHub returned release ID $release_id for $RELEASE_TAG"
+          jq -e '.draft == true and .prerelease == false' "$response" >/dev/null
           test "$(jq -r '.tag_name' "$response")" = "$RELEASE_TAG"
           upload_url="$(jq -er '.upload_url | select(type == "string") | sub("\\{.*$"; "")' "$response")"
           test "$upload_url" = "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets"
           test "$(jq -r '.body' "$response")" = "$(jq -r '.body' "$request")"
-          echo "release-id=$release_id" >> "$GITHUB_OUTPUT"
           echo "upload-url=$upload_url" >> "$GITHUB_OUTPUT"
       - name: Upload every certified asset to the new numeric draft
         shell: bash

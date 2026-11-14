@@ -320,6 +320,20 @@ def test_promotion_rejects_automatic_release_deletion() -> None:
     assert "promotion workflow must preserve releases after failure" in checker.check_promotion_truth(changed)
 
 
+def test_promotion_captures_release_id_before_rejecting_draft_response() -> None:
+    checker = load_script("check_release_truth")
+    capture = '          echo "release-id=$release_id" >> "$GITHUB_OUTPUT"\n'
+    response_check = '          jq -e \'.draft == true and .prerelease == false\' "$response" >/dev/null\n'
+    workflow = promotion_workflow()
+    assert workflow.count(capture) == workflow.count(response_check) == 1
+    late_capture = workflow.replace(capture, "", 1).replace(response_check, response_check + capture, 1)
+    message = "promotion must capture the validated release ID before checking the draft response"
+
+    assert message not in checker.check_promotion_truth(workflow)
+    assert message in checker.check_promotion_truth(late_capture)
+    assert message in checker.check_promotion_truth(workflow.replace(capture, "", 1))
+
+
 def test_promotion_requires_qualified_default_branch_source() -> None:
     checker = load_script("check_release_truth")
     workflow = promotion_workflow()

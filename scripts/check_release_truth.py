@@ -491,6 +491,23 @@ def check_promotion_truth(workflow: str) -> list[str]:
         ),
         allowed_flags=frozenset({"--repository", "--branch", "--sha"}),
     ))
+    draft_step = workflow_step_block(block, "name: Create new draft by numeric API identity")
+    draft_commands = [line.strip() for line in draft_step.splitlines()]
+    draft_response_checks = (
+        'gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"',
+        'release_id="$(jq -er \'.id | select(type == "number" and . > 0)\' "$response")"',
+        '[[ "$release_id" =~ ^[1-9][0-9]*$ ]]',
+        'echo "release-id=$release_id" >> "$GITHUB_OUTPUT"',
+        'jq -e \'.draft == true and .prerelease == false\' "$response" >/dev/null',
+        'test "$(jq -r \'.tag_name\' "$response")" = "$RELEASE_TAG"',
+    )
+    if (
+        tuple(command for command in draft_commands if command in draft_response_checks) != draft_response_checks
+        or step_is_suppressed(draft_step)
+        or step_has_dead_code_construct(draft_step)
+        or not literal_run_is_fail_closed(draft_step)
+    ):
+        errors.append("promotion must capture the validated release ID before checking the draft response")
     report = workflow_step_block(block, "name: Report the release ID after failure")
     report_requirements = (
         "failure() && steps.create-draft.outputs.release-id != ''",

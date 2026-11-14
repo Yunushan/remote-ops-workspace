@@ -148,9 +148,10 @@ matches.
 The same release source workflow run URL cannot carry conflicting accepted run
 attempts across protected-platform records for one release; that ambiguity is
 aggregate evidence only and cannot complete the parity block.
-The release workflow's `accepted-platform-evidence-assets` job must keep only
-read permissions for repository content and Actions artifacts; no write-scoped
-GitHub permission is acceptable for importing protected-platform evidence.
+The exact-tag production promotion imports protected-platform evidence with
+read access to the repository and Actions artifacts. The promotion job runs
+the importer before using its write permissions to attest and publish the
+verified inventory.
 The downloaded source artifact must contain exactly the expected release and
 review-bundle files at artifact root; extra files, private raw logs and nested
 builder output directories are rejected before anything is copied into the

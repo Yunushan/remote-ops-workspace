@@ -150,10 +150,10 @@ archive. The XP build receipt and native manifest bind the resulting
 signature metadata to the candidate bytes. The XP host tests still have
 to demonstrate the behavior of those exact files on each target OS.
 
-The policy-only preflight therefore withholds the production-signed publication
-lane today. Once the tracked policy and locks are independently approved, the
-tag run builds and retains the exact signed/notarized candidate artifacts and
-seals their numeric artifact identities and archive digests. The inventory
+With signing configured and the tagged source qualified, the tag run builds
+and retains the signed and notarized candidate artifacts. It seals their
+numeric artifact identities and archive digests. Publication requires the
+tracked policy and locks to be independently approved. The inventory
 also records the SHA-256 and size of each standard native target's
 `candidate-pip-inspect.json`, captured with the Python interpreter used for
 packaging. A reviewer downloads those exact run artifacts, uses the sealed

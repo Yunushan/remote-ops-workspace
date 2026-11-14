@@ -463,6 +463,42 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     assert any("attempt-specific redistribution approval" in error for error in checker.check_certification_truth(changed))
 
 
+@pytest.mark.parametrize(
+    ("find", "replacement", "message"),
+    [
+        (
+            '--completed-promotion-run-attempt "$PROMOTION_RUN_ATTEMPT"',
+            '--completed-promotion-run-attempt "$GITHUB_RUN_ATTEMPT"',
+            "must run the exact immutable publication audit unconditionally",
+        ),
+        (
+            "      - name: Verify completed promotion, immutable numeric release and every attested byte\n",
+            "      - name: Verify completed promotion, immutable numeric release and every attested byte\n"
+            "        continue-on-error: true\n",
+            "must run the exact immutable publication audit unconditionally",
+        ),
+        (
+            "      - name: Verify published production release notes\n",
+            "      - name: Verify published production release notes\n        if: ${{ false }}\n",
+            "must run the production release notes audit unconditionally",
+        ),
+        (
+            "      - name: Download governance proof from the triggering promotion attempt\n",
+            "      - name: Download governance proof from the triggering promotion attempt\n"
+            "        if: ${{ false }}\n",
+            "governance proof download must stage the proof unconditionally",
+        ),
+    ],
+)
+def test_certification_requires_executable_exact_audits(find, replacement, message) -> None:
+    checker = load_script("check_release_truth")
+    workflow = (ROOT / ".github/workflows/release-certification.yml").read_text(encoding="utf-8")
+    assert find in workflow
+    assert f"release certification {message}" in checker.check_certification_truth(
+        workflow.replace(find, replacement, 1)
+    )
+
+
 @pytest.mark.parametrize("name", ["promotion", "certification"])
 def test_release_verifier_rejects_unisolated_python_environment(name: str) -> None:
     checker = load_script("check_release_truth")

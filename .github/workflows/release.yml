@@ -375,7 +375,7 @@ jobs:
           Split-Path -Parent $InnoCompiler | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           Write-Host "Verified Inno Setup compiler $InnoVersion at $InnoCompiler"
           dotnet tool install --global wix --version 5.0.2
-      - name: Prepare Windows release signing certificate
+      - name: Build Windows EXE and MSI installers
         shell: powershell
         env:
           ROW_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.ROW_WINDOWS_CERTIFICATE_BASE64 }}
@@ -390,15 +390,19 @@ jobs:
               throw "Protected release environment is missing $Name"
             }
           }
-          $CertificatePath = Join-Path $env:RUNNER_TEMP "remote-ops-release-signing.pfx"
-          [System.IO.File]::WriteAllBytes($CertificatePath, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
-          Add-Content $env:GITHUB_ENV "ROW_REQUIRE_RELEASE_SIGNING=1"
-          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_CERTIFICATE_PATH=$CertificatePath"
-          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_CERTIFICATE_PASSWORD=$env:ROW_WINDOWS_CERTIFICATE_PASSWORD"
-          Add-Content $env:GITHUB_ENV "ROW_WINDOWS_TIMESTAMP_URL=$env:ROW_WINDOWS_TIMESTAMP_URL"
-      - name: Build Windows EXE and MSI installers
-        shell: powershell
-        run: .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
+          $CertificatePath = Join-Path $env:RUNNER_TEMP "row-release-$([guid]::NewGuid()).pfx"
+          try {
+            [System.IO.File]::WriteAllBytes($CertificatePath, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
+            Remove-Item -LiteralPath Env:ROW_WINDOWS_CERTIFICATE_BASE64
+            $env:ROW_REQUIRE_RELEASE_SIGNING = "1"
+            $env:ROW_WINDOWS_CERTIFICATE_PATH = $CertificatePath
+            .\scripts\make_windows_native.ps1 -Arch "${{ matrix.arch }}"
+            if ($LASTEXITCODE -ne 0) { throw "Signed Windows installer build failed" }
+          } finally {
+            if (Test-Path -LiteralPath $CertificatePath) {
+              Remove-Item -LiteralPath $CertificatePath -Force -ErrorAction Stop
+            }
+          }
       - name: Run Windows native installer smoke tests
         shell: powershell
         timeout-minutes: 20
@@ -483,7 +487,8 @@ jobs:
         run: |
           python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
           python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
-      - name: Prepare macOS release signing keychain
+      - name: Build macOS DMG and PKG installers
+        shell: bash
         env:
           ROW_MACOS_CERTIFICATE_BASE64: ${{ secrets.ROW_MACOS_CERTIFICATE_BASE64 }}
           ROW_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_MACOS_CERTIFICATE_PASSWORD }}
@@ -500,26 +505,36 @@ jobs:
           for name in ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_SIGN_IDENTITY ROW_MACOS_INSTALLER_SIGN_IDENTITY ROW_MACOS_NOTARY_KEY_BASE64 ROW_MACOS_NOTARY_KEY_ID ROW_MACOS_NOTARY_ISSUER; do
             test -n "${!name}" || { echo "Protected release environment is missing $name" >&2; exit 1; }
           done
-          keychain="$RUNNER_TEMP/remote-ops-release.keychain-db"
-          certificate="$RUNNER_TEMP/remote-ops-release.p12"
-          notary_key="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s' "$ROW_MACOS_CERTIFICATE_BASE64" | base64 --decode > "$certificate"
-          printf '%s' "$ROW_MACOS_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key"
+          signing_dir="$(mktemp -d "$RUNNER_TEMP/row-macos-signing.XXXXXXXX")"
+          keychain="$signing_dir/release.keychain-db"
+          certificate="$signing_dir/release.p12"
+          notary_key="$signing_dir/AuthKey.p8"
+          cleanup_signing_material() {
+            local status=$?
+            trap - EXIT
+            if [[ -f "$keychain" ]]; then
+              security delete-keychain "$keychain" || status=1
+            fi
+            rm -f -- "$certificate" "$notary_key" || status=1
+            rmdir -- "$signing_dir" || status=1
+            exit "$status"
+          }
+          trap cleanup_signing_material EXIT
+          (
+            umask 077
+            printf '%s' "$ROW_MACOS_CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+            printf '%s' "$ROW_MACOS_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key"
+          )
           security create-keychain -p "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
           security import "$certificate" -k "$keychain" -P "$ROW_MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
-          security list-keychain -d user -s "$keychain"
-          xcrun notarytool store-credentials "remote-ops-notary" --key "$notary_key" --key-id "$ROW_MACOS_NOTARY_KEY_ID" --issuer "$ROW_MACOS_NOTARY_ISSUER"
-          {
-            echo "ROW_REQUIRE_RELEASE_SIGNING=1"
-            echo "ROW_MACOS_SIGN_IDENTITY=$ROW_MACOS_SIGN_IDENTITY"
-            echo "ROW_MACOS_INSTALLER_SIGN_IDENTITY=$ROW_MACOS_INSTALLER_SIGN_IDENTITY"
-            echo "ROW_MACOS_NOTARY_PROFILE=remote-ops-notary"
-          } >> "$GITHUB_ENV"
-      - name: Build macOS DMG and PKG installers
-        run: EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/make_macos_native.sh
+          xcrun notarytool store-credentials "remote-ops-notary" --keychain "$keychain" --key "$notary_key" --key-id "$ROW_MACOS_NOTARY_KEY_ID" --issuer "$ROW_MACOS_NOTARY_ISSUER"
+          rm -f -- "$certificate" "$notary_key"
+          unset ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_NOTARY_KEY_BASE64
+          ROW_REQUIRE_RELEASE_SIGNING=1 ROW_MACOS_SIGNING_KEYCHAIN="$keychain" ROW_MACOS_NOTARY_PROFILE=remote-ops-notary \
+            EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/make_macos_native.sh
       - name: Run macOS native installer smoke tests
         run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
       - name: Retain macOS candidate runtime inventory

@@ -711,7 +711,7 @@ def check_native_signing_verification(windows: str, macos: str) -> list[str]:
 
     macos = strip_unquoted_comments(macos)
     commands = (
-        'productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" "$PKG" "$SIGNED_PKG"',
+        'productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} "$PKG" "$SIGNED_PKG"',
         'codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY"',
         'xcrun notarytool submit "$PKG"',
         'xcrun stapler staple "$PKG"',

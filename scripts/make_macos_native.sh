@@ -51,13 +51,18 @@ APP_NAME="Remote Ops Workspace"
 MACOS_MINIMUM_VERSION="14.4.0"
 APP_PATH="$PY_DIST/$APP_NAME.app"
 
+macos_keychain_args=()
+if [[ -n "${ROW_MACOS_SIGNING_KEYCHAIN:-}" ]]; then
+  macos_keychain_args=(--keychain "$ROW_MACOS_SIGNING_KEYCHAIN")
+fi
+
 sign_macos_artifact() {
   if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" != "1" ]]; then
     codesign --force --deep --sign - "$1"
     return
   fi
   : "${ROW_MACOS_SIGN_IDENTITY:?Production signing requires ROW_MACOS_SIGN_IDENTITY}"
-  codesign --force --deep --options runtime --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" "$1"
+  codesign --force --deep --options runtime --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} "$1"
   codesign --verify --deep --strict --verbose=2 "$1"
 }
 
@@ -197,16 +202,16 @@ if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" == "1" ]]; then
   : "${ROW_MACOS_INSTALLER_SIGN_IDENTITY:?Production signing requires ROW_MACOS_INSTALLER_SIGN_IDENTITY}"
   : "${ROW_MACOS_NOTARY_PROFILE:?Production signing requires ROW_MACOS_NOTARY_PROFILE}"
   SIGNED_PKG="$BUILD_DIR/$(basename "$PKG").signed"
-  productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" "$PKG" "$SIGNED_PKG"
+  productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} "$PKG" "$SIGNED_PKG"
   mv "$SIGNED_PKG" "$PKG"
-  codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" \
+  codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} \
     --identifier io.github.remoteopsworkspace.app.diskimage "$DMG"
-  xcrun notarytool submit "$PKG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$PKG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} --wait
   xcrun stapler staple "$PKG"
   xcrun stapler validate "$PKG"
   pkgutil --check-signature "$PKG"
   spctl --assess --type install --verbose=2 "$PKG"
-  xcrun notarytool submit "$DMG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" --wait
+  xcrun notarytool submit "$DMG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} --wait
   xcrun stapler staple "$DMG"
   xcrun stapler validate "$DMG"
   codesign --verify --strict --verbose=2 "$DMG"

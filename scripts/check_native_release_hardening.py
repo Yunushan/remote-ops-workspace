@@ -373,6 +373,24 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     macos = workflow_job_block(workflow, "macos-native")
     if "Production candidate macOS builds require protected release signing" not in macos:
         errors.append("macos-native must fail closed when release signing is unavailable")
+    for job, block, build_step in (
+        ("windows-native", windows, "Build Windows EXE and MSI installers"),
+        ("macos-native", macos, "Build macOS DMG and PKG installers"),
+    ):
+        build = workflow_step_block(block, f"name: {build_step}")
+        if "GITHUB_ENV" in build or "secrets.ROW_" in block.replace(build, "", 1):
+            errors.append(f"{job} signing credentials must be scoped to its build step")
+    windows_build = workflow_step_block(windows, "name: Build Windows EXE and MSI installers")
+    if "} finally {" not in windows_build or "Remove-Item -LiteralPath $CertificatePath" not in windows_build:
+        errors.append("windows-native must remove its signing certificate when the build exits")
+    macos_build = workflow_step_block(macos, "name: Build macOS DMG and PKG installers")
+    if (
+        "trap cleanup_signing_material EXIT" not in macos_build
+        or 'security delete-keychain "$keychain"' not in macos_build
+        or 'store-credentials "remote-ops-notary" --keychain "$keychain"' not in macos_build
+        or 'ROW_MACOS_SIGNING_KEYCHAIN="$keychain"' not in macos_build
+    ):
+        errors.append("macos-native must bind notarization to a temporary keychain and delete it when the build exits")
     preview = (ROOT / ".github" / "workflows" / "unsigned-preview.yml").read_text(
         encoding="utf-8"
     )

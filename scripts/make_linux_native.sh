@@ -106,6 +106,7 @@ if [[ ! -x "$ROW_BIN" ]]; then
   echo "PyInstaller did not create $ROW_BIN" >&2
   exit 1
 fi
+"$PYTHON_BIN" scripts/check_linux_native_elf.py --target "$APPIMAGE_ARCH" --executable "$ROW_BIN"
 
 PKGROOT="$BUILD_DIR/pkgroot"
 install -Dm755 "$ROW_BIN" "$PKGROOT/usr/bin/row"

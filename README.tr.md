@@ -222,7 +222,7 @@ Tam manifest ve skor aciklamalari icin [`docs/FULL_FEATURE_COVERAGE.md`](docs/FU
 | Windows Server 2012-2025 | CLI, GUI optional, Web/PWA | Operator jump host olarak uygundur |
 | Linux | CLI, GUI, Web/PWA | Varsayilan GitHub release is akisi x86_64/amd64 ve aarch64/arm64 native paketleri uretir; i386/i686 ve armhf haritalari eslesen builder ile betik desteklidir |
 | Unix/BSD/Solaris | CLI, Web/PWA, Qt varsa GUI | POSIX shell ve OpenSSH onceliklidir |
-| macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewer |
+| macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | Qt 6.12 DMG ve PKG kurulum paketleri macOS 14.4 veya daha yeni bir sürüm gerektirir. OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewer |
 | Android | Web/PWA, Termux CLI | ARMv7 ve ARM64 Termux/Web; APK gelecek isidir |
 | Web | PWA shell | Statik PWA kabugu; API/backend sonradan eklenebilir |
 

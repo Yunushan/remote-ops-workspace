@@ -432,7 +432,7 @@ See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`confi
 | Unix | CLI, Web/PWA, GUI where Qt is available | POSIX shell and OpenSSH first |
 | FreeBSD/OpenBSD/NetBSD/DragonFlyBSD | CLI, Web/PWA, GUI where PyQt6 is packaged | External protocol tools vary by ports/pkg availability |
 | Solaris/illumos | CLI, Web/PWA, GUI if Python/Qt stack exists | Focus on OpenSSH, browser, serial/raw sockets |
-| macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewers |
+| macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | Qt 6.12 DMG and PKG installers require macOS 14.4 or later. OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewers |
 | Android | Web/PWA, Termux CLI | ARMv7 and ARM64 through Termux/Web; Android 12 through Android 16 (API 31-36) Web/PWA emulator CI; APK remains future work |
 | iOS/iPadOS | Web/PWA | iOS/iPadOS 15 through 27.x Web/PWA contract with current and exact iOS 27 Xcode simulator smoke; native `.ipa` remains future work |
 | Web | PWA shell | Static PWA shell; API/backend can be layered on |

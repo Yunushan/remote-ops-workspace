@@ -229,8 +229,11 @@ published unsigned preview. Production promotion requires a fresh release
 namespace and a tag that resolves to the exact qualified source.
 
 1. Run the runner-readiness check above.
-2. Push the immutable production source tag after signing, dependency locks,
-   and policy prerequisites are configured. The tag push starts `release.yml`,
+2. Prepare the signing credentials and the independently approved release
+   policy on protected main. Run the
+   [pre-tag policy check](runbooks/RELEASE_PROMOTION.md#prepare-the-policy-before-tagging)
+   and verify the exact source commit has passed CI. Push the immutable
+   production source tag. The tag push starts `release.yml`,
    which builds and seals the signed and notarized candidate bytes.
    If the build fails before sealing, dispatch a fresh run with
    `gh workflow run release.yml --repo <owner>/<repo> --ref <tag>`.

@@ -87,16 +87,34 @@ payload size and payload SHA-256. Use those exact report bytes in the review
 bundle. See the [protected source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites)
 for the registry's original Actions archives.
 
-## Prepare the signed redistribution approval
+## Prepare the policy before tagging
 
-Before tagging, enroll the independent redistribution reviewer's public key
+Enroll the independent redistribution reviewer's public key
 in `trusted_ed25519_keys` and the governance auditor's public key in
 `tag_governance_attestation.trusted_ed25519_keys` in
 `configs/release_compliance_policy.json`. Each entry needs a unique `key_id`
 within its list and a `public_key` containing the base64-encoded raw 32-byte
 Ed25519 public key. The reviewer and auditor keep their private keys on their
-own systems. The policy's approved state requires the independent closed-world
-inventory review.
+own systems. The independent reviewer must approve the closed-world
+redistribution policy and inventory inputs before the policy can declare
+`policy_status: approved` and `closed_world_inventory_approved: true`.
+Set the tag-governance policy to `enforced` with the enrolled auditor key.
+The policy must map every production target to the tracked lock its workflow
+consumes.
+
+On the protected source commit, install the hash-locked verifier dependencies
+and run the policy check from a Linux x64 Python environment.
+
+```bash
+python -m pip install --require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt
+python scripts/check_release_license_compliance.py --check-policy-only
+```
+
+Cut the tag after the policy check and the required CI checks pass. The
+artifact-specific approval uses the resulting tag, commit, and signed
+installer bytes.
+
+## Prepare the signed redistribution approval
 
 Once the reviewer has approved the exact tagged candidate and bundle, save
 the approved JSON as `release-evidence.json`. In the tagged checkout, use a

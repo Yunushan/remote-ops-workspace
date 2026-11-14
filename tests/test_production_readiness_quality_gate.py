@@ -12,12 +12,14 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
     assert 'test -n "$(RELEASE_LICENSE_SIGNATURE)"' in target
     assert 'test -n "$(RELEASE_LICENSE_EVIDENCE_ROOT)"' in target
     assert 'test -n "$(RELEASE_PLATFORM_SOURCE_ARCHIVES)"' in target
-    assert 'git rev-parse --verify "$(RELEASE_TAG)^{commit}"' in target
-    assert 'git rev-parse --verify "$(RELEASE_SHA)^{commit}"' in target
-    assert 'git rev-parse --verify "HEAD^{commit}"' in target
-    assert 'test "$$head_sha" = "$$release_sha"' in target
+    tag_resolution = 'git rev-parse --verify --end-of-options "refs/tags/$(RELEASE_TAG)^{commit}"'
+    assert target.count(tag_resolution) == 2
+    assert target.count('test "$$tag_sha" = "$(RELEASE_SHA)"') == 2
+    assert target.count('git rev-parse --verify "HEAD^{commit}"') == 2
+    assert target.count('test "$$head_sha" = "$(RELEASE_SHA)"') == 2
     assert target.count("python scripts/check_repository_cleanup.py --require-clean") == 2
     assert 'python scripts/check_release_maturity.py --release-tag "$(RELEASE_TAG)"' in target
+    assert 'python scripts/check_release_version.py --release-tag "$(RELEASE_TAG)"' in target
     assert "python scripts/verify.py --production-quality" in target
     assert "--quick" not in target
     assert "--no-cli-smoke" not in target
@@ -57,6 +59,12 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
     )
     assert target.index("scripts/check_release_maturity.py") < target.index(
         "scripts/verify.py --production-quality"
+    )
+    assert target.index("scripts/check_release_version.py") < target.index(
+        "scripts/verify.py --production-quality"
+    )
+    assert target.index("--verify-published-release") < target.rindex(tag_resolution) < target.index(
+        'echo "production readiness: 100/100 gates passed"'
     )
     assert target.rindex("scripts/check_repository_cleanup.py --require-clean") > target.index(
         "--verify-published-release"

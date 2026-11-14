@@ -81,11 +81,11 @@ The governance audit must be authenticated with enough ruleset access for
 GitHub to return `bypass_actors`; GitHub hides that field from callers without
 ruleset write visibility, and the audit fails closed when it cannot prove that
 the release-tag update/deletion rules have no bypass actors.
-The release tag and its full 40-character commit SHA must both resolve in the
-local checkout. The checkout's `HEAD` must equal that SHA, and the working tree
+The local `refs/tags/<tag>` must resolve to the full 40-character
+`RELEASE_SHA`. The checkout's `HEAD` must equal that SHA, and the working tree
 must be clean before the local quality run and again immediately before the
-success message. The gate rejects a SHA that does not match the tag, a different
-checkout, or tracked/non-ignored untracked bytes that are not part of the tag.
+success message. The gate checks both refs at those boundaries and verifies
+that the tag matches the project and package version declarations.
 
 An independent compliance authority must enroll a real Ed25519 public key in
 the tracked policy and sign the exact approval JSON bytes. Follow the

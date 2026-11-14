@@ -177,6 +177,8 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
         ("malformed-page", "paginated lists"),
         ("missing-standard", "published release assets missing standard files"),
         ("wrong-bytes", "digest must match downloaded bytes"),
+        ("replaced-before-attestation", "statement does not contain the downloaded asset digest"),
+        ("replaced-after-attestation", "local release asset changed during verification"),
         ("wrong-tag-commit", "live release tag v1.2.3 must resolve to the attested source commit"),
         ("wrong-source", "source repository digest"),
         ("failed-run", "no common certificate-bound release workflow run attempt completed successfully"),
@@ -223,14 +225,18 @@ def test_single_asset_cli_checks_the_exact_published_release(
         if args == ["api", "--hostname", "github.com", f"repos/{repository}/git/tags/{'d' * 40}"]:
             return {"object": {"type": "commit", "sha": "b" * 40 if condition == "wrong-tag-commit" else sha}}
         if args[:3] == ["attestation", "verify", str(asset)]:
+            if condition == "replaced-before-attestation":
+                asset.write_bytes(b"replaced!")
             return _attestation(
                 checker,
                 repository=repository,
                 sha="b" * 40 if condition == "wrong-source" else sha,
                 tag=tag,
-                digest=hashlib.sha256(b"installer").hexdigest(),
+                digest=hashlib.sha256(asset.read_bytes()).hexdigest(),
             )
         if args == ["api", f"repos/{repository}/actions/runs/123/attempts/2"]:
+            if condition == "replaced-after-attestation":
+                asset.write_bytes(b"replaced!")
             return {
                 "id": 123,
                 "run_attempt": 2,

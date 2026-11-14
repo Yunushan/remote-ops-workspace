@@ -224,6 +224,11 @@ def main(
             print(f"Verified {len(local_assets)} unchanged draft assets against the local inventory")
             return 0
 
+        # Compare each attestation with the same digest used by the release byte check.
+        release_digests = {
+            item["name"]: item["digest"].removeprefix("sha256:")
+            for item in release["assets"] if item["name"] in local_assets
+        }
         invocations_by_asset: dict[str, set[RunInvocation]] = {}
         for name in sorted(local_assets):
             path = local_assets[name]
@@ -236,7 +241,7 @@ def main(
             invocations, attestation_errors = verified_run_invocations(
                 payload,
                 asset_name=name,
-                asset_sha256=sha256_file(path),
+                asset_sha256=release_digests[name],
                 repository=repository,
                 sha=sha,
                 tag=tag,
@@ -359,6 +364,9 @@ def main(
             errors = check_published_at(published_at)
             if errors:
                 raise RuntimeError("; ".join(dict.fromkeys(errors)))
+        for name, path in local_assets.items():
+            if path.is_symlink() or sha256_file(path) != release_digests[name]:
+                raise ValueError(f"local release asset changed during verification: {name}")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
         print(f"release provenance: {exc}", file=sys.stderr)
         return 1

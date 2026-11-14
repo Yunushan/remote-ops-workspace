@@ -194,6 +194,28 @@ def test_mobaxterm_generator_emits_candidate_and_has_no_registry_append(tmp_path
         )
 
 
+@pytest.mark.parametrize("explicit_assets_dir", [False, True])
+def test_mobaxterm_generator_keeps_candidate_outside_reviewed_evidence(
+    explicit_assets_dir: bool, tmp_path: Path, capsys
+) -> None:
+    generator = _load_generator()
+    evidence_root = tmp_path / "reviewed"
+    evidence_root.mkdir()
+    evidence = evidence_root / "evidence.json"
+    evidence.write_text("{}\n", encoding="utf-8")
+    output = evidence_root / "records" / "candidate.json"
+    args = [
+        "--article-id", "professional-deployment", "--release-tag", "v1.0.2",
+        "--release-target", "windows-x64", "--evidence", str(evidence), "--out", str(output),
+    ]
+    if explicit_assets_dir:
+        args.extend(["--assets-dir", str(evidence_root)])
+
+    assert generator.main(args) == 1
+    assert "--out must be outside the reviewed evidence directory" in capsys.readouterr().err
+    assert list(evidence_root.iterdir()) == [evidence]
+
+
 def test_mobaxterm_finalizer_binds_reviewed_published_bytes(tmp_path: Path) -> None:
     checker = _load_checker()
     finalizer = _load_finalizer()

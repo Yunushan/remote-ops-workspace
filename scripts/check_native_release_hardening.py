@@ -359,6 +359,13 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     }.items():
         if snippet not in preflight:
             errors.append(f"release-preflight missing {label}: {snippet}")
+    signing = workflow_step_block(preflight, "name: Detect release signing readiness")
+    if (
+        'if [[ "$signed_native_ready" != true ]]; then' not in signing
+        or 'if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then' not in signing
+        or '              exit 1\n            fi' not in signing
+    ):
+        errors.append("release-preflight must fail a production tag push when signing is unavailable")
     if "allow_unsigned_preview:" in workflow:
         errors.append("production candidate workflow must not expose an unsigned-preview input")
     if "softprops/action-gh-release" in workflow or "UNSIGNED PREVIEW" in workflow:

@@ -79,19 +79,6 @@ jobs:
         run: python scripts/check_release_license_compliance.py --check-policy-only
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
-      - name: Require successful Python 3.15 and native Windows CI evidence for release source
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python scripts/check_python315_ci_evidence.py
-          --repository "${{ github.repository }}"
-          --branch "$DEFAULT_BRANCH"
-          --sha "$RELEASE_SHA"
-          --wait-seconds 5400
-          --poll-interval-seconds 15
-      - name: Report protected platform readiness requirements
-        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --show-requirements
       - name: Detect release signing readiness
         id: signing-readiness
         shell: bash
@@ -131,9 +118,27 @@ jobs:
             echo "candidate_build_ready=$candidate_build_ready"
           } >> "$GITHUB_OUTPUT"
           if [[ "$signed_native_ready" != true ]]; then
+            if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+              echo "::error::Production tag push requires Windows signing and macOS signing and notarization credentials."
+              exit 1
+            fi
             echo "::notice::Exact-tag candidate staging is withheld because protected Windows/macOS release signing is incomplete."
             echo "::notice::Use unsigned-preview.yml for a uniquely tagged non-v* prerelease; release.yml never creates or mutates a GitHub Release."
           fi
+      - name: Require successful Python 3.15 and native Windows CI evidence for release source
+        if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_python315_ci_evidence.py
+          --repository "${{ github.repository }}"
+          --branch "$DEFAULT_BRANCH"
+          --sha "$RELEASE_SHA"
+          --wait-seconds 5400
+          --poll-interval-seconds 15
+      - name: Report protected platform readiness requirements
+        run: python scripts/check_protected_platform_goal.py --release-tag "$RELEASE_TAG" --show-requirements
       - name: Require clean release checkout
         run: python scripts/check_repository_cleanup.py --require-clean
 

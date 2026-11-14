@@ -98,6 +98,15 @@ def test_native_workflow_requires_fail_closed_windows_signing() -> None:
     assert "windows-native must fail closed when release signing is unavailable" in errors
 
 
+def test_production_tag_push_must_fail_when_signing_is_incomplete() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    refusal = '              exit 1\n            fi'
+    message = "release-preflight must fail a production tag push when signing is unavailable"
+    assert message not in checker.check_signing_readiness_gate(workflow)
+    assert message in checker.check_signing_readiness_gate(workflow.replace(refusal, "              :\n            fi", 1))
+
+
 def test_release_smoke_must_not_receive_windows_signing_password() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")

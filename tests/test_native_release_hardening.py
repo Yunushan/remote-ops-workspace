@@ -114,6 +114,13 @@ def test_windows_production_smoke_requires_signed_installers() -> None:
     assert "windows-native must reverify the signed installers before running smoke tests" in errors
 
 
+def test_macos_production_smoke_requires_signed_and_notarized_installers() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    errors = checker.check_signing_readiness_gate(workflow.replace(" --require-release-signing", "", 1))
+    assert "macos-native must reverify final signatures and stapled tickets before smoke tests" in errors
+
+
 def test_release_smoke_must_not_receive_windows_signing_password() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")

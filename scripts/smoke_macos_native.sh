@@ -6,6 +6,7 @@ cd "$ROOT"
 DIST="native-dist/macos"
 ARCH=""
 VERSION=""
+REQUIRE_RELEASE_SIGNING=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,6 +21,10 @@ while [[ $# -gt 0 ]]; do
     --version)
       VERSION="$2"
       shift 2
+      ;;
+    --require-release-signing)
+      REQUIRE_RELEASE_SIGNING=true
+      shift
       ;;
     *)
       echo "unknown argument: $1" >&2
@@ -68,6 +73,15 @@ for artifact in "$DMG" "$PKG"; do
     exit 1
   fi
 done
+
+if [[ "$REQUIRE_RELEASE_SIGNING" == true ]]; then
+  xcrun stapler validate "$DMG"
+  codesign --verify --strict --verbose=2 "$DMG"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+  xcrun stapler validate "$PKG"
+  pkgutil --check-signature "$PKG"
+  spctl --assess --type install --verbose=2 "$PKG"
+fi
 
 rm -rf "$SMOKE_ROOT"
 mkdir -p "$MOUNT_DIR" "$DMG_APP_DIR"

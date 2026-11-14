@@ -556,7 +556,7 @@ jobs:
           ROW_REQUIRE_RELEASE_SIGNING=1 ROW_MACOS_SIGNING_KEYCHAIN="$keychain" ROW_MACOS_NOTARY_PROFILE=remote-ops-notary \
             EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/make_macos_native.sh
       - name: Run macOS native installer smoke tests
-        run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos
+        run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos --require-release-signing
       - name: Retain macOS candidate runtime inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

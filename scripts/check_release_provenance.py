@@ -33,6 +33,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+from check_platform_evidence_source_ref import resolve_tag_commit  # noqa: E402
 from check_release_license_compliance import (  # noqa: E402
     POLICY_PATH,
     check_tag_governance_attestation,
@@ -206,6 +207,8 @@ def main(
         )
         if errors:
             raise RuntimeError("; ".join(errors))
+        if not draft_transaction:
+            require_published_tag_commit(repository, tag, sha)
         if draft_transaction:
             expected_notes = (
                 args.draft_release_notes.read_text(encoding="utf-8")
@@ -530,6 +533,24 @@ def run_gh_json(args: list[str], label: str, timeout: int) -> Any:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"{label} did not return valid JSON") from exc
+
+
+def require_published_tag_commit(repository: str, tag: str, sha: str) -> None:
+    def fetch(endpoint: str) -> dict[str, Any]:
+        payload = run_gh_json(
+            ["api", "--hostname", "github.com", f"repos/{repository}/{endpoint}"],
+            "GitHub release tag metadata",
+            30,
+        )
+        if not isinstance(payload, dict):
+            raise ValueError("GitHub release tag metadata must be a JSON object")
+        return payload
+
+    observed_sha, errors = resolve_tag_commit(fetch, tag)
+    if errors:
+        raise ValueError("; ".join(errors))
+    if observed_sha != sha:
+        raise ValueError(f"live release tag {tag} must resolve to the attested source commit {sha}")
 
 
 def local_release_assets(root: Path) -> tuple[dict[str, Path], list[str]]:

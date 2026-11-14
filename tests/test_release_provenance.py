@@ -177,6 +177,7 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
         ("malformed-page", "paginated lists"),
         ("missing-standard", "published release assets missing standard files"),
         ("wrong-bytes", "digest must match downloaded bytes"),
+        ("wrong-tag-commit", "live release tag v1.2.3 must resolve to the attested source commit"),
         ("wrong-source", "source repository digest"),
         ("failed-run", "no common certificate-bound release workflow run attempt completed successfully"),
     ],
@@ -213,6 +214,10 @@ def test_single_asset_cli_checks_the_exact_published_release(
             return release
         if args == ["api", "--paginate", "--slurp", f"repos/{repository}/releases/77/assets?per_page=100"]:
             return pages
+        if args == ["api", "--hostname", "github.com", f"repos/{repository}/git/ref/tags/{tag}"]:
+            return {"object": {"type": "tag", "sha": "d" * 40}}
+        if args == ["api", "--hostname", "github.com", f"repos/{repository}/git/tags/{'d' * 40}"]:
+            return {"object": {"type": "commit", "sha": "b" * 40 if condition == "wrong-tag-commit" else sha}}
         if args[:3] == ["attestation", "verify", str(asset)]:
             return _attestation(
                 checker,
@@ -246,9 +251,9 @@ def test_single_asset_cli_checks_the_exact_published_release(
     else:
         assert result == 0
         assert "installer.bin matches immutable v1.2.3" in output.out
-        assert len(calls) == 4
-        assert "--source-digest" in calls[2]
-        assert f"refs/tags/{tag}" in calls[2]
+        assert len(calls) == 6
+        assert "--source-digest" in calls[4]
+        assert f"refs/tags/{tag}" in calls[4]
 
 
 def test_single_asset_mode_rejects_draft_transactions_before_contacting_github(capsys) -> None:
@@ -708,6 +713,8 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
             return release
         if endpoint == f"repos/{repository}/releases/77/assets?per_page=100":
             return [release["assets"]]
+        if endpoint == f"repos/{repository}/git/ref/tags/{tag}":
+            return {"object": {"type": "commit", "sha": sha}}
         assert endpoint == f"repos/{repository}/actions/runs/123/attempts/1"
         return run
 

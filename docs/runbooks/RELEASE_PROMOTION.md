@@ -318,9 +318,10 @@ python scripts/check_release_provenance.py \
   --sha "$release_sha"
 ```
 
-The verifier compares the file's SHA-256 with the immutable GitHub Release
-and checks the attestation against the completed promotion run. Use the
-matching published filename on Windows, macOS, and Linux. Verify the platform
+The verifier compares the file's SHA-256 with the immutable GitHub Release,
+resolves the live release tag to the attested commit, and checks the completed
+promotion run. Use the matching published filename on Windows, macOS, and
+Linux. Verify the platform
 installer signature before installation. See
 [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPLOYMENT.md).
 

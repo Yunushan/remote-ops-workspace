@@ -46,7 +46,8 @@ successful Actions run URL and attempt to
 Have the reviewer include the resulting `ROW parity acceptance` line verbatim
 on its own line in the GitHub review for those exact bytes. Certification
 compares the review's live URL, author, timestamp and acceptance line with the
-record. A pull-request review must have GitHub's `APPROVED` state.
+record and checks that the review follows completion of the evidence attempt's
+jobs. A pull-request review must have GitHub's `APPROVED` state.
 
 After review, rerun the finalizer with the same inputs, the review URL, login
 and UTC timestamp, and one `--published-release-asset name=path` for each

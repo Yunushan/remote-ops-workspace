@@ -22,7 +22,9 @@ from check_mobaxterm_parity_evidence import (  # noqa: E402
     GITHUB_WORKFLOW_RUN_RE,
     check_mobaxterm_parity_evidence,
     review_acceptance_line,
+    valid_utc_timestamp,
 )
+from check_python315_ci_evidence import JOBS_PAGE_SIZE, collect_paginated_attempt_jobs  # noqa: E402
 from check_release_license_compliance import path_is_reparse, secure_regular_file  # noqa: E402
 from check_release_provenance import (  # noqa: E402
     local_release_assets,
@@ -101,12 +103,13 @@ def load_registry(repository: str, release_sha: str, registry_commit: str) -> di
     return registry
 
 
-def verify_workflow_run(repository: str, source: dict[str, Any]) -> None:
+def verify_workflow_run(repository: str, source: dict[str, Any]) -> str:
     match = GITHUB_WORKFLOW_RUN_RE.fullmatch(source["workflow_run_url"])
     assert match is not None  # The registry validator checked the URL.
     run_id = int(match.group(2))
     attempt = source["run_attempt"]
-    run = github_object(repository, f"actions/runs/{run_id}/attempts/{attempt}")
+    endpoint = f"actions/runs/{run_id}/attempts/{attempt}"
+    run = github_object(repository, endpoint)
     expected = {
         "id": run_id,
         "run_attempt": attempt,
@@ -124,6 +127,27 @@ def verify_workflow_run(repository: str, source: dict[str, Any]) -> None:
         owner = run.get(key)
         if not isinstance(owner, dict) or owner.get("full_name") != repository:
             raise ValueError(f"GitHub workflow attempt {key} differs from the release repository")
+
+    jobs = collect_paginated_attempt_jobs(
+        lambda page: github_object(repository, f"{endpoint}/jobs?per_page={JOBS_PAGE_SIZE}&page={page}")
+    )["jobs"]
+    timestamps = []
+    for job in jobs:
+        if (
+            job.get("status") != "completed" or job.get("head_sha") != source["head_sha"]
+            or type(job.get("run_id")) is not int or job["run_id"] != run_id
+            or type(job.get("run_attempt")) is not int or job["run_attempt"] != attempt
+        ):
+            raise ValueError("GitHub workflow job does not match the completed evidence attempt")
+        if job.get("conclusion") == "skipped" and job.get("completed_at") is None:
+            continue
+        completed_at = job.get("completed_at")
+        if not valid_utc_timestamp(completed_at):
+            raise ValueError("GitHub evidence job is missing a valid completion timestamp")
+        timestamps.append(completed_at)
+    if not timestamps or not any(job.get("conclusion") == "success" for job in jobs):
+        raise ValueError("GitHub evidence attempt has no successful jobs with completion timestamps")
+    return max(timestamps)
 
 
 def verify_review(repository: str, review: dict[str, Any]) -> set[str]:
@@ -215,7 +239,7 @@ def audit_release(
         return errors
 
     digests: dict[str, str] = {}
-    checked_runs: set[tuple[str, int]] = set()
+    checked_runs: dict[tuple[str, int], str] = {}
     checked_reviews: dict[tuple[str, str, str], set[str]] = {}
     for record in registry["accepted_evidence"]:
         article = record["article_id"]
@@ -239,8 +263,9 @@ def audit_release(
         review_key = (review["review_url"], review["reviewer"], review["reviewed_at"])
         try:
             if run_key not in checked_runs:
-                verify_workflow_run(repository, source)
-                checked_runs.add(run_key)
+                checked_runs[run_key] = verify_workflow_run(repository, source)
+            if review["reviewed_at"] < checked_runs[run_key]:
+                raise ValueError("GitHub review predates completion of the evidence workflow attempt")
             if review_key not in checked_reviews:
                 checked_reviews[review_key] = verify_review(repository, review)
             if review_acceptance_line(record) not in checked_reviews[review_key]:

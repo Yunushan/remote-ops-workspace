@@ -20,7 +20,12 @@ from check_release_license_compliance import (
     normalize_tag,
     verify_tag_governance_signature,
 )
-from check_release_provenance import check_draft_release_body, run_gh_json
+from check_release_provenance import (
+    RELEASE_WORKFLOW,
+    check_draft_release_body,
+    run_gh_json,
+    workflow_path_matches,
+)
 from check_repository_governance import fetch_tag_rulesets, protected_tag_ruleset_ids
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
@@ -84,6 +89,7 @@ def capture(args: argparse.Namespace) -> None:
     require_tag()
     if transaction is not None:
         run = fetch(f"actions/runs/{transaction['run_id']}/attempts/{transaction['run_attempt']}")
+        owners = [run.get(field) for field in ("repository", "head_repository")]
         if (
             run.get("id") != transaction["run_id"]
             or run.get("run_attempt") != transaction["run_attempt"]
@@ -91,11 +97,13 @@ def capture(args: argparse.Namespace) -> None:
             or run.get("event") != "workflow_dispatch"
             or run.get("head_branch") != tag
             or run.get("head_sha") != sha
-            or run.get("path") not in {
-                ".github/workflows/release-promotion.yml",
-                f".github/workflows/release-promotion.yml@refs/tags/{tag}",
-                f".github/workflows/release-promotion.yml@{tag}",
-            }
+            or not workflow_path_matches(run.get("path"), RELEASE_WORKFLOW, tag)
+            or any(
+                not isinstance(owner, dict)
+                or not isinstance(owner.get("full_name"), str)
+                or owner["full_name"].casefold() != repository.casefold()
+                for owner in owners
+            )
         ):
             raise ValueError("auditor proof requires the live exact-tag promotion run attempt")
         if args.operation == "publish":

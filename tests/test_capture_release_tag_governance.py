@@ -13,7 +13,10 @@ from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption,
 from scripts.check_release_license_compliance import verify_tag_governance_signature
 
 
-@pytest.mark.parametrize("scenario", ["approved", "hidden-bypass", "tag-moved", "untrusted-key", "wrong-draft-run"])
+@pytest.mark.parametrize("scenario", [
+    "approved", "hidden-bypass", "tag-moved", "untrusted-key", "wrong-draft-run",
+    "wrong-repository", "wrong-head-repository",
+])
 def test_capture_signs_only_live_protected_tag(
     tmp_path: Path, monkeypatch, scenario: str,
 ) -> None:
@@ -49,6 +52,8 @@ def test_capture_signs_only_live_protected_tag(
                 "id": 123, "run_attempt": 1, "status": "in_progress",
                 "event": "workflow_dispatch", "head_branch": tag, "head_sha": sha,
                 "path": f".github/workflows/release-promotion.yml@refs/tags/{tag}",
+                "repository": {"full_name": "other/project" if scenario == "wrong-repository" else repository},
+                "head_repository": {"full_name": "other/project" if scenario == "wrong-head-repository" else repository},
             }
         if endpoint == f"repos/{repository}/releases/77":
             run_id = 124 if scenario == "wrong-draft-run" else 123

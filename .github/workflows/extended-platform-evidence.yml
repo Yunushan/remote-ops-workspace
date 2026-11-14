@@ -95,6 +95,8 @@ jobs:
     runs-on: [self-hosted, linux, i386]
     timeout-minutes: 90
     env:
+      PIP_CONFIG_FILE: "/dev/null"
+      PIP_REQUIRE_VIRTUALENV: "1"
       RELEASE_ASSET_BASE_URL: ${{ inputs.release_asset_base_url }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       REPOSITORY: ${{ github.repository }}
@@ -155,6 +157,7 @@ jobs:
           . .venv-native/bin/activate
           python -m pip check
           python -X utf8 -m pip inspect --local > "platform-evidence-staging/linux-i386/${RELEASE_TAG}/candidate-pip-inspect.json"
+          python scripts/check_release_dependency_locks.py --runtime-report "platform-evidence-staging/linux-i386/${RELEASE_TAG}/candidate-pip-inspect.json" --lock requirements-locks/protected-linux/linux-i386.txt
           TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
       - name: Smoke Linux i386 native artifacts
         run: |
@@ -258,6 +261,8 @@ jobs:
     runs-on: [self-hosted, linux, armhf]
     timeout-minutes: 90
     env:
+      PIP_CONFIG_FILE: "/dev/null"
+      PIP_REQUIRE_VIRTUALENV: "1"
       RELEASE_ASSET_BASE_URL: ${{ inputs.release_asset_base_url }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       REPOSITORY: ${{ github.repository }}
@@ -308,6 +313,7 @@ jobs:
           . .venv-native/bin/activate
           python -m pip check
           python -X utf8 -m pip inspect --local > "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/candidate-pip-inspect.json"
+          python scripts/check_release_dependency_locks.py --runtime-report "platform-evidence-staging/linux-armhf/${RELEASE_TAG}/candidate-pip-inspect.json" --lock requirements-locks/protected-linux/linux-armhf.txt
           TARGET_ARCH=armhf PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
       - name: Smoke Linux armhf native artifacts
         run: |

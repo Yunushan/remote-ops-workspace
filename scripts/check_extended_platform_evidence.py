@@ -311,6 +311,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f"if: ${{{{ inputs.target == '{target}' && needs.evidence-runner-readiness.outputs.ready == 'true' }}}}": "target guard",
         f"runs-on: [self-hosted, linux, {runner}]": "matching self-hosted runner labels",
         "timeout-minutes: 90": "bounded native evidence job timeout",
+        '    env:\n      PIP_CONFIG_FILE: "/dev/null"\n      PIP_REQUIRE_VIRTUALENV: "1"\n': "isolated pip configuration",
         "RELEASE_ASSET_BASE_URL: ${{ inputs.release_asset_base_url }}": "release asset URL environment binding",
         "RELEASE_TAG: ${{ inputs.release_tag }}": "release-tag environment binding for native build script",
         "WORKFLOW_REF_NAME: ${{ github.ref_name }}": "workflow ref environment binding",
@@ -323,11 +324,6 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f'--out "{evidence_dir}/{builder_identity_name}"': "builder identity output",
         '            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \\\n': "builder workflow run-attempt evidence",
         '--source-head-sha "$SOURCE_HEAD_SHA"': "builder source head SHA evidence",
-        (
-            "python -m pip check\n"
-            f'          python -X utf8 -m pip inspect --local > "{evidence_dir}/candidate-pip-inspect.json"\n'
-            f"          TARGET_ARCH={runner} PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh"
-        ): "dependency check and runtime report from the exact native build environment",
         f'mkdir -p native-dist/linux "{assets_dir}"': "raw build output and target/release promotion staging directories",
         f'mkdir -p "{assets_dir}"': "target-scoped Linux artifact staging directory",
         smoke_command_snippet: "native installer smoke evidence capture",
@@ -397,6 +393,21 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     errors.extend(check_run_shell_safety(block, job=job))
     arch_label = target.removeprefix("linux-")
     step_prefix = f"Linux {arch_label}"
+    build_step = workflow_step_block(block, f"name: Build {step_prefix} native artifacts")
+    runtime_report = f"{evidence_dir}/candidate-pip-inspect.json"
+    expected_build_step = (
+        f"      - name: Build {step_prefix} native artifacts\n"
+        "        run: |\n"
+        "          set -euo pipefail\n"
+        "          . .venv-native/bin/activate\n"
+        "          python -m pip check\n"
+        f'          python -X utf8 -m pip inspect --local > "{runtime_report}"\n'
+        "          python scripts/check_release_dependency_locks.py "
+        f'--runtime-report "{runtime_report}" --lock {NATIVE_LOCK_DIR}/{target}.txt\n'
+        f"          TARGET_ARCH={runner} PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh\n"
+    )
+    if build_step != expected_build_step:
+        errors.append(f"{job} must validate the exact runtime lock before building native artifacts")
     errors.extend(
         check_ordered_snippets(
             block,

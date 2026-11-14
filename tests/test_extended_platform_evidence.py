@@ -44,6 +44,20 @@ def test_extended_platform_evidence_requires_locked_offline_cargo_builds() -> No
         )
 
 
+def test_extended_platform_evidence_requires_exact_runtime_lock_before_packaging() -> None:
+    checker = _load_script("check_extended_platform_evidence")
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    for target in ("linux-i386", "linux-armhf"):
+        job = f"{target}-native-evidence"
+        block = checker.workflow_job_block(workflow, job)
+        assert block
+        lock_arg = f"--lock requirements-locks/protected-linux/{target}.txt"
+        assert lock_arg in block
+        changed = block.replace(lock_arg, "--lock requirements-locks/linux-x86_64.txt", 1)
+        errors = checker.check_extended_platform_evidence(workflow.replace(block, changed, 1))
+        assert f"{job} must validate the exact runtime lock before building native artifacts" in errors
+
+
 def test_extended_platform_evidence_requires_runner_readiness_preflight() -> None:
     checker = _load_script("check_extended_platform_evidence")
     workflow = Path(".github/workflows/extended-platform-evidence.yml").read_text(encoding="utf-8").replace(

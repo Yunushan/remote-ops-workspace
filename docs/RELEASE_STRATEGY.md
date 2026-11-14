@@ -107,8 +107,9 @@ Release integrity rules:
   metadata cannot satisfy this gate.
 - Production certification separately runs
   `python scripts/check_release_license_compliance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha>`.
-  The checked-in policy status is `blocked-pending-independent-review`. Target
-  locks exist. Enroll the independent compliance key and approve the exact
+  The policy status and trusted keys are tracked in
+  `configs/release_compliance_policy.json`. Target locks exist.
+  Enroll the independent compliance key and approve the exact
   closed-world license, source and relinking inventory before promotion. The
   gate hashes the actual evidence-bundle files and native artifacts, classifies
   every distribution from raw `pip inspect`, requires the tagged native jobs to

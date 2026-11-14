@@ -379,13 +379,27 @@ def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool
     ]
 
 
-def test_current_compliance_policy_is_deliberately_fail_closed() -> None:
+@pytest.mark.parametrize("approved", [False, True], ids=["blocked", "approved"])
+def test_compliance_policy_with_tracked_workflows(approved: bool) -> None:
     checker = _load_checker()
-    policy = json.loads(Path("configs/release_compliance_policy.json").read_text())
+    policy = json.loads(Path("configs/release_compliance_policy.json").read_bytes())
     toolchain = json.loads(Path("configs/release_toolchain.json").read_text())
+    policy["policy_status"] = "approved" if approved else "blocked-pending-independent-review"
+    policy["closed_world_inventory_approved"] = approved
+    policy["trusted_ed25519_keys"] = [
+        {"key_id": "reviewer-fixture", "public_key": base64.b64encode(b"r" * 32).decode()}
+    ] if approved else []
+    governance = policy["tag_governance_attestation"]
+    governance["state"] = "enforced" if approved else "blocked-no-trusted-out-of-band-auditor"
+    governance["trusted_ed25519_keys"] = [
+        {"key_id": "auditor-fixture", "public_key": base64.b64encode(b"a" * 32).decode()}
+    ] if approved else []
 
     errors = checker.check_policy(policy, toolchain)
 
+    if approved:
+        assert not errors
+        return
     assert errors == [
         "release compliance policy is not independently approved (status='blocked-pending-independent-review')",
         "release compliance policy has no approved closed-world inventory",

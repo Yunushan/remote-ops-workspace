@@ -82,7 +82,7 @@ REQUIRED_DOC_SNIPPETS = (
     "check_release_provenance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha>",
     "check_release_license_compliance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha>",
     "check_release_maturity.py --release-tag <tag>",
-    "blocked-pending-independent-review",
+    "configs/release_compliance_policy.json",
     "Production/Stable",
     "--require-hashes",
     "unsigned-preview.yml",

@@ -690,7 +690,7 @@ def check_windows_timestamp_digest(windows: str, xp: str) -> list[str]:
     errors: list[str] = []
     for name, source in (("Windows native", windows), ("Windows XP", xp)):
         signing_commands = re.findall(
-            r"(?m)^ *& \$SignTool(?:\.Source)? sign [^\n]+",
+            r"(?m)^ *& \$SignTool sign [^\n]+",
             strip_unquoted_comments(source),
         )
         if len(signing_commands) != 1 or not re.search(
@@ -704,7 +704,7 @@ def check_native_signing_verification(windows: str, macos: str) -> list[str]:
     errors: list[str] = []
     windows = strip_unquoted_comments(windows)
     if not re.search(
-        r"(?m)^  & \$SignTool.Source verify /pa /all /tw \$ArtifactPath\n  if \(\$LASTEXITCODE -ne 0\) \{",
+        r"(?m)^  & \$SignTool verify /pa /all /tw \$ArtifactPath\n  if \(\$LASTEXITCODE -ne 0\) \{",
         windows,
     ):
         errors.append("Windows production signing must require successful Authenticode and timestamp verification")

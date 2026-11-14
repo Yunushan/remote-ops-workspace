@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
 
 function Get-ProjectVersion {
   $Pyproject = Get-Content -Raw (Join-Path $Root "pyproject.toml")
@@ -51,15 +52,12 @@ function Sign-NativeArtifact([string]$ArtifactPath) {
       throw "Production signing requires environment variable $Name"
     }
   }
-  $SignTool = Get-Command "signtool.exe" -ErrorAction SilentlyContinue
-  if (!$SignTool) {
-    throw "Production signing requires signtool.exe"
-  }
-  & $SignTool.Source sign /fd SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL /td SHA256 /f $env:ROW_WINDOWS_CERTIFICATE_PATH /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $ArtifactPath
+  $SignTool = Find-WindowsSignTool
+  & $SignTool sign /fd SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL /td SHA256 /f $env:ROW_WINDOWS_CERTIFICATE_PATH /p $env:ROW_WINDOWS_CERTIFICATE_PASSWORD $ArtifactPath
   if ($LASTEXITCODE -ne 0) {
     throw "Authenticode signing failed for $ArtifactPath"
   }
-  & $SignTool.Source verify /pa /all /tw $ArtifactPath
+  & $SignTool verify /pa /all /tw $ArtifactPath
   if ($LASTEXITCODE -ne 0) {
     throw "Authenticode signature or timestamp verification failed for $ArtifactPath"
   }

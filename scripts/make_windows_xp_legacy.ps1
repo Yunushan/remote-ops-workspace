@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
 function Get-ProjectVersion {
@@ -50,19 +51,7 @@ function Sign-XpExecutable([string]$Path) {
       throw "XP release signing requires $Name in the protected release environment."
     }
   }
-  $SignTool = (Get-Command signtool.exe -CommandType Application -ErrorAction SilentlyContinue).Source
-  if (!$SignTool) {
-    $Sdk = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
-    $SignTool = Get-ChildItem -LiteralPath $Sdk -Directory |
-      Where-Object { $_.Name -match '^10\.0\.\d+\.\d+$' } |
-      Sort-Object { [version]$_.Name } -Descending |
-      ForEach-Object { Join-Path $_.FullName "x64\signtool.exe" } |
-      Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
-      Select-Object -First 1
-  }
-  if (!$SignTool) {
-    throw "XP release signing requires signtool.exe."
-  }
+  $SignTool = Find-WindowsSignTool
   $Timestamp = [uri]$env:ROW_WINDOWS_TIMESTAMP_URL
   if (!$Timestamp.IsAbsoluteUri -or $Timestamp.Scheme -notin @("http", "https") -or !$Timestamp.Host -or $Timestamp.UserInfo) {
     throw "XP release timestamping requires a credential-free HTTP or HTTPS URL."

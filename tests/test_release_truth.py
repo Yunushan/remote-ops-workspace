@@ -119,6 +119,18 @@ def test_candidate_and_promotion_reject_checkout_using_an_unqualified_tag() -> N
     assert any("full tag ref resolution" in error for error in checker.check_promotion_truth(promotion))
 
 
+def test_candidate_ancestry_check_must_run_before_signing() -> None:
+    checker = load_script("check_release_truth")
+    build = build_workflow()
+    name = "      - name: Require trusted release source\n"
+    ancestry = 'git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"'
+    message = "release preflight must execute the exact trusted source check before maturity and signing"
+
+    assert message not in checker.check_release_preflight(build)
+    assert message in checker.check_release_preflight(build.replace(name, name + "        if: false\n", 1))
+    assert message in checker.check_release_preflight(build.replace(ancestry, "echo " + ancestry, 1))
+
+
 def test_run_source_never_interpolates_untrusted_context_directly() -> None:
     checker = load_script("check_release_truth")
     injected = promotion_workflow().replace(

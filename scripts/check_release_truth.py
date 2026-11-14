@@ -388,6 +388,27 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     signing_index = preflight.find("name: Detect release signing readiness")
     if not 0 <= maturity_index < signing_index < policy_index < verify_index:
         errors.append("release preflight must check maturity, signing readiness, and the independent policy before repository verification")
+    source_name = "Require trusted release source"
+    source_step = workflow_step_block(preflight, f"name: {source_name}")
+    allowed_event = '[[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]'
+    if (
+        executable_step_commands(source_step) != [
+            "set -euo pipefail",
+            allowed_event,
+            'test "$GITHUB_REF_TYPE" = "tag"',
+            'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"',
+            'test "$GITHUB_REF_NAME" = "$RELEASE_TAG"',
+            'test "$GITHUB_RUN_ATTEMPT" = "1"',
+            'git check-ref-format --branch "$DEFAULT_BRANCH" >/dev/null',
+            'git fetch --no-tags origin "refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"',
+            'git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"',
+        ]
+        or "DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}" not in source_step
+        or step_is_suppressed(source_step.replace(allowed_event, "", 1))
+        or not 0 <= preflight.find("name: Freeze immutable release source commit")
+            < preflight.find(f"name: {source_name}") < maturity_index
+    ):
+        errors.append("release preflight must execute the exact trusted source check before maturity and signing")
     for job in (
         "source-and-python",
         "windows-native",

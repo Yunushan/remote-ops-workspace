@@ -77,7 +77,7 @@ if ($LASTEXITCODE -ne 0 -or ($VersionOutput -join "`n") -notmatch [regex]::Escap
   throw "XP legacy host --version smoke failed"
 }
 $DryRunOutput = & $HostExe --loopback-dry-run
-if ($LASTEXITCODE -ne 0 -or ($DryRunOutput -join "`n") -notmatch "loopback profile dry-run: passed") {
+if ($LASTEXITCODE -ne 0 -or $DryRunOutput -cnotcontains "loopback TCP round trip: passed") {
   throw "XP legacy host loopback dry-run smoke failed"
 }
 $ProfileOutput = & $HostExe --legacy-profile

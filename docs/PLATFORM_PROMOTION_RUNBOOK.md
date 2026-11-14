@@ -43,9 +43,14 @@ Install PowerShell 7 on the collector for the workflow's `pwsh` steps. The
 collector validates and packages smoke evidence captured separately on XP.
 The preflight intentionally
 reports only sanitized counts, not runner names. This command needs `GH_TOKEN`
-or `GITHUB_TOKEN` with repository administration read access; it is an operator
-preflight rather than a release-workflow step because normal release tokens do
-not need runner-inventory access.
+or `GITHUB_TOKEN` with repository administration read access.
+
+Before dispatching the evidence workflows, configure the `platform-evidence`
+GitHub environment to allow only `v*` tags, with no deployment branch rule.
+Set its `ROW_PLATFORM_RUNNER_INVENTORY_TOKEN` secret to a fine-grained token
+limited to this repository with Administration read access. The hosted
+preflight uses it only for the inventory step and requires the dispatch ref to
+match the requested release tag.
 
 The dispatch-only evidence workflows have a separate non-promotional unavailable
 path. Their hosted inventory preflight uses `--allow-unavailable` and writes

@@ -203,7 +203,10 @@ python scripts/check_platform_evidence_runner_readiness.py \
 ```
 
 The manual protected-evidence workflows also perform this inventory check on a
-hosted runner. If GitHub successfully returns the inventory but no required idle
+hosted runner. Configure the tag-restricted `platform-evidence` environment
+and its read-only inventory token as described in the
+[platform promotion runbook](PLATFORM_PROMOTION_RUNBOOK.md).
+If GitHub successfully returns the inventory but no required idle
 runner exists, the workflow records an explicit non-promotional skip and leaves
 the native target jobs skipped. That result does not create evidence, change the
 support boundary, or satisfy the `4/4` protected-platform gate. Authentication,

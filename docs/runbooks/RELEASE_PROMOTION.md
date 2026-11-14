@@ -338,9 +338,10 @@ file before opening the installer.
 ## Recover a failed publication
 
 The completed-release audit checks whether the signed redistribution approval
-was valid at the publication time authenticated by GitHub and the successful
-promotion run. The live promotion workflow checks that the approval is still
-valid immediately before each release mutation.
+was valid at GitHub's publication timestamp. The timestamp must fall within the
+successful publish step of the exact promotion attempt. The live promotion
+workflow checks that the approval is still valid immediately before each
+release mutation.
 
 Retain the signed approval, its detached signature and the exact review
 bundle, including the two original XP evidence ZIPs per architecture.

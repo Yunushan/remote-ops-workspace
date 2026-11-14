@@ -50,6 +50,8 @@ from fetch_release_tag_governance import promotion_transaction, require_transact
 
 PREDICATE_TYPE = "https://slsa.dev/provenance/v1"
 RELEASE_WORKFLOW = ".github/workflows/release-promotion.yml"
+PUBLICATION_JOB = "promote-production-release"
+PUBLICATION_STEP = "Publish verified draft by numeric ID once"
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
@@ -340,7 +342,7 @@ def main(
                 tag=tag,
             )
             if verify_governance and not run_errors:
-                run_errors = check_publication_in_run(release, payload)
+                run_errors = check_publication_in_run(release, invocation, sha)
                 publication_errors.extend(run_errors)
             if not run_errors:
                 successful.append(invocation)
@@ -469,12 +471,56 @@ def verified_governance_invocations(
     return matching
 
 
-def check_publication_in_run(release: dict[str, Any], run: dict[str, Any]) -> list[str]:
+def check_publication_in_run(
+    release: dict[str, Any], invocation: RunInvocation, sha: str,
+) -> list[str]:
     published_at = parse_timestamp(release.get("published_at"), "GitHub release published_at")
-    run_started_at = parse_timestamp(run.get("run_started_at"), "GitHub run run_started_at")
-    run_updated_at = parse_timestamp(run.get("updated_at"), "GitHub run updated_at")
-    if not run_started_at <= published_at <= run_updated_at:
-        return ["release publication time falls outside the common successful promotion attempt"]
+    pages = run_gh_json(
+        [
+            "api", "--hostname", "github.com", "--paginate", "--slurp",
+            f"repos/{invocation.repository}/actions/runs/{invocation.run_id}/"
+            f"attempts/{invocation.attempt}/jobs?per_page=100",
+        ],
+        f"GitHub promotion job metadata for {invocation.url}",
+        60,
+    )
+    if not isinstance(pages, list) or not pages or any(
+        not isinstance(page, dict) or not isinstance(page.get("jobs"), list)
+        for page in pages
+    ):
+        return ["GitHub promotion job metadata must contain paginated job lists"]
+    jobs = [
+        job for page in pages for job in page["jobs"]
+        if isinstance(job, dict) and job.get("name") == PUBLICATION_JOB
+    ]
+    if len(jobs) != 1:
+        return ["successful promotion attempt must have one exact publication job"]
+    job = jobs[0]
+    if (
+        job.get("run_id") != invocation.run_id
+        or job.get("head_sha") != sha
+        or job.get("status") != "completed"
+        or job.get("conclusion") != "success"
+    ):
+        return ["publication job must belong to the successful exact-source promotion attempt"]
+    steps = job.get("steps")
+    if not isinstance(steps, list):
+        return ["GitHub publication job metadata must contain a step list"]
+    matching_steps = [
+        step for step in steps if isinstance(step, dict) and step.get("name") == PUBLICATION_STEP
+    ]
+    if len(matching_steps) != 1:
+        return ["successful promotion attempt must have one exact publication step"]
+    step = matching_steps[0]
+    if step.get("status") != "completed" or step.get("conclusion") != "success":
+        return ["the exact release publication step must have completed successfully"]
+    started_at = parse_timestamp(step.get("started_at"), "GitHub publication step started_at")
+    completed_at = parse_timestamp(step.get("completed_at"), "GitHub publication step completed_at")
+    # Release timestamps have second precision, while step timestamps can have fractions.
+    if started_at > completed_at or not (
+        started_at.replace(microsecond=0) <= published_at <= completed_at
+    ):
+        return ["release publication time falls outside the successful publication step"]
     return []
 
 

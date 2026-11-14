@@ -706,6 +706,22 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         "run_started_at": "2026-11-01T12:00:30Z",
         "updated_at": "2026-11-01T12:04:00Z",
     }
+    publish_step = {
+        "name": "Publish verified draft by numeric ID once",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-01T12:02:00.250Z",
+        "completed_at": "2026-11-01T12:02:01.750Z",
+    }
+    publish_job = {
+        "name": "promote-production-release",
+        "run_id": 123,
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": "success",
+        "steps": [publish_step],
+    }
+    job_pages = [{"jobs": []}, {"jobs": [publish_job]}]
 
     def gh_api(args: list[str], _label: str, _timeout: int):
         endpoint = args[-1]
@@ -715,6 +731,9 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
             return [release["assets"]]
         if endpoint == f"repos/{repository}/git/ref/tags/{tag}":
             return {"object": {"type": "commit", "sha": sha}}
+        if endpoint == f"repos/{repository}/actions/runs/123/attempts/1/jobs?per_page=100":
+            assert args[:-1] == ["api", "--hostname", "github.com", "--paginate", "--slurp"]
+            return job_pages
         assert endpoint == f"repos/{repository}/actions/runs/123/attempts/1"
         return run
 
@@ -817,7 +836,54 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         write_approval("2026-11-01T12:01:59Z")
         assert checker.main(exact_completed) == 1
         assert "expired" in capsys.readouterr().err
-        run["run_started_at"] = "2026-11-01T12:03:00Z"
+        publish_step["started_at"] = "2026-11-01T12:02:01.250Z"
         assert checker.main(args, check_published_at=check_approval) == 1
         assert publication_times == ["2026-11-01T12:02:00+00:00"]
-        assert "release publication time falls outside" in capsys.readouterr().err
+        assert "release publication time falls outside the successful publication step" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("wrong-run", "successful exact-source promotion attempt"),
+        ("wrong-source", "successful exact-source promotion attempt"),
+        ("duplicate-step", "one exact publication step"),
+        ("missing-step", "one exact publication step"),
+        ("failed-step", "publication step must have completed successfully"),
+        ("published-after-step", "release publication time falls outside the successful publication step"),
+    ],
+)
+def test_publication_requires_the_exact_successful_step(monkeypatch, mutation, error) -> None:
+    checker = _load_checker()
+    sha = "a" * 40
+    invocation = checker.RunInvocation("example/project", 123, 1)
+    release = {"published_at": "2026-11-01T12:02:00Z"}
+    step = {
+        "name": "Publish verified draft by numeric ID once",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-01T12:01:58Z",
+        "completed_at": "2026-11-01T12:02:01Z",
+    }
+    job = {
+        "name": "promote-production-release",
+        "run_id": 123,
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": "success",
+        "steps": [step],
+    }
+    if mutation == "wrong-run":
+        job["run_id"] = 999
+    elif mutation == "wrong-source":
+        job["head_sha"] = "b" * 40
+    elif mutation == "duplicate-step":
+        job["steps"] = [step, step.copy()]
+    elif mutation == "missing-step":
+        job["steps"] = []
+    elif mutation == "failed-step":
+        step["conclusion"] = "failure"
+    elif mutation == "published-after-step":
+        release["published_at"] = "2026-11-01T12:02:02Z"
+    monkeypatch.setattr(checker, "run_gh_json", lambda *_args: [{"jobs": [job]}])
+    assert error in checker.check_publication_in_run(release, invocation, sha)[0]

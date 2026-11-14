@@ -386,9 +386,13 @@ def test_current_compliance_policy_is_deliberately_fail_closed() -> None:
 
     errors = checker.check_policy(policy, toolchain)
 
-    assert any("not independently approved" in error for error in errors)
-    assert any("no approved closed-world inventory" in error for error in errors)
-    assert any("no trusted Ed25519 approver key" in error for error in errors)
+    assert errors == [
+        "release compliance policy is not independently approved (status='blocked-pending-independent-review')",
+        "release compliance policy has no approved closed-world inventory",
+        "release compliance policy has no trusted Ed25519 approver key",
+        "release compliance policy has no enforced short-lived out-of-band tag governance attestation",
+        "release compliance policy has no trusted tag-governance auditor key",
+    ]
 
 
 def test_compliance_maps_all_native_manifests_for_a_future_release_tag() -> None:

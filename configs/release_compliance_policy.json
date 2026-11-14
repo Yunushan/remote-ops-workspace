@@ -22,9 +22,21 @@
     "windows-xp-native-x64"
   ],
   "build_lock_enforcement": {
-    "state": "blocked-no-platform-locks",
-    "fully_hashed": false,
-    "platform_locks": {}
+    "state": "enforced",
+    "fully_hashed": true,
+    "platform_locks": {
+      "windows-x86": "requirements-locks/windows-x86.txt",
+      "windows-x64": "requirements-locks/windows-x64.txt",
+      "windows-arm64": "requirements-locks/windows-arm64.txt",
+      "macos-x64": "requirements-locks/macos-x64.txt",
+      "macos-arm64": "requirements-locks/macos-arm64.txt",
+      "linux-x86_64": "requirements-locks/linux-x86_64.txt",
+      "linux-arm64": "requirements-locks/linux-aarch64.txt",
+      "linux-i386": "requirements-locks/protected-linux/linux-i386.txt",
+      "linux-armhf": "requirements-locks/protected-linux/linux-armhf.txt",
+      "windows-xp-native-x86": "legacy/xp_host/net40-references.json",
+      "windows-xp-native-x64": "legacy/xp_host/net40-references.json"
+    }
   },
   "verifier_bootstrap": {
     "state": "enforced",

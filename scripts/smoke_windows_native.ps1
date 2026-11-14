@@ -168,6 +168,9 @@ function Initialize-CandidateByteBinding {
       Save-CandidateByteBinding
       throw "candidate PyInstaller output missing: $Relative"
     }
+    if ($RequireReleaseSigning) {
+      Assert-TimestampedAuthenticode $ExpectedPath
+    }
     $ExpectedHash = (Get-FileHash -LiteralPath $ExpectedPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $Item = [ordered]@{ role = $Role; path = $Relative; sha256 = $ExpectedHash; size = (Get-Item -LiteralPath $ExpectedPath).Length }
     $script:CandidateExpectedExecutables[$Role] = $Item
@@ -209,6 +212,13 @@ function Assert-CandidateExecutableBytes([string]$Path, [string]$Role, [string]$
   if (!$Matched) { $script:CandidateByteBinding.status = "failed" }
   Save-CandidateByteBinding
   if (!$Matched) { throw "candidate executable bytes do not match PyInstaller output: $Normalized" }
+}
+
+function Assert-TimestampedAuthenticode([string]$Path) {
+  & $SignTool verify /pa /all /tw $Path
+  if ($LASTEXITCODE -ne 0) {
+    throw "native installer smoke requires valid Authenticode and timestamp: $Path"
+  }
 }
 
 function Complete-CandidateByteBinding {
@@ -485,10 +495,7 @@ if ($RequireReleaseSigning) {
   . (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
   $SignTool = Find-WindowsSignTool
   foreach ($Installer in @($SetupExe, $Msi)) {
-    & $SignTool verify /pa /all /tw $Installer
-    if ($LASTEXITCODE -ne 0) {
-      throw "native installer smoke requires valid Authenticode and timestamp: $Installer"
-    }
+    Assert-TimestampedAuthenticode $Installer
   }
 }
 

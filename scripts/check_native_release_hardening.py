@@ -187,6 +187,14 @@ def check_windows_gui_launcher() -> list[str]:
         errors.append("scripts/smoke_windows_native.ps1 must verify the Windows native portable zip")
     if "Remote Ops Workspace GUI.exe" not in smoke:
         errors.append("scripts/smoke_windows_native.ps1 must verify the top-level portable GUI alias")
+    signed_reference_check = (
+        '    if ($RequireReleaseSigning) {\n'
+        '      Assert-TimestampedAuthenticode $ExpectedPath\n'
+        '    }\n'
+        '    $ExpectedHash = (Get-FileHash -LiteralPath $ExpectedPath -Algorithm SHA256)'
+    )
+    if signed_reference_check not in smoke:
+        errors.append("Windows native smoke must verify launcher signatures before binding reference hashes")
     if "Run Windows native installer smoke tests" not in windows_job or "timeout-minutes: 20" not in windows_job:
         errors.append("release workflow must bound Windows native installer smoke with timeout-minutes")
     if "row-gui.exe proves bounded frozen Windows GUI startup" not in smoke_contract:

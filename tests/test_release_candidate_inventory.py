@@ -166,7 +166,9 @@ def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
         ("nonregular-runtime-report", "artifact ZIP contains non-regular entry"),
         ("unknown-artifact", "unexpected=.*unexpected-build"),
         ("incomplete-listing", "artifact listing is incomplete"),
-        ("expired-smoke", "GUI smoke artifact release-macos-gui-smoke-x64 must be unexpired"),
+        ("expired-smoke", "artifact release-macos-gui-smoke-x64 live expired must be False"),
+        ("wrong-smoke-run", "artifact release-macos-gui-smoke-x64 is not bound to the approved build run and SHA"),
+        ("duplicate-smoke-id", "run artifact ID is duplicated"),
     ],
 )
 @pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
@@ -233,6 +235,11 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         })
         if name in standard or name in runtime:
             archives[artifact_id] = data
+    smoke_artifact = next((item for item in artifacts if item["name"] == "release-macos-gui-smoke-x64"), None)
+    if condition == "wrong-smoke-run":
+        smoke_artifact["workflow_run"]["id"] = 99
+    if condition == "duplicate-smoke-id":
+        smoke_artifact["id"] = artifacts[0]["id"]
     downloads: list[int] = []
 
     class BuildRun:

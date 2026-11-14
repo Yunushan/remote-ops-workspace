@@ -290,23 +290,24 @@ def stage(
             f"missing={sorted(expected_names - actual_names)}, "
             f"unexpected={sorted(actual_names - expected_names)}"
         )
-    # The workflow retains GUI smoke diagnostics alongside the release builds.
-    # Only the standard build archives feed the signed publication inventory.
-    for name in GUI_SMOKE_ARTIFACT_NAMES:
-        evidence = by_name[name]
-        if evidence.get("expired") is not False:
-            raise ValueError(f"GUI smoke artifact {name} must be unexpired")
-        positive_int(evidence.get("size_in_bytes"), f"GUI smoke artifact {name} size")
-    build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
-    for name, artifact in build_artifacts.items():
+    artifact_ids: set[int] = set()
+    for name, artifact in by_name.items():
+        artifact_id = positive_int(artifact.get("id"), f"artifact {name} id")
+        if artifact_id in artifact_ids:
+            raise ValueError(f"run artifact ID is duplicated: {artifact_id}")
+        artifact_ids.add(artifact_id)
         check_artifact_metadata(
             artifact,
-            artifact_id=positive_int(artifact.get("id"), f"artifact {name} id"),
+            artifact_id=artifact_id,
             name=name,
             digest=normalize_digest(artifact.get("digest"), f"artifact {name} digest"),
             run_id=run_id,
             release_sha=release_sha,
         )
+        positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
+
+    # GUI smoke archives must belong to this build, but are not release assets.
+    build_artifacts = {name: by_name[name] for name in EXPECTED_ARTIFACT_NAMES}
     runtime_reports = {
         target: seal_runtime_report(client, by_name[name], name, run_id, release_sha)
         for target, name in sorted(RUNTIME_REPORT_ARTIFACT_NAMES.items())

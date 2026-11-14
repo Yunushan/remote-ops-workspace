@@ -326,6 +326,12 @@ REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS = (
     "security_update_channel",
     "cve_review_reference",
 )
+LINUX_UNVERIFIED_SECURITY_PROVENANCE = frozenset(
+    {
+        "distribution-security-updates",
+        "distribution-security-tracker-and-release-notes",
+    }
+)
 XP_SECURITY_PATCH_EVIDENCE_KEYS = set(REQUIRED_SECURITY_PATCH_EVIDENCE) | set(
     REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS
 )
@@ -3023,6 +3029,17 @@ def check_linux_security_patch_evidence(target: str, raw_evidence: Any) -> list[
     for key in ("python_ssl_openssl", "openssl_cli_version"):
         if not str(raw_evidence.get(key, "")).strip():
             errors.append(f"{target} builder_identity security_patch_evidence.{key} must be set")
+    if not isinstance(raw_evidence.get("cve_patch_reviewed"), bool):
+        errors.append(f"{target} builder_identity security_patch_evidence.cve_patch_reviewed must be a boolean")
+    for key in REQUIRED_SECURITY_PATCH_PROVENANCE_FIELDS:
+        value = raw_evidence.get(key, "")
+        if value and (
+            not isinstance(value, str)
+            or value != value.strip()
+            or not value.isprintable()
+            or value.lower() in LINUX_UNVERIFIED_SECURITY_PROVENANCE
+        ):
+            errors.append(f"{target} builder_identity security_patch_evidence.{key} must be host review provenance")
     return errors
 
 

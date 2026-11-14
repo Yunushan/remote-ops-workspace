@@ -4235,9 +4235,19 @@ def test_security_provenance_and_patch_evidence_rejections() -> None:
     linux["openssl_cli_version"] = "OpenSSL 3.0.13"
     assert not features_module._has_linux_security_patch_evidence(None)
     assert not features_module._has_linux_security_patch_evidence({**linux, "unexpected": True})
+    assert not features_module._has_linux_security_patch_evidence({**linux, "cve_patch_reviewed": 1})
     assert not features_module._has_linux_security_patch_evidence(
         {**linux, "python_ssl_openssl": ""}
     )
+    for reference in (
+        "distribution-security-tracker-and-release-notes",
+        " debian-cve-review-2026-11",
+        "debian-cve-review-2026-11\nunbound line",
+        ["debian-cve-review-2026-11"],
+    ):
+        assert not features_module._has_linux_security_patch_evidence(
+            {**linux, "cve_review_reference": reference}
+        )
     assert not features_module._has_xp_security_patch_evidence(
         {**_xp_security_patch_evidence(), "unexpected": True}
     )

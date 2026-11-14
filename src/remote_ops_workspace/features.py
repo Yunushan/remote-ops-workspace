@@ -3292,6 +3292,17 @@ def _has_linux_security_patch_evidence(raw_evidence: Any) -> bool:
         return False
     if set(str(key) for key in raw_evidence) != LINUX_ACCEPTED_EVIDENCE_SECURITY_PATCH_KEYS:
         return False
+    if raw_evidence.get("cve_patch_reviewed") is not True:
+        return False
+    for key in ACCEPTED_EVIDENCE_SECURITY_PATCH_PROVENANCE_FIELDS:
+        value = raw_evidence.get(key)
+        if (
+            not isinstance(value, str)
+            or value != value.strip()
+            or not value.isprintable()
+            or value.lower() in {"distribution-security-updates", "distribution-security-tracker-and-release-notes"}
+        ):
+            return False
     return all(
         str(raw_evidence.get(key, "")).strip()
         for key in ("python_ssl_openssl", "openssl_cli_version")

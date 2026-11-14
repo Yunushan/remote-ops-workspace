@@ -247,6 +247,18 @@ source SHA and the `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `GITHUB_SHA` and
 `GITHUB_REPOSITORY` environment values. A hash-bound log that only says the
 smoke passed is not accepted evidence. Forbidden Linux weak-security proof
 lines are rejected case-insensitively.
+
+Before dispatching Linux i386 or armhf evidence, review the builder's installed
+OS and OpenSSL updates against the distribution's advisory records. Set
+`ROW_LINUX_SECURITY_UPDATE_CHANNEL` to the builder's actual security-update
+channel and `ROW_LINUX_CVE_REVIEW_REFERENCE` to the advisory or dated review
+record for that builder. Set `ROW_LINUX_CVE_PATCH_REVIEWED=true` once the review
+is complete. Set all three in the native runner service environment before
+starting the runner, or export them in the native shell for both identity
+capture and smoke. The builder refuses missing review inputs, and the smoke
+step requires the same inputs as the builder identity. Include only public,
+single-line references because the native smoke log is retained as evidence.
+
 After downloading review-bundle artifacts, run
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir <bundle-dir> --require-goal-targets --release-tag v<project.version> --require-final-record-assets`
 to extract each bundled candidate record, rerun finalization and prove the

@@ -26,15 +26,19 @@ def test_source_ref_accepts_all_goal_workflows_at_release_tag() -> None:
         ".github/workflows/extended-platform-evidence.yml",
         ".github/workflows/xp-native-evidence.yml",
     ]
-    assert fetcher.calls.count(
-        "contents/.github/workflows/extended-platform-evidence.yml?ref=v1.0.3"
-    ) == 1
+    head = "a" * 40
+    assert fetcher.calls == [
+        "git/ref/tags/v1.0.3",
+        f"contents/pyproject.toml?ref={head}",
+        f"contents/.github/workflows/extended-platform-evidence.yml?ref={head}",
+        f"contents/.github/workflows/xp-native-evidence.yml?ref={head}",
+    ]
 
 
 def test_source_ref_rejects_workflow_missing_from_release_tag() -> None:
     checker = _load_checker()
     responses = _valid_responses()
-    endpoint = "contents/.github/workflows/xp-native-evidence.yml?ref=v1.0.3"
+    endpoint = f"contents/.github/workflows/xp-native-evidence.yml?ref={'a' * 40}"
     responses[endpoint] = HTTPError(endpoint, 404, "Not Found", None, None)
 
     report, errors = checker.check_platform_evidence_source_ref(
@@ -54,7 +58,7 @@ def test_source_ref_rejects_workflow_missing_from_release_tag() -> None:
 def test_source_ref_rejects_tagged_project_version_mismatch() -> None:
     checker = _load_checker()
     responses = _valid_responses()
-    responses["contents/pyproject.toml?ref=v1.0.3"] = _file_payload(
+    responses[f"contents/pyproject.toml?ref={'a' * 40}"] = _file_payload(
         '[project]\nname = "remote-ops-workspace"\nversion = "1.0.2"\n',
         sha="b" * 40,
     )
@@ -72,12 +76,13 @@ def test_source_ref_rejects_tagged_project_version_mismatch() -> None:
 
 def test_source_ref_resolves_annotated_tag_to_commit() -> None:
     checker = _load_checker()
-    responses = _valid_responses()
+    head = "d" * 40
+    responses = _valid_responses(head=head)
     responses["git/ref/tags/v1.0.3"] = {
         "object": {"type": "tag", "sha": "c" * 40}
     }
     responses[f"git/tags/{'c' * 40}"] = {
-        "object": {"type": "commit", "sha": "d" * 40}
+        "object": {"type": "commit", "sha": head}
     }
 
     report, errors = checker.check_platform_evidence_source_ref(
@@ -88,13 +93,31 @@ def test_source_ref_resolves_annotated_tag_to_commit() -> None:
     )
 
     assert errors == []
-    assert report["source_head_sha"] == "d" * 40
+    assert report["source_head_sha"] == head
+
+
+def test_source_ref_stops_when_tag_cannot_resolve() -> None:
+    checker = _load_checker()
+    endpoint = "git/ref/tags/v1.0.3"
+    fetcher = FakeFetcher({endpoint: HTTPError(endpoint, 404, "Not Found", None, None)})
+
+    report, errors = checker.check_platform_evidence_source_ref(
+        repository="example/remote-ops-workspace",
+        release_tag="v1.0.3",
+        targets=checker.GOAL_TARGETS,
+        fetcher=fetcher,
+    )
+
+    assert report["ready"] is False
+    assert report["source_head_sha"] is None
+    assert errors == ["release tag v1.0.3 was not found"]
+    assert fetcher.calls == [endpoint]
 
 
 def test_source_ref_rejects_missing_target_dispatch_option() -> None:
     checker = _load_checker()
     responses = _valid_responses()
-    responses["contents/.github/workflows/extended-platform-evidence.yml?ref=v1.0.3"] = (
+    responses[f"contents/.github/workflows/extended-platform-evidence.yml?ref={'a' * 40}"] = (
         _file_payload(
             "on:\n  workflow_dispatch:\n    inputs:\n      target:\n        options:\n"
             "          - linux-i386\n",
@@ -146,7 +169,7 @@ class FakeFetcher:
         return response
 
 
-def _valid_responses() -> dict[str, object]:
+def _valid_responses(*, head: str = "a" * 40) -> dict[str, object]:
     linux_workflow = (
         "on:\n  workflow_dispatch:\n    inputs:\n      target:\n        options:\n"
         "          - linux-i386\n          - linux-armhf\n"
@@ -156,15 +179,15 @@ def _valid_responses() -> dict[str, object]:
         "          - windows-xp-native-x86\n          - windows-xp-native-x64\n"
     )
     return {
-        "git/ref/tags/v1.0.3": {"object": {"type": "commit", "sha": "a" * 40}},
-        "contents/pyproject.toml?ref=v1.0.3": _file_payload(
+        "git/ref/tags/v1.0.3": {"object": {"type": "commit", "sha": head}},
+        f"contents/pyproject.toml?ref={head}": _file_payload(
             '[project]\nname = "remote-ops-workspace"\nversion = "1.0.3"\n',
             sha="b" * 40,
         ),
-        "contents/.github/workflows/extended-platform-evidence.yml?ref=v1.0.3": (
+        f"contents/.github/workflows/extended-platform-evidence.yml?ref={head}": (
             _file_payload(linux_workflow, sha="c" * 40)
         ),
-        "contents/.github/workflows/xp-native-evidence.yml?ref=v1.0.3": _file_payload(
+        f"contents/.github/workflows/xp-native-evidence.yml?ref={head}": _file_payload(
             xp_workflow,
             sha="d" * 40,
         ),

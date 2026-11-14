@@ -7,6 +7,7 @@ import os
 import posixpath
 import re
 import shlex
+import stat
 import sys
 import time
 from abc import abstractmethod
@@ -900,7 +901,7 @@ def create_moba_connected_classes(
             return tuple(entry for entry in entries if entry.name.strip() not in {".", ".."})
 
         def shared_ssh_control_path(self) -> str:
-            """Find the running terminal that owns this session's SSH master."""
+            """Find an available OpenSSH control socket for this session."""
 
             main_window = self.main_window()
             key = self.state.ssh_connection_key
@@ -918,7 +919,14 @@ def create_moba_connected_classes(
                 if getattr(pane, "ssh_connection_key", "") != key or not pane.is_running():
                     continue
                 control_path = str(getattr(pane, "ssh_control_path", "") or "")
-                if control_path:
+                if not control_path:
+                    continue
+                try:
+                    mode = Path(control_path).lstat().st_mode
+                except OSError:
+                    continue
+                # OpenSSH creates the control socket after authentication.
+                if stat.S_ISSOCK(mode):
                     return control_path
             return ""
 

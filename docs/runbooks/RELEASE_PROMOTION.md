@@ -110,10 +110,44 @@ python -m pip install --require-hashes --requirement requirements-locks/release-
 python scripts/check_release_license_compliance.py --check-policy-only
 ```
 
-Cut the tag after the policy check and the required CI checks pass. The
-artifact-specific approval uses the resulting tag, commit, and signed
-installer bytes. The production candidate job repeats the policy check
-against the tagged source before starting native builds.
+After the policy and required CI checks pass, confirm that the intended tag
+is absent locally and remotely and that no release or draft uses its name.
+Run this from the release checkout with `release_repository` set to
+`owner/repo`, `release_tag` set to the intended version tag, and
+`GITHUB_TOKEN` exported for an account with push access to the repository.
+GitHub includes draft releases in the listing for users with push access.
+[GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
+
+```bash
+(
+  set -euo pipefail
+  python scripts/check_release_version.py --release-tag "$release_tag"
+  if git show-ref --exists "refs/tags/$release_tag"; then
+    echo "Local tag already exists: $release_tag" >&2
+    exit 1
+  elif [ "$?" -ne 2 ]; then
+    echo "Could not check the local tag." >&2
+    exit 1
+  fi
+  if git ls-remote --exit-code --refs "https://github.com/$release_repository.git" "refs/tags/$release_tag"; then
+    echo "Remote tag already exists: $release_tag" >&2
+    exit 1
+  else
+    status=$?
+    if [ "$status" -ne 2 ]; then
+      exit "$status"
+    fi
+  fi
+  python scripts/check_release_remote_preconditions.py namespace \
+    --repository "$release_repository" --tag "$release_tag"
+)
+```
+
+Cut the tag after this check passes. The artifact-specific approval uses
+the resulting tag, commit, and signed installer bytes. The production
+candidate job repeats the policy check against the tagged source before
+starting native builds. Promotion checks the release namespace again before
+creating the draft.
 
 ## Prepare the signed redistribution approval
 

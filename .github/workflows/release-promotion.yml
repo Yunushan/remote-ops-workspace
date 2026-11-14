@@ -476,20 +476,31 @@ jobs:
           --silent
       - name: Require same numeric release becomes immutable
         shell: bash
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
         run: |
-          immutable=false
+          set -euo pipefail
+          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
+          response="$RUNNER_TEMP/immutable-release-state.json"
           for _ in $(seq 1 30); do
-            state="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '[.id, .tag_name, .draft, .prerelease, .immutable] | @tsv')"
-            if [[ "$state" == "$RELEASE_ID"$'\t'"$RELEASE_TAG"$'\tfalse\tfalse\ttrue' ]]; then
-              immutable=true
-              break
+            curl --silent --show-error --fail --connect-timeout 5 --max-time 10 \
+              --retry 3 --retry-max-time 25 --output "$response" \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
+            jq -e --argjson id "$RELEASE_ID" --arg tag "$RELEASE_TAG" \
+              '.id == $id and .tag_name == $tag and (.draft | type == "boolean") and .prerelease == false' \
+              "$response" >/dev/null
+            if jq -e '.draft == false and .immutable == true' "$response" >/dev/null; then
+              exit 0
             fi
             sleep 2
           done
-          test "$immutable" = true
+          echo "::error::Release $RELEASE_ID did not become immutable within the polling window."
+          exit 1
       - name: Re-resolve immutable tag after publication
         shell: bash
         run: |

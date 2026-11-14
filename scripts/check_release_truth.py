@@ -569,6 +569,20 @@ def check_promotion_truth(workflow: str) -> list[str]:
         errors.append("promotion workflow must recover and report the release ID for its exact failed attempt")
     if "--method DELETE" in block or "gh release delete" in block:
         errors.append("promotion workflow must preserve releases after failure")
+    poll = workflow_step_block(block, "name: Require same numeric release becomes immutable")
+    if (
+        step_is_suppressed(poll)
+        or not literal_run_is_fail_closed(poll)
+        or not all(token in poll for token in (
+            "timeout-minutes: 3",
+            'RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}',
+            '--retry 3 --retry-max-time 25 --output "$response"',
+            '"$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"',
+            ".id == $id and .tag_name == $tag",
+            ".draft == false and .immutable == true",
+        ))
+    ):
+        errors.append("promotion must confirm the exact published release becomes immutable with bounded read retries")
     command_contracts = {
         "Verify final immutable release and complete exact-tag provenance": (
             (

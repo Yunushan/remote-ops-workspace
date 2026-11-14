@@ -270,6 +270,15 @@ def test_promotion_requires_full_release_notes_validation_before_draft_creation(
     assert any("before creating a draft" in error for error in errors)
 
 
+def test_promotion_requires_bounded_post_publication_immutability_read() -> None:
+    checker = load_script("check_release_truth")
+    workflow = promotion_workflow()
+    message = "promotion must confirm the exact published release becomes immutable with bounded read retries"
+    assert message not in checker.check_promotion_truth(workflow)
+    assert message in checker.check_promotion_truth(workflow.replace("--retry 3 --retry-max-time 25", "", 1))
+    assert message in checker.check_promotion_truth(workflow.replace(".id == $id and .tag_name == $tag", "true", 1))
+
+
 @pytest.mark.parametrize(
     ("step_name", "label"),
     [

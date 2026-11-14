@@ -11,6 +11,8 @@ XP_NATIVE_EVIDENCE_CONTRACT_PATH = ROOT / "configs" / "xp_native_evidence_contra
 RUNBOOK_PATH = ROOT / "docs" / "PLATFORM_PROMOTION_RUNBOOK.md"
 
 COMMON_SNIPPETS = (
+    "Pushing the production tag starts `release.yml`, which builds and seals",
+    "Dispatch `release-promotion.yml` from the same",
     "python scripts/check_platform_parity_promotion.py",
     "python scripts/check_platform_verified_evidence.py",
     "python scripts/check_protected_platform_goal.py",

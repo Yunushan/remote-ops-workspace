@@ -669,9 +669,9 @@ trusted default-branch history, and runs
 `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, an
 exact-SHA CI evidence check,
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements`
-and `python scripts/check_repository_cleanup.py --require-clean`. Source,
-native and core publish jobs depend on that preflight and check out the frozen
-commit SHA rather than resolving the tag again. The protected-platform command
+and `python scripts/check_repository_cleanup.py --require-clean`. Source
+and native candidate jobs depend on that preflight and check out the frozen
+commit SHA. The protected-platform command
 in preflight is a readiness report, not a 4/4 accepted-evidence gate.
 Windows XP proof for those accepted records is captured on real XP hosts with
 `scripts/xp_smoke_runner.cmd`; the modern self-hosted `xp-evidence` collector
@@ -681,13 +681,13 @@ runtime, OpenSSL and profile-only legacy crypto proof values alongside the
 captured smoke log hash.
 The complete 100/100 production-readiness checklist and external prerequisite
 matrix is [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
-The optional `accepted-platform-evidence-assets` job runs only for a manual
-dispatch with `include_protected_platform_evidence=true`. It separately runs
+The exact-tag `release-promotion.yml` workflow imports protected-platform
+assets using the registry from the signed compliance bundle. It runs
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`
 and
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`,
 then runs
-`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
+`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo> --registry <signed-registry.json> --release-head-sha <release-sha>`
 to copy only same-tag, same-repository, workflow-file, source-head and
 run-attempt-bound accepted evidence artifacts into the release asset directory
 after checking exact source artifact `workflow_run.id`,
@@ -700,11 +700,10 @@ then runs
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
 against the imported review bundles and finalized public record JSON files
 before upload; final public records must use canonical LF-terminated sorted JSON
-bytes so post-upload release asset digests are stable. The imported platform
-evidence artifact upload fails when empty, excludes hidden files and keeps a
-90-day retention window. That import job keeps only read permissions for
-repository contents and Actions artifacts. The exact-tag publish job waits for
-it and includes the accepted protected evidence in the same draft-first,
+bytes so post-upload release asset digests are stable. The source evidence
+workflows reject empty uploads, exclude hidden files and retain the scoped
+evidence for 90 days. The exact-tag promotion job verifies the imported
+protected evidence before including it in the same draft-first,
 attested production inventory. Linux i386, Linux armhf,
 windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
 evidence records for the same release tag, GitHub release repository,

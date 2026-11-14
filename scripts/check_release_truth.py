@@ -183,7 +183,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
-    "accepted-platform-evidence-assets",
+    "The exact-tag `release-promotion.yml` workflow imports protected-platform",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
     "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
@@ -210,7 +210,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
-    "The exact-tag publish job waits for",
+    "The exact-tag promotion job verifies the imported",
     "same draft-first",
     "`linux_smoke_summary`",
     "`scripts/xp_smoke_runner.cmd`",
@@ -248,6 +248,7 @@ STALE_PLATFORM_EVIDENCE_SNIPPETS = (
     "`--allow-unfinalized-candidates` flag is only for local candidate checks before append",
     "source-head-bound accepted evidence artifacts",
     "source-head-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts",
+    "include_protected_platform_evidence=true",
 )
 
 

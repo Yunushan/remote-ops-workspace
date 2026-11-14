@@ -118,10 +118,11 @@ Release integrity rules:
   branch previews, while `versioned-unsigned-release.yml` can publish an exact
   `vX.Y.Z` prerelease with the standard unsigned download families.
   When the policy and hashed locks are approved, the exact-tag build retains its
-  signed/notarized candidates and the `release-compliance-review` environment
-  holds the publish job. The independent reviewer signs those exact bytes and
+  signed/notarized candidates. The independent reviewer signs those exact bytes and
   places the evidence under `releases/<tag>/<sha>/` on the data-only
-  `release-compliance-evidence` branch before approving the held job. That
+  `release-compliance-evidence` branch before the operator dispatches
+  `release-promotion.yml` from the same tag. That workflow uses the
+  `release-compliance-review` environment. The evidence
   branch is only transport: the tag-pinned Ed25519 policy and hashes authenticate
   every consumed file.
 - `python scripts/check_release_maturity.py --release-tag <tag>` requires the
@@ -143,9 +144,8 @@ Release integrity rules:
   `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, reports
   protected-platform readiness and then runs
   `python scripts/check_repository_cleanup.py --require-clean` before standard
-  assets build. The production tag path is fail-closed on unavailable i386,
-  armhf or XP evidence; both unsigned-preview workflows remain outside this
-  certified inventory.
+  candidates build. Production promotion requires accepted i386, armhf and XP
+  evidence alongside those candidates.
 - Immediately before dispatching protected-platform evidence, an authorized
   operator must run `python scripts/check_platform_evidence_runner_readiness.py
   --repository <owner>/<repo> --require-goal-targets --require-idle`. It confirms
@@ -158,9 +158,9 @@ Release integrity rules:
   failures remain hard failures. The strict operator command above and every
   release promotion gate remain unchanged, so a skipped workflow cannot be
   mistaken for accepted evidence.
-- Before tagging or rerunning a protected-platform promotion, run the
-  pre-release protected-platform import dry-run
-  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>`.
+- After collecting evidence at the exact production tag and before dispatching
+  promotion, run the pre-release protected-platform import dry-run
+  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo> --registry <signed-registry.json> --release-head-sha <release-sha>`.
   It proves the accepted records for Linux i386, Linux armhf and Windows XP
   native-host targets are importable from exact successful same-source
   workflow runs at the accepted run id, attempt, workflow path and source SHA,
@@ -173,11 +173,9 @@ Release integrity rules:
   and artifact `expires_at` present and later than the artifact create/update timestamps,
   without copying files
   into the publish directory, and it does not stage files for upload.
-- The opt-in `accepted-platform-evidence-assets` job keeps read-only repository
-  and Actions artifact permissions; it must not request any write-scoped GitHub
-  permission while importing protected-platform evidence. It runs for every
-  tag push, while manual `include_protected_platform_evidence=true` is staging
-  only. That job first runs
+- The `release-promotion.yml` job imports protected-platform evidence from the
+  signed registry after downloading the sealed candidate inventory. The import
+  step first runs
   `python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets`,
   which refuses release tags that do not contain the tagged project version and
   all four protected workflow dispatch options.
@@ -192,8 +190,8 @@ Release integrity rules:
   and native release bytes match. It also keeps `record_complete` separate from
   `release_backed_complete` so records-only proof is not treated as published
   release-byte proof.
-  The protected-platform asset job first runs
-  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
+  The protected-platform import step runs
+  `python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo> --registry <signed-registry.json> --release-head-sha <release-sha>`
   to import only same-tag, same-repository, workflow-file, source-head and
   run-attempt-bound accepted Linux i386, Linux armhf and Windows XP native-host
   artifacts from verified exact evidence workflow runs whose artifact inventory
@@ -205,10 +203,9 @@ Release integrity rules:
   present and later than the artifact create/update timestamps, then runs
   `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
   against the imported review bundles and finalized public record JSON files
-  before uploading the platform evidence asset set. That upload must use
-  `if-no-files-found: error`, `include-hidden-files: false` and
-  `retention-days: 90` so missing imports fail, hidden scratch/private files
-  stay excluded and the publish job can download the imported assets.
+  before creating the draft. The source evidence workflows upload the scoped
+  evidence directories with `if-no-files-found: error`,
+  `include-hidden-files: false` and `retention-days: 90`.
   The importer rejects symlinked downloaded-artifact/output roots, symlinked
   parent directories and symlinked destinations before copying into
   `release-assets`, and it checks downloaded source artifact native artifact
@@ -603,13 +600,12 @@ again before the final success message. This prevents the local 100/100 claim
 from testing modified or different checkout bytes while remote evidence refers
 to the tag.
 
-The tag-triggered core release repeats this protection through actual GitHub
+The tag-triggered candidate workflow enforces this protection through GitHub
 Actions `needs` entries. The `release-preflight` job is a dependency of
-`source-and-python`, `windows-native`, `macos-native`, `linux-native`,
-`accepted-platform-evidence-assets` and `publish`. The evidence import runs on
-every tag push and the publish job waits for it. A stale manifest, broken
-verifier check, dirty checkout, or unimportable protected-platform evidence
-stops the complete production inventory before any public release exists.
+`source-and-python`, `windows-native`, `macos-native` and `linux-native`.
+Once all builds succeed, `release.yml` seals their inventory.
+`release-promotion.yml` then imports the reviewed protected-platform evidence
+and verifies the complete inventory before creating a draft.
 
 ## Phase 1: Python package artifacts
 

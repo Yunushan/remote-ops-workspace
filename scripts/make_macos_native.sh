@@ -168,6 +168,7 @@ cp -R "$APP_PATH" "$PKG_ROOT/Applications/"
 COMPONENT_PLIST="$BUILD_DIR/components.plist"
 pkgbuild --analyze --root "$PKG_ROOT" "$COMPONENT_PLIST"
 /usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST"
+COMPONENT_PKG="$BUILD_DIR/remote-ops-workspace-component.pkg"
 PKG="$OUT_DIR/remote-ops-workspace-v${VERSION}-macos-${ARTIFACT_ARCH}.pkg"
 pkgbuild \
   --root "$PKG_ROOT" \
@@ -175,7 +176,21 @@ pkgbuild \
   --identifier "io.github.remoteopsworkspace.app" \
   --version "$VERSION" \
   --install-location "/" \
-  "$PKG"
+  "$COMPONENT_PKG"
+
+PKG_REQUIREMENTS="$BUILD_DIR/pkg-requirements.plist"
+cat > "$PKG_REQUIREMENTS" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>os</key>
+  <array><string>$MACOS_MINIMUM_VERSION</string></array>
+</dict>
+</plist>
+EOF
+PKG_DISTRIBUTION="$BUILD_DIR/pkg-distribution.xml"
+productbuild --synthesize --product "$PKG_REQUIREMENTS" --package "$COMPONENT_PKG" "$PKG_DISTRIBUTION"
+productbuild --distribution "$PKG_DISTRIBUTION" --package-path "$BUILD_DIR" "$PKG"
 
 if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" == "1" ]]; then
   : "${ROW_MACOS_INSTALLER_SIGN_IDENTITY:?Production signing requires ROW_MACOS_INSTALLER_SIGN_IDENTITY}"

@@ -22,6 +22,7 @@ import hashlib
 import html
 import io
 import json
+import os
 import re
 import stat
 import struct
@@ -565,10 +566,30 @@ def rpm_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
 
 
 def pkg_embedded_file_bytes(archive: Path, wanted: str) -> bytes | None:
-    """Read an installed file from pkgbuild's gzip CPIO payload inside XAR."""
+    """Read the single component payload in a macOS installer."""
+    try:
+        listing = subprocess.run(
+            ["7z", "l", "-slt", "-ba", "-txar", str(archive)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"cannot list {archive.name} XAR payload: {exc}") from exc
+    if listing.returncode != 0:
+        raise ValueError(f"cannot list {archive.name} XAR payload (exit {listing.returncode})")
+    payloads = [
+        path for line in listing.stdout.splitlines()
+        if line.startswith("Path = ")
+        and (path := line.removeprefix("Path = ")).rsplit(os.sep, 1)[-1] == "Payload"
+    ]
+    wrapped_payload = os.sep.join(("remote-ops-workspace-component.pkg", "Payload"))
+    if payloads not in (["Payload"], [wrapped_payload]):
+        raise ValueError(f"{archive.name} must contain one expected XAR payload")
     try:
         result = subprocess.run(
-            ["7z", "x", "-so", "-txar", str(archive), "Payload"],
+            ["7z", "x", "-so", "-spd", "-txar", str(archive), payloads[0]],
             capture_output=True,
             timeout=300,
             check=False,

@@ -164,6 +164,10 @@ REFUSAL_CODES = frozenset(
         "owned-cleanup-source-changed",
         "owned-directory-containment",
         "package-info-root-unobserved",
+        "payload-archive-layout-unobserved",
+        "payload-bom-metadata-disagreement",
+        "payload-bom-path-disagreement",
+        "payload-entry-layout-unobserved",
         "previous-asset-identity-changed",
         "previous-publication-identity-changed",
         "previous-release-asset-membership-changed",
@@ -635,6 +639,85 @@ def bom_projection(raw, parser):
         "bom_payload_agreement": "not-checked",
         "native_ownership_proof": False,
     }
+
+
+def previous_payload_rows(raw, package):
+    """Read bounded metadata from the pinned gzip/portable ASCII CPIO payload."""
+    members = {row["name"]: row for row in package["components"]}
+    if (
+        len(package["components"]) != 3
+        or set(members) != {"Bom", "PackageInfo", "Payload"}
+        or package["unaccounted_heap_bytes"] != 0
+        or package["nested_or_unobserved_layout"]
+    ):
+        raise Refusal("payload-archive-layout-unobserved")
+    member = members["Payload"]
+    if (
+        member["codec"] != "application/octet-stream"
+        or member["stored_bytes"] != member["expanded_bytes_declared"]
+    ):
+        raise Refusal("payload-archive-layout-unobserved")
+    compressed_toc_size = struct.unpack_from("!Q", raw, 8)[0]
+    start = 28 + compressed_toc_size + member["offset"]
+    stored = memoryview(raw)[start : start + member["stored_bytes"]]
+    if bytes(stored[:2]) != b"\x1f\x8b" or sha(stored) != member["stored_sha256"]:
+        raise Refusal("payload-archive-layout-unobserved")
+    payload = bounded_decode(stored, gzip_stream=True, limit=MAX_EXPANDED)
+    rows, aliases = {}, set()
+    cursor = 0
+    while cursor + 76 <= len(payload):
+        header = payload[cursor : cursor + 76]
+        if not header.startswith(b"070707") or not re.fullmatch(rb"[0-7]{70}", header[6:]):
+            raise Refusal("payload-entry-layout-unobserved")
+        mode = int(header[18:24], 8)
+        uid = int(header[24:30], 8)
+        gid = int(header[30:36], 8)
+        name_size = int(header[59:65], 8)
+        size = int(header[65:76], 8)
+        start = cursor + 76
+        end = start + name_size
+        cursor = end + size
+        if not 1 <= name_size <= 1025 or cursor > len(payload):
+            raise Refusal("payload-entry-layout-unobserved")
+        name_bytes = payload[start:end]
+        if not name_bytes.endswith(b"\x00") or b"\x00" in name_bytes[:-1]:
+            raise Refusal("payload-entry-layout-unobserved")
+        try:
+            name = name_bytes[:-1].decode("utf-8")
+        except UnicodeError as exc:
+            raise Refusal("payload-entry-layout-unobserved") from exc
+        if name == "TRAILER!!!":
+            if size or any(memoryview(payload)[cursor:]) or not {".", "Applications", APP_REL} <= rows.keys():
+                raise Refusal("payload-entry-layout-unobserved")
+            return rows
+        name = member_name(name, root=True)
+        key = alias(name)
+        if (
+            len(rows) >= MAX_ROWS or key in aliases
+            or (name not in {".", "Applications", APP_REL} and not name.startswith(APP_REL + "/"))
+            or stat.S_IFMT(mode) not in {stat.S_IFDIR, stat.S_IFREG, stat.S_IFLNK}
+            or (stat.S_ISDIR(mode) and size)
+            or (name in {".", "Applications", APP_REL} and not stat.S_ISDIR(mode))
+        ):
+            raise Refusal("payload-entry-layout-unobserved")
+        aliases.add(key)
+        rows[name] = (mode, uid, gid, size)
+    raise Refusal("payload-entry-layout-unobserved")
+
+
+def verify_payload_bom(rows, bom):
+    if (
+        bom["unprojected_path_count"] or bom["nonliteral_app_alias_count"]
+        or len(bom["rows"]) != len(rows) or {row["path"] for row in bom["rows"]} != rows.keys()
+    ):
+        raise Refusal("payload-bom-path-disagreement")
+    for row in bom["rows"]:
+        mode, uid, gid, size = row["requested_columns_as_strings"]
+        expected = rows[row["path"]]
+        if (int(mode, 8), int(uid), int(gid), int(size) if size else 0) != expected:
+            raise Refusal("payload-bom-metadata-disagreement")
+    bom["ownership_mode_size_semantics"] = "matched-pinned-payload-for-observed-columns"
+    bom["bom_payload_agreement"] = "paths-mode-uid-gid-size-match"
 
 
 def receipt_location_base(info, parser):
@@ -2334,6 +2417,11 @@ def observe(root):
         diagnostic_phase("previous-toc", whole_pkg_sha256=sha(raw))
         parser = sys.modules[__name__]
         package, material = package_projection(raw, parser)
+        payload_rows = previous_payload_rows(raw, package)
+        if set(material) != {"Bom", "PackageInfo"}:
+            raise Refusal("payload-archive-layout-unobserved")
+        package["payload_expanded"] = True
+        package["payload_entry_count"] = len(payload_rows)
         diagnostic_phase(
             "previous-toc", toc_sha256=package["toc_sha256"], component_count=len(package["components"])
         )
@@ -2357,26 +2445,25 @@ def observe(root):
             "process_tree_cleanup": "not-proven",
         }
         record["system_tool_sha256"] = readonly_system_tool_hashes()
-        if "PackageInfo" in material:
-            diagnostic_phase("package-info")
-            record["package_info"] = package_info_projection(material["PackageInfo"], parser)
-        if "Bom" in material:
-            if not material["Bom"].startswith(b"BOMStore"):
-                raise Refusal("bom-magic-unobserved")
-            with (private / "Bom").open("xb") as stream:
-                stream.write(material["Bom"])
-            diagnostic_phase("installed-lsbom-manual")
-            record["lsbom_manual"] = manual_projection(
-                commands.capture(
-                    ["/usr/bin/man", "-P", "/bin/cat", "8", "lsbom"], timeout=30, limit=512 * 1024
-                )
+        diagnostic_phase("package-info")
+        record["package_info"] = package_info_projection(material["PackageInfo"], parser)
+        if not material["Bom"].startswith(b"BOMStore"):
+            raise Refusal("bom-magic-unobserved")
+        with (private / "Bom").open("xb") as stream:
+            stream.write(material["Bom"])
+        diagnostic_phase("installed-lsbom-manual")
+        record["lsbom_manual"] = manual_projection(
+            commands.capture(
+                ["/usr/bin/man", "-P", "/bin/cat", "8", "lsbom"], timeout=30, limit=512 * 1024
             )
-            diagnostic_phase("installed-bom-reader")
-            bom_raw = commands.capture(
-                ["/usr/bin/lsbom", "-p", "fmugs", str(private / "Bom")], timeout=180
-            )
-            diagnostic_phase("installed-bom-reader", bom_output_sha256=sha(bom_raw))
-            record["bom"] = bom_projection(bom_raw, parser)
+        )
+        diagnostic_phase("installed-bom-reader")
+        bom_raw = commands.capture(
+            ["/usr/bin/lsbom", "-p", "fmugs", str(private / "Bom")], timeout=180
+        )
+        diagnostic_phase("installed-bom-reader", bom_output_sha256=sha(bom_raw))
+        record["bom"] = bom_projection(bom_raw, parser)
+        verify_payload_bom(payload_rows, record["bom"])
         diagnostic_phase("receipt-namespace")
         namespace = commands.capture(["/usr/sbin/pkgutil", "--pkgs"], timeout=30, limit=65536)
         try:
@@ -2464,8 +2551,7 @@ def observe(root):
         record["command_leader_records"] = commands.calls
         record["unresolved"] = [
             "current-candidate-package-and-native-transition",
-            "payload-cpio-and-all-script-content-inventory",
-            "bom-column-semantics-and-payload-agreement",
+            "payload-content-and-symlink-target-inventory",
             "installed-sdk-header-qualification",
             "empirical-unicode-and-physical-firmlink-ownership",
             "receipt-content-concurrency",

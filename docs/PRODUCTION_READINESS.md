@@ -222,8 +222,9 @@ python scripts/check_platform_evidence_runner_readiness.py \
   --repository <owner>/<repo> --require-goal-targets --require-idle
 ```
 
-The manual protected-evidence workflows also perform this inventory check on a
-hosted runner. Configure the tag-restricted `platform-evidence` environment
+The manual protected-evidence workflows use a GitHub-hosted runner to confirm
+that the tagged commit is on the default branch before checking the inventory.
+Configure the tag-restricted `platform-evidence` environment
 and its read-only inventory token as described in the
 [platform promotion runbook](PLATFORM_PROMOTION_RUNBOOK.md).
 If GitHub successfully returns the inventory but no required idle

@@ -181,7 +181,7 @@ def check_runner_readiness_job(workflow: str) -> list[str]:
         'python-version: "3.12"': "readiness Python version pin",
         "GH_TOKEN: ${{ secrets.ROW_PLATFORM_RUNNER_INVENTORY_TOKEN }}": "Administration read token for runner inventory",
         "RELEASE_TAG: ${{ inputs.release_tag }}": "runner inventory release tag binding",
-        '"$GITHUB_REF" != "refs/tags/$RELEASE_TAG"': "exact release tag dispatch guard",
+        'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"': "exact release tag dispatch guard",
         'if [[ -z "$GH_TOKEN" ]]; then': "missing inventory token guard",
         "python scripts/check_platform_evidence_runner_readiness.py \\\n            --repository \"${{ github.repository }}\" \\\n            --target \"${{ inputs.target }}\" \\\n            --require-idle \\\n            --allow-unavailable \\\n            --github-output \"$GITHUB_OUTPUT\"": "target-specific idle runner readiness check",
     }
@@ -204,6 +204,29 @@ def check_runner_readiness_job(workflow: str) -> list[str]:
         )
     )
     errors.extend(check_checkout_step(block, job=job))
+    source = workflow_step_block(block, "name: Verify protected evidence source")
+    required_source = (
+        '        env:\n'
+        '          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}\n'
+        '          RELEASE_TAG: ${{ inputs.release_tag }}\n'
+        '        run: |\n'
+        '          set -euo pipefail\n'
+        '          [[ "$RELEASE_TAG" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]\n'
+        '          test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"\n'
+        '          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"\n'
+        '          test "$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")" = "$GITHUB_SHA"\n'
+        '          git check-ref-format --branch "$DEFAULT_BRANCH" >/dev/null\n'
+        '          git fetch --no-tags origin "refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"\n'
+        '          git merge-base --is-ancestor "$GITHUB_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"\n'
+    )
+    if (
+        not source or source.split("\n", 1)[1] != required_source
+        or "          fetch-depth: 0\n" not in workflow_step_block(
+            block, "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6"
+        )
+        or not 0 <= block.find(source) < block.find("      - id: runner-readiness")
+    ):
+        errors.append(f"{job} must verify the tagged commit is on the default branch before runner discovery")
     return errors
 
 

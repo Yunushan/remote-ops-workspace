@@ -27,6 +27,20 @@ def test_runner_inventory_requires_protected_administration_read_token() -> None
     assert any("missing Administration read token for runner inventory" in error for error in errors)
 
 
+def test_runner_discovery_requires_source_ancestry_check() -> None:
+    checker = _load_checker()
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8")
+    original = 'git merge-base --is-ancestor "$GITHUB_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"'
+    for changed in (
+        workflow.replace(original, f"echo {original}", 1),
+        workflow.replace("      - name: Verify protected evidence source\n",
+                         "      - name: Verify protected evidence source\n        if: false\n", 1),
+        workflow.replace("          fetch-depth: 0\n", "", 1),
+    ):
+        errors = checker.check_xp_native_evidence_workflow(changed)
+        assert "evidence-runner-readiness must verify the tagged commit is on the default branch before runner discovery" in errors
+
+
 def test_xp_native_evidence_workflow_passes_current_tree() -> None:
     checker = _load_checker()
 

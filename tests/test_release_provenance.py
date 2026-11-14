@@ -585,6 +585,22 @@ def test_attestation_verifier_uses_exact_release_identity(monkeypatch, tmp_path:
     assert args[args.index("--predicate-type") + 1] == checker.PREDICATE_TYPE
 
 
+def test_release_cli_verification_targets_github_dot_com(monkeypatch) -> None:
+    checker = _load_checker()
+    monkeypatch.setenv("GH_HOST", "fixture.invalid")
+    monkeypatch.setattr(checker.shutil, "which", lambda _: "gh")
+
+    def fake_run(args, *, cwd, check, capture_output, text, timeout, env):
+        assert args[0] == "gh"
+        assert args[1] in {"api", "attestation"}
+        assert env["GH_HOST"] == "github.com"
+        return checker.subprocess.CompletedProcess(args, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+    assert checker.run_gh_json(["api", "repos/example/project"], "release API", 60) == {}
+    assert checker.verify_attestation(Path("asset.bin"), repository="example/project", sha="a" * 40, tag="v1.2.3") == {}
+
+
 def test_all_standard_assets_must_share_one_attesting_run() -> None:
     checker = _load_checker()
     first = checker.RunInvocation("example/project", 123, 1)

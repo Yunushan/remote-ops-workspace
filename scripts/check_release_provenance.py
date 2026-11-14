@@ -562,7 +562,12 @@ def run_gh_json(args: list[str], label: str, timeout: int) -> Any:
             "GitHub CLI is required for cryptographic release provenance verification"
         )
     environment = os.environ.copy()
-    environment.update({"GH_PROMPT_DISABLED": "1", "GH_PAGER": "cat", "NO_COLOR": "1"})
+    environment.update({
+        "GH_HOST": "github.com",
+        "GH_PROMPT_DISABLED": "1",
+        "GH_PAGER": "cat",
+        "NO_COLOR": "1",
+    })
     try:
         completed = subprocess.run(
             [gh, *args],

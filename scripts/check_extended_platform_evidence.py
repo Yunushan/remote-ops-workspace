@@ -29,6 +29,7 @@ LINUX_TARGET_ARTIFACTS = {
 WORKFLOW_SCRIPT_DEPENDENCIES = (
     Path("scripts") / "check_extended_platform_dispatch_inputs.py",
     Path("scripts") / "check_extended_platform_builder.py",
+    Path("scripts") / "check_linux_native_elf.py",
     Path("scripts") / "check_protected_linux_build_inputs.py",
     Path("scripts") / "prepare_protected_linux_cargo.py",
     Path("scripts") / "protected_linux_cargo.sh",

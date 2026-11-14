@@ -661,17 +661,17 @@ marks the static catalog boundary as `not native-host/readiness proof`, points
 JSON consumers to `configs/platform_verified_evidence.json`, and records the
 accepted-evidence plus asset-provenance gates for Linux i386/armhf and Windows
 XP native-host readiness.
-Release manifests include `size_bytes` and `sha256` for each artifact, and CI
-build jobs run with read-only checkout credentials until the final publish step.
+Release manifests include `size_bytes` and `sha256` for each artifact. Candidate
+build jobs use read-only checkout credentials.
 The release workflow starts with a `release-preflight` job that resolves the
 requested tag once, exports its exact commit SHA, checks that it is on the
 trusted default-branch history, and runs
 `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, an
 exact-SHA CI evidence check,
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements`
-and `python scripts/check_repository_cleanup.py --require-clean`. Source,
-native and core publish jobs depend on that preflight and check out the frozen
-commit SHA rather than resolving the tag again. The protected-platform command
+and `python scripts/check_repository_cleanup.py --require-clean`. Source and
+native build jobs depend on that preflight and check out the frozen commit SHA.
+The protected-platform command
 in preflight is a readiness report, not a 4/4 accepted-evidence gate.
 Windows XP proof for those accepted records is captured on real XP hosts with
 `scripts/xp_smoke_runner.cmd`; the modern self-hosted `xp-evidence` collector
@@ -681,8 +681,10 @@ runtime, OpenSSL and profile-only legacy crypto proof values alongside the
 captured smoke log hash.
 The complete 100/100 production-readiness checklist and external prerequisite
 matrix is [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
-The optional `accepted-platform-evidence-assets` job runs only for a manual
-dispatch with `include_protected_platform_evidence=true`. It separately runs
+Once the candidate is sealed and independently approved, dispatch
+`release-promotion.yml` from the same immutable tag. Use the exact build run,
+candidate inventory artifact ID and digest, and the signed evidence commit SHA.
+The promotion job reads the reviewed platform registry from that commit and runs
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`
 and
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`,
@@ -700,11 +702,8 @@ then runs
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
 against the imported review bundles and finalized public record JSON files
 before upload; final public records must use canonical LF-terminated sorted JSON
-bytes so post-upload release asset digests are stable. The imported platform
-evidence artifact upload fails when empty, excludes hidden files and keeps a
-90-day retention window. That import job keeps only read permissions for
-repository contents and Actions artifacts. The exact-tag publish job waits for
-it and includes the accepted protected evidence in the same draft-first,
+bytes so post-upload release asset digests are stable. The promotion job
+verifies the import before including the accepted protected evidence in the same draft-first,
 attested production inventory. Linux i386, Linux armhf,
 windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
 evidence records for the same release tag, GitHub release repository,

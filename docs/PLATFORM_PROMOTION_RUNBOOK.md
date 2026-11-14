@@ -34,14 +34,14 @@ workflow was added cannot be promoted retroactively under the same-tag and
 same-source-SHA policy; create a new release tag from a commit containing the
 workflows instead of dispatching from `main` or weakening source provenance.
 
-After all four target workflows produce finalized accepted records for that
-immutable tag, review and append those records on the trusted default branch.
-The standard release assets publish automatically when the matching tag is
-pushed. Only then manually dispatch `.github/workflows/release.yml` from the
-trusted default branch with `release_tag` set to the immutable tag and
-`include_protected_platform_evidence=true`. The protected lane validates the
-branch-held accepted registry and checks out the immutable release tag; do not
-retag or rebuild from the controller branch.
+Pushing the production tag starts `release.yml`, which builds and seals the
+standard candidate artifacts. After all four target workflows produce
+finalized accepted records for that tag, include the reviewed registry in the
+signed compliance bundle. Place the bundle on the `release-compliance-evidence`
+branch, then dispatch `release-promotion.yml` from the same immutable tag with
+the candidate run and inventory identities and the exact evidence commit SHA.
+The promotion job verifies and imports the accepted records and then
+verifies the complete draft inventory before publication.
 
 Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle matching runner for

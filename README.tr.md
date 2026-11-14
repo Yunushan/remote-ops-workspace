@@ -317,16 +317,18 @@ icinde oldugunu kontrol eder,
 CI evidence denetimi,
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements`
 ve `python scripts/check_repository_cleanup.py --require-clean` calistirir.
-Source, native ve core publish isleri bu kapiya baglidir ve tag'i yeniden
-cozmek yerine frozen commit SHA'yi checkout eder. Preflight icindeki protected
+Source ve native build isleri bu kapiya baglidir ve belirlenen commit SHA'yi
+checkout eder. Preflight icindeki protected
 platform komutu yalnizca readiness raporudur; 4/4 accepted-evidence kapisi
 degildir. Protected platform goal icin Linux i386, Linux armhf,
 windows-xp-native-x86 ve windows-xp-native-x64 kayitlarinin hepsi ayni release
 tag, ayni GitHub release repository, target'a ozel release source workflow file
 path, ayni release source head SHA ve her kaydin pozitif release source run
 attempt degeri ile finalized accepted evidence
-olarak bulunmalidir. Yalnizca `include_protected_platform_evidence=true` ile
-manual dispatch edilen optional `accepted-platform-evidence-assets` isi
+olarak bulunmalidir. Aday envanteri olusturulup bagimsiz onay alindiktan sonra
+`release-promotion.yml` ayni degismez tag uzerinden baslatilir. Aday build run
+ID'si, envanter artifact ID'si ve hash degeri ile imzali kanit commit SHA'si
+verilir. Promotion isi bu commit'teki incelenmis platform kayitlarini okur ve
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`
 ve
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
@@ -342,11 +344,9 @@ artifact SHA-256 degerleri ve review-bundle size/SHA-256 degerleri finalized
 accepted kayitla eslestikten sonra release-assets icine alir, sonra
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
 ile import edilen review-bundle dosyalarini ve finalized public record JSON
-dosyalarini upload oncesi yeniden dogrular. Import edilen platform evidence
-artifact upload'i bosken fail eder, hidden dosyalari haric tutar ve 90 gun
-retention kullanir. Exact-tag publish isi bu import'u bekler ve accepted
-protected evidence dosyalarini ayni draft-first, attested production
-inventory'sine dahil eder. Tek publish isi
+dosyalarini upload oncesi yeniden dogrular. Promotion isi dogrulanan protected
+evidence dosyalarini once taslak olarak olusturulan, attestation ile dogrulanan
+production envanterine dahil eder. Bu is
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
 calistirip publish-ready release-assets dizinindeki finalized record, review
 bundle, native artifact, checksum yan dosyasi, release manifesti ve accepted

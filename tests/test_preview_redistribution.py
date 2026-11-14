@@ -322,6 +322,7 @@ def test_pkg_rejects_missing_unrelated_or_ambiguous_payload(
 ) -> None:
     module = checker()
     pkg_path = tmp_path / "installer.pkg"
+    pkg_path.write_bytes(b"xar fixture")
     listing = "".join(f"Path = {Path(path)}\n" for path in payload_paths)
     with patch.object(
         module.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=listing, stderr=""),

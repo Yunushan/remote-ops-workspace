@@ -14,7 +14,7 @@ def test_container_base_images_cover_checked_in_dockerfile() -> None:
 def test_container_base_images_reject_mutable_tags() -> None:
     checker = _load_checker()
     dockerfile = Path("docker/Dockerfile.web").read_text(encoding="utf-8")
-    mutable = dockerfile.replace(checker.PYTHON_BASE_IMAGE, "python:3.12-slim")
+    mutable = dockerfile.replace(checker.PYTHON_BASE_IMAGE, checker.PYTHON_BASE_IMAGE.split("@", 1)[0])
 
     errors = checker.check_container_base_images(mutable)
 

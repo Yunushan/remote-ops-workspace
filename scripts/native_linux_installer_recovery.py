@@ -802,6 +802,7 @@ def input_paths() -> dict[str, Path]:
         "shared_native_oracle": ROOT / "scripts/native_installer_recovery.py",
         "worker": ROOT / "scripts/smoke_workspace_recovery.py",
         "linux_builder": ROOT / "scripts/make_linux_native.sh",
+        "linux_architecture_verifier": ROOT / "scripts/check_linux_native_elf.py",
         "fixture": ROOT / "configs/workspace_recovery_fixture.json",
         "pins": ROOT / PINS,
         "owned_cleanup": ROOT / "src/remote_ops_workspace/process_status.py",

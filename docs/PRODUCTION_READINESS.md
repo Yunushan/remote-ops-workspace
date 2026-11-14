@@ -47,8 +47,14 @@ not evidence that may be inferred from a green build.
 
 ## External prerequisites
 
-Configure these protected `release` environment secrets without committing their
-values or writing them into logs:
+Use custom deployment rules to allow `v*` tags in the `release`,
+`release-compliance-review`, and `platform-evidence` GitHub environments.
+Keep the signing, promotion, and runner-inventory credentials scoped to
+their respective environments. See
+[GitHub environment configuration](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments).
+
+Configure the signing inputs in the protected `release` environment without
+committing their values or writing them into logs:
 
 - Windows: `ROW_WINDOWS_CERTIFICATE_BASE64`,
   `ROW_WINDOWS_CERTIFICATE_PASSWORD`, `ROW_WINDOWS_TIMESTAMP_URL`.
@@ -56,6 +62,18 @@ values or writing them into logs:
   `ROW_MACOS_SIGN_IDENTITY`, `ROW_MACOS_INSTALLER_SIGN_IDENTITY`,
   `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`,
   `ROW_MACOS_NOTARY_ISSUER`.
+
+The current Windows jobs import a PFX on the GitHub runner. For a newly issued
+publicly trusted Windows code-signing certificate, plan a provider integration
+that uses the signing key inside compliant hardware or a signing service.
+Qualify that integration against the staged application executables, the EXE
+and MSI installers for each modern Windows architecture, and the two XP
+executables. Verify Authenticode and the RFC 3161 timestamp on the final bytes
+before creating manifests, and run native smoke with those same signed bytes.
+For the XP targets, record the signing profile and verify that the signed
+executables still run on the two required hosts.
+[CA/Browser Forum code-signing requirements](https://cabforum.org/working-groups/code-signing/requirements/#6274-subscriber-private-key-protection-and-verification) ·
+[Microsoft SignTool](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool).
 
 The Windows builder requires successful Authenticode verification with a
 timestamp for each signed executable and MSI. The macOS builder signs the DMG

@@ -399,21 +399,6 @@ jobs:
             release-governance-publish/tag-governance-attestation.sig.json
           if-no-files-found: error
           retention-days: 90
-      - name: Reverify draft bytes after waiting for the auditor
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
-        run: >-
-          python scripts/check_release_provenance.py
-          --assets-dir release-assets
-          --repository "$GITHUB_REPOSITORY"
-          --tag "$RELEASE_TAG"
-          --sha "$RELEASE_SHA"
-          --draft-release-id "$DRAFT_RELEASE_ID"
-          --draft-transaction-run-id "$GITHUB_RUN_ID"
-          --draft-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
-          --draft-release-notes release-notes.md
-          --recheck-draft-bytes
       - name: Re-resolve immutable tag before publication
         shell: bash
         run: |
@@ -436,6 +421,21 @@ jobs:
           --repository "$GITHUB_REPOSITORY"
           --branch "$DEFAULT_BRANCH"
           --sha "$RELEASE_SHA"
+      - name: Reverify draft bytes after waiting for the auditor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: >-
+          python scripts/check_release_provenance.py
+          --assets-dir release-assets
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --draft-release-id "$DRAFT_RELEASE_ID"
+          --draft-transaction-run-id "$GITHUB_RUN_ID"
+          --draft-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
+          --draft-release-notes release-notes.md
+          --recheck-draft-bytes
       - name: Revalidate signed tag governance immediately before publication
         env:
           DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}

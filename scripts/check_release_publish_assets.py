@@ -549,12 +549,6 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "Retain exact publication governance proof",
         ),
         (
-            "--draft-release-id",
-            "draft revalidation after auditor wait",
-            "run",
-            "Reverify draft bytes after waiting for the auditor",
-        ),
-        (
             "git fetch --no-tags --force origin",
             "publication-time exact tag resolution",
             "run",
@@ -571,6 +565,12 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
             "publication-time branch governance and exact required checks",
             "run",
             branch_governance_steps[1],
+        ),
+        (
+            "--draft-release-id",
+            "draft revalidation after auditor wait",
+            "run",
+            "Reverify draft bytes after waiting for the auditor",
         ),
         (
             "check_release_tag_governance.py",
@@ -840,6 +840,14 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
         mutation_index = next((index for index, step in enumerate(steps) if step_name_is(step, mutation)), -1)
         if mutation_index <= 0 or not step_name_is(steps[mutation_index - 1], proof):
             errors.append(f"promotion must revalidate tag governance immediately before {mutation}")
+    publication_index = next(
+        (index for index, step in enumerate(steps) if step_name_is(step, "Publish verified draft by numeric ID once")),
+        -1,
+    )
+    if publication_index < 2 or not step_name_is(
+        steps[publication_index - 2], "Reverify draft bytes after waiting for the auditor",
+    ):
+        errors.append("promotion must recheck the complete draft immediately before publication governance")
     for name, local_tag in (
         ("Re-resolve immutable tag immediately before mutation", "row-release-promotion-candidate"),
         ("Re-resolve immutable tag before publication", "row-release-final-candidate"),

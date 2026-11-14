@@ -282,13 +282,29 @@ def test_promotion_rejects_remote_preconditions_before_auditor_wait(
 
 def test_promotion_requires_exact_workflow_identity_and_checks_before_publication() -> None:
     workflow = promotion_workflow().replace(
-        '          --sha "$RELEASE_SHA"\n      - name: Revalidate signed tag governance immediately before publication',
+        '          --sha "$RELEASE_SHA"\n      - name: Reverify draft bytes after waiting for the auditor',
         '          --sha "$RELEASE_SHA" --required-check "CodeQL python"\n'
-        '      - name: Revalidate signed tag governance immediately before publication',
+        '      - name: Reverify draft bytes after waiting for the auditor',
         1,
     )
     _, errors = both_contract_errors(workflow)
     assert any("publication-time branch governance" in error and "allowlisted" in error for error in errors)
+
+
+def test_promotion_rechecks_draft_at_the_publication_boundary() -> None:
+    workflow = promotion_workflow()
+    recheck = "Reverify draft bytes after waiting for the auditor"
+    signing_proof = "Revalidate signed tag governance immediately before publication"
+    message = "promotion must recheck the complete draft immediately before publication governance"
+    assert message not in both_contract_errors(workflow)[1]
+    old_boundary = workflow.replace(
+        f"      - name: {signing_proof}\n",
+        "      - name: Unrelated publication delay\n        run: sleep 1\n"
+        f"      - name: {signing_proof}\n",
+        1,
+    )
+    assert message in both_contract_errors(old_boundary)[1]
+    assert message in both_contract_errors(remove_named_step(workflow, recheck))[1]
 
 
 def test_promotion_requires_post_wait_tag_comparison() -> None:

@@ -516,6 +516,23 @@ def check_promotion_truth(workflow: str) -> list[str]:
         allowed_flags=frozenset({"--repository", "--branch", "--sha"}),
     ))
     draft_step = workflow_step_block(block, "name: Create new draft by numeric API identity")
+    notes_step_name = "Verify generated production release notes before creating a draft"
+    errors.extend(require_active_step(
+        block, "python scripts/check_published_release_notes.py",
+        label="pre-publication production release notes verification",
+        kind="run",
+        step_name=notes_step_name,
+        required_tokens=(
+            '--repository "$GITHUB_REPOSITORY"', '--tag "$RELEASE_TAG"',
+            "--channel production-signed", "--notes-file release-notes.md",
+        ),
+        allowed_flags=frozenset({"--repository", "--tag", "--channel", "--notes-file"}),
+    ))
+    generate_index = block.find("name: Generate boundary-aware release notes")
+    notes_index = block.find(f"name: {notes_step_name}")
+    draft_index = block.find("name: Create new draft by numeric API identity")
+    if not 0 <= generate_index < notes_index < draft_index:
+        errors.append("promotion must verify generated release notes after generation and before creating a draft")
     draft_commands = [line.strip() for line in draft_step.splitlines()]
     draft_response_checks = (
         'gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"',

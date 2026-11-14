@@ -260,6 +260,16 @@ def test_promotion_requires_fresh_governance_check_before_publication() -> None:
     assert any("publication-bound tag governance proof" in error for error in asset_errors)
 
 
+def test_promotion_requires_full_release_notes_validation_before_draft_creation() -> None:
+    checker = load_script("check_release_truth")
+    workflow = remove_named_step(
+        promotion_workflow(), "Verify generated production release notes before creating a draft",
+    )
+    errors = checker.check_promotion_truth(workflow)
+    assert any("pre-publication production release notes verification" in error for error in errors)
+    assert any("before creating a draft" in error for error in errors)
+
+
 @pytest.mark.parametrize(
     ("step_name", "label"),
     [

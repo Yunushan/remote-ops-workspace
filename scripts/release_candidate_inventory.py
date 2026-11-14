@@ -60,6 +60,8 @@ REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 DIGEST_RE = re.compile(r"sha256:([0-9a-f]{64})")
+WINDOWS_DEVICE_NAME_RE = re.compile(r"(?:con|prn|aux|nul|conin\$|conout\$|(?:com|lpt)[1-9¹²³])", re.I)
+UNSAFE_FILENAME_RE = re.compile(r'[\x00-\x1f\x7f<>:"/\\|?*]')
 RUN_URI_RE = re.compile(
     r"https://github\.com/([^/]+/[^/]+)/actions/runs/([1-9]\d*)/attempts/([1-9]\d*)"
 )
@@ -829,9 +831,7 @@ def extract_archive(
             raise ValueError(f"artifact ZIP must contain only {only_name}")
         for member in members:
             name = member.orig_filename
-            if name != member.filename or not safe_name(name) or ":" in name or any(
-                ord(char) < 32 or ord(char) == 127 for char in name
-            ):
+            if name != member.filename or not safe_name(name):
                 raise ValueError(f"artifact ZIP must contain safe files at ZIP root: {name!r}")
             mode = (member.external_attr >> 16) & 0xFFFF
             if stat.S_IFMT(mode) not in (0, stat.S_IFREG) or member.external_attr & 0x10:
@@ -915,9 +915,9 @@ def safe_name(value: Any) -> bool:
         isinstance(value, str)
         and bool(value)
         and value.strip() == value
-        and value not in {".", ".."}
-        and "/" not in value
-        and "\\" not in value
+        and not value.endswith(".")
+        and UNSAFE_FILENAME_RE.search(value) is None
+        and WINDOWS_DEVICE_NAME_RE.fullmatch(value.partition(".")[0].rstrip(" ")) is None
     )
 
 

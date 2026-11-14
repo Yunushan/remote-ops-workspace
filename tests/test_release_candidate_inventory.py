@@ -21,8 +21,14 @@ if str(SCRIPTS) not in sys.path:
 import release_candidate_inventory as candidate  # noqa: E402
 
 
-@pytest.mark.parametrize("name", ["parent/file", "../escape", "..\\escape", "C:escape", "empty/"])
-def test_candidate_zip_rejects_non_root_entries_before_writing(
+@pytest.mark.parametrize(
+    "name",
+    [
+        "parent/file", "../escape", "..\\escape", "C:escape", "empty/",
+        "installer.exe.", "native?.pkg", "NUL.txt", "COM¹.log", "Lpt2 .txt",
+    ],
+)
+def test_candidate_zip_rejects_unsafe_entries_before_writing(
     tmp_path: Path, name: str,
 ) -> None:
     source = tmp_path / "candidate.zip"

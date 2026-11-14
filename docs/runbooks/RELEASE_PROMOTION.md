@@ -41,6 +41,52 @@ promotion target.
    Run the [aggregate gate with the required release inputs](../PRODUCTION_READINESS.md#final-promotion-sequence)
    from the tagged checkout and require `production readiness: 100/100 gates passed`.
 
+## Stage the candidate for review
+
+Use the **Report promotion coordinates** summary from the successful
+`release.yml` run on the production tag. Set `release_repository`,
+`release_tag`, `release_sha`, `build_run_id`,
+`candidate_inventory_artifact_id`, and `candidate_inventory_archive_digest`
+from that run and its repository. Authenticate GitHub CLI and set `GH_TOKEN`
+or `GITHUB_TOKEN` with Actions, attestations, and contents read access.
+
+From the tagged checkout, download the sealed inventory to `$approval_dir/bundle`
+and materialize the standard release assets into a new directory outside the
+checkout. The materializer verifies the original inventory ZIP digest, exact
+tag and build attempt, the inventory's attestation, and all candidate bytes.
+
+```bash
+gh run download "$build_run_id" --repo "$release_repository" \
+  --name release-candidate-inventory --dir "$approval_dir/bundle"
+python scripts/release_candidate_inventory.py promote \
+  --repository "$release_repository" --release-tag "$release_tag" \
+  --release-sha "$release_sha" --build-run-id "$build_run_id" --build-run-attempt 1 \
+  --inventory-artifact-id "$candidate_inventory_artifact_id" \
+  --inventory-archive-digest "$candidate_inventory_archive_digest" \
+  --approved-inventory "$approval_dir/bundle/release-candidate-inventory.json" \
+  --assets-root "$release_assets_dir"
+```
+
+After the platform host runs are finalized, place the reviewed registry at
+`$approval_dir/bundle/platform_verified_evidence.json`. Import the native
+packages and their review files from the exact Actions runs into the same
+staging directory.
+
+```bash
+python scripts/import_platform_evidence_artifacts.py \
+  --registry "$approval_dir/bundle/platform_verified_evidence.json" \
+  --release-tag "$release_tag" --release-head-sha "$release_sha" \
+  --require-goal-targets --out-dir "$release_assets_dir" \
+  --verify-source-run --repository "$release_repository"
+```
+
+Retain the raw `candidate-pip-inspect.json` from each standard native
+target's `release-runtime-*` artifact. The sealed inventory's
+`runtime_reports` entries bind each report's artifact ID, archive digest,
+payload size and payload SHA-256. Use those exact report bytes in the review
+bundle. See the [protected source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites)
+for the registry's original Actions archives.
+
 ## Prepare the signed redistribution approval
 
 Before tagging, enroll the independent redistribution reviewer's public key

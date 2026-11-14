@@ -250,10 +250,11 @@ namespace and a tag that resolves to the exact qualified source.
 5. Put the finalized records in the protected-platform registry for the signed
    compliance bundle after their review bundles and source-run metadata pass
    validation.
-6. Review those exact Actions artifacts, capture each platform's tracked fully
-   hashed resolver input, raw realized environment, artifact extraction/license
-   inventory, and build provenance, sign the exact manifest/artifact hashes, and
-   place the authenticated bundle on `release-compliance-evidence`. Record its
+6. [Stage the exact Actions artifacts for review](runbooks/RELEASE_PROMOTION.md#stage-the-candidate-for-review).
+   Capture each platform's tracked fully hashed resolver input, raw realized
+   environment, artifact extraction/license inventory, and build provenance.
+   Sign the exact manifest and artifact hashes and place the authenticated
+   bundle on `release-compliance-evidence`. Record its
    immutable commit SHA and retain the exact sealed candidate inventory; do not
    rebuild after approval.
 7. Follow the [production promotion dispatch](runbooks/RELEASE_PROMOTION.md#dispatch-production-promotion)

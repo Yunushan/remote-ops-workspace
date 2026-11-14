@@ -1,29 +1,22 @@
 # Platform Promotion Runbook
 
-This runbook is the operator path for truthful 100% readiness promotion of
-Linux i386, Linux armhf and Windows XP native-host targets. It does not promote
-any target by itself. Promotion happens only when accepted evidence records are
-added to `configs/platform_verified_evidence.json` and all verification gates
-pass.
+This runbook covers evidence collection for Linux i386, Linux armhf and
+Windows XP native-host targets. Use `configs/platform_verified_evidence.json`
+as the registry format. Production promotion validates the four finalized
+records in the release-specific registry from the signed compliance bundle.
 The default-versus-script-supported release boundary comes from
 `configs/release_matrix.json` and is checked by
 `python scripts/check_release_matrix.py`; this runbook carries the protected
 script-supported artifact names that must stay aligned with that matrix.
 
-Start with the shared gates:
+Check the source and runner inventory before dispatching evidence workflows:
 
 ```bash
 python scripts/check_platform_parity_promotion.py
 python scripts/check_platform_verified_evidence.py
-python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete
-python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>
 python scripts/check_platform_evidence_source_ref.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets
 python scripts/check_platform_evidence_runner_readiness.py --repository <owner>/<repo> --require-goal-targets --require-idle
 python scripts/check_release_publish_assets.py
-python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>
-python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets
-python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>
-python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head
 ```
 
 Run the source-ref gate before either evidence workflow dispatch. It resolves
@@ -34,22 +27,30 @@ workflow was added cannot be promoted retroactively under the same-tag and
 same-source-SHA policy; create a new release tag from a commit containing the
 workflows instead of dispatching from `main` or weakening source provenance.
 
-After all four target workflows produce finalized accepted records for that
-immutable tag, review and append those records on the trusted default branch.
-The standard release assets publish automatically when the matching tag is
-pushed. Only then manually dispatch `.github/workflows/release.yml` from the
-trusted default branch with `release_tag` set to the immutable tag and
-`include_protected_platform_evidence=true`. The protected lane validates the
-branch-held accepted registry and checks out the immutable release tag; do not
-retag or rebuild from the controller branch.
+Pushing the production tag starts `release.yml`, which builds and seals the
+standard candidate artifacts. After all four target workflows produce
+finalized accepted records for that tag, include the reviewed registry in the
+signed compliance bundle. Place the bundle on the `release-compliance-evidence`
+branch, then dispatch `release-promotion.yml` from the same immutable tag with
+the candidate run and inventory identities and the exact evidence commit SHA.
+The promotion job verifies and imports the accepted records and then
+verifies the complete draft inventory before publication.
 
 Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle matching runner for
-Linux i386, Linux armhf, and the modern `xp-evidence` collector. It intentionally
+Linux i386, Linux armhf, and the modern `windows`, `xp-evidence` collector.
+Install PowerShell 7 on the collector for the workflow's `pwsh` steps. The
+collector validates and packages smoke evidence captured separately on XP.
+The preflight intentionally
 reports only sanitized counts, not runner names. This command needs `GH_TOKEN`
-or `GITHUB_TOKEN` with repository administration read access; it is an operator
-preflight rather than a release-workflow step because normal release tokens do
-not need runner-inventory access.
+or `GITHUB_TOKEN` with repository administration read access.
+
+Before dispatching the evidence workflows, configure the `platform-evidence`
+GitHub environment to allow only `v*` tags, with no deployment branch rule.
+Set its `ROW_PLATFORM_RUNNER_INVENTORY_TOKEN` secret to a fine-grained token
+limited to this repository with Administration read access. The hosted
+preflight uses it only for the inventory step and requires the dispatch ref to
+match the requested release tag.
 
 The dispatch-only evidence workflows have a separate non-promotional unavailable
 path. Their hosted inventory preflight uses `--allow-unavailable` and writes
@@ -65,16 +66,17 @@ for readiness.
 Accepted records must start as candidates generated with
 `python scripts/make_platform_verified_evidence_record.py`, then the review
 bundle must be packaged and bound back into the record with
-`python scripts/finalize_platform_verified_evidence_record.py`. Append only the
-finalized record with `--append-registry` when the referenced run, review
-bundle and release assets are the real promotion evidence.
+`python scripts/finalize_platform_verified_evidence_record.py`. Append only
+reviewed, finalized records to the release-specific registry using
+`--append-registry --registry <signed-registry.json>`. Include that registry
+in the signed compliance bundle.
 Candidate generation must bind the exact release upload staging root with
 `--staged-upload-out-dir platform-evidence-upload/<target>/v<project.version>`; XP candidate generation
 must also bind `--xp-evidence-output-dir <xp-evidence-output-dir>` so the staged
 upload command in the record matches the target/release-scoped XP review-bundle
 output root.
-`python scripts/check_platform_verified_evidence.py` validates
-`configs/platform_verified_evidence.json` in finalized-only mode and rejects
+`python scripts/check_platform_verified_evidence.py --registry <signed-registry.json>`
+validates the selected registry in finalized-only mode and rejects
 candidate-only CLI validation. Candidate checks run through the
 candidate-generation, bundle and finalization workflow before registry append.
 Finalization reruns strict accepted-evidence validation on the unfinalized
@@ -95,24 +97,28 @@ file and one release source head SHA, and each record must bind a positive
 release source run attempt; stale evidence from a
 previous release, different repository, different source commit or stale run
 attempt cannot promote a newer release.
-The strict `python scripts/verify.py --require-platform-goal-targets` command
-also runs
-`python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo>`
-against the supplied release tag and release asset directory, proving the
-accepted records are release-importable, bound to the current checkout head and
-backed by exact completed successful dispatch runs at the accepted run id,
-attempt, workflow path and source SHA with a complete artifact inventory
-containing exactly one non-expired, non-empty expected source artifact before
-downloaded bundle and publish-asset validation can pass. It then runs
-`python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>`
-so the protected parity gate fails if the accepted final records, review
-bundles or native artifacts are missing from the actual publish-ready release
-asset directory. The static readiness report still keeps
+Before dispatching promotion, check that the reviewed registry has all four
+records and that the original Actions archives are still available:
+
+```bash
+python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete --registry <signed-registry.json>
+python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version> --registry <signed-registry.json>
+python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo> --registry <signed-registry.json> --release-head-sha <release-sha>
+```
+
+After staging the exact release assets, verify the records, bundles and native
+packages against the same registry:
+
+```bash
+python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo> --registry <signed-registry.json>
+python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets --evidence-registry <signed-registry.json> --native-release-channel production-signed
+```
+
+The static readiness report still keeps
 `release_asset_provenance_complete=false`; only this asset-backed protected goal
 gate can flip the proof state after finalized records, review bundles and
-native release bytes match. When `--release-repository <owner>/<repo>` is
-supplied, the same strict verifier also runs
-`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head`
+native release bytes match. After publication, run
+`python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head --registry <signed-registry.json>`
 against the actual GitHub release, published native/review-bundle asset bytes,
 published final accepted-record JSON bytes, exact accepted source workflow run
 attempts and the published tag's source head. The remote auditor's
@@ -148,9 +154,10 @@ matches.
 The same release source workflow run URL cannot carry conflicting accepted run
 attempts across protected-platform records for one release; that ambiguity is
 aggregate evidence only and cannot complete the parity block.
-The release workflow's `accepted-platform-evidence-assets` job must keep only
-read permissions for repository content and Actions artifacts; no write-scoped
-GitHub permission is acceptable for importing protected-platform evidence.
+The exact-tag production promotion imports protected-platform evidence with
+read access to the repository and Actions artifacts. The promotion job runs
+the importer before using its write permissions to attest and publish the
+verified inventory.
 The downloaded source artifact must contain exactly the expected release and
 review-bundle files at artifact root; extra files, private raw logs and nested
 builder output directories are rejected before anything is copied into the
@@ -209,6 +216,26 @@ uploaded. The workflow artifact upload must set `if-no-files-found: error`,
 `include-hidden-files: false` and `retention-days: 90` so missing source files
 fail, hidden scratch/private files stay excluded and source evidence remains
 available for release import.
+
+Provision the exact CPython patch from `configs/release_toolchain.json` as
+`python3` on each protected Linux builder. The workflow checks and consumes the
+hash-locked inputs under `requirements-locks/protected-linux/` and retains the
+raw `pip inspect --local` report in the review ZIP. For a local rehearsal,
+capture the same report immediately before building and pass it to the bundler
+with `--runtime-report`. Use the checked-in workflow's install commands for
+the matching architecture.
+
+Both targets compile CFFI and need a native C toolchain and libffi headers.
+Armhf also compiles the PyInstaller bootloader, needs its native C and zlib
+development tools, and needs glibc 2.31 or newer for the pinned crypto wheels.
+i386 compiles bcrypt and cryptography and needs a native
+`i686-unknown-linux-gnu` Rust toolchain and OpenSSL headers. The workflow
+verifies both source archives against the i386 Python lock, then runs
+`cargo fetch --locked` against their upstream `Cargo.lock` files in a new
+job-local cache. The build backends use locked, offline Cargo commands. The
+Python lock hashes cover the Python distributions and build backends. Host
+toolchains and the resulting native binaries still require review and smoke
+evidence from the matching builders.
 Strict promotion also requires each accepted record to include the review bundle
 manifest, review bundle archive and review bundle SHA-256 sidecar digests
 created by `python scripts/finalize_platform_verified_evidence_record.py`.

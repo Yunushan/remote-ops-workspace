@@ -4,6 +4,8 @@ import gzip
 import importlib.util
 import io
 import json
+import stat
+import struct
 import tarfile
 import zipfile
 from pathlib import Path
@@ -38,6 +40,29 @@ def test_native_package_inventory_matches_real_release_matrix() -> None:
         "linux-x86_64": 6,
         "linux-aarch64": 6,
     }
+
+
+def test_production_notices_cover_protected_linux_and_require_exact_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+
+    tag = "v2.3.4"
+    names = notices.expected_production_packages(tag)
+    assert len(names) == 29
+    assert f"remote-ops-workspace-{tag}-linux-i386.deb" in names
+    assert f"remote-ops-workspace-{tag}-linux-armv7hl.rpm" in names
+    package = tmp_path / f"remote-ops-workspace-{tag}-windows-x86-native.zip"
+    material = ROOT / "redistribution-evidence" / "THIRD_PARTY_NOTICES.md"
+    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+    assert notices.verify_notices(tmp_path, tag) == 1
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("docs/THIRD_PARTY_NOTICES.md", b"Different bytes")
+    with pytest.raises(ValueError, match="contains different bytes"):
+        notices.verify_notices(tmp_path, tag)
 
 
 def test_missing_evidence_fails_before_native_publication(tmp_path: Path) -> None:
@@ -184,6 +209,32 @@ def test_packaged_license_bytes_are_read_from_real_archives(tmp_path: Path, sepa
     assert module.embedded_file_bytes(zip_path, "PyQt6-GPL-3.0.txt") is None
 
 
+@pytest.mark.parametrize("extension", ["exe", "msi", "dmg", "pkg", "deb", "rpm", "AppImage"])
+def test_non_portable_packages_do_not_fall_back_to_zip(tmp_path: Path, extension: str) -> None:
+    module = checker()
+    package = tmp_path / f"relabelled.{extension}"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("docs/THIRD_PARTY_NOTICES.md", b"Copied from a companion ZIP")
+    with pytest.raises(ValueError, match="different package extension"):
+        module.embedded_file_bytes(package, "THIRD_PARTY_NOTICES.md")
+
+
+def test_portable_notice_must_be_an_unambiguous_regular_file(tmp_path: Path) -> None:
+    module = checker()
+    wanted = "THIRD_PARTY_NOTICES.md"
+    package = tmp_path / "portable.zip"
+    notice_link = zipfile.ZipInfo(f"docs/{wanted}")
+    notice_link.create_system = 3
+    notice_link.external_attr = (stat.S_IFLNK | 0o777) << 16
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr(notice_link, b"missing-target")
+    assert module.embedded_file_bytes(package, wanted) is None
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr(f"docs/{wanted}", b"expected bytes")
+        archive.writestr(f"DOCS/{wanted.lower()}", b"ambiguous Windows path")
+    assert module.embedded_file_bytes(package, wanted) is None
+
+
 def test_deb_license_bytes_are_read_from_filesystem_tar_without_extraction(tmp_path: Path) -> None:
     module = checker()
     deb_path = tmp_path / "remote-ops-workspace-v1.0.27-linux-amd64.deb"
@@ -210,18 +261,25 @@ def test_deb_license_bytes_are_read_from_filesystem_tar_without_extraction(tmp_p
     )
 
 
-def test_appimage_license_bytes_come_from_the_validated_squashfs_offset(tmp_path: Path) -> None:
+@pytest.mark.parametrize("elf_class", [1, 2])
+def test_appimage_license_bytes_come_from_the_runtime_squashfs_offset(tmp_path: Path, elf_class: int) -> None:
     module = checker()
     appimage = tmp_path / "remote-ops-workspace-v1.0.27-linux-aarch64.AppImage"
-    prefix = b"\x7fELF" + b"unrelated hsqs marker"
-    squashfs_offset = len(prefix) + 11
-    appimage.write_bytes(prefix + b"\x00" * 11 + b"hsqs" + b"\x00" * 64)
+    ident = b"\x7fELF" + bytes((elf_class, 1, 1, 0)) + b"AI\x02" + bytes(5)
+    header = struct.Struct("<16sHHIIIIIHHHHHH" if elf_class == 1 else "<16sHHIQQQIHHHHHH")
+    section_size = 40 if elf_class == 1 else 64
+    padding = b"hsqs" + bytes(92)
+    table_offset = header.size + len(padding)
+    elf = header.pack(ident, 2, 3, 1, 0, 0, table_offset, 0, header.size, 0, 0, section_size, 1, 0)
+    squashfs_offset = table_offset + section_size
+    superblock = bytearray(96)
+    superblock[:4] = b"hsqs"
+    struct.pack_into("<Q", superblock, 40, len(superblock))
+    appimage.write_bytes(elf + padding + bytes(section_size) + superblock)
     payload = b"Third party release notices from AppImage\n"
 
     def inspect(command: list[str], **_kwargs: object) -> SimpleNamespace:
-        if command[1] == "-s":
-            offset = int(command[command.index("-offset") + 1])
-            return SimpleNamespace(returncode=int(offset != squashfs_offset), stdout="", stderr="")
+        assert int(command[command.index("-offset") + 1]) == squashfs_offset
         destination = Path(command[command.index("-d") + 1])
         destination.mkdir()
         (destination / "usr" / "share" / "doc").mkdir(parents=True)
@@ -231,12 +289,14 @@ def test_appimage_license_bytes_come_from_the_validated_squashfs_offset(tmp_path
     with patch.object(module.subprocess, "run", side_effect=inspect) as run:
         assert module.embedded_file_bytes(appimage, "THIRD_PARTY_NOTICES.md") == payload
 
-    inspected_offsets = [
-        int(call.args[0][call.args[0].index("-offset") + 1])
-        for call in run.call_args_list if call.args[0][1] == "-s"
-    ]
-    assert inspected_offsets == [prefix.index(b"hsqs"), squashfs_offset]
-    assert run.call_args_list[-1].args[0][0:2] == ["unsquashfs", "-d"]
+    assert run.call_count == 1
+    assert run.call_args.args[0][0:2] == ["unsquashfs", "-d"]
+
+    appimage.write_bytes(elf + padding + bytes(section_size + 96) + superblock)
+    with patch.object(module.subprocess, "run") as run:
+        with pytest.raises(ValueError, match="no SquashFS payload at the ELF boundary"):
+            module.embedded_file_bytes(appimage, "THIRD_PARTY_NOTICES.md")
+        run.assert_not_called()
 
 
 def test_rpm_license_bytes_are_read_from_cpio_without_extracting_paths(tmp_path: Path) -> None:
@@ -268,8 +328,12 @@ def test_rpm_license_bytes_are_read_from_cpio_without_extracting_paths(tmp_path:
     assert [call.args[0][0] for call in run.call_args_list] == ["rpm2cpio", "cpio", "cpio"]
 
 
-def test_pkg_license_bytes_are_read_from_nested_gzip_cpio_payload(tmp_path: Path) -> None:
+@pytest.mark.parametrize("payload_parts", [("Payload",), ("remote-ops-workspace-component.pkg", "Payload")])
+def test_pkg_license_bytes_are_read_from_gzip_cpio_payload(
+    tmp_path: Path, payload_parts: tuple[str, ...],
+) -> None:
     module = checker()
+    payload_path = str(Path(*payload_parts))
     pkg_path = tmp_path / "remote-ops-workspace-v1.0.27-macos-arm64.pkg"
     pkg_path.write_bytes(b"xar fixture")
     cpio_payload = b"old ASCII CPIO payload"
@@ -278,7 +342,10 @@ def test_pkg_license_bytes_are_read_from_nested_gzip_cpio_payload(tmp_path: Path
 
     def inspect(command: list[str], **kwargs: object) -> SimpleNamespace:
         if command[0] == "7z":
-            assert command == ["7z", "x", "-so", "-txar", str(pkg_path), "Payload"]
+            if command[1] == "l":
+                assert command == ["7z", "l", "-slt", "-ba", "-txar", str(pkg_path)]
+                return SimpleNamespace(returncode=0, stdout=f"Path = {payload_path}\n", stderr="")
+            assert command == ["7z", "x", "-so", "-spd", "-txar", str(pkg_path), payload_path]
             return SimpleNamespace(returncode=0, stdout=gzip.compress(cpio_payload), stderr=b"")
         assert kwargs["input"] == cpio_payload
         if command == ["cpio", "-it"]:
@@ -296,10 +363,33 @@ def test_pkg_rejects_invalid_compressed_payload(tmp_path: Path) -> None:
     pkg_path.write_bytes(b"xar fixture")
     with patch.object(
         module.subprocess, "run",
-        return_value=SimpleNamespace(returncode=0, stdout=b"not gzip", stderr=b""),
+        side_effect=[
+            SimpleNamespace(returncode=0, stdout="Path = Payload\n", stderr=""),
+            SimpleNamespace(returncode=0, stdout=b"not gzip", stderr=b""),
+        ],
     ):
         with pytest.raises(ValueError, match="cannot decompress.*CPIO payload"):
             module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md")
+
+
+@pytest.mark.parametrize("payload_paths", [
+    [],
+    ["unrelated.pkg/Payload"],
+    ["Payload", "remote-ops-workspace-component.pkg/Payload"],
+])
+def test_pkg_rejects_missing_unrelated_or_ambiguous_payload(
+    tmp_path: Path, payload_paths: list[str],
+) -> None:
+    module = checker()
+    pkg_path = tmp_path / "installer.pkg"
+    pkg_path.write_bytes(b"xar fixture")
+    listing = "".join(f"Path = {Path(path)}\n" for path in payload_paths)
+    with patch.object(
+        module.subprocess, "run", return_value=SimpleNamespace(returncode=0, stdout=listing, stderr=""),
+    ) as run:
+        with pytest.raises(ValueError, match="must contain one expected XAR payload"):
+            module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md")
+    run.assert_called_once()
 
 
 def test_dmg_reads_only_the_regular_license_member_to_stdout(tmp_path: Path) -> None:

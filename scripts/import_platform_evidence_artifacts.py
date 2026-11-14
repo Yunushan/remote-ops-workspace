@@ -851,10 +851,6 @@ def source_run_api_url(repository: str, run_id: str | int) -> str:
     return f"https://api.github.com/repos/{repository}/actions/runs/{run_id}"
 
 
-def source_run_child_api_url(repository: str, run_id: str | int, endpoint: str) -> str:
-    return f"{source_run_api_url(repository, run_id)}/{endpoint}"
-
-
 def source_workflow_api_url(repository: str, workflow_id: str | int) -> str:
     return f"https://api.github.com/repos/{repository}/actions/workflows/{workflow_id}"
 
@@ -947,20 +943,17 @@ def verify_source_run(
                 f"{expected_workflow_url!r}, got {data.get('workflowUrl')!r}"
             )
     if expected_run_id_int is not None:
-        for field, endpoint in (
-            ("jobsUrl", "jobs"),
-            ("logsUrl", "logs"),
-            ("artifactsUrl", "artifacts"),
+        run_api_url = source_run_api_url(expected_repository, expected_run_id_int)
+        attempt_api_url = f"{run_api_url}/attempts/{expected_run_attempt}"
+        for field, expected_url in (
+            ("jobsUrl", f"{attempt_api_url}/jobs"),
+            ("logsUrl", f"{attempt_api_url}/logs"),
+            ("artifactsUrl", f"{run_api_url}/artifacts"),
         ):
-            expected_endpoint_url = source_run_child_api_url(
-                expected_repository,
-                expected_run_id_int,
-                endpoint,
-            )
-            if data.get(field) != expected_endpoint_url:
+            if data.get(field) != expected_url:
                 errors.append(
                     f"{target} release_asset_source workflow run {field} must be "
-                    f"{expected_endpoint_url!r}, got {data.get(field)!r}"
+                    f"{expected_url!r}, got {data.get(field)!r}"
                 )
     check_suite_id = positive_int_value(data.get("checkSuiteId"))
     if check_suite_id is None:

@@ -8,6 +8,25 @@ from pathlib import Path
 import pytest
 
 
+def test_runner_inventory_requires_protected_administration_read_token() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "    environment: platform-evidence\n",
+        "",
+        1,
+    ).replace(
+        "GH_TOKEN: ${{ secrets.ROW_PLATFORM_RUNNER_INVENTORY_TOKEN }}",
+        "GH_TOKEN: ${{ github.token }}",
+        1,
+    )
+
+    errors = checker.check_xp_native_evidence_workflow(workflow)
+
+    assert any("missing tag-restricted runner inventory environment" in error for error in errors)
+    assert any("missing Administration read token for runner inventory" in error for error in errors)
+
+
 def test_xp_native_evidence_workflow_passes_current_tree() -> None:
     checker = _load_checker()
 
@@ -79,6 +98,25 @@ def test_xp_native_evidence_workflow_rejects_publish_trigger() -> None:
     errors = checker.check_xp_native_evidence_workflow(workflow)
 
     assert "XP native evidence workflow must not run on push" in errors
+
+
+@pytest.mark.parametrize(
+    ("original", "replacement", "required"),
+    [
+        ("[self-hosted, windows, xp-evidence]", "[self-hosted, xp-evidence]", "Windows collector labels"),
+        ("shell: pwsh", "shell: bash", "collector PowerShell default"),
+    ],
+)
+def test_xp_native_evidence_requires_windows_powershell_collector(
+    original: str, replacement: str, required: str
+) -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/xp-native-evidence.yml").read_text(encoding="utf-8")
+    block = checker.workflow_job_block(workflow, "xp-native-evidence")
+    assert original in block
+    workflow = workflow.replace(block, block.replace(original, replacement, 1), 1)
+
+    assert any(required in error for error in checker.check_xp_native_evidence_workflow(workflow))
 
 
 def test_xp_native_evidence_workflow_rejects_write_permissions() -> None:

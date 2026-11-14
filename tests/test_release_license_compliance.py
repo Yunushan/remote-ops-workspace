@@ -5,9 +5,11 @@ import hashlib
 import importlib.util
 import json
 import sys
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -46,6 +48,39 @@ def _license_record(root: Path, name: str) -> dict:
     )
 
 
+def test_protected_linux_runtime_report_must_match_signed_review_bundle(tmp_path: Path) -> None:
+    checker = _load_checker()
+    target = "linux-armhf"
+    tag = "v1.2.3"
+    report = b'{"version":"1","installed":[{"metadata":{"name":"pip","version":"26.3"}}]}\n'
+    realized = _write_record(tmp_path, checker.RUNTIME_REPORT_NAME, report, reference="signed fixture")
+    manifest = {
+        "schema_version": 2,
+        "bundle_type": "extended-linux-native-evidence",
+        "target": target,
+        "release_tag": tag,
+        "runtime_report": {key: realized[key] for key in ("file", "size_bytes", "sha256")},
+    }
+    archive_path = tmp_path / "review.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(checker.RUNTIME_REPORT_NAME, report)
+    record = {"review_bundle": {
+        "manifest": _write_record(tmp_path, "review.json", json.dumps(manifest).encode()),
+        "archive": _write_record(tmp_path, archive_path.name, archive_path.read_bytes()),
+    }}
+    assert checker.check_protected_linux_runtime_report(target, tag, record, tmp_path, realized) == []
+
+    changed_report = report.replace(b"26.3", b"26.4")
+    changed = _write_record(tmp_path, checker.RUNTIME_REPORT_NAME, changed_report, reference="signed fixture")
+    errors = checker.check_protected_linux_runtime_report(target, tag, record, tmp_path, changed)
+    assert any("exact accepted native build report" in error for error in errors)
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(checker.RUNTIME_REPORT_NAME, changed_report)
+    errors = checker.check_protected_linux_runtime_report(target, tag, record, tmp_path, realized)
+    assert any("archive size and SHA-256 must match" in error for error in errors)
+
+
 def _component(root: Path, name: str, version: str, origin: str) -> dict:
     return {
         "name": name,
@@ -57,7 +92,7 @@ def _component(root: Path, name: str, version: str, origin: str) -> dict:
     }
 
 
-def _positive_fixture(tmp_path: Path, checker) -> list[str]:
+def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool = False) -> list[str]:
     assets = tmp_path / "assets"
     evidence_root = tmp_path / "evidence"
     assets.mkdir()
@@ -238,7 +273,15 @@ def _positive_fixture(tmp_path: Path, checker) -> list[str]:
     candidate_inventory = _write_record(
         evidence_root,
         "release-candidate-inventory.json",
-        b'{"schema_version":1}\n',
+        json.dumps({
+            "schema_version": 2,
+            "runtime_reports": {
+                "windows-x86": {
+                    "sha256": "f" * 64 if different_runtime_report else realized["sha256"],
+                    "size_bytes": realized["size_bytes"],
+                },
+            },
+        }).encode(),
         reference="attested exact-tag candidate inventory",
     )
     evidence = {
@@ -348,10 +391,130 @@ def test_current_compliance_policy_is_deliberately_fail_closed() -> None:
     assert any("no trusted Ed25519 approver key" in error for error in errors)
 
 
+def test_compliance_maps_all_native_manifests_for_a_future_release_tag() -> None:
+    checker = _load_checker()
+    matrix = json.loads(Path("configs/release_matrix.json").read_bytes())
+    policy = json.loads(Path("configs/release_compliance_policy.json").read_bytes())
+    tag = "v2.3.4"
+
+    manifests = checker.expected_native_manifest_names(matrix, tag)
+    assert manifests
+    assert all(f"-{tag}-" in name for name in manifests)
+    targets = {checker.target_for_manifest(name, matrix=matrix, tag=tag) for name in manifests}
+    assert targets == set(policy["production_targets"]) - checker.XP_TARGETS
+    standard_targets = {
+        target
+        for job in matrix["default_github_release"]["native_jobs"]
+        for target in job["platform_target_ids"]
+    }
+    assert standard_targets == checker.RUNTIME_REPORT_ARTIFACT_NAMES.keys()
+    for target in targets:
+        checker.producer_for_target(target, release_workflow="", extended_workflow="")
+    assert checker.RUNTIME_REPORT_ARTIFACT_NAMES["linux-arm64"] == "release-runtime-linux-aarch64"
+
+
 def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> None:
     checker = _load_checker()
 
     assert checker.main(_positive_fixture(tmp_path, checker)) == 0
+
+
+def test_signed_approval_rejects_runtime_report_from_another_build(tmp_path: Path, capsys) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker, different_runtime_report=True)
+
+    assert checker.main(args) == 1
+    assert "windows-x86 pip inspect evidence must match the exact sealed build report" in capsys.readouterr().err
+
+
+def test_redistribution_only_audit_still_requires_independent_approval(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker)
+    for flag in ("--tag-governance-attestation", "--tag-governance-signature"):
+        index = args.index(flag)
+        del args[index:index + 2]
+    assert checker.main(args) == 1
+    assert checker.main([*args, "--audit-redistribution-only"]) == 0
+
+    approval = Path(args[args.index("--evidence") + 1])
+    approval.write_bytes(approval.read_bytes() + b"\n")
+    assert checker.main([*args, "--audit-redistribution-only"]) == 1
+
+
+def test_mutation_boundary_refuses_expired_signed_redistribution_approval(tmp_path: Path, monkeypatch) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker)
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    from check_release_tag_governance import recheck_redistribution_approval
+
+    def option(name):
+        return args[args.index(name) + 1]
+
+    evidence = Path(option("--evidence"))
+    signature = Path(option("--signature"))
+    policy_bytes, policy = checker.read_json_object(Path(option("--policy")), "fixture policy")
+    identity = (option("--repository"), option("--tag"), option("--sha"))
+    assert recheck_redistribution_approval(evidence, signature, policy_bytes, policy, *identity) == []
+
+    errors = recheck_redistribution_approval(
+        evidence, signature, policy_bytes, policy, *identity, now=datetime(2099, 1, 1, tzinfo=UTC),
+    )
+    assert "compliance evidence approval has expired" in errors
+
+
+@pytest.mark.parametrize("arch", ["x86", "x64"])
+def test_xp_compliance_authenticates_signed_build_evidence(
+    tmp_path: Path, monkeypatch, arch: str,
+) -> None:
+    monkeypatch.syspath_prepend(str(Path("scripts").resolve()))
+    import check_xp_candidate_run
+
+    checker = _load_checker()
+    candidate = _write_record(tmp_path, "candidate.zip", b"candidate", artifact_id=42, reference="candidate")
+    receipt = _write_record(tmp_path, "receipt.zip", b"receipt", artifact_id=43, reference="receipt")
+    review = _write_record(
+        tmp_path, "review.txt", b"XP redistribution review", reference="review",
+        decision="approved", runtime_prerequisite=".NET Framework 4", runtime_redistributed=False,
+    )
+    inventory = {
+        "profile": "xp-dotnet-framework-v4",
+        "run_id": 100,
+        "run_attempt": 1,
+        "candidate_artifact": candidate,
+        "receipt_artifact": receipt,
+        "redistribution_review": review,
+    }
+    options = {
+        "target": f"windows-xp-native-{arch}", "assets_dir": tmp_path, "evidence_root": tmp_path,
+        "repository": "example/project", "tag": "v1.2.3", "sha": "1" * 40,
+    }
+    calls = []
+
+    def verify(_client, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(check_xp_candidate_run, "verify_candidate", verify)
+    published_calls = []
+    monkeypatch.setattr(check_xp_candidate_run, "verify_candidate_bytes", lambda **kwargs: published_calls.append(kwargs))
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    assert "requires a GitHub Actions read token" in checker.check_xp_inventory(inventory, **options)[0]
+    assert checker.check_xp_inventory(inventory, **options, published_audit=True) == []
+    assert len(published_calls) == 1
+    assert published_calls[0]["arch"] == arch
+    monkeypatch.setenv("GH_TOKEN", "test-only")
+    assert checker.check_xp_inventory(inventory, **options) == []
+    assert len(calls) == 1
+    assert calls[0]["arch"] == arch
+    assert calls[0]["candidate_id"] == 42
+    assert calls[0]["receipt_id"] == 43
+
+    review["runtime_redistributed"] = True
+    assert "requires an independent approval" in checker.check_xp_inventory(inventory, **options)[0]
+    review["runtime_redistributed"] = False
+    (tmp_path / "receipt.zip").write_bytes(b"mutate!")
+    assert "sha256 does not match" in checker.check_xp_inventory(inventory, **options)[0]
+    assert len(calls) == 1
 
 
 def test_signed_evidence_still_rejects_local_artifact_drift(tmp_path: Path) -> None:
@@ -416,11 +579,12 @@ def test_release_workflow_withholds_production_but_retains_prerelease_preview() 
     promotion = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     preview = Path(".github/workflows/unsigned-preview.yml").read_text(encoding="utf-8")
 
-    assert "workflow_dispatch:" not in workflow
+    assert "allow_unsigned_preview:" not in workflow
+    assert "  workflow_dispatch:\n\npermissions:" in workflow
     assert "softprops/action-gh-release" not in workflow
     assert "seal-release-candidate:" in workflow
     assert "check_release_license_compliance.py" in promotion
-    assert "--tag-governance-attestation" in promotion
+    assert "--audit-redistribution-only" in promotion
     assert "prerelease: false" in promotion
     assert "PREVIEW_TAG: unsigned-preview-${{ github.run_id }}" in preview
     assert "prerelease: true" in preview
@@ -444,6 +608,75 @@ def test_dummy_lock_install_cannot_hide_mutable_extras_resolution() -> None:
 
     assert any("dependency-resolving pip install outside" in error for error in errors)
     assert any("project/extras install must use --no-deps" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "accepted"),
+    [
+        ("--require-hashes -r locks/linux.txt", True),
+        ('--requirement="locks/linux.txt" --require-hashes', True),
+        ("--require-hashes -r 'locks/linux.txt'", True),
+        (
+            '--require-hashes --no-build-isolation --only-binary=:all: '
+            '--no-binary=pyftpdlib --requirement "${{ matrix.lock }}"',
+            True,
+        ),
+        ("--require-hashes --requirement locks/linux.txt.backup", False),
+        ("--require-hashes -r other.txt --constraint locks/linux.txt", False),
+        ("--require-hashes -r locks/linux.txt -r other.txt", False),
+        ("--require-hashes -r locks/linux.txt mutable-package", False),
+        ("-r locks/linux.txt --require-hashes-extra", False),
+        ("--require-hashes -r locks/linux.txt || true", False),
+        ("--require-hashes -r ${{ matrix.lock }}", False),
+    ],
+)
+def test_hashed_install_requires_the_exact_requirements_argument(
+    arguments: str,
+    accepted: bool,
+) -> None:
+    checker = _load_checker()
+
+    assert checker.installs_hashed_requirements(
+        f"python -m pip install {arguments}", ("locks/linux.txt", "${{ matrix.lock }}")
+    ) is accepted
+    assert not checker.installs_hashed_requirements(
+        f"echo python -m pip install {arguments}", ("locks/linux.txt",)
+    )
+
+
+def test_wrong_lock_argument_fails_the_native_python_check() -> None:
+    checker = _load_checker()
+    block = '''
+    steps:
+      - name: Install native dependencies
+        run: python -m pip install --require-hashes -r other.txt --constraint locks/linux.txt
+      - run: python -m pip install --no-deps --no-build-isolation ".[package]"
+'''
+
+    errors = checker.check_native_job_lock_usage(
+        block,
+        "linux-i386-native-evidence",
+        "linux-i386",
+        "locks/linux.txt",
+    )
+
+    assert any("does not consume" in error for error in errors)
+    assert any("dependency-resolving pip install outside" in error for error in errors)
+
+
+def test_wrong_verifier_bootstrap_lock_fails_the_compliance_gate(tmp_path: Path) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker)
+    workflow = checker.PROMOTION_WORKFLOW_PATH
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8").replace(
+            "--requirement locks/verifier.txt",
+            "--requirement other.txt --constraint locks/verifier.txt",
+        ),
+        encoding="utf-8",
+    )
+
+    assert checker.main(args) == 1
 
 
 def test_echoed_publish_audit_is_not_executable_workflow_evidence() -> None:

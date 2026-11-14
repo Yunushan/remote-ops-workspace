@@ -10,6 +10,7 @@ import shutil
 import ssl
 import subprocess
 import sys
+import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -108,10 +109,20 @@ def main(argv: list[str] | None = None) -> int:
         release_tag=args.release_tag,
         required_targets=required_targets,
     )
-    if registry_errors and not args.require_goal_targets:
+    if registry_errors and (not args.require_goal_targets or args.capture_source_evidence is not None):
         for error in dict.fromkeys(registry_errors):
             print(f"platform release evidence remote: {error}", file=sys.stderr)
         return 1
+    if args.capture_source_evidence is not None:
+        assert args.repository is not None
+        errors = capture_live_source_evidence(
+            args.repository, args.release_tag, registry, args.capture_source_evidence,
+        )
+        for error in dict.fromkeys(errors):
+            print(f"platform release evidence capture: {error}", file=sys.stderr)
+        if not errors:
+            print(f"Verified protected-platform source evidence retained in {args.capture_source_evidence}")
+        return int(bool(errors))
     release, release_errors = load_release_data(args)
     source_runs, source_run_errors = load_source_runs(args, registry, required_targets)
     workflow_runs, workflow_errors = load_workflow_runs(args, registry, required_targets)
@@ -172,6 +183,123 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def load_live_source_evidence(
+    repository: str,
+    release_tag: str,
+    registry: dict[str, Any],
+    targets: tuple[str, ...],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, bytes], list[str]]:
+    args = parse_args([
+        "--repository", repository, "--release-tag", release_tag,
+        "--require-source-runs", "--require-source-artifact-bytes",
+    ])
+    runs, run_errors = load_source_runs(args, registry, targets)
+    artifacts, artifact_errors = load_source_artifacts(args, registry, targets)
+    archives, archive_errors = load_source_artifact_bytes(args, registry, targets, artifacts)
+    return runs, artifacts, archives, [*run_errors, *artifact_errors, *archive_errors]
+
+
+def capture_live_source_evidence(
+    repository: str, release_tag: str, registry: dict[str, Any], destination: Path,
+) -> list[str]:
+    targets = PROTECTED_GOAL_TARGETS
+    records = accepted_records_by_target(registry, release_tag=release_tag, targets=targets)
+    runs, inventories, archives, errors = load_live_source_evidence(
+        repository, release_tag, registry, targets,
+    )
+    for target, record in sorted(records.items()):
+        run_url = record["release_asset_source"]["workflow_run_url"]
+        if repository_from_run_url(run_url) != repository:
+            errors.append(f"{target} source capture must use the requested repository")
+        errors.extend(check_record_source_run(target, record, {}, source_runs_by_run=runs))
+        errors.extend(check_record_source_artifact(target, record, inventories, source_runs_by_run=runs))
+        errors.extend(check_record_source_artifact_zip_bytes(
+            target, record, source_artifacts_by_run=inventories, source_artifact_bytes_by_run=archives,
+        ))
+    if errors:
+        return errors
+    try:
+        destination.mkdir(mode=0o700)
+        with tempfile.TemporaryDirectory(dir=destination, prefix=".capture-") as temporary:
+            staging = Path(temporary)
+            bundle = staging / "protected-platform-sources"
+            archive_dir = staging / "archives"
+            bundle.mkdir()
+            archive_dir.mkdir()
+            signed_files: dict[str, Any] = {}
+            for target, record in sorted(records.items()):
+                run_url = record["release_asset_source"]["workflow_run_url"]
+                signed_files[target] = {}
+                for name, data in (("run", runs[run_url]), ("artifacts", inventories[run_url])):
+                    filename = f"{target}-{name}.json"
+                    raw = (json.dumps(data, sort_keys=True, indent=2) + "\n").encode("utf-8")
+                    (bundle / filename).write_bytes(raw)
+                    signed_files[target][name] = {
+                        "file": f"{bundle.name}/{filename}",
+                        "reference": run_url,
+                        "size_bytes": len(raw),
+                        "sha256": hashlib.sha256(raw).hexdigest(),
+                    }
+                (archive_dir / f"{target}.zip").write_bytes(archives[run_url])
+            manifest = staging / "protected-platform-sources.json"
+            manifest.write_text(
+                json.dumps({"protected_platform_sources": signed_files}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            bundle.rename(destination / bundle.name)
+            archive_dir.rename(destination / archive_dir.name)
+            manifest.rename(destination / manifest.name)
+    except OSError as exc:
+        return [f"could not retain protected-platform evidence in {destination}: {exc}"]
+    return []
+
+
+def audit_published_platform_evidence(
+    repository: str,
+    release_tag: str,
+    registry: dict[str, Any],
+    targets: tuple[str, ...],
+    runs: dict[str, Any],
+    artifacts: dict[str, Any],
+    archives: dict[str, bytes],
+) -> list[str]:
+    args = parse_args([
+        "--repository", repository, "--release-tag", release_tag,
+        "--require-final-record-bytes", "--require-release-asset-bytes",
+        "--require-tag-source-head",
+    ])
+    release, release_errors = load_release_data(args)
+    final_records, final_errors = load_final_record_bytes(args, registry, targets)
+    release_assets, asset_errors = load_release_asset_bytes(args, registry, targets)
+    tag_ref, tag_object, tag_errors = load_release_tag_data(args)
+    errors = [*release_errors, *final_errors, *asset_errors, *tag_errors]
+    if release is None:
+        return errors
+    if release.get("immutable") is not True:
+        errors.append(f"remote release {release_tag} must be immutable")
+    errors.extend(check_remote_platform_release_evidence(
+        registry=registry,
+        promotion=read_json(PROMOTION_PATH),
+        release=release,
+        workflow_runs_by_workflow={},
+        source_runs_by_run=runs,
+        source_artifacts_by_run=artifacts,
+        source_artifact_bytes_by_run=archives,
+        final_record_bytes_by_url=final_records,
+        release_asset_bytes_by_url=release_assets,
+        tag_ref=tag_ref,
+        tag_object=tag_object,
+        release_tag=release_tag,
+        required_targets=targets,
+        require_source_runs=True,
+        require_source_artifact_bytes=True,
+        require_final_record_bytes=True,
+        require_release_asset_bytes=True,
+        require_tag_source_head=True,
+    ))
+    return errors
+
+
 def remote_registry_preflight_errors(
     registry: dict[str, Any],
     *,
@@ -199,6 +327,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--release-tag", required=True, help="release tag, for example v1.0.27")
     parser.add_argument("--registry", type=Path, default=EVIDENCE_PATH)
     parser.add_argument("--promotion", type=Path, default=PROMOTION_PATH)
+    parser.add_argument(
+        "--capture-source-evidence",
+        type=Path,
+        metavar="NEW_DIRECTORY",
+        help="retain live exact-run metadata and original Actions ZIPs for all protected targets",
+    )
     parser.add_argument(
         "--release-json",
         type=Path,
@@ -341,6 +475,13 @@ def strict_arg_errors(args: argparse.Namespace) -> list[str]:
     errors.extend(repository_errors)
     if repository is not None:
         args.repository = repository
+    if args.capture_source_evidence is not None:
+        errors.extend(check_local_fixture_path(args.capture_source_evidence, "source capture directory"))
+        if not args.repository or not args.require_goal_targets:
+            errors.append("--capture-source-evidence requires --repository and --require-goal-targets")
+        if args.capture_source_evidence.exists():
+            errors.append("--capture-source-evidence requires a new directory")
+        return errors
     if args.require_goal_targets:
         missing_goal_flags = [
             flag
@@ -1247,7 +1388,7 @@ def _fetch_transport_fallback(
 
 
 def fetch_json(url: str, *, timeout: float) -> tuple[dict[str, Any] | None, list[str]]:
-    request = Request(url, headers=github_api_headers())
+    request = github_request(url)
     try:
         with urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
@@ -1281,7 +1422,7 @@ def read_bytes_file(path: object, label: str = "byte fixture") -> tuple[bytes | 
 
 
 def fetch_bytes(url: str, *, timeout: float) -> tuple[bytes | None, list[str]]:
-    request = Request(url, headers=github_api_headers())
+    request = github_request(url)
     try:
         with urlopen(request, timeout=timeout) as response:
             return response.read(), []
@@ -1323,13 +1464,13 @@ def http_error_header(exc: HTTPError, name: str) -> str | None:
     return str(value).strip() if value is not None else None
 
 
-def github_api_headers() -> dict[str, str]:
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": "Codex"}
+def github_request(url: str) -> Request:
+    request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "Codex"})
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-        headers["X-GitHub-Api-Version"] = "2022-11-28"
-    return headers
+    if token and url.startswith((f"{GITHUB_API}/", "https://github.com/")):
+        request.add_unredirected_header("Authorization", f"Bearer {token}")
+        request.add_unredirected_header("X-GitHub-Api-Version", "2022-11-28")
+    return request
 
 
 def is_lower_git_sha(value: Any) -> bool:
@@ -2549,10 +2690,6 @@ def workflow_runs_api_url(repository: str, workflow: str, release_tag: str) -> s
     )
 
 
-def source_run_child_api_url(repository: str, run_id: str | int, endpoint: str) -> str:
-    return f"{source_run_api_url(repository, run_id)}/{quote(endpoint, safe='')}"
-
-
 def source_run_attempt_api_url(repository: str, run_id: str, run_attempt: int) -> str:
     return (
         f"{source_run_api_url(repository, run_id)}"
@@ -2596,7 +2733,7 @@ def check_record_source_run(
         ]
     exact_run = exact_source_run_document(run_url, source_runs_by_run or {})
     if isinstance(exact_run, dict):
-        return check_source_run_record(target, exact_run, record)
+        return check_source_run_record(target, exact_run, record, exact_attempt=True)
     if source_runs_by_run and not workflow_runs_by_workflow:
         return [f"{target} exact source workflow run metadata missing for {run_url}"]
     runs_document = workflow_runs_by_workflow.get(workflow)
@@ -2637,6 +2774,8 @@ def check_source_run_record(
     target: str,
     run: dict[str, Any],
     record: dict[str, Any],
+    *,
+    exact_attempt: bool = False,
 ) -> list[str]:
     source = record.get("release_asset_source")
     if not isinstance(source, dict):
@@ -2691,21 +2830,23 @@ def check_source_run_record(
                 f"{target} source workflow run workflow_url must be {expected_workflow_url!r}, "
                 f"got {workflow_url!r}"
             )
+    expected_attempt = source.get("run_attempt")
     if expected_repository and expected_run_id_int is not None:
-        for field, camel_field, endpoint in (
-            ("jobs_url", "jobsUrl", "jobs"),
-            ("logs_url", "logsUrl", "logs"),
-            ("artifacts_url", "artifactsUrl", "artifacts"),
-        ):
-            expected_endpoint_url = source_run_child_api_url(
-                expected_repository,
-                expected_run_id_int,
-                endpoint,
+        run_api_url = source_run_api_url(expected_repository, expected_run_id_int)
+        jobs_logs_api_url = run_api_url
+        if exact_attempt and positive_int(expected_attempt):
+            jobs_logs_api_url = source_run_attempt_api_url(
+                expected_repository, expected_run_id, expected_attempt
             )
+        for field, camel_field, expected_url in (
+            ("jobs_url", "jobsUrl", f"{jobs_logs_api_url}/jobs"),
+            ("logs_url", "logsUrl", f"{jobs_logs_api_url}/logs"),
+            ("artifacts_url", "artifactsUrl", f"{run_api_url}/artifacts"),
+        ):
             endpoint_url = first_present(run, field, camel_field)
-            if endpoint_url != expected_endpoint_url:
+            if endpoint_url != expected_url:
                 errors.append(
-                    f"{target} source workflow run {field} must be {expected_endpoint_url!r}, "
+                    f"{target} source workflow run {field} must be {expected_url!r}, "
                     f"got {endpoint_url!r}"
                 )
     check_suite_id = first_present(run, "check_suite_id", "checkSuiteId")
@@ -2755,7 +2896,6 @@ def check_source_run_record(
             f"{target} source workflow run head_sha must match accepted record {expected_head}, "
             f"got {actual_head!r}"
         )
-    expected_attempt = source.get("run_attempt")
     actual_attempt = first_present(run, "run_attempt", "attempt")
     if not isinstance(actual_attempt, int) or isinstance(actual_attempt, bool) or actual_attempt <= 0:
         errors.append(
@@ -3019,12 +3159,10 @@ def source_artifact_record_for_run(
     artifact_name = source_values["artifact_name"]
     run_url = source_values["workflow_run_url"]
     run_key = normalize_run_key(run_url)
-    run_id = run_key.rsplit("/", 1)[-1] if run_key else ""
-    document = (
-        source_artifacts_by_run[run_key]
-        if run_key in source_artifacts_by_run
-        else source_artifacts_by_run.get(run_id)
-    )
+    aliases = source_run_aliases(source_artifacts_by_run, run_key)
+    if len(aliases) != 1:
+        return None
+    document = source_artifacts_by_run[aliases[0]]
     if not isinstance(document, dict):
         return None
     artifacts = document.get("artifacts")
@@ -3109,19 +3247,28 @@ def check_record_source_artifact_zip_bytes(
     archive_bytes = source_artifact_bytes_by_run.get(byte_aliases[0]) if byte_aliases else None
     if archive_bytes is None:
         return [f"{target} source workflow artifact ZIP bytes missing for {run_url}"]
-    errors: list[str] = []
     artifact_record = source_artifact_record_for_run(target, record, source_artifacts_by_run)
-    if isinstance(artifact_record, dict):
-        artifact_size = artifact_record.get("size_in_bytes")
-        if (
-            isinstance(artifact_size, int)
-            and not isinstance(artifact_size, bool)
-            and artifact_size != len(archive_bytes)
-        ):
-            errors.append(
-                f"{target} source workflow artifact {artifact_name} size_in_bytes "
-                f"must match downloaded ZIP byte length {len(archive_bytes)}, got {artifact_size!r}"
-            )
+    if artifact_record is None:
+        return [
+            f"{target} source workflow artifact {artifact_name} ZIP metadata is missing or ambiguous"
+        ]
+    errors: list[str] = []
+    expected_digest = artifact_record.get("digest")
+    actual_digest = f"sha256:{hashlib.sha256(archive_bytes).hexdigest()}"
+    if expected_digest != actual_digest:
+        errors.append(
+            f"{target} source workflow artifact {artifact_name} digest "
+            f"must match downloaded ZIP digest {actual_digest}, got {expected_digest!r}"
+        )
+    artifact_size = artifact_record.get("size_in_bytes")
+    if not positive_int(artifact_size) or artifact_size != len(archive_bytes):
+        errors.append(
+            f"{target} source workflow artifact {artifact_name} size_in_bytes "
+            f"must match downloaded ZIP byte length {len(archive_bytes)}, got {artifact_size!r}"
+        )
+    if errors:
+        return errors
+
     file_bytes_or_error = source_artifact_zip_file_bytes(archive_bytes)
     if isinstance(file_bytes_or_error, str):
         errors.append(

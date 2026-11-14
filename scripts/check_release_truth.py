@@ -147,6 +147,7 @@ REQUIRED_TURKISH_DOC_SNIPPETS = (
     "![published preview](https://img.shields.io/badge/published%20preview-v1.0.24-orange)",
     "![candidate](https://img.shields.io/badge/candidate-v1.0.27-yellow)",
     "configs/platform_verified_evidence.json",
+    "`release-promotion.yml` ayni degismez tag uzerinden baslatilir",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>",
@@ -183,7 +184,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>",
     "python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements",
     "python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>",
-    "accepted-platform-evidence-assets",
+    "`release-promotion.yml` from the same immutable tag",
     "python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>",
     "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets",
     "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag <tag> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head",
@@ -210,7 +211,7 @@ REQUIRED_README_RELEASE_SECTION_SNIPPETS = (
     "python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets",
     "configs/platform_verified_evidence.json",
     "accepted review-bundle hashes",
-    "The exact-tag publish job waits for",
+    "verifies the import before including the accepted protected evidence",
     "same draft-first",
     "`linux_smoke_summary`",
     "`scripts/xp_smoke_runner.cmd`",
@@ -245,6 +246,7 @@ STALE_DEFAULT_ARTIFACT_SNIPPETS = (
 )
 
 STALE_PLATFORM_EVIDENCE_SNIPPETS = (
+    "`include_protected_platform_evidence=true`",
     "`--allow-unfinalized-candidates` flag is only for local candidate checks before append",
     "source-head-bound accepted evidence artifacts",
     "source-head-bound accepted Linux i386, Linux armhf and Windows XP native-host artifacts",
@@ -312,15 +314,14 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     promotion = strip_unquoted_comments(read(".github/workflows/release-promotion.yml"))
     certification = strip_unquoted_comments(read(".github/workflows/release-certification.yml"))
     errors: list[str] = []
-    if "workflow_dispatch:" in build:
-        errors.append("candidate release build must be tag-push-only")
     for snippet, label in {
         '      - "v*"': "v* tag trigger",
+        "  workflow_dispatch:\n\npermissions:": "manual exact-tag candidate recovery trigger",
         "group: release-candidate-${{ github.repository }}-${{ github.ref_name }}": (
             "repository/tag candidate concurrency"
         ),
         "cancel-in-progress: false": "non-cancelling candidate concurrency",
-        "RELEASE_TAG: ${{ github.ref_name }}": "tag-push release tag binding",
+        "RELEASE_TAG: ${{ github.ref_name }}": "source-ref release tag binding",
     }.items():
         if snippet not in build:
             errors.append(f"candidate build workflow missing {label}: {snippet}")
@@ -334,17 +335,21 @@ def check_release_preflight(workflow: str | None = None) -> list[str]:
     errors.extend(check_checkout_step(preflight, job="release-preflight"))
     for snippet, label in {
         "timeout-minutes: 100": "bounded preflight timeout",
+        "if: ${{ github.ref_type == 'tag' }}": "tag-only preflight job",
         "release_sha: ${{ steps.release-source.outputs.sha }}": "frozen source SHA output",
         "candidate_build_ready: ${{ steps.signing-readiness.outputs.candidate_build_ready }}": (
             "candidate readiness output"
         ),
         'python-version: "3.14.7"': "exact release Python",
-        'test "$GITHUB_EVENT_NAME" = "push"': "push-only event guard",
+        '[[ "$GITHUB_EVENT_NAME" == "push" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]': (
+            "candidate event guard"
+        ),
         'test "$GITHUB_REF_TYPE" = "tag"': "tag type guard",
         'test "$GITHUB_REF" = "refs/tags/$RELEASE_TAG"': "exact tag ref guard",
         'test "$GITHUB_RUN_ATTEMPT" = "1"': "rerun refusal",
         'tag_sha="$(git rev-parse "${RELEASE_TAG}^{commit}")"': "peeled tag resolution",
         'test "$tag_sha" = "$release_sha"': "tag/source equality",
+        'test "$GITHUB_SHA" = "$release_sha"': "event/source equality",
         RELEASE_VERSION_GATE_COMMAND: "release version gate",
         'python scripts/check_release_maturity.py --release-tag "$RELEASE_TAG"': (
             "production maturity gate"
@@ -449,8 +454,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
         "steps.create-draft.outputs.release-id": "numeric draft identity",
         "gh api --method PATCH": "numeric publication",
         "target_commitish: $sha": "exact-SHA defensive draft target",
-        "--tag-governance-attestation": "signed out-of-band tag governance proof",
-        "--tag-governance-signature": "independent tag governance signature",
+        "--audit-redistribution-only": "separate exact-byte compliance audit",
         "check_release_tag_governance.py": "just-in-time signed tag governance revalidation",
         "Re-resolve immutable tag after publication": "post-publication tag race check",
         "Require same numeric release becomes immutable": "same-ID immutable poll",
@@ -460,6 +464,50 @@ def check_promotion_truth(workflow: str) -> list[str]:
     for snippet, label in required.items():
         if snippet not in workflow:
             errors.append(f"promotion workflow missing {label}: {snippet}")
+    source_step = workflow_step_block(block, "name: Require release source on the protected default branch")
+    expected_branch = "DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}"
+    source_commands = executable_step_commands(source_step)
+    if (
+        expected_branch not in source_step
+        or step_is_suppressed(source_step)
+        or step_has_dead_code_construct(source_step)
+        or not literal_run_is_fail_closed(source_step)
+        or source_commands[-2:] != [
+            'git fetch --no-tags origin "refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"',
+            'git merge-base --is-ancestor "$RELEASE_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"',
+        ]
+    ):
+        errors.append("promotion source gate must bind the release SHA to the live default branch")
+    ci_step = workflow_step_block(block, "name: Require successful exact release source CI")
+    if expected_branch not in ci_step:
+        errors.append("promotion exact CI gate must use the repository default branch")
+    errors.extend(require_active_step(
+        block, PYTHON315_CI_EVIDENCE_COMMAND,
+        label="exact default-branch CI evidence",
+        kind="run",
+        step_name="Require successful exact release source CI",
+        required_tokens=(
+            '--repository "$GITHUB_REPOSITORY"', '--branch "$DEFAULT_BRANCH"', '--sha "$RELEASE_SHA"',
+        ),
+        allowed_flags=frozenset({"--repository", "--branch", "--sha"}),
+    ))
+    draft_step = workflow_step_block(block, "name: Create new draft by numeric API identity")
+    draft_commands = [line.strip() for line in draft_step.splitlines()]
+    draft_response_checks = (
+        'gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"',
+        'release_id="$(jq -er \'.id | select(type == "number" and . > 0)\' "$response")"',
+        '[[ "$release_id" =~ ^[1-9][0-9]*$ ]]',
+        'echo "release-id=$release_id" >> "$GITHUB_OUTPUT"',
+        'jq -e \'.draft == true and .prerelease == false\' "$response" >/dev/null',
+        'test "$(jq -r \'.tag_name\' "$response")" = "$RELEASE_TAG"',
+    )
+    if (
+        tuple(command for command in draft_commands if command in draft_response_checks) != draft_response_checks
+        or step_is_suppressed(draft_step)
+        or step_has_dead_code_construct(draft_step)
+        or not literal_run_is_fail_closed(draft_step)
+    ):
+        errors.append("promotion must capture the validated release ID before checking the draft response")
     report = workflow_step_block(block, "name: Report the release ID after failure")
     report_requirements = (
         "failure() && steps.create-draft.outputs.release-id != ''",
@@ -471,6 +519,29 @@ def check_promotion_truth(workflow: str) -> list[str]:
     if "--method DELETE" in block or "gh release delete" in block:
         errors.append("promotion workflow must preserve releases after failure")
     command_contracts = {
+        "Verify final immutable release and complete exact-tag provenance": (
+            (
+                "python scripts/check_release_provenance.py",
+                "--assets-dir release-assets",
+                '--repository "$GITHUB_REPOSITORY"',
+                '--tag "$RELEASE_TAG"',
+                '--sha "$RELEASE_SHA"',
+                '--published-release-id "$PUBLISHED_RELEASE_ID"',
+                '--current-transaction-run-id "$GITHUB_RUN_ID"',
+                '--current-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"',
+                "--governance-attestation release-governance-publish/tag-governance-attestation.json",
+                "--governance-signature release-governance-publish/tag-governance-attestation.sig.json",
+                '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
+                '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
+            ),
+            ("--help",),
+            frozenset({
+                "--assets-dir", "--repository", "--tag", "--sha", "--published-release-id",
+                "--current-transaction-run-id", "--current-transaction-run-attempt",
+                "--governance-attestation", "--governance-signature",
+                "--redistribution-evidence", "--redistribution-signature",
+            }),
+        ),
         "Verify attestation and download exact candidate artifact IDs": (
             (
                 '--repository "$GITHUB_REPOSITORY"',
@@ -526,8 +597,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 "--evidence-root ",
                 "--candidate-inventory ",
                 "--protected-platform-registry ",
-                "--tag-governance-attestation ",
-                "--tag-governance-signature ",
+                "--audit-redistribution-only",
             ),
             ("--check-policy-only",),
             frozenset(
@@ -543,8 +613,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                     "--evidence-root",
                     "--candidate-inventory",
                     "--protected-platform-registry",
-                    "--tag-governance-attestation",
-                    "--tag-governance-signature",
+                    "--audit-redistribution-only",
                 }
             ),
         ),
@@ -559,15 +628,20 @@ def check_promotion_truth(workflow: str) -> list[str]:
         "Revalidate signed tag governance at mutation boundary": (
             (
                 "--policy configs/release_compliance_policy.json",
-                '--attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"',
-                '--signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"',
+                '--attestation release-governance-draft/tag-governance-attestation.json',
+                '--signature release-governance-draft/tag-governance-attestation.sig.json',
+                '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
+                '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
                 '--repository "$GITHUB_REPOSITORY"',
                 '--tag "$RELEASE_TAG"',
                 '--sha "$RELEASE_SHA"',
+                '--run-id "$GITHUB_RUN_ID"',
+                '--run-attempt "$GITHUB_RUN_ATTEMPT"',
+                "--operation create-draft",
             ),
             ("--help", "--dry-run", "--check-policy-only"),
             frozenset(
-                {"--policy", "--attestation", "--signature", "--repository", "--tag", "--sha"}
+                {"--policy", "--attestation", "--signature", "--repository", "--tag", "--sha", "--run-id", "--run-attempt", "--operation", "--redistribution-evidence", "--redistribution-signature"}
             ),
         ),
         "Require unused release namespace including drafts": (
@@ -579,6 +653,39 @@ def check_promotion_truth(workflow: str) -> list[str]:
             frozenset({"--repository", "--tag"}),
         ),
     }
+
+    command_contracts["Recheck immutable releases enabled before publication"] = command_contracts[
+        "Require immutable releases enabled before any mutation"
+    ]
+    draft_tokens, forbidden, draft_flags = command_contracts["Revalidate signed tag governance at mutation boundary"]
+    command_contracts["Revalidate signed tag governance immediately before publication"] = (
+        tuple(token.replace("release-governance-draft", "release-governance-publish")
+              .replace("--operation create-draft", "--operation publish") for token in draft_tokens)
+        + ('--draft-id "$DRAFT_RELEASE_ID"',),
+        forbidden,
+        draft_flags | {"--draft-id"},
+    )
+    for operation, output, stage in (
+        ("create-draft", "release-governance-draft", "draft creation"),
+        ("publish", "release-governance-publish", "publication"),
+    ):
+        tokens = (
+            "--policy configs/release_compliance_policy.json",
+            '--repository "$GITHUB_REPOSITORY"',
+            '--tag "$RELEASE_TAG"',
+            '--sha "$RELEASE_SHA"',
+            '--run-id "$GITHUB_RUN_ID"',
+            '--run-attempt "$GITHUB_RUN_ATTEMPT"',
+            f"--operation {operation}",
+            f"--out-dir {output}",
+        )
+        flags = {"--policy", "--repository", "--tag", "--sha", "--run-id", "--run-attempt", "--operation", "--out-dir"}
+        if operation == "publish":
+            tokens += ('--draft-id "$DRAFT_RELEASE_ID"',)
+            flags.add("--draft-id")
+        command_contracts[f"Fetch fresh signed governance for {stage}"] = (
+            tokens, ("--help",), frozenset(flags),
+        )
     for token, label, kind, step_name in (
         (
             "check_release_maturity.py",
@@ -606,9 +713,33 @@ def check_promotion_truth(workflow: str) -> list[str]:
         ),
         (
             "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+            "audited redistribution approval attestation",
+            "uses",
+            "Attest the audited redistribution approval",
+        ),
+        (
+            "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "audited redistribution approval retention",
+            "uses",
+            "Retain the audited redistribution approval",
+        ),
+        (
+            "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
             "asset attestation",
             "uses",
             "Attest every certified release asset",
+        ),
+        (
+            "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6",
+            "signed tag governance inputs attestation",
+            "uses",
+            "Attest exact signed tag governance inputs",
+        ),
+        (
+            "fetch_release_tag_governance.py",
+            "fresh independently signed governance for draft creation",
+            "run",
+            "Fetch fresh signed governance for draft creation",
         ),
         (
             "check_release_tag_governance.py",
@@ -639,6 +770,24 @@ def check_promotion_truth(workflow: str) -> list[str]:
             "draft provenance",
             "run",
             "Verify complete numeric-ID draft transaction",
+        ),
+        (
+            "fetch_release_tag_governance.py",
+            "fresh independently signed governance for publication",
+            "run",
+            "Fetch fresh signed governance for publication",
+        ),
+        (
+            "check_release_remote_preconditions.py immutable",
+            "publication-time immutable release setting proof",
+            "run",
+            "Recheck immutable releases enabled before publication",
+        ),
+        (
+            "check_release_tag_governance.py",
+            "publication-bound tag governance proof",
+            "run",
+            "Revalidate signed tag governance immediately before publication",
         ),
         (
             "gh api --method PATCH",
@@ -684,11 +833,27 @@ def check_certification_truth(workflow: str) -> list[str]:
         "- release-promotion": "promotion workflow selection",
         "github.event.workflow_run.conclusion == 'success'": "successful-run condition",
         'test "$PROMOTION_STATUS" = "completed"': "completed status proof",
+        "github.event.workflow_run.id": "triggering promotion run identity",
+        "github.event.workflow_run.run_attempt": "triggering promotion attempt identity",
+        "production-tag-governance-${{ env.PROMOTION_RUN_ID }}-${{ env.PROMOTION_RUN_ATTEMPT }}": "attempt-specific governance artifact",
+        "production-redistribution-approval-${{ env.PROMOTION_RUN_ID }}-${{ env.PROMOTION_RUN_ATTEMPT }}": "attempt-specific redistribution approval",
+        '--completed-promotion-run-id "$PROMOTION_RUN_ID"': "exact completed run proof",
+        '--completed-promotion-run-attempt "$PROMOTION_RUN_ATTEMPT"': "exact completed attempt proof",
+        '--governance-attestation "$RUNNER_TEMP/publication-governance/tag-governance-attestation.json"': "signed publication proof",
+        '--governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json"': "publication proof signature",
+        '--redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json"': "signed redistribution approval",
+        '--redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json"': "redistribution approval signature",
         "--published-release-id": "numeric immutable release proof",
         "check_release_provenance.py": "completed-success provenance audit",
     }.items():
         if snippet not in workflow:
             errors.append(f"release certification workflow missing {label}: {snippet}")
+    for proof in ("governance proof", "redistribution approval"):
+        step = workflow_step_block(block, f"name: Download {proof} from the triggering promotion attempt")
+        if "run-id: ${{ env.PROMOTION_RUN_ID }}" not in step:
+            errors.append(f"release certification {proof} missing exact artifact source run")
+        if "repository: ${{ github.repository }}" not in step:
+            errors.append(f"release certification {proof} missing same-repository artifact source")
     return errors
 
 def check_tag_targeted_release_dispatch(workflow: str) -> list[str]:

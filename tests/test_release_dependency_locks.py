@@ -23,6 +23,28 @@ def test_complete_modern_locks_are_consumed_without_mutable_resolution() -> None
     assert _checker().check_locks() == []
 
 
+@pytest.mark.parametrize("target", ["linux-i386", "linux-armhf"])
+def test_protected_linux_uses_exact_hash_locked_build_inputs(target: str) -> None:
+    checker = _checker()
+    assert checker.check_protected_linux_locks(checker.ROOT) == []
+    compliance = checker.compliance
+    workflow = compliance.EXTENDED_WORKFLOW_PATH.read_text(encoding="utf-8")
+    job = f"{target}-native-evidence"
+    block = compliance.workflow_job_block(workflow, job)
+    lock_dir = compliance.PROTECTED_LINUX_LOCK_DIR
+    options = {
+        "bootstrap_lock_path": f"{lock_dir}/{target}-bootstrap.txt",
+        "source_bootstrap_lock_path": compliance.PROTECTED_LINUX_CFFI_LOCK,
+    }
+    assert compliance.check_native_job_lock_usage(block, job, target, f"{lock_dir}/{target}.txt", **options) == []
+
+    without_cffi_bootstrap = "\n".join(line for line in block.splitlines() if compliance.PROTECTED_LINUX_CFFI_LOCK not in line)
+    errors = compliance.check_native_job_lock_usage(
+        without_cffi_bootstrap, job, target, f"{lock_dir}/{target}.txt", **options,
+    )
+    assert any("must install" in error and "linux-32bit-cffi.txt" in error for error in errors)
+
+
 def test_macos_lock_resolution_uses_the_native_installer_minimum(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:

@@ -23,8 +23,8 @@ GOAL_TARGETS = (
 TARGET_RUNNER_LABELS = {
     "linux-i386": frozenset({"self-hosted", "linux", "i386"}),
     "linux-armhf": frozenset({"self-hosted", "linux", "armhf"}),
-    "windows-xp-native-x86": frozenset({"self-hosted", "xp-evidence"}),
-    "windows-xp-native-x64": frozenset({"self-hosted", "xp-evidence"}),
+    "windows-xp-native-x86": frozenset({"self-hosted", "windows", "xp-evidence"}),
+    "windows-xp-native-x64": frozenset({"self-hosted", "windows", "xp-evidence"}),
 }
 REPOSITORY_RE = re.compile(
     r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?/[A-Za-z0-9._-]+$"
@@ -286,7 +286,7 @@ def runner_labels(runner: dict[str, Any]) -> frozenset[str]:
     if not isinstance(labels, list):
         return frozenset()
     return frozenset(
-        item["name"]
+        item["name"].casefold()
         for item in labels
         if isinstance(item, dict) and isinstance(item.get("name"), str)
     )

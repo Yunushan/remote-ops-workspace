@@ -44,8 +44,8 @@ concurrency:
 
 jobs:
   promote-production-release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     environment: release-compliance-review
     permissions:
       actions: read
@@ -90,6 +90,23 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
+      - name: Require release source on the protected default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git check-ref-format --branch "$DEFAULT_BRANCH" >/dev/null
+          git fetch --no-tags origin "refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$RELEASE_SHA" "refs/remotes/origin/$DEFAULT_BRANCH"
+      - name: Require successful exact release source CI
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/check_python315_ci_evidence.py
+          --repository "$GITHUB_REPOSITORY"
+          --branch "$DEFAULT_BRANCH"
+          --sha "$RELEASE_SHA"
       - name: Re-run immutable source release gates
         run: |
           set -euo pipefail
@@ -165,7 +182,17 @@ jobs:
           --evidence-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"
           --require-platform-goal-targets
           --native-release-channel production-signed
+      - name: Install native archive inspector
+        run: bash scripts/install_native_archive_inspector.sh
+      - name: Verify notices in the exact native packages
+        timeout-minutes: 20
+        run: >-
+          python scripts/check_packaged_release_notices.py
+          --assets-dir release-assets
+          --tag "$RELEASE_TAG"
       - name: Audit signed exact-byte redistribution and resolver evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: >-
           python scripts/check_release_license_compliance.py
           --policy configs/release_compliance_policy.json
@@ -179,8 +206,22 @@ jobs:
           --evidence-root "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle"
           --candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"
           --protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"
-          --tag-governance-attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"
-          --tag-governance-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"
+          --audit-redistribution-only
+      - name: Attest the audited redistribution approval
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.json
+            release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.sig.json
+      - name: Retain the audited redistribution approval
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: production-redistribution-approval-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.json
+            release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.sig.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Generate boundary-aware release notes
         run: >-
           python scripts/write_release_notes.py
@@ -197,21 +238,30 @@ jobs:
           test -s release-notes.md
           grep -Fq "Support boundaries" release-notes.md
           grep -Fq "$RELEASE_TAG" release-notes.md
+      - name: Attest every certified release asset
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/**
+      - name: Fetch fresh signed governance for draft creation
+        timeout-minutes: 17
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/fetch_release_tag_governance.py
+          --policy configs/release_compliance_policy.json
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --operation create-draft
+          --out-dir release-governance-draft
       - name: Re-resolve immutable tag immediately before mutation
         shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-release-promotion-candidate"
           test "$(git rev-parse 'refs/tags/row-release-promotion-candidate^{commit}')" = "$RELEASE_SHA"
-      - name: Revalidate signed tag governance at mutation boundary
-        run: >-
-          python scripts/check_release_tag_governance.py
-          --policy configs/release_compliance_policy.json
-          --attestation "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.json"
-          --signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/tag-governance-attestation.sig.json"
-          --repository "$GITHUB_REPOSITORY"
-          --tag "$RELEASE_TAG"
-          --sha "$RELEASE_SHA"
       - name: Require immutable releases enabled before any mutation
         env:
           ROW_RELEASE_IMMUTABILITY_TOKEN: ${{ secrets.ROW_RELEASE_IMMUTABILITY_TOKEN }}
@@ -226,10 +276,29 @@ jobs:
           python scripts/check_release_remote_preconditions.py namespace
           --repository "$GITHUB_REPOSITORY"
           --tag "$RELEASE_TAG"
-      - name: Attest every certified release asset
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: release-assets/**
+      - name: Verify protected branch and exact required checks before draft creation
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ secrets.ROW_RELEASE_IMMUTABILITY_TOKEN }}
+        run: >-
+          python scripts/check_repository_governance.py
+          --repository "$GITHUB_REPOSITORY"
+          --branch "$DEFAULT_BRANCH"
+          --sha "$RELEASE_SHA"
+      - name: Revalidate signed tag governance at mutation boundary
+        run: >-
+          python scripts/check_release_tag_governance.py
+          --policy configs/release_compliance_policy.json
+          --attestation release-governance-draft/tag-governance-attestation.json
+          --signature release-governance-draft/tag-governance-attestation.sig.json
+          --redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"
+          --redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --operation create-draft
       - name: Create new draft by numeric API identity
         id: create-draft
         shell: bash
@@ -243,12 +312,15 @@ jobs:
           jq -n --arg tag "$RELEASE_TAG" --arg sha "$RELEASE_SHA" --arg marker "$transaction_marker" --rawfile body release-notes.md \
             '{tag_name: $tag, target_commitish: $sha, name: $tag, body: ($body + "\n" + $marker + "\n"), draft: true, prerelease: false}' > "$request"
           gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"
-          release_id="$(jq -er 'select(.draft == true and .prerelease == false) | .id | select(type == "number" and . > 0)' "$response")"
+          release_id="$(jq -er '.id | select(type == "number" and . > 0)' "$response")"
+          [[ "$release_id" =~ ^[1-9][0-9]*$ ]]
+          echo "release-id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "GitHub returned release ID $release_id for $RELEASE_TAG"
+          jq -e '.draft == true and .prerelease == false' "$response" >/dev/null
           test "$(jq -r '.tag_name' "$response")" = "$RELEASE_TAG"
           upload_url="$(jq -er '.upload_url | select(type == "string") | sub("\\{.*$"; "")' "$response")"
           test "$upload_url" = "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets"
           test "$(jq -r '.body' "$response")" = "$(jq -r '.body' "$request")"
-          echo "release-id=$release_id" >> "$GITHUB_OUTPUT"
           echo "upload-url=$upload_url" >> "$GITHUB_OUTPUT"
       - name: Upload every certified asset to the new numeric draft
         shell: bash
@@ -295,12 +367,90 @@ jobs:
           --draft-release-id "$DRAFT_RELEASE_ID"
           --draft-transaction-run-id "$GITHUB_RUN_ID"
           --draft-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Fetch fresh signed governance for publication
+        timeout-minutes: 17
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: >-
+          python scripts/fetch_release_tag_governance.py
+          --policy configs/release_compliance_policy.json
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --operation publish
+          --draft-id "$DRAFT_RELEASE_ID"
+          --out-dir release-governance-publish
+      - name: Attest exact signed tag governance inputs
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release-governance-publish/tag-governance-attestation.json
+            release-governance-publish/tag-governance-attestation.sig.json
+      - name: Retain exact publication governance proof
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: production-tag-governance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            release-governance-publish/tag-governance-attestation.json
+            release-governance-publish/tag-governance-attestation.sig.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Reverify draft bytes after waiting for the auditor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: >-
+          python scripts/check_release_provenance.py
+          --assets-dir release-assets
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --draft-release-id "$DRAFT_RELEASE_ID"
+          --draft-transaction-run-id "$GITHUB_RUN_ID"
+          --draft-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
+          --recheck-draft-bytes
       - name: Re-resolve immutable tag before publication
         shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags --force origin "refs/tags/${RELEASE_TAG}:refs/tags/row-release-final-candidate"
           test "$(git rev-parse 'refs/tags/row-release-final-candidate^{commit}')" = "$RELEASE_SHA"
+      - name: Recheck immutable releases enabled before publication
+        env:
+          ROW_RELEASE_IMMUTABILITY_TOKEN: ${{ secrets.ROW_RELEASE_IMMUTABILITY_TOKEN }}
+        run: >-
+          python scripts/check_release_remote_preconditions.py immutable
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+      - name: Verify protected branch and exact required checks before publication
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ secrets.ROW_RELEASE_IMMUTABILITY_TOKEN }}
+        run: >-
+          python scripts/check_repository_governance.py
+          --repository "$GITHUB_REPOSITORY"
+          --branch "$DEFAULT_BRANCH"
+          --sha "$RELEASE_SHA"
+      - name: Revalidate signed tag governance immediately before publication
+        env:
+          DRAFT_RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
+        run: >-
+          python scripts/check_release_tag_governance.py
+          --policy configs/release_compliance_policy.json
+          --attestation release-governance-publish/tag-governance-attestation.json
+          --signature release-governance-publish/tag-governance-attestation.sig.json
+          --redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"
+          --redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
+          --repository "$GITHUB_REPOSITORY"
+          --tag "$RELEASE_TAG"
+          --sha "$RELEASE_SHA"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --operation publish
+          --draft-id "$DRAFT_RELEASE_ID"
       - name: Publish verified draft by numeric ID once
         id: publish-draft
         env:
@@ -348,6 +498,10 @@ jobs:
           --published-release-id "$PUBLISHED_RELEASE_ID"
           --current-transaction-run-id "$GITHUB_RUN_ID"
           --current-transaction-run-attempt "$GITHUB_RUN_ATTEMPT"
+          --governance-attestation release-governance-publish/tag-governance-attestation.json
+          --governance-signature release-governance-publish/tag-governance-attestation.sig.json
+          --redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"
+          --redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
       - name: Verify published release notes
         env:
           GH_TOKEN: ${{ github.token }}

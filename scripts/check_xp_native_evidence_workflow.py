@@ -171,14 +171,18 @@ def check_runner_readiness_job(workflow: str) -> list[str]:
     required_snippets = {
         "runs-on: ubuntu-latest": "hosted runner for readiness preflight",
         "timeout-minutes: 5": "bounded runner readiness preflight timeout",
+        "environment: platform-evidence": "tag-restricted runner inventory environment",
         "outputs:\n      ready: ${{ steps.runner-readiness.outputs.ready }}": "runner readiness output binding",
-        "permissions:\n      actions: read\n      contents: read": "read-only runner inventory permissions",
+        "permissions:\n      contents: read": "read-only workflow checkout permissions",
         "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "readiness preflight checkout",
         "persist-credentials: false": "readiness checkout credential isolation",
         "clean: true": "readiness checkout workspace cleanup",
         "uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0": "readiness Python setup",
         'python-version: "3.12"': "readiness Python version pin",
-        "GH_TOKEN: ${{ github.token }}": "GitHub token binding for runner inventory",
+        "GH_TOKEN: ${{ secrets.ROW_PLATFORM_RUNNER_INVENTORY_TOKEN }}": "Administration read token for runner inventory",
+        "RELEASE_TAG: ${{ inputs.release_tag }}": "runner inventory release tag binding",
+        '"$GITHUB_REF" != "refs/tags/$RELEASE_TAG"': "exact release tag dispatch guard",
+        'if [[ -z "$GH_TOKEN" ]]; then': "missing inventory token guard",
         "python scripts/check_platform_evidence_runner_readiness.py \\\n            --repository \"${{ github.repository }}\" \\\n            --target \"${{ inputs.target }}\" \\\n            --require-idle \\\n            --allow-unavailable \\\n            --github-output \"$GITHUB_OUTPUT\"": "target-specific idle runner readiness check",
     }
     errors: list[str] = []
@@ -232,8 +236,9 @@ def check_xp_job(workflow: str) -> list[str]:
     required_snippets = {
         "needs: evidence-runner-readiness": "runner readiness preflight dependency",
         "if: ${{ needs.evidence-runner-readiness.outputs.ready == 'true' }}": "runner readiness target guard",
-        "runs-on: [self-hosted, xp-evidence]": "XP evidence self-hosted runner labels",
+        "runs-on: [self-hosted, windows, xp-evidence]": "XP evidence Windows collector labels",
         "timeout-minutes: 60": "bounded XP evidence job timeout",
+        "defaults:\n      run:\n        shell: pwsh": "XP evidence collector PowerShell default",
         "ASSETS_DIR: ${{ inputs.assets_dir }}": "assets directory environment binding",
         "EVIDENCE_DIR: ${{ inputs.evidence_dir }}": "evidence directory environment binding",
         "EVIDENCE_FILE: ${{ inputs.evidence_file }}": "evidence file environment binding",

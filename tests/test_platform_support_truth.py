@@ -529,7 +529,7 @@ def test_platform_support_truth_requires_published_release_audit_docs() -> None:
             "artifact `created_at` values outside the exact source run creation/start/update window",
             "stale artifact timestamps",
         )
-        .replace("canonical\naccepted-record JSON bytes", "accepted record metadata")
+        .replace("canonical accepted-record JSON bytes", "accepted record metadata")
     )
 
     errors = checker.check_platform_docs(docs, coverage_report())

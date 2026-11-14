@@ -16,11 +16,11 @@ not close a native-host or release-trust requirement by itself.
 | --- | --- | --- |
 | Production maturity | Project metadata declares only `Development Status :: 5 - Production/Stable`, and the release tag exactly matches `project.version`; Alpha/Beta metadata cannot receive a production score | `python scripts/check_release_maturity.py --release-tag <tag>` |
 | Quality and product workflows | Full local pytest, Ruff, non-GUI mypy, CLI smoke, and real PyQt6 rendering pass; the exact release SHA's GitHub `ci` push run is successful | `python scripts/verify.py --production-quality` plus `python scripts/check_python315_ci_evidence.py --repository <owner/repo> --branch main --sha <release-sha>` |
-| Default release artifacts | The exact tag builds the matrix, native smoke passes, checksums/manifests exist, and the published release assets are non-empty | `python scripts/check_release_publish_assets.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo>` plus the remote release audit |
-| Published certified-inventory provenance | Every downloaded file has the same name, positive size, and SHA-256 digest as the live immutable GitHub Release; every asset in the complete release inventory has a witnessed SLSA provenance signature from `.github/workflows/release-promotion.yml` at the exact release SHA and exact `refs/tags/<tag>` source ref; all assets share one production-promotion run attempt and that exact attempt completed successfully | `python scripts/check_release_provenance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha>` |
-| Third-party redistribution and realized runtime | An independently signed approval binds the exact native manifest and artifact hashes, the complete `pip inspect` environment, component classifications, packaged license-file extraction scans, and a per-platform fully hashed lock actually consumed by the mandatory tagged build workflow. GUI bundles additionally identify the PyQt/Qt channel and bind either both commercial licenses or the open-source application-license review, corresponding source, and relink mechanism | `python scripts/check_release_license_compliance.py --assets-dir <release-assets> --tag <tag> --repository <owner/repo> --sha <release-sha> --evidence <approval.json> --signature <approval.sig.json> --evidence-root <evidence-bundle>` |
-| Production signing | Windows Authenticode and macOS Developer ID/notarization proofs are present | release environment signing readiness and native manifest signing metadata |
-| Protected platform parity | Finalized, release-bound accepted records for Linux i386, Linux armhf, Windows XP x86 and Windows XP x64, including real host smoke and release-byte provenance | `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>` and the asset-backed protected-goal gate |
+| Default release artifacts | The exact tag builds the matrix, native smoke passes, checksums/manifests exist, and the published release assets are non-empty | `check_release_publish_assets.py` with the downloaded assets, signed evidence registry, `--require-platform-goal-targets`, and `--native-release-channel production-signed`, plus the remote release audit |
+| Published certified-inventory provenance | Every downloaded file has the same name, positive size, and SHA-256 digest as the live immutable GitHub Release; every asset in the complete release inventory has a witnessed SLSA provenance signature from `.github/workflows/release-promotion.yml` at the exact release SHA and exact `refs/tags/<tag>` source ref; all assets share one production-promotion run attempt and that exact attempt completed successfully | `check_release_provenance.py` through the aggregate published compliance audit, which also verifies the attested approval and governance proof from that same attempt |
+| Third-party redistribution and realized runtime | An independently signed approval binds the exact native manifest and artifact hashes, the complete `pip inspect` environment, component classifications, packaged license-file extraction scans, and a per-platform fully hashed lock actually consumed by the mandatory tagged build workflow. GUI bundles additionally identify the PyQt/Qt channel and bind either both commercial licenses or the open-source application-license review, corresponding source, and relink mechanism | `check_release_license_compliance.py --verify-published-release` with the signed approval and bundle, sealed candidate inventory, signed platform registry, original Actions ZIPs, and publication governance proof supplied to the aggregate |
+| Production signing | Windows Authenticode and macOS Developer ID/notarization proofs are present | Native build signing and smoke jobs, and `check_release_publish_assets.py` in `production-signed` mode |
+| Protected platform parity | Finalized, release-bound accepted records for Linux i386, Linux armhf, Windows XP x86 and Windows XP x64, including real host smoke and release-byte provenance | `python scripts/check_platform_verified_evidence.py --registry <signed-registry.json> --require-goal-targets --require-review-bundles --release-tag <tag>` and the asset-backed protected-goal gate |
 | Strict MobaXterm depth | Eight accepted records from a pinned registry commit on protected `main`, bound to the release SHA, reviewed workflow attempts and published artifact hashes | `python scripts/check_release_mobaxterm_parity.py --repository <owner/repo> --tag <tag> --sha <release-sha> --registry-commit <commit> --assets-dir <release-assets> --evidence-root <reviewed-evidence>` |
 | Repository governance | Required checks (including the stable `Python 3.15 readiness` and `Native Windows readiness` aggregates), conversation resolution, linear history, and no force-push/deletion are enabled on `main`; every required check is bound in branch protection to the configured GitHub App and resolves through that app's exact check suite to a successful `push` run of `.github/workflows/ci.yml` or `.github/workflows/codeql.yml` at the release SHA; an active, applicable tag ruleset prevents update and deletion of the exact release tag without bypass actors; pull-request approvals and signed commits remain optional controls | `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-sha> --release-tag <tag>` (live GitHub branch-protection, check-run, check-suite, Actions-run, and inherited tag-ruleset APIs, not a local manifest). Add `--require-review --require-signed-commits` for the stricter policy. |
 
@@ -250,14 +250,15 @@ namespace and a tag that resolves to the exact qualified source.
    place the authenticated bundle on `release-compliance-evidence`. Record its
    immutable commit SHA and retain the exact sealed candidate inventory; do not
    rebuild after approval.
-7. Dispatch `release-promotion.yml` from the same tag with the candidate run,
-   numeric inventory artifact ID, archive digest, and evidence commit SHA. Once
-   its protected job passes and publishes, download the complete release inventory.
-8. Run the published compliance audit with the signed bundle and retained
-   protected-platform source archives. The provenance check requires one common, successful,
-   certificate-bound `release-promotion.yml` run attempt dispatched from the exact
-   tag at the exact release SHA; a main-branch dispatch, green run for another commit, and unattested or locally
-   substituted bytes do not count.
+7. Follow the [production promotion dispatch](runbooks/RELEASE_PROMOTION.md#dispatch-production-promotion)
+   using the same tag and the sealed inventory from a successful candidate run
+   on attempt 1. Once promotion completes, [download the complete release inventory
+   and the exact publication evidence](runbooks/RELEASE_PROMOTION.md#download-the-publication-evidence)
+   from that promotion attempt.
+8. Check the `release-certification.yml` run triggered by that promotion for a successful audit of
+   the immutable inventory and the two attested proofs. The final aggregate
+   also runs the published compliance audit with the complete signed bundle
+   and original protected-platform source archives.
 9. Finalize the eight MobaXterm evidence records after publication. Use the
    published bytes referenced by each record and merge the reviewed registry
    into protected `main`. Retain the full SHA of that registry commit.
@@ -290,6 +291,8 @@ make production-readiness \
   RELEASE_TAG_GOVERNANCE_SIGNATURE="<tag-governance-attestation.sig.json>"
 ```
 
+Keep the evidence inputs outside the tagged checkout so its clean-tree check
+can pass. The default `release-assets/` download directory is ignored by Git.
 Use the protected-platform registry from the signed compliance bundle for
 `RELEASE_PLATFORM_EVIDENCE_REGISTRY`. The local checks and live GitHub audit
 both use that same file. The MobaXterm audit reads the registry from

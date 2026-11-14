@@ -61,8 +61,10 @@ gh workflow run release-promotion.yml \
 ```
 
 The workflow checks that the dispatch ref and the release tag resolve to the
-same source commit. If the candidate must be rebuilt, obtain a fresh approval
-for the replacement inventory and use its new run ID, artifact ID and digest.
+same source commit. Promotion accepts only attempt 1 of the candidate run.
+If the candidate must be rebuilt, dispatch a new candidate run from the same
+tag and obtain fresh approval for its sealed inventory. Use the new run ID,
+artifact ID and digest.
 
 ## Capture the signed tag ruleset proof
 
@@ -103,6 +105,28 @@ successful promotion, the certification workflow retrieves that copy and
 verifies that the proof, the signed redistribution approval, and all
 immutable release assets share the triggering run and attempt. It verifies
 both independent signatures and checks their validity at publication.
+
+## Download the publication evidence
+
+Use the tag, run ID and attempt of the completed, successful promotion.
+Choose a new download directory for the release assets and a separate
+evidence directory outside the tagged checkout.
+
+```bash
+gh release download "$release_tag" --repo "$release_repository" --dir "$release_assets_dir"
+gh run download "$promotion_run_id" --repo "$release_repository" \
+  --name "production-tag-governance-${promotion_run_id}-${promotion_run_attempt}" \
+  --dir "$publication_evidence_dir/governance"
+gh run download "$promotion_run_id" --repo "$release_repository" \
+  --name "production-redistribution-approval-${promotion_run_id}-${promotion_run_attempt}" \
+  --dir "$publication_evidence_dir/redistribution"
+```
+
+Use the downloaded governance JSON and signature for the aggregate audit.
+The redistribution artifact contains the approval and signature. The
+aggregate also needs the matching signed evidence bundle and sealed candidate
+inventory from the pinned evidence commit, and the original protected-platform
+Actions ZIPs retained during [source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites).
 
 ## Verify a published artifact
 

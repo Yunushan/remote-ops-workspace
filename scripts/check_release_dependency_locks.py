@@ -43,11 +43,10 @@ def check_locks(root: Path = ROOT, workflows: dict[str, str] | None = None) -> l
     for key in ("resolver", "python_version"):
         if receipt.get(key) != config.get(key):
             errors.append(f"release lock receipt {key} differs from the resolver configuration")
-    expected_inputs = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in resolver.release_input_paths(root, config)}
+    expected_inputs = resolver.release_input_hashes(root, config)
     if receipt.get("input_sha256") != expected_inputs:
         errors.append("release lock resolution inputs changed; regenerate and review the locks")
-    expected_locks = {f"{target}.txt" for target in targets}
-    expected_locks.update(f"{target}-bootstrap.txt" for target, row in targets.items() if row.get("bootstrap"))
+    expected_locks = resolver.lock_names(targets, list(targets))
     if set(receipt.get("lock_sha256", {})) != expected_locks:
         errors.append("release lock receipt must exactly cover final and bootstrap locks")
     for name in sorted(expected_locks):

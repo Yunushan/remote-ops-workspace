@@ -258,6 +258,10 @@ the exact resolver version in `configs/release_dependency_locks.json`:
 python scripts/lock_release_dependencies.py --uv /path/to/pinned/uv --system-certs
 ```
 
+Use a full resolution after changing shared inputs. A partial `--target` refresh
+requires the current inputs and every unselected lock to match the previous
+resolution receipt.
+
 Review regenerated dependency/hash changes and verify installation on each native
 builder before publishing. The resolver receipt proves dependency inputs; the
 production approval separately binds components actually present in every package.

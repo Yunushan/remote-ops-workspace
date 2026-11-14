@@ -314,11 +314,15 @@ against the same successful promotion attempt as the release assets. The
 retained XP files are checked against the signed digests and published
 package bytes after the Actions archives expire.
 
-Both versioned publication workflows report the numeric release ID if an error
-occurs after draft creation. Once the failed run ends, inspect that release and
-match its tag and transaction marker to the failed run. If it is still a draft,
-remove that draft and dispatch a new run for the same tag. Use the workflow to
-publish so it can verify the complete inventory and provenance before promotion.
+The publication workflows report the numeric release ID if an error occurs
+after draft creation. Production promotion can recover the ID by matching the
+tag and full transaction marker when the creation response was lost. The marker
+contains the tag, source SHA, run ID, and run attempt. If interruption stopped
+the report step, compare those four values in the draft's raw release notes
+with the failed Actions attempt. Inspect the numeric release after that run
+ends. If it is still a draft, remove that draft and dispatch a new run for the
+same tag. Use the workflow to publish so it can verify the complete inventory
+and provenance before promotion.
 If GitHub already shows a published release, retain it and investigate the
 failed check before using the release or claiming certification.
 

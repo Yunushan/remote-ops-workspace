@@ -508,14 +508,24 @@ def check_promotion_truth(workflow: str) -> list[str]:
         or not literal_run_is_fail_closed(draft_step)
     ):
         errors.append("promotion must capture the validated release ID before checking the draft response")
-    report = workflow_step_block(block, "name: Report the release ID after failure")
+    transaction_marker = (
+        'transaction_marker="<!-- remote-ops-release-transaction:'
+        '$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"'
+    )
+    report = workflow_step_block(block, "name: Report the release ID after failure or cancellation")
     report_requirements = (
-        "failure() && steps.create-draft.outputs.release-id != ''",
+        "always() && (failure() || cancelled())",
+        "steps.create-draft.outcome != 'skipped'",
         "RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}",
+        transaction_marker,
+        'gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100"',
+        '.tag_name == $tag',
+        'index($marker) != null',
+        'error("ambiguous release transaction")',
         'Inspect release $RELEASE_ID ($RELEASE_TAG)',
     )
-    if not all(token in report for token in report_requirements):
-        errors.append("promotion workflow must report the captured release ID after failure")
+    if transaction_marker not in draft_step or not all(token in report for token in report_requirements):
+        errors.append("promotion workflow must recover and report the release ID for its exact failed attempt")
     if "--method DELETE" in block or "gh release delete" in block:
         errors.append("promotion workflow must preserve releases after failure")
     command_contracts = {

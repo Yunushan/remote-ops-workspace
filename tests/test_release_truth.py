@@ -334,6 +334,16 @@ def test_promotion_captures_release_id_before_rejecting_draft_response() -> None
     assert message in checker.check_promotion_truth(workflow.replace(capture, "", 1))
 
 
+def test_promotion_recovers_draft_id_for_the_exact_interrupted_attempt() -> None:
+    checker = load_script("check_release_truth")
+    workflow = promotion_workflow()
+    marker = "$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT"
+    message = "promotion workflow must recover and report the release ID for its exact failed attempt"
+    assert message not in checker.check_promotion_truth(workflow)
+    assert message in checker.check_promotion_truth(workflow.replace(marker, "$RELEASE_TAG:$RELEASE_SHA", 1))
+    assert message in checker.check_promotion_truth(workflow.replace("index($marker) != null", "true", 1))
+
+
 def test_promotion_requires_qualified_default_branch_source() -> None:
     checker = load_script("check_release_truth")
     workflow = promotion_workflow()

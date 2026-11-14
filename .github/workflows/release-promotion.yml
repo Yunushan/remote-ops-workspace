@@ -308,7 +308,7 @@ jobs:
           set -euo pipefail
           request="$RUNNER_TEMP/create-release.json"
           response="$RUNNER_TEMP/created-release.json"
-          transaction_marker="<!-- remote-ops-release-transaction:$RELEASE_TAG:$RELEASE_SHA -->"
+          transaction_marker="<!-- remote-ops-release-transaction:$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"
           jq -n --arg tag "$RELEASE_TAG" --arg sha "$RELEASE_SHA" --arg marker "$transaction_marker" --rawfile body release-notes.md \
             '{tag_name: $tag, target_commitish: $sha, name: $tag, body: ($body + "\n" + $marker + "\n"), draft: true, prerelease: false}' > "$request"
           gh api --method POST "repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$response"
@@ -510,12 +510,28 @@ jobs:
           --repository "$GITHUB_REPOSITORY"
           --tag "$RELEASE_TAG"
           --channel production-signed
-      - name: Report the release ID after failure
-        if: ${{ failure() && steps.create-draft.outputs.release-id != '' }}
+      - name: Report the release ID after failure or cancellation
+        if: ${{ always() && (failure() || cancelled()) && steps.create-draft.outcome != '' && steps.create-draft.outcome != 'skipped' }}
+        timeout-minutes: 2
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ steps.create-draft.outputs.release-id }}
         run: |
           set -euo pipefail
+          if [[ -z "$RELEASE_ID" ]]; then
+            transaction_marker="<!-- remote-ops-release-transaction:$RELEASE_TAG:$RELEASE_SHA:$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT -->"
+            RELEASE_ID="$(
+              gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+                jq -er --arg tag "$RELEASE_TAG" --arg marker "$transaction_marker" '
+                  [ .[][] | select(.tag_name == $tag and ((.body // "") | split("\n") | index($marker) != null)) | .id ]
+                  | if length == 1 then .[0] elif length == 0 then "" else error("ambiguous release transaction") end
+                '
+            )"
+          fi
+          if [[ -z "$RELEASE_ID" ]]; then
+            echo "::notice::No release found for $RELEASE_TAG in promotion run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+            exit 0
+          fi
           [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]]
-          echo "::warning::Inspect release $RELEASE_ID ($RELEASE_TAG) after the failed publication attempt"
+          echo "::warning::Inspect release $RELEASE_ID ($RELEASE_TAG) from promotion run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"

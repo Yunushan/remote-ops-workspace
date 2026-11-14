@@ -1008,7 +1008,11 @@ def build_parser() -> argparse.ArgumentParser:
     x11_sub = x11.add_subparsers(required=True)
     x11_start = x11_sub.add_parser("start", help="start or inspect a local X server helper")
     x11_start.add_argument("--display", default=":0")
-    x11_start.add_argument("--allow-tcp", action="store_true")
+    x11_start.add_argument(
+        "--allow-tcp",
+        action="store_true",
+        help="enable authenticated TCP, required for managed Windows X servers (may listen on all interfaces)",
+    )
     x11_start.add_argument("--authority-file", type=Path)
     x11_start.add_argument("--dry-run", action="store_true")
     x11_start.add_argument("--json", action="store_true")

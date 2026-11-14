@@ -36,7 +36,8 @@ def test_moba_x_server_plan_discovers_windows_runtime_and_extensions() -> None:
     assert "-multiwindow" in plan.command
     assert "-clipboard" in plan.command
     assert plan.environment["DISPLAY"] == ":7"
-    assert plan.command[-4:] == ["-auth", plan.environment["XAUTHORITY"], "-listen", "tcp"]
+    assert plan.command[-4:] == ["-auth", plan.environment["XAUTHORITY"], "-nolisten", "tcp"]
+    assert any("requires explicit --allow-tcp" in note for note in plan.notes)
     assert "-ac" not in plan.command
     assert plan.display_in_use is False
     assert {"glx", "randr", "composite", "xdmcp"}.issubset(

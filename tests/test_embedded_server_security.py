@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from remote_ops_workspace import moba_servers, x11
+from remote_ops_workspace import cli, moba_servers, x11
 
 
 @pytest.mark.parametrize("system", ["windows", "linux", "darwin"])
@@ -17,7 +17,7 @@ def test_x_server_cookie_is_generated_before_launch_and_shared_with_clients(tmp_
     executable = {"windows": "vcxsrv", "linux": "Xvfb", "darwin": "Xquartz"}[system]
     plan = x11.build_moba_x_server_plan(
         ":34", system=system, which=lambda name: name if name == executable else None,
-        display_probe=lambda _display: False, authority_path=authority,
+        display_probe=lambda _display: False, authority_path=authority, allow_tcp=system == "windows",
     )
     calls = []
 
@@ -48,6 +48,68 @@ def test_x_server_cookie_is_generated_before_launch_and_shared_with_clients(tmp_
     assert "password" not in json.dumps(plan.to_dict())
     monkeypatch.setenv("XAUTHORITY", str(authority))
     assert x11.managed_x11_environment(":34") == {"DISPLAY": ":34", "XAUTHORITY": str(authority)}
+
+
+@pytest.mark.parametrize("runtime", ["vcxsrv", "Xming", "XWin"])
+def test_windows_x_server_cli_requires_explicit_tcp_opt_in(runtime, tmp_path, monkeypatch, capsys):
+    authority = tmp_path / "Xauthority"
+    state = tmp_path / "state.json"
+    starts = []
+    monkeypatch.setattr(
+        cli, "build_moba_x_server_plan",
+        lambda **options: x11.build_moba_x_server_plan(
+            system="windows", which=lambda name: runtime if name == runtime else None,
+            display_probe=lambda _display: False, packaged_roots=[], **options,
+        ),
+    )
+    monkeypatch.setattr(
+        cli, "start_moba_x_server",
+        lambda plan, **options: x11.start_moba_x_server(
+            plan, state_path=state,
+            popen_factory=lambda command, **_kwargs: starts.append(command) or SimpleNamespace(
+                pid=3434, poll=lambda: None,
+            ),
+            identity_factory=lambda process: {"pid": process.pid, "kind": "test"},
+            **options,
+        ),
+    )
+    argv = ["x11", "start", "--display", ":34", "--authority-file", str(authority), "--json"]
+    assert cli.main(argv) == 1
+    assert "requires explicit --allow-tcp" in capsys.readouterr().err
+    assert not starts
+    assert not authority.exists()
+    assert not state.exists()
+
+    assert cli.main([*argv, "--dry-run"]) == 0
+    dry_run = json.loads(capsys.readouterr().out)
+    assert dry_run["command"][-2:] == ["-nolisten", "tcp"]
+    assert any("requires explicit --allow-tcp" in note for note in dry_run["notes"])
+    assert not starts
+
+    assert cli.main([*argv, "--allow-tcp"]) == 0
+    started = json.loads(capsys.readouterr().out)
+    assert started["lifecycle"]["state"] == "started"
+    assert starts == [started["command"]]
+    assert starts[0][-4:] == ["-auth", str(authority.resolve()), "-listen", "tcp"]
+    assert any("all interfaces" in note and "6034" in note for note in started["notes"])
+
+
+def test_basic_windows_x_server_refuses_implicit_tcp(tmp_path, monkeypatch):
+    authority = tmp_path / "Xauthority"
+    command = [r"C:\Tools\vcxsrv.exe", ":34", "-auth", str(authority), "-listen", "tcp"]
+    monkeypatch.setattr(x11, "popen_hidden", lambda *_args, **_kwargs: pytest.fail("must not spawn"))
+    with pytest.raises(ValueError, match="requires explicit --allow-tcp"):
+        x11.run_x_server(x11.XServerPlan(command, []))
+    assert not authority.exists()
+
+
+def test_x_server_refuses_conflicting_transport_before_launch(tmp_path, monkeypatch):
+    authority = tmp_path / "Xauthority"
+    command = ["Xorg", ":34", "-auth", str(authority), "-nolisten", "tcp", "-listen", "tcp"]
+    monkeypatch.setattr(x11, "popen_hidden", lambda *_args, **_kwargs: pytest.fail("must not spawn"))
+    with pytest.raises(ValueError, match="TCP listener policy"):
+        x11.run_x_server(x11.XServerPlan(command, []))
+    assert not authority.exists()
 
 
 def test_x_server_dry_run_does_not_create_cookie_and_tcp_opt_in_is_explicit(tmp_path):

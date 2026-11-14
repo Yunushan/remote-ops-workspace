@@ -88,7 +88,9 @@ success message. The gate rejects a SHA that does not match the tag, a different
 checkout, or tracked/non-ignored untracked bytes that are not part of the tag.
 
 An independent compliance authority must enroll a real Ed25519 public key in
-the tracked policy and sign the exact approval JSON bytes. The evidence bundle
+the tracked policy and sign the exact approval JSON bytes. Follow the
+[redistribution approval and local audit procedure](runbooks/RELEASE_PROMOTION.md#prepare-the-signed-redistribution-approval).
+The evidence bundle
 must retain the hashed resolver locks, raw `pip inspect` captures, extracted
 license/notice files from every native artifact, and referenced legal/source or
 commercial-license review records. The checker reads and hashes those files; a

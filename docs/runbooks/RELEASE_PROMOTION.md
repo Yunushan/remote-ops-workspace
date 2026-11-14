@@ -41,6 +41,81 @@ promotion target.
    Run the [aggregate gate with the required release inputs](../PRODUCTION_READINESS.md#final-promotion-sequence)
    from the tagged checkout and require `production readiness: 100/100 gates passed`.
 
+## Prepare the signed redistribution approval
+
+Before tagging, enroll the independent redistribution reviewer's public key
+in `trusted_ed25519_keys` and the governance auditor's public key in
+`tag_governance_attestation.trusted_ed25519_keys` in
+`configs/release_compliance_policy.json`. Each entry needs a unique `key_id`
+within its list and a `public_key` containing the base64-encoded raw 32-byte
+Ed25519 public key. The reviewer and auditor keep their private keys on their
+own systems. The policy's approved state requires the independent closed-world
+inventory review.
+
+Once the reviewer has approved the exact tagged candidate and bundle, save
+the approved JSON as `release-evidence.json`. In the tagged checkout, use a
+Linux x64 Python environment with
+`python -m pip install --require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt`.
+The example signs the existing bytes and verifies the signature against the
+enrolled public key. Set the three shell variables to the reviewed JSON, the
+enrolled key ID and the path to the reviewer's local Ed25519 PEM.
+
+```bash
+python - "$approval_json" "$review_key_id" "$review_private_key" <<'PY'
+import base64
+import json
+import sys
+from pathlib import Path
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from scripts.check_release_license_compliance import verify_evidence_signature
+
+approval, key_id, private_key = sys.argv[1:]
+approval_path = Path(approval)
+if approval_path.name != "release-evidence.json":
+    raise SystemExit("expected release-evidence.json")
+payload = approval_path.read_bytes()
+key = load_pem_private_key(Path(private_key).read_bytes(), password=None)
+if not isinstance(key, Ed25519PrivateKey):
+    raise SystemExit("the review key must be Ed25519")
+signature = {
+    "schema_version": 1,
+    "algorithm": "ed25519",
+    "key_id": key_id,
+    "signature": base64.b64encode(key.sign(payload)).decode("ascii"),
+}
+policy = json.loads(Path("configs/release_compliance_policy.json").read_bytes())
+verify_evidence_signature(payload, signature, policy)
+with approval_path.with_name("release-evidence.sig.json").open("x", encoding="utf-8") as output:
+    json.dump(signature, output, indent=2)
+    output.write("\n")
+PY
+```
+
+Run the exact-byte audit from the tagged checkout with the same sealed
+inventory and signed platform registry the promotion job will consume. Set
+`approval_dir` to the directory containing the two approval files and its
+`bundle/` subdirectory. Set `release_assets_dir` to the complete staged asset
+inventory and authenticate GitHub CLI for the live source checks.
+
+```bash
+python scripts/check_release_license_compliance.py \
+  --policy configs/release_compliance_policy.json --policy-root . \
+  --assets-dir "$release_assets_dir" --repository "$release_repository" \
+  --tag "$release_tag" --sha "$release_sha" \
+  --evidence "$approval_dir/release-evidence.json" \
+  --signature "$approval_dir/release-evidence.sig.json" \
+  --evidence-root "$approval_dir/bundle" \
+  --candidate-inventory "$approval_dir/bundle/release-candidate-inventory.json" \
+  --protected-platform-registry "$approval_dir/bundle/platform_verified_evidence.json" \
+  --audit-redistribution-only
+```
+
+After the audit passes, place the two approval files and `bundle/` at
+`releases/<tag>/<sha>/` on the data-only `release-compliance-evidence` branch.
+Preserve the exact signed bytes and record the full commit SHA for dispatch.
+
 ## Dispatch production promotion
 
 Copy the tag, build run ID, numeric inventory artifact ID and

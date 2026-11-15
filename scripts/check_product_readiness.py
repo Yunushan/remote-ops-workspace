@@ -915,6 +915,7 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
             "--assets-dir <target-release-artifact-dir> "
             "--builder-evidence <builder-identity.json> "
             "--smoke-evidence <native-smoke-log> "
+            "--runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json "
             f"--candidate-record <{candidate}> "
             "--out-dir <target-release-artifact-dir>"
         ),

@@ -119,7 +119,7 @@ def test_private_lock_metadata_refusal_closes_scope_and_descriptor_before_native
     _os_facade(monkeypatch, name="nt", open=opened, fstat=fstat, close=close)
     native_conversion = Mock(side_effect=AssertionError("unsafe lock reached native conversion"))
     monkeypatch.setattr(storage, "descriptor_handle", native_conversion)
-    guard = SimpleNamespace(verify=Mock())
+    guard = SimpleNamespace(verify=Mock(), create_private_file=lambda path: opened(path, locking.os.O_RDWR | locking.os.O_CREAT | locking.os.O_EXCL))
     scope = SimpleNamespace(close=Mock(), enter_context=Mock())
     with pytest.raises(OSError, match="^private native lock file metadata refused$"):
         locking._open_lock_file(path, _private_guard=guard, _private_scope=scope)

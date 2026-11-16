@@ -159,7 +159,7 @@ def check_gui_runtime_script(platform: str, text: str) -> list[str]:
         required = {
             **shared, "Test-PackagedGui $GuiPath": "installed GUI execution",
             "Test-PackagedGui $RootGuiPath": "portable GUI execution",
-            "-WindowStyle Hidden": "hidden GUI launch", "WaitForExit(25000)": "bounded GUI execution",
+            "-WindowStyle Normal": "normal GUI launch", "WaitForExit(25000)": "bounded GUI execution",
             '$Result.frozen -ne $true': "frozen runtime proof",
             '$Result.qt_platform -ne "windows"': "native Qt platform proof",
             "Get-FileHash -LiteralPath $Image": "paint byte verification",

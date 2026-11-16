@@ -12,6 +12,17 @@ def test_native_installer_smoke_checker_passes_current_tree() -> None:
     assert checker.main() == 0
 
 
+def test_windows_gui_smoke_rejects_a_hidden_launch() -> None:
+    checker = _load_checker()
+    source = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
+    assert checker.check_gui_runtime_script("windows", source) == []
+
+    hidden = source.replace("-WindowStyle Normal", "-WindowStyle Hidden")
+    errors = checker.check_gui_runtime_script("windows", hidden)
+
+    assert "windows native GUI smoke missing normal GUI launch" in errors
+
+
 def test_native_installer_smoke_contract_covers_required_formats() -> None:
     config = json.loads(Path("configs/native_installer_smoke.json").read_text(encoding="utf-8"))
     formats = {

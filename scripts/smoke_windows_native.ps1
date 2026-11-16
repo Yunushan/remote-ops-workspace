@@ -306,7 +306,8 @@ function Test-PackagedGui([string]$GuiPath, [string]$Label) {
   try {
     $env:ROW_HOME = $GuiHome
     $env:QT_QPA_PLATFORM = "windows"
-    $Process = Start-Process -FilePath $GuiPath -ArgumentList @("--smoke-json", ('"' + $Report + '"')) -WindowStyle Hidden -PassThru
+    # The GUI verifier needs a normal show state to observe window visibility and paint.
+    $Process = Start-Process -FilePath $GuiPath -ArgumentList @("--smoke-json", ('"' + $Report + '"')) -WindowStyle Normal -PassThru
     if (!$Process.WaitForExit(25000)) {
       throw "$Label packaged GUI startup exceeded 25 seconds"
     }

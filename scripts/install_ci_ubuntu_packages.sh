@@ -78,4 +78,9 @@ apt_options=(
   -o Acquire::https::Timeout=15
 )
 sudo -n apt-get "${apt_options[@]}" update --error-on=any
+# Hosted images may contain newer graphics libraries than the current Ubuntu
+# archive. Allow their versions to align with the authenticated archive packages.
+if [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_ENVIRONMENT:-}" == github-hosted ]]; then
+  install_options+=(--allow-downgrades)
+fi
 sudo -n apt-get "${apt_options[@]}" install -y "${install_options[@]}" "${missing_packages[@]}"

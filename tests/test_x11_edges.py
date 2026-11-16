@@ -161,7 +161,7 @@ def test_runtime_commands_cover_supported_platform_variants(
 ) -> None:
     runtime = x11.XServerRuntimeCandidate(key, key, "runtime", True, "test")
     command = x11._runtime_command(runtime, ":3", system, authority_path=Path("authority"))
-    assert command == [*expected, "-auth", "authority", "-listen" if system == "windows" else "-nolisten", "tcp"]
+    assert command == [*expected, "-auth", "authority", "-nolisten", "tcp"]
 
 
 def test_run_and_lifecycle_failure_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

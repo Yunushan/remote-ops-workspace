@@ -40,12 +40,18 @@ XSERVER_RELEASE_EVIDENCE_SCHEMA = "row.moba-xserver.release-evidence.v1"
 XSERVER_RUNTIME_BUNDLE_SCHEMA = "row.moba-xserver.runtime-bundle.v1"
 XSERVER_RUNTIME_DIR_ENV = "ROW_XSERVER_RUNTIME_DIR"
 XSERVER_RUNTIME_MANIFEST_NAME = "xserver-runtime.json"
+_WINDOWS_TCP_RUNTIMES = frozenset({"vcxsrv", "xming", "xwin"})
+_WINDOWS_TCP_OPT_IN = (
+    "This managed Windows X server requires explicit --allow-tcp. "
+    "Its listener can be reachable on all interfaces."
+)
 
 
 @dataclass(slots=True)
 class XServerPlan:
     command: list[str]
     notes: list[str]
+    allow_tcp: bool = False
 
     def printable(self) -> str:
         return " ".join(safe.argv_list(self.command, "x server command"))
@@ -97,6 +103,7 @@ class ManagedXServerPlan:
     display_in_use: bool
     notes: list[str]
     candidates: tuple[XServerRuntimeCandidate, ...]
+    allow_tcp: bool = False
 
     def printable(self) -> str:
         return " ".join(safe.argv_list(self.command, "managed x server command"))
@@ -326,9 +333,9 @@ class XServerReleaseEvidenceValidation:
         }
 
 
-def build_x_server_plan(display: str = ":0") -> XServerPlan:
-    plan = build_moba_x_server_plan(display=display)
-    return XServerPlan(plan.command, plan.notes)
+def build_x_server_plan(display: str = ":0", *, allow_tcp: bool = False) -> XServerPlan:
+    plan = build_moba_x_server_plan(display=display, allow_tcp=allow_tcp)
+    return XServerPlan(plan.command, plan.notes, allow_tcp=allow_tcp)
 
 
 def build_moba_x_server_plan(
@@ -354,9 +361,13 @@ def build_moba_x_server_plan(
     command = _runtime_command(runtime, display, system_key, authority_path=authority, allow_tcp=allow_tcp)
     notes = _runtime_notes(runtime, display, display_in_use, system_key)
     notes.append(f"MIT-MAGIC-COOKIE-1 authentication is required; clients use XAUTHORITY={authority}.")
-    if system_key == "windows" or allow_tcp:
-        notes.append("Authenticated TCP transport is enabled. This runtime may listen on all interfaces; configure the host firewall to restrict port "
-                     f"{6000 + _display_number(display)} to intended clients. ROW does not change firewall rules.")
+    if allow_tcp:
+        notes.append(
+            "Authenticated TCP transport is enabled and may listen on all interfaces. "
+            f"Restrict port {6000 + _display_number(display)} to intended clients using the host firewall."
+        )
+    elif system_key == "windows":
+        notes.append(_WINDOWS_TCP_OPT_IN)
     return ManagedXServerPlan(
         display=display,
         command=command,
@@ -366,6 +377,7 @@ def build_moba_x_server_plan(
         display_in_use=display_in_use,
         notes=notes,
         candidates=candidates,
+        allow_tcp=allow_tcp,
     )
 
 
@@ -552,6 +564,8 @@ def run_x_server(plan: XServerPlan, dry_run: bool = False) -> XServerPlan:
         if index + 1 >= len(plan.command):
             raise ValueError("X server launch requires a managed authorization file")
         environment = {"DISPLAY": safe.display(plan.command[1]), "XAUTHORITY": plan.command[index + 1]}
+        runtime_key = re.split(r"[/\\]", plan.command[0])[-1].lower().removesuffix(".exe")
+        _require_x_server_transport(plan.command, runtime_key, allow_tcp=plan.allow_tcp)
         _prepare_x_server_authority(plan.command, environment, environment["DISPLAY"])
         popen_hidden(plan.command, env={**os.environ, **environment})
     return plan
@@ -583,6 +597,7 @@ def start_moba_x_server(
         )
     if not plan.runtime.available:
         raise ValueError(f"X server runtime is not available: {plan.runtime.label}")
+    _require_x_server_transport(plan.command, plan.runtime.key, allow_tcp=plan.allow_tcp)
     verify_packaged_x_server_runtime_integrity(plan.runtime)
     with exclusive_file_lock(target_state_path, timeout_seconds=lock_timeout_seconds):
         _require_replaceable_x_server_record(target_state_path)
@@ -1270,7 +1285,7 @@ def _runtime_command(
     if runtime.key in {"xlaunch", "xquartz"}:
         raise ValueError("managed X servers require the direct VcXsrv/Xming/Xquartz executable so authentication and transport settings can be enforced")
     authority = authority_path or _authority_path(display)
-    security = ["-auth", str(authority), "-listen" if system == "windows" or allow_tcp else "-nolisten", "tcp"]
+    security = ["-auth", str(authority), "-listen" if allow_tcp else "-nolisten", "tcp"]
     if system == "windows":
         if runtime.key == "xming":
             return [executable, display, "-multiwindow", "-clipboard", *security]
@@ -1339,6 +1354,19 @@ def managed_xauth_location(
         if candidate.is_file():
             return str(candidate)
     return None
+
+
+def _require_x_server_transport(command: list[str], runtime_key: str, *, allow_tcp: bool) -> None:
+    if runtime_key in _WINDOWS_TCP_RUNTIMES and not allow_tcp:
+        raise ValueError(_WINDOWS_TCP_OPT_IN)
+    transport_options = [
+        (argument, command[index + 1 : index + 2])
+        for index, argument in enumerate(command[2:], start=2)
+        if argument in {"-listen", "-nolisten"}
+    ]
+    expected = "-listen" if allow_tcp else "-nolisten"
+    if transport_options != [(expected, ["tcp"])]:
+        raise ValueError("Managed X server command must match the requested TCP listener policy.")
 
 
 def _prepare_x_server_authority(command: list[str], environment: dict[str, str], display: str) -> None:

@@ -308,6 +308,9 @@ class RecordingGuard:
     def verify(self):
         self.scene.events.append(("verify-root",))
 
+    def create_private_file(self, path):
+        return self.scene.open(path, 2 | 64 | 128)
+
     @contextmanager
     def private_file(self, descriptor, path):
         name = str(path)
@@ -440,6 +443,22 @@ def test_actual_lock_nul_is_after_private_binding_and_os_lock_and_lease_retained
         assert scene.data[str(path)] == b"\0"
     labels = [row[0] for row in scene.events]
     assert labels.index("fsync") < labels.index("release") < labels.index("private-verified") < labels.index("private-close") < labels.index("close-crt")
+
+
+def test_private_lock_reopens_a_predecessor_without_creation_flag(monkeypatch):
+    scene, guard = lock_fixture(monkeypatch)
+    path = scene.path(STAGE + r"\.transaction.json.lock")
+    descriptor = scene.open(path, 2 | 64 | 128)
+    scene.close(descriptor)
+    scene.events.clear()
+
+    with ExitStack() as scope:
+        descriptor = locks._open_lock_file(path, _private_guard=guard, _private_scope=scope)
+    scene.close(descriptor)
+
+    attempts = [row[2] for row in scene.events if row[0] == "open"]
+    assert len(attempts) == 2 and attempts[0] & 128
+    assert not attempts[1] & (64 | 128)
 
 
 def test_actual_lock_acl_refusal_precedes_first_nul_and_closes_empty_descriptor(monkeypatch):

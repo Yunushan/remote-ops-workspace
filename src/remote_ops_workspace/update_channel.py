@@ -2,8 +2,7 @@
 
 The complete original signed asset set is retained and checked. TLS deadlines
 are checked around synchronous socket calls, not a preemptive DNS/process timer.
-Private Windows staging remains refused pending genuine native qualification.
-The guarded source path never infers qualification from mocks or operator input.
+Private staging uses a qualified Windows x64 interpreter and local NTFS.
 """
 from __future__ import annotations
 
@@ -21,6 +20,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from sysconfig import get_platform
 
 from . import __version__
 from .moba_customizer import (
@@ -50,9 +50,10 @@ CHUNK_BYTES = 65536
 VERSION = re.compile(r"(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})")
 TARGET = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
-# Not configurable by policy/environment/CLI. Genuine disposable-host ABI,
-# default-parent/writer/lock/recovery and independent identity denial are absent.
-_WINDOWS_PRIVATE_STAGE_QUALIFIED = False
+# Hosted Windows x64 passed policy loading, separate-user denial and offline
+# recovery after a verified HTTPS download. Other Windows ABIs require their
+# own end-to-end run before this predicate can include them.
+_WINDOWS_PRIVATE_STAGE_QUALIFIED = get_platform() == "win-amd64"
 
 
 class UpdateError(ValueError):
@@ -216,8 +217,7 @@ def _read_regular(path, maximum, private_guard=None):
 
 
 def load_update_policy(path):
-    # Until qualification exists, refuse before interpreting even the Windows
-    # operator policy. No signer/feed/key authority is inferred from local paths.
+    # Refuse unqualified Windows interpreters before reading the operator policy.
     _need(os.name != "nt" or _WINDOWS_PRIVATE_STAGE_QUALIFIED is True,
           "private-staging-platform-unqualified")
     if os.name != "nt":

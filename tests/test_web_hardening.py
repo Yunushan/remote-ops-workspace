@@ -1482,6 +1482,47 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
     assert report["milestones"][-2:] == ["exit-requested", "exit-event"]
 
 
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
+@pytest.mark.parametrize("mode", ("browser-context", "synchronous-stall"))
+def test_web_policy_browser_context_isolated_and_stalls_fail(tmp_path, mode):
+    app_path = tmp_path / "browser-probe.js"
+    if mode == "synchronous-stall":
+        app_path.write_text("while (true) {}", encoding="utf-8")
+    else:
+        probe = """
+if (typeof process !== 'undefined' || typeof require !== 'undefined'
+    || typeof module !== 'undefined' || 'serviceWorker' in navigator) {
+  throw new Error('Node globals leaked into the browser context');
+}
+let timerRanInline = false;
+setTimeout(() => { timerRanInline = true; }, 5000);
+if (timerRanInline) throw new Error('Browser timer ran synchronously');
+const pendingRequest = fetch('enterprise-policy.json');
+if (!pendingRequest || typeof pendingRequest.then !== 'function') {
+  throw new Error('Pending fetch did not return a promise');
+}
+"""
+        app_path.write_text(probe + Path("apps/web/app.js").read_text(encoding="utf-8"),
+                            encoding="utf-8")
+    result_path = tmp_path / "result.json"
+    command = [
+        shutil.which("node"), str(Path("tests/fixtures/web_policy_submit_mock.cjs")),
+        str(app_path), "pending", str(result_path), "browser-probe",
+        str(result_path.with_suffix(".progress.json")),
+    ]
+    if mode == "synchronous-stall":
+        with pytest.raises(RuntimeError, match="exited nonzero"):
+            _run_web_policy_harness(command, result_path, "pending", "browser-probe", timeout=30)
+        assert "ERR_SCRIPT_EXECUTION_TIMEOUT" in result_path.with_suffix(".stderr.log").read_text()
+    else:
+        result = _run_web_policy_harness(command, result_path, "pending", "browser-probe", timeout=30)
+        assert result["saved"] == 0 and result["blocked"] == "enterprise policy is unavailable"
+    report = json.loads(result_path.with_suffix(".runner.json").read_text())
+    assert report["child_reaped"] is True and report["cleanup_requested"] is False
+    assert report["complete_result"] is (mode == "browser-context")
+    assert report.get("timed_out", False) is False
+
+
 def test_web_policy_temporary_progress_uses_same_bounded_parser_without_completion(tmp_path, monkeypatch):
     progress = tmp_path / "progress.json"
     records = [{"stage": "harness-start", "elapsed_ms": 0},

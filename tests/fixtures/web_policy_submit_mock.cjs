@@ -1,5 +1,5 @@
 const fs = require('node:fs');
-const path = require('node:path');
+const vm = require('node:vm');
 // Keep source, completion and progress separate so the parent can diagnose
 // where execution stopped without accepting an unobserved completion.
 const [appPath, scenario, outputPath, nonce, progressPath] = process.argv.slice(2);
@@ -13,7 +13,6 @@ function milestone(stage) {
 }
 milestone('harness-start');
 process.once('exit', () => milestone('exit-event'));
-const windowsPendingFallback = process.platform === 'win32' && scenario === 'pending';
 const records = new Map();
 const listeners = {};
 const harnessForm = {
@@ -38,9 +37,9 @@ const elements = {
 };
 const harnessSetTimeout = scenario === 'pending'
   ? callback => {
-      // Resolve the timeout branch immediately so the test exercises the
-      // production fallback without leaving a timer alive.
-      callback();
+      // Browser timers cannot run inside the current script. Settle the
+      // timeout after the pending-policy submit, without a real timer handle.
+      queueMicrotask(callback);
       return {};
     }
   : setTimeout;
@@ -63,17 +62,16 @@ const FormData = function () {
     ['target', 'edge.example.invalid'],
   ][Symbol.iterator]()};
 };
-if (!('navigator' in globalThis)) {
-  Object.defineProperty(globalThis, 'navigator', {value: {}, configurable: true});
-}
-// Load the actual application as CommonJS, avoiding an unnecessary VM context.
-Object.assign(globalThis, {
+// The browser script gets only its mocked browser APIs. Do not overwrite Node's
+// globals or load this classic script through Node's CommonJS module loader.
+const browser = {
   document: harnessDocument,
+  navigator: {},
   sessionStorage,
   FormData,
   setTimeout: harnessSetTimeout,
   clearTimeout: harnessClearTimeout,
-});
+};
 const validPolicy = {
   active: true,
   allow_user_profiles: true,
@@ -82,26 +80,21 @@ const validPolicy = {
 };
 let fetchResult;
 if (scenario === 'pending') {
-  if (windowsPendingFallback) {
-    // Keep this case synchronous so it exercises the unavailable-policy
-    // fallback without leaving an unresolved promise behind.
-    globalThis.fetch = () => {
-      throw new Error('enterprise policy is unavailable');
-    };
-  } else {
-    fetchResult = new Promise(() => {});
-    globalThis.fetch = () => fetchResult;
-  }
+  fetchResult = new Promise(() => {});
+  browser.fetch = () => fetchResult;
 } else if (scenario === 'reject') {
   fetchResult = Promise.reject(new Error('offline'));
-  globalThis.fetch = () => fetchResult;
+  browser.fetch = () => fetchResult;
 } else {
   const body = scenario === 'malformed' ? {active: false} : validPolicy;
   fetchResult = Promise.resolve({ok: true, json: async () => body});
-  globalThis.fetch = () => fetchResult;
+  browser.fetch = () => fetchResult;
 }
 milestone('require-enter');
-require(path.resolve(appPath));
+vm.runInNewContext(fs.readFileSync(appPath, 'utf8'), browser, {
+  filename: appPath,
+  timeout: 5000,
+});
 milestone('require-return');
 const finish = () => {
   milestone('submit-enter');

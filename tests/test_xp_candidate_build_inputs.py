@@ -32,17 +32,18 @@ def digest(data: bytes) -> str:
         (None, None),
         (("run_attempt", 2), "successful exact-tag build attempt"),
         (("head_sha", "2" * 40), "successful exact-tag build attempt"),
-        (("event", "workflow_dispatch"), "successful exact-tag build attempt"),
+        (("event", "pull_request"), "successful exact-tag build attempt"),
         (("path", ".github/workflows/ci.yml"), "legacy candidate workflow"),
         (("repository", {"full_name": "elsewhere/project"}), "different repository"),
     ],
 )
-def test_xp_candidate_authenticates_exact_github_run(monkeypatch, change, expected) -> None:
+@pytest.mark.parametrize("event", ["push", "workflow_dispatch"])
+def test_xp_candidate_authenticates_exact_github_run(monkeypatch, change, expected, event) -> None:
     checker = load_checker(monkeypatch, "check_xp_candidate_run")
     run = {
         "id": 100,
         "run_attempt": 1,
-        "event": "push",
+        "event": event,
         "head_branch": "v1.2.3",
         "head_sha": "1" * 40,
         "status": "completed",
@@ -135,6 +136,7 @@ def test_xp_candidate_authenticates_archive_bytes(tmp_path, monkeypatch, change,
     [
         ("", ""),
         ("preview", ""),
+        ("preview-tag", ""),
         ("attempt", "build receipt run_attempt does not match"),
         ("archive", "build receipt archive_sha256 does not match"),
         ("reference", "build receipt reference_assemblies does not match"),
@@ -161,7 +163,7 @@ def test_build_receipt_matches_exact_xp_candidate(
     exe[64:70] = b"PE\0\0\x64\x86"
     exe[88:90] = b"\x0b\x02"
     exe[196:200] = (16).to_bytes(4, "little")
-    if change not in {"unsigned", "preview"}:
+    if change not in {"unsigned", "preview", "preview-tag"}:
         exe[232:236] = (256).to_bytes(4, "little")
         exe[236:240] = (16).to_bytes(4, "little")
         exe[256:264] = b"\x10\0\0\0\0\x02\x02\0"
@@ -174,7 +176,7 @@ def test_build_receipt_matches_exact_xp_candidate(
             bundle.writestr(f"docs/{name}", (checker.ROOT / name).read_bytes())
         if change == "extra":
             bundle.writestr("bin/extra.dll", "unexpected runtime")
-    signed = change != "preview"
+    signed = change not in {"preview", "preview-tag"}
     signing = {
         "release_channel": "production-signed" if signed else "unsigned-preview",
         "production_trusted": signed,
@@ -196,7 +198,7 @@ def test_build_receipt_matches_exact_xp_candidate(
     identity = {
         "repository": "example/project",
         "tag": tag,
-        "source_ref": f"refs/tags/{tag}" if signed else "refs/heads/test",
+        "source_ref": "refs/heads/test" if change == "preview" else f"refs/tags/{tag}",
         "source_sha": "1" * 40,
         "run_id": "100",
         "run_attempt": "1",
@@ -234,9 +236,53 @@ def test_build_receipt_matches_exact_xp_candidate(
     receipt = tmp_path / "xp-build-inputs.json"
     receipt.write_text(json.dumps(record), encoding="utf-8")
 
-    errors = checker.check_build_inputs(receipt, assets, arch="x64", **identity)
+    errors = checker.check_build_inputs(receipt, assets, arch="x64", require_signing=signed, **identity)
 
     if expected:
         assert any(expected in error for error in errors)
     else:
         assert errors == []
+
+    if change == "preview-tag":
+        assert checker.check_build_inputs(receipt, assets, arch="x64", **identity) == []
+        signed_errors = checker.check_build_inputs(
+            receipt, assets, arch="x64", require_signing=True, **identity,
+        )
+        assert any("signing metadata" in error for error in signed_errors)
+
+
+def test_production_candidate_verification_requires_signing(tmp_path, monkeypatch) -> None:
+    checker = load_checker(monkeypatch, "check_xp_candidate_run")
+    monkeypatch.setattr(checker, "check_tag", lambda *_args: None)
+    monkeypatch.setattr(checker, "check_run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(checker, "verify_archive", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(checker, "extract_expected", lambda *_args: None)
+
+    job = {
+        "name": "Windows XP signed candidate (x64)",
+        "status": "completed", "conclusion": "success", "head_sha": "1" * 40,
+        "run_id": 100, "run_attempt": 1,
+        "completed_at": "2026-11-13T15:10:00Z",
+        "steps": [{
+            "name": "Verify XP candidate build receipt", "conclusion": "success",
+            "completed_at": "2026-11-13T15:05:00Z",
+        }],
+    }
+
+    class Client:
+        def json(self, endpoint):
+            if endpoint.endswith("/jobs?per_page=100"):
+                return {"jobs": [job]}
+            return {}
+
+    def check_inputs(_receipt, _assets, **kwargs):
+        assert kwargs["require_signing"] is True
+        raise ValueError("signed receipt verification reached")
+
+    monkeypatch.setattr(checker, "check_build_inputs", check_inputs)
+    with pytest.raises(ValueError, match="signed receipt verification reached"):
+        checker.verify_candidate(
+            Client(), repository="example/project", tag="v1.2.3", sha="1" * 40,
+            arch="x64", run_id=100, attempt=1, candidate=tmp_path / "candidate.zip",
+            candidate_id=50, receipt=tmp_path / "receipt.zip", receipt_id=51, assets_dir=tmp_path,
+        )

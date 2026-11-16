@@ -35,13 +35,15 @@ def check_run(
     expected = {
         "id": run_id,
         "run_attempt": attempt,
-        "event": "push",
         "head_branch": tag,
         "head_sha": sha,
         "status": "completed",
         "conclusion": "success",
     }
-    if any(run.get(key) != value for key, value in expected.items()):
+    if (
+        run.get("event") not in {"push", "workflow_dispatch"}
+        or any(run.get(key) != value for key, value in expected.items())
+    ):
         raise ValueError("XP evidence must come from the successful exact-tag build attempt")
     if not workflow_path_matches(run.get("path"), WORKFLOW, tag):
         raise ValueError("XP evidence run does not use the legacy candidate workflow")
@@ -155,6 +157,7 @@ def verify_candidate(
             root / "xp-build-inputs.json", extracted, repository=repository, arch=arch,
             tag=tag, source_ref=f"refs/tags/{tag}", source_sha=sha, run_id=str(run_id),
             run_attempt=str(attempt),
+            require_signing=True,
         )
         if errors:
             raise ValueError("\n".join(errors))

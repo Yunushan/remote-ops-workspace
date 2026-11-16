@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def test_windows_xp_legacy_candidate_workflow_passes_current_tree() -> None:
     checker = _load_checker()
@@ -51,6 +53,32 @@ def test_signed_candidate_requires_protected_release_environment() -> None:
     errors = checker.check_windows_xp_legacy_candidate_workflow(workflow)
 
     assert any("missing protected release environment" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "error"),
+    [
+        ("        default: false", "        default: true", "unsigned default signing input"),
+        (
+            "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.sign }}",
+            "if: ${{ github.ref_type != 'tag' }}",
+            "default unsigned candidate job",
+        ),
+        (
+            "if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign }}",
+            "if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}",
+            "explicit signing job",
+        ),
+        ('$SigningArguments = @("--require-signing")', "$SigningArguments = @()", "signed receipt verification"),
+    ],
+)
+def test_xp_signing_stays_explicit(old, new, error) -> None:
+    checker = _load_checker()
+    workflow = checker.WORKFLOW_PATH.read_text(encoding="utf-8").replace(old, new)
+
+    errors = checker.check_windows_xp_legacy_candidate_workflow(workflow)
+
+    assert any(f"missing {error}" in message for message in errors)
 
 
 def _load_checker():

@@ -383,6 +383,122 @@ def test_verified_manifest_rejects_replaced_layer(
         builder.verified_image_manifest(archive, image_id)
 
 
+@pytest.mark.parametrize("identity", ["config", "manifest", "index"])
+@pytest.mark.parametrize("depth", [1, 3])
+def test_verified_manifest_resolves_containerd_indexes(tmp_path: Path, identity, depth) -> None:
+    builder = _load_builder()
+    archive = tmp_path / "image.tar"
+    identities, manifest = _write_indexed_image_archive(archive, depth=depth)
+
+    assert builder.verified_image_manifest(archive, identities[identity]) == manifest
+    for unrelated in (IMAGE_ID, identities["attestation"]):
+        with pytest.raises(ValueError, match="does not match the smoke-tested image ID"):
+            builder.verified_image_manifest(archive, unrelated)
+
+
+def test_verified_manifest_limits_nested_indexes(tmp_path: Path) -> None:
+    builder = _load_builder()
+    archive = tmp_path / "image.tar"
+    identities, _manifest = _write_indexed_image_archive(
+        archive, depth=builder.MAX_IMAGE_INDEX_DEPTH,
+    )
+    with pytest.raises(ValueError, match="nested index depth limit"):
+        builder.verified_image_manifest(archive, identities["index"])
+
+
+def test_verified_manifest_checks_layers_below_tested_index(tmp_path: Path) -> None:
+    builder = _load_builder()
+    archive = tmp_path / "image.tar"
+    identities, _manifest = _write_indexed_image_archive(archive, different_layer=True)
+    with pytest.raises(ValueError, match="layer does not match the tested configuration"):
+        builder.verified_image_manifest(archive, identities["index"])
+
+
+@pytest.mark.parametrize("change", ["index-bytes", "index-size", "multiple-images", "attestation-only"])
+def test_verified_manifest_rejects_invalid_nested_index(tmp_path: Path, change) -> None:
+    builder = _load_builder()
+    archive = tmp_path / "image.tar"
+    identities, _manifest = _write_indexed_image_archive(archive)
+    with tarfile.open(archive, "r:") as source:
+        files = {member.name: source.extractfile(member).read() for member in source}
+    root = json.loads(files["index.json"])
+    entry = root["manifests"][0]
+    blob_name = "blobs/sha256/" + entry["digest"].removeprefix("sha256:")
+    if change == "index-bytes":
+        files[blob_name] = b"x" + files[blob_name][1:]
+        error = "blob digest mismatch"
+    elif change == "index-size":
+        entry["size"] += 1
+        error = "blob size mismatch"
+    else:
+        index = json.loads(files[blob_name])
+        if change == "multiple-images":
+            index["manifests"].append(index["manifests"][0])
+        else:
+            index["manifests"] = index["manifests"][1:]
+        data = json.dumps(index).encode()
+        entry["digest"] = "sha256:" + hashlib.sha256(data).hexdigest()
+        entry["size"] = len(data)
+        files["blobs/sha256/" + entry["digest"].removeprefix("sha256:")] = data
+        error = "must contain one manifest"
+    files["index.json"] = json.dumps(root).encode()
+    _write_archive_files(archive, files)
+
+    with pytest.raises(ValueError, match=error):
+        builder.verified_image_manifest(archive, identities["config"])
+
+
+def _write_archive_files(path: Path, files: dict[str, bytes]) -> None:
+    with tarfile.open(path, "w") as archive:
+        for name, data in files.items():
+            member = tarfile.TarInfo(name)
+            member.size = len(data)
+            archive.addfile(member, io.BytesIO(data))
+
+
+def _write_indexed_image_archive(
+    path: Path, *, depth: int = 1, different_layer: bool = False,
+) -> tuple[dict[str, str], bytes]:
+    config_id, manifest = _write_image_archive(path, different_layer=different_layer)
+    with tarfile.open(path, "r:") as archive:
+        files = {member.name: archive.extractfile(member).read() for member in archive}
+    entry = json.loads(files["index.json"])["manifests"][0]
+    manifest_id = entry["digest"]
+    attestation = json.dumps({
+        "schemaVersion": 2, "artifactType": "application/vnd.in-toto+json",
+    }).encode()
+    attestation_id = "sha256:" + hashlib.sha256(attestation).hexdigest()
+    files["blobs/sha256/" + attestation_id.removeprefix("sha256:")] = attestation
+    for _depth in range(depth):
+        data = json.dumps({
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "manifests": [entry, {
+                "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                "digest": attestation_id,
+                "size": len(attestation),
+                "annotations": {"vnd.docker.reference.type": "attestation-manifest"},
+                "platform": {"os": "unknown", "architecture": "unknown"},
+            }],
+        }).encode()
+        digest = "sha256:" + hashlib.sha256(data).hexdigest()
+        files["blobs/sha256/" + digest.removeprefix("sha256:")] = data
+        entry = {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": digest,
+            "size": len(data),
+        }
+    files["index.json"] = json.dumps({"schemaVersion": 2, "manifests": [entry]}).encode()
+    _write_archive_files(path, files)
+    identities = {
+        "config": config_id,
+        "manifest": manifest_id,
+        "index": digest,
+        "attestation": attestation_id,
+    }
+    return identities, manifest
+
+
 def _write_image_archive(
     path: Path,
     *,

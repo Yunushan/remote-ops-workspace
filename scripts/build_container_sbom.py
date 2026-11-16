@@ -25,6 +25,10 @@ IMAGE_MANIFEST_TYPES = {
     "application/vnd.oci.image.manifest.v1+json",
     "application/vnd.docker.distribution.manifest.v2+json",
 }
+IMAGE_INDEX_TYPES = {
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+}
 PLAIN_LAYER_TYPES = {
     "application/vnd.oci.image.layer.v1.tar",
     "application/vnd.docker.image.rootfs.diff.tar",
@@ -34,6 +38,7 @@ GZIP_LAYER_TYPES = {
     "application/vnd.docker.image.rootfs.diff.tar.gzip",
 }
 MAX_IMAGE_METADATA_BYTES = 1024 * 1024
+MAX_IMAGE_INDEX_DEPTH = 8
 
 
 def source_date_epoch() -> int:
@@ -176,6 +181,40 @@ def verified_blob(
     return data
 
 
+def resolve_image_manifest(archive: tarfile.TarFile, index: object) -> tuple[bytes, set[str]]:
+    identities: set[str] = set()
+    for _depth in range(MAX_IMAGE_INDEX_DEPTH):
+        if not isinstance(index, dict) or index.get("schemaVersion") != 2:
+            raise ValueError("image archive index must use schema version 2")
+        entries = index.get("manifests")
+        if not isinstance(entries, list) or not entries or len(entries) > 32:
+            raise ValueError("image archive must contain one manifest for the tested image")
+        runnable = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError("image archive has an invalid content descriptor")
+            annotations = entry.get("annotations")
+            if isinstance(annotations, dict) and annotations.get(
+                "vnd.docker.reference.type"
+            ) == "attestation-manifest":
+                # Attestations are siblings of the runnable manifest in BuildKit exports.
+                verified_blob(archive, entry, read_metadata=True)
+                continue
+            runnable.append(entry)
+        if len(runnable) != 1:
+            raise ValueError("image archive must contain one manifest for the tested image")
+        entry = runnable[0]
+        media_type = entry.get("mediaType")
+        if media_type not in IMAGE_MANIFEST_TYPES | IMAGE_INDEX_TYPES:
+            raise ValueError("image archive index must name a runnable image manifest")
+        data = verified_blob(archive, entry, read_metadata=True)
+        identities.add(entry["digest"])
+        if media_type in IMAGE_MANIFEST_TYPES:
+            return data, identities
+        index = json.loads(data)
+    raise ValueError("image archive exceeds the nested index depth limit")
+
+
 def verified_image_manifest(path: Path, image_id: str) -> bytes:
     with tarfile.open(path, mode="r:") as archive:
         index_member = archive_member(archive, "index.json")
@@ -185,18 +224,14 @@ def verified_image_manifest(path: Path, image_id: str) -> bytes:
         assert stream is not None
         with stream:
             index = json.load(stream)
-        entries = index.get("manifests") if isinstance(index, dict) else None
-        if not isinstance(entries, list) or len(entries) != 1:
-            raise ValueError("image archive must contain one manifest for the tested image")
-        entry = entries[0]
-        if not isinstance(entry, dict) or entry.get("mediaType") not in IMAGE_MANIFEST_TYPES:
-            raise ValueError("image archive index must name a runnable image manifest")
-        data = verified_blob(archive, entry, read_metadata=True)
+        data, identities = resolve_image_manifest(archive, index)
         manifest = json.loads(data)
         if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 2:
             raise ValueError("image archive manifest must use schema version 2")
         config = manifest.get("config")
-        if not isinstance(config, dict) or config.get("digest") != image_id:
+        if not isinstance(config, dict):
+            raise ValueError("image archive manifest must name its configuration")
+        if image_id != config.get("digest") and image_id not in identities:
             raise ValueError("image archive config does not match the smoke-tested image ID")
         layers = manifest.get("layers")
         if not isinstance(layers, list) or not layers:

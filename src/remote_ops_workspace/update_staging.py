@@ -113,7 +113,10 @@ class _StageFiles:
         digest = hashlib.sha256()
         total = 0
         # Exclusive create retains an interrupted partial for explicit refusal.
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+        if self.private_guard is None:
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
+        else:
+            descriptor = self.private_guard.create_private_file(temporary)
         try:
             # This function owns the raw descriptor until the one finally close.
             # The stream explicitly never owns it, including failed wrapping.

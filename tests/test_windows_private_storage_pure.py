@@ -47,6 +47,11 @@ class MockNative:
         self.created.append(path)
         self.exists = True
 
+    def create_private_file(self, path, user):
+        assert user == USER
+        self.created.append(path)
+        return 31
+
     def open_file(self, path):
         handle = len(self.opened) + 1
         self.opened.append((path, handle))
@@ -79,6 +84,16 @@ def test_existing_root_is_verified_and_never_rewritten():
     with storage.private_stage_guard(ROOT, _native=native):
         assert native.created == []
     assert native.closed == [4, 3, 2, 1]
+
+
+def test_private_file_creation_uses_retained_direct_child_and_token():
+    native = MockNative()
+    with storage.private_stage_guard(ROOT, _native=native) as guard:
+        path = ROOT + "\\private.tmp"
+        assert guard.create_private_file(path) == 31
+        with pytest.raises(storage.PrivateStorageError, match="private-child-containment-refused"):
+            guard.create_private_file(ROOT + "\\nested\\private.tmp")
+    assert native.created == [path]
 
 
 def test_create_refusal_retains_existing_root_and_releases_every_parent():

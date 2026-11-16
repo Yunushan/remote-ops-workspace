@@ -53,8 +53,8 @@
     },
     {
       "path": "src/remote_ops_workspace/features.py",
-      "sha256": "85f07ac0618e76ce9255c2d3035d15e0e0a0b182460e1e661ce56ce45ed9a6d8",
-      "size": 139479
+      "sha256": "e8b9bd9e11c858c114cb5cb8a5c076b7fc4af9eb73a0e07dd8d8b5e17d021ad2",
+      "size": 139946
     },
     {
       "path": "src/remote_ops_workspace/file_safety.py",

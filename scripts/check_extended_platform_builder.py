@@ -20,6 +20,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from check_platform_verified_evidence import (  # noqa: E402
+    LINUX_UNVERIFIED_SECURITY_PROVENANCE,
     RESERVED_WORKSPACE_ROOTS,
     directory_path_has_file_suffix,
 )
@@ -539,6 +540,9 @@ def is_concrete_security_provenance(value: str, field: str = "") -> bool:
     lowered = value.strip().lower()
     if (
         not lowered
+        or lowered in LINUX_UNVERIFIED_SECURITY_PROVENANCE
+        or not value.isprintable()
+        or value != value.strip()
         or any(marker in lowered for marker in FORBIDDEN_SECURITY_PROVENANCE_MARKERS)
         or has_reserved_security_provenance_url(value)
     ):
@@ -574,9 +578,9 @@ def security_patch_evidence() -> dict[str, Any]:
         "tls_minimum_modern_profiles": "TLS 1.2",
         "tls_preferred_modern_profiles": "TLS 1.3",
         "legacy_compatibility_profile": "isolated-opt-in",
-        "cve_patch_reviewed": True,
-        "security_update_channel": "distribution-security-updates",
-        "cve_review_reference": "distribution-security-tracker-and-release-notes",
+        "cve_patch_reviewed": os.environ.get("ROW_LINUX_CVE_PATCH_REVIEWED") == "true",
+        "security_update_channel": os.environ.get("ROW_LINUX_SECURITY_UPDATE_CHANNEL", ""),
+        "cve_review_reference": os.environ.get("ROW_LINUX_CVE_REVIEW_REFERENCE", ""),
     }
 
 

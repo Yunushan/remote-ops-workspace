@@ -205,10 +205,13 @@ def _open_lock_file(path: Path, *, shared: bool = False, _private_guard=None, _p
         flags |= os.O_NOFOLLOW
     created = False
     try:
-        descriptor = os.open(path, flags | os.O_EXCL, mode)
+        if _private_guard is None:
+            descriptor = os.open(path, flags | os.O_EXCL, mode)
+        else:
+            descriptor = _private_guard.create_private_file(path)
         created = True
     except FileExistsError:
-        descriptor = os.open(path, flags, mode)
+        descriptor = os.open(path, flags if _private_guard is None else flags & ~os.O_CREAT, mode)
     try:
         named = path.stat(follow_symlinks=False)
         opened = os.fstat(descriptor)

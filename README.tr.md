@@ -317,7 +317,7 @@ icinde oldugunu kontrol eder,
 CI evidence denetimi,
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements`
 ve `python scripts/check_repository_cleanup.py --require-clean` calistirir.
-Source ve native build isleri bu kapiya baglidir ve belirlenen commit SHA'yi
+Source ve native candidate isleri bu kapiya baglidir ve frozen commit SHA'yi
 checkout eder. Preflight icindeki protected
 platform komutu yalnizca readiness raporudur; 4/4 accepted-evidence kapisi
 degildir. Protected platform goal icin Linux i386, Linux armhf,
@@ -328,12 +328,13 @@ attempt degeri ile finalized accepted evidence
 olarak bulunmalidir. Aday envanteri olusturulup bagimsiz onay alindiktan sonra
 `release-promotion.yml` ayni degismez tag uzerinden baslatilir. Aday build run
 ID'si, envanter artifact ID'si ve hash degeri ile imzali kanit commit SHA'si
-verilir. Promotion isi bu commit'teki incelenmis platform kayitlarini okur ve
+verilir. Promotion isi bu commit'teki imzali compliance bundle registry'si ile
+korunan platform dosyalarini alir ve
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`
 ve
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`
 kapilarindan sonra
-`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
+`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo> --registry <signed-registry.json> --release-head-sha <release-sha>`
 ile sadece accepted kayitlarda ayni tag/repository/workflow file path/source-head/run-attempt
 bagli artifact ve review-bundle dosyalarini, indirilen source artifact native
 artifact `workflow_run.id`, `workflow_run.head_sha`,
@@ -344,9 +345,11 @@ artifact SHA-256 degerleri ve review-bundle size/SHA-256 degerleri finalized
 accepted kayitla eslestikten sonra release-assets icine alir, sonra
 `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
 ile import edilen review-bundle dosyalarini ve finalized public record JSON
-dosyalarini upload oncesi yeniden dogrular. Promotion isi dogrulanan protected
-evidence dosyalarini once taslak olarak olusturulan, attestation ile dogrulanan
-production envanterine dahil eder. Bu is
+dosyalarini draft olusturmadan once yeniden dogrular. Kaynak evidence
+workflow'lari bos upload'lari reddeder, gizli dosyalari haric tutar ve 90 gun
+retention kullanir. Exact-tag promotion isi accepted protected evidence
+dosyalarini draft-first, attested production inventory'sine dahil eder.
+Promotion isi
 `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
 calistirip publish-ready release-assets dizinindeki finalized record, review
 bundle, native artifact, checksum yan dosyasi, release manifesti ve accepted

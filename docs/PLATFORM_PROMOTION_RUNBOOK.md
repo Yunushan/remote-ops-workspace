@@ -1,9 +1,9 @@
 # Platform Promotion Runbook
 
 This runbook covers evidence collection for Linux i386, Linux armhf and
-Windows XP native-host targets. Use `configs/platform_verified_evidence.json`
-as the registry format. Production promotion validates the four finalized
-records in the release-specific registry from the signed compliance bundle.
+Windows XP native-host targets. Production promotion requires all four
+accepted records in the signed compliance bundle and all verification gates
+to pass. Use `configs/platform_verified_evidence.json` as the registry format.
 The default-versus-script-supported release boundary comes from
 `configs/release_matrix.json` and is checked by
 `python scripts/check_release_matrix.py`; this runbook carries the protected
@@ -28,13 +28,15 @@ same-source-SHA policy; create a new release tag from a commit containing the
 workflows instead of dispatching from `main` or weakening source provenance.
 
 Pushing the production tag starts `release.yml`, which builds and seals the
-standard candidate artifacts. After all four target workflows produce
+signed candidate inventory. After all four target workflows produce
 finalized accepted records for that tag, include the reviewed registry in the
 signed compliance bundle. Place the bundle on the `release-compliance-evidence`
-branch, then dispatch `release-promotion.yml` from the same immutable tag with
+branch. Dispatch `release-promotion.yml` from the same immutable tag with
 the candidate run and inventory identities and the exact evidence commit SHA.
 The promotion job verifies and imports the accepted records and then
-verifies the complete draft inventory before publication.
+verifies the complete draft inventory before publication. Follow the
+[production promotion sequence](PRODUCTION_READINESS.md#final-promotion-sequence)
+for the remaining review inputs and the post-publication audit.
 
 Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle matching runner for
@@ -105,6 +107,11 @@ python scripts/check_protected_platform_goal.py --release-tag v<project.version>
 python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version> --registry <signed-registry.json>
 python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo> --registry <signed-registry.json> --release-head-sha <release-sha>
 ```
+
+The dry-run binds the records to the supplied release tag and current
+checkout head. It checks completed source run IDs and attempts, workflow paths,
+source SHAs, and the complete artifact inventory before staging bytes. The
+accepted source artifact must be unique, non-empty and unexpired.
 
 After staging the exact release assets, verify the records, bundles and native
 packages against the same registry:
@@ -304,7 +311,7 @@ assets for the accepted target, so a promoted release must upload those evidence
 files. The final accepted-record JSON must exactly match the accepted registry
 entry, use canonical LF-terminated sorted JSON bytes, and bind its
 `finalized_record_release_asset_url`; review bundle files must match the exact
-size and SHA-256 recorded in `configs/platform_verified_evidence.json`, and
+size and SHA-256 recorded in the signed registry, and
 checksum sidecars must collectively cover every expected non-sidecar release
 file except the final accepted-record JSON, which is verified by content. The
 post-upload remote release audit also checks each published asset's positive

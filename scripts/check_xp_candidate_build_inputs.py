@@ -58,6 +58,7 @@ def check_build_inputs(
     run_attempt: str,
     signtool: Path | None = None,
     root: Path = ROOT,
+    require_signing: bool = False,
 ) -> list[str]:
     if not (
         arch in {"x86", "x64"}
@@ -84,7 +85,7 @@ def check_build_inputs(
     base = f"remote-ops-workspace-{tag}-windows-xp-{arch}-native"
     archive = assets_dir / f"{base}.zip"
     manifest = assets_dir / f"{base}-manifest.json"
-    signed = source_ref == f"refs/tags/{tag}"
+    signed = require_signing
     expected_signing = {
         "release_channel": "production-signed" if signed else "unsigned-preview",
         "production_trusted": signed,
@@ -214,18 +215,20 @@ def main() -> int:
     parser.add_argument("--assets-dir", type=Path, required=True)
     parser.add_argument("--arch", choices=("x86", "x64"), required=True)
     parser.add_argument("--tag", default=f"v{read_project_version()}")
+    parser.add_argument("--require-signing", action="store_true")
     parser.add_argument("--signtool", type=Path, help="Windows SDK SignTool for verifying the archived release executable")
     for option in ("repository", "source-ref", "source-sha", "run-id", "run-attempt"):
         parser.add_argument(f"--{option}", required=True)
     args = parser.parse_args()
     try:
-        if args.source_ref.startswith("refs/tags/") and args.signtool is None:
+        if args.require_signing and args.signtool is None:
             raise ValueError("signed XP build receipt verification requires --signtool")
         signtool = args.signtool.resolve(strict=True) if args.signtool is not None else None
         errors = check_build_inputs(
             args.receipt, args.assets_dir, repository=args.repository, arch=args.arch,
             tag=args.tag, source_ref=args.source_ref, source_sha=args.source_sha,
             run_id=args.run_id, run_attempt=args.run_attempt, signtool=signtool,
+            require_signing=args.require_signing,
         )
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired, zipfile.BadZipFile) as exc:
         errors = [str(exc)]

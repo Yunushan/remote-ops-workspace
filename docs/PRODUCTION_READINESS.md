@@ -165,15 +165,18 @@ Both artifact records include their numeric GitHub `artifact_id`. The review
 record binds the independent decision, the `.NET Framework 4` prerequisite
 and `runtime_redistributed: false`. Promotion repeats the live candidate check
 for both XP architectures using the signed records.
-Release-tag pushes build both XP candidates in the protected `release`
-environment. If the build fails, dispatch `xp-legacy-candidate.yml` from
-the same release tag for a fresh signed run. Both paths verify the live tag
-commit and its ancestry on the default branch. Both use the Windows
-certificate and RFC 3161 timestamp settings above and verify the signed
-executable before creating the
-archive. The XP build receipt and native manifest bind the resulting
-signature metadata to the candidate bytes. The XP host tests still have
-to demonstrate the behavior of those exact files on each target OS.
+Branch builds, release-tag pushes and default manual runs create unsigned
+XP candidates. To request signed candidates, dispatch the workflow against
+the release tag with `sign` enabled. That job uses the protected `release`
+environment, the Windows certificate and the RFC 3161 timestamp settings
+above. Tag builds and explicit signing runs verify the live release tag
+and its ancestry on the default branch before building. The signed run
+verifies the executable both before archiving and inside the resulting ZIP.
+The receipt checker receives `--require-signing` for that explicit choice,
+and production evidence verification requires the signed candidate job.
+The XP build receipt and native manifest bind signature metadata to the
+candidate bytes. The XP host tests still have to demonstrate the behavior
+of those exact files on each target OS.
 
 With signing configured and the tagged source qualified, the tag run builds
 and retains the signed and notarized candidate artifacts. It seals their

@@ -8,10 +8,10 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import tomllib
 import urllib.request
 from pathlib import Path
 
+import tomllib
 from check_release_license_compliance import (
     PROTECTED_LINUX_LOCK_DIR,
     ROOT,

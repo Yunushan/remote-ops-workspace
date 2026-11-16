@@ -46,14 +46,17 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
         "group: xp-legacy-candidate-${{ github.event.pull_request.number || github.ref }}": "PR or ref concurrency group",
         "cancel-in-progress: ${{ github.ref_type != 'tag' }}": "superseded branch cancellation with signed tag protection",
         "name: Windows XP signed candidate (${{ matrix.arch }})": "signed candidate matrix",
-        "if: ${{ github.ref_type != 'tag' }}": "non-tag candidate job",
-        "if: ${{ github.ref_type == 'tag' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}": "tag-only signing job",
+        "workflow_dispatch:\n    inputs:\n      sign:": "explicit signing input",
+        "type: boolean\n        default: false": "unsigned default signing input",
+        "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.sign }}": "default unsigned candidate job",
+        "if: ${{ github.event_name == 'workflow_dispatch' && inputs.sign }}": "explicit signing job",
+        "if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.sign) }}": "signed and tag source verification",
         "name: Require trusted XP release source": "trusted tag source gate",
         'test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"': "exact tag reference",
         'test "$GITHUB_SHA" = "$(git rev-parse \'refs/tags/row-xp-release^{commit}\')"': "live tag commit",
         'git merge-base --is-ancestor HEAD "refs/remotes/origin/$DEFAULT_BRANCH"': "trusted default branch ancestry",
         "environment: release": "protected release environment",
-        "ROW_XP_REQUIRE_SIGNING: ${{ github.ref_type == 'tag' && '1' || '0' }}": "tag signing requirement",
+        "ROW_XP_REQUIRE_SIGNING: ${{ github.event_name == 'workflow_dispatch' && inputs.sign && '1' || '0' }}": "explicit signing choice",
         "runs-on: windows-2025-vs2026": "modern Windows builder",
         "arch: [x86, x64]": "x86/x64 matrix",
         "uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6": "checkout",
@@ -85,9 +88,9 @@ def check_windows_xp_legacy_candidate_workflow(workflow: str | None = None) -> l
         errors.append("legacy candidate workflow must verify build evidence before upload")
     receipt_step = text[text.find("      - name: Verify XP candidate build receipt and archived signature"):upload]
     if not all(fragment in receipt_step for fragment in (
-        'if ($env:GITHUB_REF_TYPE -eq "tag") {\n'
+        'if ($env:ROW_XP_REQUIRE_SIGNING -eq "1") {\n'
         '            . ./scripts/find_windows_signtool.ps1\n'
-        '            $SignatureArgs = @("--signtool", (Find-WindowsSignTool))',
+        '            $SignatureArgs = @("--require-signing", "--signtool", (Find-WindowsSignTool))',
         '--run-attempt "$env:GITHUB_RUN_ATTEMPT" @SignatureArgs',
     )):
         errors.append("legacy candidate workflow must use SignTool on the archived executable before upload")

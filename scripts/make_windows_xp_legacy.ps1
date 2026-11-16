@@ -155,9 +155,6 @@ foreach ($Path in $References) {
 }
 
 $Signed = $env:ROW_XP_REQUIRE_SIGNING -eq "1"
-if ($env:GITHUB_REF_TYPE -eq "tag" -and !$Signed) {
-  throw "An XP release tag must produce signed candidates."
-}
 if ($Signed) {
   Sign-XpExecutable $HostExe
 }

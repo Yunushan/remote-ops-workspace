@@ -183,6 +183,7 @@ def verify_candidate_bytes(
             root / "xp-build-inputs.json", extracted, repository=repository, arch=arch,
             tag=tag, source_ref=f"refs/tags/{tag}", source_sha=sha, run_id=str(run_id),
             run_attempt=str(attempt),
+            require_signing=True,
         )
         if errors:
             raise ValueError("\n".join(errors))

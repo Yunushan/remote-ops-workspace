@@ -101,8 +101,8 @@
     },
     {
       "path": "src/remote_ops_workspace/state_lock.py",
-      "sha256": "9c55be3b474f51f93a09584080ae97273c29e7dd2519c7dc3b5a74269158d42f",
-      "size": 12584
+      "sha256": "87e314dd42c4d75438d5e0c8d92ebcfd1ebf2eb95b1763ca6c0b0d98cb21c9de",
+      "size": 12754
     },
     {
       "path": "src/remote_ops_workspace/storage.py",

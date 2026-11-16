@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import stat
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -1015,6 +1017,23 @@ def test_connected_dock_remaining_auth_monitoring_and_sftp_routes(
         terminal_panes_in=lambda _current: panes,
     )
     monkeypatch.setattr(dock, "main_window", lambda: shared_window)
+    real_lstat = Path.lstat
+    control_mode = None
+
+    def stat_control_path(path, *args, **kwargs):
+        if path != Path("controlled-path"):
+            return real_lstat(path, *args, **kwargs)
+        if control_mode is None:
+            raise FileNotFoundError(path)
+        return SimpleNamespace(st_mode=control_mode)
+
+    monkeypatch.setattr(Path, "lstat", stat_control_path)
+    assert dock.shared_ssh_control_path() == ""
+    control_mode = stat.S_IFREG
+    assert dock.shared_ssh_control_path() == ""
+    control_mode = stat.S_IFLNK
+    assert dock.shared_ssh_control_path() == ""
+    control_mode = stat.S_IFSOCK
     assert dock.shared_ssh_control_path() == "controlled-path"
     panes.pop()
     assert dock.shared_ssh_control_path() == ""

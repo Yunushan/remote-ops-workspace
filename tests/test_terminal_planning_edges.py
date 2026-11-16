@@ -415,6 +415,29 @@ def test_control_path_command_handles_empty_unsupported_and_supported_commands(
     assert "ControlPath=/tmp/control" in adapted
 
 
+@pytest.mark.parametrize("client", ["ssh", "sftp", "scp"])
+@pytest.mark.parametrize("jump_option", [
+    ["-vJ", "jump.example"],
+    ["-vJjump.example"],
+    ["-v", "-o", "ProxyJump jump.example"],
+])
+def test_shared_background_command_cannot_open_a_fallback_connection(
+    client: str, jump_option: list[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(terminal, "_is_native_windows", lambda: False)
+    destination = "operator@target.example"
+    command = [client, *jump_option, "-oProxyCommand=!example", "-oBatchMode=no", destination]
+
+    shared = ssh_command_with_control_path(command, "/tmp/control", master=False)
+    assert shared == [
+        client, "-o", "ControlMaster=no", "-o", "ControlPath=/tmp/control",
+        "-o", "BatchMode=yes", "-o", "ProxyCommand=false", "-o", "ProxyJump=none",
+        "-v", destination,
+    ]
+    master = ssh_command_with_control_path(command, "/tmp/control", master=True)
+    assert master[5:] == command[1:]
+
+
 def test_restored_terminal_plan_hardening_is_noop_or_note_idempotent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

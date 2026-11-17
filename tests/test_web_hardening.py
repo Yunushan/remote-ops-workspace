@@ -1482,6 +1482,49 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
     assert report["milestones"][-2:] == ["exit-requested", "exit-event"]
 
 
+@pytest.mark.skipif(
+    os.name != "nt" or shutil.which("node") is None,
+    reason="Windows Node.js is required",
+)
+@pytest.mark.parametrize("stage", ("result-write-enter", "exit-event"))
+def test_web_policy_progress_recovers_from_windows_rename_refusal(tmp_path, stage):
+    node = shutil.which("node")
+    assert node is not None
+    output_path = tmp_path / "web-policy-allow.json"
+    progress_path = output_path.with_suffix(".progress.json")
+    injection = tmp_path / "refuse-first-rename.cjs"
+    injection.write_text(
+        """
+const fs = require('node:fs');
+const rename = fs.renameSync;
+let refused = false;
+fs.renameSync = (source, destination) => {
+  if (!refused && destination === process.argv[6]) {
+    const entries = JSON.parse(fs.readFileSync(source, 'utf8'));
+    if (entries.at(-1).stage === REPLACEMENT_STAGE) {
+      refused = true;
+      fs.writeFileSync(destination + '.fault', 'EPERM');
+      throw Object.assign(new Error('injected Windows rename refusal'), {code: 'EPERM'});
+    }
+  }
+  return rename(source, destination);
+};
+""".replace("REPLACEMENT_STAGE", json.dumps(stage)),
+        encoding="utf-8",
+    )
+    nonce = secrets.token_hex(16)
+    command = [
+        node, "--require", str(injection),
+        str(Path("tests/fixtures/web_policy_submit_mock.cjs")),
+        str(Path("apps/web/app.js")), "allow", str(output_path), nonce, str(progress_path),
+    ]
+    result = _run_web_policy_harness(command, output_path, "allow", nonce, timeout=30)
+    report = json.loads(output_path.with_suffix(".runner.json").read_text())
+    assert Path(f"{progress_path}.fault").read_text() == "EPERM"
+    assert result["saved"] == 1
+    assert report["milestones"][-2:] == ["exit-requested", "exit-event"]
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
 @pytest.mark.parametrize("mode", ("browser-context", "synchronous-stall"))
 def test_web_policy_browser_context_isolated_and_stalls_fail(tmp_path, mode):

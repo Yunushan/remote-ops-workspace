@@ -113,6 +113,38 @@ def test_new_stage_requires_running_stable_newer_version(accepted_signature, ver
         channel.authenticate_manifest(manifest_bytes(data), policy(), now=NOW)
 
 
+@pytest.mark.parametrize("minimum", ["1.0.28", "1.0.9"])
+def test_v2_policy_accepts_the_exact_target_set_at_or_above_the_minimum(accepted_signature, minimum):
+    config = policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": minimum})
+    result = channel.authenticate_manifest(manifest_bytes(), config, now=NOW)
+    assert result.version == "1.0.28"
+    assert {row.target for row in result.artifacts} == set(config.settings["approved_targets"])
+
+
+def test_v1_policy_keeps_approved_targets_as_an_allowlist(accepted_signature):
+    data = manifest_data()
+    data["artifacts"].pop()
+    result = channel.authenticate_manifest(manifest_bytes(data), policy(), now=NOW)
+    assert [row.target for row in result.artifacts] == ["linux-x64"]
+
+
+@pytest.mark.parametrize("minimum", [None, 28, "", "v1.0.28", "1.0.028", "1.0.28-rc1"])
+def test_v2_policy_requires_a_canonical_minimum_version(minimum):
+    with pytest.raises(channel.UpdateError, match="^invalid-trust-policy$"):
+        policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": minimum})
+
+
+def test_policy_fields_are_exact_for_each_schema():
+    malformed = [
+        [policy_data()],
+        {**policy_data(), "schema": channel.POLICY_SCHEMA_V2},
+        {**policy_data(), "minimum_version": "1.0.28"},
+    ]
+    for data in malformed:
+        with pytest.raises(channel.UpdateError, match="^invalid-trust-policy$"):
+            policy(data)
+
+
 @pytest.mark.parametrize("stamp", ["2026-10-04T00:00:00Z", "2026-10-07T00:00:00Z",
                                  "2026-02-30T00:00:00Z", "2026-10-06T00:00:00+00:00"])
 def test_time_policy_refuses_stale_future_invalid_or_non_utc_text(accepted_signature, stamp):
@@ -515,6 +547,42 @@ def test_recovery_reauthenticates_current_policy_before_journal_trust(monkeypatc
     with pytest.raises(channel.UpdateError, match="manifest-authentication-refused"):
         channel.recover_update(policy(), tmp_path, current_home=tmp_path / "home")
     assert reached == []
+
+
+@pytest.mark.parametrize("recover", [False, True], ids=["stage", "recover"])
+@pytest.mark.parametrize("failure", ["update-version-below-policy-minimum", "update-target-set-incomplete"])
+def test_stage_and_recovery_refuse_signed_v2_policy_violations(
+    monkeypatch, tmp_path, private_boundary, accepted_signature, recover, failure
+):
+    data = manifest_data()
+    minimum = "1.0.28"
+    if failure == "update-version-below-policy-minimum":
+        minimum = "1.0.29"
+    else:
+        data["artifacts"].pop()
+    raw = manifest_bytes(data)
+    config = policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": minimum})
+    if recover:
+        (tmp_path / staging.MANIFEST).write_bytes(raw)
+    private_boundary.stage(tmp_path)
+    monkeypatch.setattr(channel, "exclusive_file_lock", lambda path, **_kwargs: mock_lease(path))
+    real_authenticate = channel.authenticate_manifest
+    monkeypatch.setattr(channel, "authenticate_manifest", lambda body, trust: real_authenticate(body, trust, now=NOW))
+    requested = []
+
+    def chunks(url, *_args):
+        requested.append(url)
+        assert url == config.settings["manifest_url"]
+        yield raw
+
+    monkeypatch.setattr(channel, "_chunks", chunks)
+    monkeypatch.setattr(channel, "_transaction", lambda *_args, **_kwargs: pytest.fail("refused manifest reached staging"))
+    operation = channel.recover_update if recover else channel.stage_update
+    with pytest.raises(channel.UpdateError, match=f"^{failure}$"):
+        operation(config, tmp_path, current_home=tmp_path / "home")
+    assert len(accepted_signature) == 1
+    assert requested == ([] if recover else [config.settings["manifest_url"]])
+    assert {item.name: item.read_bytes() for item in tmp_path.iterdir()} == ({staging.MANIFEST: raw} if recover else {})
 
 
 def test_stage_closes_all_owned_generators_after_atomic_refusal(monkeypatch, tmp_path, accepted_signature, private_boundary):

@@ -45,6 +45,7 @@ from .update_staging import (
 )
 
 POLICY_SCHEMA = "row.update-trust-policy.v1"
+POLICY_SCHEMA_V2 = "row.update-trust-policy.v2"
 POLICY_BYTES = 16384
 CHUNK_BYTES = 65536
 VERSION = re.compile(r"(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})")
@@ -123,9 +124,15 @@ def _approved_url(url, settings):
 
 def _policy_data(raw):
     data = _decode(raw, POLICY_BYTES)
-    _exact(data, {"schema", "enabled", "manifest_url", "public_key", "organization", "channel",
-                  "selected_target", "approved_targets", "allowed_origins", "limits"}, "invalid-trust-policy")
-    _need(data["schema"] == POLICY_SCHEMA and data["enabled"] is True, "update-policy-not-enabled")
+    fields = {"schema", "enabled", "manifest_url", "public_key", "organization", "channel",
+              "selected_target", "approved_targets", "allowed_origins", "limits"}
+    if type(data) is dict and data.get("schema") == POLICY_SCHEMA_V2:
+        fields.add("minimum_version")
+    _exact(data, fields, "invalid-trust-policy")
+    _need(data["schema"] in (POLICY_SCHEMA, POLICY_SCHEMA_V2) and data["enabled"] is True,
+          "update-policy-not-enabled")
+    if data["schema"] == POLICY_SCHEMA_V2:
+        _release_version(data["minimum_version"], "invalid-trust-policy")
     for key in ("organization", "channel"):
         _text(data[key], 128, "invalid-trust-policy")
     try:
@@ -251,8 +258,8 @@ def _private_stage(root, current_home):
     return root
 
 
-def _release_version(value):
-    _need(type(value) is str and VERSION.fullmatch(value) is not None, "invalid-release-version")
+def _release_version(value, refusal="invalid-release-version"):
+    _need(type(value) is str and VERSION.fullmatch(value) is not None, refusal)
     return tuple(int(piece) for piece in value.split("."))
 
 
@@ -303,7 +310,10 @@ def authenticate_manifest(raw, policy, *, now=None):
     _need(_verify_update_manifest_signature("ed25519", public_key=settings["public_key"],
                                           signature_value=signature["value"], payload=payload, errors=errors)
           and not errors, "manifest-authentication-refused")
-    _need(_release_version(data["version"]) > _release_version(__version__), "update-version-not-newer")
+    version = _release_version(data["version"])
+    _need(version > _release_version(__version__), "update-version-not-newer")
+    if settings["schema"] == POLICY_SCHEMA_V2:
+        _need(version >= _release_version(settings["minimum_version"]), "update-version-below-policy-minimum")
     stamp = data["generated_at"]
     _need(type(stamp) is str and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", stamp) is not None, "invalid-release-time")
     try:
@@ -338,6 +348,8 @@ def authenticate_manifest(raw, policy, *, now=None):
         _need(total <= settings["limits"]["total_asset_bytes"], "asset-set-byte-bound")
         artifacts.append(ManifestArtifact(row["target"], row["name"], row["url"], row["sha256"], row["size_bytes"]))
     _need(any(row.target == settings["selected_target"] for row in artifacts), "selected-target-absent")
+    if settings["schema"] == POLICY_SCHEMA_V2:
+        _need({row.target for row in artifacts} == set(settings["approved_targets"]), "update-target-set-incomplete")
     return AuthenticatedManifest(raw, data["version"], tuple(artifacts))
 
 

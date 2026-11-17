@@ -282,8 +282,8 @@ manifest. A payload checksum alone does not establish the publisher identity.
 
 ### Authenticated update staging and recovery
 
-The explicit `row customizer update-stage --policy PATH --stage DIRECTORY`
-proposal adds download and authenticated staging, not installation. Its companion
+`row customizer update-stage --policy PATH --stage DIRECTORY` downloads and
+authenticates an asset set for staging. Its companion
 `update-stage-recover` has the same arguments and revalidates completed inputs
 without downloading. `update-verify` retains its existing local verification,
 metadata-only and zero-byte contracts; the new staging policy separately refuses
@@ -299,6 +299,15 @@ approved GitHub release asset redirect origins, but no host is implicitly truste
 The manifest cannot supply or override this policy. The optional security extra
 must be installed; a missing Ed25519 backend refuses the operation.
 
+The example uses `row.update-trust-policy.v2`. Set `minimum_version` to the
+lowest approved stable version, using a value such as `1.2.3`. The signed
+release must be at least that version and strictly newer than the running
+application. The signed manifest must contain one or more assets for every
+configured `approved_targets` entry. To migrate an existing v1 policy, set the
+schema to v2, choose the minimum version, and set `approved_targets` to the
+exact target set published by the feed. An existing v1 policy continues to
+check the running version and treat approved targets as an allowlist.
+
 The original signed manifest bytes and **every declared approved asset** are
 staged. The selected target identifies future installer inputs; it never drops
 other signed entries. All filenames must be portable plain basenames and each
@@ -306,7 +315,8 @@ other signed entries. All filenames must be portable plain basenames and each
 authenticate the manifest before any asset URL is followed. After all exact
 sizes and SHA-256 values match, the unchanged complete manifest validator checks
 the original manifest and full local asset set. Recovery repeats authentication
-against the current policy and running version, validates the bound journal and
+against the current policy, including any new version floor or target set, and
+the running version. It validates the bound journal and
 rehashes every file. Journal flags and payload checksums never authorize recovery.
 
 On POSIX, use an existing empty private staging directory outside `ROW_HOME`,

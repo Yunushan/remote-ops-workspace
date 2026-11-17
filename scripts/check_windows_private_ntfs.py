@@ -281,11 +281,12 @@ def signed_fixture(origin: str = "https://publisher.invalid"):
         "payload_sha256": hashlib.sha256(payload).hexdigest(),
     }
     policy = {
-        "schema": channel.POLICY_SCHEMA,
+        "schema": channel.POLICY_SCHEMA_V2,
         "enabled": True,
         "manifest_url": manifest_url,
         "organization": organization,
         "channel": update_channel,
+        "minimum_version": manifest["version"],
         "selected_target": target,
         "approved_targets": [target],
         "allowed_origins": [origin],
@@ -441,18 +442,21 @@ def qualify_staging_entrypoints(parent: Path, observed: list[str]) -> None:
 
     native = storage._Native()
     with private_fixture(storage, native, parent, "row-entrypoint-ntfs-") as scratch:
+        def load_fixture_policy(name: str, document: bytes):
+            path = scratch / name
+            with storage.private_stage_guard(scratch, _native=native) as guard:
+                with os.fdopen(guard.create_private_file(path), "wb") as stream:
+                    stream.write(document)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            return channel.load_update_policy(path)
+
         stage = scratch / "stage"
         refused_stage = scratch / "untrusted-stage"
         with serve_https_fixture(scratch, bodies, requested) as (origin, cert_path):
             raw, assets, fixture_policy, _wrong_policy = signed_fixture(origin)
             bodies.update({"/manifest.json": raw, **{f"/{name}": body for name, body in assets.items()}})
-            policy_path = scratch / "policy.json"
-            with storage.private_stage_guard(scratch, _native=native) as guard:
-                with os.fdopen(guard.create_private_file(policy_path), "wb") as stream:
-                    stream.write(fixture_policy.document)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-            policy = channel.load_update_policy(policy_path)
+            policy = load_fixture_policy("policy.json", fixture_policy.document)
             require(policy.digest == fixture_policy.digest, "entrypoint-policy-digest-mismatch")
             try:
                 channel.stage_update(policy, refused_stage, current_home=data_dir())
@@ -481,9 +485,30 @@ def qualify_staging_entrypoints(parent: Path, observed: list[str]) -> None:
         )
         for name, body in assets.items():
             require((stage / name).read_bytes() == body, "entrypoint-staged-bytes-mismatch")
+        old_journal = (stage / channel.JOURNAL).read_bytes()
+        raised_floor = policy.settings
+        major, minor, patch_version = map(int, raised_floor["minimum_version"].split("."))
+        raised_floor["minimum_version"] = f"{major}.{minor}.{patch_version + 1}"
+        incomplete_targets = policy.settings
+        incomplete_targets["approved_targets"].append("windows-arm64")
+        for label, settings, refusal in (
+            ("raised-floor", raised_floor, "update-version-below-policy-minimum"),
+            ("required-target", incomplete_targets, "update-target-set-incomplete"),
+        ):
+            updated_policy = load_fixture_policy(f"{label}.json", json.dumps(settings).encode("utf-8"))
+            try:
+                channel.recover_update(updated_policy, stage, current_home=data_dir())
+            except channel.UpdateError as exc:
+                require(exc.args == (refusal,), "entrypoint-updated-policy-refusal-mismatch")
+            else:
+                raise ValueError("entrypoint-updated-policy-accepted")
+            require((stage / channel.JOURNAL).read_bytes() == old_journal,
+                    "entrypoint-refused-recovery-changed-journal")
+        require(requested == list(bodies), "entrypoint-recovery-requested-network")
     observed.extend((
         "windows-policy-stage-and-recovery-entrypoints",
         "windows-verified-https-stage-and-offline-recovery",
+        "windows-recovery-refuses-below-floor-and-missing-target",
     ))
 
 
@@ -532,6 +557,8 @@ FAILURE_CODES = frozenset({
     "entrypoint-policy-digest-mismatch",
     "entrypoint-fixture-request-mismatch", "entrypoint-recovery-requested-network",
     "entrypoint-stage-recovery-mismatch", "entrypoint-staged-bytes-mismatch",
+    "entrypoint-updated-policy-refusal-mismatch", "entrypoint-updated-policy-accepted",
+    "entrypoint-refused-recovery-changed-journal",
     "private-staging-platform-unqualified", "windows-policy-input-refused",
     "windows-private-boundary-refused", "update-stage-refused", "update-stage-io-refused",
     "unexpected-row-home-override", "expected-staging-interruption-missing", "staging-recovery-binding-mismatch",

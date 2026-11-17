@@ -94,7 +94,7 @@ The full verifier runs:
 - `python scripts/check_native_release_hardening.py` for native checksum sidecars, native manifest integrity, appimagetool verification hooks and native workflow boundaries;
 - `python scripts/check_native_installer_smoke.py` for the native installer smoke contract in `configs/native_installer_smoke.json`, including install, verify, upgrade and uninstall coverage for `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm` and AppImage release artifacts; every installed artifact must also run the `platforms --json` runtime-resource probe from its own packaged entrypoint and validate the bundled platform catalog, while Linux target-bound smoke retains source/run, target/architecture, target-scoped host label, evidence run ID and UTC observation proof lines;
 - `row x11 bundle-runtime --out <artifact-dir> --runtime <key> --source <x-server-binary> --system <target-system> --json` to assemble a packaged X server runtime root, then `python scripts/check_moba_xserver_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm-style packaged X server evidence, including bundled/packaged runtime hash binding, passing X11 smoke JSON and forwarded GUI screenshot hash verification;
-- `row mobapt bundle-runtime --out <artifact-dir> --tool <name> --tool-source <name=path> --package <name=version> --package-source <name=version=path> --json` to assemble a ROW-owned MobApt runtime/cache bundle, then `python scripts/check_mobapt_cache_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobApt-style offline package cache evidence, including ROW-owned runtime manifest hash binding, cached package archive hashes, install-test evidence and terminal-use proof;
+- `row mobapt bundle-runtime --out <artifact-dir> --tool <name> --tool-source <name=path> --package <name=version> --package-source <name=version=path> --json` assembles a ROW-owned MobApt runtime/cache bundle. Use `row mobapt cache-verify` to check local assembly. Capture offline execution before running `python scripts/check_mobapt_cache_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for release parity;
 - `row servers bundle-runtime <service> --out <artifact-dir> --runtime <runtime-key> --source <daemon-binary> --system <target-system> --json` to assemble packaged embedded-server daemon roots, then `python scripts/check_moba_server_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm-style embedded server evidence, including packaged daemon hash binding, auth/hardening policy checks and real client proof for every embedded service;
 - `row text evidence-bundle <profile> <remote-path> --out-dir <artifact-dir> --local <local-copy> --remote-sha256 <sha256> --open-evidence <open-proof> --save-review-evidence <review-proof> --save-evidence <upload-proof> --connected-evidence <connected-proof> --real-connected-session --sftp-browser-open --editor-tab-visible --json`, then `python scripts/check_moba_text_remote_edit_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaTextEditor-style connected remote-edit evidence, including editor-tab open proof, save conflict review proof, upload proof and SHA-bound real connected-session/SFTP-browser evidence;
 - `row macro evidence-bundle <macro> --profile <profile> --out-dir <artifact-dir> --capture-evidence <capture-proof> --review-evidence <review-proof> --replay-evidence <profile>=<replay-proof> --connected-profile <profile> --pane-id <profile>=<pane-id> --gui-record-button --gui-stop-button --gui-cancel-button --per-event-timing-captured --confirmation-prompt --cancel-prompt-verified --conflict-checked --real-connected-session --live-terminal-pane --per-keystroke-timing-replay --json`, then `python scripts/check_moba_macro_live_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm-style live macro evidence, including GUI record/stop/cancel controls, replay confirmation/cancel review and SHA-bound real connected-terminal per-keystroke timing proof;
@@ -116,6 +116,30 @@ The full verifier runs:
 - `python scripts/check_product_readiness.py` for coverage truth checks: adapter-ready and implementation-backed workflow inventory with JSON references, explicit separation from runtime production readiness, strict platform evidence registry validity, visible platform gaps and no blanket product or feature overrides;
 - `python -m pytest -q`;
 - a CLI smoke test in a temporary `ROW_HOME`, including init, profile listing, example SSH dry-run, doctor JSON, and feature coverage output.
+
+### MobApt release evidence
+
+Assemble the bundle with real tools and package archives. In an isolated
+environment for the declared release target, disable networking, install each
+cached archive, then invoke a bundled terminal executable to run an installed
+package. Capture each process's argument list, exit code, standard output and
+standard error. Keep the runtime manifest and archives used by those processes.
+
+Save each capture as a JSON receipt with `schema` set to
+`row.mobapt.offline-execution.v1` and `kind` set to `offline-install` or
+`terminal-probe`. Include `argv`, `exit_code`, `stdout`, `stderr`,
+`network_disabled: true`, `package`, `runtime_manifest_sha256`, and
+`package_archive_sha256`. Use the bundle as the working directory. The install
+argument list must include the archive's bundle-relative path. The terminal
+argument list starts with the executable's bundle-relative path and must
+produce output from the installed package.
+
+In `mobapt-cache-evidence.json`, update each `install_tests` entry and the
+`terminal_probe` object to reference the receipt filename and SHA-256. Record
+the same command as a shell-quoted argument list and name the tested package
+in `terminal_probe.package`. Run the release checker above. The independent
+review still binds the receipts and package bytes to the exact release and
+workflow attempt.
 
 For dependency-constrained environments, run:
 

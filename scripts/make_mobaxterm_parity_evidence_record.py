@@ -19,7 +19,6 @@ from remote_ops_workspace.moba_customizer import (  # noqa: E402
     validate_professional_deployment_evidence,
 )
 from remote_ops_workspace.moba_macros import validate_macro_live_replay_evidence  # noqa: E402
-from remote_ops_workspace.moba_mobapt import validate_mobapt_cache_evidence  # noqa: E402
 from remote_ops_workspace.moba_servers import validate_moba_server_release_evidence  # noqa: E402
 from remote_ops_workspace.moba_smartcards import validate_smartcard_release_evidence  # noqa: E402
 from remote_ops_workspace.moba_text import validate_moba_text_release_evidence  # noqa: E402
@@ -27,6 +26,7 @@ from remote_ops_workspace.x11 import validate_moba_x_server_release_evidence  # 
 from scripts.check_moba_transport_terminal_evidence import (  # noqa: E402
     validate_moba_transport_terminal_evidence,
 )
+from scripts.check_mobapt_cache_evidence import validate_mobapt_release_cache_evidence  # noqa: E402
 from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
     ARTICLE_SPECS,
     check_candidate_record,
@@ -37,7 +37,7 @@ Validator = Callable[..., Any]
 
 VALIDATORS: dict[str, Validator] = {
     "embedded-x-server": validate_moba_x_server_release_evidence,
-    "mobapt-unix-runtime": validate_mobapt_cache_evidence,
+    "mobapt-unix-runtime": validate_mobapt_release_cache_evidence,
     "embedded-server-suite": validate_moba_server_release_evidence,
     "moba-text-editor-diff": validate_moba_text_release_evidence,
     "macro-recorder": validate_macro_live_replay_evidence,

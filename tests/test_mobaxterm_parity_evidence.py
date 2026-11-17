@@ -63,6 +63,16 @@ def test_mobaxterm_record_generator_registers_eighth_article_validator() -> None
     assert validator.__name__ == "validate_moba_transport_terminal_evidence"
 
 
+def test_mobapt_registry_requires_the_release_execution_validator() -> None:
+    checker, generator = _load_checker(), _load_generator()
+    assert generator.VALIDATORS["mobapt-unix-runtime"].__name__ == "validate_mobapt_release_cache_evidence"
+    record = _complete_record(checker.ARTICLE_SPECS["mobapt-unix-runtime"])
+    record["article_id"] = "mobapt-unix-runtime"
+    assert checker.check_record(record) == ["mobapt-unix-runtime validation summary must record verified offline execution receipts"]
+    record["validation_summary"]["summary"]["offline_execution_receipts_verified"] = True
+    assert checker.check_record(record) == []
+
+
 def test_mobaxterm_parity_evidence_accepts_complete_article_record() -> None:
     checker = _load_checker()
     spec = checker.ARTICLE_SPECS["professional-deployment"]
@@ -332,6 +342,8 @@ def reviewed_release(tmp_path, monkeypatch):
                 "workflow_run_url": record["release_source"]["workflow_run_url"],
                 "run_attempt": 2,
             }
+        if article == "mobapt-unix-runtime":
+            record["validation_summary"]["summary"]["offline_execution_receipts_verified"] = True
         article_root = evidence_root / article
         article_root.mkdir()
         evidence = article_root / "evidence.json"

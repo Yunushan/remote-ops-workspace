@@ -5,11 +5,23 @@ const vm = require('node:vm');
 const [appPath, scenario, outputPath, nonce, progressPath] = process.argv.slice(2);
 const marks = [];
 const started = process.hrtime.bigint();
+const renameWait = new Int32Array(new SharedArrayBuffer(4));
 function milestone(stage) {
   marks.push({stage, elapsed_ms: Number((process.hrtime.bigint() - started) / 1000000n)});
   const temp = progressPath + '.tmp';
   fs.writeFileSync(temp, JSON.stringify(marks));
-  fs.renameSync(temp, progressPath);
+  // The exit callback also publishes progress and must finish synchronously.
+  for (let retries = 0; ; retries += 1) {
+    try {
+      fs.renameSync(temp, progressPath);
+      return;
+    } catch (error) {
+      if (process.platform !== 'win32' || error.code !== 'EPERM' || retries === 10) {
+        throw error;
+      }
+      Atomics.wait(renameWait, 0, 0, 10);
+    }
+  }
 }
 milestone('harness-start');
 process.once('exit', () => milestone('exit-event'));

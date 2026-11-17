@@ -830,6 +830,7 @@ def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
 
     assert "moba.top-stack-geometry" in requirement_ids
     assert "moba.top-menu-geometry" in requirement_ids
@@ -854,8 +855,8 @@ def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
     assert "mobaTitlebarControlKeys" in gui_source
     assert "mobaTopStackRibbonHeight" in gui_source
     assert "mobaTopStackQuickConnectY" in gui_source
-    assert "mobaTopMenuStaticX" in gui_source
-    assert "mobaTopMenuLabelFontSize" in gui_source
+    assert "mobaTopMenuStaticX" in menu_source
+    assert "mobaTopMenuLabelFontSize" in menu_source
     assert "EXPECTED_MOBA_TITLEBAR_CHROME" in checker_source
     assert "EXPECTED_MOBA_TOP_STACK_GEOMETRY" in checker_source
     assert "EXPECTED_MOBA_TOP_MENU_GEOMETRY" in checker_source
@@ -995,12 +996,13 @@ def test_mobaxterm_home_welcome_uses_shared_metadata() -> None:
 def test_mobaxterm_live_gui_uses_generated_ribbon_icons() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
+    menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
 
     assert "def moba_ribbon_icon" in gui_source
     assert "def draw_moba_ribbon_icon" in gui_source
     assert "gui_design_moba_ribbon_actions" in gui_source
     assert "gui_design_moba_top_menu_items" in gui_source
-    assert "mobaTopMenuKey" in gui_source
+    assert "mobaTopMenuKey" in menu_source
     assert "EXPECTED_MOBA_TOP_MENU_KEYS" in live_checker_source
     assert "mobaIconKey" in gui_source
     assert "mobaRibbonStaticX" in gui_source

@@ -281,6 +281,7 @@ def create_main_window(
         TransferQueueDialog,
         WorkflowDialog,
     )
+    from .gui_menus import add_moba_top_menu, add_primary_menu_action, add_reference_top_menu
     from .gui_workspace import MobaRailLabel, MobaWorkspaceTabBar, ResponsiveWorkspaceTabs
 
     def _application_clipboard() -> QClipboard:
@@ -1195,44 +1196,16 @@ def create_main_window(
                     "help": "help-topics",
                 },
             }
+            def invoke_menu_action(family: str, key: str) -> None:
+                self.run_product_menu_action(family, key)
+
             for moba_item in gui_design_moba_top_menu_items():
-                geometry = gui_design_moba_top_menu_geometry_for(moba_item.key)
-                menu = _required_gui_value(
-                    self.main_menu_bar.addMenu(moba_item.label),
-                    f"Moba top menu for {moba_item.key}",
-                )
-                menu.setObjectName("mobaTopMenu")
-                menu.setProperty("mobaTopMenuKey", moba_item.key)
-                menu.setProperty("mobaTopMenuLabel", moba_item.label)
-                menu.setProperty(
-                    "mobaTopMenuGeometryKeys",
+                menu, menu_action = add_moba_top_menu(
+                    self.main_menu_bar,
+                    moba_item,
+                    gui_design_moba_top_menu_geometry_for(moba_item.key),
                     [entry.key for entry in gui_design_moba_top_menu_geometry()],
                 )
-                menu.setProperty("mobaTopMenuStaticX", geometry.static_x)
-                menu.setProperty("mobaTopMenuWidth", geometry.width)
-                menu.setProperty("mobaTopMenuLabelY", geometry.label_y)
-                menu.setProperty("mobaTopMenuLabelFontSize", geometry.label_font_size)
-                menu.setProperty("mobaTopMenuGapAfter", geometry.gap_after)
-                menu.setToolTip(moba_item.tooltip)
-                menu_action = _required_gui_value(
-                    menu.menuAction(),
-                    f"Moba menu action for {moba_item.key}",
-                )
-                menu_action.setProperty("mobaTopMenuKey", moba_item.key)
-                menu_action.setProperty("mobaTopMenuLabel", moba_item.label)
-                menu_action.setProperty(
-                    "mobaTopMenuGeometryKeys",
-                    [entry.key for entry in gui_design_moba_top_menu_geometry()],
-                )
-                menu_action.setProperty("mobaTopMenuStaticX", geometry.static_x)
-                menu_action.setProperty("mobaTopMenuWidth", geometry.width)
-                menu_action.setProperty("mobaTopMenuLabelY", geometry.label_y)
-                menu_action.setProperty(
-                    "mobaTopMenuLabelFontSize",
-                    geometry.label_font_size,
-                )
-                menu_action.setProperty("mobaTopMenuGapAfter", geometry.gap_after)
-                menu_action.setToolTip(moba_item.tooltip)
                 self.moba_top_menus.append(menu)
                 self.moba_top_menu_actions.append(menu_action)
                 if moba_item.key == "sessions":
@@ -1243,119 +1216,56 @@ def create_main_window(
                     raise RuntimeError(
                         f"missing Moba top-menu handler: {moba_item.key}"
                     )
-                action = _required_gui_value(
-                    menu.addAction(moba_item.primary_action),
-                    f"Moba primary menu action for {moba_item.key}",
-                )
-                action.triggered.connect(
-                    lambda _checked=False, action_key=moba_item.key: self.run_product_menu_action(
-                        "mobaxterm", action_key
-                    )
-                )
-                action.setProperty("menuActionKey", moba_item.key)
-                action.setProperty("menuActionFamily", "mobaxterm")
-                action.setProperty(
-                    "menuActionOperation",
-                    self.product_menu_operations["mobaxterm"][moba_item.key],
+                add_primary_menu_action(
+                    menu,
+                    moba_item.primary_action,
+                    display_name="Moba",
+                    family="mobaxterm",
+                    key=moba_item.key,
+                    operation=self.product_menu_operations["mobaxterm"][moba_item.key],
+                    invoke=invoke_menu_action,
                 )
 
-            securecrt_chrome = gui_design_securecrt_top_chrome()
             self.securecrt_top_menus: list[QMenu] = []
             self.securecrt_top_menu_actions: list[QAction] = []
-            for securecrt_item in securecrt_chrome.menu_items:
-                menu = _required_gui_value(
-                    self.main_menu_bar.addMenu(securecrt_item.label),
-                    f"SecureCRT top menu for {securecrt_item.key}",
-                )
-                menu.setObjectName("secureCrtTopMenu")
-                menu.setProperty("secureCrtTopMenuKey", securecrt_item.key)
-                menu.setProperty("secureCrtTopMenuLabel", securecrt_item.label)
-                menu.setProperty(
-                    "secureCrtTopMenuPrimaryAction",
-                    securecrt_item.primary_action,
-                )
-                menu.setToolTip(securecrt_item.tooltip)
-                menu_action = _required_gui_value(
-                    menu.menuAction(),
-                    f"SecureCRT menu action for {securecrt_item.key}",
-                )
-                menu_action.setProperty("secureCrtTopMenuKey", securecrt_item.key)
-                menu_action.setProperty("secureCrtTopMenuLabel", securecrt_item.label)
-                menu_action.setProperty(
-                    "secureCrtTopMenuPrimaryAction",
-                    securecrt_item.primary_action,
-                )
-                menu_action.setToolTip(securecrt_item.tooltip)
-                self.securecrt_top_menus.append(menu)
-                self.securecrt_top_menu_actions.append(menu_action)
-                if securecrt_item.key not in self.product_menu_callbacks["securecrt"]:
-                    raise RuntimeError(
-                        f"missing SecureCRT top-menu handler: {securecrt_item.key}"
-                    )
-                action = _required_gui_value(
-                    menu.addAction(securecrt_item.primary_action),
-                    f"SecureCRT primary menu action for {securecrt_item.key}",
-                )
-                action.triggered.connect(
-                    lambda _checked=False, action_key=securecrt_item.key: self.run_product_menu_action(
-                        "securecrt", action_key
-                    )
-                )
-                action.setProperty("menuActionKey", securecrt_item.key)
-                action.setProperty("menuActionFamily", "securecrt")
-                action.setProperty(
-                    "menuActionOperation",
-                    self.product_menu_operations["securecrt"][securecrt_item.key],
-                )
-
-            mremoteng_chrome = gui_design_mremoteng_top_chrome()
             self.mremoteng_top_menus: list[QMenu] = []
             self.mremoteng_top_menu_actions: list[QAction] = []
-            for mremoteng_item in mremoteng_chrome.menu_items:
-                menu = _required_gui_value(
-                    self.main_menu_bar.addMenu(mremoteng_item.label),
-                    f"mRemoteNG top menu for {mremoteng_item.key}",
-                )
-                menu.setObjectName("mRemoteNgTopMenu")
-                menu.setProperty("mRemoteNgTopMenuKey", mremoteng_item.key)
-                menu.setProperty("mRemoteNgTopMenuLabel", mremoteng_item.label)
-                menu.setProperty(
-                    "mRemoteNgTopMenuPrimaryAction",
-                    mremoteng_item.primary_action,
-                )
-                menu.setToolTip(mremoteng_item.tooltip)
-                menu_action = _required_gui_value(
-                    menu.menuAction(),
-                    f"mRemoteNG menu action for {mremoteng_item.key}",
-                )
-                menu_action.setProperty("mRemoteNgTopMenuKey", mremoteng_item.key)
-                menu_action.setProperty("mRemoteNgTopMenuLabel", mremoteng_item.label)
-                menu_action.setProperty(
-                    "mRemoteNgTopMenuPrimaryAction",
-                    mremoteng_item.primary_action,
-                )
-                menu_action.setToolTip(mremoteng_item.tooltip)
-                self.mremoteng_top_menus.append(menu)
-                self.mremoteng_top_menu_actions.append(menu_action)
-                if mremoteng_item.key not in self.product_menu_callbacks["mremoteng"]:
-                    raise RuntimeError(
-                        f"missing mRemoteNG top-menu handler: {mremoteng_item.key}"
+            reference_menus = (
+                (
+                    "securecrt",
+                    "SecureCRT",
+                    "secureCrtTopMenu",
+                    gui_design_securecrt_top_chrome,
+                    self.securecrt_top_menus,
+                    self.securecrt_top_menu_actions,
+                ),
+                (
+                    "mremoteng",
+                    "mRemoteNG",
+                    "mRemoteNgTopMenu",
+                    gui_design_mremoteng_top_chrome,
+                    self.mremoteng_top_menus,
+                    self.mremoteng_top_menu_actions,
+                ),
+            )
+            for family, display_name, object_name, top_chrome, menus, menu_actions in reference_menus:
+                for item in top_chrome().menu_items:
+                    menu, menu_action = add_reference_top_menu(
+                        self.main_menu_bar, item, display_name=display_name, object_name=object_name,
                     )
-                action = _required_gui_value(
-                    menu.addAction(mremoteng_item.primary_action),
-                    f"mRemoteNG primary menu action for {mremoteng_item.key}",
-                )
-                action.triggered.connect(
-                    lambda _checked=False, action_key=mremoteng_item.key: self.run_product_menu_action(
-                        "mremoteng", action_key
+                    menus.append(menu)
+                    menu_actions.append(menu_action)
+                    if item.key not in self.product_menu_callbacks[family]:
+                        raise RuntimeError(f"missing {display_name} top-menu handler: {item.key}")
+                    add_primary_menu_action(
+                        menu,
+                        item.primary_action,
+                        display_name=display_name,
+                        family=family,
+                        key=item.key,
+                        operation=self.product_menu_operations[family][item.key],
+                        invoke=invoke_menu_action,
                     )
-                )
-                action.setProperty("menuActionKey", mremoteng_item.key)
-                action.setProperty("menuActionFamily", "mremoteng")
-                action.setProperty(
-                    "menuActionOperation",
-                    self.product_menu_operations["mremoteng"][mremoteng_item.key],
-                )
 
         def run_product_menu_action(self, family: str, action_key: str) -> None:
             callbacks = self.product_menu_callbacks.get(family)

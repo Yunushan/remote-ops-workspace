@@ -924,9 +924,12 @@
               "item.label"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "mobaTopMenuKey",
-              "mobaTopMenuLabel",
+              "add_moba_top_menu",
               "gui_design_moba_top_menu_items"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "mobaTopMenuKey",
+              "mobaTopMenuLabel"
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TOP_MENU_KEYS",
@@ -952,7 +955,7 @@
               "geometry.static_x",
               "geometry.label_font_size"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_menus.py": [
               "mobaTopMenuStaticX",
               "mobaTopMenuWidth",
               "mobaTopMenuLabelFontSize"
@@ -4168,8 +4171,11 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_menu_bar_for_design",
-              "secureCrtTopMenuKey",
+              "add_reference_top_menu",
               "secureCrtTopToolbarIconKey"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "secureCrtTopMenuKey"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_securecrt_title_bar",
@@ -9483,8 +9489,11 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_menu_bar_for_design",
-              "mRemoteNgTopMenuKey",
+              "add_reference_top_menu",
               "mRemoteNgTopToolbarIconKey"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "mRemoteNgTopMenuKey"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_mremoteng_title_bar",

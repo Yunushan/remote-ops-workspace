@@ -12507,20 +12507,12 @@ def create_main_window(
                 return
             try:
                 layout = self.layout_store.get(name)
-                profiles = self.layout_launch_profiles(layout)
-                sessions = build_layout_terminal_sessions(
-                    layout,
-                    self.store,
-                    surface="gui",
-                )
+                sessions = self.layout_launch_sessions(layout)
                 plans = [plan for plan, _profile in sessions]
-                # Resolve through the same session snapshot used for the
-                # plans. The preflight above is kept explicit so GUI policy
-                # checks remain visible at this execution surface.
                 profiles = [profile for _plan, profile in sessions]
                 widget = self.layout_widget(layout, plans, profiles)
                 self.bind_layout_resize_persistence(layout.name, widget)
-                for plan, profile in zip(plans, profiles, strict=True):
+                for plan, profile in sessions:
                     self.remember_terminal_plan(plan, profile=profile)
                 tab_index = self.add_workspace_tab(widget, layout.name, role="layout")
                 self.log.append(f"LAYOUT: {layout.name} ({len(plans)} panes)")
@@ -12535,16 +12527,17 @@ def create_main_window(
                 )
 
         def layout_launch_profiles(self, layout: Layout) -> list[Profile]:
+            return [profile for _plan, profile in self.layout_launch_sessions(layout)]
+
+        def layout_launch_sessions(self, layout: Layout) -> list[tuple[TerminalPanePlan, Profile]]:
             sessions = build_layout_terminal_sessions(
                 layout,
                 self.store,
                 surface="gui",
             )
-            profiles: list[Profile] = []
             for _plan, profile in sessions:
                 assert_profile_launch_allowed(profile, surface="gui")
-                profiles.append(profile)
-            return profiles
+            return sessions
 
         def layout_widget(
             self,

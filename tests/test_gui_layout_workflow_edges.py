@@ -250,6 +250,19 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     bindings: list[str] = []
     remembered: list[str] = []
     started: list[tuple[object, int]] = []
+    resolved_layouts: list[Layout] = []
+    checked_profiles: list[Profile] = []
+
+    def resolve_sessions(layout: Layout, *_args, **_kwargs):
+        resolved_layouts.append(layout)
+        return list(zip(plans, profiles, strict=True))
+
+    original_launch_check = gui.assert_profile_launch_allowed
+
+    def check_profile(profile: Profile, *, surface: str) -> None:
+        original_launch_check(profile, surface=surface)
+        checked_profiles.append(profile)
+
     original_build_layout_terminal_sessions = gui.build_layout_terminal_sessions
     original_layout_widget = window.layout_widget
     original_bind_layout_resize_persistence = window.bind_layout_resize_persistence
@@ -261,8 +274,9 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     monkeypatch.setattr(
         gui,
         "build_layout_terminal_sessions",
-        lambda *_args, **_kwargs: list(zip(plans, profiles, strict=True)),
+        resolve_sessions,
     )
+    monkeypatch.setattr(gui, "assert_profile_launch_allowed", check_profile)
     monkeypatch.setattr(
         window,
         "layout_widget",
@@ -295,6 +309,7 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
         "build_layout_terminal_sessions",
         original_build_layout_terminal_sessions,
     )
+    monkeypatch.setattr(gui, "assert_profile_launch_allowed", original_launch_check)
     monkeypatch.setattr(window, "layout_widget", original_layout_widget)
     monkeypatch.setattr(
         window,
@@ -318,6 +333,8 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
         "start_terminal_pane_when_active",
         original_start_terminal_pane,
     )
+    assert resolved_layouts == [created]
+    assert checked_profiles == profiles
 
     actual_layout = Layout(
         name="launch-profiles",

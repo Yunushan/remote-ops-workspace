@@ -542,4 +542,50 @@ def test_main_audits_offline_protection_and_exact_sha_check_runs(monkeypatch, ca
     assert result == 0
     output = capsys.readouterr().out
     assert f"SHA {SHA}" in output
-    assert "immutable-tag v1.2.3" in output
+    assert "tag-ruleset v1.2.3" in output
+
+
+@pytest.mark.parametrize("kind", ["lightweight", "annotated", "mismatched", "missing"])
+def test_main_binds_live_release_tag_to_qualified_sha(monkeypatch, capsys, kind: str) -> None:
+    monkeypatch.setattr(governance, "fetch_protection", lambda *_: _protection())
+    monkeypatch.setattr(governance, "fetch_check_runs", lambda *_: _check_runs())
+    monkeypatch.setattr(governance, "fetch_check_suites", lambda *_: _check_suites())
+    monkeypatch.setattr(governance, "fetch_workflow_runs", lambda *_: _workflow_runs())
+    monkeypatch.setattr(governance, "fetch_tag_rulesets", lambda *_: _tag_rulesets())
+
+    api = "https://api.github.com/repos/fixture/fixture"
+    tag_ref = f"{api}/git/ref/tags/v1.2.3"
+    annotated_sha = "b" * 40
+    requests = []
+
+    def fake_fetch(url: str, *, label: str) -> dict:
+        requests.append(url)
+        assert label == "release tag"
+        if kind == "annotated" and url == f"{api}/git/tags/{annotated_sha}":
+            return {"object": {"sha": SHA, "type": "commit"}}
+        assert url == tag_ref
+        if kind == "missing":
+            raise RuntimeError("release tag request failed with HTTP 404")
+        if kind == "annotated":
+            return {"object": {"sha": annotated_sha, "type": "tag"}}
+        commit = "c" * 40 if kind == "mismatched" else SHA
+        return {"object": {"sha": commit, "type": "commit"}}
+
+    monkeypatch.setattr(governance, "_fetch_github_object", fake_fetch)
+    result = governance.main(
+        ["--repository", "fixture/fixture", "--sha", SHA, "--release-tag", "v1.2.3"]
+    )
+    output = capsys.readouterr()
+    if kind in ("lightweight", "annotated"):
+        assert result == 0
+        assert "immutable-tag v1.2.3" in output.out
+    elif kind == "mismatched":
+        assert result == 1
+        assert "live release tag refs/tags/v1.2.3 resolves to" in output.err
+    else:
+        assert result == 1
+        assert "HTTP 404" in output.err
+    expected_urls = [tag_ref]
+    if kind == "annotated":
+        expected_urls.append(f"{api}/git/tags/{annotated_sha}")
+    assert requests == expected_urls

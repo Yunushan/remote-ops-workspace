@@ -25,6 +25,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
+if __package__:
+    from .check_platform_evidence_source_ref import resolve_tag_commit
+else:
+    from check_platform_evidence_source_ref import resolve_tag_commit
+
 DEFAULT_BRANCH = "main"
 REQUIRED_CHECKS = (
     "Repository policy and lint",
@@ -736,6 +741,21 @@ def fetch_tag_rulesets(repository: str) -> dict[str, Any]:
     return {"total_count": len(details), "rulesets": details}
 
 
+def audit_live_release_tag(repository: str, tag: str, expected_sha: str) -> list[str]:
+    def fetch(endpoint: str) -> dict[str, Any]:
+        return _fetch_github_object(
+            f"https://api.github.com/repos/{repository}/{endpoint}",
+            label="release tag",
+        )
+
+    resolved_sha, errors = resolve_tag_commit(fetch, tag)
+    if errors:
+        return errors
+    if resolved_sha != expected_sha:
+        return [f"live release tag refs/tags/{tag} resolves to {resolved_sha}, expected {expected_sha}"]
+    return []
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", help="GitHub repository in owner/name form")
@@ -745,8 +765,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check-runs-json", type=Path, help="offline check-runs response fixture")
     parser.add_argument("--check-suites-json", type=Path, help="offline check-suites response fixture")
     parser.add_argument("--workflow-runs-json", type=Path, help="offline Actions workflow-runs fixture")
-    parser.add_argument("--release-tag", help="exact vX.Y.Z release tag that must be immutable")
-    parser.add_argument("--tag-rulesets-json", type=Path, help="offline detailed tag-rulesets fixture")
+    parser.add_argument(
+        "--release-tag",
+        help="audit protection for a vX.Y.Z tag and, with --sha, verify its live commit",
+    )
+    parser.add_argument(
+        "--tag-rulesets-json",
+        type=Path,
+        help="offline detailed tag-rulesets fixture for a policy-only tag audit",
+    )
     parser.add_argument("--required-check", action="append", dest="required_checks")
     parser.add_argument(
         "--require-review",
@@ -825,6 +852,8 @@ def main(argv: list[str] | None = None) -> int:
                 else fetch_tag_rulesets(repository)
             )
             errors.extend(audit_tag_rulesets(tag_rulesets, release_tag))
+            if sha and not args.tag_rulesets_json:
+                errors.extend(audit_live_release_tag(repository, release_tag, sha))
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"repository governance: {exc}", file=sys.stderr)
         return 1
@@ -835,7 +864,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     suffix = f" SHA {sha}" if sha else ""
     if release_tag:
-        suffix += f" immutable-tag {release_tag}"
+        tag_scope = "immutable-tag" if sha and not args.tag_rulesets_json else "tag-ruleset"
+        suffix += f" {tag_scope} {release_tag}"
     print(f"repository governance passed: {repository}@{args.branch}{suffix}")
     return 0
 

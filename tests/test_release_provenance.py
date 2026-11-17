@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 def _load_checker():
@@ -174,8 +177,12 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
         ("malformed-page", "paginated lists"),
         ("missing-standard", "published release assets missing standard files"),
         ("wrong-bytes", "digest must match downloaded bytes"),
+        ("replaced-before-attestation", "statement does not contain the downloaded asset digest"),
+        ("replaced-after-attestation", "local release asset changed during verification"),
+        ("wrong-tag-commit", "live release tag v1.2.3 must resolve to the attested source commit"),
         ("wrong-source", "source repository digest"),
         ("failed-run", "no common certificate-bound release workflow run attempt completed successfully"),
+        ("wrong-publication-time", "release publication time falls outside the successful publication step"),
     ],
 )
 def test_single_asset_cli_checks_the_exact_published_release(
@@ -190,6 +197,9 @@ def test_single_asset_cli_checks_the_exact_published_release(
     asset = tmp_path / "installer.bin"
     asset.write_bytes(b"tampering" if condition == "wrong-bytes" else b"installer")
     release = _release(checker, published, repository, tag)
+    release["published_at"] = (
+        "2026-11-01T12:03:00Z" if condition == "wrong-publication-time" else "2026-11-01T12:02:00Z"
+    )
     installer, other = release.pop("assets")
     if condition == "mutable":
         release["immutable"] = False
@@ -210,15 +220,23 @@ def test_single_asset_cli_checks_the_exact_published_release(
             return release
         if args == ["api", "--paginate", "--slurp", f"repos/{repository}/releases/77/assets?per_page=100"]:
             return pages
+        if args == ["api", "--hostname", "github.com", f"repos/{repository}/git/ref/tags/{tag}"]:
+            return {"object": {"type": "tag", "sha": "d" * 40}}
+        if args == ["api", "--hostname", "github.com", f"repos/{repository}/git/tags/{'d' * 40}"]:
+            return {"object": {"type": "commit", "sha": "b" * 40 if condition == "wrong-tag-commit" else sha}}
         if args[:3] == ["attestation", "verify", str(asset)]:
+            if condition == "replaced-before-attestation":
+                asset.write_bytes(b"replaced!")
             return _attestation(
                 checker,
                 repository=repository,
                 sha="b" * 40 if condition == "wrong-source" else sha,
                 tag=tag,
-                digest=hashlib.sha256(b"installer").hexdigest(),
+                digest=hashlib.sha256(asset.read_bytes()).hexdigest(),
             )
         if args == ["api", f"repos/{repository}/actions/runs/123/attempts/2"]:
+            if condition == "replaced-after-attestation":
+                asset.write_bytes(b"replaced!")
             return {
                 "id": 123,
                 "run_attempt": 2,
@@ -231,6 +249,25 @@ def test_single_asset_cli_checks_the_exact_published_release(
                 "repository": {"full_name": repository},
                 "head_repository": {"full_name": repository},
             }
+        if args == [
+            "api", "--hostname", "github.com", "--paginate", "--slurp",
+            f"repos/{repository}/actions/runs/123/attempts/2/jobs?per_page=100",
+        ]:
+            return [{"jobs": [{
+                "name": checker.PUBLICATION_JOB,
+                "run_id": 123,
+                "run_attempt": 2,
+                "head_sha": sha,
+                "status": "completed",
+                "conclusion": "success",
+                "steps": [{
+                    "name": checker.PUBLICATION_STEP,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "started_at": "2026-11-01T12:01:59Z",
+                    "completed_at": "2026-11-01T12:02:01Z",
+                }],
+            }]}]
         raise AssertionError(f"unexpected GitHub CLI arguments: {args}")
 
     monkeypatch.setattr(checker, "run_gh_json", fake_run)
@@ -243,9 +280,9 @@ def test_single_asset_cli_checks_the_exact_published_release(
     else:
         assert result == 0
         assert "installer.bin matches immutable v1.2.3" in output.out
-        assert len(calls) == 4
-        assert "--source-digest" in calls[2]
-        assert f"refs/tags/{tag}" in calls[2]
+        assert len(calls) == 7
+        assert "--source-digest" in calls[4]
+        assert f"refs/tags/{tag}" in calls[4]
 
 
 def test_single_asset_mode_rejects_draft_transactions_before_contacting_github(capsys) -> None:
@@ -318,6 +355,58 @@ def test_complete_inventory_rejects_unapproved_asset_on_a_later_api_page(
     assert "downloaded release directory missing published files: ['unexpected.bin']" in output.err
     assert output.out == ""
     assert calls == [["api", endpoint], pages]
+
+
+@pytest.mark.parametrize(
+    ("change", "expected_error"),
+    [
+        ("none", None),
+        ("attempt", "must bind the exact promotion run attempt"),
+        ("duplicate", "must bind the exact promotion run attempt"),
+        ("notes", "differ from the generated promotion notes"),
+    ],
+)
+def test_recheck_draft_requires_original_notes_and_run_marker(
+    tmp_path: Path, monkeypatch, capsys, change: str, expected_error: str | None,
+) -> None:
+    checker = _load_checker()
+    repository, tag, sha = "example/project", "v1.2.3", "a" * 40
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "installer.bin").write_bytes(b"installer")
+    notes = tmp_path / "release-notes.md"
+    original_notes = "Support boundaries\n"
+    notes.write_text(original_notes, encoding="utf-8")
+    marker = f"<!-- remote-ops-release-transaction:{tag}:{sha}:123:1 -->"
+    body = f"{original_notes}\n{marker}\n"
+    if change == "attempt":
+        body = body.replace(":123:1", ":123:2")
+    elif change == "duplicate":
+        body += marker + "\n"
+    elif change == "notes":
+        body = body.replace("Support boundaries", "Edited notes")
+    release = _release(checker, assets, repository, tag)
+    release.update(draft=True, immutable=False, body=body)
+
+    def fake_run(args: list[str], _label: str, _timeout: int):
+        if args == ["api", f"repos/{repository}/releases/77"]:
+            return release
+        if args == ["api", "--paginate", "--slurp", f"repos/{repository}/releases/77/assets?per_page=100"]:
+            return [release["assets"]]
+        raise AssertionError(f"unexpected GitHub CLI arguments: {args}")
+
+    monkeypatch.setattr(checker, "run_gh_json", fake_run)
+    monkeypatch.setattr(checker, "expected_release_assets", lambda _matrix, *, tag: {"installer.bin"})
+    result = checker.main([
+        "--assets-dir", str(assets), "--repository", repository, "--tag", tag, "--sha", sha,
+        "--draft-release-id", "77", "--draft-transaction-run-id", "123",
+        "--draft-transaction-run-attempt", "1", "--draft-release-notes", str(notes), "--recheck-draft-bytes",
+    ])
+    output = capsys.readouterr()
+    if expected_error:
+        assert result == 1 and expected_error in output.err
+    else:
+        assert result == 0 and "unchanged draft assets" in output.out
 
 
 def test_verified_attestation_binds_digest_source_ref_and_run_attempt() -> None:
@@ -502,6 +591,22 @@ def test_attestation_verifier_uses_exact_release_identity(monkeypatch, tmp_path:
     assert args[args.index("--predicate-type") + 1] == checker.PREDICATE_TYPE
 
 
+def test_release_cli_verification_targets_github_dot_com(monkeypatch) -> None:
+    checker = _load_checker()
+    monkeypatch.setenv("GH_HOST", "fixture.invalid")
+    monkeypatch.setattr(checker.shutil, "which", lambda _: "gh")
+
+    def fake_run(args, *, cwd, check, capture_output, text, timeout, env):
+        assert args[0] == "gh"
+        assert args[1] in {"api", "attestation"}
+        assert env["GH_HOST"] == "github.com"
+        return checker.subprocess.CompletedProcess(args, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(checker.subprocess, "run", fake_run)
+    assert checker.run_gh_json(["api", "repos/example/project"], "release API", 60) == {}
+    assert checker.verify_attestation(Path("asset.bin"), repository="example/project", sha="a" * 40, tag="v1.2.3") == {}
+
+
 def test_all_standard_assets_must_share_one_attesting_run() -> None:
     checker = _load_checker()
     first = checker.RunInvocation("example/project", 123, 1)
@@ -556,3 +661,295 @@ def test_certificate_bound_release_run_must_be_exact_and_successful() -> None:
         tag="v1.2.3",
     )
     assert any("conclusion must be 'success'" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("published_at", "signature_attempt", "expected_error"),
+    [
+        ("2026-11-01T12:02:00Z", 1, None),
+        ("2026-11-01T12:05:00Z", 1, "tag governance attestation has expired"),
+        ("2026-11-01T11:59:59Z", 1, "observed_at must not be in the future"),
+        ("2026-11-01T12:02:00Z", 2, "governance proof and signature must bind"),
+    ],
+)
+def test_published_governance_uses_live_time_and_common_signed_attempt(
+    tmp_path: Path, monkeypatch, capsys, published_at: str, signature_attempt: int, expected_error: str | None
+) -> None:
+    checker = _load_checker()
+    repository, tag, sha = "example/project", "v1.2.3", "a" * 40
+    root = tmp_path / "release-assets"
+    root.mkdir()
+    asset = root / "release.bin"
+    asset.write_bytes(b"release asset")
+    release = {**_release(checker, root, repository, tag), "published_at": published_at}
+    attestation = tmp_path / "governance.json"
+    attestation.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "decision": "approved",
+            "source": "github-rulesets-api",
+            "repository": repository,
+            "release_tag": tag,
+            "release_sha": sha,
+            "tag_update_blocked": True,
+            "tag_deletion_blocked": True,
+            "bypass_actors": [],
+            "ruleset_ids": [42],
+            "auditor": {"kind": "github-app", "identity": "fixture-auditor"},
+            "observed_at": "2026-11-01T12:00:00Z",
+            "expires_at": "2026-11-01T12:05:00Z",
+            "promotion_transaction": {
+                "run_id": 123,
+                "run_attempt": 1,
+                "operation": "publish",
+                "draft_release_id": 77,
+            },
+        }),
+        encoding="utf-8",
+    )
+    signer = Ed25519PrivateKey.generate()
+    signature = tmp_path / "governance.sig.json"
+    signature.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "algorithm": "ed25519",
+            "key_id": "auditor",
+            "signature": base64.b64encode(signer.sign(attestation.read_bytes())).decode(),
+        }),
+        encoding="utf-8",
+    )
+    policy = tmp_path / "policy.json"
+    reviewer = Ed25519PrivateKey.generate()
+    policy.write_text(
+        json.dumps({
+            "trusted_ed25519_keys": [{
+                "key_id": "reviewer",
+                "public_key": base64.b64encode(reviewer.public_key().public_bytes_raw()).decode(),
+            }],
+            "tag_governance_attestation": {
+                "state": "enforced",
+                "max_validity_seconds": 300,
+                "trusted_ed25519_keys": [{
+                    "key_id": "auditor",
+                    "public_key": base64.b64encode(signer.public_key().public_bytes_raw()).decode(),
+                }],
+            },
+        }),
+        encoding="utf-8",
+    )
+    run = {
+        "id": 123,
+        "run_attempt": 1,
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": "success",
+        "path": f"{checker.RELEASE_WORKFLOW}@refs/tags/{tag}",
+        "event": "workflow_dispatch",
+        "head_branch": tag,
+        "repository": {"full_name": repository},
+        "head_repository": {"full_name": repository},
+        "run_started_at": "2026-11-01T12:00:30Z",
+        "updated_at": "2026-11-01T12:04:00Z",
+    }
+    publish_step = {
+        "name": "Publish verified draft by numeric ID once",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-01T12:02:00.250Z",
+        "completed_at": "2026-11-01T12:02:01.750Z",
+    }
+    publish_job = {
+        "name": "promote-production-release",
+        "run_id": 123,
+        "run_attempt": 1,
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": "success",
+        "steps": [publish_step],
+    }
+    job_pages = [{"jobs": []}, {"jobs": [publish_job]}]
+
+    def gh_api(args: list[str], _label: str, _timeout: int):
+        endpoint = args[-1]
+        if endpoint in {f"repos/{repository}/releases/tags/{tag}", f"repos/{repository}/releases/77"}:
+            return release
+        if endpoint == f"repos/{repository}/releases/77/assets?per_page=100":
+            return [release["assets"]]
+        if endpoint == f"repos/{repository}/git/ref/tags/{tag}":
+            return {"object": {"type": "commit", "sha": sha}}
+        if endpoint == f"repos/{repository}/actions/runs/123/attempts/1/jobs?per_page=100":
+            assert args[:-1] == ["api", "--hostname", "github.com", "--paginate", "--slurp"]
+            return job_pages
+        assert endpoint == f"repos/{repository}/actions/runs/123/attempts/1"
+        return run
+
+    def attestation_api(path: Path, **_kwargs):
+        return _attestation(
+            checker, repository=repository, sha=sha, tag=tag, digest=checker.sha256_file(path),
+            attempt=signature_attempt if path == signature else 1,
+        )
+
+    monkeypatch.setattr(checker, "POLICY_PATH", policy)
+    monkeypatch.setattr(checker, "expected_release_assets", lambda *_args, **_kwargs: {asset.name})
+    monkeypatch.setattr(checker, "run_gh_json", gh_api)
+    monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+    args = [
+        "--assets-dir", str(root), "--repository", repository, "--sha", sha, "--tag", tag,
+        "--governance-attestation", str(attestation), "--governance-signature", str(signature),
+    ]
+
+    if expected_error:
+        assert checker.main(args) == 1
+        assert expected_error in capsys.readouterr().err
+    else:
+        assert checker.main(args) == 0
+        completed_args = [*args, "--published-release-id", "77", "--completed-promotion-run-id", "123"]
+        assert checker.main(completed_args) == 1
+        assert checker.main([*completed_args, "--completed-promotion-run-attempt", "1"]) == 0
+        assert checker.main([*completed_args, "--completed-promotion-run-attempt", "2"]) == 1
+        assert "do not share the triggering promotion" in capsys.readouterr().err
+        approved = tmp_path / "release-evidence.json"
+        approved_sig = tmp_path / "release-evidence.sig.json"
+
+        def write_approval(expires_at):
+            approved.write_text(json.dumps({
+                "schema_version": 1,
+                "decision": "approved",
+                "repository": repository,
+                "release_tag": tag,
+                "release_sha": sha,
+                "policy_sha256": checker.sha256_file(policy),
+                "reviewed_at": "2026-11-01T11:00:00Z",
+                "expires_at": expires_at,
+            }), encoding="utf-8")
+            approved_sig.write_text(json.dumps({
+                "schema_version": 1,
+                "algorithm": "ed25519",
+                "key_id": "reviewer",
+                "signature": base64.b64encode(reviewer.sign(approved.read_bytes())).decode(),
+            }), encoding="utf-8")
+
+        write_approval("2026-11-01T12:02:30Z")
+        inputs = {path: checker.sha256_file(path) for path in (approved, approved_sig)}
+        assert checker.main(args, audited_inputs=inputs) == 0
+        # The compliance caller has already authenticated this exact policy.
+        # The standalone verifier's tracked default has no enrolled auditor.
+        selected_policy = checker.read_json_object(policy, "selected policy")
+        with monkeypatch.context() as custom:
+            custom.setattr(checker, "POLICY_PATH", Path("configs/release_compliance_policy.json"))
+            assert checker.main(args, audited_inputs=inputs) == 1
+            assert "tag governance attestation policy is not enforced" in capsys.readouterr().err
+            assert checker.main(
+                args, audited_inputs=inputs, check_published_at=lambda _time: [],
+                audited_policy=selected_policy,
+            ) == 0
+            assert checker.main(args, audited_policy=selected_policy) == 1
+            assert "audited policy requires a delegated compliance audit" in capsys.readouterr().err
+        assert checker.main(args, audited_inputs={**inputs, approved_sig: "b" * 64}) == 1
+
+        def mismatched_input_attempt(path: Path, **kwargs):
+            if path == approved_sig:
+                return _attestation(
+                    checker, repository=repository, sha=sha, tag=tag,
+                    digest=checker.sha256_file(path), attempt=2,
+                )
+            return attestation_api(path, **kwargs)
+
+        monkeypatch.setattr(checker, "verify_attestation", mismatched_input_attempt)
+        assert checker.main(args, audited_inputs=inputs) == 1
+        assert "signed redistribution approval must share" in capsys.readouterr().err
+        monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+        publication_times = []
+
+        def check_approval(published):
+            publication_times.append(published.isoformat())
+            from check_release_license_compliance import check_review_window
+
+            return check_review_window(
+                {
+                    "reviewed_at": "2026-11-01T11:00:00Z",
+                    "expires_at": "2026-11-01T12:02:30Z",
+                },
+                now=published,
+            )
+
+        assert checker.main(args, check_published_at=check_approval) == 0
+        assert publication_times == ["2026-11-01T12:02:00+00:00"]
+        assert checker.main(args, check_published_at=lambda _published: ["approval expired at publication"]) == 1
+        assert "approval expired at publication" in capsys.readouterr().err
+        current_args = [
+            *args, "--published-release-id", "77",
+            "--current-transaction-run-id", "123", "--current-transaction-run-attempt", "1",
+        ]
+        assert checker.main(current_args) == 0
+        approval_args = ["--redistribution-evidence", str(approved), "--redistribution-signature", str(approved_sig)]
+        exact_completed = [*completed_args, "--completed-promotion-run-attempt", "1", *approval_args]
+        assert checker.main([*current_args, *approval_args]) == 0
+        assert checker.main(exact_completed) == 0
+        assert checker.main([*current_args, *approval_args[:2]]) == 1
+        assert checker.main([*args, *approval_args]) == 1
+        monkeypatch.setattr(checker, "verify_attestation", mismatched_input_attempt)
+        assert checker.main([*current_args, *approval_args]) == 1
+        assert "signed redistribution approval must share" in capsys.readouterr().err
+        monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+        write_approval("2026-11-01T12:01:59Z")
+        assert checker.main(exact_completed) == 1
+        assert "expired" in capsys.readouterr().err
+        publish_step["started_at"] = "2026-11-01T12:02:01.250Z"
+        assert checker.main(args, check_published_at=check_approval) == 1
+        assert publication_times == ["2026-11-01T12:02:00+00:00"]
+        assert "release publication time falls outside the successful publication step" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("wrong-run", "successful exact-source promotion attempt"),
+        ("wrong-attempt", "successful exact-source promotion attempt"),
+        ("boolean-attempt", "successful exact-source promotion attempt"),
+        ("wrong-source", "successful exact-source promotion attempt"),
+        ("duplicate-step", "one exact publication step"),
+        ("missing-step", "one exact publication step"),
+        ("failed-step", "publication step must have completed successfully"),
+        ("published-after-step", "release publication time falls outside the successful publication step"),
+    ],
+)
+def test_publication_requires_the_exact_successful_step(monkeypatch, mutation, error) -> None:
+    checker = _load_checker()
+    sha = "a" * 40
+    invocation = checker.RunInvocation("example/project", 123, 1)
+    release = {"published_at": "2026-11-01T12:02:00Z"}
+    step = {
+        "name": "Publish verified draft by numeric ID once",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-01T12:01:58Z",
+        "completed_at": "2026-11-01T12:02:01Z",
+    }
+    job = {
+        "name": "promote-production-release",
+        "run_id": 123,
+        "run_attempt": 1,
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": "success",
+        "steps": [step],
+    }
+    if mutation == "wrong-run":
+        job["run_id"] = 999
+    elif mutation == "wrong-attempt":
+        job["run_attempt"] = 2
+    elif mutation == "boolean-attempt":
+        job["run_attempt"] = True
+    elif mutation == "wrong-source":
+        job["head_sha"] = "b" * 40
+    elif mutation == "duplicate-step":
+        job["steps"] = [step, step.copy()]
+    elif mutation == "missing-step":
+        job["steps"] = []
+    elif mutation == "failed-step":
+        step["conclusion"] = "failure"
+    elif mutation == "published-after-step":
+        release["published_at"] = "2026-11-01T12:02:02Z"
+    monkeypatch.setattr(checker, "run_gh_json", lambda *_args: [{"jobs": [job]}])
+    assert error in checker.check_publication_in_run(release, invocation, sha)[0]

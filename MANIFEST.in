@@ -6,3 +6,4 @@ include configs/xp_native_evidence_contract.json
 include configs/release_dependency_locks.json
 recursive-include requirements-locks *.txt *.in *.json
 recursive-include apps/web *.css *.html *.js *.json
+include tests/fixtures/web_catalogue_mock.cjs tests/fixtures/web_policy_submit_mock.cjs

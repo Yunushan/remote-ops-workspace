@@ -88,14 +88,18 @@ def accepted_target_ids(registry: dict[str, object], *, tag: str) -> set[str]:
     for item in accepted:
         if (
             isinstance(item, dict)
+            and item.get("status") == "accepted"
+            and item.get("readiness_percent") == 100.0
             and item.get("release_tag") == tag
-            and isinstance(item.get("target"), str)
+            and item.get("target") in GOAL_TARGETS
         ):
             result.add(item["target"])
     return result
 
 
-def moba_counts(root: Path, registry: dict[str, object]) -> tuple[int, int]:
+def moba_counts(
+    root: Path, registry: dict[str, object], *, tag: str, repository: str,
+) -> tuple[int, int]:
     checker_path = root / "scripts" / "check_mobaxterm_parity_evidence.py"
     spec = importlib.util.spec_from_file_location("moba_parity_checker_for_release_notes", checker_path)
     if spec is None or spec.loader is None:
@@ -103,15 +107,16 @@ def moba_counts(root: Path, registry: dict[str, object]) -> tuple[int, int]:
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
-    required = getattr(module, "ARTICLE_SPECS", {})
-    required_count = len(required) if isinstance(required, dict) else 0
+    required = module.ARTICLE_SPECS
     accepted = registry.get("accepted_evidence", [])
-    accepted_count = (
-        sum(1 for item in accepted if isinstance(item, dict) and item.get("status") == "accepted")
-        if isinstance(accepted, list)
-        else 0
-    )
-    return accepted_count, required_count
+    accepted_articles = set()
+    if isinstance(accepted, list):
+        for item in accepted:
+            if not isinstance(item, dict) or item.get("release_tag") != tag or module.check_record(item):
+                continue
+            if item["release_source"]["repository"].casefold() == repository.casefold():
+                accepted_articles.add(item["article_id"])
+    return len(accepted_articles), len(required)
 
 
 def write_notes(
@@ -144,7 +149,9 @@ def write_notes(
     moba_registry = load_json(source_root, "configs/mobaxterm_parity_evidence.json")
     accepted_platform = accepted_target_ids(platform_registry, tag=tag)
     missing_platform = [target for target in GOAL_TARGETS if target not in accepted_platform]
-    moba_accepted_count, moba_required_count = moba_counts(source_root, moba_registry)
+    moba_accepted_count, moba_required_count = moba_counts(
+        source_root, moba_registry, tag=tag, repository=repository,
+    )
 
     default_release = matrix.get("default_github_release", {})
     if not isinstance(default_release, dict):

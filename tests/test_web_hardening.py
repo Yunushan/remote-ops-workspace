@@ -1460,151 +1460,11 @@ def test_web_client_profile_submit_obeys_loaded_policy_behavior(
 ) -> None:
     node = shutil.which("node")
     assert node is not None
-    harness = r"""
-const fs = require('node:fs');
-const path = require('node:path');
-// Keep source, completion and progress separate so the parent can diagnose
-// where execution stopped without accepting an unobserved completion.
-const scenario = process.argv[2];
-const outputPath = process.argv[3];
-const nonce = process.argv[4];
-const progressPath = process.argv[5];
-const marks = [];
-const started = process.hrtime.bigint();
-function milestone(stage) {
-  marks.push({stage, elapsed_ms: Number((process.hrtime.bigint() - started) / 1000000n)});
-  const temp = progressPath + '.tmp';
-  fs.writeFileSync(temp, JSON.stringify(marks));
-  fs.renameSync(temp, progressPath);
-}
-milestone('harness-start');
-process.once('exit', () => milestone('exit-event'));
-const windowsPendingFallback = process.platform === 'win32' && scenario === 'pending';
-const records = new Map();
-const listeners = {};
-const harnessForm = {
-  dataset: {},
-  addEventListener: (name, callback) => { listeners[name] = callback; },
-  reset: () => {},
-};
-const inertElement = () => ({
-  appendChild: () => {},
-  replaceChildren: () => {},
-  style: {},
-  dataset: {},
-  textContent: '',
-  innerHTML: '',
-  className: '',
-});
-const elements = {
-  '#profiles': inertElement(),
-  '#profile-form': harnessForm,
-  '#terminal-grid': inertElement(),
-  '#feature-tags': inertElement(),
-};
-const harnessSetTimeout = scenario === 'pending'
-  ? callback => {
-      // Resolve the timeout branch immediately so the test exercises the
-      // production fallback without leaving a timer alive.
-      callback();
-      return {};
-    }
-  : setTimeout;
-const harnessClearTimeout = scenario === 'pending' ? () => {} : clearTimeout;
-const harnessDocument = {
-  querySelector: selector => elements[selector],
-  querySelectorAll: () => [],
-  createElement: inertElement,
-  documentElement: {dataset: {}},
-};
-const sessionStorage = {
-  getItem: key => records.get(key) ?? null,
-  setItem: (key, value) => records.set(key, String(value)),
-  removeItem: key => records.delete(key),
-};
-const FormData = function () {
-  return {entries: () => [
-    ['name', 'edge'],
-    ['protocol', 'ssh'],
-    ['target', 'edge.example.invalid'],
-  ][Symbol.iterator]()};
-};
-if (!('navigator' in globalThis)) {
-  Object.defineProperty(globalThis, 'navigator', {value: {}, configurable: true});
-}
-// Load the actual application as CommonJS, avoiding an unnecessary VM context.
-Object.assign(globalThis, {
-  document: harnessDocument,
-  sessionStorage,
-  FormData,
-  setTimeout: harnessSetTimeout,
-  clearTimeout: harnessClearTimeout,
-});
-const validPolicy = {
-  active: true,
-  allow_user_profiles: true,
-  has_restricted_locks: scenario === 'restricted',
-  locked_settings: [],
-};
-let fetchResult;
-if (scenario === 'pending') {
-  if (windowsPendingFallback) {
-    // Keep this case synchronous so it exercises the unavailable-policy
-    // fallback without leaving an unresolved promise behind.
-    globalThis.fetch = () => {
-      throw new Error('enterprise policy is unavailable');
-    };
-  } else {
-    fetchResult = new Promise(() => {});
-    globalThis.fetch = () => fetchResult;
-  }
-} else if (scenario === 'reject') {
-  fetchResult = Promise.reject(new Error('offline'));
-  globalThis.fetch = () => fetchResult;
-} else {
-  const body = scenario === 'malformed' ? {active: false} : validPolicy;
-  fetchResult = Promise.resolve({ok: true, json: async () => body});
-  globalThis.fetch = () => fetchResult;
-}
-milestone('require-enter');
-require(path.resolve(process.argv[1]));
-milestone('require-return');
-const finish = () => {
-  milestone('submit-enter');
-  listeners.submit({preventDefault: () => {}});
-  milestone('submit-return');
-  const saved = JSON.parse(
-    records.get('remote-ops-workspace-demo-profiles') || '[]',
-  );
-  const output = JSON.stringify({
-    complete: true, scenario, nonce,
-    saved: saved.length,
-    blocked: harnessForm.dataset.enterprisePolicyBlocked || '',
-  });
-  milestone('result-write-enter');
-  fs.writeFileSync(outputPath + '.tmp', output);
-  fs.renameSync(outputPath + '.tmp', outputPath);
-  milestone('result-published');
-  milestone('exit-requested');
-  // Let handled policy promises settle and the event loop finish naturally.
-  // The parent still requires an observed zero exit within its original limit.
-  process.exitCode = 0;
-};
-// The pending case intentionally submits before policy loading completes, so
-// finish it synchronously. All other scenarios allow policy-loading promises
-// to settle before submitting.
-if (scenario === 'pending') {
-  finish();
-} else {
-  setImmediate(finish);
-}
-    """
     output_path = tmp_path / f"web-policy-{scenario}.json"
     nonce = secrets.token_hex(16)
     command = [
         node,
-        "-e",
-        harness,
+        str(Path("tests/fixtures/web_policy_submit_mock.cjs")),
         str(Path("apps/web/app.js")),
         scenario,
         str(output_path),
@@ -1620,6 +1480,47 @@ if (scenario === 'pending') {
     assert report["cleanup_requested"] is False
     assert report["pre_cleanup_returncode"] == report["final_returncode"] == 0
     assert report["milestones"][-2:] == ["exit-requested", "exit-event"]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
+@pytest.mark.parametrize("mode", ("browser-context", "synchronous-stall"))
+def test_web_policy_browser_context_isolated_and_stalls_fail(tmp_path, mode):
+    app_path = tmp_path / "browser-probe.js"
+    if mode == "synchronous-stall":
+        app_path.write_text("while (true) {}", encoding="utf-8")
+    else:
+        probe = """
+if (typeof process !== 'undefined' || typeof require !== 'undefined'
+    || typeof module !== 'undefined' || 'serviceWorker' in navigator) {
+  throw new Error('Node globals leaked into the browser context');
+}
+let timerRanInline = false;
+setTimeout(() => { timerRanInline = true; }, 5000);
+if (timerRanInline) throw new Error('Browser timer ran synchronously');
+const pendingRequest = fetch('enterprise-policy.json');
+if (!pendingRequest || typeof pendingRequest.then !== 'function') {
+  throw new Error('Pending fetch did not return a promise');
+}
+"""
+        app_path.write_text(probe + Path("apps/web/app.js").read_text(encoding="utf-8"),
+                            encoding="utf-8")
+    result_path = tmp_path / "result.json"
+    command = [
+        shutil.which("node"), str(Path("tests/fixtures/web_policy_submit_mock.cjs")),
+        str(app_path), "pending", str(result_path), "browser-probe",
+        str(result_path.with_suffix(".progress.json")),
+    ]
+    if mode == "synchronous-stall":
+        with pytest.raises(RuntimeError, match="exited nonzero"):
+            _run_web_policy_harness(command, result_path, "pending", "browser-probe", timeout=30)
+        assert "ERR_SCRIPT_EXECUTION_TIMEOUT" in result_path.with_suffix(".stderr.log").read_text()
+    else:
+        result = _run_web_policy_harness(command, result_path, "pending", "browser-probe", timeout=30)
+        assert result["saved"] == 0 and result["blocked"] == "enterprise policy is unavailable"
+    report = json.loads(result_path.with_suffix(".runner.json").read_text())
+    assert report["child_reaped"] is True and report["cleanup_requested"] is False
+    assert report["complete_result"] is (mode == "browser-context")
+    assert report.get("timed_out", False) is False
 
 
 def test_web_policy_temporary_progress_uses_same_bounded_parser_without_completion(tmp_path, monkeypatch):

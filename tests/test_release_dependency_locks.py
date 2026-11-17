@@ -23,6 +23,28 @@ def test_complete_modern_locks_are_consumed_without_mutable_resolution() -> None
     assert _checker().check_locks() == []
 
 
+@pytest.mark.parametrize("target", ["linux-i386", "linux-armhf"])
+def test_protected_linux_uses_exact_hash_locked_build_inputs(target: str) -> None:
+    checker = _checker()
+    assert checker.check_protected_linux_locks(checker.ROOT) == []
+    compliance = checker.compliance
+    workflow = compliance.EXTENDED_WORKFLOW_PATH.read_text(encoding="utf-8")
+    job = f"{target}-native-evidence"
+    block = compliance.workflow_job_block(workflow, job)
+    lock_dir = compliance.PROTECTED_LINUX_LOCK_DIR
+    options = {
+        "bootstrap_lock_path": f"{lock_dir}/{target}-bootstrap.txt",
+        "source_bootstrap_lock_path": compliance.PROTECTED_LINUX_CFFI_LOCK,
+    }
+    assert compliance.check_native_job_lock_usage(block, job, target, f"{lock_dir}/{target}.txt", **options) == []
+
+    without_cffi_bootstrap = "\n".join(line for line in block.splitlines() if compliance.PROTECTED_LINUX_CFFI_LOCK not in line)
+    errors = compliance.check_native_job_lock_usage(
+        without_cffi_bootstrap, job, target, f"{lock_dir}/{target}.txt", **options,
+    )
+    assert any("must install" in error and "linux-32bit-cffi.txt" in error for error in errors)
+
+
 def test_macos_lock_resolution_uses_the_native_installer_minimum(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
@@ -141,6 +163,58 @@ def test_generator_rechecks_exact_input_bytes_before_writing_receipt(
     assert receipt_path.read_bytes() == before
 
 
+@pytest.mark.parametrize(("relative", "error"), [
+    ("requirements-release.txt", "release inputs differ from the previous receipt"),
+    ("requirements-locks/windows-x64-bootstrap.txt", "unselected locks differ from the previous receipt"),
+])
+def test_partial_resolution_refuses_unverified_existing_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    relative: str, error: str,
+) -> None:
+    resolver = _checker().resolver
+    root = _release_checkout(tmp_path)
+    _use_checkout(monkeypatch, resolver, root)
+    path = root / relative
+    path.write_bytes(path.read_bytes() + b"\n")
+    receipt_path = root / "requirements-locks/resolution.json"
+    before = receipt_path.read_bytes()
+
+    def forbidden_resolution(*args, **kwargs):
+        raise AssertionError("the resolver must not run for unverified inputs or unselected locks")
+
+    monkeypatch.setattr(resolver.subprocess, "run", forbidden_resolution)
+    assert resolver.main(["--uv", str(root / "unused"), "--target", "windows-x86"]) == 1
+    assert error in capsys.readouterr().err
+    assert receipt_path.read_bytes() == before
+
+
+@pytest.mark.parametrize(("relative", "error"), [
+    ("requirements-release.txt", "release inputs changed during resolution"),
+    ("requirements-locks/windows-x64-bootstrap.txt", "unselected locks differ from the previous receipt"),
+])
+def test_partial_resolution_refuses_changes_during_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    relative: str, error: str,
+) -> None:
+    resolver = _checker().resolver
+    root = _release_checkout(tmp_path)
+    _use_checkout(monkeypatch, resolver, root)
+    uv = root / "uv"
+    uv.touch()
+    monkeypatch.setattr(resolver.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout="uv 0.12.21\n"))
+    path = root / relative
+
+    def changed_bytes(*args, **kwargs):
+        path.write_bytes(path.read_bytes() + b"\n")
+
+    monkeypatch.setattr(resolver, "compile_lock", changed_bytes)
+    receipt_path = root / "requirements-locks/resolution.json"
+    before = receipt_path.read_bytes()
+    assert resolver.main(["--uv", str(uv), "--target", "windows-x86"]) == 1
+    assert error in capsys.readouterr().err
+    assert receipt_path.read_bytes() == before
+
+
 def test_generator_writes_lf_receipt_bound_to_original_lf_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -151,9 +225,41 @@ def test_generator_writes_lf_receipt_bound_to_original_lf_bytes(
     uv = root / "uv"
     uv.write_bytes(b"unused test resolver")
     monkeypatch.setattr(resolver.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout="uv 0.12.21\n"))
-    monkeypatch.setattr(resolver, "compile_lock", lambda *args, **kwargs: None)
+    selected = root / "requirements-locks/windows-x86.txt"
+    receipt_path = root / "requirements-locks/resolution.json"
+    before = json.loads(receipt_path.read_bytes())
+
+    def refresh_selected(*args, **kwargs):
+        selected.write_bytes(selected.read_bytes() + b"\n")
+
+    monkeypatch.setattr(resolver, "compile_lock", refresh_selected)
     assert resolver.main(["--uv", str(uv), "--target", "windows-x86"]) == 0
-    assert b"\r" not in (root / "requirements-locks/resolution.json").read_bytes()
+    assert b"\r" not in receipt_path.read_bytes()
+    before["lock_sha256"][selected.name] = hashlib.sha256(selected.read_bytes()).hexdigest()
+    assert json.loads(receipt_path.read_bytes()) == before
+    assert checker.check_locks(root, workflows={}) == []
+
+
+def test_full_resolution_can_refresh_changed_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _checker()
+    resolver = checker.resolver
+    root = _release_checkout(tmp_path)
+    _use_checkout(monkeypatch, resolver, root)
+    uv = root / "uv"
+    uv.touch()
+    constraints = root / "requirements-release.txt"
+    constraints.write_bytes(constraints.read_bytes() + b"\n")
+    monkeypatch.setattr(resolver.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(stdout="uv 0.12.21\n"))
+    resolved = []
+
+    def record_target(uv, config, target, spec, *, system_certs):
+        resolved.append(f"{target}.txt")
+
+    monkeypatch.setattr(resolver, "compile_lock", record_target)
+    assert resolver.main(["--uv", str(uv)]) == 0
+    assert sorted(resolved) == sorted(path.name for path in (root / "requirements-locks").glob("*.txt"))
     assert checker.check_locks(root, workflows={}) == []
 
 
@@ -163,6 +269,73 @@ def test_mutable_project_resolution_cannot_hide_after_hashed_dependencies() -> N
     workflow = workflow.replace('--no-deps --no-build-isolation ".[${Extras}]"', '".[${Extras}]"')
     errors = checker.check_locks(workflows={"release.yml": workflow})
     assert any("dependency-resolving pip install outside" in error for error in errors)
+
+
+def test_signed_native_release_requires_isolated_python_before_lock_install() -> None:
+    checker = _checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace("python -m venv ", "python -m venv --system-site-packages ")
+    errors = checker.check_locks(workflows={"release.yml": workflow})
+    for job in ("source-and-python", "windows-native", "macos-native", "linux-native"):
+        assert f"release.yml {job} must create an isolated Python environment before installing its lock" in errors
+
+
+def test_signed_native_runtime_report_must_use_matrix_lock() -> None:
+    checker = _checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace('RELEASE_DEPENDENCY_LOCK: ${{ matrix.lock }}', 'RELEASE_DEPENDENCY_LOCK: ${{ matrix.bootstrap_lock }}')
+    errors = checker.check_locks(workflows={"release.yml": workflow})
+    for job in ("windows-native", "macos-native", "linux-native"):
+        assert f"release.yml {job} must verify its installed inventory against the matrix lock" in errors
+
+
+def test_source_build_checks_installed_environment_against_exact_source_lock() -> None:
+    checker = _checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "--lock requirements-locks/source-linux-x86_64.txt",
+        "--lock requirements-locks/source-linux-x86_64-bootstrap.txt",
+        1,
+    )
+    errors = checker.check_locks(workflows={"release.yml": workflow})
+    assert "release.yml source-and-python must verify its installed inventory against the build lock" in errors
+
+
+def test_signed_native_runtime_report_requires_exact_locked_versions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _checker()
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+    report = tmp_path / "pip-inspect.json"
+    lock = tmp_path / "hashed-lock.txt"
+    lock.write_text(f"setuptools==84.0.0 --hash=sha256:{'a' * 64}\n", encoding="utf-8")
+    version = "1.2.3"
+    (tmp_path / "pyproject.toml").write_text(f'[project]\nversion = "{version}"\n', encoding="utf-8")
+    project = {"name": "remote_ops_workspace", "version": version}
+    pinned = {"name": "setuptools", "version": "84.0.0"}
+
+    def install(*distributions: dict[str, str]) -> None:
+        payload = {"version": "1", "installed": [{"metadata": item} for item in distributions]}
+        report.write_text(json.dumps(payload), encoding="utf-8")
+
+    install(project, pinned)
+    assert checker.main(["--runtime-report", str(report), "--lock", str(lock)]) == 0
+
+    stale_version = "1.2.2"
+    install({**project, "version": stale_version}, pinned)
+    assert checker.check_runtime_report(report, lock) == [
+        f"release runtime report lists remote-ops-workspace {stale_version}, expected project version {version}"
+    ]
+
+    install(project, {"name": "setuptools", "version": "83.0.0"}, {"name": "wheel", "version": "0.48.0"})
+    errors = checker.check_runtime_report(report, lock)
+    assert len(errors) == 1
+    assert "unexpected=['wheel'], version-mismatched=['setuptools']" in errors[0]
+
+    install(project)
+    assert "missing=['setuptools']" in checker.check_runtime_report(report, lock)[0]
+    install(pinned)
+    assert "missing the installed remote-ops-workspace" in checker.check_runtime_report(report, lock)[0]
 
 
 def test_bootstrap_requires_exact_versions_and_reviewed_artifact_hashes(tmp_path: Path) -> None:

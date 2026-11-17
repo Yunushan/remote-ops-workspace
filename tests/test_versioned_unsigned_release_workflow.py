@@ -142,9 +142,7 @@ def test_release_boundary_rejects_late_redistribution_gate() -> None:
         ("$InnoProbeExit -ne 0", "$false", "installer toolchains"),
         ("$InnoVersionLines.Count -ne 1", "$false", "installer toolchains"),
         ('& $InnoCompiler /O- "/O$InnoProbeDirectory" $InnoProbe', "& $InnoCompiler /?", "installer toolchains"),
-        (" cpio msitools ", " cpio ", "msitools"),
-        ("sha256sum --check --strict", "sha256sum", "sha256sum"),
-        ("16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede", "0" * 64, "archive inspector"),
+        ("bash scripts/install_native_archive_inspector.sh", "echo omitted", "archive inspector"),
         ("runs-on: ubuntu-24.04\n    timeout-minutes: 90", "runs-on: ubuntu-latest\n    timeout-minutes: 90", "pinned Ubuntu"),
     ],
 )
@@ -153,3 +151,18 @@ def test_installer_audit_requires_compatible_pinned_tools(old: str, new: str, ex
     assert old in source
     errors = checker().check_versioned_unsigned_release_workflow(source.replace(old, new, 1))
     assert any(expected in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    "snippet",
+    [
+        "cpio msitools",
+        "sha256sum --check --strict",
+        "16d7dd7bb68d6e4f8e3574d76ebdd9d153b83aa7941b4887615007349c8d0ede",
+    ],
+)
+def test_shared_archive_inspector_requires_reviewed_toolchain(snippet: str) -> None:
+    policy = checker()
+    source = policy.ARCHIVE_INSPECTOR_PATH.read_text(encoding="utf-8")
+    assert snippet in source
+    assert any(snippet in error for error in policy.check_native_archive_inspector(source.replace(snippet, "")))

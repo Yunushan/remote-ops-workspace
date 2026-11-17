@@ -146,6 +146,64 @@ def test_download_retries_only_bounded_transient_http_failures(tmp_path, monkeyp
     assert not wheel.exists()
 
 
+def test_download_recovers_from_connect_and_read_timeouts(tmp_path, monkeypatch):
+    smoke = _load_smoke()
+    contents = b"synthetic pinned fixture"
+    monkeypatch.setattr(smoke, "EXPECTED_WHEEL_SIZE", len(contents))
+    monkeypatch.setattr(smoke, "EXPECTED_WHEEL_SHA256", smoke.hashlib.sha256(contents).hexdigest())
+    waits = []
+    monkeypatch.setattr(smoke.time, "sleep", waits.append)
+    calls = 0
+    wheel = tmp_path / smoke.EXPECTED_WHEEL_NAME
+
+    class Download:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, bound):
+            assert bound == len(contents) + 1
+            if calls == 2:
+                raise TimeoutError
+            return contents
+
+    def open_release(url, timeout):
+        nonlocal calls
+        assert url == smoke.EXPECTED_WHEEL_URL and timeout == 30
+        assert not wheel.exists()
+        calls += 1
+        if calls == 1:
+            raise smoke.urllib.error.URLError(TimeoutError())
+        return Download()
+
+    monkeypatch.setattr(smoke.urllib.request, "urlopen", open_release)
+    smoke.download_previous_wheel(wheel)
+    assert wheel.read_bytes() == contents
+    assert calls == 3
+    assert waits == [1, 2]
+
+
+@pytest.mark.parametrize("network_error, attempts", [(TimeoutError(), 3), (ValueError("bad TLS"), 1)])
+def test_download_refuses_exhausted_or_non_timeout_transport_failures(tmp_path, monkeypatch, network_error, attempts):
+    smoke = _load_smoke()
+    failure = smoke.urllib.error.URLError(network_error)
+    waits = []
+
+    def unavailable(url, timeout):
+        raise failure
+
+    monkeypatch.setattr(smoke.urllib.request, "urlopen", unavailable)
+    monkeypatch.setattr(smoke.time, "sleep", waits.append)
+    wheel = tmp_path / smoke.EXPECTED_WHEEL_NAME
+    with pytest.raises(smoke.urllib.error.URLError) as caught:
+        smoke.download_previous_wheel(wheel)
+    assert caught.value is failure
+    assert waits == list(range(1, attempts))
+    assert not wheel.exists()
+
+
 def test_worker_uses_isolated_runtime_and_stdin_without_disclosing_failures(tmp_path, monkeypatch):
     smoke = _load_smoke()
     calls = []

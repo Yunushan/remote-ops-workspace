@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -12,13 +13,14 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_IOS_OPEN_URL_ATTEMPTS = 3
 DEFAULT_IOS_OPEN_URL_RETRY_DELAY_SECONDS = 10.0
 DEFAULT_ANDROID_WEB_RESPONSE_ATTEMPTS = 3
 DEFAULT_ANDROID_WEB_RESPONSE_RETRY_DELAY_SECONDS = 2.0
 DEFAULT_WEB_READY_TIMEOUT_SECONDS = 30.0
+IOS_PAGE_REQUEST_TIMEOUT_SECONDS = 30.0
 HTTP_OK_MARKER = "HTTP/1.0 200 OK"
 ANDROID_WEB_REQUEST_PATH = "/data/local/tmp/row-web-pwa-request.txt"
 ANDROID_WEB_RESPONSE_PATH = "/data/local/tmp/row-web-pwa-response.txt"
@@ -45,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         "--ios-version",
         help="Require an exact iOS simulator runtime version prefix, for example 27 or 27.0.",
     )
+    parser.add_argument("--ios-server-log", type=Path, help="Require the simulator page request in the local HTTP access log.")
     parser.add_argument("--out-dir", default="artifacts/mobile")
     args = parser.parse_args(argv)
 
@@ -64,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         out_dir=out_dir,
         open_url_attempts=args.ios_open_url_attempts,
         required_version=args.ios_version,
+        server_log=args.ios_server_log,
     )
 
 
@@ -183,9 +187,16 @@ def check_ios(
     out_dir: Path,
     open_url_attempts: int = DEFAULT_IOS_OPEN_URL_ATTEMPTS,
     required_version: str | None = None,
+    server_log: Path | None = None,
 ) -> int:
     require_tool("xcrun")
     wait_for_web_url(url)
+    if server_log is not None:
+        parsed = urlsplit(url)
+        marker = f"row_ios_probe={secrets.token_hex(16)}"
+        query = f"{parsed.query}&{marker}" if parsed.query else marker
+        url = urlunsplit(parsed._replace(query=query))
+        request_target = f"{parsed.path or '/'}?{query}"
     runtime = latest_ios_runtime(required_version=required_version)
     udid = create_ios_simulator(runtime["identifier"])
     try:
@@ -193,6 +204,8 @@ def check_ios(
         run(["xcrun", "simctl", "bootstatus", udid, "-b"])
         warm_ios_browser(udid)
         open_ios_url(udid, url, attempts=open_url_attempts)
+        if server_log is not None:
+            wait_for_ios_page_request(server_log, request_target)
         time.sleep(5)
         target = out_dir / "ios-simulator-web-pwa.png"
         capture_ios_screenshot(udid, target)
@@ -203,6 +216,21 @@ def check_ios(
     finally:
         run(["xcrun", "simctl", "shutdown", udid], check=False)
         run(["xcrun", "simctl", "delete", udid], check=False)
+
+
+def wait_for_ios_page_request(
+    server_log: Path, request_target: str, timeout_seconds: float = IOS_PAGE_REQUEST_TIMEOUT_SECONDS,
+) -> None:
+    successful_request = re.compile(rf'"GET {re.escape(request_target)} HTTP/1\.[01]" 200(?: |$)')
+    deadline = time.monotonic() + timeout_seconds
+    with server_log.open(encoding="utf-8", errors="replace") as log:
+        while time.monotonic() < deadline:
+            for line in log:
+                if successful_request.search(line.rstrip("\r\n")):
+                    print("iOS simulator Web/PWA page request returned HTTP 200")
+                    return
+            time.sleep(0.5)
+    raise SystemExit("iOS simulator did not receive HTTP 200 for the Web/PWA page")
 
 
 def capture_ios_screenshot(udid: str, target: Path) -> None:

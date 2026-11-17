@@ -64,3 +64,43 @@ def test_published_release_notes_main_accepts_offline_fixture(tmp_path: Path) ->
         )
         == 0
     )
+
+
+def test_generated_production_notes_use_the_published_body_contract(tmp_path: Path) -> None:
+    checker = _load_checker()
+    notes = tmp_path / "release-notes.md"
+    args = [
+        "--repository", "Yunushan/remote-ops-workspace", "--tag", "v2.0.0",
+        "--channel", "production-signed", "--notes-file", str(notes),
+    ]
+    evidence = "- Protected platform evidence accepted for this source is 4/4 targets; missing: none."
+    content = (
+        "# v2.0.0\n\n"
+        "**Channel: production-signed.** Windows installers are signed.\n\n"
+        f"## Support boundaries\n\n{evidence}\n"
+    )
+    notes.write_text(content, encoding="utf-8")
+    assert checker.main(args) == 0
+    notes.write_text(content.replace("production-signed", "unsigned preview"), encoding="utf-8")
+    assert checker.main(args) == 1
+    notes.write_text(content.replace("# v2.0.0", "# v2.0.01"), encoding="utf-8")
+    assert checker.main(args) == 1
+    notes.write_text(content.replace("## Support boundaries", "Text mentioning ## Support boundaries"), encoding="utf-8")
+    assert checker.main(args) == 1
+
+
+def test_production_support_section_requires_one_complete_protected_evidence_statement() -> None:
+    checker = _load_checker()
+    heading = "# v2.0.0\n\n**Channel: production-signed.**\n\n## Support boundaries\n"
+    complete = "- Protected platform evidence accepted for this source is 4/4 targets; missing: none.\n"
+    incomplete = complete.replace("4/4 targets; missing: none", "3/4 targets; missing: linux-i386")
+    assert checker.check_notes_body(heading + complete, tag="v2.0.0", channel="production-signed") == []
+
+    for body in (
+        heading,
+        heading + incomplete,
+        heading + complete + incomplete,
+        heading + "## Verification\n" + complete,
+    ):
+        errors = checker.check_notes_body(body, tag="v2.0.0", channel="production-signed")
+        assert "production-signed support boundaries must report exactly 4/4 accepted protected targets" in errors

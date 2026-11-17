@@ -1,5 +1,8 @@
 using System;
 using System.Drawing;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Windows.Forms;
 
 namespace RemoteOpsWorkspace.XpHost
@@ -7,6 +10,7 @@ namespace RemoteOpsWorkspace.XpHost
     internal static class Program
     {
         private const string ProductVersion = "@VERSION@";
+        private const int ProbeTimeoutMilliseconds = 3000;
 
         [STAThread]
         private static int Main(string[] args)
@@ -18,7 +22,13 @@ namespace RemoteOpsWorkspace.XpHost
             }
             if (HasArgument(args, "--loopback-dry-run"))
             {
+                if (!VerifyLoopback())
+                {
+                    Console.Error.WriteLine("loopback profile dry-run: failed");
+                    return 1;
+                }
                 Console.WriteLine("loopback profile dry-run: passed");
+                Console.WriteLine("loopback TCP round trip: passed");
                 Console.WriteLine("legacy compatibility profile: isolated-opt-in");
                 Console.WriteLine("modern defaults unchanged: true");
                 return 0;
@@ -49,6 +59,65 @@ namespace RemoteOpsWorkspace.XpHost
                 Application.Run(window);
             }
             return 0;
+        }
+
+        private static bool VerifyLoopback()
+        {
+            const int request = 0x52;
+            const int response = 0x4f;
+            TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+            try
+            {
+                listener.ExclusiveAddressUse = true;
+                listener.Start(1);
+                listener.Server.Blocking = false;
+                IPEndPoint endpoint = (IPEndPoint)listener.LocalEndpoint;
+                using (TcpClient sender = new TcpClient(AddressFamily.InterNetwork))
+                {
+                    IAsyncResult connection = sender.BeginConnect(endpoint.Address, endpoint.Port, null, null);
+                    using (System.Threading.WaitHandle completion = connection.AsyncWaitHandle)
+                    {
+                        if (!completion.WaitOne(ProbeTimeoutMilliseconds))
+                        {
+                            return false;
+                        }
+                        sender.EndConnect(connection);
+                    }
+                    using (TcpClient receiver = listener.AcceptTcpClient())
+                    {
+                        receiver.Client.Blocking = true;
+                        if (!sender.Client.LocalEndPoint.Equals(receiver.Client.RemoteEndPoint))
+                        {
+                            return false;
+                        }
+                        using (NetworkStream outgoing = sender.GetStream())
+                        using (NetworkStream incoming = receiver.GetStream())
+                        {
+                            outgoing.ReadTimeout = outgoing.WriteTimeout = ProbeTimeoutMilliseconds;
+                            incoming.ReadTimeout = incoming.WriteTimeout = ProbeTimeoutMilliseconds;
+                            outgoing.WriteByte(request);
+                            if (incoming.ReadByte() != request)
+                            {
+                                return false;
+                            }
+                            incoming.WriteByte(response);
+                            return outgoing.ReadByte() == response;
+                        }
+                    }
+                }
+            }
+            catch (SocketException)
+            {
+                return false;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            finally
+            {
+                listener.Stop();
+            }
         }
 
         private static bool HasArgument(string[] args, string expected)
@@ -93,13 +162,13 @@ namespace RemoteOpsWorkspace.XpHost
             dryRun.Size = new Size(130, 28);
             dryRun.Click += delegate(object sender, EventArgs eventArgs)
             {
+                bool passed = VerifyLoopback();
                 MessageBox.Show(
                     window,
-                    "Loopback profile dry-run passed.\r\n\r\n" +
-                    "Legacy compatibility remains isolated and opt-in.",
+                    passed ? "Loopback TCP round trip passed." : "Loopback TCP round trip failed.",
                     "Remote Ops Workspace XP Host",
                     MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                    passed ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
             };
 
             Button close = new Button();

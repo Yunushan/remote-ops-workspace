@@ -58,6 +58,32 @@ def test_open_ios_url_reports_exhausted_attempts(monkeypatch) -> None:
         raise AssertionError("open_ios_url should fail when every attempt times out")
 
 
+def test_ios_page_request_requires_success_for_the_exact_probe(monkeypatch, tmp_path) -> None:
+    smoke = _load_smoke()
+    log = tmp_path / "web-server.log"
+    target = "/index.html?row_ios_probe=abc123"
+    log.write_text(
+        '127.0.0.1 - - [date] "GET /index.html HTTP/1.1" 200 -\n'
+        '127.0.0.1 - - [date] "GET /index.html?row_ios_probe=old HTTP/1.1" 200 -\n'
+        f'127.0.0.1 - - [date] "GET {target} HTTP/1.1" 404 -\n',
+        encoding="utf-8",
+    )
+    times = iter([0.0, 0.0, 1.0])
+    monkeypatch.setattr(smoke.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(smoke.time, "sleep", lambda _seconds: None)
+    try:
+        smoke.wait_for_ios_page_request(log, target, timeout_seconds=1)
+    except SystemExit as exc:
+        assert "did not receive HTTP 200" in str(exc)
+    else:
+        raise AssertionError("the iOS smoke accepted unrelated or failed page requests")
+
+    with log.open("a", encoding="utf-8") as output:
+        output.write(f'127.0.0.1 - - [date] "GET {target} HTTP/1.1" 200 -\n')
+    times = iter([0.0, 0.0])
+    smoke.wait_for_ios_page_request(log, target, timeout_seconds=1)
+
+
 def test_android_web_response_accepts_expected_page(monkeypatch) -> None:
     smoke = _load_smoke()
 

@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import check_release_mobaxterm_parity as release_parity
+from scripts.write_release_notes import moba_counts
 
 
 def test_mobaxterm_parity_evidence_empty_registry_is_valid_but_not_complete() -> None:
@@ -73,6 +74,20 @@ def test_mobaxterm_parity_evidence_accepts_complete_article_record() -> None:
     }
 
     assert checker.check_mobaxterm_parity_evidence(registry=registry) == []
+
+
+def test_release_notes_count_only_valid_parity_articles_for_the_release() -> None:
+    checker = _load_checker()
+    record = _complete_record(checker.ARTICLE_SPECS["professional-deployment"])
+    root = Path(__file__).resolve().parents[1]
+    repository = record["release_source"]["repository"]
+    tag = record["release_tag"]
+    assert moba_counts(root, {"accepted_evidence": [record, dict(record)]}, tag=tag, repository=repository) == (1, 8)
+    assert moba_counts(root, {"accepted_evidence": [record]}, tag="v1.0.3", repository=repository) == (0, 8)
+    assert moba_counts(root, {"accepted_evidence": [record]}, tag=tag, repository="other/project") == (0, 8)
+    incomplete = dict(record)
+    del incomplete["acceptance_review"]
+    assert moba_counts(root, {"accepted_evidence": [incomplete]}, tag=tag, repository=repository) == (0, 8)
 
 
 def test_mobaxterm_parity_evidence_rejects_incomplete_article_record() -> None:
@@ -157,7 +172,7 @@ def test_mobaxterm_generator_emits_candidate_and_has_no_registry_append(tmp_path
 
         @staticmethod
         def to_dict() -> dict[str, object]:
-            return {"passed": True, "errors": [], "summary": {"real": True}}
+            return {"passed": True, "errors": [], "summary": {"release_target": "windows-x64"}}
 
     generator.VALIDATORS["professional-deployment"] = lambda *_args, **_kwargs: PassingValidation()
     errors, record = generator.build_evidence_record(
@@ -329,6 +344,7 @@ def reviewed_release(tmp_path, monkeypatch):
 
     on_main = f"compare/{registry_commit}...{main_tip}?per_page=1"
     run = "actions/runs/1234/attempts/2"
+    jobs = f"{run}/jobs?per_page=20&page=1"
     review = "pulls/42/reviews/99"
     responses = {
         "branches/main": {"name": "main", "protected": True, "commit": {"sha": main_tip}},
@@ -340,6 +356,15 @@ def reviewed_release(tmp_path, monkeypatch):
             "conclusion": "success",
             "repository": {"full_name": repository},
             "head_repository": {"full_name": repository},
+        },
+        jobs: {
+            "total_count": 2,
+            "jobs": [
+                {"id": 1, "run_id": 1234, "run_attempt": 2, "head_sha": release_sha,
+                 "status": "completed", "conclusion": "success", "completed_at": "2026-08-23T12:30:00Z"},
+                {"id": 2, "run_id": 1234, "run_attempt": 2, "head_sha": release_sha,
+                 "status": "completed", "conclusion": "skipped", "completed_at": None},
+            ],
         },
         review: {
             "id": 99,
@@ -392,13 +417,25 @@ def reviewed_release(tmp_path, monkeypatch):
     }
     return SimpleNamespace(
         args=args, asset=asset, records=records, responses=responses,
-        on_main=on_main, run=run, review=review, validator_calls=validator_calls,
+        on_main=on_main, run=run, jobs=jobs, review=review, validator_calls=validator_calls,
     )
 
 
 def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_release) -> None:
     assert release_parity.audit_release(**reviewed_release.args) == []
     assert set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
+
+
+@pytest.mark.parametrize("observed_target", ["linux-x86_64", None])
+def test_parity_evidence_for_each_article_must_bind_its_tested_target(reviewed_release, observed_target) -> None:
+    checker = _load_checker()
+    for record in reviewed_release.records:
+        article = record["article_id"]
+        record["validation_summary"]["summary"]["release_target"] = observed_target
+        candidate = dict(record, status="candidate")
+        error = f"{article} validation summary release_target must match record release_target"
+        assert error in checker.check_candidate_record(candidate)
+        assert error in checker.check_record(record)
 
 
 def test_certification_rejects_registry_commit_outside_main(reviewed_release) -> None:
@@ -437,6 +474,22 @@ def test_certification_checks_live_attempt_and_review(
     errors = release_parity.audit_release(**reviewed_release.args)
 
     assert any(expected_error in error for error in errors)
+
+
+@pytest.mark.parametrize(("field", "value", "expected"), [
+    ("completed_at", "2026-08-23T12:35:00Z", "review predates completion"),
+    ("completed_at", None, "missing a valid completion timestamp"),
+    ("run_attempt", 1, "job does not match the completed evidence attempt"),
+])
+def test_certification_binds_review_time_to_completed_attempt_jobs(
+    reviewed_release, field, value, expected,
+) -> None:
+    reviewed_release.responses[reviewed_release.jobs]["jobs"][0][field] = value
+
+    errors = release_parity.audit_release(**reviewed_release.args)
+
+    assert len(errors) == len(reviewed_release.records)
+    assert all(expected in error for error in errors)
 
 
 def test_finalizer_prints_the_same_review_line_before_acceptance(reviewed_release, tmp_path, capsys) -> None:

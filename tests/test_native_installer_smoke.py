@@ -2,14 +2,91 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    ("channel", "reference", "reviewed", "expected_status"),
+    [
+        ("host-channel", "host-review", "true", 0),
+        ("", "host-review", "true", 2),
+        ("other-channel", "host-review", "true", 2),
+        ("host-channel", "", "true", 2),
+        ("host-channel", "other-review", "true", 2),
+        ("host-channel", "host-review", "", 2),
+        ("host-channel", "host-review", "false", 2),
+    ],
+)
+def test_linux_smoke_keeps_independent_host_review_inputs(
+    channel, reference, reviewed, expected_status,
+):
+    if os.name == "nt":
+        git_bash = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe"
+        bash = str(git_bash) if git_bash.is_file() else None
+    else:
+        bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("Bash is unavailable")
+    source = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
+    # Execute the real snapshot, TSV parser and review validation. Installer,
+    # architecture and host-mutation commands are outside these blocks.
+    snapshot_start = source.index("SMOKE_SECURITY_UPDATE_CHANNEL=")
+    snapshot_end = source.index("\n\nwhile [[ $#", snapshot_start)
+    parser_start = source.index("  while IFS=$'\\t' read -r key value; do")
+    parser_end = source.index('\n  require_builder_match "target"', parser_start)
+    review_start = source.index(
+        '  require_builder_value "security_patch_evidence.security_update_channel"',
+        parser_end,
+    )
+    review_end = source.index('\nfi\n\ncase "$ARCH"', review_start)
+    script = (
+        "set -euo pipefail\nTARGET=linux-i386\n"
+        + source[snapshot_start:snapshot_end] + "\n"
+        + source[parser_start:parser_end] + "\n"
+        + source[review_start:review_end] + "\n"
+    )
+    env = {
+        **os.environ,
+        "ROW_LINUX_SECURITY_UPDATE_CHANNEL": channel,
+        "ROW_LINUX_CVE_REVIEW_REFERENCE": reference,
+        "ROW_LINUX_CVE_PATCH_REVIEWED": reviewed,
+        "BUILDER_BINDING_TSV": (
+            "security_update_channel\thost-channel\ncve_review_reference\thost-review"
+        ),
+    }
+    result = subprocess.run(
+        [bash, "--noprofile", "--norc", "-c", script],
+        env=env, capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == expected_status, result.stderr
+    if expected_status:
+        assert (
+            "requires an explicit CVE patch review"
+            if reviewed != "true" else "must match smoke value"
+        ) in result.stderr
 
 
 def test_native_installer_smoke_checker_passes_current_tree() -> None:
     checker = _load_checker()
 
     assert checker.main() == 0
+
+
+def test_windows_gui_smoke_rejects_a_hidden_launch() -> None:
+    checker = _load_checker()
+    source = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
+    assert checker.check_gui_runtime_script("windows", source) == []
+
+    hidden = source.replace("-WindowStyle Normal", "-WindowStyle Hidden")
+    errors = checker.check_gui_runtime_script("windows", hidden)
+
+    assert "windows native GUI smoke missing normal GUI launch" in errors
 
 
 def test_native_installer_smoke_contract_covers_required_formats() -> None:
@@ -193,8 +270,9 @@ def test_linux_smoke_binds_security_lines_to_builder_evidence() -> None:
     script = Path("scripts/smoke_linux_native.sh").read_text(encoding="utf-8")
 
     assert "openssl version | tr '[:upper:]' '[:lower:]'" in script
-    assert 'SMOKE_SECURITY_UPDATE_CHANNEL="distribution-security-updates"' in script
-    assert 'SMOKE_CVE_REVIEW_REFERENCE="distribution-security-tracker-and-release-notes"' in script
+    assert 'SMOKE_SECURITY_UPDATE_CHANNEL="${ROW_LINUX_SECURITY_UPDATE_CHANNEL:-}"' in script
+    assert 'SMOKE_CVE_REVIEW_REFERENCE="${ROW_LINUX_CVE_REVIEW_REFERENCE:-}"' in script
+    assert 'if [[ "${ROW_LINUX_CVE_PATCH_REVIEWED:-}" != "true" ]]; then' in script
     assert 'BUILDER_SECURITY_UPDATE_CHANNEL="$value"' in script
     assert 'BUILDER_CVE_REVIEW_REFERENCE="$value"' in script
     assert "SMOKE_SECURITY_UPDATE_CHANNEL" in script

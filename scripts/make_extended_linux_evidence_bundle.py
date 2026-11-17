@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -36,6 +37,11 @@ from make_platform_verified_evidence_record import (  # noqa: E402
     linux_smoke_evidence_sha256_map,
     sha256_file,
 )
+from release_candidate_inventory import (  # noqa: E402
+    MAX_JSON_BYTES,
+    RUNTIME_REPORT_NAME,
+    validate_runtime_report,
+)
 
 RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 
@@ -48,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         assets_dir=args.assets_dir,
         builder_evidence=args.builder_evidence,
         smoke_evidence=args.smoke_evidence,
+        runtime_report=args.runtime_report,
         candidate_record=args.candidate_record,
         out_dir=args.out_dir,
         force=args.force,
@@ -72,6 +79,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--assets-dir", type=Path, required=True, help="directory containing Linux native artifacts")
     parser.add_argument("--builder-evidence", type=Path, required=True, help="builder identity JSON")
     parser.add_argument("--smoke-evidence", type=Path, required=True, help="native smoke log captured on the builder")
+    parser.add_argument("--runtime-report", type=Path, help="raw pip inspect report from the native build environment")
     parser.add_argument("--candidate-record", type=Path, required=True, help="candidate accepted-evidence JSON")
     parser.add_argument("--out-dir", type=Path, required=True, help="directory that will receive the bundle")
     parser.add_argument("--force", action="store_true", help="overwrite existing bundle outputs")
@@ -87,6 +95,7 @@ def make_extended_linux_evidence_bundle(
     smoke_evidence: object,
     candidate_record: object,
     out_dir: object,
+    runtime_report: Path | None = None,
     force: bool = False,
 ) -> list[str]:
     errors: list[str] = []
@@ -107,6 +116,18 @@ def make_extended_linux_evidence_bundle(
     if errors:
         return errors
     errors.extend(check_input_symlinks(builder_evidence, smoke_evidence, candidate_record))
+    runtime_bytes = None
+    if runtime_report is not None:
+        errors.extend(check_bundle_source_file(runtime_report, "runtime report"))
+        if runtime_report.name != RUNTIME_REPORT_NAME:
+            errors.append(f"runtime report file name must be {RUNTIME_REPORT_NAME}")
+        if not errors:
+            try:
+                with runtime_report.open("rb") as stream:
+                    runtime_bytes = stream.read(MAX_JSON_BYTES + 1)
+                validate_runtime_report(runtime_bytes, "runtime report")
+            except (OSError, ValueError) as exc:
+                errors.append(f"cannot validate runtime report: {exc}")
     if errors:
         return errors
     release_tag_errors, release_tag = extended_linux_release_tag_value(release_tag)
@@ -228,7 +249,7 @@ def make_extended_linux_evidence_bundle(
                 smoke_evidence=smoke_evidence,
                 candidate_record=candidate_record,
                 artifact_names=artifact_names,
-            ),
+            ) + ([RUNTIME_REPORT_NAME] if runtime_bytes is not None else []),
             label="extended Linux evidence bundle archive",
         )
     )
@@ -260,6 +281,13 @@ def make_extended_linux_evidence_bundle(
         candidate=candidate,
         promotion=promotion,
     )
+    if runtime_bytes is not None:
+        manifest["schema_version"] = 2
+        manifest["runtime_report"] = {
+            "file": RUNTIME_REPORT_NAME,
+            "sha256": hashlib.sha256(runtime_bytes).hexdigest(),
+            "size_bytes": len(runtime_bytes),
+        }
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     write_bundle_archive(
         archive_path=archive_path,
@@ -267,6 +295,7 @@ def make_extended_linux_evidence_bundle(
         builder_evidence=builder_evidence,
         smoke_evidence=smoke_evidence,
         candidate_record=candidate_record,
+        runtime_report=runtime_bytes,
         assets_dir=assets_dir,
         artifact_names=artifact_names,
     )
@@ -780,22 +809,29 @@ def write_bundle_archive(
     candidate_record: Path,
     assets_dir: Path,
     artifact_names: list[str],
+    runtime_report: bytes | None = None,
 ) -> None:
     with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         write_regular_file_to_zip(archive, manifest_path, manifest_path.name)
         write_regular_file_to_zip(archive, builder_evidence, builder_evidence.name)
         write_regular_file_to_zip(archive, smoke_evidence, smoke_evidence.name)
         write_regular_file_to_zip(archive, candidate_record, candidate_record.name)
+        if runtime_report is not None:
+            write_regular_bytes_to_zip(archive, RUNTIME_REPORT_NAME, runtime_report)
         for name in artifact_names:
             write_regular_file_to_zip(archive, assets_dir / name, name)
 
 
 def write_regular_file_to_zip(archive: zipfile.ZipFile, path: Path, arcname: str) -> None:
+    write_regular_bytes_to_zip(archive, arcname, path.read_bytes())
+
+
+def write_regular_bytes_to_zip(archive: zipfile.ZipFile, arcname: str, data: bytes) -> None:
     info = zipfile.ZipInfo(arcname)
     info.compress_type = zipfile.ZIP_DEFLATED
     info.create_system = 3
     info.external_attr = 0o100644 << 16
-    archive.writestr(info, path.read_bytes())
+    archive.writestr(info, data)
 
 
 def platform_evidence_policy() -> str:

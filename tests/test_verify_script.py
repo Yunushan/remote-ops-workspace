@@ -322,6 +322,8 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
         "--repository",
         "example/remote-ops-workspace",
         "--require-platform-goal-targets",
+        "--native-release-channel",
+        "production-signed",
     ]
     assert remote_audit.command == [
         "python",
@@ -337,6 +339,42 @@ def test_verify_can_require_platform_goal_targets(tmp_path: Path) -> None:
         "--require-release-asset-bytes",
         "--require-tag-source-head",
     ]
+
+
+def test_verify_uses_one_release_registry_for_the_strict_platform_audit(tmp_path, monkeypatch):
+    verify = _load_verify_module()
+    registry = tmp_path / "signed registry.json"
+    checks = {
+        "scripts/check_platform_verified_evidence.py": "--registry",
+        "scripts/check_protected_platform_goal.py": "--registry",
+        "scripts/import_platform_evidence_artifacts.py": "--registry",
+        "scripts/check_platform_review_bundle_artifacts.py": "--registry",
+        "scripts/check_release_publish_assets.py": "--evidence-registry",
+        "scripts/check_platform_release_evidence_remote.py": "--registry",
+    }
+    exercised = set()
+
+    def inspect_steps(steps):
+        for step in steps:
+            command = step.command
+            script = command[1]
+            if script not in checks or "--help" in command:
+                continue
+            flag = checks[script]
+            assert command.count(flag) == 1
+            assert command[command.index(flag) + 1] == str(registry)
+            exercised.add(script)
+        return 0
+
+    monkeypatch.setattr(verify, "run_steps", inspect_steps)
+    assert verify.main([
+        "--quick", "--no-cli-smoke", "--require-platform-goal-targets",
+        "--release-tag", "v1.0.3", "--release-repository", "example/remote-ops-workspace",
+        "--platform-review-bundle-dir", str(tmp_path / "bundles"),
+        "--release-assets-dir", str(tmp_path / "assets"),
+        "--platform-evidence-registry", str(registry),
+    ]) == 0
+    assert exercised == checks.keys()
 
 
 def test_verify_rejects_strict_platform_goal_without_release_tag(tmp_path: Path) -> None:

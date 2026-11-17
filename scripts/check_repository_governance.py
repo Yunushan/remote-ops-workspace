@@ -493,12 +493,18 @@ def _ruleset_applies_to_tag(value: dict[str, Any], tag: str) -> bool:
 
 def audit_tag_rulesets(payload: Any, tag: str) -> list[str]:
     """Require non-bypassable update/deletion protection for one release tag."""
+    _, errors = protected_tag_ruleset_ids(payload, tag)
+    return errors
+
+
+def protected_tag_ruleset_ids(payload: Any, tag: str) -> tuple[list[int], list[str]]:
+    """Return the IDs of the active, non-bypassable rules enforcing tag immutability."""
 
     raw_rulesets = payload.get("rulesets") if isinstance(payload, dict) else payload
     if not isinstance(raw_rulesets, list) or not all(
         isinstance(item, dict) for item in raw_rulesets
     ):
-        return ["tag-rulesets response must contain a rulesets list"]
+        return [], ["tag-rulesets response must contain a rulesets list"]
     if isinstance(payload, dict) and "total_count" in payload:
         total_count = payload.get("total_count")
         if (
@@ -506,14 +512,14 @@ def audit_tag_rulesets(payload: Any, tag: str) -> list[str]:
             or isinstance(total_count, bool)
             or total_count != len(raw_rulesets)
         ):
-            return [
+            return [], [
                 "tag-rulesets response is incomplete or inconsistent: "
                 f"total_count={total_count!r}, received={len(raw_rulesets)}"
             ]
 
     applicable = [item for item in raw_rulesets if _ruleset_applies_to_tag(item, tag)]
     if not applicable:
-        return [f"no active tag ruleset applies to refs/tags/{tag}"]
+        return [], [f"no active tag ruleset applies to refs/tags/{tag}"]
 
     missing_bypass_visibility = [
         item for item in applicable if "bypass_actors" not in item
@@ -521,26 +527,39 @@ def audit_tag_rulesets(payload: Any, tag: str) -> list[str]:
     strict = [item for item in applicable if item.get("bypass_actors") == []]
     if not strict:
         if missing_bypass_visibility:
-            return [
+            return [], [
                 "cannot prove release-tag immutability because applicable ruleset "
                 "bypass_actors are hidden; use a token with ruleset write visibility"
             ]
-        return [
+        return [], [
             f"every active tag ruleset applying to refs/tags/{tag} has bypass actors"
         ]
 
-    protected_operations = {
-        rule.get("type")
-        for ruleset in strict
-        for rule in ruleset.get("rules", [])
-        if isinstance(rule, dict)
-    }
+    rule_ids: list[int] = []
+    protected_operations: set[str] = set()
     errors: list[str] = []
+    for ruleset in strict:
+        rules = ruleset.get("rules")
+        if not isinstance(rules, list):
+            errors.append("active tag ruleset rules must be a list")
+            continue
+        operations = {
+            rule["type"] for rule in rules
+            if isinstance(rule, dict) and rule.get("type") in ("update", "deletion")
+        }
+        if not operations:
+            continue
+        ruleset_id = ruleset.get("id")
+        if not _positive_int(ruleset_id) or ruleset_id in rule_ids:
+            errors.append("tag protection ruleset IDs must be unique positive integers")
+            continue
+        rule_ids.append(ruleset_id)
+        protected_operations.update(operations)
     if "update" not in protected_operations:
         errors.append(f"release tag refs/tags/{tag} is not protected against updates")
     if "deletion" not in protected_operations:
         errors.append(f"release tag refs/tags/{tag} is not protected against deletion")
-    return errors
+    return sorted(rule_ids), errors
 
 
 def load_fixture(path: Path) -> dict[str, Any]:
@@ -560,16 +579,18 @@ def load_rulesets_fixture(path: Path) -> dict[str, Any] | list[Any]:
 def _fetch_with_gh_json(gh: str, url: str, *, label: str) -> Any:
     parsed = urlsplit(url)
     endpoint = url
+    hostname_args = []
     if parsed.netloc == "api.github.com" and parsed.path:
         endpoint = parsed.path.lstrip("/")
         if parsed.query:
             endpoint = f"{endpoint}?{parsed.query}"
+        hostname_args = ["--hostname", "github.com"]
     environment = os.environ.copy()
     if not environment.get("GH_TOKEN") and environment.get("GITHUB_TOKEN"):
         environment["GH_TOKEN"] = environment["GITHUB_TOKEN"]
     try:
         completed = subprocess.run(
-            [gh, "api", endpoint, "--header", "Accept: application/vnd.github+json"],
+            [gh, "api", endpoint, *hostname_args, "--header", "Accept: application/vnd.github+json"],
             check=True,
             capture_output=True,
             text=True,
@@ -708,7 +729,10 @@ def fetch_tag_rulesets(repository: str) -> dict[str, Any]:
         ruleset_id = int(item["id"])
         query = urlencode({"includes_parents": "true"})
         url = f"https://api.github.com/repos/{repository}/rulesets/{ruleset_id}?{query}"
-        details.append(_fetch_github_object(url, label=f"tag-ruleset {ruleset_id}"))
+        detail = _fetch_github_object(url, label=f"tag-ruleset {ruleset_id}")
+        if not _positive_int(detail.get("id")) or detail["id"] != ruleset_id:
+            raise RuntimeError(f"GitHub tag-ruleset detail does not match requested ID {ruleset_id}")
+        details.append(detail)
     return {"total_count": len(details), "rulesets": details}
 
 

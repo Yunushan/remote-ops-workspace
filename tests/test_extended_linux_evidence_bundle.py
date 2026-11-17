@@ -11,12 +11,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 
+
+@pytest.mark.parametrize("with_runtime_report", [False, True])
 def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     tmp_path: Path,
     monkeypatch,
+    with_runtime_report: bool,
 ) -> None:
     bundler = _load_script("make_extended_linux_evidence_bundle")
+    finalizer = _load_script("finalize_platform_verified_evidence_record")
     generator = _load_script("make_platform_verified_evidence_record")
     artifact_checker = _load_script("check_platform_promotion_artifacts")
     target = "linux-i386"
@@ -46,6 +51,10 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     assert errors == []
     candidate.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     out_dir = assets
+    runtime_report = None
+    if with_runtime_report:
+        runtime_report = builder.with_name("candidate-pip-inspect.json")
+        runtime_report.write_bytes(b'{"version":"1","installed":[{"metadata":{"name":"pip","version":"26.3"}}]}\n')
 
     errors = bundler.make_extended_linux_evidence_bundle(
         target=target,
@@ -55,6 +64,7 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
         smoke_evidence=smoke,
         candidate_record=candidate,
         out_dir=out_dir,
+        runtime_report=runtime_report,
     )
 
     assert errors == []
@@ -65,6 +75,16 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
     assert data["target"] == target
     assert data["release_tag"] == tag
     assert data["bundle_type"] == "extended-linux-native-evidence"
+    if runtime_report is None:
+        assert data["schema_version"] == 1
+        assert "runtime_report" not in data
+    else:
+        assert data["schema_version"] == 2
+        assert data["runtime_report"] == {
+            "file": runtime_report.name,
+            "size_bytes": runtime_report.stat().st_size,
+            "sha256": _sha256(runtime_report),
+        }
     assert len(data["artifacts"]) == len(names)
     assert data["release_asset_urls"] == record["release_asset_urls"]
     assert data["release_asset_source"] == record["release_asset_source"]
@@ -95,10 +115,19 @@ def test_extended_linux_evidence_bundle_packages_valid_i386_evidence(
         assert smoke.name in names_in_archive
         assert candidate.name in names_in_archive
         assert set(names).issubset(names_in_archive)
+        if runtime_report is not None:
+            assert zipped.read(runtime_report.name) == runtime_report.read_bytes()
         assert_zip_entries_are_regular_files(zipped)
     sidecar_text = sidecar.read_text(encoding="utf-8")
     assert f"{_sha256(manifest)}  {manifest.name}" in sidecar_text
     assert f"{_sha256(archive)}  {archive.name}" in sidecar_text
+    finalize_errors, _ = finalizer.finalize_platform_verified_evidence_record(
+        candidate_record=candidate,
+        bundle_manifest=manifest,
+        bundle_archive=archive,
+        bundle_sha256s=sidecar,
+    )
+    assert finalize_errors == []
 
 
 def test_extended_linux_evidence_bundle_rejects_ambiguous_archive_entry_names() -> None:

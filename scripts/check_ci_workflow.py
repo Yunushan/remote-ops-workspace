@@ -1035,6 +1035,7 @@ def check_ios_simulator_web_job(workflow: str) -> list[str]:
         ),
         "scripts/check_mobile_emulator_smoke.py --platform ios": "iOS simulator smoke helper",
         "--ios-open-url-attempts 3": "iOS simulator openurl retry budget",
+        "--ios-server-log web-server.log": "iOS simulator page request evidence",
         '--url "$WEB_PWA_URL"': "iOS simulator host loopback URL",
         "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": "iOS smoke screenshot upload",
         "if-no-files-found: error": "artifact upload failure on missing iOS screenshots",
@@ -1074,6 +1075,7 @@ def check_apple_27_validation_job(workflow: str) -> list[str]:
             "Apple simulator smoke helper"
         ),
         "--ios-version 27": "exact iOS 27 simulator runtime requirement",
+        "--ios-server-log web-server.log": "Apple simulator page request evidence",
         '--url "$WEB_PWA_URL"': "Apple validation host loopback URL",
         "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7": (
             "Apple 27 evidence upload"

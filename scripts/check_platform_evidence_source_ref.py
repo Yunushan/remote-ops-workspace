@@ -126,8 +126,10 @@ def check_platform_evidence_source_ref(
     source_head_sha, resolve_errors = resolve_tag_commit(fetcher, release_tag)
     errors.extend(resolve_errors)
     report["source_head_sha"] = source_head_sha
+    if source_head_sha is None:
+        return report, errors
 
-    pyproject, fetch_errors = fetch_tagged_file(fetcher, release_tag, "pyproject.toml")
+    pyproject, fetch_errors = fetch_tagged_file(fetcher, source_head_sha, "pyproject.toml")
     errors.extend(fetch_errors)
     if pyproject is not None:
         version_match = PROJECT_VERSION_RE.search(pyproject)
@@ -151,6 +153,7 @@ def check_platform_evidence_source_ref(
         workflow_text, workflow_errors, blob_sha = fetch_tagged_workflow(
             fetcher,
             release_tag,
+            source_head_sha,
             workflow_path,
         )
         errors.extend(workflow_errors)
@@ -235,9 +238,10 @@ def resolve_tag_commit(fetcher: ApiFetcher, release_tag: str) -> tuple[str | Non
 def fetch_tagged_workflow(
     fetcher: ApiFetcher,
     release_tag: str,
+    source_head_sha: str,
     workflow_path: str,
 ) -> tuple[str | None, list[str], str | None]:
-    text, errors, blob_sha = fetch_tagged_file_with_sha(fetcher, release_tag, workflow_path)
+    text, errors, blob_sha = fetch_tagged_file_with_sha(fetcher, source_head_sha, workflow_path)
     if errors and any("was not found" in error for error in errors):
         return (
             None,
@@ -252,36 +256,36 @@ def fetch_tagged_workflow(
 
 def fetch_tagged_file(
     fetcher: ApiFetcher,
-    release_tag: str,
+    ref: str,
     path: str,
 ) -> tuple[str | None, list[str]]:
-    text, errors, _ = fetch_tagged_file_with_sha(fetcher, release_tag, path)
+    text, errors, _ = fetch_tagged_file_with_sha(fetcher, ref, path)
     return text, errors
 
 
 def fetch_tagged_file_with_sha(
     fetcher: ApiFetcher,
-    release_tag: str,
+    ref: str,
     path: str,
 ) -> tuple[str | None, list[str], str | None]:
-    endpoint = f"contents/{quote(path, safe='/')}?ref={quote(release_tag, safe='')}"
+    endpoint = f"contents/{quote(path, safe='/')}?ref={quote(ref, safe='')}"
     try:
         payload = fetcher(endpoint)
     except Exception as exc:
-        return None, [fetch_failure(endpoint, exc, release_tag=release_tag, path=path)], None
+        return None, [fetch_failure(endpoint, exc, release_tag=ref, path=path)], None
     if payload.get("type") != "file":
-        return None, [f"{release_tag} path {path} must be a file"], None
+        return None, [f"{ref} path {path} must be a file"], None
     blob_sha = payload.get("sha")
     if not isinstance(blob_sha, str) or LOWER_GIT_SHA_RE.fullmatch(blob_sha) is None:
-        return None, [f"{release_tag} file {path} has invalid blob SHA {blob_sha!r}"], None
+        return None, [f"{ref} file {path} has invalid blob SHA {blob_sha!r}"], None
     if payload.get("encoding") != "base64" or not isinstance(payload.get("content"), str):
-        return None, [f"{release_tag} file {path} must include base64 GitHub content"], None
+        return None, [f"{ref} file {path} must include base64 GitHub content"], None
     try:
         encoded = "".join(payload["content"].split())
         raw = base64.b64decode(encoded, validate=True)
         return raw.decode("utf-8"), [], blob_sha
     except (ValueError, UnicodeDecodeError) as exc:
-        return None, [f"{release_tag} file {path} content is invalid: {exc}"], None
+        return None, [f"{ref} file {path} content is invalid: {exc}"], None
 
 
 def fetch_failure(

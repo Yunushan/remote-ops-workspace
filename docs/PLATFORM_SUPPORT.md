@@ -116,7 +116,7 @@ rows. The strict promotion path is
 `python scripts/check_platform_evidence_runner_readiness.py --repository <owner>/<repo> --require-goal-targets --require-idle`,
 `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`
-and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>`;
+and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo> --platform-evidence-registry <signed-registry.json>`;
 that strict verifier audits the intended already-published GitHub release, exact source-run
 metadata, published native/review-bundle asset bytes and published final
 accepted-record JSON bytes.
@@ -164,8 +164,11 @@ Source artifact inventory checks bind `workflow_run.id`,
 `workflow_run.head_repository_id` from exact source-run metadata, reject
 artifact `created_at` values outside the exact source run creation/start/update window
 from exact source-run timestamps, require artifact `expires_at` to be present
-and later than the artifact create/update timestamps, and compare the finalized public record asset to canonical
-accepted-record JSON bytes before a published release can pass the live audit.
+and later than the artifact create/update timestamps, and verify the SHA-256 of
+the raw Actions archive against the artifact's GitHub digest before checking
+its file inventory. The verifier also compares the finalized public record
+asset to canonical accepted-record JSON bytes before a published release can
+pass the live audit.
 The live remote audit
 (`python scripts/check_platform_release_evidence_remote.py`) also requires each
 published protected-platform release asset to expose a positive GitHub release
@@ -330,7 +333,7 @@ Current readiness:
   and `release_asset_source.run_attempt` must be a positive GitHub Actions run attempt.
   That builder identity must prove `workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`, `workflow_sha`, `source_head_sha` and `observed_git_head_sha` matching the release source head SHA, `git_worktree_clean=true`, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=i386`,
   `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
-  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <target-release-artifact-dir>`.
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <target-release-artifact-dir>`.
 - Linux armhf: 70.0%, script-supported native. Promotion requires a real
   armv7l/armhf release builder, default `linux-native` release matrix
   membership, upload/publish asset coverage, `scripts/make_linux_native.sh`
@@ -346,7 +349,7 @@ Current readiness:
   and `release_asset_source.run_attempt` must be a positive GitHub Actions run attempt.
   That builder identity must prove `workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`, `workflow_sha`, `source_head_sha` and `observed_git_head_sha` matching the release source head SHA, `git_worktree_clean=true`, `workflow_run_attempt` matching the release source run attempt, `dpkg --print-architecture=armhf`,
   `getconf LONG_BIT=32`, concrete `rpm`/`rpmbuild` tool paths and `sudo_non_interactive=true`, plus a target/release-scoped review bundle from
-  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <target-release-artifact-dir>`.
+  `python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <target-release-artifact-dir>`.
 - Windows XP native host: 25.0%, remote-target-only as a local operator host
   row. Promotion requires a separate XP-capable legacy toolchain, XP x86 SP3
   and Windows XP Professional x64 Edition SP2 VM or physical-host smoke

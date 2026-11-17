@@ -25,7 +25,7 @@ def _gui_pyz_archive_fixture(target="windows-x64"):
 
 
 class TestRequiredGuiPyzModules(_gui_pyz_unittest.TestCase):
-    def test_all_gui_targets_require_the_fixed_six_modules(self):
+    def test_all_gui_targets_require_the_packaged_modules(self):
         self.assertEqual(
             _GUI_PYZ_MODULES,
             (
@@ -35,6 +35,7 @@ class TestRequiredGuiPyzModules(_gui_pyz_unittest.TestCase):
                 "remote_ops_workspace.terminal_output",
                 "remote_ops_workspace.gui_workspace",
                 "remote_ops_workspace.gui_connected",
+                "remote_ops_workspace.quick_connect",
             ),
         )
         for target in ("windows-x64", "windows-arm64", "macos-x64", "macos-arm64"):
@@ -58,7 +59,7 @@ class TestRequiredGuiPyzModules(_gui_pyz_unittest.TestCase):
                 self.assertEqual(report["observed_presence"], {})
                 self.assertEqual(report["errors"], [])
 
-    def test_each_missing_module_fails_even_when_the_other_five_are_present(self):
+    def test_each_missing_module_fails_even_when_all_others_are_present(self):
         for module in _GUI_PYZ_MODULES:
             with self.subTest(module=module):
                 archive = _gui_pyz_archive_fixture()

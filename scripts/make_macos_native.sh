@@ -51,13 +51,18 @@ APP_NAME="Remote Ops Workspace"
 MACOS_MINIMUM_VERSION="14.4.0"
 APP_PATH="$PY_DIST/$APP_NAME.app"
 
+macos_keychain_args=()
+if [[ -n "${ROW_MACOS_SIGNING_KEYCHAIN:-}" ]]; then
+  macos_keychain_args=(--keychain "$ROW_MACOS_SIGNING_KEYCHAIN")
+fi
+
 sign_macos_artifact() {
   if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" != "1" ]]; then
     codesign --force --deep --sign - "$1"
     return
   fi
   : "${ROW_MACOS_SIGN_IDENTITY:?Production signing requires ROW_MACOS_SIGN_IDENTITY}"
-  codesign --force --deep --options runtime --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" "$1"
+  codesign --force --deep --options runtime --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} "$1"
   codesign --verify --deep --strict --verbose=2 "$1"
 }
 
@@ -73,9 +78,10 @@ create_macos_dmg() {
   for attempt in 1 2 3; do
     if hdiutil create -volname "$APP_NAME" -srcfolder "$dmg_stage" -format UDZO "$dmg_tmp"; then
       mv "$dmg_tmp" "$dmg"
-      return 0
+      return
+    else
+      status=$?
     fi
-    status=$?
     rm -f "$dmg_tmp"
     hdiutil detach "/Volumes/$APP_NAME" -force >/dev/null 2>&1 || true
     sleep "$((attempt * 3))"
@@ -168,6 +174,7 @@ cp -R "$APP_PATH" "$PKG_ROOT/Applications/"
 COMPONENT_PLIST="$BUILD_DIR/components.plist"
 pkgbuild --analyze --root "$PKG_ROOT" "$COMPONENT_PLIST"
 /usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST"
+COMPONENT_PKG="$BUILD_DIR/remote-ops-workspace-component.pkg"
 PKG="$OUT_DIR/remote-ops-workspace-v${VERSION}-macos-${ARTIFACT_ARCH}.pkg"
 pkgbuild \
   --root "$PKG_ROOT" \
@@ -175,18 +182,40 @@ pkgbuild \
   --identifier "io.github.remoteopsworkspace.app" \
   --version "$VERSION" \
   --install-location "/" \
-  "$PKG"
+  "$COMPONENT_PKG"
+
+PKG_REQUIREMENTS="$BUILD_DIR/pkg-requirements.plist"
+cat > "$PKG_REQUIREMENTS" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>os</key>
+  <array><string>$MACOS_MINIMUM_VERSION</string></array>
+</dict>
+</plist>
+EOF
+PKG_DISTRIBUTION="$BUILD_DIR/pkg-distribution.xml"
+productbuild --synthesize --product "$PKG_REQUIREMENTS" --package "$COMPONENT_PKG" "$PKG_DISTRIBUTION"
+productbuild --distribution "$PKG_DISTRIBUTION" --package-path "$BUILD_DIR" "$PKG"
 
 if [[ "${ROW_REQUIRE_RELEASE_SIGNING:-0}" == "1" ]]; then
   : "${ROW_MACOS_INSTALLER_SIGN_IDENTITY:?Production signing requires ROW_MACOS_INSTALLER_SIGN_IDENTITY}"
   : "${ROW_MACOS_NOTARY_PROFILE:?Production signing requires ROW_MACOS_NOTARY_PROFILE}"
   SIGNED_PKG="$BUILD_DIR/$(basename "$PKG").signed"
-  productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" "$PKG" "$SIGNED_PKG"
+  productsign --sign "$ROW_MACOS_INSTALLER_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} "$PKG" "$SIGNED_PKG"
   mv "$SIGNED_PKG" "$PKG"
-  xcrun notarytool submit "$PKG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" --wait
+  codesign --timestamp --sign "$ROW_MACOS_SIGN_IDENTITY" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} \
+    --identifier io.github.remoteopsworkspace.app.diskimage "$DMG"
+  xcrun notarytool submit "$PKG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} --wait
   xcrun stapler staple "$PKG"
-  xcrun notarytool submit "$DMG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" --wait
+  xcrun stapler validate "$PKG"
+  pkgutil --check-signature "$PKG"
+  spctl --assess --type install --verbose=2 "$PKG"
+  xcrun notarytool submit "$DMG" --keychain-profile "$ROW_MACOS_NOTARY_PROFILE" ${macos_keychain_args[@]+"${macos_keychain_args[@]}"} --wait
   xcrun stapler staple "$DMG"
+  xcrun stapler validate "$DMG"
+  codesign --verify --strict --verbose=2 "$DMG"
+  spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
 fi
 
 "$PYTHON_BIN" - "$ROOT" "$VERSION" "$DMG" "$PKG" "$ARTIFACT_ARCH" "$OUT_DIR" "${ROW_REQUIRE_RELEASE_SIGNING:-0}" <<'PY'

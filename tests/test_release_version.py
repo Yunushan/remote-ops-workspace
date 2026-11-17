@@ -3,11 +3,13 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from remote_ops_workspace import __version__
+
 
 def test_release_version_checker_passes_current_tree() -> None:
     checker = _load_checker()
 
-    assert checker.check_release_version("v1.0.27") == []
+    assert checker.check_release_version(f"v{__version__}") == []
 
 
 def test_release_version_checker_rejects_observed_tag_project_mismatch(tmp_path: Path) -> None:

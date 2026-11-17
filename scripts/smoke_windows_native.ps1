@@ -2,7 +2,8 @@ param(
   [string]$Dist = "native-dist\windows",
   [ValidateSet("x86", "x64", "arm64")]
   [string]$Arch = "x64",
-  [string]$Version = ""
+  [string]$Version = "",
+  [switch]$RequireReleaseSigning
 )
 
 $ErrorActionPreference = "Stop"
@@ -167,6 +168,9 @@ function Initialize-CandidateByteBinding {
       Save-CandidateByteBinding
       throw "candidate PyInstaller output missing: $Relative"
     }
+    if ($RequireReleaseSigning) {
+      Assert-TimestampedAuthenticode $ExpectedPath
+    }
     $ExpectedHash = (Get-FileHash -LiteralPath $ExpectedPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $Item = [ordered]@{ role = $Role; path = $Relative; sha256 = $ExpectedHash; size = (Get-Item -LiteralPath $ExpectedPath).Length }
     $script:CandidateExpectedExecutables[$Role] = $Item
@@ -208,6 +212,13 @@ function Assert-CandidateExecutableBytes([string]$Path, [string]$Role, [string]$
   if (!$Matched) { $script:CandidateByteBinding.status = "failed" }
   Save-CandidateByteBinding
   if (!$Matched) { throw "candidate executable bytes do not match PyInstaller output: $Normalized" }
+}
+
+function Assert-TimestampedAuthenticode([string]$Path) {
+  & $SignTool verify /pa /all /tw $Path
+  if ($LASTEXITCODE -ne 0) {
+    throw "native installer smoke requires valid Authenticode and timestamp: $Path"
+  }
 }
 
 function Complete-CandidateByteBinding {
@@ -295,7 +306,8 @@ function Test-PackagedGui([string]$GuiPath, [string]$Label) {
   try {
     $env:ROW_HOME = $GuiHome
     $env:QT_QPA_PLATFORM = "windows"
-    $Process = Start-Process -FilePath $GuiPath -ArgumentList @("--smoke-json", ('"' + $Report + '"')) -WindowStyle Hidden -PassThru
+    # The GUI verifier needs a normal show state to observe window visibility and paint.
+    $Process = Start-Process -FilePath $GuiPath -ArgumentList @("--smoke-json", ('"' + $Report + '"')) -WindowStyle Normal -PassThru
     if (!$Process.WaitForExit(25000)) {
       throw "$Label packaged GUI startup exceeded 25 seconds"
     }
@@ -480,6 +492,14 @@ foreach ($Artifact in @($NativeZip, $SetupExe, $Msi)) {
   }
 }
 
+if ($RequireReleaseSigning) {
+  . (Join-Path $PSScriptRoot "find_windows_signtool.ps1")
+  $SignTool = Find-WindowsSignTool
+  foreach ($Installer in @($SetupExe, $Msi)) {
+    Assert-TimestampedAuthenticode $Installer
+  }
+}
+
 $SmokeRoot = Join-Path $Root "build\native-smoke\windows-$Arch"
 Remove-CandidateSmokeTree $SmokeRoot
 New-Item -ItemType Directory -Force $SmokeRoot | Out-Null
@@ -520,6 +540,9 @@ Test-RowGuiLauncher $ExeRow $Arch
 $Uninstaller = Get-ChildItem -Path $ExeInstallDir -Filter "unins*.exe" | Select-Object -First 1
 if (!$Uninstaller) {
   throw "EXE uninstall helper was not created"
+}
+if ($RequireReleaseSigning) {
+  Assert-TimestampedAuthenticode $Uninstaller.FullName
 }
 Invoke-SmokeCommand "EXE uninstall" $Uninstaller.FullName @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
 if (Test-Path $ExeRow) {

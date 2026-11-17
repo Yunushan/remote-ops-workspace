@@ -177,7 +177,13 @@ def download_previous_wheel(path: Path) -> None:
         except urllib.error.HTTPError as exc:
             if attempt == 2 or exc.code not in {429, 500, 502, 503, 504}:
                 raise
-            time.sleep(attempt + 1)
+        except (TimeoutError, urllib.error.URLError) as exc:
+            # urllib wraps connection timeouts, while response reads can raise them directly.
+            if attempt == 2 or (
+                isinstance(exc, urllib.error.URLError) and not isinstance(exc.reason, TimeoutError)
+            ):
+                raise
+        time.sleep(attempt + 1)
     if len(data) != EXPECTED_WHEEL_SIZE or hashlib.sha256(data).hexdigest() != EXPECTED_WHEEL_SHA256:
         raise ValueError("downloaded previous wheel does not match its pinned release digest")
     path.parent.mkdir(parents=True, exist_ok=True)

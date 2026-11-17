@@ -588,7 +588,8 @@ class AnsiTerminalTranscript:
             return
         if sequence.startswith("["):
             if "@" <= char <= "~":
-                self._apply_csi(sequence[1:-1], char)
+                if sequence.isascii():
+                    self._apply_csi(sequence[1:-1], char)
                 self._escape = None
                 return
             if len(sequence) > 64:
@@ -736,7 +737,9 @@ class AnsiTerminalTranscript:
                 self._normal_cursor_row = 0
                 self._column = 0
         elif command in {"G", "C"}:
-            self._column = max(0, (first or 1) - 1) if command == "G" else self._column + (first or 1)
+            amount = first or 1
+            column = amount - 1 if command == "G" else self._column + amount
+            self._column = min(self._screen_columns - 1, column)
         elif command == "D":
             self._column = max(0, self._column - (first or 1))
         elif command in {"A", "B", "E", "F"}:

@@ -2255,8 +2255,8 @@ def test_import_record_rejects_source_workflow_run_endpoint_metadata(
             command,
             url="https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999",
             workflowUrl="https://api.github.com/repos/example/remote-ops-workspace/actions/workflows/999",
-            jobsUrl="https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/jobs",
-            logsUrl="https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/logs",
+            jobsUrl="https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs",
+            logsUrl="https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/2/logs",
             artifactsUrl=(
                 "https://api.github.com/repos/example/remote-ops-workspace/"
                 "actions/runs/99999/artifacts"
@@ -2286,13 +2286,13 @@ def test_import_record_rejects_source_workflow_run_endpoint_metadata(
     ) in errors
     assert (
         "linux-i386 release_asset_source workflow run jobsUrl must be "
-        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs', "
-        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/jobs'"
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/1/jobs', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs'"
     ) in errors
     assert (
         "linux-i386 release_asset_source workflow run logsUrl must be "
-        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/logs', "
-        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/99999/logs'"
+        "'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/1/logs', "
+        "got 'https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/2/logs'"
     ) in errors
     assert (
         "linux-i386 release_asset_source workflow run artifactsUrl must be "
@@ -3968,8 +3968,8 @@ def _source_run_metadata(
         "workflowUrl": (
             "https://api.github.com/repos/example/remote-ops-workspace/actions/workflows/445566"
         ),
-        "jobsUrl": "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/jobs",
-        "logsUrl": "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/logs",
+        "jobsUrl": "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/1/jobs",
+        "logsUrl": "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/attempts/1/logs",
         "artifactsUrl": (
             "https://api.github.com/repos/example/remote-ops-workspace/actions/runs/12345/artifacts"
         ),

@@ -75,9 +75,10 @@ def test_runner_readiness_accepts_all_goal_targets_with_idle_runners() -> None:
         fetcher=FakeFetcher(
             {
                 "actions/runners?per_page=100&page=1": _runner_page(
-                    _runner("online", False, "self-hosted", "linux", "i386"),
+                    _runner("online", False, "self-hosted", "Linux", "i386"),
                     _runner("online", False, "self-hosted", "linux", "armhf"),
-                    _runner("online", False, "self-hosted", "xp-evidence"),
+                    _runner("online", False, "self-hosted", "Windows", "XP-Evidence"),
+                    _runner("online", False, "self-hosted", "linux", "xp-evidence"),
                 )
             }
         ),
@@ -86,6 +87,7 @@ def test_runner_readiness_accepts_all_goal_targets_with_idle_runners() -> None:
     assert errors == []
     assert report["ready"] is True
     assert report["target_readiness"]["linux-i386"]["idle_runners"] == 1
+    assert report["target_readiness"]["windows-xp-native-x86"]["idle_runners"] == 1
     assert report["target_readiness"]["windows-xp-native-x64"]["idle_runners"] == 1
 
 
@@ -175,14 +177,15 @@ def test_runner_readiness_require_idle_rejects_busy_runner() -> None:
         fetcher=FakeFetcher(
             {
                 "actions/runners?per_page=100&page=1": _runner_page(
-                    _runner("online", True, "self-hosted", "xp-evidence"),
+                    _runner("online", True, "self-hosted", "windows", "xp-evidence"),
                 )
             }
         ),
     )
 
     assert errors == [
-        "windows-xp-native-x86 has online self-hosted runner labels ['self-hosted', 'xp-evidence'] but none are idle"
+        "windows-xp-native-x86 has online self-hosted runner labels "
+        "['self-hosted', 'windows', 'xp-evidence'] but none are idle"
     ]
 
 

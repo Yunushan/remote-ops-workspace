@@ -285,6 +285,13 @@ if not exist "%PROOF_FILE%" (
   echo proof file is missing: %PROOF_FILE% 1>&2
   exit /b 1
 )
+if /I "%SMOKE_ID%"=="loopback_profile_dry_run" (
+  findstr /X /L /C:"loopback TCP round trip: passed" "%PROOF_FILE%" >nul
+  if errorlevel 1 (
+    echo proof file must include a passing TCP round trip from row-xp-host.exe --loopback-dry-run. 1>&2
+    exit /b 1
+  )
+)
 
 set "SECURITY_PROVENANCE_REQUIRED="
 if /I "%SMOKE_ID%"=="legacy_crypto_profile_scoped" set "SECURITY_PROVENANCE_REQUIRED=1"

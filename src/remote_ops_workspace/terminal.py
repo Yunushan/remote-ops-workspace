@@ -201,10 +201,9 @@ def openssh_command_with_overrides(
 ) -> list[str]:
     """Return an argv copy with selected ``-o Name=value`` options replaced.
 
-    The helper handles both ``-o Name=value`` and ``-oName=value`` forms and
-    never mutates the stored launch plan.  It is used only for bounded,
-    non-interactive runtime copies such as background monitoring and the
-    no-ConPTY safety fallback.
+    The helper handles attached and separate ``-o`` values, plus the short
+    ``-J`` spelling when overriding ProxyJump. It leaves the stored launch
+    plan intact.
     """
 
     if not command:
@@ -223,8 +222,9 @@ def openssh_command_with_overrides(
             break
         option, value, consumed, option_prefix = _openssh_short_argument(command, index)
         candidate = value.strip() if option == "o" and value is not None else ""
-        option_name = candidate.partition("=")[0].strip().lower()
-        if option_name in normalized and "=" in candidate:
+        option_parts = re.split(r"[=\s]+", candidate, maxsplit=1)
+        option_name = option_parts[0].lower() if len(option_parts) == 2 else ""
+        if option_name in normalized or (option == "J" and "proxyjump" in normalized):
             if option_prefix:
                 result.append(option_prefix)
             index += consumed
@@ -705,9 +705,9 @@ def ssh_command_with_control_path(
     """Add safe OpenSSH connection sharing to an argv copy.
 
     ``master=True`` is reserved for the interactive terminal.  Background
-    clients explicitly use ``ControlMaster=no`` so they can only reuse an
-    already-authenticated terminal connection and can never create a hidden
-    password prompt of their own.
+    clients use the existing socket with batch mode enabled. If the master
+    disappears before they attach, OpenSSH reaches the failing proxy command
+    without opening another network connection.
     """
 
     if _is_native_windows():
@@ -717,13 +717,13 @@ def ssh_command_with_control_path(
     executable = os.path.basename(command[0]).lower()
     if executable not in {"ssh", "ssh.exe", "sftp", "sftp.exe", "scp", "scp.exe"}:
         return list(command)
-    return openssh_command_with_overrides(
-        list(command),
-        {
-            "ControlMaster": "auto" if master else "no",
-            "ControlPath": control_path,
-        },
-    )
+    overrides = {
+        "ControlMaster": "auto" if master else "no",
+        "ControlPath": control_path,
+    }
+    if not master:
+        overrides.update(BatchMode="yes", ProxyCommand="false", ProxyJump="none")
+    return openssh_command_with_overrides(command, overrides)
 
 
 def terminal_plan_for_sftp_browser(profile: Profile) -> TerminalPanePlan:

@@ -14,10 +14,10 @@ PLATFORM_TARGETS_PATH = ROOT / "configs" / "platform_targets.json"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "release.yml"
 
 STALE_DEFAULT_ARTIFACT_SNIPPETS = (
-    "remote-ops-workspace-v1.0.27-linux-<i386|amd64|armhf|arm64>.deb",
-    "remote-ops-workspace-v1.0.27-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
-    "remote-ops-workspace-v1.0.27-linux-<i686|x86_64|armhf|aarch64>.AppImage",
-    "remote-ops-workspace-v1.0.27-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
+    "remote-ops-workspace-v<project.version>-linux-<i386|amd64|armhf|arm64>.deb",
+    "remote-ops-workspace-v<project.version>-linux-<i686|x86_64|armv7hl|aarch64>.rpm",
+    "remote-ops-workspace-v<project.version>-linux-<i686|x86_64|armhf|aarch64>.AppImage",
+    "remote-ops-workspace-v<project.version>-linux-<i686|x86_64|armhf|aarch64>-native.tar.gz",
 )
 SCRIPT_TARGET_BUILDER_REQUIREMENT_SNIPPETS = {
     "linux-i386": (
@@ -329,8 +329,9 @@ def check_release_docs(matrix: dict[str, Any]) -> list[str]:
         if not any(variant in combined for variant in variants):
             errors.append(f"release docs missing matrix asset pattern: {pattern}")
     for snippet in STALE_DEFAULT_ARTIFACT_SNIPPETS:
-        if snippet in combined:
-            errors.append(f"release docs still advertise stale default artifact pattern: {snippet}")
+        for stale in sorted(release_asset_doc_variants(snippet.replace("<project.version>", version), version)):
+            if stale in combined:
+                errors.append(f"release docs still advertise stale default artifact pattern: {stale}")
     return errors
 
 

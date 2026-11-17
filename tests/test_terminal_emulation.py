@@ -17,6 +17,21 @@ def test_ansi_transcript_rewrites_carriage_return_progress_and_backspaces() -> N
     assert terminal.feed("\b\bOK") == "download 4OK"
 
 
+@pytest.mark.parametrize("command", ["G", "C"])
+def test_primary_cursor_cannot_allocate_padding_beyond_the_viewport(command: str) -> None:
+    terminal = AnsiTerminalTranscript()
+    terminal.set_screen_size(20, 5)
+    terminal.feed(f"abc\x1b[{'9' * 60}{command}")
+    assert terminal.cursor_column == 19
+    assert terminal.feed("x") == "abc" + " " * 16 + "x"
+
+
+def test_primary_transcript_preserves_long_literals_and_ignores_non_ascii_csi() -> None:
+    terminal = AnsiTerminalTranscript()
+    content = "x" * 100
+    assert terminal.feed(content + "\x1b[²G\x1b[²m!") == content + "!"
+
+
 def test_ansi_transcript_replaces_normal_readline_history_rows() -> None:
     terminal = AnsiTerminalTranscript()
 

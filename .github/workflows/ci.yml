@@ -944,7 +944,7 @@ jobs:
           )
           PY
       - name: iOS Web/PWA simulator smoke
-        run: python scripts/check_mobile_emulator_smoke.py --platform ios --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --out-dir artifacts/mobile
+        run: python scripts/check_mobile_emulator_smoke.py --platform ios --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --ios-server-log web-server.log --out-dir artifacts/mobile
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ios-web-pwa-simulator
@@ -1039,7 +1039,7 @@ jobs:
           )
           PY
       - name: iOS 27 Web/PWA simulator smoke
-        run: python scripts/check_mobile_emulator_smoke.py --platform ios --ios-version 27 --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --out-dir artifacts/apple-27
+        run: python scripts/check_mobile_emulator_smoke.py --platform ios --ios-version 27 --url "$WEB_PWA_URL" --ios-open-url-attempts 3 --ios-server-log web-server.log --out-dir artifacts/apple-27
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() }}
         with:

@@ -9,6 +9,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 
 def test_xp_native_evidence_contract_passes_current_tree() -> None:
     checker = _load_xp_native_evidence_checker()
@@ -931,6 +933,33 @@ def test_xp_native_evidence_rejects_smoke_evidence_wrong_smoke_id_binding(tmp_pa
         "windows-xp-native-x64 smoke result cli_launch evidence_file smoke-id binding must be "
         "['cli_launch'], got ['loopback_profile_dry_run']"
     ) in errors
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    ("", "loopback TCP round trip: failed\n", "loopback TCP round trip: passed\n" * 2),
+)
+def test_xp_native_evidence_rejects_missing_failed_or_duplicate_round_trip(
+    tmp_path: Path,
+    replacement: str,
+) -> None:
+    checker = _load_xp_native_evidence_checker()
+    evidence = _valid_evidence("windows-xp-native-x86", "x86", "SP3", "v1.0.2", [])
+    _attach_smoke_evidence_files(tmp_path, evidence)
+    result = next(item for item in evidence["smoke_results"] if item["id"] == "loopback_profile_dry_run")
+    smoke_file = tmp_path / result["evidence_file"]
+    smoke_file.write_text(
+        smoke_file.read_text(encoding="utf-8").replace("loopback TCP round trip: passed\n", replacement),
+        encoding="utf-8",
+    )
+    result["evidence_sha256"] = _sha256(smoke_file)
+    path = tmp_path / "xp-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+
+    assert (
+        "windows-xp-native-x86 smoke result loopback_profile_dry_run "
+        "must contain exactly one passing TCP round trip"
+    ) in checker.check_xp_native_evidence(path)
 
 
 def test_xp_native_evidence_rejects_smoke_evidence_wrong_release_binding(tmp_path: Path) -> None:
@@ -2254,6 +2283,8 @@ def _xp_host_probe_lines(target: str, os_identity: dict[str, Any]) -> str:
 
 
 def _security_smoke_lines(smoke_id: str) -> str:
+    if smoke_id == "loopback_profile_dry_run":
+        return "loopback TCP round trip: passed\n"
     if smoke_id == "legacy_crypto_profile_scoped":
         return (
             "legacy compatibility profile: isolated-opt-in\n"

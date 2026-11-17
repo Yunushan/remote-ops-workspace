@@ -64,22 +64,22 @@ def test_platform_promotion_runbook_requires_non_promotional_runner_skip_boundar
     assert any("--allow-unavailable" in error for error in errors)
 
 
-def test_platform_promotion_runbook_requires_bundle_backed_strict_verify() -> None:
+def test_platform_promotion_runbook_requires_signed_registry_for_bundle_validation() -> None:
     checker = _load_checker()
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
         (
-            "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
-            "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
-            "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>"
+            "python scripts/check_protected_platform_goal.py --release-tag v<project.version> "
+            "--require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo> "
+            "--registry <signed-registry.json>"
         ),
-        "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets",
+        "python scripts/check_protected_platform_goal.py --require-complete",
     )
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
-    assert any("--platform-review-bundle-dir <bundle-dir>" in error for error in errors)
-    assert any("--release-assets-dir <release-assets-dir>" in error for error in errors)
-    assert any("--release-repository <owner>/<repo>" in error for error in errors)
+    assert any("--assets-dir <release-assets-dir>" in error for error in errors)
+    assert any("--repository <owner>/<repo>" in error for error in errors)
+    assert any("--registry <signed-registry.json>" in error for error in errors)
 
 
 def test_platform_promotion_runbook_requires_asset_backed_strict_publish() -> None:
@@ -119,23 +119,25 @@ def test_platform_promotion_runbook_requires_strict_verify_import_dry_run() -> N
     assert any("--verify-source-run" in error for error in errors)
 
 
-def test_platform_promotion_runbook_requires_live_release_repository_verify() -> None:
+def test_platform_promotion_runbook_requires_signed_registry_for_live_release_audit() -> None:
     checker = _load_checker()
     command = (
-        "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
-        "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
-        "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>"
+        "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> "
+        "--release-tag v<project.version> --require-goal-targets --require-source-runs "
+        "--require-source-artifact-bytes --require-final-record-bytes "
+        "--require-release-asset-bytes --require-tag-source-head"
     )
     text = Path("docs/PLATFORM_PROMOTION_RUNBOOK.md").read_text(encoding="utf-8").replace(
+        f"{command} --registry <signed-registry.json>",
         command,
-        "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
-        "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
-        "--release-assets-dir <release-assets-dir>",
     )
 
     errors = checker.check_platform_promotion_runbook(runbook_text=text)
 
-    assert any("--release-repository <owner>/<repo>" in error for error in errors)
+    assert any(
+        "check_platform_release_evidence_remote.py" in error and "--registry <signed-registry.json>" in error
+        for error in errors
+    )
 
 
 def test_platform_promotion_runbook_requires_published_release_audit_command() -> None:

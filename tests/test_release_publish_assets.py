@@ -12,6 +12,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from remote_ops_workspace import __version__
+
+CURRENT_TAG = f"v{__version__}"
+I386_ASSET = f"remote-ops-workspace-{CURRENT_TAG}-linux-i386.deb"
+
 POLICY = (
     "Only accepted evidence records in this file can promote Linux i386, Linux armhf, "
     "or Windows XP native-host readiness. Accepted records must include release asset URLs, "
@@ -200,13 +205,13 @@ def test_expected_release_assets_expand_default_matrix() -> None:
 
     assets = checker.expected_release_assets(matrix)
 
-    assert "remote_ops_workspace-1.0.27-py3-none-any.whl" in assets
-    assert "remote-ops-workspace-v1.0.27-windows-x86-setup.exe" in assets
-    assert "remote-ops-workspace-v1.0.27-macos-arm64.pkg" in assets
-    assert "remote-ops-workspace-v1.0.27-linux-amd64.deb" in assets
-    assert "remote-ops-workspace-v1.0.27-linux-aarch64-native-SHA256SUMS.txt" in assets
-    assert "remote-ops-workspace-v1.0.27-linux-i386.deb" not in assets
-    assert "remote-ops-workspace-v1.0.27-linux-armhf.deb" not in assets
+    assert f"remote_ops_workspace-{__version__}-py3-none-any.whl" in assets
+    assert f"remote-ops-workspace-{CURRENT_TAG}-windows-x86-setup.exe" in assets
+    assert f"remote-ops-workspace-{CURRENT_TAG}-macos-arm64.pkg" in assets
+    assert f"remote-ops-workspace-{CURRENT_TAG}-linux-amd64.deb" in assets
+    assert f"remote-ops-workspace-{CURRENT_TAG}-linux-aarch64-native-SHA256SUMS.txt" in assets
+    assert I386_ASSET not in assets
+    assert f"remote-ops-workspace-{CURRENT_TAG}-linux-armhf.deb" not in assets
 
 
 def test_expected_release_assets_normalize_to_requested_tag() -> None:
@@ -217,8 +222,8 @@ def test_expected_release_assets_normalize_to_requested_tag() -> None:
 
     assert "remote_ops_workspace-1.0.3-py3-none-any.whl" in assets
     assert "remote-ops-workspace-v1.0.3-windows-x64-setup.exe" in assets
-    assert "remote_ops_workspace-1.0.27-py3-none-any.whl" not in assets
-    assert "remote-ops-workspace-v1.0.27-windows-x64-setup.exe" not in assets
+    assert f"remote_ops_workspace-{__version__}-py3-none-any.whl" not in assets
+    assert f"remote-ops-workspace-{CURRENT_TAG}-windows-x64-setup.exe" not in assets
 
 
 def test_publish_contract_rejects_gated_default_asset_without_evidence() -> None:
@@ -226,11 +231,11 @@ def test_publish_contract_rejects_gated_default_asset_without_evidence() -> None
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.27-linux-i386.deb")
+    linux_job["asset_patterns"].append(I386_ASSET)
 
     errors = checker.check_publish_contract(matrix, workflow, evidence_registry=_empty_evidence_registry())
 
-    assert any("gated native asset remote-ops-workspace-v1.0.27-linux-i386.deb" in error for error in errors)
+    assert any(f"gated native asset {I386_ASSET}" in error for error in errors)
 
 
 def test_publish_contract_uses_explicit_empty_platform_registry(monkeypatch) -> None:
@@ -238,14 +243,14 @@ def test_publish_contract_uses_explicit_empty_platform_registry(monkeypatch) -> 
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.27-linux-i386.deb")
+    linux_job["asset_patterns"].append(I386_ASSET)
     monkeypatch.setattr(checker, "read_evidence_registry", lambda: _accepted_evidence_registry("linux-i386"))
 
     errors = checker.check_publish_contract(matrix, workflow, evidence_registry={})
 
     assert any(
-        "default release matrix includes gated native asset remote-ops-workspace-v1.0.27-linux-i386.deb "
-        "for linux-i386 without accepted platform evidence for release_tag v1.0.27"
+        f"default release matrix includes gated native asset {I386_ASSET} "
+        f"for linux-i386 without accepted platform evidence for release_tag {CURRENT_TAG}"
         in error
         for error in errors
     )
@@ -273,7 +278,7 @@ def test_publish_contract_rejects_gated_default_asset_with_wrong_release_evidenc
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.27-linux-i386.deb")
+    linux_job["asset_patterns"].append(I386_ASSET)
 
     errors = checker.check_publish_contract(
         matrix,
@@ -295,13 +300,13 @@ def test_publish_contract_rejects_gated_asset_with_unfinalized_platform_candidat
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.27-linux-i386.deb")
+    linux_job["asset_patterns"].append(I386_ASSET)
     registry = _accepted_evidence_registry("linux-i386")
     registry["accepted_evidence"][0].pop("review_bundle")
 
     errors = checker.check_publish_contract(matrix, workflow, evidence_registry=registry)
 
-    assert any("gated native asset remote-ops-workspace-v1.0.27-linux-i386.deb" in error for error in errors)
+    assert any(f"gated native asset {I386_ASSET}" in error for error in errors)
 
 
 def test_publish_contract_rejects_malformed_accepted_evidence_for_gated_asset() -> None:
@@ -309,7 +314,7 @@ def test_publish_contract_rejects_malformed_accepted_evidence_for_gated_asset() 
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     linux_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "linux-native")
-    linux_job["asset_patterns"].append("remote-ops-workspace-v1.0.27-linux-i386.deb")
+    linux_job["asset_patterns"].append(I386_ASSET)
 
     errors = checker.check_publish_contract(
         matrix,
@@ -327,7 +332,7 @@ def test_publish_contract_rejects_malformed_accepted_evidence_for_gated_asset() 
         },
     )
 
-    assert any("gated native asset remote-ops-workspace-v1.0.27-linux-i386.deb" in error for error in errors)
+    assert any(f"gated native asset {I386_ASSET}" in error for error in errors)
 
 
 def test_publish_contract_rejects_xp_asset_without_complete_xp_pair() -> None:
@@ -335,7 +340,7 @@ def test_publish_contract_rejects_xp_asset_without_complete_xp_pair() -> None:
     matrix = _load_matrix()
     workflow = Path(".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
     windows_job = next(job for job in matrix["default_github_release"]["native_jobs"] if job["job"] == "windows-native")
-    windows_job["asset_patterns"].append("remote-ops-workspace-v1.0.27-windows-xp-x86-native.zip")
+    windows_job["asset_patterns"].append(f"remote-ops-workspace-{CURRENT_TAG}-windows-xp-x86-native.zip")
 
     errors = checker.check_publish_contract(
         matrix,

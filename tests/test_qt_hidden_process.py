@@ -446,32 +446,50 @@ def test_hidden_process_missing_program_reports_failed_start(qt_app) -> None:
         process.close()
 
 
-def test_hidden_process_threads_tolerate_deleted_qt_owner(qt_app) -> None:
+@pytest.mark.parametrize("observation_delay", (0.0, 0.15))
+def test_hidden_process_threads_tolerate_deleted_qt_owner(qt_app, observation_delay) -> None:
     from PyQt6 import sip
 
     process = QtHiddenProcess()
     process.setProgram(sys.executable)
     process.setArguments(
-        ["-u", "-c", "import time; time.sleep(0.05); print('late output', flush=True)"]
+        ["-u", "-c", "import sys; sys.stdin.buffer.read(); print('late output', flush=True)"]
     )
     thread_errors: list[threading.ExceptHookArgs] = []
     original_hook = threading.excepthook
     threading.excepthook = thread_errors.append
+    child = None
 
     try:
         process.start()
+        # The child stays alive until input closes. A delayed Qt event pump
+        # must not miss a transient 50ms Running state before owner deletion.
+        time.sleep(observation_delay)
         _process_events_until(
             qt_app,
             lambda: process.state() == qt_core.QProcess.ProcessState.Running,
         )
+        child = process._process
+        assert child is not None
+        finished = process._finished_event
         sip.delete(process)
-        deadline = time.monotonic() + 1.0
-        while time.monotonic() < deadline and not thread_errors:
-            qt_app.processEvents()
-            time.sleep(0.01)
+        process.closeWriteChannel()
+        assert finished.wait(5.0), "child and pipe readers did not finish after owner deletion"
+        assert child.poll() == 0
+        assert b"late output" in process._stdout
+        qt_app.processEvents()
         assert thread_errors == []
     finally:
-        threading.excepthook = original_hook
+        try:
+            process.closeWriteChannel()
+            if not sip.isdeleted(process):
+                process.close()
+            elif child is not None and child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
+                process._finished_event.wait(5)
+        finally:
+            threading.excepthook = original_hook
 
 
 def test_hidden_process_accessors_empty_reads_and_start_guards() -> None:

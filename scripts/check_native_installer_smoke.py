@@ -159,7 +159,7 @@ def check_gui_runtime_script(platform: str, text: str) -> list[str]:
         required = {
             **shared, "Test-PackagedGui $GuiPath": "installed GUI execution",
             "Test-PackagedGui $RootGuiPath": "portable GUI execution",
-            "-WindowStyle Hidden": "hidden GUI launch", "WaitForExit(25000)": "bounded GUI execution",
+            "-WindowStyle Normal": "normal GUI launch", "WaitForExit(25000)": "bounded GUI execution",
             '$Result.frozen -ne $true': "frozen runtime proof",
             '$Result.qt_platform -ne "windows"': "native Qt platform proof",
             "Get-FileHash -LiteralPath $Image": "paint byte verification",
@@ -203,6 +203,9 @@ def check_runtime_resource_script(platform: str, script: Path, text: str) -> lis
             'verify_app_macos_minimum "$DMG_APP" "DMG verify"': "DMG minimum macOS version check",
             'verify_app_macos_minimum "$PKG_APP" "PKG verify"': "PKG minimum macOS version check",
             '[[ "$minimum" != "14.4.0" ]]': "macOS 14.4 minimum version assertion",
+            'pkgutil --expand "$PKG"': "final PKG distribution readback",
+            'distribution.findall("./volume-check/allowed-os-versions/os-version")': "PKG install-time OS range check",
+            'native installer smoke PKG distribution: macOS 14.4 minimum': "PKG distribution evidence line",
             "release_architectures": "release architecture resource assertion",
             "windows_legacy_targets": "legacy Windows resource assertion",
             "native installer smoke runtime resources:": "resource-probe evidence line",
@@ -274,6 +277,15 @@ def check_linux_smoke_source_binding(script: Path, text: str) -> list[str]:
         ),
         "require_builder_match \"security_patch_evidence.cve_review_reference\"": (
             "builder evidence CVE review reference match"
+        ),
+        'SMOKE_SECURITY_UPDATE_CHANNEL="${ROW_LINUX_SECURITY_UPDATE_CHANNEL:-}"': (
+            "host security update channel input"
+        ),
+        'SMOKE_CVE_REVIEW_REFERENCE="${ROW_LINUX_CVE_REVIEW_REFERENCE:-}"': (
+            "host CVE review reference input"
+        ),
+        'if [[ "${ROW_LINUX_CVE_PATCH_REVIEWED:-}" != "true" ]]; then': (
+            "explicit host CVE review requirement"
         ),
         "openssl version | tr '[:upper:]' '[:lower:]'": "builder-compatible OpenSSL CLI normalization",
         'SMOKE_OBSERVED_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"': (

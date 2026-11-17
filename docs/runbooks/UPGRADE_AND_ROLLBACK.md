@@ -1,18 +1,24 @@
 # Runbook: Upgrade and rollback
 
-Applies to a source install or a release-candidate build of Remote Ops Workspace.
+Applies to source installs and promoted native releases of Remote Ops Workspace.
 For the deployment model, see [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPLOYMENT.md).
 
 ## Preconditions
 
 - All Remote Ops Workspace windows, terminals and managed helpers are closed.
-- You have an encrypted workspace snapshot taken immediately before the change
-  (see [`WORKSPACE_BACKUP_AND_RESTORE.md`](WORKSPACE_BACKUP_AND_RESTORE.md)).
-- You know the currently installed version and the target version.
+- You know the currently installed release tag and commit, the target release,
+  the installation format and architecture, and the active `ROW_HOME`.
+- For a native install, keep the verified previous installer and its release
+  coordinates available before upgrading. Confirm that it can be reinstalled on
+  the receiving host.
 
 ## Upgrade
 
-1. Record the current state.
+1. Record the current state and take an encrypted offline snapshot. Keep the
+   backup and passphrase separately. Use a verified CLI that supports
+   `row workspace backup` and `row workspace restore`. If the installed version
+   lacks these commands, keep a verified copy of a compatible CLI outside the
+   installation directory and run the backup against the existing `ROW_HOME`.
 
    ```bash
    row --version
@@ -20,30 +26,42 @@ For the deployment model, see [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPL
    row workspace backup --out /secure/row-pre-upgrade.enc --offline
    ```
 
-2. Install the new version. For a source install, check out the target tag and
-   reinstall into a fresh virtual environment; do not upgrade in place over a
-   running process.
+2. For a native package, verify the new installer against its promoted release
+   tag and commit using the
+   [release promotion runbook](RELEASE_PROMOTION.md#verify-a-published-artifact).
+   For Windows and macOS, also verify the platform signature before running it.
+   Keep the same installation format, architecture, and scope.
+
+   For a source install, use a fresh virtual environment. The example below
+   uses the source release locks for Linux x86_64. Use the Python patch version
+   recorded at the top of those locks and a new environment directory for each
+   version. Set `target_tag` to the release tag you intend to install.
 
    ```bash
    git fetch --tags
-   git checkout <target-tag>
-   python -m venv .venv-upgrade && . .venv-upgrade/bin/activate
-   python -m pip install --require-hashes -r requirements-locks/linux-x86_64.txt
-   python -m pip install .
+   git checkout --detach "$target_tag"
+   python3.14 -m venv .venv-upgrade
+   . .venv-upgrade/bin/activate
+   export PIP_CONFIG_FILE=/dev/null PIP_REQUIRE_VIRTUALENV=1
+   python -m pip install --require-hashes --only-binary=:all: \
+     --requirement requirements-locks/source-linux-x86_64-bootstrap.txt
+   python -m pip install --require-hashes --no-build-isolation \
+     --only-binary=:all: --no-binary=pyftpdlib \
+     --requirement requirements-locks/source-linux-x86_64.txt
+   python -m pip install --no-deps --no-build-isolation '.[desktop,security,package,servers]'
+   python -m pip check
    ```
 
-   Use the lock file for your platform (for example
-   `requirements-locks/macos-arm64.txt` on Apple silicon or
-   `requirements-locks/windows-x64.txt` on Windows) and consult
-   [`../PYTHON_SUPPORT.md`](../PYTHON_SUPPORT.md) for the supported
-   interpreter.
+   For source builds on other platforms, use
+   the matching bootstrap lock, runtime lock, and install options from the
+   tagged release workflow.
 
-3. Verify before opening the GUI.
+3. Verify before opening the GUI. Run the CLI from the new installation and
+   check that its reported version matches the target release.
 
    ```bash
    row --version
    row doctor --json
-   python scripts/verify.py --quick --lint
    ```
 
 4. Open the GUI, confirm profiles, layouts, vault status and one SSH/SFTP
@@ -55,14 +73,37 @@ For the deployment model, see [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPL
 
 ## Rollback
 
-1. Close the new version completely.
-2. Reinstall the previous version using the same fresh-environment steps above
-   at the previous tag.
-3. If the upgrade migrated workspace state, restore the pre-upgrade snapshot
-   into a new sibling directory and point `ROW_HOME` at it:
-   [`WORKSPACE_BACKUP_AND_RESTORE.md`](WORKSPACE_BACKUP_AND_RESTORE.md).
-4. Re-run `row doctor --json` and confirm the three checks from the upgrade
-   step. Escalate with a support bundle if any check fails.
+1. Close the upgraded application, terminals, and managed helpers. Preserve
+   the upgraded `ROW_HOME` for investigation and record the failure with the
+   installed version and affected platform.
+2. Restore the pre-upgrade backup into a new, private direct sibling of the
+   upgraded workspace using the verified recovery CLI. Keep `ROW_HOME` pointed
+   at the upgraded directory during restore. If recovery depends on the
+   installed CLI, restore before removing that installation. On Windows,
+   use a parent directory with a private ACL for the restore destination.
+   The example assumes `ROW_HOME` is `/private/row-workspace`. See the
+   [backup and restore runbook](WORKSPACE_BACKUP_AND_RESTORE.md).
+
+   ```bash
+   row workspace restore --backup /secure/row-pre-upgrade.enc \
+     --destination /private/row-restored --offline
+   ```
+
+3. For a native rollback, recheck the previous installer's published provenance
+   using its own release coordinates. Recheck the signature for Windows and
+   macOS. Reinstall using the same platform and package format. If the package
+   manager refuses a downgrade, follow that package's supported removal and
+   reinstall sequence while retaining both workspace directories. Finish
+   installation before starting the previous application. For a source
+   rollback, select the retained environment for the previous tag or recreate
+   it with that tag's locks.
+4. Set `ROW_HOME` to the restored directory for the CLI and GUI before the first
+   launch of the previous version. Confirm the expected `row --version`, run
+   `row doctor --json`, and check profiles, layouts, and vault access by using a
+   known saved credential in a test connection. Check `row servers status --json`
+   after closing the test session. If any check fails, retain the encrypted backup
+   and both workspace directories and follow the
+   [incident runbook](SECRET_ROTATION_AND_INCIDENT.md).
 
 ## Notes
 

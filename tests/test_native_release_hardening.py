@@ -98,6 +98,51 @@ def test_native_workflow_requires_fail_closed_windows_signing() -> None:
     assert "windows-native must fail closed when release signing is unavailable" in errors
 
 
+def test_production_tag_push_must_fail_when_signing_is_incomplete() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    refusal = '              exit 1\n            fi'
+    message = "release-preflight must fail a production tag push when signing is unavailable"
+    assert message not in checker.check_signing_readiness_gate(workflow)
+    assert message in checker.check_signing_readiness_gate(workflow.replace(refusal, "              :\n            fi", 1))
+
+
+def test_windows_production_smoke_requires_signed_installers() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    errors = checker.check_signing_readiness_gate(workflow.replace(" -RequireReleaseSigning", "", 1))
+    assert "windows-native must reverify the signed installers before running smoke tests" in errors
+
+
+def test_macos_production_smoke_requires_signed_and_notarized_installers() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    errors = checker.check_signing_readiness_gate(workflow.replace(" --require-release-signing", "", 1))
+    assert "macos-native must reverify final signatures and stapled tickets before smoke tests" in errors
+
+
+def test_release_smoke_must_not_receive_windows_signing_password() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace(
+        "      - name: Run Windows native installer smoke tests\n",
+        "      - name: Run Windows native installer smoke tests\n"
+        "        env:\n"
+        "          ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD }}\n",
+        1,
+    )
+
+    assert "windows-native signing credentials must be scoped to its build step" in checker.check_signing_readiness_gate(workflow)
+
+
+def test_release_rejects_macos_notarization_outside_temporary_keychain() -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = workflow.replace('store-credentials "remote-ops-notary" --keychain "$keychain"', 'store-credentials "remote-ops-notary"', 1)
+
+    assert "macos-native must bind notarization to a temporary keychain and delete it when the build exits" in checker.check_signing_readiness_gate(workflow)
+
+
 def test_native_workflow_rejects_candidate_job_without_readiness_gate() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -181,6 +226,8 @@ def test_macos_dmg_creation_retries_resource_busy_failures() -> None:
     assert "create_macos_dmg()" in script
     assert 'hdiutil detach "/Volumes/$APP_NAME" -force' in script
     assert "for attempt in 1 2 3" in script
+    assert '      return\n    else\n      status=$?\n    fi\n' in script
+    assert '  return "$status"' in script
     assert '$(basename "${dmg%.dmg}").tmp.dmg' in script
 
 

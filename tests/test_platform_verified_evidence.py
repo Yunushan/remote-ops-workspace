@@ -5460,6 +5460,38 @@ def test_platform_verified_evidence_rejects_missing_security_patch_provenance() 
     assert "linux-i386 builder_identity security_patch_evidence.security_update_channel must be set" in errors
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("security_update_channel", "distribution-security-updates"),
+        ("cve_review_reference", "distribution-security-tracker-and-release-notes"),
+        ("cve_review_reference", " debian-cve-review-2026-11"),
+        ("cve_review_reference", "debian-cve-review-2026-11\nunbound line"),
+        ("cve_review_reference", ["debian-cve-review-2026-11"]),
+    ],
+)
+def test_linux_security_evidence_rejects_unverified_provenance(field: str, value: object) -> None:
+    checker = _load_platform_verified_evidence_checker()
+    record = _linux_record("linux-i386")
+    record["builder_identity"]["security_patch_evidence"][field] = value
+    record["builder_identity_sha256"] = _json_sha256(record["builder_identity"])
+    registry = {"schema_version": 1, "policy": POLICY, "accepted_evidence": [record]}
+
+    errors = checker.check_platform_verified_evidence(registry=registry)
+
+    assert f"linux-i386 builder_identity security_patch_evidence.{field} must be host review provenance" in errors
+
+
+def test_linux_security_evidence_rejects_numeric_review_flag() -> None:
+    checker = _load_platform_verified_evidence_checker()
+    evidence = _linux_record("linux-i386")["builder_identity"]["security_patch_evidence"]
+    evidence["cve_patch_reviewed"] = 1
+
+    assert checker.check_linux_security_patch_evidence("linux-i386", evidence) == [
+        "linux-i386 builder_identity security_patch_evidence.cve_patch_reviewed must be a boolean"
+    ]
+
+
 def test_platform_verified_evidence_rejects_placeholder_security_patch_provenance() -> None:
     checker = _load_platform_verified_evidence_checker()
     record = _linux_record("linux-i386")

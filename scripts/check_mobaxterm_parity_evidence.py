@@ -317,7 +317,11 @@ def check_article_record(
     errors.extend(check_sha(row.get("evidence_file_sha256"), f"{article_id} evidence_file_sha256"))
     errors.extend(check_sha_map(row.get("evidence_assets_sha256"), f"{article_id} evidence_assets_sha256"))
     errors.extend(check_required_checks(row, spec))
-    errors.extend(check_validation_summary(article_id, row.get("validation_summary")))
+    errors.extend(
+        check_validation_summary(
+            article_id, row.get("validation_summary"), release_target=row.get("release_target"),
+        )
+    )
     if article_id == "shared-authenticated-transport-terminal-grid":
         errors.extend(
             check_transport_terminal_validation_identity(
@@ -433,17 +437,21 @@ def check_required_checks(row: dict[str, Any], spec: ArticleSpec) -> list[str]:
     return []
 
 
-def check_validation_summary(article_id: str, summary: Any) -> list[str]:
+def check_validation_summary(article_id: str, summary: Any, *, release_target: Any) -> list[str]:
     if not isinstance(summary, dict) or not summary:
         return [f"{article_id} validation_summary must be a non-empty object"]
     if summary.get("passed") is not True:
         return [f"{article_id} validation_summary.passed must be true"]
-    if not isinstance(summary.get("summary"), dict):
+    details = summary.get("summary")
+    if not isinstance(details, dict):
         return [f"{article_id} validation_summary.summary must be an object"]
-    errors = summary.get("errors")
-    if errors not in ([], None):
-        return [f"{article_id} validation_summary.errors must be empty"]
-    return []
+    errors: list[str] = []
+    if summary.get("errors") not in ([], None):
+        errors.append(f"{article_id} validation_summary.errors must be empty")
+    observed_target = details.get("release_target")
+    if not isinstance(observed_target, str) or not observed_target or observed_target != release_target:
+        errors.append(f"{article_id} validation summary release_target must match record release_target")
+    return errors
 
 
 def check_transport_terminal_validation_identity(
@@ -463,8 +471,6 @@ def check_transport_terminal_validation_identity(
         repository = ""
     if summary.get("release_tag") != row.get("release_tag"):
         errors.append(f"{article_id} validation summary release_tag must match record release_tag")
-    if summary.get("release_target") != row.get("release_target"):
-        errors.append(f"{article_id} validation summary release_target must match record release_target")
     source_head_sha = summary.get("source_head_sha")
     if not isinstance(source_head_sha, str) or not GIT_SHA_RE.fullmatch(source_head_sha):
         errors.append(f"{article_id} validation summary source_head_sha must be a lowercase Git SHA")

@@ -858,8 +858,12 @@ def check_finalized_evidence_requirements(
         errors.append(f"{label} review_bundle_command must package a review bundle for {label}")
     if "--candidate-record" not in review:
         errors.append(f"{label} review_bundle_command must bind the candidate record with --candidate-record")
-    if kind == "linux" and "--smoke-evidence <native-smoke-log>" not in review:
-        errors.append(f"{label} review_bundle_command must bind Linux smoke evidence")
+    if kind == "linux":
+        if "--smoke-evidence <native-smoke-log>" not in review:
+            errors.append(f"{label} review_bundle_command must bind Linux smoke evidence")
+        runtime_report = "--runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json"
+        if runtime_report not in review:
+            errors.append(f"{label} review_bundle_command must bind the native pip inspect report")
     expected_out_dir = "<target-release-artifact-dir>" if kind == "linux" else "<xp-evidence-output-dir>"
     if f"--out-dir {expected_out_dir}" not in review:
         errors.append(f"{label} review_bundle_command must write to {expected_out_dir}")

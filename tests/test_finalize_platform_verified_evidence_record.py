@@ -2555,7 +2555,7 @@ def test_finalize_platform_verified_evidence_record_rejects_boolean_manifest_sch
 
     errors = finalizer.check_bundle_manifest_records(manifest)
 
-    assert "review bundle manifest schema_version must be 1" in errors
+    assert "review bundle manifest schema_version must be 1 or 2" in errors
 
 
 def test_finalize_platform_verified_evidence_record_rejects_extra_manifest_file_record_metadata() -> None:
@@ -2995,6 +2995,8 @@ def _xp_host_probe_lines(target: str, os_identity: dict[str, Any]) -> str:
 
 
 def _xp_security_smoke_lines(smoke_id: str) -> str:
+    if smoke_id == "loopback_profile_dry_run":
+        return "loopback TCP round trip: passed\n"
     if smoke_id == "legacy_crypto_profile_scoped":
         return (
             "legacy compatibility profile: isolated-opt-in\n"

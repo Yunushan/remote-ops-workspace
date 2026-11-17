@@ -106,7 +106,7 @@ def test_platform_targets_declare_protected_readiness_goal_boundary() -> None:
     assert goal["published_release_audit_gate"] == (
         "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
         "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
-        "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>"
+        "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo> --platform-evidence-registry <signed-registry.json>"
     )
     assert goal["target_evidence_sources"] == {
         "linux-i386": ".github/workflows/extended-platform-evidence.yml",
@@ -176,7 +176,7 @@ def test_platforms_cli_json_exposes_protected_readiness_boundary(capsys) -> None
     assert goal["published_release_audit_gate"] == (
         "python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets "
         "--release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> "
-        "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>"
+        "--release-assets-dir <release-assets-dir> --release-repository <owner>/<repo> --platform-evidence-registry <signed-registry.json>"
     )
 
 

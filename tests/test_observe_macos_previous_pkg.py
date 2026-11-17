@@ -1,6 +1,7 @@
 """Pure synthetic metadata/refusal fixtures; no native tool or package execution."""
 
 import contextlib
+import gzip
 import hashlib
 import importlib.util
 import io
@@ -106,6 +107,67 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(result["whole_pkg_sha256"], M.sha(raw))
         self.assertEqual(result["unaccounted_heap_bytes"], 0)
         self.assertFalse(result["payload_expanded"])
+
+    @staticmethod
+    def portable_cpio(entries):
+        archive = bytearray()
+        for index, (name, mode, data) in enumerate([*entries, ("TRAILER!!!", 0, b"")], 1):
+            encoded = name.encode() + b"\0"
+            archive.extend(
+                f"070707{0:06o}{index:06o}{mode:06o}{0:06o}{0:06o}{1:06o}{0:06o}"
+                f"{0:011o}{len(encoded):06o}{len(data):011o}".encode()
+            )
+            archive.extend(encoded)
+            archive.extend(data)
+        return bytes(archive)
+
+    def test_pinned_payload_and_bom_match_mode_owner_and_size(self):
+        entries = [(path, 0o40755, b"") for path in (".", "Applications", M.APP_REL)]
+        entries.append((M.APP_REL + "/app", 0o100755, b"fixture"))
+        raw = package([
+            ("Bom", b"BOMStore fixture"),
+            ("PackageInfo", b"<pkg-info/>"),
+            ("Payload", gzip.compress(self.portable_cpio(entries))),
+        ])
+        projection, _ = M.package_projection(raw, P)
+        rows = M.previous_payload_rows(raw, projection)
+        bom_lines = "".join(
+            f"{path}\t{mode:o}\t0\t0\t" + (str(len(data)) if data else "") + "\n"
+            for path, mode, data in entries
+        ).encode()
+        bom = M.bom_projection(bom_lines, P)
+        M.verify_payload_bom(rows, bom)
+        self.assertEqual(bom["bom_payload_agreement"], "paths-mode-uid-gid-size-match")
+        self.assertFalse(bom["native_ownership_proof"])
+        for changed, refusal in (
+            (bom_lines.replace(b"\t100755\t0\t0\t7", b"\t100755\t0\t80\t7"),
+             "payload-bom-metadata-disagreement"),
+            (bom_lines.replace(b"\t100755\t0\t0\t7", b"\t100755\t0\t0\t8"),
+             "payload-bom-metadata-disagreement"),
+            (bom_lines.replace(b"/app\t", b"/other\t"), "payload-bom-path-disagreement"),
+        ):
+            with self.subTest(refusal=refusal):
+                with self.assertRaisesRegex(M.Refusal, refusal):
+                    M.verify_payload_bom(rows, M.bom_projection(changed, P))
+
+    def test_pinned_payload_refuses_unknown_layout_outside_paths_and_trailing_data(self):
+        entries = [(path, 0o40755, b"") for path in (".", "Applications", M.APP_REL)]
+        cpio = self.portable_cpio(entries)
+        for archive in (
+            b"not gzip",
+            gzip.compress(cpio + b"hidden"),
+            gzip.compress(self.portable_cpio([*entries, ("etc/other", 0o100755, b"fixture")])),
+            gzip.compress(self.portable_cpio([*entries, (M.APP_REL.lower(), 0o40755, b"")])),
+        ):
+            with self.subTest(archive=archive[:12]):
+                raw = package([
+                    ("Bom", b"BOMStore fixture"),
+                    ("PackageInfo", b"<pkg-info/>"),
+                    ("Payload", archive),
+                ])
+                projection, _ = M.package_projection(raw, P)
+                with self.assertRaisesRegex(M.Refusal, "payload-(archive|entry)-layout-unobserved"):
+                    M.previous_payload_rows(raw, projection)
 
     def test_sha1_toc_is_exactly_observed(self):
         result, _ = M.package_projection(package([("Payload", b"fixture")], algorithm=1), P)
@@ -2853,8 +2915,12 @@ class MetadataApiCredentialTests(unittest.TestCase):
         commands = SimpleNamespace(private=None, uncertain=False, calls=[], remaining=lambda: 100)
 
         def capture(argv, **_kwargs):
-            self.assertEqual(argv, ["/usr/sbin/pkgutil", "--pkgs"])
             self.assertNotIn(self.ENV, environment)
+            if argv[:2] == ["/usr/bin/man", "-P"]:
+                return b""
+            if argv[:3] == ["/usr/bin/lsbom", "-p", "fmugs"]:
+                return b""
+            self.assertEqual(argv, ["/usr/sbin/pkgutil", "--pkgs"])
             return b""
 
         commands.capture = capture
@@ -2917,7 +2983,12 @@ class MetadataApiCredentialTests(unittest.TestCase):
                 M, "previous_identity", side_effect=previous,
             ) as identity, patch.object(M, "fetch", side_effect=download), patch.dict(
                 M.PREVIOUS, {"size": len(payload), "sha256": M.sha(payload)},
-            ), patch.object(M, "package_projection", return_value=({"toc_sha256": "d" * 64, "components": []}, {})), patch.object(
+            ), patch.object(M, "package_projection", return_value=(
+                {"toc_sha256": "d" * 64, "components": []},
+                {"Bom": b"BOMStore fixture", "PackageInfo": b"<pkg-info/>"},
+            )), patch.object(M, "previous_payload_rows", return_value={}), patch.object(
+                M, "verify_payload_bom",
+            ), patch.object(M, "manual_projection", return_value={}), patch.object(
                 M, "readonly_system_tool_hashes", return_value={},
             ), patch.object(M, "observe_capabilities", return_value={"status": "synthetic"}), patch.object(
                 M.Path, "stat", synthetic_stat,

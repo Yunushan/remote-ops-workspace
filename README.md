@@ -337,23 +337,23 @@ validates the registry in finalized-only mode and rejects
 `--allow-unfinalized-candidates`; candidate validation stays inside the
 generator, review-bundle and finalization commands before registry append.
 The goal-specific gate is
-`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`;
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version> --registry <signed-registry.json>`;
 it must fail until linux-i386, linux-armhf, windows-xp-native-x86 and
 windows-xp-native-x64 all have finalized accepted records for the same release tag,
 same GitHub release repository, target-specific release source workflow file,
 same release source head SHA and a positive release source run attempt in each record. Mixed-tag,
 mixed-repository or mixed-source-head accepted records remain visible as aggregate evidence,
 but the protected goal parity block stays incomplete until one release source has all four targets. The release/verifier promotion
-gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>`,
-which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>`
-and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets`
+gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo> --platform-evidence-registry <signed-registry.json>`,
+which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo> --registry <signed-registry.json>`
+and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets --evidence-registry <signed-registry.json> --native-release-channel production-signed`
 and must fail until the same four records are finalized and accepted from that same release source.
 The static readiness report keeps `release_asset_provenance_complete=false`;
 only the asset-backed protected goal gate can flip that proof state after
 checking finalized records, review bundles and native release bytes.
-Add `--release-repository <owner>/<repo>` to the same strict verifier when validating
-an already-published GitHub release; that also runs the live protected-platform
-release/source-run audit. Today Linux i386 and
+This strict verifier also audits the published release and source runs. For
+pre-publication staging, use the separate signed-registry goal, import and bundle
+checks in the [promotion runbook](docs/PLATFORM_PROMOTION_RUNBOOK.md). Today Linux i386 and
 armhf remain script-supported at 70.0% until matching release builders, default
 release matrix entries, smoke evidence, checksum sidecars and native manifests
 with target architecture/format binding exist. Windows XP native-host readiness remains 25.0% until a separate
@@ -432,7 +432,7 @@ See [`docs/FULL_FEATURE_COVERAGE.md`](docs/FULL_FEATURE_COVERAGE.md) and [`confi
 | Unix | CLI, Web/PWA, GUI where Qt is available | POSIX shell and OpenSSH first |
 | FreeBSD/OpenBSD/NetBSD/DragonFlyBSD | CLI, Web/PWA, GUI where PyQt6 is packaged | External protocol tools vary by ports/pkg availability |
 | Solaris/illumos | CLI, Web/PWA, GUI if Python/Qt stack exists | Focus on OpenSSH, browser, serial/raw sockets |
-| macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewers |
+| macOS Intel/Apple Silicon | CLI, GUI, Web/PWA | Qt 6.12 DMG and PKG installers require macOS 14.4 or later. OpenSSH, XQuartz, Microsoft Remote Desktop/FreeRDP, VNC viewers |
 | Android | Web/PWA, Termux CLI | ARMv7 and ARM64 through Termux/Web; Android 12 through Android 16 (API 31-36) Web/PWA emulator CI; APK remains future work |
 | iOS/iPadOS | Web/PWA | iOS/iPadOS 15 through 27.x Web/PWA contract with current and exact iOS 27 Xcode simulator smoke; native `.ipa` remains future work |
 | Web | PWA shell | Static PWA shell; API/backend can be layered on |
@@ -661,17 +661,17 @@ marks the static catalog boundary as `not native-host/readiness proof`, points
 JSON consumers to `configs/platform_verified_evidence.json`, and records the
 accepted-evidence plus asset-provenance gates for Linux i386/armhf and Windows
 XP native-host readiness.
-Release manifests include `size_bytes` and `sha256` for each artifact, and CI
-build jobs run with read-only checkout credentials until the final publish step.
+Release manifests include `size_bytes` and `sha256` for each artifact. Candidate
+build jobs use read-only checkout credentials.
 The release workflow starts with a `release-preflight` job that resolves the
 requested tag once, exports its exact commit SHA, checks that it is on the
 trusted default-branch history, and runs
 `python scripts/verify.py --quick --no-cli-smoke --release-tag <tag>`, an
 exact-SHA CI evidence check,
 `python scripts/check_protected_platform_goal.py --release-tag <tag> --show-requirements`
-and `python scripts/check_repository_cleanup.py --require-clean`. Source,
-native and core publish jobs depend on that preflight and check out the frozen
-commit SHA rather than resolving the tag again. The protected-platform command
+and `python scripts/check_repository_cleanup.py --require-clean`. Source
+and native candidate jobs depend on that preflight and check out the frozen
+commit SHA. The protected-platform command
 in preflight is a readiness report, not a 4/4 accepted-evidence gate.
 Windows XP proof for those accepted records is captured on real XP hosts with
 `scripts/xp_smoke_runner.cmd`; the modern self-hosted `xp-evidence` collector
@@ -681,13 +681,16 @@ runtime, OpenSSL and profile-only legacy crypto proof values alongside the
 captured smoke log hash.
 The complete 100/100 production-readiness checklist and external prerequisite
 matrix is [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
-The optional `accepted-platform-evidence-assets` job runs only for a manual
-dispatch with `include_protected_platform_evidence=true`. It separately runs
-`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements`
+Once the candidate is sealed and independently approved, dispatch
+`release-promotion.yml` from the same immutable tag. Use the exact build run,
+candidate inventory artifact ID and digest, and the signed evidence commit SHA.
+The exact-tag `release-promotion.yml` workflow imports protected-platform
+assets using the registry from the signed compliance bundle. It runs
+`python scripts/check_protected_platform_goal.py --release-tag <tag> --require-records-complete --show-requirements --registry <signed-registry.json>`
 and
-`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag>`,
+`python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag <tag> --registry <signed-registry.json>`,
 then runs
-`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo>`
+`python scripts/import_platform_evidence_artifacts.py --release-tag <tag> --require-goal-targets --out-dir release-assets --verify-source-run --repository <owner>/<repo> --registry <signed-registry.json> --release-head-sha <release-sha>`
 to copy only same-tag, same-repository, workflow-file, source-head and
 run-attempt-bound accepted evidence artifacts into the release asset directory
 after checking exact source artifact `workflow_run.id`,
@@ -697,14 +700,13 @@ available, artifact created_at inside the exact source run creation/start/update
 when GitHub exposes timestamps, plus downloaded source artifact native artifact SHA-256 values and
 review-bundle size/SHA-256 values against the finalized accepted record,
 then runs
-`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
+`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets --registry <signed-registry.json>`
 against the imported review bundles and finalized public record JSON files
 before upload; final public records must use canonical LF-terminated sorted JSON
-bytes so post-upload release asset digests are stable. The imported platform
-evidence artifact upload fails when empty, excludes hidden files and keeps a
-90-day retention window. That import job keeps only read permissions for
-repository contents and Actions artifacts. The exact-tag publish job waits for
-it and includes the accepted protected evidence in the same draft-first,
+bytes so post-upload release asset digests are stable. The source evidence
+workflows reject empty uploads, exclude hidden files and retain the scoped
+evidence for 90 days. The exact-tag promotion job verifies the imported
+protected evidence before including it in the same draft-first,
 attested production inventory. Linux i386, Linux armhf,
 windows-xp-native-x86 and windows-xp-native-x64 require finalized accepted
 evidence records for the same release tag, GitHub release repository,
@@ -716,11 +718,12 @@ The static readiness report intentionally leaves
 is the proof that finalized accepted records, review bundles and native release
 bytes match before upload.
 The single exact-tag publish job runs
-`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
+`python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets --evidence-registry <signed-registry.json> --native-release-channel production-signed`
 to verify the downloaded asset set, finalized protected-platform records,
 review bundles, native artifacts, checksum sidecars and release manifest
-against `configs/release_matrix.json`, `configs/platform_verified_evidence.json`
-and the accepted review-bundle hashes. Core publish validates
+against `configs/release_matrix.json`, the release-specific signed registry
+and the accepted review-bundle hashes. Use
+`configs/platform_verified_evidence.json` as the registry template. Core publish validates
 `configs/mobaxterm_parity_evidence.json` structurally but does not require its
 8/8 backlog to be complete; `--require-mobaxterm-parity-complete` is a separate
 hard gate for any release or readiness report that explicitly claims complete

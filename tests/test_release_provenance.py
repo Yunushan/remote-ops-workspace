@@ -183,6 +183,11 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
         ("wrong-source", "source repository digest"),
         ("failed-run", "no common certificate-bound release workflow run attempt completed successfully"),
         ("wrong-publication-time", "release publication time falls outside the successful publication step"),
+        ("native-valid", ""),
+        ("native-replaced-before", "local release asset changed before platform signature verification"),
+        ("native-replaced-during", "local release asset changed during verification"),
+        ("native-refused", "platform installer signature check failed"),
+        ("native-mutable", "must have GitHub immutable releases enabled"),
     ],
 )
 def test_single_asset_cli_checks_the_exact_published_release(
@@ -190,18 +195,20 @@ def test_single_asset_cli_checks_the_exact_published_release(
 ) -> None:
     checker = _load_checker()
     repository, tag, sha = "example/project", "v1.2.3", "a" * 40
+    native = condition.startswith("native-")
+    name = "installer.exe" if native else "installer.bin"
     published = tmp_path / "published"
     published.mkdir()
-    (published / "installer.bin").write_bytes(b"installer")
+    (published / name).write_bytes(b"installer")
     (published / "other.bin").write_bytes(b"other")
-    asset = tmp_path / "installer.bin"
+    asset = tmp_path / name
     asset.write_bytes(b"tampering" if condition == "wrong-bytes" else b"installer")
     release = _release(checker, published, repository, tag)
     release["published_at"] = (
         "2026-11-01T12:03:00Z" if condition == "wrong-publication-time" else "2026-11-01T12:02:00Z"
     )
     installer, other = release.pop("assets")
-    if condition == "mutable":
+    if condition in {"mutable", "native-mutable"}:
         release["immutable"] = False
     if condition == "unpublished":
         release["draft"] = True
@@ -210,9 +217,22 @@ def test_single_asset_cli_checks_the_exact_published_release(
         pages = [[other], installer]
     if condition == "missing-standard":
         pages = [[installer]]
-    monkeypatch.setattr(checker, "expected_release_assets", lambda _matrix, *, tag: {"installer.bin", "other.bin"})
+    monkeypatch.setattr(checker, "expected_release_assets", lambda _matrix, *, tag: {name, "other.bin"})
 
     calls: list[list[str]] = []
+    signature_checks: list[list[list[str]]] = []
+    signature_commands = [["local-platform-verifier", str(asset)]]
+    monkeypatch.setattr(checker, "native_installer_signature_commands", lambda _asset: signature_commands)
+
+    def platform_verify(commands):
+        signature_checks.append(commands)
+        assert len(calls) == 7 and asset.read_bytes() == b"installer"
+        if condition == "native-refused":
+            raise RuntimeError("platform installer signature check failed")
+        if condition == "native-replaced-during":
+            asset.write_bytes(b"replaced!")
+
+    monkeypatch.setattr(checker, "verify_platform_signature", platform_verify)
 
     def fake_run(args: list[str], _label: str, _timeout: int):
         calls.append(args)
@@ -235,7 +255,7 @@ def test_single_asset_cli_checks_the_exact_published_release(
                 digest=hashlib.sha256(asset.read_bytes()).hexdigest(),
             )
         if args == ["api", f"repos/{repository}/actions/runs/123/attempts/2"]:
-            if condition == "replaced-after-attestation":
+            if condition in {"replaced-after-attestation", "native-replaced-before"}:
                 asset.write_bytes(b"replaced!")
             return {
                 "id": 123,
@@ -271,15 +291,22 @@ def test_single_asset_cli_checks_the_exact_published_release(
         raise AssertionError(f"unexpected GitHub CLI arguments: {args}")
 
     monkeypatch.setattr(checker, "run_gh_json", fake_run)
-    result = checker.main(["--asset", str(asset), "--repository", repository, "--tag", tag, "--sha", sha])
+    signature_args = ["--verify-platform-signature"] if native else []
+    result = checker.main([
+        "--asset", str(asset), "--repository", repository, "--tag", tag, "--sha", sha, *signature_args,
+    ])
     output = capsys.readouterr()
+    assert signature_checks == (
+        [signature_commands] if condition in {"native-valid", "native-replaced-during", "native-refused"} else []
+    )
     if expected_error:
         assert result == 1
         assert expected_error in output.err
         assert output.out == ""
     else:
         assert result == 0
-        assert "installer.bin matches immutable v1.2.3" in output.out
+        assert f"{name} matches immutable v1.2.3" in output.out
+        assert ("platform installer signature passed" in output.out) is native
         assert len(calls) == 7
         assert "--source-digest" in calls[4]
         assert f"refs/tags/{tag}" in calls[4]
@@ -298,6 +325,105 @@ def test_single_asset_mode_rejects_draft_transactions_before_contacting_github(c
     ])
     assert result == 1
     assert "requires a completed published release" in capsys.readouterr().err
+
+
+def test_platform_signature_flag_requires_a_single_asset(capsys) -> None:
+    checker = _load_checker()
+    assert checker.main([
+        "--assets-dir", "downloads", "--verify-platform-signature",
+        "--repository", "example/project", "--tag", "v1.2.3", "--sha", "a" * 40,
+    ]) == 1
+    assert "--verify-platform-signature requires --asset" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("suffix", [".exe", ".msi"])
+def test_windows_installer_signature_uses_the_windows_sdk(monkeypatch, tmp_path, suffix) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker.sys, "platform", "win32")
+    sdk_tool = tmp_path / "Windows SDK/signtool.exe"
+    monkeypatch.setattr(checker, "find_windows_signtool", lambda: sdk_tool)
+    installer = tmp_path / f"file with spaces{suffix}"
+    assert checker.native_installer_signature_commands(installer) == [[
+        str(sdk_tool), "verify", "/pa", "/all", "/tw", str(installer),
+    ]]
+
+
+def test_windows_sign_tool_uses_the_newest_sdk_for_the_host_architecture(monkeypatch, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    checker = _load_checker()
+    sdk = tmp_path / "Windows Kits" / "10"
+    candidates = [
+        sdk / "bin/10.0.9.0/x64/signtool.exe",
+        sdk / "bin/10.0.10.0/x64/signtool.exe",
+        sdk / "bin/10.0.11.0/x86/signtool.exe",
+    ]
+    for candidate in candidates:
+        candidate.parent.mkdir(parents=True)
+        candidate.touch()
+    def missing_key(*_args, **_kwargs):
+        raise FileNotFoundError
+
+    registry = SimpleNamespace(
+        KEY_WOW64_32KEY=1, KEY_WOW64_64KEY=2, KEY_READ=4, HKEY_LOCAL_MACHINE=0, OpenKey=missing_key,
+    )
+    monkeypatch.setitem(checker.sys.modules, "winreg", registry)
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
+    monkeypatch.setenv("PROCESSOR_ARCHITEW6432", "AMD64")
+    monkeypatch.setenv("PROCESSOR_ARCHITECTURE", "x86")
+    assert checker.find_windows_signtool() == candidates[1]
+
+
+@pytest.mark.parametrize(("suffix", "signature", "assessment"), [
+    (".PKG", ["/usr/sbin/pkgutil", "--check-signature"], ["--type", "install"]),
+    (".dmg", ["/usr/bin/codesign", "--verify", "--strict"], ["--type", "open", "--context", "context:primary-signature"]),
+])
+def test_macos_installer_signature_requires_signature_ticket_and_gatekeeper(monkeypatch, tmp_path, suffix, signature, assessment) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker.sys, "platform", "darwin")
+    installer = tmp_path / f"file with spaces{suffix}"
+    path = str(installer)
+    assert checker.native_installer_signature_commands(installer) == [
+        [*signature, path],
+        ["/usr/bin/xcrun", "stapler", "validate", path],
+        ["/usr/sbin/spctl", "--assess", *assessment, path],
+    ]
+
+
+@pytest.mark.parametrize(("suffix", "expected"), [
+    (".exe", "verify Windows installer signatures on Windows"),
+    (".dmg", "verify macOS installer signatures on macOS"),
+    (".AppImage", "supports Windows EXE/MSI and macOS PKG/DMG"),
+])
+def test_native_installer_refuses_wrong_host_or_unsupported_format(monkeypatch, suffix, expected) -> None:
+    checker = _load_checker()
+    monkeypatch.setattr(checker.sys, "platform", "linux")
+    with pytest.raises(ValueError, match=expected):
+        checker.native_installer_signature_commands(Path(f"installer{suffix}"))
+
+
+@pytest.mark.parametrize("outcome", ["pass", "warning", "timeout"])
+def test_platform_signature_runner_refuses_failures_and_timeouts(monkeypatch, outcome) -> None:
+    checker = _load_checker()
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert kwargs == {"stdin": checker.subprocess.DEVNULL, "capture_output": True, "check": False, "timeout": 120}
+        if outcome == "timeout":
+            raise checker.subprocess.TimeoutExpired(command, 120)
+        return checker.subprocess.CompletedProcess(command, 2 if outcome == "warning" else 0)
+
+    monkeypatch.setattr(checker.subprocess, "run", run)
+    commands = [["first-verify"], ["second-verify"]]
+    if outcome == "pass":
+        checker.verify_platform_signature(commands)
+        assert calls == commands
+    else:
+        message = "exited with 2" if outcome == "warning" else "timed out: first-verify"
+        with pytest.raises(RuntimeError, match=message):
+            checker.verify_platform_signature(commands)
+        assert calls == commands[:1]
 
 
 @pytest.mark.parametrize("mode", ["draft", "published-transaction", "published"])

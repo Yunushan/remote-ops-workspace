@@ -8,7 +8,8 @@ must have SLSA provenance issued by the exact release workflow and source SHA.
 Final verification requires one common completed successful run; the narrowly
 scoped draft-transaction mode instead binds every draft asset to the current
 tag-triggered run before the draft is promoted. Operators can verify a single
-downloaded file against the immutable published release and its promotion run.
+downloaded file against the immutable published release and its promotion run,
+with optional platform signature verification for Windows and macOS installers.
 """
 
 from __future__ import annotations
@@ -122,6 +123,8 @@ def main(
         single_asset = args.asset is not None
         if single_asset and (draft_transaction or current_transaction):
             raise ValueError("--asset requires a completed published release, outside a transaction")
+        if args.verify_platform_signature and not single_asset:
+            raise ValueError("--verify-platform-signature requires --asset")
         governance_paths = (args.governance_attestation, args.governance_signature)
         verify_governance = any(path is not None for path in governance_paths)
         if verify_governance and (
@@ -164,11 +167,14 @@ def main(
         tag = normalize_tag(args.tag)
         matrix = read_json(MATRIX_PATH, "release matrix")
         standard_assets = expected_release_assets(matrix, tag=tag)
+        signature_commands: list[list[str]] = []
         if single_asset:
             asset = args.asset.absolute()
             if not safe_asset_name(asset.name) or asset.is_symlink() or not asset.is_file():
                 raise ValueError("--asset must identify a regular file with its published name")
             local_assets = {asset.name: asset}
+            if args.verify_platform_signature:
+                signature_commands = native_installer_signature_commands(asset)
         else:
             local_assets, local_errors = local_release_assets(args.assets_dir)
             if local_errors:
@@ -374,6 +380,10 @@ def main(
             errors = check_published_at(published_at)
             if errors:
                 raise RuntimeError("; ".join(dict.fromkeys(errors)))
+        if signature_commands:
+            if asset.is_symlink() or sha256_file(asset) != release_digests[asset.name]:
+                raise ValueError(f"local release asset changed before platform signature verification: {asset.name}")
+            verify_platform_signature(signature_commands)
         for name, path in local_assets.items():
             if path.is_symlink() or sha256_file(path) != release_digests[name]:
                 raise ValueError(f"local release asset changed during verification: {name}")
@@ -387,6 +397,8 @@ def main(
             f"release asset provenance passed: {asset.name} matches immutable {tag} "
             f"and its completed promotion run {chosen.url}"
         )
+        if signature_commands:
+            print(f"platform installer signature passed: {asset.name}")
         return 0
     print(
         "release provenance passed: "
@@ -406,6 +418,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     inputs = parser.add_mutually_exclusive_group(required=True)
     inputs.add_argument("--assets-dir", type=Path, help="verify the complete published or draft inventory")
     inputs.add_argument("--asset", type=Path, help="verify one downloaded file from an immutable published release")
+    parser.add_argument(
+        "--verify-platform-signature",
+        action="store_true",
+        help="also require a trusted platform signature for a Windows EXE/MSI or macOS PKG/DMG on its platform",
+    )
     parser.add_argument("--repository", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--sha", required=True)
@@ -424,6 +441,81 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--redistribution-evidence", type=Path)
     parser.add_argument("--redistribution-signature", type=Path)
     return parser.parse_args(argv)
+
+
+def native_installer_signature_commands(path: Path) -> list[list[str]]:
+    artifact = str(path)
+    suffix = path.suffix.casefold()
+    if suffix in {".exe", ".msi"}:
+        if sys.platform != "win32":
+            raise ValueError("verify Windows installer signatures on Windows")
+        return [[str(find_windows_signtool()), "verify", "/pa", "/all", "/tw", artifact]]
+    if suffix not in {".dmg", ".pkg"}:
+        raise ValueError("platform signature verification supports Windows EXE/MSI and macOS PKG/DMG")
+    if sys.platform != "darwin":
+        raise ValueError("verify macOS installer signatures on macOS")
+    if suffix == ".pkg":
+        signature = ["/usr/sbin/pkgutil", "--check-signature", artifact]
+        assessment = ["/usr/sbin/spctl", "--assess", "--type", "install", artifact]
+    else:
+        signature = ["/usr/bin/codesign", "--verify", "--strict", artifact]
+        assessment = [
+            "/usr/sbin/spctl", "--assess", "--type", "open", "--context", "context:primary-signature", artifact,
+        ]
+    return [signature, ["/usr/bin/xcrun", "stapler", "validate", artifact], assessment]
+
+
+def find_windows_signtool() -> Path:
+    import winreg
+
+    sdk_root = None
+    for view in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+        try:
+            with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows Kits\Installed Roots",
+                access=winreg.KEY_READ | view,
+            ) as key:
+                root, _ = winreg.QueryValueEx(key, "KitsRoot10")
+        except OSError:
+            continue
+        if isinstance(root, str) and Path(root).is_absolute():
+            sdk_root = Path(root)
+            break
+    if sdk_root is None:
+        program_files = os.environ.get("ProgramFiles(x86)") or os.environ.get("ProgramFiles", "")
+        if Path(program_files).is_absolute():
+            sdk_root = Path(program_files) / "Windows Kits" / "10"
+
+    host_arch = os.environ.get("PROCESSOR_ARCHITEW6432") or os.environ.get("PROCESSOR_ARCHITECTURE", "")
+    architectures = {
+        "amd64": ("x64", "x86"), "arm64": ("arm64", "x64", "x86"), "x86": ("x86",),
+    }.get(host_arch.lower(), ())
+    if sdk_root is not None and (sdk_root / "bin").is_dir():
+        versions = sorted(
+            (directory for directory in (sdk_root / "bin").iterdir()
+             if re.fullmatch(r"10\.0\.\d+\.\d+", directory.name) and directory.is_dir()),
+            key=lambda directory: tuple(int(part) for part in directory.name.split(".")),
+            reverse=True,
+        )
+        for architecture in architectures:
+            for directory in versions:
+                tool = directory / architecture / "signtool.exe"
+                if tool.is_file():
+                    return tool
+    raise RuntimeError("platform signature verification requires SignTool from the Windows SDK")
+
+
+def verify_platform_signature(commands: list[list[str]]) -> None:
+    for command in commands:
+        tool = Path(command[0]).name
+        try:
+            result = subprocess.run(
+                command, stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=120,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"platform installer signature check timed out: {tool}") from exc
+        if result.returncode != 0:
+            raise RuntimeError(f"platform installer signature check failed: {tool} exited with {result.returncode}")
 
 
 def verified_governance_invocations(

@@ -29,7 +29,8 @@ For the deployment model, see [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPL
 2. For a native package, verify the new installer against its promoted release
    tag and commit using the
    [release promotion runbook](RELEASE_PROMOTION.md#verify-a-published-artifact).
-   For Windows and macOS, also verify the platform signature before running it.
+   For Windows and macOS, include `--verify-platform-signature` before running
+   the installer.
    Keep the same installation format, architecture, and scope.
 
    For a source install, use a fresh virtual environment. The example below
@@ -90,9 +91,9 @@ For the deployment model, see [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPL
    ```
 
 3. For a native rollback, recheck the previous installer's published provenance
-   using its own release coordinates. Recheck the signature for Windows and
-   macOS. Reinstall using the same platform and package format. If the package
-   manager refuses a downgrade, follow that package's supported removal and
+   using its own release coordinates. Include `--verify-platform-signature`
+   for Windows and macOS. Reinstall using the same platform and package format.
+   If the package manager refuses a downgrade, follow its supported removal and
    reinstall sequence while retaining both workspace directories. Finish
    installation before starting the previous application. For a source
    rollback, select the retained environment for the previous tag or recreate

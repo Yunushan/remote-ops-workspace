@@ -309,9 +309,16 @@ python scripts/check_release_provenance.py \
 
 The verifier compares the file's SHA-256 with the immutable GitHub Release,
 resolves the live release tag to the attested commit, and checks the completed
-promotion run and its successful publish step. Use the matching published
-filename on Windows, macOS, and Linux. Verify the platform installer
-signature before installation. See
+promotion run and its successful publish step.
+
+For a Windows EXE or MSI, run the verifier on Windows with Windows SDK
+SignTool available. For a macOS PKG or DMG, run it on macOS with Gatekeeper
+and the `stapler` tool available. Use the published filename and add
+`--verify-platform-signature`. On Windows this verifies all embedded signatures
+and their timestamps under the Authenticode policy. On macOS it verifies the
+installer signature, stapled notarization ticket, and Gatekeeper assessment.
+The verifier rechecks the file's digest after the platform checks. Use the
+installer from a directory you control. See
 [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPLOYMENT.md).
 
 ## Installer trust boundary (O3)

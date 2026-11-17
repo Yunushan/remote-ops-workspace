@@ -139,9 +139,10 @@ Rules:
   [PR #159](https://github.com/Yunushan/remote-ops-workspace/pull/159) ·
   [PR #183](https://github.com/Yunushan/remote-ops-workspace/pull/183) ·
   [PR #187](https://github.com/Yunushan/remote-ops-workspace/pull/187)
-  The next increment moves the live toolbar, profile tree, and control icon
-  painters into `gui_icons.py`. Native rendering qualification verifies the
-  normal desktop entry point.
+  `gui_icons.py` contains the live toolbar, profile tree, and control icon
+  painters. `gui_preset_properties.py` applies and clears Qt route properties
+  as the active preset changes. The native render and interaction checks
+  exercise these modules through the desktop entry point.
 
 ## Phase 6 - Internal certification gates (about +3)
 

@@ -2530,9 +2530,11 @@
               "moba_connected_action_route"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "mobaConnectedSessionActionRouteKey",
               "apply_moba_connected_session_action_route_to_tab",
               "route.captured_enabled_keys_property"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "mobaConnectedSessionActionRouteKey"
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE",
@@ -2801,6 +2803,9 @@
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -2830,6 +2835,9 @@
               "preset-palette-density-to-live-static-style"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -2859,6 +2867,9 @@
               "active-preset-visible-hidden-widget-isolation"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -2888,6 +2899,9 @@
               "selector-style-switch-resets-inactive-product-chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -2917,9 +2931,11 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
               "create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -2945,8 +2961,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -2974,8 +2992,10 @@
               "product-preset-focus-interaction-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -3002,8 +3022,10 @@
               "product-preset-home-search-entry-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -3030,6 +3052,9 @@
               "preset-catalog-to-design-selector-options"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -4507,9 +4532,11 @@
               "reference-profile-tab-can-be-active-surface"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabActivatedLabel",
-              "presetReferenceTabReturnedHomeLabel",
               "find_tab_by_label"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabActivatedLabel",
+              "presetReferenceTabReturnedHomeLabel"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_route",
@@ -4536,9 +4563,11 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabChromeTooltip",
               "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabChromeTooltip"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_chrome_route",
@@ -4564,9 +4593,11 @@
               "active-reference-status-bar-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceStatusSegments",
               "apply_reference_status_bar_route_to_terminal_tab",
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceStatusSegments"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_status_bar_route",
@@ -4593,7 +4624,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "sessionTabContextActionKey",
-              "apply_reference_session_action_route_to_terminal_tab",
+              "apply_reference_session_action_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceSessionActionEnabledKeys"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4620,9 +4653,11 @@
               "active-reference-tab-surface-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceSurfaceActualCommand",
-              "presetReferenceSurfaceActualOutput",
               "apply_reference_surface_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceSurfaceActualCommand",
+              "presetReferenceSurfaceActualOutput"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_surface_route",
@@ -4651,8 +4686,10 @@
               "terminalActionKey"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceControlCapturedActionKeys",
               "apply_reference_control_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceControlCapturedActionKeys"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_control_route",
@@ -4678,9 +4715,11 @@
               "active-reference-tab-terminal-input"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceInputEnabled",
               "apply_reference_input_route_to_terminal_tab",
               "terminalInput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceInputEnabled"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_input_route",
@@ -4706,9 +4745,11 @@
               "active-reference-tab-terminal-transcript"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTranscriptCommandEcho",
               "apply_reference_transcript_route_to_terminal_tab",
               "terminalOutput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTranscriptCommandEcho"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_transcript_route",
@@ -4734,6 +4775,9 @@
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -4763,6 +4807,9 @@
               "preset-palette-density-to-live-static-style"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -4792,6 +4839,9 @@
               "active-preset-visible-hidden-widget-isolation"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -4821,6 +4871,9 @@
               "selector-style-switch-resets-inactive-product-chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -4850,9 +4903,11 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
               "create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -4878,8 +4933,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4907,8 +4964,10 @@
               "product-preset-focus-interaction-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4935,8 +4994,10 @@
               "product-preset-home-search-entry-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4963,6 +5024,9 @@
               "preset-catalog-to-design-selector-options"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -6356,9 +6420,11 @@
               "reference-profile-tab-can-be-active-surface"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabActivatedLabel",
-              "presetReferenceTabReturnedHomeLabel",
               "find_tab_by_label"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabActivatedLabel",
+              "presetReferenceTabReturnedHomeLabel"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_route",
@@ -6385,9 +6451,11 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabChromeTooltip",
               "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabChromeTooltip"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_chrome_route",
@@ -6413,9 +6481,11 @@
               "active-reference-status-bar-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceStatusSegments",
               "apply_reference_status_bar_route_to_terminal_tab",
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceStatusSegments"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_status_bar_route",
@@ -6442,7 +6512,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "sessionTabContextActionKey",
-              "apply_reference_session_action_route_to_terminal_tab",
+              "apply_reference_session_action_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceSessionActionEnabledKeys"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6469,9 +6541,11 @@
               "active-reference-tab-surface-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceSurfaceActualCommand",
-              "presetReferenceSurfaceActualOutput",
               "apply_reference_surface_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceSurfaceActualCommand",
+              "presetReferenceSurfaceActualOutput"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_surface_route",
@@ -6500,8 +6574,10 @@
               "terminalActionKey"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceControlCapturedActionKeys",
               "apply_reference_control_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceControlCapturedActionKeys"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_control_route",
@@ -6527,9 +6603,11 @@
               "active-reference-tab-terminal-input"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceInputEnabled",
               "apply_reference_input_route_to_terminal_tab",
               "terminalInput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceInputEnabled"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_input_route",
@@ -6555,9 +6633,11 @@
               "active-reference-tab-terminal-transcript"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTranscriptCommandEcho",
               "apply_reference_transcript_route_to_terminal_tab",
               "terminalOutput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTranscriptCommandEcho"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_transcript_route",
@@ -6583,6 +6663,9 @@
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -6612,6 +6695,9 @@
               "preset-palette-density-to-live-static-style"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -6641,6 +6727,9 @@
               "active-preset-visible-hidden-widget-isolation"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -6670,6 +6759,9 @@
               "selector-style-switch-resets-inactive-product-chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -6699,9 +6791,11 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
               "create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -6727,8 +6821,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6756,8 +6852,10 @@
               "product-preset-focus-interaction-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6784,8 +6882,10 @@
               "product-preset-home-search-entry-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6812,6 +6912,9 @@
               "preset-catalog-to-design-selector-options"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -8171,9 +8274,11 @@
               "reference-profile-tab-can-be-active-surface"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabActivatedLabel",
-              "presetReferenceTabReturnedHomeLabel",
               "find_tab_by_label"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabActivatedLabel",
+              "presetReferenceTabReturnedHomeLabel"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_route",
@@ -8200,9 +8305,11 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabChromeTooltip",
               "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabChromeTooltip"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_chrome_route",
@@ -8228,9 +8335,11 @@
               "active-reference-status-bar-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceStatusSegments",
               "apply_reference_status_bar_route_to_terminal_tab",
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceStatusSegments"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_status_bar_route",
@@ -8257,7 +8366,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "sessionTabContextActionKey",
-              "apply_reference_session_action_route_to_terminal_tab",
+              "apply_reference_session_action_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceSessionActionEnabledKeys"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8284,9 +8395,11 @@
               "active-reference-tab-surface-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceSurfaceActualCommand",
-              "presetReferenceSurfaceActualOutput",
               "apply_reference_surface_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceSurfaceActualCommand",
+              "presetReferenceSurfaceActualOutput"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_surface_route",
@@ -8315,8 +8428,10 @@
               "terminalActionKey"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceControlCapturedActionKeys",
               "apply_reference_control_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceControlCapturedActionKeys"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_control_route",
@@ -8342,9 +8457,11 @@
               "active-reference-tab-terminal-input"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceInputEnabled",
               "apply_reference_input_route_to_terminal_tab",
               "terminalInput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceInputEnabled"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_input_route",
@@ -8370,9 +8487,11 @@
               "active-reference-tab-terminal-transcript"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTranscriptCommandEcho",
               "apply_reference_transcript_route_to_terminal_tab",
               "terminalOutput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTranscriptCommandEcho"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_transcript_route",
@@ -8398,6 +8517,9 @@
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -8427,6 +8549,9 @@
               "preset-palette-density-to-live-static-style"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -8456,6 +8581,9 @@
               "active-preset-visible-hidden-widget-isolation"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -8485,6 +8613,9 @@
               "selector-style-switch-resets-inactive-product-chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -8514,9 +8645,11 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
               "create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -8542,8 +8675,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8571,8 +8706,10 @@
               "product-preset-focus-interaction-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8599,8 +8736,10 @@
               "product-preset-home-search-entry-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8627,6 +8766,9 @@
               "preset-catalog-to-design-selector-options"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"
@@ -9913,9 +10055,11 @@
               "reference-profile-tab-can-be-active-surface"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabActivatedLabel",
-              "presetReferenceTabReturnedHomeLabel",
               "find_tab_by_label"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabActivatedLabel",
+              "presetReferenceTabReturnedHomeLabel"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_route",
@@ -9942,9 +10086,11 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTabChromeTooltip",
               "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTabChromeTooltip"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_tab_chrome_route",
@@ -9970,9 +10116,11 @@
               "active-reference-status-bar-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceStatusSegments",
               "apply_reference_status_bar_route_to_terminal_tab",
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceStatusSegments"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_status_bar_route",
@@ -9999,7 +10147,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "sessionTabContextActionKey",
-              "apply_reference_session_action_route_to_terminal_tab",
+              "apply_reference_session_action_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceSessionActionEnabledKeys"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10026,9 +10176,11 @@
               "active-reference-tab-surface-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceSurfaceActualCommand",
-              "presetReferenceSurfaceActualOutput",
               "apply_reference_surface_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceSurfaceActualCommand",
+              "presetReferenceSurfaceActualOutput"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_surface_route",
@@ -10057,8 +10209,10 @@
               "terminalActionKey"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceControlCapturedActionKeys",
               "apply_reference_control_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceControlCapturedActionKeys"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_control_route",
@@ -10084,9 +10238,11 @@
               "active-reference-tab-terminal-input"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceInputEnabled",
               "apply_reference_input_route_to_terminal_tab",
               "terminalInput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceInputEnabled"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_input_route",
@@ -10112,9 +10268,11 @@
               "active-reference-tab-terminal-transcript"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetReferenceTranscriptCommandEcho",
               "apply_reference_transcript_route_to_terminal_tab",
               "terminalOutput"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetReferenceTranscriptCommandEcho"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_reference_transcript_route",
@@ -10140,6 +10298,9 @@
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_selection_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetSelectionRouteKey",
               "presetSelectionRouteHomeTabLabel",
               "presetSelectionRouteStatusSegments"
@@ -10169,6 +10330,9 @@
               "preset-palette-density-to-live-static-style"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_visual_signature_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetVisualSignatureDensity",
               "presetVisualSignaturePalette",
               "presetVisualSignatureRenderSource"
@@ -10198,6 +10362,9 @@
               "active-preset-visible-hidden-widget-isolation"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_isolation_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetIsolationVisibleObjects",
               "presetIsolationHiddenObjects",
               "presetIsolationRenderSource"
@@ -10227,6 +10394,9 @@
               "selector-style-switch-resets-inactive-product-chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_transition_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetTransitionFromPresetIds",
               "presetTransitionResetObjects",
               "presetTransitionRenderSource"
@@ -10256,9 +10426,11 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "presetKeyboardShortcutCapturedSequences",
               "create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
+              "presetKeyboardShortcutCapturedSequences"
             ],
             "scripts/render_gui_design_previews.py": [
               "preset_keyboard_shortcut_route",
@@ -10284,8 +10456,10 @@
               "product-preset-command-surface-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_command_surface_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCommandSurfaceCapturedKeys",
-              "apply_command_surface_route_for_design",
               "presetCommandSurfaceCapturedStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10313,8 +10487,10 @@
               "product-preset-focus-interaction-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_focus_interaction_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetFocusInteractionCapturedFocus",
-              "apply_focus_interaction_route_for_design",
               "presetFocusInteractionToolbarStates"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10341,8 +10517,10 @@
               "product-preset-home-search-entry-route"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "apply_home_search_route_for_design"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetHomeSearchCapturedPlaceholder",
-              "apply_home_search_route_for_design",
               "presetHomeSearchCapturedRecentLabels"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10369,6 +10547,9 @@
               "preset-catalog-to-design-selector-options"
             ],
             "src/remote_ops_workspace/gui.py": [
+              "gui_preset_properties.apply_preset_catalog_route_properties"
+            ],
+            "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetCatalogRouteOptionIds",
               "presetCatalogRouteProductPresetIds",
               "presetCatalogRouteDefaultPresetId"

@@ -263,6 +263,7 @@ def create_main_window(
         raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
 
     # Imported only after Qt is available so CLI commands keep working without it.
+    from . import gui_preset_properties
     from .gui_connected import (
         ConnectedGuiServices,
         ConnectedMainWindow,
@@ -565,7 +566,7 @@ def create_main_window(
                 persistent_widget.setProperty("styleSelectorLocation", "layout-toolbar")
             for preset in GUI_DESIGN_PRESETS:
                 self.design_select.addItem(preset.label, preset.id)
-            self.apply_preset_catalog_route_properties(
+            gui_preset_properties.apply_preset_catalog_route_properties(
                 self.design_select, gui_design_preset_catalog_route()
             )
             self.new_layout_button = self.toolbar_button("New", "SP_FileIcon", "Create layout")
@@ -2255,7 +2256,7 @@ def create_main_window(
                     label.setText(segment.text)
                     label.setToolTip(segment.tooltip)
                     label.setProperty("productStatusKey", segment.key)
-                    self.apply_preset_selection_route_properties(label, selection_route)
+                    gui_preset_properties.apply_preset_selection_route_properties(label, selection_route)
                 return
             self.statusBar().setFixedHeight(22)
             self.status_notice_label.setText("Remote Ops Workspace")
@@ -2269,7 +2270,7 @@ def create_main_window(
                 label.setText(text)
                 label.setToolTip(f"{preset.label}: {text}")
                 label.setProperty("productStatusKey", text.lower().replace(" ", "-"))
-                self.apply_preset_selection_route_properties(label, selection_route)
+                gui_preset_properties.apply_preset_selection_route_properties(label, selection_route)
 
         def show_moba_connected_dock(self, state: MobaConnectedSessionState) -> None:
             if not hasattr(self, "moba_left_stack"):
@@ -3236,111 +3237,23 @@ def create_main_window(
                 if preset.id in PRODUCT_GUI_PRESET_IDS
                 else None
             )
-            reference_tab_route = (
-                gui_design_preset_reference_tab_route(preset.id)
-                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
-                else None
-            )
-            reference_tab_chrome_route = (
-                gui_design_preset_reference_tab_chrome_route(preset.id)
-                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
-                else None
-            )
-            reference_status_route = (
-                gui_design_preset_reference_status_bar_route(preset.id)
-                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
-                else None
-            )
-            reference_session_action_route = (
-                gui_design_preset_reference_session_action_route(preset.id)
-                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
-                else None
-            )
-            reference_surface_route = (
-                gui_design_preset_reference_surface_route(preset.id)
-                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
-                else None
-            )
-            reference_control_route = (
-                gui_design_preset_reference_control_route(preset.id)
-                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
-                else None
-            )
-            reference_input_route = (
-                gui_design_preset_reference_input_route(preset.id)
-                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
-                else None
-            )
-            reference_transcript_route = (
-                gui_design_preset_reference_transcript_route(preset.id)
-                if preset.id in PRODUCT_REFERENCE_TAB_PRESET_IDS
-                else None
-            )
+            reference_routes = gui_preset_properties.ReferencePresetRoutes.for_preset(preset.id)
             is_moba = preset.id == "mobaxterm"
             self.synchronize_terminal_mouse_paste_policy_for_design(preset.id)
             self.setStyleSheet(preset.stylesheet)
             for catalog_widget in (self, self.design_select, self.main_toolbar):
-                self.apply_preset_catalog_route_properties(catalog_widget, catalog_route)
-                self.apply_preset_isolation_route_properties(
+                gui_preset_properties.apply_preset_catalog_route_properties(catalog_widget, catalog_route)
+                gui_preset_properties.apply_preset_isolation_route_properties(
                     catalog_widget,
                     isolation_route,
                 )
-                self.apply_preset_transition_route_properties(
+                gui_preset_properties.apply_preset_transition_route_properties(
                     catalog_widget,
                     transition_route,
                 )
             self.apply_keyboard_shortcut_route_for_design(keyboard_shortcut_route)
             for reference_widget in (self, self.tabs):
-                if reference_tab_route is None:
-                    self.clear_preset_reference_tab_route_properties(reference_widget)
-                    self.clear_preset_reference_tab_chrome_route_properties(
-                        reference_widget
-                    )
-                    self.clear_preset_reference_status_bar_route_properties(
-                        reference_widget
-                    )
-                    self.clear_preset_reference_session_action_route_properties(
-                        reference_widget
-                    )
-                    self.clear_preset_reference_surface_route_properties(reference_widget)
-                    self.clear_preset_reference_control_route_properties(reference_widget)
-                    self.clear_preset_reference_input_route_properties(reference_widget)
-                    self.clear_preset_reference_transcript_route_properties(
-                        reference_widget
-                    )
-                else:
-                    self.apply_preset_reference_tab_route_properties(
-                        reference_widget,
-                        reference_tab_route,
-                    )
-                    self.apply_preset_reference_tab_chrome_route_properties(
-                        reference_widget,
-                        reference_tab_chrome_route,
-                    )
-                    self.apply_preset_reference_status_bar_route_properties(
-                        reference_widget,
-                        reference_status_route,
-                    )
-                    self.apply_preset_reference_session_action_route_properties(
-                        reference_widget,
-                        reference_session_action_route,
-                    )
-                    self.apply_preset_reference_surface_route_properties(
-                        reference_widget,
-                        reference_surface_route,
-                    )
-                    self.apply_preset_reference_control_route_properties(
-                        reference_widget,
-                        reference_control_route,
-                    )
-                    self.apply_preset_reference_input_route_properties(
-                        reference_widget,
-                        reference_input_route,
-                    )
-                    self.apply_preset_reference_transcript_route_properties(
-                        reference_widget,
-                        reference_transcript_route,
-                    )
+                gui_preset_properties.apply_reference_preset_routes(reference_widget, reference_routes)
             for visual_widget in (
                 self,
                 self.main_toolbar,
@@ -3351,11 +3264,11 @@ def create_main_window(
                 self.log,
                 self.statusBar(),
             ):
-                self.apply_preset_visual_signature_properties(
+                gui_preset_properties.apply_preset_visual_signature_properties(
                     visual_widget,
                     visual_signature,
                 )
-            self.apply_preset_selection_route_properties(self, selection_route)
+            gui_preset_properties.apply_preset_selection_route_properties(self, selection_route)
             for selection_widget in (
                 self.design_select,
                 self.main_toolbar,
@@ -3365,7 +3278,7 @@ def create_main_window(
                 self.tabs,
                 self.statusBar(),
             ):
-                self.apply_preset_selection_route_properties(
+                gui_preset_properties.apply_preset_selection_route_properties(
                     selection_widget,
                     selection_route,
                 )
@@ -3423,21 +3336,21 @@ def create_main_window(
                 self.status_notice_label,
                 *self.status_segment_labels,
             ):
-                if reference_status_route is None:
-                    self.clear_preset_reference_status_bar_route_properties(status_widget)
+                if reference_routes is None:
+                    gui_preset_properties.clear_preset_reference_status_bar_route_properties(status_widget)
                 else:
-                    self.apply_preset_reference_status_bar_route_properties(
+                    gui_preset_properties.apply_preset_reference_status_bar_route_properties(
                         status_widget,
-                        reference_status_route,
+                        reference_routes.status_bar,
                     )
-            if reference_session_action_route is None:
-                self.clear_preset_reference_session_action_route_properties(
+            if reference_routes is None:
+                gui_preset_properties.clear_preset_reference_session_action_route_properties(
                     self.moba_tab_bar
                 )
             else:
-                self.apply_preset_reference_session_action_route_properties(
+                gui_preset_properties.apply_preset_reference_session_action_route_properties(
                     self.moba_tab_bar,
-                    reference_session_action_route,
+                    reference_routes.session_action,
                 )
             self.configure_toolbar_for_design(preset, is_moba, preset.toolbar_icon_size)
             if is_moba:
@@ -3531,228 +3444,23 @@ def create_main_window(
             widget.setMinimumHeight(height)
             widget.setMaximumHeight(height)
 
-        @staticmethod
-        def apply_preset_selection_route_properties(widget, route) -> None:
-            properties = {
-                "presetSelectionRouteKey": route.key,
-                "presetSelectionRouteRole": route.route_role,
-                "presetSelectionRoutePresetId": route.preset_id,
-                "presetSelectionRoutePresetLabel": route.preset_label,
-                "presetSelectionRoutePresetIndex": route.preset_index,
-                "presetSelectionRouteSelectorObject": route.selector_object,
-                "presetSelectionRouteMainToolbarObject": route.main_toolbar_object,
-                "presetSelectionRouteLayoutToolbarObject": route.layout_toolbar_object,
-                "presetSelectionRouteLeftPanelHeaderObject": route.left_panel_header_object,
-                "presetSelectionRouteProfileTreeObject": route.profile_tree_object,
-                "presetSelectionRouteTabsObject": route.tabs_object,
-                "presetSelectionRouteStatusBarObject": route.status_bar_object,
-                "presetSelectionRouteStatusSegmentObject": route.status_segment_object,
-                "presetSelectionRouteWorkspaceSurfaceObject": route.workspace_surface_object,
-                "presetSelectionRouteReferenceStateObject": route.reference_state_object,
-                "presetSelectionRouteHomeTabLabel": route.home_tab_label,
-                "presetSelectionRouteSidebarTitle": route.sidebar_title,
-                "presetSelectionRouteSidebarSubtitle": route.sidebar_subtitle,
-                "presetSelectionRouteStatusSegments": list(route.status_segments),
-                "presetSelectionRouteTabPosition": route.tab_position,
-                "presetSelectionRouteDocumentMode": route.document_mode,
-                "presetSelectionRouteProfileWidth": route.profile_width,
-                "presetSelectionRouteLogHeight": route.log_height,
-                "presetSelectionRouteToolbarIconSize": route.toolbar_icon_size,
-                "presetSelectionRouteRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def apply_preset_catalog_route_properties(widget, route) -> None:
-            properties = {
-                "presetCatalogRouteKey": route.key,
-                "presetCatalogRouteRole": route.route_role,
-                "presetCatalogRouteSelectorObject": route.selector_object,
-                "presetCatalogRouteOptionIds": list(route.option_ids),
-                "presetCatalogRouteOptionLabels": list(route.option_labels),
-                "presetCatalogRouteProductPresetIds": list(route.product_preset_ids),
-                "presetCatalogRouteProductPresetLabels": list(route.product_preset_labels),
-                "presetCatalogRouteDefaultPresetId": route.default_preset_id,
-                "presetCatalogRouteDefaultPresetLabel": route.default_preset_label,
-                "presetCatalogRouteOptionCount": route.option_count,
-                "presetCatalogRouteProductOptionCount": route.product_option_count,
-                "presetCatalogRouteSelectorProperty": route.selector_property,
-                "presetCatalogRouteOptionLabelsProperty": route.option_labels_property,
-                "presetCatalogRouteProductIdsProperty": route.product_ids_property,
-                "presetCatalogRouteDefaultProperty": route.default_property,
-                "presetCatalogRouteRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def apply_preset_isolation_route_properties(widget, route) -> None:
-            properties = {
-                "presetIsolationRouteKey": route.key,
-                "presetIsolationRouteRole": route.route_role,
-                "presetIsolationRoutePresetId": route.preset_id,
-                "presetIsolationVisibleObjects": list(route.visible_objects),
-                "presetIsolationHiddenObjects": list(route.hidden_objects),
-                "presetIsolationVisibleProperty": route.visible_property,
-                "presetIsolationHiddenProperty": route.hidden_property,
-                "presetIsolationRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def apply_preset_transition_route_properties(widget, route) -> None:
-            properties = {
-                "presetTransitionRouteKey": route.key,
-                "presetTransitionRouteRole": route.route_role,
-                "presetTransitionFromPresetIds": list(route.from_preset_ids),
-                "presetTransitionToPresetId": route.to_preset_id,
-                "presetTransitionToPresetIndex": route.to_preset_index,
-                "presetTransitionSelectorObject": route.selector_object,
-                "presetTransitionResetObjects": list(route.reset_objects),
-                "presetTransitionRouteProperty": route.route_property,
-                "presetTransitionFromProperty": route.from_property,
-                "presetTransitionToProperty": route.to_property,
-                "presetTransitionResetProperty": route.reset_property,
-                "presetTransitionRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def apply_preset_keyboard_shortcut_route_properties(widget, route) -> None:
-            properties = {
-                "presetKeyboardShortcutRouteKey": route.key,
-                "presetKeyboardShortcutRouteRole": route.route_role,
-                "presetKeyboardShortcutPresetId": route.preset_id,
-                "presetKeyboardShortcutObject": route.shortcut_object,
-                "presetKeyboardShortcutExpectedKeys": list(route.expected_shortcut_keys),
-                "presetKeyboardShortcutExpectedSequences": list(route.expected_sequences),
-                "presetKeyboardShortcutExpectedActionLabels": list(route.expected_action_labels),
-                "presetKeyboardShortcutExpectedCount": route.expected_shortcut_count,
-                "presetKeyboardShortcutKeyProperty": route.shortcut_key_property,
-                "presetKeyboardShortcutSequenceProperty": route.shortcut_sequence_property,
-                "presetKeyboardShortcutActionProperty": route.shortcut_action_property,
-                "presetKeyboardShortcutCapturedProperty": route.captured_property,
-                "presetKeyboardShortcutCapturedKeysProperty": route.captured_keys_property,
-                "presetKeyboardShortcutCapturedSequencesProperty": route.captured_sequences_property,
-                "presetKeyboardShortcutCapturedActionLabelsProperty": route.captured_action_labels_property,
-                "presetKeyboardShortcutCapturedCountProperty": route.captured_count_property,
-                "presetKeyboardShortcutRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_keyboard_shortcut_route_properties(widget) -> None:
-            for key in (
-                "presetKeyboardShortcutRouteKey",
-                "presetKeyboardShortcutRouteRole",
-                "presetKeyboardShortcutPresetId",
-                "presetKeyboardShortcutObject",
-                "presetKeyboardShortcutExpectedKeys",
-                "presetKeyboardShortcutExpectedSequences",
-                "presetKeyboardShortcutExpectedActionLabels",
-                "presetKeyboardShortcutExpectedCount",
-                "presetKeyboardShortcutKeyProperty",
-                "presetKeyboardShortcutSequenceProperty",
-                "presetKeyboardShortcutActionProperty",
-                "presetKeyboardShortcutCapturedProperty",
-                "presetKeyboardShortcutCapturedKeysProperty",
-                "presetKeyboardShortcutCapturedSequencesProperty",
-                "presetKeyboardShortcutCapturedActionLabelsProperty",
-                "presetKeyboardShortcutCapturedCountProperty",
-                "presetKeyboardShortcutsCaptured",
-                "presetKeyboardShortcutCapturedKeys",
-                "presetKeyboardShortcutCapturedSequences",
-                "presetKeyboardShortcutCapturedActionLabels",
-                "presetKeyboardShortcutCapturedCount",
-                "presetKeyboardShortcutRenderSource",
-            ):
-                widget.setProperty(key, None)
-
         def apply_keyboard_shortcut_route_for_design(self, route) -> None:
             shortcuts = getattr(self, "keyboard_shortcuts", [])
             route_widgets = [self, *shortcuts]
             if route is None:
                 for widget in route_widgets:
-                    self.clear_preset_keyboard_shortcut_route_properties(widget)
+                    gui_preset_properties.clear_preset_keyboard_shortcut_route_properties(widget)
                 return
             keys = [str(shortcut.property(route.shortcut_key_property) or "") for shortcut in shortcuts]
             sequences = [str(shortcut.property(route.shortcut_sequence_property) or "") for shortcut in shortcuts]
             action_labels = [str(shortcut.property(route.shortcut_action_property) or "") for shortcut in shortcuts]
             for widget in route_widgets:
-                self.apply_preset_keyboard_shortcut_route_properties(widget, route)
+                gui_preset_properties.apply_preset_keyboard_shortcut_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_keys_property, keys)
                 widget.setProperty(route.captured_sequences_property, sequences)
                 widget.setProperty(route.captured_action_labels_property, action_labels)
                 widget.setProperty(route.captured_count_property, len(keys))
-
-        @staticmethod
-        def apply_preset_command_surface_route_properties(widget, route) -> None:
-            properties = {
-                "presetCommandSurfaceRouteKey": route.key,
-                "presetCommandSurfaceRouteRole": route.route_role,
-                "presetCommandSurfacePresetId": route.preset_id,
-                "presetCommandSurfaceToolbarObject": route.toolbar_object,
-                "presetCommandSurfaceCommandObject": route.command_object,
-                "presetCommandSurfaceExpectedKeys": list(route.expected_action_keys),
-                "presetCommandSurfaceExpectedLabels": list(route.expected_action_labels),
-                "presetCommandSurfaceExpectedTooltips": list(route.expected_action_tooltips),
-                "presetCommandSurfaceExpectedStates": dict(route.expected_action_states),
-                "presetCommandSurfaceExpectedCount": route.expected_action_count,
-                "presetCommandSurfaceKeyProperty": route.key_property,
-                "presetCommandSurfaceLabelProperty": route.label_property,
-                "presetCommandSurfaceTooltipProperty": route.tooltip_property,
-                "presetCommandSurfaceStateProperty": route.state_property,
-                "presetCommandSurfaceCapturedProperty": route.captured_property,
-                "presetCommandSurfaceCapturedKeysProperty": route.captured_keys_property,
-                "presetCommandSurfaceCapturedLabelsProperty": route.captured_labels_property,
-                "presetCommandSurfaceCapturedTooltipsProperty": route.captured_tooltips_property,
-                "presetCommandSurfaceCapturedStatesProperty": route.captured_states_property,
-                "presetCommandSurfaceCapturedCountProperty": route.captured_count_property,
-                "presetCommandSurfaceRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_command_surface_route_properties(widget) -> None:
-            for key in (
-                "presetCommandSurfaceRouteKey",
-                "presetCommandSurfaceRouteRole",
-                "presetCommandSurfacePresetId",
-                "presetCommandSurfaceToolbarObject",
-                "presetCommandSurfaceCommandObject",
-                "presetCommandSurfaceExpectedKeys",
-                "presetCommandSurfaceExpectedLabels",
-                "presetCommandSurfaceExpectedTooltips",
-                "presetCommandSurfaceExpectedStates",
-                "presetCommandSurfaceExpectedCount",
-                "presetCommandSurfaceKeyProperty",
-                "presetCommandSurfaceLabelProperty",
-                "presetCommandSurfaceTooltipProperty",
-                "presetCommandSurfaceStateProperty",
-                "presetCommandSurfaceCapturedProperty",
-                "presetCommandSurfaceCapturedKeysProperty",
-                "presetCommandSurfaceCapturedLabelsProperty",
-                "presetCommandSurfaceCapturedTooltipsProperty",
-                "presetCommandSurfaceCapturedStatesProperty",
-                "presetCommandSurfaceCapturedCountProperty",
-                "presetCommandSurfaceCaptured",
-                "presetCommandSurfaceCapturedKeys",
-                "presetCommandSurfaceCapturedLabels",
-                "presetCommandSurfaceCapturedTooltips",
-                "presetCommandSurfaceCapturedStates",
-                "presetCommandSurfaceCapturedCount",
-                "presetCommandSurfaceActionKey",
-                "presetCommandSurfaceActionLabel",
-                "presetCommandSurfaceActionTooltip",
-                "presetCommandSurfaceRenderSource",
-            ):
-                widget.setProperty(key, None)
 
         def command_surface_buttons_for_route(self, route) -> list[QToolButton]:
             if route.command_object == "mobaRibbonButton":
@@ -3767,7 +3475,7 @@ def create_main_window(
                 *self.product_toolbar_buttons,
             ]
             for widget in route_widgets:
-                self.clear_preset_command_surface_route_properties(widget)
+                gui_preset_properties.clear_preset_command_surface_route_properties(widget)
             if route is None:
                 return
 
@@ -3794,74 +3502,13 @@ def create_main_window(
 
             target_widgets = [self, self.main_toolbar, *buttons]
             for widget in target_widgets:
-                self.apply_preset_command_surface_route_properties(widget, route)
+                gui_preset_properties.apply_preset_command_surface_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_keys_property, captured_keys)
                 widget.setProperty(route.captured_labels_property, captured_labels)
                 widget.setProperty(route.captured_tooltips_property, captured_tooltips)
                 widget.setProperty(route.captured_states_property, captured_states)
                 widget.setProperty(route.captured_count_property, len(captured_keys))
-
-        @staticmethod
-        def apply_preset_focus_interaction_route_properties(widget, route) -> None:
-            properties = {
-                "presetFocusInteractionRouteKey": route.key,
-                "presetFocusInteractionRouteRole": route.route_role,
-                "presetFocusInteractionPresetId": route.preset_id,
-                "presetFocusInteractionFocusedControl": route.focused_control,
-                "presetFocusInteractionFocusObject": route.focus_object,
-                "presetFocusInteractionActiveToolbarKey": route.active_toolbar_key,
-                "presetFocusInteractionCheckedToolbarKey": route.checked_toolbar_key,
-                "presetFocusInteractionDisabledToolbarKey": route.disabled_toolbar_key,
-                "presetFocusInteractionSelectedTreeLabel": route.selected_tree_label,
-                "presetFocusInteractionActiveTabStatus": route.active_tab_status,
-                "presetFocusInteractionStatusNote": route.status_note,
-                "presetFocusInteractionStatusBarObject": route.status_bar_object,
-                "presetFocusInteractionProfileTreeObject": route.profile_tree_object,
-                "presetFocusInteractionFocusedStateProperty": route.focused_state_property,
-                "presetFocusInteractionCapturedProperty": route.captured_property,
-                "presetFocusInteractionCapturedFocusProperty": route.captured_focus_property,
-                "presetFocusInteractionCapturedStateProperty": route.captured_focus_state_property,
-                "presetFocusInteractionCapturedStatusMessageProperty": route.captured_status_message_property,
-                "presetFocusInteractionCapturedSelectedTreeProperty": route.captured_selected_tree_property,
-                "presetFocusInteractionCapturedToolbarStatesProperty": route.captured_toolbar_states_property,
-                "presetFocusInteractionRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_focus_interaction_route_properties(widget) -> None:
-            for key in (
-                "presetFocusInteractionRouteKey",
-                "presetFocusInteractionRouteRole",
-                "presetFocusInteractionPresetId",
-                "presetFocusInteractionFocusedControl",
-                "presetFocusInteractionFocusObject",
-                "presetFocusInteractionActiveToolbarKey",
-                "presetFocusInteractionCheckedToolbarKey",
-                "presetFocusInteractionDisabledToolbarKey",
-                "presetFocusInteractionSelectedTreeLabel",
-                "presetFocusInteractionActiveTabStatus",
-                "presetFocusInteractionStatusNote",
-                "presetFocusInteractionStatusBarObject",
-                "presetFocusInteractionProfileTreeObject",
-                "presetFocusInteractionFocusedStateProperty",
-                "presetFocusInteractionCapturedProperty",
-                "presetFocusInteractionCapturedFocusProperty",
-                "presetFocusInteractionCapturedStateProperty",
-                "presetFocusInteractionCapturedStatusMessageProperty",
-                "presetFocusInteractionCapturedSelectedTreeProperty",
-                "presetFocusInteractionCapturedToolbarStatesProperty",
-                "presetFocusInteractionCaptured",
-                "presetFocusInteractionCapturedFocus",
-                "presetFocusInteractionCapturedState",
-                "presetFocusInteractionStatusMessage",
-                "presetFocusInteractionCapturedSelectedTreeLabel",
-                "presetFocusInteractionToolbarStates",
-                "presetFocusInteractionRenderSource",
-            ):
-                widget.setProperty(key, None)
 
         def apply_focus_interaction_route_for_design(self, route, preset_id: str) -> None:
             focus_widgets = self.focus_interaction_widgets()
@@ -3874,7 +3521,7 @@ def create_main_window(
                     continue
                 seen.add(widget_id)
                 route_widgets.append(widget)
-                self.clear_preset_focus_interaction_route_properties(widget)
+                gui_preset_properties.clear_preset_focus_interaction_route_properties(widget)
             if route is None:
                 return
             focused_widget = focus_widgets.get(route.focused_control)
@@ -3889,84 +3536,13 @@ def create_main_window(
                 captured_status_message = f"{route.preset_id}: {route.status_note}"
             captured_selected_tree_label = self.selected_profile_tree_label()
             for widget in route_widgets:
-                self.apply_preset_focus_interaction_route_properties(widget, route)
+                gui_preset_properties.apply_preset_focus_interaction_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_focus_property, route.focus_object)
                 widget.setProperty(route.captured_focus_state_property, captured_focus_state)
                 widget.setProperty(route.captured_status_message_property, captured_status_message)
                 widget.setProperty(route.captured_selected_tree_property, captured_selected_tree_label)
                 widget.setProperty(route.captured_toolbar_states_property, toolbar_states)
-
-        @staticmethod
-        def apply_preset_home_search_route_properties(widget, route) -> None:
-            properties = {
-                "presetHomeSearchRouteKey": route.key,
-                "presetHomeSearchRouteRole": route.route_role,
-                "presetHomeSearchPresetId": route.preset_id,
-                "presetHomeSearchHomeTabLabel": route.home_tab_label,
-                "presetHomeSearchObject": route.home_search_object,
-                "presetHomeSearchEntryControl": route.entry_search_control,
-                "presetHomeSearchEntryObject": route.entry_search_object,
-                "presetHomeSearchContainerObject": route.container_object,
-                "presetHomeSearchRecentLabelObject": route.recent_label_object,
-                "presetHomeSearchExpectedPlaceholder": route.placeholder_text,
-                "presetHomeSearchExpectedEntryPlaceholder": route.entry_placeholder_text,
-                "presetHomeSearchExpectedActions": list(route.expected_home_actions),
-                "presetHomeSearchExpectedRecentLabels": list(route.expected_recent_labels),
-                "presetHomeSearchExpectedRecentCount": route.expected_recent_count,
-                "presetHomeSearchPlaceholderProperty": route.placeholder_property,
-                "presetHomeSearchEntryPlaceholderProperty": route.entry_placeholder_property,
-                "presetHomeSearchCapturedProperty": route.captured_property,
-                "presetHomeSearchCapturedPlaceholderProperty": route.captured_placeholder_property,
-                "presetHomeSearchCapturedEntryPlaceholderProperty": route.captured_entry_placeholder_property,
-                "presetHomeSearchCapturedTextProperty": route.captured_text_property,
-                "presetHomeSearchCapturedEntryTextProperty": route.captured_entry_text_property,
-                "presetHomeSearchCapturedActionsProperty": route.captured_actions_property,
-                "presetHomeSearchCapturedRecentLabelsProperty": route.captured_recent_labels_property,
-                "presetHomeSearchCapturedRecentCountProperty": route.captured_recent_count_property,
-                "presetHomeSearchRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_home_search_route_properties(widget) -> None:
-            for key in (
-                "presetHomeSearchRouteKey",
-                "presetHomeSearchRouteRole",
-                "presetHomeSearchPresetId",
-                "presetHomeSearchHomeTabLabel",
-                "presetHomeSearchObject",
-                "presetHomeSearchEntryControl",
-                "presetHomeSearchEntryObject",
-                "presetHomeSearchContainerObject",
-                "presetHomeSearchRecentLabelObject",
-                "presetHomeSearchExpectedPlaceholder",
-                "presetHomeSearchExpectedEntryPlaceholder",
-                "presetHomeSearchExpectedActions",
-                "presetHomeSearchExpectedRecentLabels",
-                "presetHomeSearchExpectedRecentCount",
-                "presetHomeSearchPlaceholderProperty",
-                "presetHomeSearchEntryPlaceholderProperty",
-                "presetHomeSearchCapturedProperty",
-                "presetHomeSearchCapturedPlaceholderProperty",
-                "presetHomeSearchCapturedEntryPlaceholderProperty",
-                "presetHomeSearchCapturedTextProperty",
-                "presetHomeSearchCapturedEntryTextProperty",
-                "presetHomeSearchCapturedActionsProperty",
-                "presetHomeSearchCapturedRecentLabelsProperty",
-                "presetHomeSearchCapturedRecentCountProperty",
-                "presetHomeSearchCaptured",
-                "presetHomeSearchCapturedPlaceholder",
-                "presetHomeSearchCapturedEntryPlaceholder",
-                "presetHomeSearchCapturedText",
-                "presetHomeSearchCapturedEntryText",
-                "presetHomeSearchCapturedActions",
-                "presetHomeSearchCapturedRecentLabels",
-                "presetHomeSearchCapturedRecentCount",
-                "presetHomeSearchRenderSource",
-            ):
-                widget.setProperty(key, None)
 
         def home_search_route_widgets(self, route) -> list:
             container = self.findChild(QWidget, route.container_object)
@@ -4003,7 +3579,7 @@ def create_main_window(
                 *self.findChildren(QLineEdit, "remminaProfileFilter"),
                 *self.findChildren(QLineEdit, "mRemoteNgDocumentFilter"),
             ]:
-                self.clear_preset_home_search_route_properties(widget)
+                gui_preset_properties.clear_preset_home_search_route_properties(widget)
             if route is None:
                 return
             container = self.findChild(QWidget, route.container_object)
@@ -4032,7 +3608,7 @@ def create_main_window(
             if entry_search is not None:
                 entry_search.setProperty(route.entry_placeholder_property, route.entry_placeholder_text)
             for widget in self.home_search_route_widgets(route):
-                self.apply_preset_home_search_route_properties(widget, route)
+                gui_preset_properties.apply_preset_home_search_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_placeholder_property, captured_placeholder)
                 widget.setProperty(route.captured_entry_placeholder_property, captured_entry_placeholder)
@@ -4041,533 +3617,6 @@ def create_main_window(
                 widget.setProperty(route.captured_actions_property, action_labels)
                 widget.setProperty(route.captured_recent_labels_property, recent_labels)
                 widget.setProperty(route.captured_recent_count_property, len(recent_labels))
-
-        @staticmethod
-        def apply_preset_reference_tab_route_properties(widget, route) -> None:
-            properties = {
-                "presetReferenceTabRouteKey": route.key,
-                "presetReferenceTabRouteRole": route.route_role,
-                "presetReferenceTabPresetId": route.preset_id,
-                "presetReferenceTabProfile": route.reference_profile,
-                "presetReferenceTabActiveLabel": route.active_tab_label,
-                "presetReferenceTabHomeLabel": route.home_tab_label,
-                "presetReferenceTabTabsObject": route.tabs_object,
-                "presetReferenceTabHomeRole": route.home_tab_role,
-                "presetReferenceTabReferenceRole": route.reference_tab_role,
-                "presetReferenceTabActivatedLabelProperty": route.activated_label_property,
-                "presetReferenceTabReturnedHomeLabelProperty": route.returned_home_label_property,
-                "presetReferenceTabActiveProperty": route.active_tab_property,
-                "presetReferenceTabHomeProperty": route.home_tab_property,
-                "presetReferenceTabProfileProperty": route.reference_profile_property,
-                "presetReferenceTabRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_reference_tab_route_properties(widget) -> None:
-            for key in (
-                "presetReferenceTabRouteKey",
-                "presetReferenceTabRouteRole",
-                "presetReferenceTabPresetId",
-                "presetReferenceTabProfile",
-                "presetReferenceTabActiveLabel",
-                "presetReferenceTabHomeLabel",
-                "presetReferenceTabTabsObject",
-                "presetReferenceTabHomeRole",
-                "presetReferenceTabReferenceRole",
-                "presetReferenceTabActivatedLabelProperty",
-                "presetReferenceTabReturnedHomeLabelProperty",
-                "presetReferenceTabActiveProperty",
-                "presetReferenceTabHomeProperty",
-                "presetReferenceTabProfileProperty",
-                "presetReferenceTabActivatedLabel",
-                "presetReferenceTabReturnedHomeLabel",
-                "presetReferenceTabRenderSource",
-            ):
-                widget.setProperty(key, None)
-
-        @staticmethod
-        def apply_preset_reference_tab_chrome_route_properties(widget, route) -> None:
-            properties = {
-                "presetReferenceTabChromeRouteKey": route.key,
-                "presetReferenceTabChromeRouteRole": route.route_role,
-                "presetReferenceTabChromePresetId": route.preset_id,
-                "presetReferenceTabChromeProfile": route.reference_profile,
-                "presetReferenceTabChromeActiveLabel": route.active_tab_label,
-                "presetReferenceTabChromeHomeLabel": route.home_tab_label,
-                "presetReferenceTabChromeTabsObject": route.tabs_object,
-                "presetReferenceTabChromeTabBarObject": route.tab_bar_object,
-                "presetReferenceTabChromeReferenceRole": route.reference_tab_role,
-                "presetReferenceTabChromeNewSessionRole": route.new_session_tab_role,
-                "presetReferenceTabChromeExpectedPosition": route.expected_tab_position,
-                "presetReferenceTabChromeExpectedTooltip": route.expected_tooltip,
-                "presetReferenceTabChromeExpectedCloseable": route.expected_closeable,
-                "presetReferenceTabChromeExpectedSelectedDuringCapture": route.expected_selected_during_capture,
-                "presetReferenceTabChromeCapturedProperty": route.captured_property,
-                "presetReferenceTabChromeCapturedLabelProperty": route.captured_label_property,
-                "presetReferenceTabChromeCapturedTooltipProperty": route.captured_tooltip_property,
-                "presetReferenceTabChromeCapturedIndexProperty": route.captured_index_property,
-                "presetReferenceTabChromeCapturedRoleProperty": route.captured_role_property,
-                "presetReferenceTabChromeCapturedPositionProperty": route.captured_position_property,
-                "presetReferenceTabChromeCapturedCloseableProperty": route.captured_closeable_property,
-                "presetReferenceTabChromeCapturedSelectedProperty": route.captured_selected_property,
-                "presetReferenceTabChromeRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_reference_tab_chrome_route_properties(widget) -> None:
-            for key in (
-                "presetReferenceTabChromeRouteKey",
-                "presetReferenceTabChromeRouteRole",
-                "presetReferenceTabChromePresetId",
-                "presetReferenceTabChromeProfile",
-                "presetReferenceTabChromeActiveLabel",
-                "presetReferenceTabChromeHomeLabel",
-                "presetReferenceTabChromeTabsObject",
-                "presetReferenceTabChromeTabBarObject",
-                "presetReferenceTabChromeReferenceRole",
-                "presetReferenceTabChromeNewSessionRole",
-                "presetReferenceTabChromeExpectedPosition",
-                "presetReferenceTabChromeExpectedTooltip",
-                "presetReferenceTabChromeExpectedCloseable",
-                "presetReferenceTabChromeExpectedSelectedDuringCapture",
-                "presetReferenceTabChromeCapturedProperty",
-                "presetReferenceTabChromeCapturedLabelProperty",
-                "presetReferenceTabChromeCapturedTooltipProperty",
-                "presetReferenceTabChromeCapturedIndexProperty",
-                "presetReferenceTabChromeCapturedRoleProperty",
-                "presetReferenceTabChromeCapturedPositionProperty",
-                "presetReferenceTabChromeCapturedCloseableProperty",
-                "presetReferenceTabChromeCapturedSelectedProperty",
-                "presetReferenceTabChromeCaptured",
-                "presetReferenceTabChromeLabel",
-                "presetReferenceTabChromeTooltip",
-                "presetReferenceTabChromeIndex",
-                "presetReferenceTabChromeRole",
-                "presetReferenceTabChromePosition",
-                "presetReferenceTabChromeCloseable",
-                "presetReferenceTabChromeSelected",
-                "presetReferenceTabChromeRenderSource",
-            ):
-                widget.setProperty(key, None)
-
-        @staticmethod
-        def apply_preset_reference_status_bar_route_properties(widget, route) -> None:
-            properties = {
-                "presetReferenceStatusRouteKey": route.key,
-                "presetReferenceStatusRouteRole": route.route_role,
-                "presetReferenceStatusPresetId": route.preset_id,
-                "presetReferenceStatusProfile": route.reference_profile,
-                "presetReferenceStatusActiveTab": route.active_tab_label,
-                "presetReferenceStatusBarObject": route.status_bar_object,
-                "presetReferenceStatusNoticeObject": route.status_notice_object,
-                "presetReferenceStatusSegmentObject": route.status_segment_object,
-                "presetReferenceStatusExpectedMessage": route.expected_status_message,
-                "presetReferenceStatusExpectedSegments": list(route.expected_status_segments),
-                "presetReferenceStatusExpectedSegmentCount": route.expected_segment_count,
-                "presetReferenceStatusCapturedProperty": route.captured_property,
-                "presetReferenceStatusCapturedTabProperty": route.captured_tab_property,
-                "presetReferenceStatusCapturedMessageProperty": route.captured_message_property,
-                "presetReferenceStatusCapturedSegmentsProperty": route.captured_segments_property,
-                "presetReferenceStatusCapturedSegmentCountProperty": route.captured_segment_count_property,
-                "presetReferenceStatusCapturedSegmentTooltipsProperty": route.captured_segment_tooltips_property,
-                "presetReferenceStatusCapturedNoticeProperty": route.captured_notice_property,
-                "presetReferenceStatusRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_reference_status_bar_route_properties(widget) -> None:
-            for key in (
-                "presetReferenceStatusRouteKey",
-                "presetReferenceStatusRouteRole",
-                "presetReferenceStatusPresetId",
-                "presetReferenceStatusProfile",
-                "presetReferenceStatusActiveTab",
-                "presetReferenceStatusBarObject",
-                "presetReferenceStatusNoticeObject",
-                "presetReferenceStatusSegmentObject",
-                "presetReferenceStatusExpectedMessage",
-                "presetReferenceStatusExpectedSegments",
-                "presetReferenceStatusExpectedSegmentCount",
-                "presetReferenceStatusCapturedProperty",
-                "presetReferenceStatusCapturedTabProperty",
-                "presetReferenceStatusCapturedMessageProperty",
-                "presetReferenceStatusCapturedSegmentsProperty",
-                "presetReferenceStatusCapturedSegmentCountProperty",
-                "presetReferenceStatusCapturedSegmentTooltipsProperty",
-                "presetReferenceStatusCapturedNoticeProperty",
-                "presetReferenceStatusCaptured",
-                "presetReferenceStatusCapturedTab",
-                "presetReferenceStatusMessage",
-                "presetReferenceStatusSegments",
-                "presetReferenceStatusSegmentCount",
-                "presetReferenceStatusSegmentTooltips",
-                "presetReferenceStatusNotice",
-                "presetReferenceStatusRenderSource",
-            ):
-                widget.setProperty(key, None)
-
-        @staticmethod
-        def apply_preset_reference_session_action_route_properties(widget, route) -> None:
-            properties = {
-                "presetReferenceSessionActionRouteKey": route.key,
-                "presetReferenceSessionActionRouteRole": route.route_role,
-                "presetReferenceSessionActionPresetId": route.preset_id,
-                "presetReferenceSessionActionProfile": route.reference_profile,
-                "presetReferenceSessionActionActiveTab": route.active_tab_label,
-                "presetReferenceSessionActionTabsObject": route.tabs_object,
-                "presetReferenceSessionActionTabBarObject": route.tab_bar_object,
-                "presetReferenceSessionActionReferenceRole": route.reference_tab_role,
-                "presetReferenceSessionActionObject": route.action_object,
-                "presetReferenceSessionActionExpectedKeys": list(route.expected_action_keys),
-                "presetReferenceSessionActionExpectedLabels": list(route.expected_action_labels),
-                "presetReferenceSessionActionExpectedCount": route.expected_action_count,
-                "presetReferenceSessionActionAlwaysEnabledKeys": list(route.always_enabled_action_keys),
-                "presetReferenceSessionActionConditionalEnabledKeys": list(route.conditional_enabled_action_keys),
-                "presetReferenceSessionActionActionKeyProperty": route.action_key_property,
-                "presetReferenceSessionActionActionLabelProperty": route.action_label_property,
-                "presetReferenceSessionActionActionEnabledProperty": route.action_enabled_property,
-                "presetReferenceSessionActionCapturedProperty": route.captured_property,
-                "presetReferenceSessionActionCapturedTabProperty": route.captured_tab_property,
-                "presetReferenceSessionActionCapturedKeysProperty": route.captured_action_keys_property,
-                "presetReferenceSessionActionCapturedLabelsProperty": route.captured_action_labels_property,
-                "presetReferenceSessionActionCapturedCountProperty": route.captured_action_count_property,
-                "presetReferenceSessionActionCapturedEnabledKeysProperty": route.captured_enabled_keys_property,
-                "presetReferenceSessionActionCapturedDisabledKeysProperty": route.captured_disabled_keys_property,
-                "presetReferenceSessionActionRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_reference_session_action_route_properties(widget) -> None:
-            for key in (
-                "presetReferenceSessionActionRouteKey",
-                "presetReferenceSessionActionRouteRole",
-                "presetReferenceSessionActionPresetId",
-                "presetReferenceSessionActionProfile",
-                "presetReferenceSessionActionActiveTab",
-                "presetReferenceSessionActionTabsObject",
-                "presetReferenceSessionActionTabBarObject",
-                "presetReferenceSessionActionReferenceRole",
-                "presetReferenceSessionActionObject",
-                "presetReferenceSessionActionExpectedKeys",
-                "presetReferenceSessionActionExpectedLabels",
-                "presetReferenceSessionActionExpectedCount",
-                "presetReferenceSessionActionAlwaysEnabledKeys",
-                "presetReferenceSessionActionConditionalEnabledKeys",
-                "presetReferenceSessionActionActionKeyProperty",
-                "presetReferenceSessionActionActionLabelProperty",
-                "presetReferenceSessionActionActionEnabledProperty",
-                "presetReferenceSessionActionCapturedProperty",
-                "presetReferenceSessionActionCapturedTabProperty",
-                "presetReferenceSessionActionCapturedKeysProperty",
-                "presetReferenceSessionActionCapturedLabelsProperty",
-                "presetReferenceSessionActionCapturedCountProperty",
-                "presetReferenceSessionActionCapturedEnabledKeysProperty",
-                "presetReferenceSessionActionCapturedDisabledKeysProperty",
-                "presetReferenceSessionActionsCaptured",
-                "presetReferenceSessionActionsCapturedTab",
-                "presetReferenceSessionActionKeys",
-                "presetReferenceSessionActionLabels",
-                "presetReferenceSessionActionCount",
-                "presetReferenceSessionActionEnabledKeys",
-                "presetReferenceSessionActionDisabledKeys",
-                "presetReferenceSessionActionRenderSource",
-            ):
-                widget.setProperty(key, None)
-
-        @staticmethod
-        def apply_moba_connected_session_action_route_properties(widget, route) -> None:
-            properties = {
-                "mobaConnectedSessionActionRouteKey": route.key,
-                "mobaConnectedSessionActionRouteRole": route.route_role,
-                "mobaConnectedSessionActionProfile": route.profile_name,
-                "mobaConnectedSessionActionTarget": route.target,
-                "mobaConnectedSessionActionActiveTabKey": route.active_tab_key,
-                "mobaConnectedSessionActionActiveTab": route.active_tab_label,
-                "mobaConnectedSessionActionReferenceTab": route.reference_tab_label,
-                "mobaConnectedSessionActionTabsObject": route.tabs_object,
-                "mobaConnectedSessionActionTabBarObject": route.tab_bar_object,
-                "mobaConnectedSessionActionReferenceRole": route.reference_tab_role,
-                "mobaConnectedSessionActionMenuObject": route.menu_object,
-                "mobaConnectedSessionActionObject": route.action_object,
-                "mobaConnectedSessionActionExpectedKeys": list(route.expected_action_keys),
-                "mobaConnectedSessionActionExpectedLabels": list(route.expected_action_labels),
-                "mobaConnectedSessionActionExpectedCount": route.expected_action_count,
-                "mobaConnectedSessionActionAlwaysEnabledKeys": list(route.always_enabled_action_keys),
-                "mobaConnectedSessionActionConditionalEnabledKeys": list(route.conditional_enabled_action_keys),
-                "mobaConnectedSessionActionActionKeyProperty": route.action_key_property,
-                "mobaConnectedSessionActionActionLabelProperty": route.action_label_property,
-                "mobaConnectedSessionActionActionEnabledProperty": route.action_enabled_property,
-                "mobaConnectedSessionActionCapturedProperty": route.captured_property,
-                "mobaConnectedSessionActionCapturedTabProperty": route.captured_tab_property,
-                "mobaConnectedSessionActionCapturedKeysProperty": route.captured_action_keys_property,
-                "mobaConnectedSessionActionCapturedLabelsProperty": route.captured_action_labels_property,
-                "mobaConnectedSessionActionCapturedCountProperty": route.captured_action_count_property,
-                "mobaConnectedSessionActionCapturedEnabledKeysProperty": route.captured_enabled_keys_property,
-                "mobaConnectedSessionActionCapturedDisabledKeysProperty": route.captured_disabled_keys_property,
-                "mobaConnectedSessionActionRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def apply_preset_reference_surface_route_properties(widget, route) -> None:
-            properties = {
-                "presetReferenceSurfaceRouteKey": route.key,
-                "presetReferenceSurfaceRouteRole": route.route_role,
-                "presetReferenceSurfacePresetId": route.preset_id,
-                "presetReferenceSurfaceProfile": route.reference_profile,
-                "presetReferenceSurfaceActiveTab": route.active_tab_label,
-                "presetReferenceSurfaceExpectedTitle": route.expected_title,
-                "presetReferenceSurfaceExpectedSource": route.expected_source,
-                "presetReferenceSurfaceCommandExecutables": list(route.command_executables),
-                "presetReferenceSurfaceCommandExecutableChoices": "|".join(route.command_executables),
-                "presetReferenceSurfaceCommandTargetFragment": route.command_target_fragment,
-                "presetReferenceSurfaceTerminalPaneObject": route.terminal_pane_object,
-                "presetReferenceSurfaceTitleObject": route.terminal_title_object,
-                "presetReferenceSurfaceSourceObject": route.terminal_source_object,
-                "presetReferenceSurfaceCommandObject": route.terminal_command_object,
-                "presetReferenceSurfaceOutputObject": route.terminal_output_object,
-                "presetReferenceSurfaceCapturedProperty": route.captured_property,
-                "presetReferenceSurfaceCapturedTabProperty": route.captured_tab_property,
-                "presetReferenceSurfaceActualTitleProperty": route.actual_title_property,
-                "presetReferenceSurfaceActualSourceProperty": route.actual_source_property,
-                "presetReferenceSurfaceActualCommandProperty": route.actual_command_property,
-                "presetReferenceSurfaceActualOutputProperty": route.actual_output_property,
-                "presetReferenceSurfaceRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_reference_surface_route_properties(widget) -> None:
-            for key in (
-                "presetReferenceSurfaceRouteKey",
-                "presetReferenceSurfaceRouteRole",
-                "presetReferenceSurfacePresetId",
-                "presetReferenceSurfaceProfile",
-                "presetReferenceSurfaceActiveTab",
-                "presetReferenceSurfaceExpectedTitle",
-                "presetReferenceSurfaceExpectedSource",
-                "presetReferenceSurfaceCommandExecutables",
-                "presetReferenceSurfaceCommandExecutableChoices",
-                "presetReferenceSurfaceCommandTargetFragment",
-                "presetReferenceSurfaceTerminalPaneObject",
-                "presetReferenceSurfaceTitleObject",
-                "presetReferenceSurfaceSourceObject",
-                "presetReferenceSurfaceCommandObject",
-                "presetReferenceSurfaceOutputObject",
-                "presetReferenceSurfaceCapturedProperty",
-                "presetReferenceSurfaceCapturedTabProperty",
-                "presetReferenceSurfaceActualTitleProperty",
-                "presetReferenceSurfaceActualSourceProperty",
-                "presetReferenceSurfaceActualCommandProperty",
-                "presetReferenceSurfaceActualOutputProperty",
-                "presetReferenceSurfaceCaptured",
-                "presetReferenceSurfaceCapturedTab",
-                "presetReferenceSurfaceActualTitle",
-                "presetReferenceSurfaceActualSource",
-                "presetReferenceSurfaceActualCommand",
-                "presetReferenceSurfaceActualOutput",
-                "presetReferenceSurfaceRenderSource",
-            ):
-                widget.setProperty(key, None)
-
-        @staticmethod
-        def apply_preset_reference_control_route_properties(widget, route) -> None:
-            properties = {
-                "presetReferenceControlRouteKey": route.key,
-                "presetReferenceControlRouteRole": route.route_role,
-                "presetReferenceControlPresetId": route.preset_id,
-                "presetReferenceControlProfile": route.reference_profile,
-                "presetReferenceControlActiveTab": route.active_tab_label,
-                "presetReferenceControlTerminalPaneObject": route.terminal_pane_object,
-                "presetReferenceControlStatusObject": route.terminal_status_object,
-                "presetReferenceControlActionObject": route.terminal_action_object,
-                "presetReferenceControlActionKeys": list(route.action_keys),
-                "presetReferenceControlActionLabels": list(route.action_labels),
-                "presetReferenceControlActionTooltips": list(route.action_tooltips),
-                "presetReferenceControlAllowedStatusStates": list(route.allowed_status_states),
-                "presetReferenceControlActionKeyProperty": route.action_key_property,
-                "presetReferenceControlActionLabelProperty": route.action_label_property,
-                "presetReferenceControlActionTooltipProperty": route.action_tooltip_property,
-                "presetReferenceControlStatusStateProperty": route.status_state_property,
-                "presetReferenceControlCapturedProperty": route.captured_property,
-                "presetReferenceControlCapturedActionsProperty": route.captured_actions_property,
-                "presetReferenceControlCapturedStatusProperty": route.captured_status_property,
-                "presetReferenceControlCapturedStatusTextProperty": route.captured_status_text_property,
-                "presetReferenceControlRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_reference_control_route_properties(widget) -> None:
-            for key in (
-                "presetReferenceControlRouteKey",
-                "presetReferenceControlRouteRole",
-                "presetReferenceControlPresetId",
-                "presetReferenceControlProfile",
-                "presetReferenceControlActiveTab",
-                "presetReferenceControlTerminalPaneObject",
-                "presetReferenceControlStatusObject",
-                "presetReferenceControlActionObject",
-                "presetReferenceControlActionKeys",
-                "presetReferenceControlActionLabels",
-                "presetReferenceControlActionTooltips",
-                "presetReferenceControlAllowedStatusStates",
-                "presetReferenceControlActionKeyProperty",
-                "presetReferenceControlActionLabelProperty",
-                "presetReferenceControlActionTooltipProperty",
-                "presetReferenceControlStatusStateProperty",
-                "presetReferenceControlCapturedProperty",
-                "presetReferenceControlCapturedActionsProperty",
-                "presetReferenceControlCapturedStatusProperty",
-                "presetReferenceControlCapturedStatusTextProperty",
-                "presetReferenceControlsCaptured",
-                "presetReferenceControlCapturedActionKeys",
-                "presetReferenceControlStatusState",
-                "presetReferenceControlStatusText",
-                "presetReferenceControlRenderSource",
-            ):
-                widget.setProperty(key, None)
-
-        @staticmethod
-        def apply_preset_reference_input_route_properties(widget, route) -> None:
-            properties = {
-                "presetReferenceInputRouteKey": route.key,
-                "presetReferenceInputRouteRole": route.route_role,
-                "presetReferenceInputPresetId": route.preset_id,
-                "presetReferenceInputProfile": route.reference_profile,
-                "presetReferenceInputActiveTab": route.active_tab_label,
-                "presetReferenceInputTerminalPaneObject": route.terminal_pane_object,
-                "presetReferenceInputObject": route.terminal_input_object,
-                "presetReferenceInputExpectedPlaceholder": route.placeholder_text,
-                "presetReferenceInputExpectedInitialText": route.expected_initial_text,
-                "presetReferenceInputAllowedEnabledStates": list(route.allowed_enabled_states),
-                "presetReferenceInputCapturedProperty": route.captured_property,
-                "presetReferenceInputCapturedTabProperty": route.captured_tab_property,
-                "presetReferenceInputCapturedPlaceholderProperty": route.captured_placeholder_property,
-                "presetReferenceInputCapturedTextProperty": route.captured_text_property,
-                "presetReferenceInputCapturedEnabledProperty": route.captured_enabled_property,
-                "presetReferenceInputRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_reference_input_route_properties(widget) -> None:
-            for key in (
-                "presetReferenceInputRouteKey",
-                "presetReferenceInputRouteRole",
-                "presetReferenceInputPresetId",
-                "presetReferenceInputProfile",
-                "presetReferenceInputActiveTab",
-                "presetReferenceInputTerminalPaneObject",
-                "presetReferenceInputObject",
-                "presetReferenceInputExpectedPlaceholder",
-                "presetReferenceInputExpectedInitialText",
-                "presetReferenceInputAllowedEnabledStates",
-                "presetReferenceInputCapturedProperty",
-                "presetReferenceInputCapturedTabProperty",
-                "presetReferenceInputCapturedPlaceholderProperty",
-                "presetReferenceInputCapturedTextProperty",
-                "presetReferenceInputCapturedEnabledProperty",
-                "presetReferenceInputCaptured",
-                "presetReferenceInputCapturedTab",
-                "presetReferenceInputPlaceholder",
-                "presetReferenceInputText",
-                "presetReferenceInputEnabled",
-                "presetReferenceInputRenderSource",
-            ):
-                widget.setProperty(key, None)
-
-        @staticmethod
-        def apply_preset_reference_transcript_route_properties(widget, route) -> None:
-            properties = {
-                "presetReferenceTranscriptRouteKey": route.key,
-                "presetReferenceTranscriptRouteRole": route.route_role,
-                "presetReferenceTranscriptPresetId": route.preset_id,
-                "presetReferenceTranscriptProfile": route.reference_profile,
-                "presetReferenceTranscriptActiveTab": route.active_tab_label,
-                "presetReferenceTranscriptTerminalPaneObject": route.terminal_pane_object,
-                "presetReferenceTranscriptOutputObject": route.terminal_output_object,
-                "presetReferenceTranscriptCommandEchoPrefix": route.command_echo_prefix,
-                "presetReferenceTranscriptRequiredFragments": list(route.required_fragments),
-                "presetReferenceTranscriptMinimumLineCount": route.minimum_line_count,
-                "presetReferenceTranscriptCapturedProperty": route.captured_property,
-                "presetReferenceTranscriptCapturedTabProperty": route.captured_tab_property,
-                "presetReferenceTranscriptCapturedTextProperty": route.captured_text_property,
-                "presetReferenceTranscriptCapturedLineCountProperty": route.captured_line_count_property,
-                "presetReferenceTranscriptCapturedCommandEchoProperty": route.captured_command_echo_property,
-                "presetReferenceTranscriptRenderSource": route.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
-
-        @staticmethod
-        def clear_preset_reference_transcript_route_properties(widget) -> None:
-            for key in (
-                "presetReferenceTranscriptRouteKey",
-                "presetReferenceTranscriptRouteRole",
-                "presetReferenceTranscriptPresetId",
-                "presetReferenceTranscriptProfile",
-                "presetReferenceTranscriptActiveTab",
-                "presetReferenceTranscriptTerminalPaneObject",
-                "presetReferenceTranscriptOutputObject",
-                "presetReferenceTranscriptCommandEchoPrefix",
-                "presetReferenceTranscriptRequiredFragments",
-                "presetReferenceTranscriptMinimumLineCount",
-                "presetReferenceTranscriptCapturedProperty",
-                "presetReferenceTranscriptCapturedTabProperty",
-                "presetReferenceTranscriptCapturedTextProperty",
-                "presetReferenceTranscriptCapturedLineCountProperty",
-                "presetReferenceTranscriptCapturedCommandEchoProperty",
-                "presetReferenceTranscriptCaptured",
-                "presetReferenceTranscriptCapturedTab",
-                "presetReferenceTranscriptText",
-                "presetReferenceTranscriptLineCount",
-                "presetReferenceTranscriptCommandEcho",
-                "presetReferenceTranscriptRenderSource",
-            ):
-                widget.setProperty(key, None)
-
-        @staticmethod
-        def apply_preset_visual_signature_properties(widget, signature) -> None:
-            properties = {
-                "presetVisualSignatureKey": signature.key,
-                "presetVisualSignatureRole": signature.route_role,
-                "presetVisualSignaturePresetId": signature.preset_id,
-                "presetVisualSignaturePresetLabel": signature.preset_label,
-                "presetVisualSignatureDensity": signature.density,
-                "presetVisualSignatureTabPosition": signature.tab_position,
-                "presetVisualSignatureDocumentMode": signature.document_mode,
-                "presetVisualSignatureProfileWidth": signature.profile_width,
-                "presetVisualSignatureLogHeight": signature.log_height,
-                "presetVisualSignatureToolbarIconSize": signature.toolbar_icon_size,
-                "presetVisualSignatureListSpacing": signature.list_spacing,
-                "presetVisualSignaturePalette": dict(signature.palette_items()),
-                "presetVisualSignatureWindowObject": signature.window_object,
-                "presetVisualSignatureMainToolbarObject": signature.main_toolbar_object,
-                "presetVisualSignatureLayoutToolbarObject": signature.layout_toolbar_object,
-                "presetVisualSignatureLeftPanelObject": signature.left_panel_object,
-                "presetVisualSignatureProfileTreeObject": signature.profile_tree_object,
-                "presetVisualSignatureTabsObject": signature.tabs_object,
-                "presetVisualSignatureActivityLogObject": signature.activity_log_object,
-                "presetVisualSignatureStatusBarObject": signature.status_bar_object,
-                "presetVisualSignatureDensityProperty": signature.density_property,
-                "presetVisualSignaturePaletteProperty": signature.palette_property,
-                "presetVisualSignatureRenderSource": signature.render_source,
-            }
-            for key, value in properties.items():
-                widget.setProperty(key, value)
 
         def configure_toolbar_for_design(self, preset: GuiDesignPreset, is_moba: bool, icon_size: int) -> None:
             icon = QSize(icon_size, icon_size)
@@ -6515,9 +5564,9 @@ def create_main_window(
             action.setProperty("sessionTabContextActionEnabled", bool(spec["enabled"]))
             if route is not None:
                 if hasattr(route, "profile_name"):
-                    self.apply_moba_connected_session_action_route_properties(action, route)
+                    gui_preset_properties.apply_moba_connected_session_action_route_properties(action, route)
                 else:
-                    self.apply_preset_reference_session_action_route_properties(action, route)
+                    gui_preset_properties.apply_preset_reference_session_action_route_properties(action, route)
 
         @staticmethod
         def session_action_menu_object_name(route) -> str:
@@ -6535,9 +5584,9 @@ def create_main_window(
             if route is None:
                 return
             if hasattr(route, "profile_name"):
-                self.apply_moba_connected_session_action_route_properties(menu, route)
+                gui_preset_properties.apply_moba_connected_session_action_route_properties(menu, route)
             else:
-                self.apply_preset_reference_session_action_route_properties(menu, route)
+                gui_preset_properties.apply_preset_reference_session_action_route_properties(menu, route)
             action_keys = [str(action.property(route.action_key_property) or "") for action in actions]
             action_labels = [str(action.property(route.action_label_property) or "") for action in actions]
             enabled_keys = [
@@ -7957,7 +7006,7 @@ def create_main_window(
             panel = QFrame()
             panel.setObjectName("productWorkspaceSurface")
             panel.setProperty("designPreset", self.current_design_id())
-            self.apply_preset_selection_route_properties(panel, selection_route)
+            gui_preset_properties.apply_preset_selection_route_properties(panel, selection_route)
             layout = QVBoxLayout(panel)
             layout.setContentsMargins(10, 9, 10, 9)
             layout.setSpacing(8)
@@ -11071,7 +10120,7 @@ def create_main_window(
             panel.setObjectName("productReferenceState")
             panel.setProperty("designPreset", self.current_design_id())
             self.apply_product_identity_route_properties(panel, route)
-            self.apply_preset_selection_route_properties(panel, selection_route)
+            gui_preset_properties.apply_preset_selection_route_properties(panel, selection_route)
             layout = QHBoxLayout(panel)
             layout.setContentsMargins(7, 5, 7, 5)
             layout.setSpacing(8)
@@ -11080,7 +10129,7 @@ def create_main_window(
                 label.setObjectName("productReferenceStateItem")
                 label.setProperty("referenceKey", key)
                 self.apply_product_identity_route_properties(label, route)
-                self.apply_preset_selection_route_properties(label, selection_route)
+                gui_preset_properties.apply_preset_selection_route_properties(label, selection_route)
                 label.setToolTip(_safe_tooltip_html(f"{reference.active_tab_label} {key}"))
                 layout.addWidget(label)
             layout.addStretch(1)
@@ -11323,7 +10372,7 @@ def create_main_window(
             input_route = gui_design_preset_reference_input_route(preset_id)
             transcript_route = gui_design_preset_reference_transcript_route(preset_id)
             for widget in (pane, self.tabs):
-                self.apply_preset_reference_tab_route_properties(widget, route)
+                gui_preset_properties.apply_preset_reference_tab_route_properties(widget, route)
                 widget.setProperty(route.active_tab_property, route.active_tab_label)
                 widget.setProperty(route.reference_profile_property, route.reference_profile)
             self.tabs.setProperty(route.activated_label_property, route.active_tab_label)
@@ -11350,7 +10399,7 @@ def create_main_window(
             selected = self.tabs.currentIndex() == tab_index
             position = self.tab_position_name()
             for widget in (pane, self.tabs, self.moba_tab_bar):
-                self.apply_preset_reference_tab_chrome_route_properties(widget, route)
+                gui_preset_properties.apply_preset_reference_tab_chrome_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_label_property, self.tabs.tabText(tab_index))
                 widget.setProperty(route.captured_tooltip_property, tooltip)
@@ -11372,7 +10421,7 @@ def create_main_window(
             notice_text = self.status_notice_label.text()
             message = self.statusBar().currentMessage()
             for widget in (pane, self.tabs, self.statusBar(), self.status_notice_label, *self.status_segment_labels):
-                self.apply_preset_reference_status_bar_route_properties(widget, route)
+                gui_preset_properties.apply_preset_reference_status_bar_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_tab_property, tab_title)
                 widget.setProperty(route.captured_message_property, message)
@@ -11399,7 +10448,7 @@ def create_main_window(
             enabled_keys = [str(spec["key"]) for spec in specs if bool(spec["enabled"])]
             disabled_keys = [str(spec["key"]) for spec in specs if not bool(spec["enabled"])]
             for widget in (pane, self.tabs, self.moba_tab_bar):
-                self.apply_preset_reference_session_action_route_properties(widget, route)
+                gui_preset_properties.apply_preset_reference_session_action_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_tab_property, tab_title)
                 widget.setProperty(route.captured_action_keys_property, action_keys)
@@ -11423,7 +10472,7 @@ def create_main_window(
             specs = self.tab_context_session_action_specs(tab_index)
             action_keys, action_labels, enabled_keys, disabled_keys = self.session_action_capture_from_specs(specs)
             for widget in (panel, self.tabs, self.moba_tab_bar):
-                self.apply_moba_connected_session_action_route_properties(widget, route)
+                gui_preset_properties.apply_moba_connected_session_action_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_tab_property, tab_title)
                 widget.setProperty(route.captured_action_keys_property, action_keys)
@@ -11445,7 +10494,7 @@ def create_main_window(
             output_widget = getattr(pane, "output", None)
             actual_output = getattr(output_widget, "toPlainText", lambda: "")()
             for widget in (pane, self.tabs, *[item for item in child_widgets if item is not None]):
-                self.apply_preset_reference_surface_route_properties(widget, route)
+                gui_preset_properties.apply_preset_reference_surface_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_tab_property, tab_title)
                 widget.setProperty(route.actual_title_property, actual_title)
@@ -11476,7 +10525,7 @@ def create_main_window(
             for widget in (pane, self.tabs, status_widget, *action_buttons):
                 if widget is None:
                     continue
-                self.apply_preset_reference_control_route_properties(widget, route)
+                gui_preset_properties.apply_preset_reference_control_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_actions_property, action_keys)
                 widget.setProperty(route.captured_status_property, status_state)
@@ -11491,7 +10540,7 @@ def create_main_window(
             for widget in (pane, self.tabs, input_widget):
                 if widget is None:
                     continue
-                self.apply_preset_reference_input_route_properties(widget, route)
+                gui_preset_properties.apply_preset_reference_input_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_tab_property, tab_title)
                 widget.setProperty(route.captured_placeholder_property, placeholder)
@@ -11506,7 +10555,7 @@ def create_main_window(
             for widget in (pane, self.tabs, output_widget):
                 if widget is None:
                     continue
-                self.apply_preset_reference_transcript_route_properties(widget, route)
+                gui_preset_properties.apply_preset_reference_transcript_route_properties(widget, route)
                 widget.setProperty(route.captured_property, True)
                 widget.setProperty(route.captured_tab_property, tab_title)
                 widget.setProperty(route.captured_text_property, transcript)

@@ -1516,6 +1516,7 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
@@ -1572,7 +1573,7 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     assert "mobaTabStaticWidth" in gui_source
     assert "mobaTabCloseRightOffset" in gui_source
     assert "mobaTabChromeGeometryKeys" in gui_source
-    assert "mobaConnectedSessionActionRouteKey" in gui_source
+    assert "mobaConnectedSessionActionRouteKey" in preset_properties_source
     assert "apply_moba_connected_session_action_route_to_tab" in gui_source
     assert "build_tab_context_menu" in gui_source
     assert "apply_session_action_menu_capture" in gui_source
@@ -2885,6 +2886,7 @@ def test_gui_parity_tracks_reference_tab_activation_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2907,8 +2909,8 @@ def test_gui_parity_tracks_reference_tab_activation_routes() -> None:
     assert "PRODUCT_REFERENCE_TAB_PRESET_IDS" in design_source
     assert "gui_design_preset_reference_tab_route" in design_source
     assert "reference-profile-tab-can-be-active-surface" in design_source
-    assert "presetReferenceTabActivatedLabel" in gui_source
-    assert "presetReferenceTabReturnedHomeLabel" in gui_source
+    assert "presetReferenceTabActivatedLabel" in preset_properties_source
+    assert "presetReferenceTabReturnedHomeLabel" in preset_properties_source
     assert "find_tab_by_label" in gui_source
     assert "preset_reference_tab_route" in renderer_source
     assert "reference_tab_route.active_tab_label" in renderer_source
@@ -2924,6 +2926,7 @@ def test_gui_parity_tracks_reference_tab_chrome_evidence_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2945,7 +2948,7 @@ def test_gui_parity_tracks_reference_tab_chrome_evidence_routes() -> None:
     assert "GuiPresetReferenceTabChromeRoute" in design_source
     assert "gui_design_preset_reference_tab_chrome_route" in design_source
     assert "active-reference-tab-chrome-evidence" in design_source
-    assert "presetReferenceTabChromeTooltip" in gui_source
+    assert "presetReferenceTabChromeTooltip" in preset_properties_source
     assert "apply_reference_tab_chrome_route_to_terminal_tab" in gui_source
     assert "preset_reference_tab_chrome_route" in renderer_source
     assert "reference_tab_chrome_route.expected_tooltip" in renderer_source
@@ -2961,6 +2964,7 @@ def test_gui_parity_tracks_reference_status_bar_evidence_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2982,7 +2986,7 @@ def test_gui_parity_tracks_reference_status_bar_evidence_routes() -> None:
     assert "GuiPresetReferenceStatusBarRoute" in design_source
     assert "gui_design_preset_reference_status_bar_route" in design_source
     assert "active-reference-status-bar-evidence" in design_source
-    assert "presetReferenceStatusSegments" in gui_source
+    assert "presetReferenceStatusSegments" in preset_properties_source
     assert "apply_reference_status_bar_route_to_terminal_tab" in gui_source
     assert "preset_reference_status_bar_route" in renderer_source
     assert "reference_status_route.expected_status_segments" in renderer_source
@@ -2998,6 +3002,7 @@ def test_gui_parity_tracks_product_keyboard_shortcut_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3020,7 +3025,7 @@ def test_gui_parity_tracks_product_keyboard_shortcut_routes() -> None:
     assert "GuiPresetKeyboardShortcutRoute" in design_source
     assert "gui_design_preset_keyboard_shortcut_route" in design_source
     assert "product-preset-keyboard-shortcuts" in design_source
-    assert "presetKeyboardShortcutCapturedSequences" in gui_source
+    assert "presetKeyboardShortcutCapturedSequences" in preset_properties_source
     assert "create_keyboard_shortcuts" in gui_source
     assert "preset_keyboard_shortcut_route" in renderer_source
     assert "keyboard_shortcut_route.expected_sequences" in renderer_source
@@ -3036,6 +3041,7 @@ def test_gui_parity_tracks_product_command_surface_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3058,9 +3064,9 @@ def test_gui_parity_tracks_product_command_surface_routes() -> None:
     assert "GuiPresetCommandSurfaceRoute" in design_source
     assert "gui_design_preset_command_surface_route" in design_source
     assert "product-preset-command-surface-route" in design_source
-    assert "presetCommandSurfaceCapturedKeys" in gui_source
+    assert "presetCommandSurfaceCapturedKeys" in preset_properties_source
     assert "apply_command_surface_route_for_design" in gui_source
-    assert "presetCommandSurfaceCapturedStates" in gui_source
+    assert "presetCommandSurfaceCapturedStates" in preset_properties_source
     assert "preset_command_surface_route" in renderer_source
     assert "command_surface_route.expected_action_keys" in renderer_source
     assert "EXPECTED_PRESET_COMMAND_SURFACE_ROUTES" in live_checker_source
@@ -3148,6 +3154,7 @@ def test_gui_parity_tracks_product_focus_interaction_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3170,7 +3177,7 @@ def test_gui_parity_tracks_product_focus_interaction_routes() -> None:
     assert "GuiPresetFocusInteractionRoute" in design_source
     assert "gui_design_preset_focus_interaction_route" in design_source
     assert "product-preset-focus-interaction-route" in design_source
-    assert "presetFocusInteractionCapturedFocus" in gui_source
+    assert "presetFocusInteractionCapturedFocus" in preset_properties_source
     assert "apply_focus_interaction_route_for_design" in gui_source
     assert "preset_focus_interaction_route" in renderer_source
     assert "focus_interaction_route.focused_control" in renderer_source
@@ -3186,6 +3193,7 @@ def test_gui_parity_tracks_product_home_search_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3208,7 +3216,7 @@ def test_gui_parity_tracks_product_home_search_routes() -> None:
     assert "GuiPresetHomeSearchRoute" in design_source
     assert "gui_design_preset_home_search_route" in design_source
     assert "product-preset-home-search-entry-route" in design_source
-    assert "presetHomeSearchCapturedPlaceholder" in gui_source
+    assert "presetHomeSearchCapturedPlaceholder" in preset_properties_source
     assert "apply_home_search_route_for_design" in gui_source
     assert "preset_home_search_route" in renderer_source
     assert "home_search_route.placeholder_text" in renderer_source
@@ -3261,6 +3269,7 @@ def test_gui_parity_tracks_reference_surface_evidence_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3282,8 +3291,8 @@ def test_gui_parity_tracks_reference_surface_evidence_routes() -> None:
     assert "GuiPresetReferenceSurfaceRoute" in design_source
     assert "gui_design_preset_reference_surface_route" in design_source
     assert "active-reference-tab-surface-evidence" in design_source
-    assert "presetReferenceSurfaceActualCommand" in gui_source
-    assert "presetReferenceSurfaceActualOutput" in gui_source
+    assert "presetReferenceSurfaceActualCommand" in preset_properties_source
+    assert "presetReferenceSurfaceActualOutput" in preset_properties_source
     assert "apply_reference_surface_route_to_terminal_tab" in gui_source
     assert "preset_reference_surface_route" in renderer_source
     assert "reference_surface_route.command_target_fragment" in renderer_source
@@ -3299,6 +3308,7 @@ def test_gui_parity_tracks_reference_control_evidence_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     terminal_source = Path("src/remote_ops_workspace/gui_terminal.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -3322,7 +3332,7 @@ def test_gui_parity_tracks_reference_control_evidence_routes() -> None:
     assert "gui_design_preset_reference_control_route" in design_source
     assert "active-reference-tab-terminal-controls" in design_source
     assert "terminalActionKey" in terminal_source
-    assert "presetReferenceControlCapturedActionKeys" in gui_source
+    assert "presetReferenceControlCapturedActionKeys" in preset_properties_source
     assert "apply_reference_control_route_to_terminal_tab" in gui_source
     assert "preset_reference_control_route" in renderer_source
     assert "reference_control_route.action_keys" in renderer_source
@@ -3338,6 +3348,7 @@ def test_gui_parity_tracks_reference_input_evidence_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3359,7 +3370,7 @@ def test_gui_parity_tracks_reference_input_evidence_routes() -> None:
     assert "GuiPresetReferenceInputRoute" in design_source
     assert "gui_design_preset_reference_input_route" in design_source
     assert "active-reference-tab-terminal-input" in design_source
-    assert "presetReferenceInputEnabled" in gui_source
+    assert "presetReferenceInputEnabled" in preset_properties_source
     assert "apply_reference_input_route_to_terminal_tab" in gui_source
     assert "preset_reference_input_route" in renderer_source
     assert "reference_input_route.placeholder_text" in renderer_source
@@ -3375,6 +3386,7 @@ def test_gui_parity_tracks_reference_transcript_evidence_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3396,7 +3408,7 @@ def test_gui_parity_tracks_reference_transcript_evidence_routes() -> None:
     assert "GuiPresetReferenceTranscriptRoute" in design_source
     assert "gui_design_preset_reference_transcript_route" in design_source
     assert "active-reference-tab-terminal-transcript" in design_source
-    assert "presetReferenceTranscriptCommandEcho" in gui_source
+    assert "presetReferenceTranscriptCommandEcho" in preset_properties_source
     assert "apply_reference_transcript_route_to_terminal_tab" in gui_source
     assert "preset_reference_transcript_route" in renderer_source
     assert "reference_transcript_route.required_fragments" in renderer_source
@@ -3411,7 +3423,7 @@ def test_gui_parity_tracks_preset_selection_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3443,9 +3455,9 @@ def test_gui_parity_tracks_preset_selection_routes() -> None:
     assert "GuiPresetSelectionRoute" in design_source
     assert "gui_design_preset_selection_route" in design_source
     assert "selector-to-toolbar-sidebar-tabs-status-workspace" in design_source
-    assert "presetSelectionRouteKey" in gui_source
-    assert "presetSelectionRouteHomeTabLabel" in gui_source
-    assert "presetSelectionRouteStatusSegments" in gui_source
+    assert "presetSelectionRouteKey" in preset_properties_source
+    assert "presetSelectionRouteHomeTabLabel" in preset_properties_source
+    assert "presetSelectionRouteStatusSegments" in preset_properties_source
     assert "gui_design_preset_selection_route" in renderer_source
     assert "preset_selection_route" in renderer_source
     assert "selection_route.home_tab_label" in renderer_source
@@ -3460,7 +3472,7 @@ def test_gui_parity_tracks_preset_catalog_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3483,9 +3495,9 @@ def test_gui_parity_tracks_preset_catalog_routes() -> None:
     assert "GuiPresetCatalogRoute" in design_source
     assert "gui_design_preset_catalog_route" in design_source
     assert "preset-catalog-to-design-selector-options" in design_source
-    assert "presetCatalogRouteOptionIds" in gui_source
-    assert "presetCatalogRouteProductPresetIds" in gui_source
-    assert "presetCatalogRouteDefaultPresetId" in gui_source
+    assert "presetCatalogRouteOptionIds" in preset_properties_source
+    assert "presetCatalogRouteProductPresetIds" in preset_properties_source
+    assert "presetCatalogRouteDefaultPresetId" in preset_properties_source
     assert "gui_design_preset_catalog_route" in renderer_source
     assert "preset_catalog_route" in renderer_source
     assert "catalog_route.option_ids" in renderer_source
@@ -3500,7 +3512,7 @@ def test_gui_parity_tracks_preset_visual_signatures() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3523,9 +3535,9 @@ def test_gui_parity_tracks_preset_visual_signatures() -> None:
     assert "GuiPresetVisualSignature" in design_source
     assert "gui_design_preset_visual_signature" in design_source
     assert "preset-palette-density-to-live-static-style" in design_source
-    assert "presetVisualSignatureDensity" in gui_source
-    assert "presetVisualSignaturePalette" in gui_source
-    assert "presetVisualSignatureRenderSource" in gui_source
+    assert "presetVisualSignatureDensity" in preset_properties_source
+    assert "presetVisualSignaturePalette" in preset_properties_source
+    assert "presetVisualSignatureRenderSource" in preset_properties_source
     assert "gui_design_preset_visual_signature" in renderer_source
     assert "preset_visual_signature" in renderer_source
     assert "visual_signature.palette_items" in renderer_source
@@ -3540,7 +3552,7 @@ def test_gui_parity_tracks_preset_isolation_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3572,9 +3584,9 @@ def test_gui_parity_tracks_preset_isolation_routes() -> None:
     assert "GuiPresetIsolationRoute" in design_source
     assert "gui_design_preset_isolation_route" in design_source
     assert "active-preset-visible-hidden-widget-isolation" in design_source
-    assert "presetIsolationVisibleObjects" in gui_source
-    assert "presetIsolationHiddenObjects" in gui_source
-    assert "presetIsolationRenderSource" in gui_source
+    assert "presetIsolationVisibleObjects" in preset_properties_source
+    assert "presetIsolationHiddenObjects" in preset_properties_source
+    assert "presetIsolationRenderSource" in preset_properties_source
     assert "preset_isolation_route" in renderer_source
     assert "isolation_route.visible_objects" in renderer_source
     assert "isolation_route.hidden_objects" in renderer_source
@@ -3588,7 +3600,7 @@ def test_gui_parity_tracks_preset_transition_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3620,9 +3632,9 @@ def test_gui_parity_tracks_preset_transition_routes() -> None:
     assert "GuiPresetTransitionRoute" in design_source
     assert "gui_design_preset_transition_route" in design_source
     assert "selector-style-switch-resets-inactive-product-chrome" in design_source
-    assert "presetTransitionFromPresetIds" in gui_source
-    assert "presetTransitionResetObjects" in gui_source
-    assert "presetTransitionRenderSource" in gui_source
+    assert "presetTransitionFromPresetIds" in preset_properties_source
+    assert "presetTransitionResetObjects" in preset_properties_source
+    assert "presetTransitionRenderSource" in preset_properties_source
     assert "preset_transition_route" in renderer_source
     assert "transition_route.from_preset_ids" in renderer_source
     assert "transition_route.reset_objects" in renderer_source

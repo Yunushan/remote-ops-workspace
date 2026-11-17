@@ -183,6 +183,29 @@ print(f"native installer smoke packaged GUI: {label} startup, profile selection 
 PY
 }
 
+require_pkg_absent() {
+  local phase="$1" receipts
+  if [[ -e "$PKG_APP" || -L "$PKG_APP" ]]; then
+    echo "$phase found an existing application bundle at $PKG_APP" >&2
+    return 1
+  fi
+  receipts="$(pkgutil --pkgs)" || return 1
+  if grep -Fxq -- "$APP_ID" <<< "$receipts"; then
+    echo "$phase found an existing package receipt for $APP_ID" >&2
+    return 1
+  fi
+}
+
+verify_pkg_receipt() {
+  local phase="$1" receipt
+  receipt="$(pkgutil --pkg-info "$APP_ID")" || return 1
+  if ! grep -Fxq -- "version: $VERSION" <<< "$receipt"; then
+    echo "$phase expected the package receipt for $APP_ID to report version $VERSION" >&2
+    return 1
+  fi
+  echo "native installer smoke PKG receipt: $phase $APP_ID $VERSION"
+}
+
 echo "native installer smoke: DMG install"
 hdiutil attach "$DMG" -mountpoint "$MOUNT_DIR" -nobrowse -readonly -quiet
 if [[ ! -d "$MOUNT_DIR/$APP_NAME" ]]; then
@@ -213,6 +236,7 @@ fi
 cleanup
 trap - EXIT
 
+require_pkg_absent "PKG preflight"
 echo "native installer smoke: PKG install"
 pkgutil --expand "$PKG" "$SMOKE_ROOT/pkg-expanded"
 python3 - "$SMOKE_ROOT/pkg-expanded/Distribution" "$APP_ID" <<'PY'
@@ -240,6 +264,7 @@ if [[ ! -d "$PKG_APP" ]]; then
 fi
 
 echo "native installer smoke: PKG verify"
+verify_pkg_receipt "PKG verify"
 codesign --verify --deep --strict "$PKG_APP"
 verify_app_macos_minimum "$PKG_APP" "PKG verify"
 verify_app_runtime_resources "$PKG_APP" "PKG verify" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
@@ -251,17 +276,15 @@ if [[ ! -d "$PKG_APP" ]]; then
   echo "PKG upgrade removed $PKG_APP" >&2
   exit 1
 fi
+verify_pkg_receipt "PKG upgrade"
 codesign --verify --deep --strict "$PKG_APP"
 verify_app_macos_minimum "$PKG_APP" "PKG upgrade"
 verify_app_runtime_resources "$PKG_APP" "PKG upgrade" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall
 
 echo "native installer smoke: PKG uninstall"
 sudo rm -rf "$PKG_APP"
-sudo pkgutil --forget "$APP_ID" >/dev/null 2>&1 || true
-if [[ -e "$PKG_APP" ]]; then
-  echo "PKG uninstall cleanup left app bundle behind" >&2
-  exit 1
-fi
+sudo pkgutil --forget "$APP_ID"
+require_pkg_absent "PKG uninstall"
 
 python3 scripts/candidate_posix_byte_binding.py complete --target "$BINDING_TARGET" --report "$BINDING_REPORT"
 echo "native installer smoke passed for macOS $ARCH"

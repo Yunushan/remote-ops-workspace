@@ -364,6 +364,87 @@ def bash_run(tmp_path, code, env):
     )
 
 
+@pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
+@pytest.mark.parametrize("existing", ("none", "bundle", "symlink", "receipt", "query-failed"))
+def test_macos_pkg_preflight_refuses_an_existing_install(tmp_path, existing):
+    bundle = tmp_path / "Remote Ops Workspace.app"
+    if existing == "bundle":
+        bundle.mkdir()
+    if existing == "symlink":
+        bundle.symlink_to(tmp_path / "absent")
+    script = SCRIPTS / "smoke_macos_native.sh"
+    mock = r"""
+pkgutil() {
+  [[ "$*" = --pkgs ]] || return 2
+  case "$EXISTING" in
+    query-failed) return 2 ;;
+    receipt) printf '%s\n' "$APP_ID" ;;
+    *) printf '%s\n' "$APP_ID.other" ;;
+  esac
+}
+"""
+    env = {
+        **os.environ,
+        "EXISTING": existing,
+        "APP_ID": "io.github.remoteopsworkspace.app",
+        "PKG_APP": str(bundle),
+    }
+    code = functions(script, ("require_pkg_absent",)) + mock + '\nrequire_pkg_absent "PKG preflight"'
+    result = bash_run(tmp_path, code, env)
+    assert (result.returncode == 0) is (existing == "none")
+
+
+@pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
+@pytest.mark.parametrize("cleanup", ("removed", "forget-failed", "receipt-retained"))
+def test_macos_pkg_uninstall_proves_receipt_cleanup(tmp_path, cleanup):
+    script = SCRIPTS / "smoke_macos_native.sh"
+    uninstall = script.read_text().split('echo "native installer smoke: PKG uninstall"\n', 1)[1]
+    uninstall = uninstall.split("\n\n", 1)[0]
+    mock = r"""
+sudo() {
+  case "$*" in
+    "rm -rf $PKG_APP") : ;;
+    "pkgutil --forget $APP_ID") [[ "$CLEANUP" != forget-failed ]] ;;
+    *) return 2 ;;
+  esac
+}
+pkgutil() {
+  [[ "$*" = --pkgs ]] || return 2
+  if [[ "$CLEANUP" = receipt-retained ]]; then printf '%s\n' "$APP_ID"; fi
+}
+"""
+    env = {
+        **os.environ,
+        "CLEANUP": cleanup,
+        "APP_ID": "io.github.remoteopsworkspace.app",
+        "PKG_APP": str(tmp_path / "removed"),
+    }
+    code = functions(script, ("require_pkg_absent",)) + mock + uninstall
+    result = bash_run(tmp_path, code, env)
+    assert (result.returncode == 0) is (cleanup == "removed")
+
+
+@pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
+@pytest.mark.parametrize("installed_version", ("1.0.27", "1.0.270", ""))
+def test_macos_pkg_checks_installed_receipt_version(tmp_path, installed_version):
+    script = SCRIPTS / "smoke_macos_native.sh"
+    mock = r"""
+pkgutil() {
+  [[ "$*" = "--pkg-info $APP_ID" && -n "$INSTALLED_VERSION" ]] || return 2
+  printf 'package-id: %s\nversion: %s\n' "$APP_ID" "$INSTALLED_VERSION"
+}
+"""
+    env = {
+        **os.environ,
+        "APP_ID": "io.github.remoteopsworkspace.app",
+        "VERSION": "1.0.27",
+        "INSTALLED_VERSION": installed_version,
+    }
+    code = functions(script, ("verify_pkg_receipt",)) + mock + '\nverify_pkg_receipt "PKG verify"'
+    result = bash_run(tmp_path, code, env)
+    assert (result.returncode == 0) is (installed_version == "1.0.27")
+
+
 PROBES = [
     (target, path, phase, probe)
     for target in ("macos-x64", "linux-x86_64")

@@ -453,6 +453,8 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
         errors.append(f"{article_id} validation summary release_target must match record release_target")
     if article_id == "mobapt-unix-runtime" and details.get("offline_execution_receipts_verified") is not True:
         errors.append("mobapt-unix-runtime validation summary must record verified offline execution receipts")
+    if article_id == "embedded-x-server" and details.get("live_forwarding_receipt_verified") is not True:
+        errors.append("embedded-x-server validation summary must record a verified live forwarding receipt")
     return errors
 
 

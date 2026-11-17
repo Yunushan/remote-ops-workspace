@@ -2082,6 +2082,15 @@ def secure_regular_file(
     return candidate, None
 
 
+def bound_evidence_file(root: Path, name: Any, digest: Any, label: str) -> Path:
+    path, error = secure_regular_file(root, name, label)
+    if path is None:
+        raise ValueError(error)
+    if not valid_sha256(digest) or sha256_file(path) != digest:
+        raise ValueError(f"{label} SHA-256 differs from the evidence")
+    return path
+
+
 def valid_sha256(value: Any) -> bool:
     return isinstance(value, str) and SHA256_RE.fullmatch(value) is not None
 

@@ -19,21 +19,12 @@ from remote_ops_workspace.moba_mobapt import (  # noqa: E402
     validate_mobapt_cache_evidence,
 )
 from scripts.check_release_license_compliance import (  # noqa: E402
+    bound_evidence_file,
     read_json_object,
     secure_regular_file,
-    sha256_file,
 )
 
 EXECUTION_SCHEMA = "row.mobapt.offline-execution.v1"
-
-
-def bound_evidence_file(root: Path, name: Any, digest: Any, label: str) -> Path:
-    path, error = secure_regular_file(root, name, label)
-    if path is None:
-        raise ValueError(error)
-    if sha256_file(path) != digest:
-        raise ValueError(f"{label} SHA-256 differs from the evidence")
-    return path
 
 
 def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str], dict[str, dict[str, Any]]]:

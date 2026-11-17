@@ -73,6 +73,19 @@ def test_mobapt_registry_requires_the_release_execution_validator() -> None:
     assert checker.check_record(record) == []
 
 
+def test_xserver_registry_requires_the_live_forwarding_validator() -> None:
+    checker, generator = _load_checker(), _load_generator()
+    validator = generator.VALIDATORS["embedded-x-server"]
+    assert validator.__name__ == "validate_moba_x_server_live_release_evidence"
+    record = _complete_record(checker.ARTICLE_SPECS["embedded-x-server"])
+    record["article_id"] = "embedded-x-server"
+    assert checker.check_record(record) == [
+        "embedded-x-server validation summary must record a verified live forwarding receipt",
+    ]
+    record["validation_summary"]["summary"]["live_forwarding_receipt_verified"] = True
+    assert checker.check_record(record) == []
+
+
 def test_mobaxterm_parity_evidence_accepts_complete_article_record() -> None:
     checker = _load_checker()
     spec = checker.ARTICLE_SPECS["professional-deployment"]
@@ -344,6 +357,8 @@ def reviewed_release(tmp_path, monkeypatch):
             }
         if article == "mobapt-unix-runtime":
             record["validation_summary"]["summary"]["offline_execution_receipts_verified"] = True
+        if article == "embedded-x-server":
+            record["validation_summary"]["summary"]["live_forwarding_receipt_verified"] = True
         article_root = evidence_root / article
         article_root.mkdir()
         evidence = article_root / "evidence.json"

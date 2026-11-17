@@ -11,9 +11,9 @@ from remote_ops_workspace.moba_mobapt import (
 )
 from scripts.check_mobapt_cache_evidence import (
     EXECUTION_SCHEMA,
-    sha256_file,
     validate_mobapt_release_cache_evidence,
 )
+from scripts.check_release_license_compliance import sha256_file
 
 
 def write_json(path: Path, document: dict) -> None:

@@ -457,7 +457,7 @@ class PngImage:
         self.pixels = pixels
 
 
-def read_png_rgb(path: Path) -> PngImage:
+def read_png_rgb(path: Path, *, max_pixels: int | None = None) -> PngImage:
     data = path.read_bytes()
     if not data.startswith(PNG_SIGNATURE):
         raise ValueError(f"not a PNG file: {display(path)}")
@@ -477,13 +477,19 @@ def read_png_rgb(path: Path) -> PngImage:
             break
     if width is None or height is None or bit_depth is None or color_type is None or interlace is None:
         raise ValueError(f"PNG missing IHDR: {display(path)}")
+    if not width or not height or (max_pixels is not None and width * height > max_pixels):
+        raise ValueError(f"PNG dimensions are outside the supported bounds: {display(path)}")
     if bit_depth != 8 or color_type not in {2, 6} or interlace != 0:
         raise ValueError(
             f"unsupported PNG format for {display(path)}: bit_depth={bit_depth}, color_type={color_type}, interlace={interlace}"
         )
     channels = 3 if color_type == 2 else 4
     row_size = width * channels
-    raw = zlib.decompress(bytes(compressed))
+    expected_bytes = height * (row_size + 1)
+    decompressor = zlib.decompressobj()
+    raw = decompressor.decompress(compressed, expected_bytes + 1)
+    if len(raw) != expected_bytes or not decompressor.eof:
+        raise ValueError(f"PNG data size does not match its dimensions: {display(path)}")
     rows: list[bytes] = []
     index = 0
     previous = bytes(row_size)

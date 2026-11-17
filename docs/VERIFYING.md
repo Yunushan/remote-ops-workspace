@@ -93,7 +93,7 @@ The full verifier runs:
 - `python scripts/check_optional_dependencies.py` for optional extra declarations, fail-closed missing dependency paths and real PyQt6/vault smoke checks when those extras are installed;
 - `python scripts/check_native_release_hardening.py` for native checksum sidecars, native manifest integrity, appimagetool verification hooks and native workflow boundaries;
 - `python scripts/check_native_installer_smoke.py` for the native installer smoke contract in `configs/native_installer_smoke.json`, including install, verify, upgrade and uninstall coverage for `.exe`, `.msi`, `.dmg`, `.pkg`, `.deb`, `.rpm` and AppImage release artifacts; every installed artifact must also run the `platforms --json` runtime-resource probe from its own packaged entrypoint and validate the bundled platform catalog, while Linux target-bound smoke retains source/run, target/architecture, target-scoped host label, evidence run ID and UTC observation proof lines;
-- `row x11 bundle-runtime --out <artifact-dir> --runtime <key> --source <x-server-binary> --system <target-system> --json` to assemble a packaged X server runtime root, then `python scripts/check_moba_xserver_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm-style packaged X server evidence, including bundled/packaged runtime hash binding, passing X11 smoke JSON and forwarded GUI screenshot hash verification;
+- `python scripts/check_moba_xserver_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for the packaged X server article, including managed runtime start, live X11 display probe and a visible GUI window forwarded over OpenSSH;
 - `row mobapt bundle-runtime --out <artifact-dir> --tool <name> --tool-source <name=path> --package <name=version> --package-source <name=version=path> --json` assembles a ROW-owned MobApt runtime/cache bundle. Use `row mobapt cache-verify` to check local assembly. Capture offline execution before running `python scripts/check_mobapt_cache_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for release parity;
 - `row servers bundle-runtime <service> --out <artifact-dir> --runtime <runtime-key> --source <daemon-binary> --system <target-system> --json` to assemble packaged embedded-server daemon roots, then `python scripts/check_moba_server_release_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaXterm-style embedded server evidence, including packaged daemon hash binding, auth/hardening policy checks and real client proof for every embedded service;
 - `row text evidence-bundle <profile> <remote-path> --out-dir <artifact-dir> --local <local-copy> --remote-sha256 <sha256> --open-evidence <open-proof> --save-review-evidence <review-proof> --save-evidence <upload-proof> --connected-evidence <connected-proof> --real-connected-session --sftp-browser-open --editor-tab-visible --json`, then `python scripts/check_moba_text_remote_edit_evidence.py --evidence <evidence.json> --assets-dir <artifact-dir>` for MobaTextEditor-style connected remote-edit evidence, including editor-tab open proof, save conflict review proof, upload proof and SHA-bound real connected-session/SFTP-browser evidence;
@@ -116,6 +116,28 @@ The full verifier runs:
 - `python scripts/check_product_readiness.py` for coverage truth checks: adapter-ready and implementation-backed workflow inventory with JSON references, explicit separation from runtime production readiness, strict platform evidence registry validity, visible platform gaps and no blanket product or feature overrides;
 - `python -m pytest -q`;
 - a CLI smoke test in a temporary `ROW_HOME`, including init, profile listing, example SSH dry-run, doctor JSON, and feature coverage output.
+
+### Embedded X server release evidence
+
+Assemble the real X server with `row x11 bundle-runtime --out <runtime-root>
+--runtime <key> --source <binary> --release-target <target> --system <system>`.
+Set `ROW_XSERVER_RUNTIME_DIR` to the bundle and capture the output of
+`row x11 start --display <display> --json`. Run `row x11 smoke --display <display>
+--out <smoke.json>` using `xdpyinfo`. Use a real OpenSSH session with X11
+forwarding, record the remote `DISPLAY`, capture `xwininfo -id <window-id>` and
+save a visible 8-bit RGB or RGBA PNG of the forwarded window.
+
+In the `row.moba-xserver.release-evidence.v1` record, bind the runtime manifest
+as `runtime.manifest` and `runtime.manifest_sha256` and the start JSON as
+`runtime.start` and `runtime.start_sha256`. Preserve the bundle layout under
+the capture root. Bind a `row.moba-xserver.ssh-forwarding.v1` receipt as
+`forwarded_gui_app.receipt` and `forwarded_gui_app.receipt_sha256`.
+Include the local `display`, `remote_display`, executed `ssh_argv`, application
+`command`, `window_id`, `window_title`, relative `window_info` path and its
+`window_info_sha256`, plus `runtime_sha256`, `start_sha256`, `smoke_sha256` and
+`screenshot_sha256`. Paths in the evidence are relative to the capture root.
+The release check validates the capture and the parity registry separately
+requires independently reviewed evidence for the published release.
 
 ### MobApt release evidence
 

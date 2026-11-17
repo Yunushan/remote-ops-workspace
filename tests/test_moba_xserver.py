@@ -21,6 +21,7 @@ from remote_ops_workspace.x11 import (
     write_moba_x_server_smoke_evidence,
     x_server_extension_inventory,
 )
+from scripts.check_moba_xserver_release_evidence import validate_moba_x_server_live_release_evidence
 
 
 def test_moba_x_server_plan_discovers_windows_runtime_and_extensions() -> None:
@@ -331,6 +332,9 @@ def test_moba_x_server_release_evidence_requires_packaged_runtime_and_forwarded_
     assert result.errors == []
     assert result.summary["runtime_key"] == "xvfb"
     assert result.summary["forwarded_gui_command"] == "xclock"
+    production_result = validate_moba_x_server_live_release_evidence(evidence)
+    assert production_result.passed is False
+    assert production_result.errors == ["runtime manifest file path is invalid"]
 
 
 def test_moba_x_server_release_evidence_rejects_host_only_runtime(tmp_path: Path) -> None:

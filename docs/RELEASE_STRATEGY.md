@@ -10,7 +10,7 @@ Release integrity rules:
   initialize an empty private workspace; users must add their own SSH/RDP
   connections.
 
-- Release tags must match `pyproject.toml` exactly, for example `v1.0.27`.
+- Release tags must match `pyproject.toml` exactly, for example `v1.0.28`.
 - Pushing a `vX.Y.Z` tag starts `release.yml`. With protected Windows and macOS
   signing material, that workflow builds and seals the standard native candidate
   inventory. It never publishes a GitHub Release. `release-promotion.yml`
@@ -255,7 +255,7 @@ The default GitHub release workflow publishes:
 
 - Python wheel, Python sdist, a source/Python-environment CycloneDX SBOM,
   target source/install bundles, the release manifest and
-  `remote-ops-workspace-v1.0.27-SHA256SUMS.txt`;
+  `remote-ops-workspace-v1.0.28-SHA256SUMS.txt`;
 - Windows native `x86`, `x64` and `arm64` artifacts;
 - macOS native `x64` and `arm64` artifacts;
 - Linux native `x86_64`/`amd64` and `aarch64`/`arm64` artifacts.
@@ -632,12 +632,12 @@ Status: active.
 
 Release assets:
 
-- `remote_ops_workspace-1.0.27-py3-none-any.whl`
-- `remote_ops_workspace-1.0.27.tar.gz`
+- `remote_ops_workspace-1.0.28-py3-none-any.whl`
+- `remote_ops_workspace-1.0.28.tar.gz`
 - target source/install bundles for Windows, Linux, macOS, BSD, Solaris,
   Android/Termux, and Web/PWA
-- `remote-ops-workspace-v1.0.27-release-manifest.json`
-- `remote-ops-workspace-v1.0.27-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.28-release-manifest.json`
+- `remote-ops-workspace-v1.0.28-SHA256SUMS.txt`
 
 Purpose:
 
@@ -653,11 +653,11 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>-setup.exe`
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>.msi`
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>-native.zip`
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.27-windows-<x86|x64|arm64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>-setup.exe`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>.msi`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>-native.zip`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.28-windows-<x86|x64|arm64>-native-SHA256SUMS.txt`
 
 Implementation:
 
@@ -690,10 +690,10 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.27-macos-<x64|arm64>.dmg`
-- `remote-ops-workspace-v1.0.27-macos-<x64|arm64>.pkg`
-- `remote-ops-workspace-v1.0.27-macos-<x64|arm64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.27-macos-<x64|arm64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.28-macos-<x64|arm64>.dmg`
+- `remote-ops-workspace-v1.0.28-macos-<x64|arm64>.pkg`
+- `remote-ops-workspace-v1.0.28-macos-<x64|arm64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.28-macos-<x64|arm64>-native-SHA256SUMS.txt`
 
 Implementation:
 
@@ -728,12 +728,12 @@ Status: active.
 
 Release assets:
 
-- `remote-ops-workspace-v1.0.27-linux-<amd64|arm64>.deb`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>.rpm`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>.AppImage`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>-native.tar.gz`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>-native-manifest.json`
-- `remote-ops-workspace-v1.0.27-linux-<x86_64|aarch64>-native-SHA256SUMS.txt`
+- `remote-ops-workspace-v1.0.28-linux-<amd64|arm64>.deb`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>.rpm`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>.AppImage`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>-native.tar.gz`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>-native-manifest.json`
+- `remote-ops-workspace-v1.0.28-linux-<x86_64|aarch64>-native-SHA256SUMS.txt`
 
 Implementation:
 

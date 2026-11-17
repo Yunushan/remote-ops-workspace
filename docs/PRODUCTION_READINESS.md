@@ -28,7 +28,7 @@ The protected-platform gate must report `4/4` accepted targets and the strict
 MobaXterm gate must report `8/8`. Candidate workflow success is deliberately not
 counted as accepted evidence.
 
-The v1.0.27 package metadata declares `Development Status :: 5 -
+The v1.0.28 candidate metadata declares `Development Status :: 5 -
 Production/Stable`. The repository remains intentionally fail-closed for
 publication while `configs/release_compliance_policy.json` is
 `blocked-pending-independent-review`, has no trusted approver key, no approved
@@ -261,10 +261,9 @@ records, screenshots, or generated placeholders to the accepted registries.
 
 ## Final promotion sequence
 
-Choose an unused production version before updating the project and package
-version declarations. The protected `v1.0.27` tag already belongs to the
-published unsigned preview. Production promotion requires a fresh release
-namespace and a tag that resolves to the exact qualified source.
+The v1.0.28 candidate uses a fresh release namespace. The protected `v1.0.27`
+tag belongs to the published unsigned preview. Verify the production version
+is still unused before creating the tag on the qualified source commit.
 
 1. Run the runner-readiness check above.
 2. Prepare the signing credentials and the independently approved release

@@ -5,8 +5,8 @@
 ### SSH, RDP, VNC, SFTP, Mosh, Telnet, X11, SPICE, X2Go, ICA, HTTP/HTTPS, seri konsollar, raw socket'ler, bolunmus paneller, vault, snippet, sync, CLI, GUI ve Web/PWA icin operator odakli uzak erisim calisma alani.
 
 ![build](https://img.shields.io/badge/build-source--available-brightgreen)
-![published preview](https://img.shields.io/badge/published%20preview-v1.0.24-orange)
-![candidate](https://img.shields.io/badge/candidate-v1.0.27-yellow)
+![published preview](https://img.shields.io/badge/published%20preview-v1.0.27-orange)
+![candidate](https://img.shields.io/badge/candidate-v1.0.28-yellow)
 ![license](https://img.shields.io/badge/license-0BSD-blue)
 ![runtime](https://img.shields.io/badge/runtime-Python%203.10--3.15-orange)
 ![interfaces](https://img.shields.io/badge/interfaces-CLI%20%7C%20GUI%20%7C%20Web-purple)
@@ -282,9 +282,9 @@ python scripts/check_repository_cleanup.py
 python scripts/check_repository_cleanup.py --require-clean
 ```
 
-`v1.0.27` su anda yalnizca hazirlanan bir yayin adayidir; guvenlik kapsami ve
-yayin durumu icin [`docs/RELEASE_NOTES_v1.0.27.md`](docs/RELEASE_NOTES_v1.0.27.md)
-dosyasina bakin. Tag veya GitHub yayini olusturulmadi.
+`1.0.28` siradaki yayin adayidir. Yayimlanan indirme
+[v1.0.27 imzasiz on yayini](https://github.com/Yunushan/remote-ops-workspace/releases/tag/v1.0.27).
+Kapsami [v1.0.27 yayin notlarinda](docs/RELEASE_NOTES_v1.0.27.md) aciklanir.
 
 `.github/workflows/versioned-unsigned-release.yml`, tam `vX.Y.Z` etiketi icin
 standart indirme dosyalarini ayri bir **UNSIGNED PREVIEW** on yayini olarak
@@ -293,10 +293,10 @@ imzasi, korumali platform kaniti veya uretim sertifikasyonu iddia edilmez.
 `.github/workflows/unsigned-preview.yml` ise yalnizca `preview` dallarindan
 benzersiz `unsigned-preview-*` etiketiyle kaynak/Python on yayini uretir.
 
-Yayin akisi `v1.0.27` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip
+Yayin akisi `v1.0.28` gibi tag'lerde wheel/sdist, kaynak zip, platform tar/zip
 paketleri, Windows `x86`/`x64`/`arm64`, macOS `x64`/`arm64` ve Linux
 `x86_64`/`aarch64` native paketleri, release manifestleri ve
-`remote-ops-workspace-v1.0.27-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve
+`remote-ops-workspace-v1.0.28-SHA256SUMS.txt` uretir. Linux `i386`/`i686` ve
 `armhf` ciktisi eslesen builder ile betik desteklidir, fakat varsayilan GitHub
 release is akisinda accepted evidence olmadan yuklenmez. Makine tarafindan
 okunabilen yayin karari `configs/release_matrix.json` icindedir;

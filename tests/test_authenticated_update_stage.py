@@ -40,6 +40,11 @@ def no_actual_tls_or_transport(monkeypatch):
     monkeypatch.setattr(channel.urllib.request, "build_opener", lambda *_args: RefusedOpener())
 
 
+@pytest.fixture(autouse=True)
+def installed_fixture_version(monkeypatch):
+    monkeypatch.setattr(channel, "__version__", "1.0.27")
+
+
 def policy_data():
     return {"schema": channel.POLICY_SCHEMA, "enabled": True,
             "manifest_url": "https://publisher.invalid/manifest.json",

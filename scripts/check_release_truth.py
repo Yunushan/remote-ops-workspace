@@ -150,7 +150,7 @@ REQUIRED_DOC_SNIPPETS = (
 )
 
 REQUIRED_TURKISH_DOC_SNIPPETS = (
-    "![published preview](https://img.shields.io/badge/published%20preview-v1.0.24-orange)",
+    "![published preview](https://img.shields.io/badge/published%20preview-v1.0.27-orange)",
     "![candidate](https://img.shields.io/badge/candidate-v<project.version>-yellow)",
     "configs/platform_verified_evidence.json",
     "`release-promotion.yml` ayni degismez tag uzerinden baslatilir",

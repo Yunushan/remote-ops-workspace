@@ -235,7 +235,7 @@ def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
     ).read_text(encoding="utf-8")
 
     assert 'assert_profile_launch_allowed(profile, surface="gui")' in source
-    assert "profiles = self.layout_launch_profiles(layout)" in source
+    assert "sessions = self.layout_launch_sessions(layout)" in source
     assert "self.open_terminal_tab(pane_plan, profile=profile)" in source
     assert "pane = TerminalPane(plan, profile=profile)" in source
     assert "widget.plan,\n                    profile=widget.profile," in source

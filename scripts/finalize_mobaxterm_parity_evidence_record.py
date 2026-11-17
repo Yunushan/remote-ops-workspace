@@ -16,12 +16,29 @@ from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
     check_candidate_record,
     check_mobaxterm_parity_evidence,
     check_record,
+    review_acceptance_line,
 )
 from scripts.make_mobaxterm_parity_evidence_record import registry_policy  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    candidate, read_errors = read_json_object(args.candidate_record, "candidate record")
+    if args.print_review_line:
+        if args.append_registry or args.out is not None:
+            print("--print-review-line cannot write or append a record", file=sys.stderr)
+            return 1
+        errors = read_errors or check_candidate_record(candidate)
+        if errors:
+            for error in errors:
+                print(f"mobaxterm parity evidence finalizer: {error}", file=sys.stderr)
+            return 1
+        source = release_source(
+            candidate, args.repository, args.source_head_sha, args.tag_source_head_sha,
+            args.workflow_run_url, args.run_attempt,
+        )
+        print(review_acceptance_line({**candidate, "release_source": source}))
+        return 0
     if args.append_registry and args.out is None:
         print(
             "mobaxterm parity evidence finalizer: --append-registry requires --out so the reviewed "
@@ -29,7 +46,9 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    candidate, read_errors = read_json_object(args.candidate_record, "candidate record")
+    if not all((args.reviewer, args.review_url, args.reviewed_at)):
+        print("finalization requires --reviewer, --review-url and --reviewed-at", file=sys.stderr)
+        return 1
     published_assets, asset_arg_errors = published_asset_paths(args.published_release_asset)
     errors, record = finalize_candidate(
         candidate,
@@ -75,9 +94,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tag-source-head-sha", required=True, help="resolved release tag source SHA")
     parser.add_argument("--workflow-run-url", required=True, help="exact GitHub Actions source run URL")
     parser.add_argument("--run-attempt", required=True, type=positive_int)
-    parser.add_argument("--reviewer", required=True, help="GitHub login that accepted the evidence")
-    parser.add_argument("--review-url", required=True, help="exact GitHub pull-request review or review-comment URL")
-    parser.add_argument("--reviewed-at", required=True, help="UTC RFC3339 review timestamp")
+    parser.add_argument("--reviewer", help="GitHub login that accepted the evidence")
+    parser.add_argument("--review-url", help="exact GitHub pull-request review or review-comment URL")
+    parser.add_argument("--reviewed-at", help="UTC RFC3339 review timestamp")
     parser.add_argument(
         "--published-release-asset",
         action="append",
@@ -85,6 +104,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="downloaded published release bytes as release-file-name=local-path; repeat for every candidate asset",
     )
     parser.add_argument("--out", type=Path, help="write the finalized accepted record")
+    parser.add_argument(
+        "--print-review-line",
+        action="store_true",
+        help="print the acceptance line without writing or appending a record",
+    )
     parser.add_argument("--append-registry", action="store_true")
     parser.add_argument("--registry", type=Path, default=REGISTRY_PATH)
     return parser.parse_args(argv)
@@ -97,6 +121,24 @@ def positive_int(value: str) -> int:
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be a positive integer")
     return parsed
+
+
+def release_source(
+    candidate: dict[str, Any],
+    repository: str,
+    source_head_sha: str,
+    tag_source_head_sha: str,
+    workflow_run_url: str,
+    run_attempt: int,
+) -> dict[str, Any]:
+    return {
+        "repository": repository,
+        "release_tag": candidate.get("release_tag"),
+        "head_sha": source_head_sha,
+        "tag_source_head_sha": tag_source_head_sha,
+        "workflow_run_url": workflow_run_url,
+        "run_attempt": run_attempt,
+    }
 
 
 def finalize_candidate(
@@ -164,14 +206,9 @@ def finalize_candidate(
     record = {
         **candidate,
         "status": "accepted",
-        "release_source": {
-            "repository": repository,
-            "release_tag": candidate.get("release_tag"),
-            "head_sha": source_head_sha,
-            "tag_source_head_sha": tag_source_head_sha,
-            "workflow_run_url": workflow_run_url,
-            "run_attempt": run_attempt,
-        },
+        "release_source": release_source(
+            candidate, repository, source_head_sha, tag_source_head_sha, workflow_run_url, run_attempt,
+        ),
         "acceptance_review": {
             "reviewer": reviewer,
             "review_url": review_url,

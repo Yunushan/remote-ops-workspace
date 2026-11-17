@@ -13,6 +13,7 @@ SOURCE_HEAD_SHA=""
 BUILDER_EVIDENCE=""
 SMOKE_SECURITY_UPDATE_CHANNEL="${ROW_LINUX_SECURITY_UPDATE_CHANNEL:-}"
 SMOKE_CVE_REVIEW_REFERENCE="${ROW_LINUX_CVE_REVIEW_REFERENCE:-}"
+readonly SMOKE_SECURITY_UPDATE_CHANNEL SMOKE_CVE_REVIEW_REFERENCE
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -309,11 +310,9 @@ PY
       openssl_cli_version) BUILDER_OPENSSL_CLI_VERSION="$value" ;;
       security_update_channel)
         BUILDER_SECURITY_UPDATE_CHANNEL="$value"
-        SMOKE_SECURITY_UPDATE_CHANNEL="$value"
         ;;
       cve_review_reference)
         BUILDER_CVE_REVIEW_REFERENCE="$value"
-        SMOKE_CVE_REVIEW_REFERENCE="$value"
         ;;
     esac
   done <<< "$BUILDER_BINDING_TSV"

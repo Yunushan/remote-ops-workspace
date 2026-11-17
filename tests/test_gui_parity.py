@@ -36,6 +36,39 @@ def test_gui_parity_checker_json_mode_outputs_report(capsys) -> None:
     assert report["overall"]["live_render_proof_gap_percent"] == 0.0
 
 
+def test_gui_parity_dimensions_reuse_source_reads_for_one_check(monkeypatch, tmp_path: Path) -> None:
+    checker = _load_checker()
+    implementation = tmp_path / "implementation.py"
+    evidence = tmp_path / "evidence.md"
+    implementation.write_text("implementation token", encoding="utf-8")
+    evidence.write_text("evidence token", encoding="utf-8")
+    preset_data = {
+        "requirements": [{
+            "id": "shared",
+            "source_tokens": {
+                "implementation.py": ["implementation token"],
+                "evidence.md": ["evidence token"],
+            },
+        }],
+        "dimension_coverage": {"first": ["shared"], "second": ["shared"]},
+    }
+    reads = []
+    read_text = Path.read_text
+
+    def count_read(path, *args, **kwargs):
+        reads.append(path)
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+    monkeypatch.setattr(Path, "read_text", count_read)
+
+    assert checker.dimension_counts(preset_data, ["first", "second"]) == (2, 2)
+    assert reads == [implementation, evidence]
+
+    evidence.write_text("changed", encoding="utf-8")
+    assert checker.dimension_counts(preset_data, ["first", "second"]) == (2, 0)
+
+
 def test_gui_parity_tracks_all_product_style_presets() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
@@ -995,11 +1028,12 @@ def test_mobaxterm_home_welcome_uses_shared_metadata() -> None:
 
 def test_mobaxterm_live_gui_uses_generated_ribbon_icons() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    icon_source = Path("src/remote_ops_workspace/gui_icons.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
 
     assert "def moba_ribbon_icon" in gui_source
-    assert "def draw_moba_ribbon_icon" in gui_source
+    assert "def draw_moba_ribbon_icon" in icon_source
     assert "gui_design_moba_ribbon_actions" in gui_source
     assert "gui_design_moba_top_menu_items" in gui_source
     assert "mobaTopMenuKey" in menu_source

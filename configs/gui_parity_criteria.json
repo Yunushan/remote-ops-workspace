@@ -1040,9 +1040,12 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "moba_ribbon_icon",
-              "draw_moba_ribbon_icon",
               "mobaIconKey",
               "gui_design_moba_ribbon_actions"
+            ],
+            "src/remote_ops_workspace/gui_icons.py": [
+              "def draw_moba_ribbon_icon(",
+              "painter.drawRoundedRect"
             ],
             "scripts/check_real_gui_render.py": [
               "mobaIconKey",

@@ -139,13 +139,15 @@ def test_x11_status_cli_command_is_registered() -> None:
     assert args.func.__name__ == "cmd_x11_status"
 
 
-def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path) -> None:
+def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path: Path) -> None:
     state_path = tmp_path / "xserver-state.json"
+    authority_path = tmp_path / "Xauthority"
     plan = build_moba_x_server_plan(
         display=":10",
         system="linux",
         which=lambda name: "/usr/bin/Xvfb" if name == "Xvfb" else None,
         display_probe=lambda display: False,
+        authority_path=authority_path,
     )
     started = start_moba_x_server(
         plan,
@@ -163,6 +165,7 @@ def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path) -> None:
 
     assert started.pid == 4242
     assert started.state == "started"
+    assert authority_path.stat().st_size > 0
     assert loaded is not None
     assert loaded.running is True
     assert stopped.state == "stopped"
@@ -171,28 +174,32 @@ def test_moba_x_server_lifecycle_writes_and_stops_state(tmp_path) -> None:
     assert terminated == [4242]
 
 
-def test_moba_x_server_lifecycle_dry_run_does_not_write_state(tmp_path) -> None:
+def test_moba_x_server_lifecycle_dry_run_does_not_write_state(tmp_path: Path) -> None:
     state_path = tmp_path / "xserver-state.json"
+    authority_path = tmp_path / "Xauthority"
     plan = build_moba_x_server_plan(
         display=":11",
         system="linux",
         which=lambda name: "/usr/bin/Xorg" if name == "Xorg" else None,
         display_probe=lambda display: False,
+        authority_path=authority_path,
     )
     record = start_moba_x_server(plan, dry_run=True, state_path=state_path)
 
     assert record.state == "dry-run"
     assert record.pid is None
     assert not state_path.exists()
+    assert not authority_path.exists()
 
 
-def test_moba_x_server_status_includes_lifecycle_record(tmp_path) -> None:
+def test_moba_x_server_status_includes_lifecycle_record(tmp_path: Path) -> None:
     state_path = tmp_path / "xserver-state.json"
     plan = build_moba_x_server_plan(
         display=":12",
         system="linux",
         which=lambda name: "/usr/bin/Xvfb" if name == "Xvfb" else None,
         display_probe=lambda display: False,
+        authority_path=tmp_path / "Xauthority",
     )
     start_moba_x_server(
         plan,

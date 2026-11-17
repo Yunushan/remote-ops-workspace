@@ -7,11 +7,6 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
 
     assert 'test -n "$(RELEASE_SHA)"' in target
     assert 'test -n "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)"' in target
-    assert 'test -n "$(RELEASE_MOBAXTERM_EVIDENCE_ROOT)"' in target
-    assert 'test -n "$(RELEASE_LICENSE_EVIDENCE)"' in target
-    assert 'test -n "$(RELEASE_LICENSE_SIGNATURE)"' in target
-    assert 'test -n "$(RELEASE_LICENSE_EVIDENCE_ROOT)"' in target
-    assert 'test -n "$(RELEASE_PLATFORM_SOURCE_ARCHIVES)"' in target
     tag_resolution = 'git rev-parse --verify --end-of-options "refs/tags/$(RELEASE_TAG)^{commit}"'
     assert target.count(tag_resolution) == 2
     assert target.count('test "$$tag_sha" = "$(RELEASE_SHA)"') == 2
@@ -85,3 +80,29 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
     assert target.index("--verify-published-release") < target.index(
         'echo "production readiness: 100/100 gates passed"'
     )
+
+
+def test_make_production_readiness_checks_evidence_paths_before_running_audit() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    preflight = makefile.split("production-readiness:\n", 1)[1].split("@tag_sha=", 1)[0]
+
+    for variable in (
+        "RELEASE_ASSETS_DIR",
+        "RELEASE_LICENSE_EVIDENCE_ROOT",
+        "RELEASE_PLATFORM_SOURCE_ARCHIVES",
+        "RELEASE_MOBAXTERM_EVIDENCE_ROOT",
+    ):
+        assert f'test -d "$({variable})" || (echo "{variable} must point' in preflight
+
+    for variable in (
+        "RELEASE_LICENSE_EVIDENCE",
+        "RELEASE_LICENSE_SIGNATURE",
+        "RELEASE_CANDIDATE_INVENTORY",
+        "RELEASE_PLATFORM_EVIDENCE_REGISTRY",
+        "RELEASE_TAG_GOVERNANCE_ATTESTATION",
+        "RELEASE_TAG_GOVERNANCE_SIGNATURE",
+    ):
+        assert (
+            f'test -f "$({variable})" && test -s "$({variable})" '
+            f'|| (echo "{variable} must point'
+        ) in preflight

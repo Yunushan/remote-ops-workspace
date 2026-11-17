@@ -103,47 +103,36 @@ The policy must map every production target to the tracked lock its workflow
 consumes.
 
 On the protected source commit, install the hash-locked verifier dependencies
-and run the policy check from a Linux x64 Python environment.
+from a Linux x64 Python environment.
 
 ```bash
 python -m pip install --require-hashes --requirement requirements-locks/release-verifier-linux-x86_64.txt
-python scripts/check_release_license_compliance.py --check-policy-only
 ```
 
-After the policy and required CI checks pass, confirm that the intended tag
-is absent locally and remotely and that no release or draft uses its name.
-Run this from the release checkout with `release_repository` set to
-`owner/repo`, `release_tag` set to the intended version tag, and
-`GITHUB_TOKEN` exported for an account with push access to the repository.
-GitHub includes draft releases in the listing for users with push access.
-[GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
+Configure the protected signing inputs, then run the read-only pre-tag check
+from a clean checkout of the selected production commit. Set
+`release_repository` to `owner/repo`, `release_tag` to the unused production
+version, and `release_sha` to the full qualified commit SHA. Fetch `main`
+first if the selected commit is behind its live tip so Git can verify ancestry.
+Use the following credentials for their respective checks.
+
+- Export `GITHUB_TOKEN` for an account with push access so the release listing
+  includes drafts. The token also needs Actions read for exact-commit CI.
+- Use `GH_TOKEN` for branch protection and tag-ruleset inspection, including
+  visibility of bypass actors, if `GITHUB_TOKEN` lacks that access.
+- Export `ROW_RELEASE_IMMUTABILITY_TOKEN` for the repository setting check
+  and `ROW_PLATFORM_RUNNER_INVENTORY_TOKEN` for the protected runner check.
+  [GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
 
 ```bash
-(
-  set -euo pipefail
-  python scripts/check_release_version.py --release-tag "$release_tag"
-  if git show-ref --exists "refs/tags/$release_tag"; then
-    echo "Local tag already exists: $release_tag" >&2
-    exit 1
-  elif [ "$?" -ne 2 ]; then
-    echo "Could not check the local tag." >&2
-    exit 1
-  fi
-  if git ls-remote --exit-code --refs "https://github.com/$release_repository.git" "refs/tags/$release_tag"; then
-    echo "Remote tag already exists: $release_tag" >&2
-    exit 1
-  else
-    status=$?
-    if [ "$status" -ne 2 ]; then
-      exit "$status"
-    fi
-  fi
-  python scripts/check_release_remote_preconditions.py namespace \
-    --repository "$release_repository" --tag "$release_tag"
-)
+python scripts/check_release_remote_preconditions.py pre-tag \
+  --repository "$release_repository" --tag "$release_tag" --sha "$release_sha"
 ```
 
-Cut the tag after this check passes. The artifact-specific approval uses
+The command checks production metadata, policy, exact-commit CI and governance,
+immutable release settings, runner availability, and the unused tag and release
+namespace. After it passes, cut the tag at the same explicit `release_sha`.
+The artifact-specific approval uses
 the resulting tag, commit, and signed installer bytes. The production
 candidate job repeats the policy check against the tagged source before
 starting native builds. Promotion checks the release namespace again before

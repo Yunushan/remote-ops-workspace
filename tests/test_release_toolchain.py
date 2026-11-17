@@ -40,23 +40,28 @@ def test_release_signing_refuses_missing_timestamp_or_package_verification() -> 
         assert any("verify both final packages" in error for error in errors)
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_windows_authenticode_requires_timestamp_digest_after_url(legacy: bool) -> None:
+def test_windows_authenticode_requires_timestamp_digest_after_url() -> None:
     checker = _load_release_toolchain_checker()
     windows = Path("scripts/sign_windows_artifact.ps1").read_text(encoding="utf-8")
     xp = Path("scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8")
     assert checker.check_windows_timestamp_digest(windows, xp) == []
 
-    if legacy:
-        xp = xp.replace("/tr $Timestamp.AbsoluteUri /td SHA256", "/td SHA256 /tr $Timestamp.AbsoluteUri")
-    else:
-        windows = windows.replace(
-            "/tr $env:ROW_WINDOWS_TIMESTAMP_URL /td SHA256",
-            "/td SHA256 /tr $env:ROW_WINDOWS_TIMESTAMP_URL",
-        )
-    target = "Windows XP" if legacy else "Windows native"
+    windows = windows.replace("/tr $Timestamp.AbsoluteUri /td SHA256", "/td SHA256 /tr $Timestamp.AbsoluteUri")
     assert checker.check_windows_timestamp_digest(windows, xp) == [
-        f"{target} signing must select SHA256 after the RFC 3161 timestamp URL",
+        "Windows native signing must select SHA256 after the RFC 3161 timestamp URL",
+    ]
+
+
+@pytest.mark.parametrize("certificate_argument", ["", " -CertificatePath $Certificate"])
+def test_xp_signing_requires_the_shared_signer_for_both_certificate_sources(certificate_argument: str) -> None:
+    checker = _load_release_toolchain_checker()
+    signer = Path("scripts/sign_windows_artifact.ps1").read_text(encoding="utf-8")
+    xp = Path("scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8")
+    command = f"& $ArtifactSigner -ArtifactPath $Path{certificate_argument}\n"
+    assert command in xp
+    xp = xp.replace(command, 'Write-Host "signing bypassed"\n')
+    assert checker.check_windows_timestamp_digest(signer, xp) == [
+        "Windows XP signing must use the shared Authenticode and timestamp verifier",
     ]
 
 

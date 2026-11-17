@@ -693,15 +693,25 @@ def check_native_release_tag_guards() -> list[str]:
 
 def check_windows_timestamp_digest(windows: str, xp: str) -> list[str]:
     errors: list[str] = []
-    for name, source in (("Windows native", windows), ("Windows XP", xp)):
-        signing_commands = re.findall(
-            r"(?m)^ *& \$SignTool sign [^\n]+",
-            strip_unquoted_comments(source),
-        )
-        if len(signing_commands) != 1 or not re.search(
-            r" /fd SHA256 /tr \S+ /td SHA256 ", signing_commands[0],
-        ):
-            errors.append(f"{name} signing must select SHA256 after the RFC 3161 timestamp URL")
+    signing_commands = re.findall(
+        r"(?m)^ *& \$SignTool sign [^\n]+",
+        strip_unquoted_comments(windows),
+    )
+    if len(signing_commands) != 1 or not re.search(
+        r" /fd SHA256 /tr \S+ /td SHA256 ", signing_commands[0],
+    ):
+        errors.append("Windows native signing must select SHA256 after the RFC 3161 timestamp URL")
+    xp = strip_unquoted_comments(xp)
+    signer_calls = set(re.findall(r"(?m)^ *(& \$ArtifactSigner[^\n]+)", xp))
+    if (
+        '$ArtifactSigner = Join-Path $PSScriptRoot "sign_windows_artifact.ps1"' not in xp
+        or signer_calls != {
+            "& $ArtifactSigner -ArtifactPath $Path",
+            "& $ArtifactSigner -ArtifactPath $Path -CertificatePath $Certificate",
+        }
+        or re.search(r"(?im)^ *& \$SignTool sign\b", xp)
+    ):
+        errors.append("Windows XP signing must use the shared Authenticode and timestamp verifier")
     return errors
 
 

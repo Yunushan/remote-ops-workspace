@@ -100,6 +100,8 @@ main window stays a composition layer rather than a monolith:
   window and the static preview renderer.
 - `gui_workspace.py` and `gui_connected.py` build the connected-session
   workspace and its monitoring panels.
+- `gui_icons.py` paints the generated toolbar, profile tree, and control icons.
+  The window selects icons and sets their device pixel ratio.
 - `gui_terminal.py` and `qt_terminal_process.py` render terminal panes and bind
   each process-backed session to a transport (general `QProcess`, or the
   dependency-free Windows ConPTY transport for direct OpenSSH SSH/SFTP).

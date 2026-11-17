@@ -7,14 +7,18 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urljoin, urlsplit
 
+ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
+PRODUCTION_BRANCH = "main"
 MAX_JSON_BYTES = 20 * 1024 * 1024
 MAX_RELEASE_PAGES = 1000
 
@@ -39,6 +43,10 @@ def main(argv: list[str] | None = None) -> int:
         child = subparsers.add_parser(command)
         child.add_argument("--repository", required=True)
         child.add_argument("--tag", required=True)
+    pre_tag = subparsers.add_parser("pre-tag", help="check the exact production source before creating a tag")
+    pre_tag.add_argument("--repository", required=True)
+    pre_tag.add_argument("--tag", required=True)
+    pre_tag.add_argument("--sha", required=True, help="full commit SHA selected for production")
     args = parser.parse_args(argv)
     try:
         repository = normalize_repository(args.repository)
@@ -47,14 +55,91 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "immutable":
             token = require_token("ROW_RELEASE_IMMUTABILITY_TOKEN")
             require_immutable_enabled(api_root, repository, token)
-        else:
+        elif args.command == "namespace":
             token = require_token("GITHUB_TOKEN")
             require_unused_namespace(api_root, repository, tag, token)
-    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        else:
+            if re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) is None:
+                raise ValueError("--sha must be a full 40-character commit SHA")
+            require_pre_tag(api_root, repository, tag, args.sha.lower())
+    except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as exc:
         print(f"release remote precondition: {exc}", file=sys.stderr)
         return 1
-    print(f"release remote precondition {args.command} passed")
+    scope = f" for {repository}@{args.sha.lower()} and {tag}" if args.command == "pre-tag" else ""
+    print(f"release remote precondition {args.command} passed{scope}")
     return 0
+
+
+def require_pre_tag(api_root: str, repository: str, tag: str, sha: str) -> None:
+    if api_root != "https://api.github.com":
+        raise ValueError("pre-tag checks require the GitHub.com API used by the governance and CI verifiers")
+    check_local_pre_tag_refs(tag, sha)
+    run_release_check("check_repository_cleanup.py", "--require-clean")
+    run_release_check("check_release_version.py", "--release-tag", tag)
+    run_release_check("check_release_maturity.py", "--release-tag", tag)
+    run_release_check("check_release_license_compliance.py", "--check-policy-only")
+
+    check_remote_pre_tag_refs(repository, tag, sha)
+    require_immutable_enabled(api_root, repository, require_token("ROW_RELEASE_IMMUTABILITY_TOKEN"))
+    coordinates = ("--repository", repository, "--branch", PRODUCTION_BRANCH)
+    run_release_check("check_python315_ci_evidence.py", *coordinates, "--sha", sha)
+    run_release_check("check_repository_governance.py", *coordinates, "--sha", sha)
+    # This policy-only tag check works before the tag exists. The signed
+    # release audit still uses both the tag and its exact SHA together.
+    run_release_check("check_repository_governance.py", *coordinates, "--release-tag", tag)
+    runner_token = require_token("ROW_PLATFORM_RUNNER_INVENTORY_TOKEN")
+    run_release_check(
+        "check_platform_evidence_runner_readiness.py", "--repository", repository,
+        "--require-goal-targets", "--require-idle", env={**os.environ, "GH_TOKEN": runner_token},
+    )
+    require_unused_namespace(api_root, repository, tag, require_token("GITHUB_TOKEN"), require_push=True)
+    check_remote_pre_tag_refs(repository, tag, sha)
+    run_release_check("check_repository_cleanup.py", "--require-clean")
+    check_local_pre_tag_refs(tag, sha)
+
+
+def run_release_check(script: str, *args: str, env: dict[str, str] | None = None) -> None:
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / script), *args], cwd=ROOT, env=env, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"{script} failed with exit code {result.returncode}")
+
+
+def run_git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+
+
+def check_local_pre_tag_refs(tag: str, sha: str) -> None:
+    head = run_git("rev-parse", "--verify", "HEAD^{commit}")
+    if head.returncode != 0 or head.stdout.strip() != sha:
+        raise RuntimeError("the release checkout HEAD must match the selected SHA")
+    tag_ref = run_git("show-ref", "--exists", f"refs/tags/{tag}")
+    if tag_ref.returncode == 0:
+        raise RuntimeError(f"the local tag {tag} already exists")
+    if tag_ref.returncode != 2:
+        raise RuntimeError(f"could not establish whether local tag {tag} exists")
+
+
+def check_remote_pre_tag_refs(repository: str, tag: str, sha: str) -> None:
+    branch_ref = f"refs/heads/{PRODUCTION_BRANCH}"
+    tag_ref = f"refs/tags/{tag}"
+    refs = run_git("ls-remote", "--exit-code", "--refs", "--", f"https://github.com/{repository}.git", branch_ref, tag_ref)
+    if refs.returncode != 0:
+        raise RuntimeError("could not verify the remote branch and release tag refs")
+    lines = refs.stdout.splitlines()
+    if any(line.endswith(f"\t{tag_ref}") for line in lines):
+        raise RuntimeError(f"the remote tag {tag} already exists")
+    head = re.fullmatch(rf"([0-9a-f]{{40}})\t{branch_ref}", lines[0]) if len(lines) == 1 else None
+    if head is None:
+        raise RuntimeError(f"could not identify the live {PRODUCTION_BRANCH} commit")
+    if head[1] != sha:
+        ancestry = run_git("merge-base", "--is-ancestor", sha, head[1])
+        if ancestry.returncode == 1:
+            raise RuntimeError(f"the selected release SHA must be on remote {PRODUCTION_BRANCH}")
+        if ancestry.returncode != 0:
+            raise RuntimeError(f"could not verify remote {PRODUCTION_BRANCH} ancestry from the local checkout")
 
 
 def normalize_repository(value: str) -> str:
@@ -136,6 +221,8 @@ def require_unused_namespace(
     repository: str,
     tag: str,
     token: str,
+    *,
+    require_push: bool = False,
 ) -> None:
     repository_url = f"{api_root}/repos/{repository}"
     metadata, _ = get_json(repository_url, token, api_version="2022-11-28")
@@ -151,6 +238,9 @@ def require_unused_namespace(
         or repository_id < 1
     ):
         raise RuntimeError("GitHub repository API did not identify the requested repository")
+    permissions = metadata.get("permissions")
+    if require_push and (not isinstance(permissions, dict) or permissions.get("push") is not True):
+        raise RuntimeError("GITHUB_TOKEN must demonstrate repository push access so draft releases are visible")
 
     base_url = f"{repository_url}/releases"
     # GitHub can return numeric repository paths in pagination links.

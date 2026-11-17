@@ -111,16 +111,20 @@ Rules:
   steps. Validate: `python scripts/check_docs.py`.
   Added `UPGRADE_AND_ROLLBACK.md`, `WORKSPACE_BACKUP_AND_RESTORE.md`,
   `SECRET_ROTATION_AND_INCIDENT.md` and `RELEASE_PROMOTION.md`.
-- [ ] **O2** Generate a container-image SBOM and attestation for
+- [x] **O2** Generate a container-image SBOM and attestation for
   `docker/Dockerfile.web` in CI. Accept: image is covered by SBOM + attestation
   as source/Python assets already are. Validate: `python -m pytest tests/test_container_base_images.py -q` and CI.
+  The exact-main job verified provenance and the CycloneDX SBOM attestation
+  against the smoke-tested image digest.
+  [Attestation job](https://github.com/Yunushan/remote-ops-workspace/actions/runs/44132009249/job/134280129818)
 - [x] **O3** Document installer trust. `installers/install.sh` and
   `installers/install.ps1` are source installers with no integrity checks. For
   binary downloads, document and automate SHA-256 plus
   `gh attestation verify`. Validate: `python scripts/check_docs.py`.
-  Documented in `docs/runbooks/RELEASE_PROMOTION.md` (installer trust boundary +
-  checksum/attestation verification steps). Automating verification inside the
-  installers remains a follow-up.
+  The release promotion runbook includes an operator command that verifies a
+  downloaded installer against the immutable release digest and attested
+  provenance. A live end-to-end check depends on the first certified release.
+  [Release promotion runbook](runbooks/RELEASE_PROMOTION.md)
 
 ## Phase 5 - Maintainability (about +3)
 
@@ -129,6 +133,15 @@ Rules:
   assets. Behaviour-preserving; coverage stays 100%. Validate:
   `python -m pytest --cov --cov-branch --cov-fail-under=100` and
   `python scripts/check_gui_interactions.py --require-pyqt6`.
+  Workflow and transfer dialogs, the common QSS, Quick Connect parsing, and
+  shared Qt top menus have moved into dedicated modules or packaged assets.
+  The main window still owns launch and action dispatch.
+  [PR #159](https://github.com/Yunushan/remote-ops-workspace/pull/159) ·
+  [PR #183](https://github.com/Yunushan/remote-ops-workspace/pull/183) ·
+  [PR #187](https://github.com/Yunushan/remote-ops-workspace/pull/187)
+  The next increment moves the live toolbar, profile tree, and control icon
+  painters into `gui_icons.py`. Native rendering qualification verifies the
+  normal desktop entry point.
 
 ## Phase 6 - Internal certification gates (about +3)
 

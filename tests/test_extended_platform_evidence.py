@@ -5,6 +5,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def test_runner_inventory_requires_protected_administration_read_token() -> None:
@@ -757,17 +758,30 @@ def test_extended_platform_evidence_rejects_untracked_script_dependency(
     scripts_dir.mkdir()
     dependency = scripts_dir / "stage_extended_linux_evidence_upload.py"
     dependency.write_text("print('stage')\n", encoding="utf-8")
+    tracked_dependency = scripts_dir / "check_extended_platform_builder.py"
+    tracked_dependency.write_text("print('build')\n", encoding="utf-8")
     monkeypatch.setattr(checker, "ROOT", tmp_path)
-    monkeypatch.setattr(checker, "is_git_tracked", lambda relative: False)
+    commands = []
+
+    def fake_git(command, **kwargs):
+        commands.append(command)
+        assert kwargs["cwd"] == tmp_path
+        return SimpleNamespace(returncode=0, stdout="scripts/check_extended_platform_builder.py\0")
+
+    monkeypatch.setattr(checker.subprocess, "run", fake_git)
 
     errors = checker.check_workflow_script_dependencies(
-        (Path("scripts") / "stage_extended_linux_evidence_upload.py",)
+        (Path("scripts") / dependency.name, Path("scripts") / tracked_dependency.name)
     )
 
-    assert (
+    assert errors == [
         "extended platform evidence workflow script dependency must be tracked by git: "
         "scripts/stage_extended_linux_evidence_upload.py"
-    ) in errors
+    ]
+    assert commands == [[
+        "git", "--literal-pathspecs", "ls-files", "-z", "--",
+        "scripts/stage_extended_linux_evidence_upload.py", "scripts/check_extended_platform_builder.py",
+    ]]
 
 
 def test_extended_platform_evidence_rejects_missing_script_dependency(

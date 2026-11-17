@@ -578,6 +578,9 @@ def check_top_level_run_defaults(workflow: str, *, workflow_label: str) -> list[
 
 def check_workflow_script_dependencies(dependencies: tuple[Path, ...] | None = None) -> list[str]:
     dependencies = WORKFLOW_SCRIPT_DEPENDENCIES if dependencies is None else dependencies
+    if not dependencies:
+        return []
+    tracked = tracked_workflow_scripts(dependencies)
     label = "extended platform evidence workflow script dependency"
     errors: list[str] = []
     for relative_path in dependencies:
@@ -590,7 +593,7 @@ def check_workflow_script_dependencies(dependencies: tuple[Path, ...] | None = N
             errors.append(f"{label} must not be a symlink: {relative}")
         if not dependency.is_file():
             errors.append(f"{label} must be a file: {relative}")
-        if not is_git_tracked(relative_path):
+        if relative not in tracked:
             errors.append(f"{label} must be tracked by git: {relative}")
     return errors
 
@@ -601,14 +604,14 @@ def workflow_script_dependencies(workflow: str) -> tuple[Path, ...]:
     return tuple(sorted(discovered | required, key=lambda path: path.as_posix()))
 
 
-def is_git_tracked(relative: Path) -> bool:
+def tracked_workflow_scripts(dependencies: tuple[Path, ...]) -> set[str]:
     result = subprocess.run(
-        ["git", "ls-files", "--error-unmatch", "--", relative.as_posix()],
+        ["git", "--literal-pathspecs", "ls-files", "-z", "--", *(path.as_posix() for path in dependencies)],
         cwd=ROOT,
         capture_output=True,
         text=True,
     )
-    return result.returncode == 0
+    return set(result.stdout.split("\0")) if result.returncode == 0 else set()
 
 
 def workflow_top_level_block(workflow: str, key: str) -> str:

@@ -63,9 +63,20 @@ committing their values or writing them into logs:
   `ROW_MACOS_NOTARY_KEY_BASE64`, `ROW_MACOS_NOTARY_KEY_ID`,
   `ROW_MACOS_NOTARY_ISSUER`.
 
-The current Windows jobs import a PFX on the GitHub runner. For a newly issued
-publicly trusted Windows code-signing certificate, plan a provider integration
-that uses the signing key inside compliant hardware or a signing service.
+The current hosted Windows jobs use a PFX on the GitHub runner. On a Windows
+signing host provisioned by a certificate provider, the native and XP builders
+can use a certificate from the `My` store by setting
+`ROW_WINDOWS_CERTIFICATE_THUMBPRINT` to its 40-digit hexadecimal thumbprint.
+Set `ROW_WINDOWS_CERTIFICATE_STORE_LOCATION=LocalMachine` for a machine-store
+certificate. The default is `CurrentUser`. Set `ROW_WINDOWS_TIMESTAMP_URL` to
+the provider's RFC 3161 endpoint and clear the PFX settings before selecting the
+store certificate. Use `ROW_REQUIRE_RELEASE_SIGNING=1` for the modern builder
+or `ROW_XP_REQUIRE_SIGNING=1` for the XP builder.
+
+For a newly issued publicly trusted Windows code-signing certificate, connect
+the signing provider on the protected runner so the key stays inside compliant
+hardware or a signing service. The thumbprint selects the certificate and the
+file and timestamp digests use SHA-256.
 Qualify that integration against the staged application executables, the EXE
 and MSI installers for each modern Windows architecture, and the two XP
 executables. The EXE build calls the signer during Inno Setup compilation
@@ -258,8 +269,8 @@ namespace and a tag that resolves to the exact qualified source.
 1. Run the runner-readiness check above.
 2. Prepare the signing credentials and the independently approved release
    policy on protected main. Run the
-   [pre-tag policy check](runbooks/RELEASE_PROMOTION.md#prepare-the-policy-before-tagging)
-   and verify the exact source commit has passed CI. Push the immutable
+   [pre-tag check](runbooks/RELEASE_PROMOTION.md#prepare-the-policy-before-tagging)
+   against the exact qualified source commit. Push the immutable
    production source tag. The tag push starts `release.yml`,
    which builds and seals the signed and notarized candidate bytes.
    If the build fails before sealing, dispatch a fresh run with
@@ -331,8 +342,10 @@ make production-readiness \
   RELEASE_TAG_GOVERNANCE_SIGNATURE="<tag-governance-attestation.sig.json>"
 ```
 
-Keep the evidence inputs outside the tagged checkout so its clean-tree check
-can pass. The default `release-assets/` download directory is ignored by Git.
+The target checks that the supplied directories exist and the evidence files
+are nonempty before starting the audit. Keep the evidence inputs outside the
+tagged checkout so its clean-tree check can pass. The default `release-assets/`
+download directory is ignored by Git.
 Use the protected-platform registry from the signed compliance bundle for
 `RELEASE_PLATFORM_EVIDENCE_REGISTRY`. The local checks and live GitHub audit
 both use that same file. The MobaXterm audit reads the registry from

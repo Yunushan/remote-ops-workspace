@@ -100,7 +100,7 @@ same GitHub release repository, target-specific release source workflow file,
 same release source head SHA and a positive release source run attempt in each record. Mixed-tag,
 mixed-repository, mixed-source-head or same-run-URL conflicting-attempt accepted records
 remain aggregate evidence only and cannot complete the protected goal parity block. The release/verifier promotion
-gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>`,
+gate is `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo> --platform-evidence-registry <signed-registry.json>`,
 which also runs `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo>`
 and `python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets`
 and must fail until the same four records are finalized and accepted from that same release source.

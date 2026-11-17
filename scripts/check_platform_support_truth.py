@@ -69,7 +69,7 @@ PROTECTED_READINESS_GATE_COMMANDS = {
         "--require-platform-goal-targets --release-tag v<project.version> "
         "--platform-review-bundle-dir <bundle-dir> "
         "--release-assets-dir <release-assets-dir> "
-        "--release-repository <owner>/<repo>"
+        "--release-repository <owner>/<repo> --platform-evidence-registry <signed-registry.json>"
     ),
 }
 RELEASE_TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")

@@ -35,9 +35,14 @@ def build_steps(
     release_tag: str | None = None,
     release_repository: str | None = None,
     platform_review_bundle_dir: Path | None = None,
+    platform_evidence_registry: Path | None = None,
     release_assets_dir: Path | None = None,
     row_home: Path | None = None,
 ) -> list[VerifyStep]:
+    registry_args = (
+        ["--registry", str(platform_evidence_registry)]
+        if platform_evidence_registry is not None else []
+    )
     if production_quality:
         # A release-quality caller must not be able to inherit any of the
         # convenience switches that make local verification less expensive.
@@ -218,7 +223,7 @@ def build_steps(
         ),
         VerifyStep(
             "platform verified evidence registry",
-            [python, "scripts/check_platform_verified_evidence.py"],
+            [python, "scripts/check_platform_verified_evidence.py", *registry_args],
             env=_source_env(),
         ),
         VerifyStep(
@@ -226,6 +231,7 @@ def build_steps(
             [
                 python,
                 "scripts/check_protected_platform_goal.py",
+                *registry_args,
                 *(["--release-tag", release_tag] if release_tag else []),
             ],
             env=_source_env(),
@@ -237,6 +243,7 @@ def build_steps(
                     [
                         python,
                         "scripts/check_platform_verified_evidence.py",
+                        *registry_args,
                         "--require-goal-targets",
                         "--require-review-bundles",
                         *(["--release-tag", release_tag] if release_tag else []),
@@ -279,6 +286,7 @@ def build_steps(
                     [
                         python,
                         "scripts/import_platform_evidence_artifacts.py",
+                        *registry_args,
                         "--release-tag",
                         release_tag,
                         "--require-goal-targets",
@@ -302,6 +310,7 @@ def build_steps(
                     [
                         python,
                         "scripts/check_platform_review_bundle_artifacts.py",
+                        *registry_args,
                         "--bundle-dir",
                         str(platform_review_bundle_dir),
                         *(["--require-goal-targets"] if require_platform_goal_targets else []),
@@ -321,6 +330,7 @@ def build_steps(
                     [
                         python,
                         "scripts/check_protected_platform_goal.py",
+                        *registry_args,
                         "--require-complete",
                         *(["--release-tag", release_tag] if release_tag else []),
                         *(["--assets-dir", str(release_assets_dir)] if release_assets_dir is not None else []),
@@ -363,10 +373,17 @@ def build_steps(
             [
                 python,
                 "scripts/check_release_publish_assets.py",
+                *(
+                    ["--evidence-registry", str(platform_evidence_registry)]
+                    if platform_evidence_registry is not None else []
+                ),
                 *(["--assets-dir", str(release_assets_dir)] if release_assets_dir is not None else []),
                 *(["--tag", release_tag] if release_tag else []),
                 *(["--repository", release_repository] if release_repository else []),
-                *(["--require-platform-goal-targets"] if require_platform_goal_targets else []),
+                *(
+                    ["--require-platform-goal-targets", "--native-release-channel", "production-signed"]
+                    if require_platform_goal_targets else []
+                ),
             ],
             env=_source_env(),
         ),
@@ -377,6 +394,7 @@ def build_steps(
                     [
                         python,
                         "scripts/check_platform_release_evidence_remote.py",
+                        *registry_args,
                         "--repository",
                         release_repository,
                         "--release-tag",
@@ -588,6 +606,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "strict platform-goal promotion."
         ),
     )
+    parser.add_argument(
+        "--platform-evidence-registry",
+        type=Path,
+        help="Use the release-specific accepted platform registry for every evidence check.",
+    )
     return parser.parse_args(argv)
 
 
@@ -611,6 +634,7 @@ def main(argv: list[str] | None = None) -> int:
             release_tag=args.release_tag,
             release_repository=args.release_repository,
             platform_review_bundle_dir=args.platform_review_bundle_dir,
+            platform_evidence_registry=args.platform_evidence_registry,
             release_assets_dir=args.release_assets_dir,
             row_home=row_home,
         )

@@ -180,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                 "--governance-signature", str(args.tag_governance_signature),
             ],
                 check_published_at=lambda published_at: check_review_window(evidence, now=published_at),
+                audited_policy=(policy_bytes, policy),
                 audited_inputs={
                     args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
                     args.signature: hashlib.sha256(signature_bytes).hexdigest(),

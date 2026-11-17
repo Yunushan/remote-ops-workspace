@@ -9,7 +9,9 @@ The default-versus-script-supported release boundary comes from
 `python scripts/check_release_matrix.py`; this runbook carries the protected
 script-supported artifact names that must stay aligned with that matrix.
 
-Check the source and runner inventory before dispatching evidence workflows:
+These pre-dispatch checks validate the source contract, tracked template registry
+and runner inventory. Use the signed release-specific registry for the strict
+operator checks below once the four records have been finalized.
 
 ```bash
 python scripts/check_platform_parity_promotion.py
@@ -294,7 +296,7 @@ step requires the same inputs as the builder identity. Include only public,
 single-line references because the native smoke log is retained as evidence.
 
 After downloading review-bundle artifacts, run
-`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir <bundle-dir> --require-goal-targets --release-tag v<project.version> --require-final-record-assets`
+`python scripts/check_platform_review_bundle_artifacts.py --bundle-dir <bundle-dir> --require-goal-targets --release-tag v<project.version> --require-final-record-assets --registry <signed-registry.json>`
 to extract each bundled candidate record, rerun finalization and prove the
 accepted registry entry still matches the actual bundle files for the release
 being promoted.

@@ -80,6 +80,7 @@ def main(
     *,
     check_published_at: Callable[[datetime], list[str]] | None = None,
     audited_inputs: dict[Path, str] | None = None,
+    audited_policy: tuple[bytes, dict[str, Any]] | None = None,
 ) -> int:
     args = parse_args(argv)
     try:
@@ -150,6 +151,12 @@ def main(
             }
         if audited_inputs is not None and not verify_governance:
             raise ValueError("audited input checks require verified governance")
+        if audited_policy is not None and (check_published_at is None or not audited_inputs):
+            raise ValueError("audited policy requires a delegated compliance audit")
+        policy_snapshot = (
+            audited_policy or read_json_object(POLICY_PATH, "release compliance policy")
+            if verify_governance else None
+        )
         if args.published_release_id is not None and args.published_release_id < 1:
             raise ValueError("published release id must be positive")
         repository = normalize_repository(args.repository)
@@ -189,7 +196,8 @@ def main(
             expected_release_id=numeric_release_id,
         )
         if approval is not None:
-            policy_bytes, policy = read_json_object(POLICY_PATH, "release compliance policy")
+            assert policy_snapshot is not None
+            policy_bytes, policy = policy_snapshot
             published_at = parse_timestamp(release.get("published_at"), "GitHub release published_at")
             approval_errors = check_redistribution_approval(
                 *approval, policy_bytes, policy, repository, tag, sha, now=published_at,
@@ -254,9 +262,11 @@ def main(
         if verify_governance:
             assert args.governance_attestation is not None
             assert args.governance_signature is not None
+            assert policy_snapshot is not None
             proof_invocations = verified_governance_invocations(
                 args.governance_attestation,
                 args.governance_signature,
+                policy=policy_snapshot[1],
                 release=release,
                 repository=repository,
                 tag=tag,
@@ -420,12 +430,12 @@ def verified_governance_invocations(
     attestation_path: Path,
     signature_path: Path,
     *,
+    policy: dict[str, Any],
     release: dict[str, Any],
     repository: str,
     tag: str,
     sha: str,
 ) -> set[RunInvocation]:
-    _, policy = read_json_object(POLICY_PATH, "release compliance policy")
     attestation_bytes, attestation = read_json_object(attestation_path, "tag governance attestation")
     signature_bytes, signature = read_json_object(signature_path, "tag governance signature")
     governance_policy = policy.get("tag_governance_attestation")

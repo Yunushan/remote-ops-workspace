@@ -182,7 +182,7 @@ Release integrity rules:
   which refuses release tags that do not contain the tagged project version and
   all four protected workflow dispatch options.
 - The single exact-tag publish job runs
-  `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets`
+  `python scripts/check_release_publish_assets.py --assets-dir release-assets --tag <tag> --repository <owner>/<repo> --require-platform-goal-targets --evidence-registry <signed-registry.json> --native-release-channel production-signed`
   before creating the draft release. It verifies the full release asset contract
   and binds accepted protected-platform release URLs to the publishing
   repository.
@@ -203,7 +203,7 @@ Release integrity rules:
   source-run metadata, with artifact created_at inside the exact source
   run start/update window from exact source-run timestamps and artifact `expires_at`
   present and later than the artifact create/update timestamps, then runs
-  `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets`
+  `python scripts/check_platform_review_bundle_artifacts.py --bundle-dir release-assets --require-goal-targets --release-tag <tag> --require-final-record-assets --registry <signed-registry.json>`
   against the imported review bundles and finalized public record JSON files
   before creating the draft. The source evidence workflows upload the scoped
   evidence directories with `if-no-files-found: error`,

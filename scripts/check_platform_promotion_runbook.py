@@ -29,7 +29,7 @@ COMMON_SNIPPETS = (
     "python scripts/check_release_publish_assets.py",
     "python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-complete --assets-dir <release-assets-dir> --repository <owner>/<repo> --registry <signed-registry.json>",
     "python scripts/check_release_publish_assets.py --assets-dir <release-assets-dir> --tag v<project.version> --repository <owner>/<repo> --require-platform-goal-targets --evidence-registry <signed-registry.json> --native-release-channel production-signed",
-    "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir <bundle-dir> --require-goal-targets --release-tag v<project.version> --require-final-record-assets",
+    "python scripts/check_platform_review_bundle_artifacts.py --bundle-dir <bundle-dir> --require-goal-targets --release-tag v<project.version> --require-final-record-assets --registry <signed-registry.json>",
     "python scripts/import_platform_evidence_artifacts.py --release-tag v<project.version> --require-goal-targets --out-dir <release-assets-dir> --dry-run --verify-source-run --repository <owner>/<repo> --registry <signed-registry.json> --release-head-sha <release-sha>",
     "python scripts/check_platform_release_evidence_remote.py --repository <owner>/<repo> --release-tag v<project.version> --require-goal-targets --require-source-runs --require-source-artifact-bytes --require-final-record-bytes --require-release-asset-bytes --require-tag-source-head --registry <signed-registry.json>",
     "gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> --ref v<project.version>",

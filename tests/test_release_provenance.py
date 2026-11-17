@@ -832,6 +832,19 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         write_approval("2026-11-01T12:02:30Z")
         inputs = {path: checker.sha256_file(path) for path in (approved, approved_sig)}
         assert checker.main(args, audited_inputs=inputs) == 0
+        # The compliance caller has already authenticated this exact policy.
+        # The standalone verifier's tracked default has no enrolled auditor.
+        selected_policy = checker.read_json_object(policy, "selected policy")
+        with monkeypatch.context() as custom:
+            custom.setattr(checker, "POLICY_PATH", Path("configs/release_compliance_policy.json"))
+            assert checker.main(args, audited_inputs=inputs) == 1
+            assert "tag governance attestation policy is not enforced" in capsys.readouterr().err
+            assert checker.main(
+                args, audited_inputs=inputs, check_published_at=lambda _time: [],
+                audited_policy=selected_policy,
+            ) == 0
+            assert checker.main(args, audited_policy=selected_policy) == 1
+            assert "audited policy requires a delegated compliance audit" in capsys.readouterr().err
         assert checker.main(args, audited_inputs={**inputs, approved_sig: "b" * 64}) == 1
 
         def mismatched_input_attempt(path: Path, **kwargs):

@@ -116,7 +116,7 @@ rows. The strict promotion path is
 `python scripts/check_platform_evidence_runner_readiness.py --repository <owner>/<repo> --require-goal-targets --require-idle`,
 `python scripts/check_protected_platform_goal.py --release-tag v<project.version> --require-records-complete`,
 `python scripts/check_platform_verified_evidence.py --require-goal-targets --require-review-bundles --release-tag v<project.version>`
-and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo>`;
+and `python scripts/verify.py --quick --no-cli-smoke --require-platform-goal-targets --release-tag v<project.version> --platform-review-bundle-dir <bundle-dir> --release-assets-dir <release-assets-dir> --release-repository <owner>/<repo> --platform-evidence-registry <signed-registry.json>`;
 that strict verifier audits the intended already-published GitHub release, exact source-run
 metadata, published native/review-bundle asset bytes and published final
 accepted-record JSON bytes.

@@ -551,6 +551,10 @@ def reviewed_release(tmp_path, monkeypatch):
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1237"
             record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"]
             record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {wheel.name: wheel_digest}
+        if article == "shared-authenticated-transport-terminal-grid":
+            record["release_target"] = "linux-x86_64"
+            record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"]
+            record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {wheel.name: wheel_digest}
         if article in SOURCE_BOUND_ARTICLES:
             record["validation_summary"]["summary"] = {
                 "repository": repository,
@@ -573,6 +577,11 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "embedded-server-suite":
             record["validation_summary"]["summary"].update(
                 live_client_proof_count=8, tested_release_asset={"name": name, "sha256": digest},
+            )
+        if article == "shared-authenticated-transport-terminal-grid":
+            record["validation_summary"]["summary"].update(
+                verified_capture_count=12, verified_ssh_channel_count=3,
+                tested_release_asset={"name": wheel.name, "sha256": wheel_digest},
             )
         if article == "macro-recorder":
             record["validation_summary"]["summary"].update(

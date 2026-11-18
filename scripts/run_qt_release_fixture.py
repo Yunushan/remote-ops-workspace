@@ -23,6 +23,7 @@ KEYGEN = (
 CAPTURES = {
     "editor": (EDITOR_USER, "capture_moba_text_remote_edit.py"),
     "macro": (MACRO_USER, "capture_moba_macro_replay.py"),
+    "transport": (EDITOR_USER, "capture_moba_shared_ssh_channels.py"),
 }
 CLIENT = """
 mkdir /fixture
@@ -57,7 +58,7 @@ def wait_for_server(log: Path) -> None:
 
 
 def server_command(capture: str, user: str) -> str:
-    if capture == "editor":
+    if capture != "macro":
         prepare = f"install -m 600 -o {user} -g {user} /input/document.txt /home/{user}/document.txt"
     else:
         prepare = "install -m 755 /input/receiver.py /usr/local/lib/row-macro-receiver.py"
@@ -104,7 +105,7 @@ def run_fixture(image: str, wheel: Path, output: Path, *, capture: str = "editor
                *mount(server, "/server", writable=True), image, "sh", "-ec", KEYGEN)
         host_key = (client / "host_key.pub").read_text(encoding="utf-8")
         (client / "known_hosts").write_text(f"[{HOST}]:{PORT} {host_key}", encoding="utf-8", newline="\n")
-        if capture == "editor":
+        if capture != "macro":
             (server / "document.txt").write_bytes(EDITOR_ORIGINAL)
         else:
             (server / "receiver.py").write_bytes((ROOT / "scripts/macro_ssh_receiver.py").read_bytes())

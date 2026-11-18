@@ -412,24 +412,57 @@ document.
 
 ### Article 8 evidence contract
 
-The top-level evidence schema is
-`row.moba-transport-terminal.release-evidence.v1`. It records the release
-target; exact GitHub `owner/repository`, `vX.Y.Z` tag, source head SHA, Actions
-run URL/attempt and UTC capture time; and one non-loopback SSH session ID,
-transport ID and host-key SHA-256. `synthetic`, `fixture` and `simulation` must
-all be explicitly `false`.
+The `row.moba-transport-terminal.release-evidence.v2` envelope records the
+release target and the tested package in `release_asset` with its published
+`name` and `sha256`. It also records the exact GitHub repository, release tag,
+source SHA, Actions run and attempt, UTC capture time, and the non-loopback
+SSH session, transport, and host-key digest. Set `synthetic`, `fixture`, and
+`simulation` to `false` only for a native connected capture.
 
 Its `proofs` object must contain exactly these six `file` plus `sha256`
 references: `shared_transport`, `connection_state`, `terminal_grid`,
 `alternate_screen`, `terminal_modes` and `connected_session`. Every referenced
 JSON file must remain under the evidence root without symlink traversal, match
-its dedicated `row.moba-transport-terminal.*-proof.v1` schema, and repeat the
-same release/session/transport/source identity. A digest-only assertion is not
-enough: the referenced proof bytes are re-hashed by the validator. The
-candidate generator also requires the validated repository, tag and target to
-match its release asset URLs and command arguments; the accepted-record checker
-then requires the final release provenance to match the validated source
-identity.
+its dedicated `row.moba-transport-terminal.*-proof.v2` schema, and repeat the
+release asset, host-key digest, and release, session, transport, and source
+identity. Each proof has a `captures` object with a separate `file` and
+`sha256` reference for each of its raw observations.
+
+| Proof | Capture keys |
+| --- | --- |
+| Shared transport | `sshd_log` and `ssh_client_log` |
+| Connection state | `state_log` |
+| Terminal grid | `initial_screen` and `updated_screen` |
+| Alternate screen | `primary_before`, `alternate_screen`, and `primary_restored` |
+| Terminal modes | `mode_capture` |
+| Connected session | `transcript`, `sftp_capture`, and `monitoring_capture` |
+
+Retain the OpenSSH client debug log and server verbose log as UTF-8 files.
+Record `ssh_user`, `client_endpoint`, and `server_endpoint` in the shared
+transport proof, with an IP `address` and TCP `port` for each endpoint. The
+validator reads the negotiated host-key fingerprint from the client and
+checks for one authentication and a PTY shell, SFTP subsystem, and command
+channel on the same server-observed socket. The state log records the desktop
+SSH state snapshots in order under `events` and the snapshots shown by
+`terminal`, `sftp`, and `monitoring` under `connected_views`. The validator
+checks the close reason, terminal exit status, reconnect, and the shared
+authenticated state. Keep the terminal, SFTP, and monitoring observations so
+a reviewer can check the operation on each channel. The terminal transcript
+must include a `ROW_SHARED_` line followed by the remote shell's
+`SSH_CONNECTION` value and a `ROW_SFTP_SHA256_` line followed by the remote
+file digest. The validator compares those values with the authenticated
+socket and bytes read over SFTP. It also checks the monitoring process and
+CPU sample, re-hashes all twelve captures, and compares the primary and
+alternate screen snapshots.
+
+Generate the candidate with the tested package as `--artifact`. The candidate
+and published-release audit check that the exact package bytes match the
+capture. Independent review still requires the retained capture files.
+
+For a local Linux smoke test, use `scripts/run_qt_release_fixture.py --capture
+transport --image <fixture-image> --wheel <package.whl> --out <new-dir>`.
+It opens the packaged desktop against a private SSH peer and verifies the
+terminal round trip, SFTP file read, monitoring sample, and reconnect.
 
 The active parity target is not complete until every article above has a real
 implementation, tests, accepted release evidence in

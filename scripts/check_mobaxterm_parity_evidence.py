@@ -15,10 +15,10 @@ REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
 TESTED_ASSET_ARTICLES = frozenset(
     {
         "embedded-server-suite", "embedded-x-server", "macro-recorder", "moba-text-editor-diff", "mobapt-unix-runtime",
-        "professional-deployment", "ssh-browser-26-4-smartcard",
+        "professional-deployment", "ssh-browser-26-4-smartcard", "shared-authenticated-transport-terminal-grid",
     }
 )
-SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES | {"shared-authenticated-transport-terminal-grid"}
+SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES
 PROFESSIONAL_POLICY_SURFACES = ("cli", "gui", "launcher", "profile-editor", "quick-connect", "web")
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -476,6 +476,12 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
             errors.append("macro-recorder validation summary must record verified SSH timing and review for every replay")
     if article_id == "moba-text-editor-diff" and details.get("verified_remote_edit") is not True:
         errors.append("moba-text-editor-diff validation summary must record a verified SFTP edit")
+    if article_id == "shared-authenticated-transport-terminal-grid":
+        if (
+            type(details.get("verified_capture_count")) is not int or details["verified_capture_count"] != 12
+            or type(details.get("verified_ssh_channel_count")) is not int or details["verified_ssh_channel_count"] != 3
+        ):
+            errors.append(f"{article_id} validation summary must bind twelve captures and three verified SSH channels")
     if article_id == "ssh-browser-26-4-smartcard":
         fingerprint = details.get("openssh_key_fingerprint")
         if (

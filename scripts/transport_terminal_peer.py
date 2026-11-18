@@ -92,11 +92,22 @@ def modes() -> dict:
     return seen
 
 
+def native() -> dict:
+    detector = shutil.which("systemd-detect-virt")
+    if (
+        sys.platform != "linux" or detector is None
+        or any(Path(path).exists() for path in ("/.dockerenv", "/run/.containerenv"))
+        or subprocess.run([detector, "--container", "--quiet"], check=False, timeout=5).returncode != 1
+    ):
+        raise ValueError("release observations require a non-container Linux SSH peer")
+    return {"native_linux": True}
+
+
 def main() -> int:
     if len(sys.argv) != 2 or not all(os.isatty(fd) for fd in (0, 1, 2)):
         raise ValueError("a named terminal challenge requires an interactive SSH PTY")
     stage = sys.argv[1]
-    probe = {"grid": grid, "vim": vim, "modes": modes}[stage]
+    probe = {"grid": grid, "vim": vim, "modes": modes, "native": native}[stage]
     socket = os.environ.get("SSH_CONNECTION", "").split()
     if len(socket) != 4:
         raise ValueError("OpenSSH did not provide the authenticated connection endpoints")

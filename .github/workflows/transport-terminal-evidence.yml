@@ -1,0 +1,84 @@
+name: Native terminal-grid release evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  qualify-terminal:
+    name: Qualify native terminal-grid and shared SSH
+    if: github.ref_type == 'tag'
+    runs-on: [self-hosted, linux, x64, transport-evidence]
+    environment: transport-evidence
+    timeout-minutes: 25
+    steps:
+      - name: Require an exact release tag
+        shell: bash
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          work="$RUNNER_TEMP/transport-evidence-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 -- "$work"
+          printf 'TRANSPORT_WORK=%s\n' "$work" >> "$GITHUB_ENV"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.7"
+      - name: Verify the immutable wheel and its promotion provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          mkdir -- "$TRANSPORT_WORK/release" "$TRANSPORT_WORK/review"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$wheel" --dir "$TRANSPORT_WORK/release"
+          python scripts/check_release_provenance.py --asset "$TRANSPORT_WORK/release/$wheel" \
+            --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
+      - name: Install the verified release wheel for the native capture
+        shell: bash
+        run: |
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          python -m venv "$TRANSPORT_WORK/venv"
+          python="$TRANSPORT_WORK/venv/bin/python"
+          "$python" -m pip install --require-hashes --only-binary=:all: \
+            -r requirements-locks/source-linux-x86_64-bootstrap.txt
+          "$python" -m pip install --require-hashes --no-build-isolation \
+            --only-binary=:all: --no-binary=pyftpdlib -r requirements-locks/source-linux-x86_64.txt
+          "$python" -m pip install --no-index --no-deps "$TRANSPORT_WORK/release/$wheel"
+      - name: Capture and validate native shared SSH and terminal-grid evidence
+        shell: bash
+        run: |
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          evidence="$TRANSPORT_WORK/review/shared-authenticated-transport-terminal-grid"
+          python="$TRANSPORT_WORK/venv/bin/python"
+          "$python" -I scripts/capture_native_transport_release.py \
+            --wheel "$TRANSPORT_WORK/release/$wheel" --out "$evidence" \
+            --peer-config /etc/row-transport-evidence/peer.json
+          "$python" scripts/make_mobaxterm_parity_evidence_record.py \
+            --article-id shared-authenticated-transport-terminal-grid \
+            --release-tag "$GITHUB_REF_NAME" --release-target linux-x86_64 \
+            --evidence "$evidence/evidence.json" --assets-dir "$evidence" \
+            --release-asset-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$wheel" \
+            --artifact "$wheel=$TRANSPORT_WORK/release/$wheel" --out "$TRANSPORT_WORK/review/candidate.json"
+      - name: Retain the candidate and exact native captures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: transport-terminal-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/transport-evidence-${{ github.run_id }}-${{ github.run_attempt }}/review/
+          if-no-files-found: error
+          retention-days: 30

@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from scripts import capture_native_transport_release as native
 from scripts.check_moba_transport_terminal_evidence import (
     CAPTURE_ROLES,
     PROOF_SCHEMAS,
@@ -65,6 +66,59 @@ def test_complete_transport_terminal_evidence_passes(tmp_path: Path) -> None:
         "verified_ssh_channel_count": 3,
         "verified_screen_proof_count": 3,
     }
+
+
+def test_native_evidence_assembly_requires_and_revalidates_all_twelve_captures(tmp_path: Path) -> None:
+    simulated = tmp_path / "simulated"
+    simulated.mkdir()
+    evidence = _read_json(_write_complete_evidence(simulated))
+    review = tmp_path / "review"
+    review.mkdir()
+    files = {}
+    for section, proof in evidence["proofs"].items():
+        captures = _read_json(simulated / proof["file"])["captures"]
+        for role, reference in captures.items():
+            attachment = review / native.CAPTURE_FILES[section][role]
+            attachment.write_bytes((simulated / reference["file"]).read_bytes())
+            files[attachment.name] = _sha256(attachment)
+    report = {
+        "native_peer_verified": True, "captures": files, "host_key_sha256": HOST_KEY,
+        "ssh_user": "reviewer", "client_endpoint": {"address": "192.168.40.2", "port": 54600},
+        "server_endpoint": {"address": "192.168.40.3", "port": 22}, "grid": {"initial": [120, 40]},
+        "alternate_screen": {"application": "vim"}, "session_duration_seconds": 40,
+    }
+
+    native.write_native_evidence(review, evidence["source"], ASSET, report)
+
+    result = validate_moba_transport_terminal_evidence(review / "evidence.json")
+    assert result.passed, result.errors
+    assert result.summary["verified_screen_proof_count"] == 3
+    assert result.summary["verified_capture_count"] == 12
+    (review / native.CAPTURE_FILES["terminal_modes"]["mode_capture"]).write_bytes(b"{}")
+    with pytest.raises(ValueError, match="native evidence did not validate"):
+        native.write_native_evidence(review, evidence["source"], ASSET, report)
+
+
+def test_native_evidence_refuses_a_fixture_capture(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="native peer observation"):
+        native.write_native_evidence(tmp_path, {}, {}, {"native_peer_verified": False})
+    (tmp_path / "local-qualification.json").write_bytes(b"{}")
+    with pytest.raises(ValueError, match="fixture capture cannot be converted"):
+        native.write_native_evidence(tmp_path, {}, {}, {"native_peer_verified": True})
+    assert not (tmp_path / "evidence.json").exists()
+
+
+def test_native_peer_config_refuses_public_peer_and_unprivileged_scope(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(native, "administrator_file", lambda path, **_kwargs: path)
+    config = tmp_path / "peer.json"
+    _write_json(config, {"address": "8.8.8.8", "port": 2222, "user": "rowedit"})
+    with pytest.raises(ValueError, match="canonical private IP address"):
+        native.load_peer(config)
+    _write_json(config, {"address": "192.168.40.3", "port": 2222, "user": "root"})
+    with pytest.raises(ValueError, match="dedicated unprivileged account"):
+        native.load_peer(config)
+    _write_json(config, {"address": "192.168.40.3", "port": 2222, "user": "rowedit"})
+    assert native.load_peer(config).known_hosts == tmp_path / "known_hosts"
 
 
 def test_transport_terminal_evidence_rejects_tampered_proof_bytes(tmp_path: Path) -> None:

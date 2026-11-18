@@ -8,7 +8,8 @@ from pathlib import Path
 
 from scripts.qt_release_capture import write_json
 
-PEER_COMMAND = "/usr/local/bin/python /usr/local/lib/row-transport-peer.py"
+PEER_PROGRAM = "/usr/local/lib/row-transport-peer.py"
+PEER_COMMAND = f"python3 {PEER_PROGRAM}"
 
 
 def terminal_grid_geometry(emulator) -> tuple[int, int]:

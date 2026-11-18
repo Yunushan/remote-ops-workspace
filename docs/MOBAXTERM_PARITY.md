@@ -469,6 +469,32 @@ Generate the candidate with the tested package as `--artifact`. The candidate
 and published-release audit check that the exact package bytes match the
 capture. Independent review still requires the retained capture files.
 
+Dispatch `transport-terminal-evidence.yml` at the immutable published release
+tag. The workflow verifies the wheel's promotion provenance, installs its
+locked dependencies, and captures all six proofs through that installed
+wheel. It retains `transport-terminal-evidence-<run-id>-<attempt>` for
+review. The release audit requires the successful qualification job, its
+native runner labels, and the exact retained candidate and capture bytes.
+
+The `transport-evidence` environment must restrict deployment to approved
+release tags and require operator approval. Its dedicated self-hosted Linux
+x64 runner needs an unprivileged service account, GitHub CLI, OpenSSH,
+`systemd-detect-virt`, and the system libraries required by the locked Qt
+runtime. The administrator provisions `/etc/row-transport-evidence/peer.json`
+with the private IP `address`, TCP `port`, and dedicated peer `user`. Keep
+`peer.json`, `known_hosts`, and the peer's append-only `sshd.log` beside it
+in a root-controlled directory with runner read access. The runner owns
+the separate `identity` file and keeps it private. The log must contain the
+dedicated peer's OpenSSH verbose output, with no rotation during capture.
+
+On that peer, install `scripts/transport_terminal_peer.py` from the exact tag
+as `/usr/local/lib/row-transport-peer.py`. The unprivileged peer account
+needs Python 3, a full Vim build, `systemd-detect-virt`, SFTP, and a UTF-8
+`document.txt` in its home directory containing `opening fixture: café`
+followed by a newline. Pin the peer's key in `known_hosts`. The workflow uses
+the dedicated peer, checks the installed challenge program against the
+release checkout, and leaves approval to the release reviewer.
+
 For a local Linux smoke test, use `scripts/run_qt_release_fixture.py --capture
 transport --image <fixture-image> --server-image <vim-peer-image> --wheel
 <package.whl> --out <new-dir>`. The peer image must have OpenSSH, Python,

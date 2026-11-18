@@ -65,6 +65,8 @@ EDITOR_WORKFLOW = ".github/workflows/connected-editor-evidence.yml"
 EDITOR_JOB = "Qualify the published wheel's connected editor"
 MACRO_WORKFLOW = ".github/workflows/macro-replay-evidence.yml"
 MACRO_JOB = "Qualify the published wheel's timed macro replay"
+TRANSPORT_WORKFLOW = ".github/workflows/transport-terminal-evidence.yml"
+TRANSPORT_JOB = "Qualify native terminal-grid and shared SSH"
 
 
 @dataclass(frozen=True)
@@ -73,6 +75,7 @@ class EvidenceWorkflow:
     path: str
     job: str
     artifact_prefix: str
+    runner_labels: frozenset[str] = frozenset()
 
 
 EVIDENCE_WORKFLOWS = {
@@ -82,6 +85,10 @@ EVIDENCE_WORKFLOWS = {
         "Connected editor", EDITOR_WORKFLOW, EDITOR_JOB, "connected-editor-evidence",
     ),
     "macro-recorder": EvidenceWorkflow("Macro replay", MACRO_WORKFLOW, MACRO_JOB, "macro-replay-evidence"),
+    "shared-authenticated-transport-terminal-grid": EvidenceWorkflow(
+        "Terminal grid", TRANSPORT_WORKFLOW, TRANSPORT_JOB, "transport-terminal-evidence",
+        frozenset({"self-hosted", "linux", "x64", "transport-evidence"}),
+    ),
 }
 
 
@@ -205,6 +212,13 @@ def verify_workflow_run(
                          and job.get("conclusion") == "success"]
         if len(qualification) != 1:
             raise ValueError(f"{evidence_workflow.label} evidence attempt must contain one successful qualification job")
+        if evidence_workflow.runner_labels:
+            labels = qualification[0].get("labels")
+            if (
+                not isinstance(labels, list) or not all(isinstance(label, str) for label in labels)
+                or not evidence_workflow.runner_labels.issubset(label.casefold() for label in labels)
+            ):
+                raise ValueError(f"{evidence_workflow.label} evidence job did not report the approved native runner labels")
         started = qualification[0].get("started_at")
         completed = qualification[0]["completed_at"]
         if not valid_utc_timestamp(started) or started > completed:
@@ -440,7 +454,7 @@ def audit_release(
         if record["release_tag"] != tag or source["repository"] != repository or source["head_sha"] != release_sha:
             errors.append(f"{article} accepted record must bind the exact release repository, tag, and source SHA")
             continue
-        if article in {"moba-text-editor-diff", "macro-recorder"}:
+        if article in {"moba-text-editor-diff", "macro-recorder", "shared-authenticated-transport-terminal-grid"}:
             tested = record["validation_summary"]["summary"]["tested_release_asset"]
             wheel = f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl"
             if tested["name"] != wheel or record["release_target"] != "linux-x86_64":

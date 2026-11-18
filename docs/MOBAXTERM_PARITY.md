@@ -531,6 +531,15 @@ manifest and all eight daemon digests with the downloaded Debian package,
 including the shared HTTP and FTP launcher bytes. Redistribution approval and
 the live client captures remain required.
 
+For OpenSSH built with the package-owned libexec path, use the same daemon
+bytes for the SSH and SFTP roles. Put `sshd-session` and `sshd-auth` under
+`linux/openssh/libexec` in the bundle and add their SHA-256 digests to the
+manifest's `openssh_helpers` object, keyed by filename. The installed libexec
+path is `/usr/lib/remote-ops-workspace/servers/linux/openssh/libexec`. Keep
+both helpers with the reviewed manifest. The packager checks their native
+architecture, and the audit compares both files with the downloaded package.
+Exercise SSH and SFTP on a host where the distro's OpenSSH helpers are absent.
+
 Point each `client_test.evidence_file` and `evidence_sha256` at a
 `row.moba-servers.live-client.v1` receipt. Include `service`, `runtime_sha256`,
 `release_asset_sha256`, `source_head_sha`, `workflow_run_url`, `run_attempt`, the

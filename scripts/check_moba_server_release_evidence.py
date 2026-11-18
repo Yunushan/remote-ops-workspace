@@ -20,6 +20,7 @@ from remote_ops_workspace.moba_servers import (  # noqa: E402
     SERVER_RUNTIME_BUNDLE_SCHEMA,
     MobaEmbeddedServerReleaseEvidenceValidation,
     validate_moba_server_release_evidence,
+    verify_packaged_openssh_helpers,
 )
 from scripts.check_gui_visual_metrics import read_png_rgb  # noqa: E402
 from scripts.check_mobaxterm_parity_evidence import capture_release_identity  # noqa: E402
@@ -244,6 +245,10 @@ def validate_live_server_release_evidence(
             raise ValueError("runtime manifest must match the release target and native platform")
         entries = service_inventory(evidence.get("services"), "release evidence")
         runtimes = service_inventory(manifest.get("services"), "runtime manifest")
+        if "openssh_helpers" in manifest:
+            if system != "linux":
+                raise ValueError("package-owned OpenSSH helper evidence requires a Linux target")
+            verify_packaged_openssh_helpers(manifest_path.parent, manifest["openssh_helpers"])
         capture_paths: set[Path] = set()
         for service, entry in entries.items():
             try:

@@ -186,6 +186,7 @@ def test_runtime_manifest_merges_services_and_tolerates_bad_existing_data(tmp_pa
         system="linux",
         service_record=ssh,
     )
+    first["openssh_helpers"] = dict.fromkeys(servers.SERVER_OPENSSH_HELPERS, "a" * 64)
     manifest.write_text(json.dumps(first), encoding="utf-8")
     merged = servers._merged_server_runtime_manifest(
         manifest,
@@ -195,6 +196,7 @@ def test_runtime_manifest_merges_services_and_tolerates_bad_existing_data(tmp_pa
     )
 
     assert [item["service"] for item in merged["services"]] == ["ftp", "ssh"]
+    assert merged["openssh_helpers"] == first["openssh_helpers"]
 
     manifest.write_text(json.dumps({"schema": servers.SERVER_RUNTIME_BUNDLE_SCHEMA, "services": "bad"}), encoding="utf-8")
     reset = servers._merged_server_runtime_manifest(
@@ -574,6 +576,60 @@ def test_packaged_runtime_integrity_accepts_matching_and_skips_unbundled(tmp_pat
     runtime = _packaged_runtime(tmp_path / "bundle", digest=_matching_digest())
     servers.verify_packaged_runtime_integrity(runtime)
     servers.verify_packaged_runtime_integrity(replace(runtime, bundled=False))
+
+
+@pytest.mark.parametrize("service", ["ssh", "sftp"])
+def test_packaged_openssh_checks_both_private_helpers_before_start(tmp_path: Path, service: str) -> None:
+    runtime = replace(_packaged_runtime(tmp_path, digest=_matching_digest()), service=service)
+    manifest = tmp_path / servers.SERVER_RUNTIME_MANIFEST_NAME
+    record = json.loads(manifest.read_bytes())
+    record["services"][0]["service"] = service
+    hashes = {}
+    for name in servers.SERVER_OPENSSH_HELPERS:
+        helper = tmp_path / servers.SERVER_OPENSSH_HELPER_DIR / name
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_bytes(name.encode())
+        hashes[name] = hashlib.sha256(helper.read_bytes()).hexdigest()
+    record["openssh_helpers"] = hashes
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+
+    servers.verify_packaged_runtime_integrity(runtime)
+
+    helper.write_bytes(b"replacement")
+    with pytest.raises(ValueError, match="OpenSSH helper failed its integrity check"):
+        servers.verify_packaged_runtime_integrity(runtime)
+
+
+def test_packaged_openssh_rejects_invalid_hash_records_and_untrusted_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    digest = hashlib.sha256(b"a").hexdigest()
+    hashes = dict.fromkeys(servers.SERVER_OPENSSH_HELPERS, digest)
+    helper = tmp_path / servers.SERVER_OPENSSH_HELPER_DIR / "sshd-session"
+    helper.parent.mkdir(parents=True)
+    for malformed in (None, {"sshd-session": digest}):
+        with pytest.raises(ValueError, match="must record sshd-session and sshd-auth"):
+            servers.verify_packaged_openssh_helpers(tmp_path, malformed)
+    for invalid in (7, "not-a-hash"):
+        with pytest.raises(ValueError, match="invalid SHA-256"):
+            servers.verify_packaged_openssh_helpers(tmp_path, {**hashes, "sshd-session": invalid})
+    with pytest.raises(ValueError, match="must be a regular package file"):
+        servers.verify_packaged_openssh_helpers(tmp_path, hashes)
+    helper.touch()
+    with pytest.raises(ValueError, match="must be a regular package file"):
+        servers.verify_packaged_openssh_helpers(tmp_path, hashes)
+    helper.write_bytes(b"too long")
+    monkeypatch.setattr(servers, "SERVER_RUNTIME_MAX_BYTES", 1)
+    with pytest.raises(ValueError, match="must be a regular package file"):
+        servers.verify_packaged_openssh_helpers(tmp_path, hashes)
+
+    resolve = Path.resolve
+    monkeypatch.setattr(
+        Path, "resolve",
+        lambda path: tmp_path / "outside" if path == helper else resolve(path),
+    )
+    with pytest.raises(ValueError, match="must be a regular package file"):
+        servers.verify_packaged_openssh_helpers(tmp_path, hashes)
 
 
 def test_packaged_runtime_integrity_refuses_missing_manifest(tmp_path: Path) -> None:

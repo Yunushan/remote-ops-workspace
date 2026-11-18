@@ -260,6 +260,25 @@ def test_server_release_validator_rejects_incomplete_client_evidence(embedded_se
     assert not result.passed and any(expected_error in error for error in result.errors)
 
 
+def test_server_review_binds_declared_openssh_helper_attachments(embedded_server_bundle):
+    root, _, evidence, attachment = embedded_server_bundle
+    manifest_file = evidence["runtime_manifest"]["file"]
+    manifest = json.loads((root / manifest_file).read_bytes())
+    helpers = [
+        attachment(f"runtimes/linux/openssh/libexec/{name}", name.encode())
+        for name in ("sshd-session", "sshd-auth")
+    ]
+    manifest["openssh_helpers"] = {Path(row["file"]).name: row["sha256"] for row in helpers}
+    evidence["runtime_manifest"] = attachment(manifest_file, manifest)
+    evidence_file = root / "evidence.json"
+    attachment("evidence.json", evidence)
+
+    assert server_evidence.validate_live_server_release_evidence(evidence_file).passed
+    (root / helpers[0]["file"]).write_bytes(b"replacement")
+    result = server_evidence.validate_live_server_release_evidence(evidence_file)
+    assert not result.passed and any("OpenSSH helper failed its integrity check" in error for error in result.errors)
+
+
 def test_mobaxterm_parity_evidence_accepts_complete_article_record() -> None:
     checker = _load_checker()
     spec = checker.ARTICLE_SPECS["professional-deployment"]

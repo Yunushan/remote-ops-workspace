@@ -107,3 +107,86 @@ def test_staging_refuses_wrong_architecture_and_tampered_daemons(approved_bundle
     (approved_bundle / "linux/tftp/bin/tftpd").write_bytes(make_elf(b"wrong binary"))
     with pytest.raises(ValueError, match="differs from its manifest digest"):
         payload.server_payload(approved_bundle, TARGET, payload.EXTERNAL_SERVICES)
+
+
+@pytest.fixture
+def private_openssh_bundle(approved_bundle: Path) -> Path:
+    manifest = approved_bundle / payload.MANIFEST
+    record = json.loads(manifest.read_bytes())
+    helpers = approved_bundle / payload.SERVER_OPENSSH_HELPER_DIR
+    helpers.mkdir(parents=True)
+    helper_reference = f"/{payload.PAYLOAD}/{payload.SERVER_OPENSSH_HELPER_DIR}/".encode()
+    daemon = make_elf(helper_reference + b"sshd-session\0")
+    for row in record["services"]:
+        service = row["service"]
+        if service in payload.OPENSSH_DAEMON_KEYS:
+            runtime = row["runtime"]
+            executable = f"linux/{service}/bin/sshd"
+            installed = approved_bundle / executable
+            installed.write_bytes(daemon)
+            runtime.update(key=payload.OPENSSH_DAEMON_KEYS[service], executable=executable,
+                           sha256=payload.sha256_file(installed))
+    (helpers / "sshd-session").write_bytes(make_elf(helper_reference + b"sshd-auth\0"))
+    (helpers / "sshd-auth").write_bytes(make_elf(b"package-owned auth"))
+    record["openssh_helpers"] = {path.name: payload.sha256_file(path) for path in helpers.iterdir()}
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+    return approved_bundle
+
+
+def test_debian_stages_and_audits_both_private_openssh_helpers(
+    private_openssh_bundle: Path, tmp_path: Path,
+) -> None:
+    package = tmp_path / "debian"
+    launcher = package / payload.LAUNCHER
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(make_elf(b"launcher"))
+    payload.stage_payload(private_openssh_bundle, package, TARGET)
+    _, expected = payload.server_payload(package / payload.PAYLOAD, TARGET)
+    helpers = {f"{payload.SERVER_OPENSSH_HELPER_DIR}/{name}" for name in ("sshd-session", "sshd-auth")}
+    assert helpers <= expected.keys()
+    with tarfile.open(fileobj=io.BytesIO(make_tar(package))) as archive:
+        payload.compare_payload_tar(archive, expected)
+
+    changed = (payload.PAYLOAD / payload.SERVER_OPENSSH_HELPER_DIR / "sshd-auth").as_posix()
+    with tarfile.open(fileobj=io.BytesIO(make_tar(package, substitute=changed))) as archive:
+        with pytest.raises(ValueError, match="differs from reviewed evidence"):
+            payload.compare_payload_tar(archive, expected)
+    (package / changed).unlink()
+    with tarfile.open(fileobj=io.BytesIO(make_tar(package))) as archive:
+        with pytest.raises(ValueError, match="missing the reviewed server payload members"):
+            payload.compare_payload_tar(archive, expected)
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        ("unrecorded", "helper files must be recorded"),
+        ("differing-daemons", "SSH and SFTP must use the same OpenSSH daemon"),
+        ("external-session", "sshd-session must reference the package-owned sshd-auth"),
+        ("foreign-elf", "machine does not match"),
+    ],
+)
+def test_debian_rejects_unbound_openssh_helpers(private_openssh_bundle: Path, damage: str, reason: str) -> None:
+    root = private_openssh_bundle
+    manifest = root / payload.MANIFEST
+    record = json.loads(manifest.read_bytes())
+    if damage == "unrecorded":
+        del record["openssh_helpers"]
+    elif damage == "differing-daemons":
+        runtime = next(row["runtime"] for row in record["services"] if row["service"] == "sftp")
+        path = root / runtime["executable"]
+        path.write_bytes(path.read_bytes() + b"other build")
+        runtime["sha256"] = payload.sha256_file(path)
+    else:
+        path = root / payload.SERVER_OPENSSH_HELPER_DIR / "sshd-session"
+        changed = bytearray(path.read_bytes())
+        if damage == "external-session":
+            changed = bytearray(make_elf(b"/usr/lib/openssh/sshd-auth\0"))
+        else:
+            struct.pack_into("<H", changed, 18, 183)
+        path.write_bytes(changed)
+        record["openssh_helpers"][path.name] = payload.sha256_file(path)
+    manifest.write_text(json.dumps(record), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=reason):
+        payload.server_payload(root, TARGET, payload.EXTERNAL_SERVICES)

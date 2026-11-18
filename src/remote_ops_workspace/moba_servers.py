@@ -35,6 +35,9 @@ ProcessTerminator = Callable[[int], None]
 SERVER_RUNTIME_DIR_ENV = "ROW_SERVER_RUNTIME_DIR"
 SERVER_RUNTIME_BUNDLE_SCHEMA = "row.moba-servers.runtime-bundle.v1"
 SERVER_RUNTIME_MANIFEST_NAME = "servers-runtime.json"
+SERVER_OPENSSH_HELPER_DIR = "linux/openssh/libexec"
+SERVER_OPENSSH_HELPERS = ("sshd-session", "sshd-auth")
+SERVER_RUNTIME_MAX_BYTES = 128 * 1024 * 1024
 SERVER_RELEASE_EVIDENCE_SCHEMA = "row.moba-servers.release-evidence.v1"
 SERVER_POLICY_SCHEMA = "row.moba-servers.policy.v1"
 SERVER_GUI_CONFIG_SCHEMA = "row.moba-servers.gui-config-surface.v1"
@@ -1336,6 +1339,7 @@ def _merged_server_runtime_manifest(
     service_record: dict[str, Any],
 ) -> dict[str, Any]:
     services: list[dict[str, Any]] = []
+    helper_manifest: dict[str, Any] = {}
     if manifest_path.is_file():
         try:
             existing = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -1345,6 +1349,8 @@ def _merged_server_runtime_manifest(
             raw_services = existing.get("services", [])
             if isinstance(raw_services, list):
                 services = [item for item in raw_services if isinstance(item, dict)]
+            if "openssh_helpers" in existing:
+                helper_manifest["openssh_helpers"] = existing["openssh_helpers"]
     service_key = str(service_record.get("service") or "")
     services = [item for item in services if str(item.get("service") or "") != service_key]
     services.append(service_record)
@@ -1353,6 +1359,7 @@ def _merged_server_runtime_manifest(
         "release_target": release_target,
         "system": system,
         "services": sorted(services, key=lambda item: str(item.get("service") or "")),
+        **helper_manifest,
     }
 
 
@@ -1368,21 +1375,42 @@ def _packaged_runtime_manifest_path(executable: Path) -> Path:
     raise ValueError(f"packaged embedded server runtime has no integrity manifest: {executable}")
 
 
-def _manifest_runtime_record(manifest_path: Path, runtime: MobaEmbeddedServerRuntime) -> dict[str, Any]:
+def _manifest_runtime_record(
+    manifest_path: Path, runtime: MobaEmbeddedServerRuntime,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"packaged embedded server manifest is unreadable: {manifest_path}") from exc
-    services = manifest.get("services") if isinstance(manifest, dict) else None
-    if not isinstance(services, list):
+    if not isinstance(manifest, dict) or not isinstance(services := manifest.get("services"), list):
         raise ValueError(f"packaged embedded server manifest is malformed: {manifest_path}")
     for item in services:
         if not isinstance(item, dict) or str(item.get("service") or "") != runtime.service:
             continue
         record = item.get("runtime")
         if isinstance(record, dict) and str(record.get("key") or "") == runtime.key:
-            return record
+            return manifest, record
     raise ValueError(f"packaged embedded server runtime is not recorded in {manifest_path.name}: {runtime.key}")
+
+
+def verify_packaged_openssh_helpers(root: Path, hashes: Any) -> dict[str, str]:
+    """Verify the two companion executables in the package-owned libexec directory."""
+    if not isinstance(hashes, dict) or hashes.keys() != set(SERVER_OPENSSH_HELPERS):
+        raise ValueError("OpenSSH helper manifest must record sshd-session and sshd-auth")
+    root = root.resolve()
+    verified = {}
+    for name in SERVER_OPENSSH_HELPERS:
+        relative = f"{SERVER_OPENSSH_HELPER_DIR}/{name}"
+        helper = root / relative
+        expected = hashes[name]
+        if not isinstance(expected, str) or re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+            raise ValueError(f"OpenSSH helper has an invalid SHA-256: {name}")
+        if helper.resolve() != helper or not helper.is_file() or not 0 < helper.stat().st_size <= SERVER_RUNTIME_MAX_BYTES:
+            raise ValueError(f"OpenSSH helper must be a regular package file: {helper}")
+        if not hmac.compare_digest(_sha256_file(helper), expected):
+            raise ValueError(f"OpenSSH helper failed its integrity check: {helper}")
+        verified[relative] = expected
+    return verified
 
 
 def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> None:
@@ -1391,7 +1419,7 @@ def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> Non
         return
     executable = Path(runtime.executable)
     manifest_path = _packaged_runtime_manifest_path(executable)
-    record = _manifest_runtime_record(manifest_path, runtime)
+    manifest, record = _manifest_runtime_record(manifest_path, runtime)
     recorded_executable = manifest_path.parent / str(record.get("executable") or "")
     if recorded_executable.resolve() != executable.resolve():
         raise ValueError(
@@ -1402,6 +1430,8 @@ def verify_packaged_runtime_integrity(runtime: MobaEmbeddedServerRuntime) -> Non
         raise ValueError(f"packaged embedded server runtime has no recorded sha256: {runtime.key}")
     if not hmac.compare_digest(_sha256_file(executable), expected):
         raise ValueError(f"packaged embedded server runtime failed its integrity check: {executable}")
+    if runtime.service in {"ssh", "sftp"} and "openssh_helpers" in manifest:
+        verify_packaged_openssh_helpers(manifest_path.parent, manifest["openssh_helpers"])
 
 
 def _chmod_executable(path: Path) -> None:

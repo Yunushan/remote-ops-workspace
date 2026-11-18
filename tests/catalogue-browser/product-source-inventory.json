@@ -228,8 +228,8 @@
     },
     {
       "path": "src/remote_ops_workspace/moba_servers.py",
-      "sha256": "b8d49dad1961eafc4ccbcdcaab62232d8a55fd9858a5becd7ed82d007c43d614",
-      "size": 69651
+      "sha256": "2554a9a42d04935047e4bb356e1a58d04511f841a2fea0cfc087774544fd0f0e",
+      "size": 71345
     },
     {
       "path": "src/remote_ops_workspace/moba_smartcards.py",

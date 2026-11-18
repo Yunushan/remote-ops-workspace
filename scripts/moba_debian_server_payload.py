@@ -13,9 +13,15 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryFile
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+for location in (ROOT, ROOT / "src"):
+    if str(location) not in sys.path:
+        sys.path.insert(0, str(location))
 
+from remote_ops_workspace.moba_servers import (  # noqa: E402
+    SERVER_OPENSSH_HELPER_DIR,
+    SERVER_RUNTIME_MAX_BYTES,
+    verify_packaged_openssh_helpers,
+)
 from scripts.check_linux_native_elf import validate_elf  # noqa: E402
 from scripts.check_release_license_compliance import secure_regular_file, sha256_file  # noqa: E402
 from scripts.debian_release_fixture import release_deb_version  # noqa: E402
@@ -28,7 +34,12 @@ ELF_TARGETS = {"linux-x86_64": "x86_64", "linux-arm64": "aarch64", "linux-i386":
 SERVICES = frozenset({"http", "ftp", "tftp", "ssh", "sftp", "telnet", "vnc", "nfs"})
 BUILTINS = {"http": ("python-http", "python"), "ftp": ("pyftpdlib", "pyftpdlib")}
 EXTERNAL_SERVICES = SERVICES - BUILTINS.keys()
-MAX_RUNTIME_BYTES = 128 * 1024 * 1024
+OPENSSH_DAEMON_KEYS = {"ssh": "sshd", "sftp": "sshd-sftp"}
+
+
+def private_helper_reference(path: Path, name: str) -> bool:
+    reference = f"/{PAYLOAD}/{SERVER_OPENSSH_HELPER_DIR}/{name}".encode("ascii") + b"\x00"
+    return reference in path.read_bytes()
 
 
 def server_payload(
@@ -53,6 +64,7 @@ def server_payload(
         raise ValueError("embedded server manifest must describe the required services for the exact Linux target")
     digests = {MANIFEST: hashlib.sha256(raw).hexdigest()}
     seen = set()
+    private_openssh = {}
     for row in services:
         service = row.get("service") if isinstance(row, dict) else None
         if not isinstance(service, str) or service not in required or service in seen:
@@ -74,13 +86,29 @@ def server_payload(
         executable, error = secure_regular_file(root, relative, f"{service} daemon")
         if executable is None:
             raise ValueError(error)
-        if not 0 < executable.stat().st_size <= MAX_RUNTIME_BYTES:
+        if not 0 < executable.stat().st_size <= SERVER_RUNTIME_MAX_BYTES:
             raise ValueError(f"{service} daemon has an invalid size")
         digest = sha256_file(executable)
         if digest != runtime.get("sha256"):
             raise ValueError(f"{service} daemon differs from its manifest digest")
         validate_elf(executable, elf)
         digests[relative] = digest
+        if service in OPENSSH_DAEMON_KEYS and private_helper_reference(executable, "sshd-session"):
+            if runtime["key"] != OPENSSH_DAEMON_KEYS[service] or parts[3] != "sshd":
+                raise ValueError(f"{service} must record the correct packaged OpenSSH daemon")
+            private_openssh[service] = digest
+    if "openssh_helpers" in document:
+        if private_openssh.keys() != OPENSSH_DAEMON_KEYS.keys() or len(set(private_openssh.values())) != 1:
+            raise ValueError("SSH and SFTP must use the same OpenSSH daemon built for the package-owned helpers")
+        helpers = verify_packaged_openssh_helpers(root, document["openssh_helpers"])
+        for relative in helpers:
+            validate_elf(root / relative, elf)
+        session = root / SERVER_OPENSSH_HELPER_DIR / "sshd-session"
+        if not private_helper_reference(session, "sshd-auth"):
+            raise ValueError("sshd-session must reference the package-owned sshd-auth")
+        digests.update(helpers)
+    elif private_openssh:
+        raise ValueError("the package-owned OpenSSH helper files must be recorded in the manifest")
     return document, digests
 
 
@@ -127,7 +155,7 @@ def compare_payload_tar(archive: tarfile.TarFile, expected: dict[str, str]) -> N
             if (
                 launcher_digest is not None or not item.isfile()
                 or item.uid != 0 or item.gid != 0 or item.mode & 0o7022 or not item.mode & 0o100
-                or not 0 < item.size <= MAX_RUNTIME_BYTES
+                or not 0 < item.size <= SERVER_RUNTIME_MAX_BYTES
             ):
                 raise ValueError("Debian embedded server payload requires one native ROW launcher")
             data = archive.extractfile(item)
@@ -149,7 +177,7 @@ def compare_payload_tar(archive: tarfile.TarFile, expected: dict[str, str]) -> N
         if (
             relative not in remaining or not item.isfile()
             or item.uid != 0 or item.gid != 0 or item.mode & 0o7022
-            or not 0 < item.size <= MAX_RUNTIME_BYTES
+            or not 0 < item.size <= SERVER_RUNTIME_MAX_BYTES
             or (relative != MANIFEST and not item.mode & 0o100)
         ):
             raise ValueError(f"Debian embedded server payload contains an unexpected member: {relative}")

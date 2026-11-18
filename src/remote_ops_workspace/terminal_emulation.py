@@ -885,6 +885,8 @@ class AnsiTerminalTranscript:
             self._move_primary_cursor(values, command)
         elif self.primary_reflow and command == "K":
             self._erase_primary_row(first)
+        elif self.primary_reflow and command == "J" and first in {2, 3}:
+            self._erase_primary_display(first)
         elif command == "K":
             self._primary_rows_cache = None
             line, styles = self._normal_cursor_line()
@@ -1012,6 +1014,54 @@ class AnsiTerminalTranscript:
         else:
             cells[start:end] = [" "] * (end - start)
             styles[start:end] = [self._style] * (end - start)
+        self._primary_rows_cache = None
+
+    def _erase_primary_display(self, mode: int) -> None:
+        top_index = self._primary_view_top()
+        rows = self._primary_rows()
+        top = rows[top_index]
+        cells, styles = self._primary_source_row(top.source_row)
+        saved = self._normal_saved_cursor
+        if mode == 3:
+            # A visual row at the top of the viewport may be the continuation
+            # of a logical line whose beginning is in scrollback.
+            del self._lines[:top.source_row]
+            del self._line_styles[:top.source_row]
+            del cells[:top.start]
+            del styles[:top.start]
+            self._normal_cursor_row -= top.source_row
+            if self._normal_cursor_row == 0:
+                self._column -= top.start
+            if saved is not None:
+                saved_row, saved_column = max(saved, (top.source_row, top.start))
+                self._normal_saved_cursor = (
+                    saved_row - top.source_row,
+                    saved_column - (top.start if saved_row == top.source_row else 0),
+                )
+            self._primary_view_start = (0, 0)
+            self._primary_rows_cache = None
+            return
+
+        cursor_row, cursor_column = self.cursor_display_position()
+        screen_start = top.source_row + int(bool(top.start))
+        if saved is not None and saved >= (top.source_row, top.start):
+            saved_index = self._primary_row_index(saved)
+            saved_row = min(self._screen_rows - 1, saved_index - top_index)
+            saved_column = min(self._screen_columns - 1, saved[1] - rows[saved_index].start)
+            self._normal_saved_cursor = (screen_start + saved_row, saved_column)
+        self._lines[top.source_row:] = [cells[:top.start]] if top.start else []
+        self._line_styles[top.source_row:] = [styles[:top.start]] if top.start else []
+        # Keep a full blank viewport to prevent the cleared area from pulling
+        # saved rows back onto the screen and overwriting them on the next home.
+        for _ in range(self._screen_rows - 1):
+            self._lines.append([])
+            self._line_styles.append([])
+        self._line.clear()
+        self._styles.clear()
+        self._normal_cursor_row = screen_start + cursor_row - top_index
+        self._column = cursor_column
+        self._primary_view_start = (screen_start, 0)
+        self._trim_normal_scrollback()
         self._primary_rows_cache = None
 
     def _apply_alternate_csi(self, values: list[int], command: str) -> None:
@@ -1526,6 +1576,13 @@ class AnsiTerminalTranscript:
         self._primary_rows_cache = None
         self._lines.append(list(self._line))
         self._line_styles.append(list(self._styles))
+        self._line.clear()
+        self._styles.clear()
+        self._column = 0
+        self._normal_cursor_row = len(self._lines)
+        self._trim_normal_scrollback()
+
+    def _trim_normal_scrollback(self) -> None:
         limit = self.max_scrollback_lines
         if self.primary_reflow:
             limit = max(limit, self._screen_rows - 1)
@@ -1535,10 +1592,10 @@ class AnsiTerminalTranscript:
             del self._line_styles[:overflow]
             top_row, top_column = self._primary_view_start
             self._primary_view_start = (top_row - overflow, top_column) if top_row >= overflow else (0, 0)
-        self._line.clear()
-        self._styles.clear()
-        self._column = 0
-        self._normal_cursor_row = len(self._lines)
+            self._normal_cursor_row -= overflow
+            if self.primary_reflow and self._normal_saved_cursor is not None:
+                row, column = self._normal_saved_cursor
+                self._normal_saved_cursor = (row - overflow, column) if row >= overflow else (0, 0)
 
     def _write(self, char: str) -> None:
         width = 1

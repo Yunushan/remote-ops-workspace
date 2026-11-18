@@ -103,6 +103,60 @@ def test_primary_grid_keeps_viewport_top_when_resize_hides_blank_rows() -> None:
     assert terminal.text().splitlines()[0] == "newder"
 
 
+def test_primary_grid_clear_display_preserves_scrollback_and_cursor() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("\n".join(f"line-{index}" for index in range(8)))
+    terminal.feed("\x1b[2;4H\x1b[s\x1b[4;8H\x1b[2J\x1b[6n")
+
+    assert terminal.text().split("\n") == ["line-0", "line-1", "line-2", "", "", "", "", ""]
+    assert terminal.take_pending_responses() == (b"\x1b[4;8R",)
+    terminal.feed("\x1b[uX\x1b[Hnew prompt")
+    assert terminal.text().split("\n")[:5] == ["line-0", "line-1", "line-2", "new prompt", "   X"]
+
+
+@pytest.mark.parametrize("clear", ["\x1b[2J", "\x1b[3J"])
+def test_primary_grid_erase_keeps_the_correct_half_of_a_line_that_spans_the_viewport(clear: str) -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    saved_history = "a" * 18 + "界\u0301"
+    visible = "b" * 20 + "c" * 20 + "d" * 20 + "e" * 20 + "end"
+    terminal.feed(saved_history + "\x1b[31m" + visible + "\x1b[0m")
+    terminal.feed("\x1b[1;2H\x1b[s\x1b[2;3H" + clear + "\x1b[6n")
+
+    if clear == "\x1b[2J":
+        assert terminal.text() == saved_history + "\n" * 5
+    else:
+        assert terminal.text().replace(SOFT_LINE_BREAK, "") == visible
+        assert terminal.styled_fragments()[0].style.foreground == ANSI_16_COLOR_PALETTE[1]
+    assert terminal.take_pending_responses() == (b"\x1b[2;3R",)
+    terminal.feed("\x1b[u\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[1;2R",)
+
+
+def test_primary_grid_clear_history_preserves_visible_hard_lines() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("\n".join(f"line-{index}" for index in range(8)))
+    terminal.feed("\x1b[3J\x1b[6n")
+
+    assert terminal.text().split("\n") == [f"line-{index}" for index in range(3, 8)]
+    assert terminal.take_pending_responses() == (b"\x1b[5;7R",)
+    terminal.feed("\x1b[2J\x1b[Hnew prompt")
+    assert terminal.text() == "new prompt" + "\n" * 4
+
+
+def test_primary_grid_saved_cursor_tracks_bounded_history() -> None:
+    terminal = AnsiTerminalTranscript(max_scrollback_lines=6, primary_reflow=True)
+    terminal.set_screen_size(20, 5)
+    terminal.feed("\n".join(f"line-{index}" for index in range(7)))
+    terminal.feed("\x1b[2;2H\x1b[s\x1b[5;1H\nline-7\x1b[uX")
+
+    assert terminal.text().split("\n")[2] == "lXne-3"
+    terminal.feed("\x1b[5;1H" + "\nmore" * 8 + "\x1b[uY")
+    assert terminal.text().startswith("Yore\n")
+
+
 def test_ansi_transcript_replaces_normal_readline_history_rows() -> None:
     terminal = AnsiTerminalTranscript()
 

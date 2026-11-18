@@ -300,6 +300,9 @@ reviews, and the downloaded release assets. See the
    OpenSSH control socket after it appears. The Windows terminal uses ConPTY
    when available, and background tools authenticate separately. The renderer
    implements a bounded transcript and a cursor-addressed alternate screen.
+   Both account for wide characters and combining marks in cursor positions,
+   erasure and colored output. The alternate screen also keeps wide characters
+   intact when wrapping or clipping at the right edge.
    Full parity requires evidence of shared authenticated transport, structured
    connection state and a terminal grid with alternate-screen, cursor, color,
    mode and mouse semantics.

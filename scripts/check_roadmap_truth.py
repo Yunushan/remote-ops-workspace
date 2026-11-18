@@ -145,7 +145,7 @@ IMPLEMENTED_ITEMS = (
         stale_future_snippets=("Richer layout save/restore with resize persistence.",),
         evidence=(
             Evidence("src/remote_ops_workspace/layouts.py", "def layout_splitter_size_lengths"),
-            Evidence("src/remote_ops_workspace/gui.py", "def persist_layout_resize_state"),
+            Evidence("src/remote_ops_workspace/gui_layouts.py", "def persist_layout_resize_state"),
             Evidence("tests/test_operator_features.py", "test_layout_store_roundtrips_nested_splitter_sizes"),
         ),
     ),

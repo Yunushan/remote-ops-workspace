@@ -37,7 +37,7 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
 ) -> None:
     from PyQt6.QtWidgets import QDialog, QMessageBox, QWidget
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_layouts
 
     _app, window = gui_window
     original = Layout(
@@ -257,13 +257,13 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
         resolved_layouts.append(layout)
         return list(zip(plans, profiles, strict=True))
 
-    original_launch_check = gui.assert_profile_launch_allowed
+    original_launch_check = gui_layouts.assert_profile_launch_allowed
 
     def check_profile(profile: Profile, *, surface: str) -> None:
         original_launch_check(profile, surface=surface)
         checked_profiles.append(profile)
 
-    original_build_layout_terminal_sessions = gui.build_layout_terminal_sessions
+    original_build_layout_terminal_sessions = gui_layouts.build_layout_terminal_sessions
     original_layout_widget = window.layout_widget
     original_bind_layout_resize_persistence = window.bind_layout_resize_persistence
     original_remember_terminal_plan = window.remember_terminal_plan
@@ -272,11 +272,11 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     original_terminal_panes_in = window.terminal_panes_in
     original_start_terminal_pane = window.start_terminal_pane_when_active
     monkeypatch.setattr(
-        gui,
+        gui_layouts,
         "build_layout_terminal_sessions",
         resolve_sessions,
     )
-    monkeypatch.setattr(gui, "assert_profile_launch_allowed", check_profile)
+    monkeypatch.setattr(gui_layouts, "assert_profile_launch_allowed", check_profile)
     monkeypatch.setattr(
         window,
         "layout_widget",
@@ -305,11 +305,11 @@ def test_layout_create_edit_remove_save_and_open_workflow_edges(
     assert remembered == ["left", "right"]
     assert started == [("pane", 7)]
     monkeypatch.setattr(
-        gui,
+        gui_layouts,
         "build_layout_terminal_sessions",
         original_build_layout_terminal_sessions,
     )
-    monkeypatch.setattr(gui, "assert_profile_launch_allowed", original_launch_check)
+    monkeypatch.setattr(gui_layouts, "assert_profile_launch_allowed", original_launch_check)
     monkeypatch.setattr(window, "layout_widget", original_layout_widget)
     monkeypatch.setattr(
         window,

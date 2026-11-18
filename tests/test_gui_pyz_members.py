@@ -32,6 +32,7 @@ class TestRequiredGuiPyzModules(_gui_pyz_unittest.TestCase):
                 "remote_ops_workspace.gui_terminal",
                 "remote_ops_workspace.gui_processes",
                 "remote_ops_workspace.gui_smartcards",
+                "remote_ops_workspace.gui_layouts",
                 "remote_ops_workspace.gui_values",
                 "remote_ops_workspace.terminal_output",
                 "remote_ops_workspace.gui_workspace",

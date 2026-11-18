@@ -235,7 +235,11 @@ def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
     ).read_text(encoding="utf-8")
 
     assert 'assert_profile_launch_allowed(profile, surface="gui")' in source
-    assert "sessions = self.layout_launch_sessions(layout)" in source
+    layout_source = (
+        Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_layouts.py"
+    ).read_text(encoding="utf-8")
+    assert "sessions = self.layout_launch_sessions(layout)" in layout_source
+    assert 'assert_profile_launch_allowed(profile, surface="gui")' in layout_source
     assert "self.open_terminal_tab(pane_plan, profile=profile)" in source
     assert "pane = TerminalPane(plan, profile=profile)" in source
     assert "widget.plan,\n                    profile=widget.profile," in source
@@ -275,4 +279,7 @@ def test_gui_state_transitions_preserve_stable_identity_contracts() -> None:
     assert "self.profile_list.setCurrentItem(None)" in source
     assert "and plan.source == f\"profile:{profile.name}\"" in source
     assert "and self.moba_connected_profile_supported(profile)" in source
-    assert "suffix.startswith((\" ·\", \":\", \" copy\"))" in source
+    layout_source = (
+        Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_layouts.py"
+    ).read_text(encoding="utf-8")
+    assert "suffix.startswith((\" ·\", \":\", \" copy\"))" in layout_source

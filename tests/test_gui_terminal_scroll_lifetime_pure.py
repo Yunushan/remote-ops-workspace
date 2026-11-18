@@ -155,6 +155,7 @@ def _pane():
         ))
 
     pane.setProperty = set_property
+    pane.invalidate_macro_session = lambda: pane.cleanup_observations.append("macro-session-invalidated")
     pane.reset_process_output_pipeline = lambda: pane.cleanup_observations.append("pipeline-reset")
     return pane
 
@@ -241,7 +242,7 @@ def test_prepare_closes_stops_and_invalidates_before_native_cleanup():
     pane._stop_timer.start(60_000)
     pane.prepare_for_close()
     assert pane.cleanup_observations == [
-        ("terminalClosing", True, True, False, 2), "pipeline-reset",
+        ("terminalClosing", True, True, False, 2), "macro-session-invalidated", "pipeline-reset",
     ]
     assert pane._terminal_scroll_timer.stops == 1
     assert pane._stop_timer.active is False

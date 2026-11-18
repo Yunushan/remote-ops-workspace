@@ -129,7 +129,7 @@ workflows.
 
 The runner-readiness gate must run immediately before dispatch. It checks only
 sanitized counts for required self-hosted label sets and requires an idle Linux
-i386 runner, an idle Linux armhf runner, and an idle modern `xp-evidence`
+i386 evidence collector on Linux x64, an idle native Linux armhf runner, and an idle modern `xp-evidence`
 collector. It requires a GitHub token with repository administration read
 access and does not broaden normal release-token permissions.
 those commands must fail until linux-i386, linux-armhf,
@@ -324,8 +324,10 @@ Current readiness:
   `scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --builder-evidence <builder-identity.json>`, native
   manifest evidence, checksum sidecars and
   `python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir <target-release-artifact-dir> --tag v<project.version> --strict`.
-  The dispatch-only evidence workflow uses a `[self-hosted, linux, i386]`
-  runner and uploads `extended-linux-evidence-linux-i386-v<project.version>`, including
+  The dispatch-only evidence workflow uses a `[self-hosted, linux, x64, i386]`
+  collector. The native i386 builder runs `scripts/capture_linux_i386_evidence.sh`
+  with the collector's exact run identity. The collector validates the staged
+  capture and uploads `extended-linux-evidence-linux-i386-v<project.version>`, including
   `builder-identity-linux-i386.json` and
   `native-smoke-linux-i386.log` inside the review bundle, plus
   `platform-verified-evidence-linux-i386.json` as the reviewed registry-record

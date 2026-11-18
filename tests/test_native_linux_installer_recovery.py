@@ -42,6 +42,38 @@ def tar_bytes(rows):
     return result.getvalue()
 
 
+@pytest.mark.parametrize("path_prefix", ["", "native-dist/linux/", "../"])
+def test_linux_recovery_manifest_binds_payload_by_safe_filename(module, tmp_path, path_prefix):
+    version = "1.0.28"
+    prefix = f"remote-ops-workspace-v{version}-linux-x86_64-native-"
+    assets = {}
+    records = []
+    for filename in ("package.deb", "package.rpm", "package.AppImage", "package.tar.gz"):
+        payload = tmp_path / filename
+        payload.write_bytes(filename.encode("ascii"))
+        assets[filename] = payload
+        records.append({
+            "file": path_prefix + filename,
+            "size_bytes": payload.stat().st_size,
+            "sha256": hashlib.sha256(payload.read_bytes()).hexdigest(),
+        })
+    manifest = tmp_path / (prefix + "manifest.json")
+    manifest.write_text(json.dumps(records), encoding="utf-8")
+    assets[manifest.name] = manifest
+    checksums = tmp_path / (prefix + "SHA256SUMS.txt")
+    checksums.write_text(
+        "".join(f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {name}\n" for name, path in assets.items()),
+        encoding="ascii",
+    )
+    assets[checksums.name] = checksums
+
+    if path_prefix == "../":
+        with pytest.raises(module.EvidenceError, match="native-manifest-row-set"):
+            module.verify_manifest(assets, version)
+    else:
+        module.verify_manifest(assets, version)
+
+
 PREVIOUS_PAYLOAD_PATHS = (
     "usr/bin/row",
     "usr/share/doc/remote-ops-workspace/LICENSE",

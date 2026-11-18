@@ -72,6 +72,11 @@ PY_DIST="$BUILD_DIR/pyinstaller-dist"
 PY_WORK="$BUILD_DIR/pyinstaller-work"
 LAUNCHER="$BUILD_DIR/row_launcher.py"
 
+if ! command -v file >/dev/null; then
+  echo "Linux native packaging requires the file utility for appimagetool" >&2
+  exit 1
+fi
+
 rm -rf "$BUILD_DIR"
 mkdir -p "$OUT_DIR" "$PY_DIST" "$PY_WORK"
 
@@ -122,7 +127,7 @@ Version: v$VERSION
 Target: Linux $UNAME_ARCH
 Build host architecture: $HOST_ARCH
 
-This native package installs the standalone `row` command built with
+This native package installs the standalone row command built with
 PyInstaller. Protocol sessions still depend on Linux system tools such as
 OpenSSH, FreeRDP, TigerVNC, virt-viewer, x2goclient, mosh, and Xorg/Wayland
 display tooling.
@@ -296,7 +301,7 @@ ARCH="$APPIMAGE_ARCH" "$APPIMAGETOOL" --appimage-extract-and-run \
   --runtime-file "$APPIMAGE_RUNTIME" "$APPDIR" "$APPIMAGE"
 
 TARBALL="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${APPIMAGE_ARCH}-native.tar.gz"
-tar -C "$PKGROOT" -czf "$TARBALL" .
+tar -C "$PKGROOT" -czf "$TARBALL" usr
 
 "$PYTHON_BIN" - "$ROOT" "$VERSION" "$OUT_DIR" "$DEB" "$RPM" "$APPIMAGE" "$TARBALL" "$DEB_ARCH" "$RPM_ARCH" "$APPIMAGE_ARCH" "$UNAME_ARCH" "$HOST_ARCH" <<'PY'
 from __future__ import annotations
@@ -330,7 +335,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 def add_integrity(item: dict[str, object]) -> dict[str, object]:
-    path = root / str(item["file"])
+    path = out_dir / str(item["file"])
     item["size_bytes"] = path.stat().st_size
     item["sha256"] = sha256_file(path)
     return item
@@ -345,7 +350,7 @@ manifest = [
         "target": f"linux-{deb_arch}-deb",
         "label": f"Linux {deb_arch} DEB",
         "architecture": deb_arch,
-        "file": repo_path(deb),
+        "file": deb.name,
         "format": "deb",
         "install_command": f"sudo apt install ./{deb.name}",
         "notes": [
@@ -358,7 +363,7 @@ manifest = [
         "target": f"linux-{rpm_arch}-rpm",
         "label": f"Linux {rpm_arch} RPM",
         "architecture": rpm_arch,
-        "file": repo_path(rpm),
+        "file": rpm.name,
         "format": "rpm",
         "install_command": f"sudo rpm -Uvh {rpm.name}",
         "notes": [
@@ -371,7 +376,7 @@ manifest = [
         "target": f"linux-{appimage_arch}-appimage",
         "label": f"Linux {appimage_arch} AppImage",
         "architecture": appimage_arch,
-        "file": repo_path(appimage),
+        "file": appimage.name,
         "format": "AppImage",
         "install_command": f"chmod +x {appimage.name} && ./{appimage.name} --version",
         "notes": [
@@ -384,7 +389,7 @@ manifest = [
         "target": f"linux-{appimage_arch}-native-tarball",
         "label": f"Linux {appimage_arch} native tarball",
         "architecture": appimage_arch,
-        "file": repo_path(tarball),
+        "file": tarball.name,
         "format": "tar.gz",
         "install_command": "Extract into a staging root or copy usr/bin/row into PATH.",
         "notes": [

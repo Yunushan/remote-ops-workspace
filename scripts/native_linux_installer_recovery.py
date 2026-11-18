@@ -942,8 +942,16 @@ def candidate_assets(commands: Commands, sha: str, version: str) -> tuple[dict, 
 def verify_manifest(paths: dict[str, Path], version: str) -> None:
     prefix = f"remote-ops-workspace-v{version}-linux-x86_64-native-"
     manifest = json.loads(regular(paths[prefix + "manifest.json"], 1024 * 1024))
-    rows = {row["file"]: row for row in manifest}
-    if len(rows) != len(manifest) or len(rows) != 4:
+    rows = {}
+    for row in manifest:
+        reference = row["file"]
+        if not isinstance(reference, str):
+            raise EvidenceError("native-manifest-row-set")
+        name = PurePosixPath(reference).name
+        if not name or reference not in {name, "native-dist/linux/" + name} or name in rows:
+            raise EvidenceError("native-manifest-row-set")
+        rows[name] = row
+    if len(rows) != 4:
         raise EvidenceError("native-manifest-row-set")
     checksums = {}
     for line in regular(paths[prefix + "SHA256SUMS.txt"], 65536).decode("ascii").splitlines():
@@ -958,10 +966,10 @@ def verify_manifest(paths: dict[str, Path], version: str) -> None:
             raise EvidenceError("native-checksum-bytes-disagree")
         if name.endswith("manifest.json"):
             continue
-        row = rows.get("native-dist/linux/" + name)
+        row = rows.get(name)
         if row is None or row["size_bytes"] != path.stat().st_size or row["sha256"] != digest(path):
             raise EvidenceError("native-manifest-bytes-disagree")
-    if set(checksums) != {PurePosixPath(name).name for name in rows} | {prefix + "manifest.json"}:
+    if set(checksums) != set(rows) | {prefix + "manifest.json"}:
         raise EvidenceError("native-checksum-file-set-mismatch")
 
 

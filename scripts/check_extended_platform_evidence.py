@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "extended-platform-evidence.yml"
+I386_CAPTURE_PATH = Path("scripts") / "capture_linux_i386_evidence.sh"
 NATIVE_LOCK_DIR = "requirements-locks/protected-linux"
 LINUX_TARGET_ARTIFACTS = {
     "linux-i386": (
@@ -27,6 +28,7 @@ LINUX_TARGET_ARTIFACTS = {
     ),
 }
 WORKFLOW_SCRIPT_DEPENDENCIES = (
+    I386_CAPTURE_PATH,
     Path("scripts") / "check_extended_platform_dispatch_inputs.py",
     Path("scripts") / "check_extended_platform_builder.py",
     Path("scripts") / "check_linux_native_elf.py",
@@ -59,7 +61,9 @@ def main() -> int:
     return 0
 
 
-def check_extended_platform_evidence(workflow: str | None = None) -> list[str]:
+def check_extended_platform_evidence(
+    workflow: str | None = None, *, i386_capture: str | None = None,
+) -> list[str]:
     text = workflow if workflow is not None else WORKFLOW_PATH.read_text(encoding="utf-8")
     errors: list[str] = []
     errors.extend(check_github_expression_delimiters(text))
@@ -75,6 +79,9 @@ def check_extended_platform_evidence(workflow: str | None = None) -> list[str]:
     errors.extend(check_unavailable_runner_job(text))
     errors.extend(check_linux_job(text, target="linux-i386", job="linux-i386-native-evidence", runner="i386"))
     errors.extend(check_linux_job(text, target="linux-armhf", job="linux-armhf-native-evidence", runner="armhf"))
+    if i386_capture is not None or (ROOT / I386_CAPTURE_PATH).is_file():
+        shell = i386_capture if i386_capture is not None else (ROOT / I386_CAPTURE_PATH).read_text(encoding="utf-8")
+        errors.extend(check_i386_capture(shell))
     errors.extend(check_workflow_script_dependencies(workflow_script_dependencies(text)))
     return errors
 
@@ -263,6 +270,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     block = workflow_job_block(workflow, job)
     if not block:
         return [f"extended platform evidence workflow missing job: {job}"]
+    builds_on_runner = target == "linux-armhf"
     record_name = f"platform-verified-evidence-{target}.json"
     builder_identity_name = f"builder-identity-{target}.json"
     smoke_name = f"native-smoke-{target}.log"
@@ -273,20 +281,8 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     source_artifact_name = f"extended-linux-evidence-{target}-${{RELEASE_TAG}}"
     action_upload_dir = f"platform-evidence-upload/{target}/${{{{ inputs.release_tag }}}}"
     action_source_artifact_name = f"extended-linux-evidence-{target}-${{{{ inputs.release_tag }}}}"
-    source_packages = (
-        "bcrypt,cffi,cryptography,pyftpdlib" if target == "linux-i386" else "cffi,pyftpdlib,pyinstaller"
-    )
-    cargo_commands = (
-        'CARGO_HOME="$(mktemp -d "$RUNNER_TEMP/row-protected-linux-cargo.XXXXXXXX")"',
-        "export CARGO_HOME",
-        """trap 'rm -rf -- "$CARGO_HOME"' EXIT""",
-        "python3 scripts/prepare_protected_linux_cargo.py",
-        'install -m 0700 scripts/protected_linux_cargo.sh "$CARGO_HOME/locked-cargo"',
-        'export CARGO="$CARGO_HOME/locked-cargo"',
-    ) if target == "linux-i386" else ()
     lock_commands = (
         f"python3 scripts/check_protected_linux_build_inputs.py --target {target}",
-        *cargo_commands,
         "python3 -m venv --clear .venv-native",
         ". .venv-native/bin/activate",
         f"python -m pip install --require-hashes --force-reinstall --only-binary=:all: "
@@ -294,7 +290,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         "python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cffi "
         f"--requirement {NATIVE_LOCK_DIR}/linux-32bit-cffi.txt",
         "python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: "
-        f"--no-binary={source_packages} "
+        "--no-binary=cffi,pyftpdlib,pyinstaller "
         f"--requirement {NATIVE_LOCK_DIR}/{target}.txt",
         'python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"',
     )
@@ -332,9 +328,8 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
     required_snippets = {
         "needs: evidence-runner-readiness": "runner readiness preflight dependency",
         f"if: ${{{{ inputs.target == '{target}' && needs.evidence-runner-readiness.outputs.ready == 'true' }}}}": "target guard",
-        f"runs-on: [self-hosted, linux, {runner}]": "matching self-hosted runner labels",
+        f"runs-on: [self-hosted, linux, {runner if builds_on_runner else 'x64, i386'}]": "matching self-hosted runner labels",
         "timeout-minutes: 90": "bounded native evidence job timeout",
-        '    env:\n      PIP_CONFIG_FILE: "/dev/null"\n      PIP_REQUIRE_VIRTUALENV: "1"\n': "isolated pip configuration",
         "RELEASE_ASSET_BASE_URL: ${{ inputs.release_asset_base_url }}": "release asset URL environment binding",
         "RELEASE_TAG: ${{ inputs.release_tag }}": "release-tag environment binding for native build script",
         "WORKFLOW_REF_NAME: ${{ github.ref_name }}": "workflow ref environment binding",
@@ -343,16 +338,6 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         "persist-credentials: false": "checkout credential isolation",
         "clean: true": "self-hosted checkout workspace cleanup",
         f"python3 scripts/check_extended_platform_dispatch_inputs.py \\\n            --target {target}": "dispatch input preflight",
-        f"python3 scripts/check_extended_platform_builder.py \\\n            --target {target}": "builder identity preflight evidence",
-        f'--out "{evidence_dir}/{builder_identity_name}"': "builder identity output",
-        '            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \\\n': "builder workflow run-attempt evidence",
-        '--source-head-sha "$SOURCE_HEAD_SHA"': "builder source head SHA evidence",
-        f'mkdir -p native-dist/linux "{assets_dir}"': "raw build output and target/release promotion staging directories",
-        f'mkdir -p "{assets_dir}"': "target-scoped Linux artifact staging directory",
-        smoke_command_snippet: "native installer smoke evidence capture",
-        '--workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA"': (
-            "native smoke workflow run-attempt evidence"
-        ),
         (
             f'python scripts/check_platform_promotion_artifacts.py --target {target} '
             f'--assets-dir "{assets_dir}" --tag "$RELEASE_TAG" --strict'
@@ -393,24 +378,51 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         "include-hidden-files: false": "hidden file exclusion for evidence artifact upload",
         "retention-days: 90": "evidence artifact retention window",
     }
-    for artifact in LINUX_TARGET_ARTIFACTS[target]:
-        required_snippets[f'cp "native-dist/linux/{artifact}" "{assets_dir}/"'] = (
-            f"target-scoped artifact staging for {artifact}"
+    if builds_on_runner:
+        required_snippets.update({
+            '    env:\n      PIP_CONFIG_FILE: "/dev/null"\n      PIP_REQUIRE_VIRTUALENV: "1"\n': "isolated pip configuration",
+            f'--out "{evidence_dir}/{builder_identity_name}"': "builder identity output",
+            '            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \\\n': "builder workflow run-attempt evidence",
+            f'mkdir -p native-dist/linux "{assets_dir}"': "raw build output and target/release promotion staging directories",
+            f'mkdir -p "{assets_dir}"': "target-scoped Linux artifact staging directory",
+            smoke_command_snippet: "native installer smoke evidence capture",
+            '--workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA"': (
+                "native smoke workflow run-attempt evidence"
+            ),
+        })
+        for artifact in LINUX_TARGET_ARTIFACTS[target]:
+            required_snippets[f'cp "native-dist/linux/{artifact}" "{assets_dir}/"'] = (
+                f"target-scoped artifact staging for {artifact}"
+            )
+    else:
+        required_snippets.update({
+            'uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0': "collector Python setup",
+            f"with scripts/{I386_CAPTURE_PATH.name}.": "native i386 capture instructions",
+            '"$RELEASE_TAG" "$RELEASE_ASSET_BASE_URL" "$WORKFLOW_RUN_URL" "$SOURCE_HEAD_SHA" "$SOURCE_RUN_ATTEMPT"':
+                "exact run identity printed for the native host",
+            '[[ ! -e "$evidence_dir" && ! -L "$evidence_dir" ]]': "fresh collector staging directory",
+            "--runner-label x64": "x64 collector runner-label evidence",
+        })
+        wait_step = (
+            "      - name: Wait for completed Linux i386 evidence\n"
+            "        timeout-minutes: 80\n"
+            "        run: |\n"
+            "          set -euo pipefail\n"
+            '          while [[ ! -d "platform-evidence-staging/linux-i386/$RELEASE_TAG/artifacts" ]]; do\n'
+            "            sleep 10\n"
+            "          done\n"
         )
+        if workflow_step_block(block, "name: Wait for completed Linux i386 evidence") != wait_step:
+            errors.append(f"{job} must wait for staged native evidence before collector validation")
     for snippet, label in required_snippets.items():
         if snippet not in block:
             errors.append(f"{job} missing {label}: {snippet}")
     install_step = re.search(r"(?ms)^      - name: Create isolated release environment\n(.*?)(?=^      - |\Z)", block)
-    expected_env = (
-        '        env:\n          CARGO_NET_OFFLINE: "true"\n          MATURIN_NO_INSTALL_RUST: "true"\n'
-        '          MATURIN_PEP517_ARGS: "--locked --offline"\n'
-        if target == "linux-i386" else ""
-    )
     expected_install_step = (
-        expected_env + "        run: |\n          set -euo pipefail\n          "
+        "        run: |\n          set -euo pipefail\n          "
         + "\n          ".join(lock_commands) + "\n"
     )
-    if install_step is None or install_step[1] != expected_install_step:
+    if builds_on_runner and (install_step is None or install_step[1] != expected_install_step):
         errors.append(f"{job} must install the protected Linux locks in one unconditional build setup step")
     errors.extend(check_checkout_step(block, job=job))
     errors.extend(check_run_shell_safety(block, job=job))
@@ -429,18 +441,24 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         f'--runtime-report "{runtime_report}" --lock {NATIVE_LOCK_DIR}/{target}.txt\n'
         f"          TARGET_ARCH={runner} PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh\n"
     )
-    if build_step != expected_build_step:
+    if builds_on_runner and build_step != expected_build_step:
         errors.append(f"{job} must validate the exact runtime lock before building native artifacts")
+    capture_steps = (
+        ("builder identity evidence", f"      - name: Check {step_prefix} builder identity"),
+        ("isolated release environment", "      - name: Create isolated release environment"),
+        ("native Linux artifact build", f"      - name: Build {step_prefix} native artifacts"),
+        ("native installer smoke evidence capture", f"      - name: Smoke {step_prefix} native artifacts"),
+        ("target artifact staging", f"      - name: Stage {step_prefix} target artifacts"),
+    ) if builds_on_runner else (
+        ("native builder request", "      - name: Request Linux i386 evidence from the native builder"),
+        ("native evidence collection", "      - name: Wait for completed Linux i386 evidence"),
+    )
     errors.extend(
         check_ordered_snippets(
             block,
             (
                 ("dispatch input preflight", f"      - name: Validate {step_prefix} evidence dispatch inputs"),
-                ("builder identity evidence", f"      - name: Check {step_prefix} builder identity"),
-                ("isolated release environment", "      - name: Create isolated release environment"),
-                ("native Linux artifact build", f"      - name: Build {step_prefix} native artifacts"),
-                ("native installer smoke evidence capture", f"      - name: Smoke {step_prefix} native artifacts"),
-                ("target artifact staging", f"      - name: Stage {step_prefix} target artifacts"),
+                *capture_steps,
                 ("strict promotion artifact validation", f"      - name: Validate {step_prefix} promotion artifacts"),
                 (
                     "local protected goal evidence preflight",
@@ -485,7 +503,7 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         '            --source-head-sha "$SOURCE_HEAD_SHA" \\\n'
         f'            --out "{evidence_dir}/{builder_identity_name}"'
     )
-    if builder_command not in block:
+    if builds_on_runner and builder_command not in block:
         errors.append(
             f"{job} builder identity preflight must bind release_tag, workflow_run_url, "
             "workflow_run_attempt and source_head_sha"
@@ -514,6 +532,51 @@ def check_linux_job(workflow: str, *, target: str, job: str, runner: str) -> lis
         errors.append(f"{job} must not publish GitHub releases")
     if re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s+write\s*$", block):
         errors.append(f"{job} must not request write permissions")
+    return errors
+
+
+def check_i386_capture(shell: str) -> list[str]:
+    label = "native i386 capture"
+    lines = (line.strip() for line in shell.splitlines())
+    commands = "\n".join(
+        line for line in lines if not line.startswith("#") or line.startswith("#!")
+    ).replace(" \\\n", " ")
+    required = (
+        ("strict shell safety", "#!/usr/bin/env bash\nset -euo pipefail\numask 077"),
+        ("dispatch input preflight", 'python3 scripts/check_extended_platform_dispatch_inputs.py --target linux-i386'),
+        ("exact tagged checkout", '$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")" != "$SOURCE_HEAD_SHA"'),
+        ("builder identity run context", 'python3 scripts/check_extended_platform_builder.py --target linux-i386 '
+         '--release-tag "$RELEASE_TAG" --workflow-run-url "$WORKFLOW_RUN_URL" '
+         '--workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA" '
+         '--out "$EVIDENCE_DIR/builder-identity-linux-i386.json"'),
+        ("locked offline Cargo configuration", 'export CARGO_NET_OFFLINE=true MATURIN_NO_INSTALL_RUST=true MATURIN_PEP517_ARGS="--locked --offline"'),
+        ("protected build inputs", "python3 scripts/check_protected_linux_build_inputs.py --target linux-i386"),
+        ("locked Cargo prefetch", "python3 scripts/prepare_protected_linux_cargo.py"),
+        ("locked Cargo wrapper", 'export CARGO="$CARGO_HOME/locked-cargo"'),
+        ("isolated release environment", "python3 -m venv .venv-native"),
+        ("protected bootstrap lock", "pip install --require-hashes --force-reinstall --only-binary=:all: "
+         f"--requirement {NATIVE_LOCK_DIR}/linux-i386-bootstrap.txt"),
+        ("protected CFFI lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
+         f"--only-binary=:all: --no-binary=cffi --requirement {NATIVE_LOCK_DIR}/linux-32bit-cffi.txt"),
+        ("protected i386 runtime lock", "pip install --require-hashes --no-cache-dir --no-build-isolation "
+         f"--only-binary=:all: --no-binary=bcrypt,cffi,cryptography,pyftpdlib --requirement {NATIVE_LOCK_DIR}/linux-i386.txt"),
+        ("exact runtime lock verification", 'python scripts/check_release_dependency_locks.py '
+         '--runtime-report "$EVIDENCE_DIR/candidate-pip-inspect.json" '
+         f"--lock {NATIVE_LOCK_DIR}/linux-i386.txt"),
+        ("native artifact build", "TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh"),
+        ("native smoke run identity", "bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 "
+         '--workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" '
+         '--source-head-sha "$SOURCE_HEAD_SHA" --builder-evidence "$EVIDENCE_DIR/builder-identity-linux-i386.json" '
+         '2>&1 | tee "$EVIDENCE_DIR/native-smoke-linux-i386.log"'),
+        ("staging after native smoke", 'mkdir -- "$EVIDENCE_DIR/artifacts"'),
+        ("strict promotion artifact validation", "python scripts/check_platform_promotion_artifacts.py --target linux-i386 "
+         '--assets-dir "$EVIDENCE_DIR/artifacts" --tag "$RELEASE_TAG" --strict'),
+    )
+    errors = [f"{label} missing {name}" for name, snippet in required if snippet not in commands]
+    errors.extend(check_ordered_snippets(commands, required, job=label))
+    for artifact in LINUX_TARGET_ARTIFACTS["linux-i386"]:
+        if f'"native-dist/linux/{artifact.replace("${RELEASE_TAG}", "$RELEASE_TAG")}"' not in commands:
+            errors.append(f"{label} missing target-scoped artifact staging for {artifact}")
     return errors
 
 

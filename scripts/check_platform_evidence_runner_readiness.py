@@ -21,7 +21,7 @@ GOAL_TARGETS = (
     "windows-xp-native-x64",
 )
 TARGET_RUNNER_LABELS = {
-    "linux-i386": frozenset({"self-hosted", "linux", "i386"}),
+    "linux-i386": frozenset({"self-hosted", "linux", "x64", "i386"}),
     "linux-armhf": frozenset({"self-hosted", "linux", "armhf"}),
     "windows-xp-native-x86": frozenset({"self-hosted", "windows", "xp-evidence"}),
     "windows-xp-native-x64": frozenset({"self-hosted", "windows", "xp-evidence"}),

@@ -303,9 +303,11 @@ member names, link/device entries inside native archives and path-qualified
 checksum/native-manifest references. Accepted Linux evidence command paths must
 include the Linux target id and release tag as path segments.
 `.github/workflows/extended-platform-evidence.yml` is the dispatch-only
-self-hosted collection path for that evidence; it uses `[self-hosted, linux,
-i386]` and `[self-hosted, linux, armhf]` runners and uploads evidence artifacts
-without publishing a GitHub release. Before artifact upload it runs
+self-hosted collection path for that evidence. The
+`[self-hosted, linux, x64, i386]` collector validates evidence staged from a
+native i386 builder. The `[self-hosted, linux, armhf]` runner builds and validates
+armhf evidence. Both jobs upload evidence artifacts without publishing a GitHub
+release. Before artifact upload each job runs
 `python scripts/stage_extended_linux_evidence_upload.py`, stages the exact
 release-importable file set in a plain non-symlink
 `platform-evidence-upload/<target>/<release_tag>` tree,

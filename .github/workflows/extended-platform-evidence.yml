@@ -101,11 +101,9 @@ jobs:
   linux-i386-native-evidence:
     needs: evidence-runner-readiness
     if: ${{ inputs.target == 'linux-i386' && needs.evidence-runner-readiness.outputs.ready == 'true' }}
-    runs-on: [self-hosted, linux, i386]
+    runs-on: [self-hosted, linux, x64, i386]
     timeout-minutes: 90
     env:
-      PIP_CONFIG_FILE: "/dev/null"
-      PIP_REQUIRE_VIRTUALENV: "1"
       RELEASE_ASSET_BASE_URL: ${{ inputs.release_asset_base_url }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       REPOSITORY: ${{ github.repository }}
@@ -118,6 +116,9 @@ jobs:
         with:
           persist-credentials: false
           clean: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
       - name: Validate Linux i386 evidence dispatch inputs
         run: |
           set -euo pipefail
@@ -129,68 +130,29 @@ jobs:
             --workflow-ref-name "$WORKFLOW_REF_NAME" \
             --source-head-sha "$SOURCE_HEAD_SHA" \
             --source-run-attempt "$SOURCE_RUN_ATTEMPT"
-      - name: Check Linux i386 builder identity
+      - name: Request Linux i386 evidence from the native builder
         run: |
           set -euo pipefail
-          mkdir -p native-dist/linux "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts"
-          python3 scripts/check_extended_platform_builder.py \
-            --target linux-i386 \
-            --release-tag "$RELEASE_TAG" \
-            --workflow-run-url "$WORKFLOW_RUN_URL" \
-            --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" \
-            --source-head-sha "$SOURCE_HEAD_SHA" \
-            --out "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json"
-      - name: Create isolated release environment
-        env:
-          CARGO_NET_OFFLINE: "true"
-          MATURIN_NO_INSTALL_RUST: "true"
-          MATURIN_PEP517_ARGS: "--locked --offline"
+          evidence_dir="platform-evidence-staging/linux-i386/$RELEASE_TAG"
+          [[ ! -e "$evidence_dir" && ! -L "$evidence_dir" ]]
+          echo "Capture these inputs on the native i386 builder with scripts/capture_linux_i386_evidence.sh."
+          printf 'Release tag: %s\nRelease asset base URL: %s\nWorkflow run URL: %s\nSource head SHA: %s\nRun attempt: %s\n' \
+            "$RELEASE_TAG" "$RELEASE_ASSET_BASE_URL" "$WORKFLOW_RUN_URL" "$SOURCE_HEAD_SHA" "$SOURCE_RUN_ATTEMPT"
+          echo "Publish the completed directory on this collector at $evidence_dir."
+      - name: Wait for completed Linux i386 evidence
+        timeout-minutes: 80
         run: |
           set -euo pipefail
-          python3 scripts/check_protected_linux_build_inputs.py --target linux-i386
-          CARGO_HOME="$(mktemp -d "$RUNNER_TEMP/row-protected-linux-cargo.XXXXXXXX")"
-          export CARGO_HOME
-          trap 'rm -rf -- "$CARGO_HOME"' EXIT
-          python3 scripts/prepare_protected_linux_cargo.py
-          install -m 0700 scripts/protected_linux_cargo.sh "$CARGO_HOME/locked-cargo"
-          export CARGO="$CARGO_HOME/locked-cargo"
-          python3 -m venv --clear .venv-native
-          . .venv-native/bin/activate
-          python -m pip install --require-hashes --force-reinstall --only-binary=:all: --requirement requirements-locks/protected-linux/linux-i386-bootstrap.txt
-          python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=cffi --requirement requirements-locks/protected-linux/linux-32bit-cffi.txt
-          python -m pip install --require-hashes --no-cache-dir --no-build-isolation --only-binary=:all: --no-binary=bcrypt,cffi,cryptography,pyftpdlib --requirement requirements-locks/protected-linux/linux-i386.txt
-          python -m pip install --no-deps --no-build-isolation ".[security,package,servers]"
-      - name: Build Linux i386 native artifacts
-        run: |
-          set -euo pipefail
-          . .venv-native/bin/activate
-          python -m pip check
-          python -X utf8 -m pip inspect --local > "platform-evidence-staging/linux-i386/${RELEASE_TAG}/candidate-pip-inspect.json"
-          python scripts/check_release_dependency_locks.py --runtime-report "platform-evidence-staging/linux-i386/${RELEASE_TAG}/candidate-pip-inspect.json" --lock requirements-locks/protected-linux/linux-i386.txt
-          TARGET_ARCH=i386 PYTHON_BIN=.venv-native/bin/python bash scripts/make_linux_native.sh
-      - name: Smoke Linux i386 native artifacts
-        run: |
-          set -euo pipefail
-          bash scripts/smoke_linux_native.sh --arch i386 --dist native-dist/linux --target linux-i386 --workflow-run-url "$WORKFLOW_RUN_URL" --workflow-run-attempt "$SOURCE_RUN_ATTEMPT" --source-head-sha "$SOURCE_HEAD_SHA" --builder-evidence "platform-evidence-staging/linux-i386/${RELEASE_TAG}/builder-identity-linux-i386.json" 2>&1 | tee "platform-evidence-staging/linux-i386/${RELEASE_TAG}/native-smoke-linux-i386.log"
-      - name: Stage Linux i386 target artifacts
-        run: |
-          set -euo pipefail
-          mkdir -p "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts"
-          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i386.deb" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
-          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686.rpm" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
-          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686.AppImage" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
-          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686-native.tar.gz" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
-          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686-native-manifest.json" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
-          cp "native-dist/linux/remote-ops-workspace-${RELEASE_TAG}-linux-i686-native-SHA256SUMS.txt" "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/"
+          while [[ ! -d "platform-evidence-staging/linux-i386/$RELEASE_TAG/artifacts" ]]; do
+            sleep 10
+          done
       - name: Validate Linux i386 promotion artifacts
         run: |
           set -euo pipefail
-          . .venv-native/bin/activate
           python scripts/check_platform_promotion_artifacts.py --target linux-i386 --assets-dir "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts" --tag "$RELEASE_TAG" --strict
       - name: Preflight Linux i386 local platform goal evidence
         run: |
           set -euo pipefail
-          . .venv-native/bin/activate
           python scripts/check_platform_goal_local_evidence.py \
             --root platform-evidence-staging \
             --release-tag "$RELEASE_TAG" \
@@ -205,7 +167,6 @@ jobs:
       - name: Generate Linux i386 accepted-evidence candidate
         run: |
           set -euo pipefail
-          . .venv-native/bin/activate
           python scripts/make_platform_verified_evidence_record.py \
             --target linux-i386 \
             --release-tag "$RELEASE_TAG" \
@@ -222,11 +183,11 @@ jobs:
             --runner-label self-hosted \
             --runner-label linux \
             --runner-label i386 \
+            --runner-label x64 \
             --out "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-i386.json"
       - name: Package Linux i386 review evidence bundle
         run: |
           set -euo pipefail
-          . .venv-native/bin/activate
           python scripts/make_extended_linux_evidence_bundle.py \
             --target linux-i386 \
             --release-tag "$RELEASE_TAG" \
@@ -239,7 +200,6 @@ jobs:
       - name: Finalize Linux i386 accepted-evidence candidate
         run: |
           set -euo pipefail
-          . .venv-native/bin/activate
           python scripts/finalize_platform_verified_evidence_record.py \
             --candidate-record "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/platform-verified-evidence-linux-i386.json" \
             --bundle-manifest "platform-evidence-staging/linux-i386/${RELEASE_TAG}/artifacts/extended-linux-evidence-bundle-linux-i386-${RELEASE_TAG}.json" \
@@ -249,7 +209,6 @@ jobs:
       - name: Stage scoped Linux i386 evidence upload
         run: |
           set -euo pipefail
-          . .venv-native/bin/activate
           python scripts/stage_extended_linux_evidence_upload.py \
             --target linux-i386 \
             --release-tag "$RELEASE_TAG" \

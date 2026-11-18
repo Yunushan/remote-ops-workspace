@@ -41,8 +41,9 @@ verifies the complete draft inventory before publication. Follow the
 for the remaining review inputs and the post-publication audit.
 
 Run the runner-readiness gate immediately before dispatch as well. It reads the
-repository self-hosted runner inventory and requires an idle matching runner for
-Linux i386, Linux armhf, and the modern `windows`, `xp-evidence` collector.
+repository self-hosted runner inventory and requires an idle Linux x64
+collector with the custom `i386` label, an idle native Linux armhf runner, and
+an idle modern `windows`, `xp-evidence` collector.
 Install PowerShell 7 on the collector for the workflow's `pwsh` steps. The
 collector validates and packages smoke evidence captured separately on XP.
 The preflight intentionally
@@ -227,14 +228,17 @@ fail, hidden scratch/private files stay excluded and source evidence remains
 available for release import.
 
 Provision the exact CPython patch from `configs/release_toolchain.json` as
-`python3` on each protected Linux builder. The workflow checks and consumes the
+`python3` on each protected Linux builder. The build checks and consumes the
 hash-locked inputs under `requirements-locks/protected-linux/` and retains the
 raw `pip inspect --local` report in the review ZIP. For a local rehearsal,
 capture the same report immediately before building and pass it to the bundler
 with `--runtime-report`. Use the checked-in workflow's install commands for
 the matching architecture.
 
+### Linux i386 and armhf build prerequisites
+
 Both targets compile CFFI and need a native C toolchain and libffi headers.
+Install the `file` utility for AppImage packaging.
 Armhf also compiles the PyInstaller bootloader, needs its native C and zlib
 development tools, and needs glibc 2.31 or newer for the pinned crypto wheels.
 i386 compiles bcrypt and cryptography and needs a native
@@ -441,8 +445,26 @@ Required real evidence:
 - Dispatch it with `gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> --ref v<project.version> -f target=linux-i386 -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url>`.
 - Provide `release_tag` and an exact `release_asset_base_url` of
   `https://github.com/<owner>/<repo>/releases/download/vX.Y.Z`.
-- Required runner evidence: matching self-hosted i386/i686 Linux runner or equivalent real i386 builder.
-- Use a matching `[self-hosted, linux, i386]` runner or equivalent real i386/i686 builder.
+- Use a native i386/i686 Linux builder with a separate self-hosted Linux x64 collector.
+- Register the collector on a modern Linux x64 host with the custom `i386`
+  label. GitHub's Linux runner packages target x64, ARM64, and ARM.
+  [GitHub Actions runner releases](https://github.com/actions/runner/releases/tag/v2.338.2)
+- Use a separate real native i386/i686 Linux builder with the prerequisites in
+  [the Linux build section](#linux-i386-and-armhf-build-prerequisites). Wait for the
+  collector to print the release tag, asset base URL, run URL, source SHA and
+  run attempt. Run the capture command on a fresh checkout of that exact tag
+  on the native host.
+
+  ```bash
+  bash scripts/capture_linux_i386_evidence.sh <release-tag> <asset-base-url> <workflow-run-url> <source-sha> <run-attempt>
+  ```
+
+  After the capture passes, transfer its complete
+  `platform-evidence-staging/linux-i386/<release-tag>` directory to a temporary
+  sibling on the collector via an authenticated channel. Rename it to the
+  printed path under the collector's checked-out workspace after the copy
+  completes. The job validates the exact dispatch identity and the staged
+  files, then creates and uploads the review bundle.
 - Capture builder identity evidence with `python3 scripts/check_extended_platform_builder.py --target linux-i386 --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out <target-release-evidence-dir>/builder-identity-linux-i386.json`.
 - Builder identity must prove matching `platform.machine()` and `uname -m`, `dpkg --print-architecture=i386`, `getconf LONG_BIT=32`, concrete `rpm` and `rpmbuild` tool paths, and `sudo -n true` non-interactive sudo.
 - Accepted evidence must include `builder_identity_sha256` matching that builder identity JSON, and the JSON must use the exact Linux builder identity schema with no scratch/private extras, including only the required tool path keys, bind the same `release_tag`, `workflow_run_url`, `workflow_run_attempt`, `workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`, `workflow_sha`, `source_head_sha` and `observed_git_head_sha` as the accepted record's release source, record non-empty `os_release`, `kernel_release` and `glibc_version` runtime identity values that match the smoke log, prove `git_worktree_clean=true` before native build, include a sanitized target-scoped `host_identity` block with `operator_private_data_redacted=true`, include security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review with concrete security_update_channel and cve_review_reference update/advisory provenance, and prove modern Windows 10/11, Linux and macOS defaults remain hardened.
@@ -474,7 +496,7 @@ Generate, finalize and append only after review:
 
 ```bash
 python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-i386 --assets-dir <target-release-artifact-dir> --repository <owner>/<repo> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha> --linux-source-run-attempt <github-actions-run-attempt>
-python scripts/make_platform_verified_evidence_record.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-i386-v<project.version> --release-source-head-sha <github-actions-head-sha> --release-source-run-attempt <github-actions-run-attempt> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --local-evidence-root . --staged-upload-out-dir platform-evidence-upload/linux-i386/v<project.version> --runner-label self-hosted --runner-label linux --runner-label i386 --out <platform-verified-evidence-linux-i386.json>
+python scripts/make_platform_verified_evidence_record.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-i386-v<project.version> --release-source-head-sha <github-actions-head-sha> --release-source-run-attempt <github-actions-run-attempt> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --local-evidence-root . --staged-upload-out-dir platform-evidence-upload/linux-i386/v<project.version> --runner-label self-hosted --runner-label linux --runner-label i386 --runner-label x64 --out <platform-verified-evidence-linux-i386.json>
 python scripts/make_extended_linux_evidence_bundle.py --target linux-i386 --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json --candidate-record <platform-verified-evidence-linux-i386.json> --out-dir <target-release-artifact-dir>
 python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-linux-i386.json> --bundle-manifest <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>.json --bundle-archive <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>.zip --bundle-sha256s <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-i386-v<project.version>-SHA256SUMS.txt --out <target-release-artifact-dir>/platform-verified-evidence-linux-i386-final.json --append-registry
 ```

@@ -32,24 +32,11 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     secure_regular_file,
     sha256_file,
 )
+from scripts.isolated_linux_fixture import require_offline_container  # noqa: E402
 
 RUNTIME = "bin/bash"
 PRODUCT_PACKAGE = "remote-ops-workspace"
 PROCESS_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C", "SHELL": "/bin/sh", "TERM": "dumb"}
-# Linux capability numbers from linux/capability.h.
-NETWORK_OR_NAMESPACE_CAPABILITIES = (1 << 12) | (1 << 13) | (1 << 21)
-
-
-def require_offline_container() -> None:
-    if sys.platform != "linux" or not Path("/.dockerenv").is_file() or os.geteuid() != 0:
-        raise ValueError("capture requires root inside a disposable Linux Docker container")
-    interfaces = Path("/proc/net/dev").read_text(encoding="ascii").splitlines()[2:]
-    if {line.partition(":")[0].strip() for line in interfaces} != {"lo"}:
-        raise ValueError("capture requires Docker --network none")
-    status = Path("/proc/self/status").read_text(encoding="ascii").splitlines()
-    capabilities = next(line.split()[1] for line in status if line.startswith("CapBnd:"))
-    if int(capabilities, 16) & NETWORK_OR_NAMESPACE_CAPABILITIES:
-        raise ValueError("capture requires dropping NET_ADMIN, NET_RAW, and SYS_ADMIN")
 
 
 def run(arguments: list[str], cwd: Path, *, check: bool = True) -> subprocess.CompletedProcess[str]:

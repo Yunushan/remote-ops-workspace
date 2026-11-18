@@ -119,6 +119,32 @@ The full verifier runs:
 
 ### Embedded X server release evidence
 
+For the Linux x86_64 qualification, use a disposable Debian Docker image with
+the native `.deb`, Python, `xvfb`, `xauth`, `x11-apps`, `x11-utils`,
+`openssh-server`, `openssh-client`, and ImageMagick installed. Verify the
+release installer before installing it. Run the collector with the checkout
+mounted read-only and a separate writable evidence directory:
+
+```bash
+docker run --rm --pull never --network none \
+  --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
+  --security-opt no-new-privileges \
+  --mount "type=bind,source=$PWD,target=/src,readonly" \
+  --mount "type=bind,source=$X11_OUTPUT,target=/proof" \
+  "$X11_IMAGE" python /src/scripts/capture_moba_xserver_forwarding.py --out /proof/review
+
+python scripts/check_moba_xserver_release_evidence.py \
+  --evidence "$X11_OUTPUT/review/evidence.json" --assets-dir "$X11_OUTPUT/review"
+```
+
+The collector uses the installed `row` command to bundle, start, probe, and
+stop Xvfb. It generates short-lived SSH keys in the container, pins the local
+SSH daemon's host key, and captures a real forwarded clock window. The matched
+control session uses the same SSH settings with `-x` and must report an empty
+remote `DISPLAY`. Only the validated evidence files are written to `review`.
+
+For an equivalent capture on another platform, use the following inputs.
+
 Assemble the real X server with `row x11 bundle-runtime --out <runtime-root>
 --runtime <key> --source <binary> --release-target <target> --system <system>`.
 Set `ROW_XSERVER_RUNTIME_DIR` to the bundle and capture the output of
@@ -135,9 +161,12 @@ the capture root. Bind a `row.moba-xserver.ssh-forwarding.v1` receipt as
 Include the local `display`, `remote_display`, executed `ssh_argv`, application
 `command`, `window_id`, `window_title`, relative `window_info` path and its
 `window_info_sha256`, plus `runtime_sha256`, `start_sha256`, `smoke_sha256` and
-`screenshot_sha256`. Paths in the evidence are relative to the capture root.
-The release check validates the capture and the parity registry separately
-requires independently reviewed evidence for the published release.
+`screenshot_sha256`. Start the remote SSH command with
+`printf "remote_display=%s\n" "$DISPLAY"; exec <application command>`.
+Record the same SSH argument list with forwarding replaced by `-x` and only
+the `printf` command as `control_argv`, plus its exact `control_stdout`.
+Paths in the evidence are relative to the capture root. Independent review
+must bind this capture to the published release and exact workflow attempt.
 
 ### MobApt release evidence
 

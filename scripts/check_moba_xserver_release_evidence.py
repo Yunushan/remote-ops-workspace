@@ -28,6 +28,7 @@ from scripts.check_release_license_compliance import (  # noqa: E402
 )
 
 FORWARDING_SCHEMA = "row.moba-xserver.ssh-forwarding.v1"
+REMOTE_DISPLAY_PROBE = 'printf "remote_display=%s\\n" "$DISPLAY"'
 
 
 def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> None:
@@ -142,11 +143,22 @@ def check_forwarded_window(root: Path, evidence: dict[str, Any], screenshot: Pat
         or executable_name(argv) != "ssh"
         or not isinstance(mode, str)
         or not forwarding_flags.get(mode, set()).intersection(argv[:-1])
-        or command not in argv[-1]
     ):
         raise ValueError(
             "SSH forwarding receipt must bind the display, command, runtime, probe and screenshot"
         )
+
+    # The control must use the same destination, credentials, and SSH settings. Only
+    # forwarding and the remote command change between these two real sessions.
+    control = receipt.get("control_argv")
+    expected = ["-x" if item in {"-X", "-Y"} else item for item in argv[:-1]]
+    if (
+        argv[-1] != f"{REMOTE_DISPLAY_PROBE}; exec {command}"
+        or sum(item in {"-X", "-Y"} for item in argv[:-1]) != 1 or "-x" in argv[:-1]
+        or control != [*expected, REMOTE_DISPLAY_PROBE]
+        or receipt.get("control_stdout") != "remote_display=\n"
+    ):
+        raise ValueError("SSH forwarding receipt must include a matched session with forwarding disabled and no remote display")
 
     window_id, title = receipt["window_id"], receipt["window_title"]
     info = bound_evidence_file(

@@ -1,5 +1,5 @@
 {
-  "baseline_head": "2cf106f29c40fef0edfdf577c5765f7856b221a6",
+  "baseline_head": "3efa9090eb2ba1be54e9d46060e5d32de8576bfa",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -118,8 +118,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_processes.py",
-      "sha256": "bba921ea3125372ed02fae6378d41eff91e7baefaf94ab6065567b0f766dfb82",
-      "size": 3756
+      "sha256": "5204fbf6ef4c88863b69a149cd596c4df935fe4dc041c6c4200ec20266b50adc",
+      "size": 3915
     },
     {
       "path": "src/remote_ops_workspace/gui_smartcards.py",
@@ -133,8 +133,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal.py",
-      "sha256": "2fb0bc83030970b287c6504dfb70ff1bb408310d16e1199b3fbba79426c3d0ec",
-      "size": 131525
+      "sha256": "b7bfc205977d1e089330964cec43fc69651964f1eec79379b878217d2722ad9f",
+      "size": 131778
     },
     {
       "path": "src/remote_ops_workspace/gui_values.py",
@@ -160,6 +160,11 @@
       "path": "src/remote_ops_workspace/layouts.py",
       "sha256": "024f8713d17846a92f62aa7fc0dc2f3695f8d664c0a5c3f9d11137e23cb6ae8f",
       "size": 12304
+    },
+    {
+      "path": "src/remote_ops_workspace/linux_pty.py",
+      "sha256": "917b748beb65a3ee5240515db567cd58aa5d58a94c5a6f85d285b1b75855ac11",
+      "size": 7156
     },
     {
       "path": "src/remote_ops_workspace/logging_setup.py",
@@ -273,8 +278,8 @@
     },
     {
       "path": "src/remote_ops_workspace/qt_terminal_process.py",
-      "sha256": "6ffedfac756fcb2b0a88f8a10ca7bf7d4846ed91cc29764cd81a9229427fdd19",
-      "size": 57814
+      "sha256": "a8edbc61c497f609131c6d258178d831260a03635212f6ac0e37c7b7984f8e9d",
+      "size": 59447
     },
     {
       "path": "src/remote_ops_workspace/quick_connect.py",

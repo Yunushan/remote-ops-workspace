@@ -297,9 +297,12 @@ reviews, and the downloaded release assets. See the
    policy surfaces and hosted organization update channel.
 8. Shared authenticated transport and terminal-screen behavior. On POSIX
    hosts, the SFTP browser and monitoring can reuse a matching terminal's
-   OpenSSH control socket after it appears. The Windows terminal uses ConPTY
-   when available, and background tools authenticate separately. The renderer
-   implements a bounded transcript and a cursor-addressed alternate screen.
+   OpenSSH control socket after it appears. Linux interactive SSH and SFTP
+   panes use a controlling pseudoterminal. OpenSSH receives the initial viewport
+   dimensions and forwards later resizes to its remote PTY. The Windows
+   terminal uses ConPTY when available, and background tools authenticate
+   separately. The renderer implements a bounded transcript and a
+   cursor-addressed alternate screen.
    Both account for wide characters and combining marks in cursor positions,
    erasure and colored output. The alternate screen also keeps wide characters
    intact when wrapping or clipping at the right edge.

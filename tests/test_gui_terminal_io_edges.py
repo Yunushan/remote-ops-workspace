@@ -263,6 +263,12 @@ def test_primary_viewport_reflow_preserves_selection_links_and_search(gui_window
     assert not pane.output.textCursor().hasSelection()
     assert not window.find_in_text_widget(pane.output, url)
 
+    monkeypatch.setattr(pane.output_viewport, "size", lambda: QSize(900, 88))
+    pane.resize_terminal_backend()
+    pane.flush_terminal_resize()
+    assert SOFT_LINE_BREAK not in pane.output.document().toRawText()
+    assert window.find_in_text_widget(pane.output, "Xttps://example.test/reflow/path")
+
 
 def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_window, monkeypatch) -> None:
     from PyQt6.QtCore import Qt

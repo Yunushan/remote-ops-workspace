@@ -1,5 +1,5 @@
 {
-  "baseline_head": "909332ae46b36a3ba791512d53e6a883fcc05a82",
+  "baseline_head": "44058373ff67afc7485dac42232cea626134bfcf",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -28,8 +28,8 @@
     },
     {
       "path": "src/remote_ops_workspace/cli.py",
-      "sha256": "1b3c923ab7c147fbaa27d9fc8bb381d9c1c59defd37507e15117d4b61554e15a",
-      "size": 154195
+      "sha256": "73834b4f9ad7ac80238013853e5d530425bad4fdb30655d838a8bec60fc61634",
+      "size": 154794
     },
     {
       "path": "src/remote_ops_workspace/command_safety.py",
@@ -188,8 +188,8 @@
     },
     {
       "path": "src/remote_ops_workspace/moba_servers.py",
-      "sha256": "d646cc5fcabd7395d0c716529d8c705e85de638e6521cc161abc48d02bc73ce2",
-      "size": 66694
+      "sha256": "cbbbfce279191ec98fe263437c2dd5921b2d956424130edd8941397c069b58b8",
+      "size": 68486
     },
     {
       "path": "src/remote_ops_workspace/moba_smartcards.py",
@@ -328,8 +328,8 @@
     },
     {
       "path": "src/remote_ops_workspace/update_channel.py",
-      "sha256": "5e0b7d9f443be301c28597ad22fd64c2fb3775914b80fa44e39663e352521bbe",
-      "size": 26130
+      "sha256": "e1e3d057b1521db40f49c2f8a012c41f579f4627ec7c3d5506c956a3a81c7cc2",
+      "size": 26819
     },
     {
       "path": "src/remote_ops_workspace/update_staging.py",

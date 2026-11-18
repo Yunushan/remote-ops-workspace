@@ -303,6 +303,9 @@ reviews, and the downloaded release assets. See the
    Both account for wide characters and combining marks in cursor positions,
    erasure and colored output. The alternate screen also keeps wide characters
    intact when wrapping or clipping at the right edge.
+   Applications can set and query block, underline and bar cursor styles.
+   The cursor uses the desktop's blink timing and restores the primary-screen
+   style when an application leaves the alternate screen.
    Full parity requires evidence of shared authenticated transport, structured
    connection state and a terminal grid with alternate-screen, cursor, color,
    mode and mouse semantics.

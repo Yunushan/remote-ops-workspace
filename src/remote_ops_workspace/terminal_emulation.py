@@ -340,12 +340,17 @@ class AnsiTerminalTranscript:
         behavior unchanged.
         """
 
+        columns = max(20, int(columns))
+        rows = max(5, int(rows))
+        if (columns, rows) == (self._screen_columns, self._screen_rows):
+            return
+        columns_changed = columns != self._screen_columns
         self._invalidate_render_cache()
-        self._screen_columns = max(20, int(columns))
-        self._screen_rows = max(5, int(rows))
+        self._screen_columns = columns
+        self._screen_rows = rows
         if self._alternate_screen:
             self._full_redraw_hint = True
-            self._resize_alternate_screen()
+            self._resize_alternate_screen(columns_changed=columns_changed)
 
     def feed(self, text: str) -> str:
         """Apply a stream chunk and return the current transcript text.
@@ -1102,7 +1107,7 @@ class AnsiTerminalTranscript:
         if len(self._alternate_lines) != self._screen_rows:
             self._resize_alternate_screen()
 
-    def _resize_alternate_screen(self) -> None:
+    def _resize_alternate_screen(self, *, columns_changed: bool = False) -> None:
         old_lines = self._alternate_lines
         old_styles = self._alternate_line_styles
         self._alternate_lines = [[] for _ in range(self._screen_rows)]
@@ -1111,17 +1116,27 @@ class AnsiTerminalTranscript:
             _blank_wide_boundary(old_lines[row], self._screen_columns)
             self._alternate_lines[row] = list(old_lines[row][: self._screen_columns])
             self._alternate_line_styles[row] = old_styles[row][: self._screen_columns]
-        self._alternate_row = min(self._alternate_row, self._screen_rows - 1)
-        self._alternate_column = min(self._alternate_column, self._screen_columns - 1)
-        self._alternate_margin_written = False
-        self._alternate_top_margin = max(
-            0,
-            min(self._alternate_top_margin, self._screen_rows - 1),
+        last_row = self._screen_rows - 1
+        top = min(self._alternate_top_margin, last_row)
+        bottom = min(self._alternate_bottom_margin, last_row)
+        if top >= bottom or (self._alternate_top_margin, self._alternate_bottom_margin) == (0, len(old_lines) - 1):
+            top, bottom = 0, last_row
+        self._alternate_top_margin = top
+        self._alternate_bottom_margin = bottom
+
+        # A cursor one cell beyond the last column represents pending
+        # autowrap. A height-only resize should preserve that state.
+        right = self._screen_columns - 1 if columns_changed else self._screen_columns
+        cursor = (self._alternate_row, self._alternate_column)
+        self._alternate_row, self._alternate_column = (
+            min(cursor[0], last_row),
+            min(cursor[1], right),
         )
-        self._alternate_bottom_margin = max(
-            self._alternate_top_margin,
-            min(self._alternate_bottom_margin or self._screen_rows - 1, self._screen_rows - 1),
-        )
+        if (self._alternate_row, self._alternate_column) != cursor:
+            self._alternate_margin_written = False
+        saved = self._alternate_saved_cursor
+        if saved is not None:
+            self._alternate_saved_cursor = (min(saved[0], last_row), min(saved[1], right))
 
     def _blank_alternate_row(self, row: int) -> None:
         if 0 <= row < self._screen_rows:

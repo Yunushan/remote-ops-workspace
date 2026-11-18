@@ -725,11 +725,16 @@ class TerminalPane(QWidget):
         return max(1, metrics.horizontalAdvance("M")), max(1, metrics.lineSpacing())
 
     def resize_terminal_backend(self) -> None:
+        if self._terminal_scroll_closed:
+            return
         cell_width, cell_height = self.terminal_cell_size()
         viewport = self.output_viewport.size()
-        columns = max(20, viewport.width() // cell_width)
-        rows = max(5, viewport.height() // cell_height)
-        self.terminal_emulator.set_screen_size(columns, rows)
+        if viewport.isEmpty():
+            return
+        document = _required_gui_value(self.output.document(), "terminal text document")
+        margin = 2 * document.documentMargin()
+        columns = max(20, int((viewport.width() - margin) // cell_width))
+        rows = max(5, int((viewport.height() - margin) // cell_height))
         self._pending_terminal_size = (columns, rows)
         if not self._terminal_resize_timer.isActive():
             self._terminal_resize_timer.start()
@@ -737,8 +742,13 @@ class TerminalPane(QWidget):
     def flush_terminal_resize(self) -> None:
         pending = self._pending_terminal_size
         self._pending_terminal_size = None
-        if pending is None:
+        if pending is None or self._terminal_scroll_closed:
             return
+        # Apply the new grid and forward its dimensions in the same turn.
+        # Viewport resize events can arrive inside a document update.
+        self.terminal_emulator.set_screen_size(*pending)
+        if self.terminal_emulator.alternate_screen_active:
+            self.render_terminal_transcript(self.terminal_emulator.screen_text())
         resize = getattr(self.process, "setTerminalSize", None)
         if resize is not None:
             resize(*pending)
@@ -806,6 +816,8 @@ class TerminalPane(QWidget):
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         terminal_targets = (self.output, self.output_viewport)
+        if watched is self.output_viewport and event.type() == QEvent.Type.Resize:
+            self.resize_terminal_backend()
         if watched in terminal_targets and event.type() == QEvent.Type.FocusIn:
             # QApplication.focusChanged can lag behind native focus
             # delivery. Track the terminal surface at the source so a

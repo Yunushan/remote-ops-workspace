@@ -176,6 +176,48 @@ def test_alternate_screen_palette_change_updates_inverse_colors(gui_window) -> N
     assert pane.output.toPlainText().split("\n")[0] == "selected"
 
 
+def test_viewport_resize_refreshes_alternate_grid_without_waiting_for_output(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QResizeEvent
+
+    app, window = gui_window
+    pane = _new_pane(window)
+    pane.terminal_emulator.set_screen_size(40, 9)
+    pane.append_process_text("shell\x1b[?1049hfirst")
+    document = pane.output.document()
+    assert document.blockCount() == 9
+    document.setDocumentMargin(4)
+    size = QSize(320, 85)
+    monkeypatch.setattr(pane.output_viewport, "size", lambda: size)
+    monkeypatch.setattr(pane, "terminal_cell_size", lambda: (10, 10))
+    sent = []
+    monkeypatch.setattr(
+        pane.process, "setTerminalSize", lambda columns, rows: sent.append((columns, rows)), raising=False,
+    )
+
+    pane.eventFilter(pane.output_viewport, QResizeEvent(size, QSize(400, 100)))
+    app.processEvents()
+    pane.flush_terminal_resize()
+    assert sent and sent[-1] == (31, 7)
+    assert document.blockCount() == 7
+    assert pane.output.toPlainText() == "first" + "\n" * 6
+    size = QSize()
+    sent.clear()
+    pane.resize_terminal_backend()
+    pane.flush_terminal_resize()
+    assert sent == []
+    assert document.blockCount() == 7
+    pane.append_process_text("\x1b[?1049l")
+    assert pane.output.toPlainText() == "shell"
+
+    size = QSize(500, 160)
+    pane.resize_terminal_backend()
+    pane.prepare_for_close()
+    pane.flush_terminal_resize()
+    pane.resize_terminal_backend()
+    assert sent == []
+
+
 def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_window, monkeypatch) -> None:
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QTextCursor

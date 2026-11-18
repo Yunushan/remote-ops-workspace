@@ -324,6 +324,44 @@ def test_alternate_screen_resize_preserves_bounded_content() -> None:
     assert transcript.cursor_column == 19
 
 
+@pytest.mark.parametrize(("save", "restore"), [("\x1b7", "\x1b8"), ("\x1b[s", "\x1b[u")])
+def test_alternate_saved_cursor_is_clamped_to_the_resized_screen(save: str, restore: str) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(30, 7)
+    transcript.feed("\x1b[?1049h\x1b[7;30H" + save + "\x1b[Hfirst")
+    transcript.set_screen_size(20, 5)
+    transcript.feed(restore + "Z")
+    rows = transcript.screen_text().split("\n")
+    assert rows[0] == "first"
+    assert len(rows) == 5
+    assert rows[-1] == " " * 19 + "Z"
+
+
+def test_height_only_resize_keeps_delayed_wrap_and_extends_default_scroll_region() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(20, 5)
+    transcript.feed("\x1b[?1049h" + "x" * 20)
+    transcript.set_screen_size(20, 5)
+    transcript.set_screen_size(20, 7)
+    assert transcript.cursor_column == 20
+    transcript.feed("Y\x1b[6;1Hbottom\nlast")
+    rows = transcript.screen_text().split("\n")
+    assert rows[0] == "x" * 20
+    assert rows[1] == "Y"
+    assert rows[-2:] == ["bottom", "last"]
+
+
+def test_resize_keeps_finite_scroll_region_and_resets_an_empty_region() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(40, 9)
+    transcript.feed("\x1b[?1049h\x1b[4;8r")
+    transcript.set_screen_size(40, 10)
+    assert (transcript._alternate_top_margin, transcript._alternate_bottom_margin) == (3, 7)
+    transcript.feed("\x1b[6;10r")
+    transcript.set_screen_size(40, 5)
+    assert (transcript._alternate_top_margin, transcript._alternate_bottom_margin) == (0, 4)
+
+
 def test_alternate_newline_scrolls_region_and_no_wrap_overwrites_last_cell() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.set_screen_size(20, 5)

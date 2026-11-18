@@ -22,7 +22,7 @@
     "test_contract.py",
     "upload_guard.py"
   ],
-  "product_baseline_head": "c2224dbc89d309cde5d948224416c7dcd45dce21",
+  "product_baseline_head": "976f2e18daea1d44bc0b1d553e1741b4b4a2f2ee",
   "product_inputs": [
     {
       "path": "apps/web/app.js",

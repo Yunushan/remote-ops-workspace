@@ -229,16 +229,15 @@ reviews, and the downloaded release assets. See the
    file again before saving, prompts on conflicts and uploads only after the
    review succeeds. Full parity still needs accepted passing evidence bundles
    from supported release targets proving those real remote edits.
-5. Macro recorder parity: ROW now has a CLI-backed typed macro store, SSH
-   replay workflow, GUI capture control contracts, live connected-pane replay
-   plans preserving per-event delay metadata, conflict/cancel review, a
-   release-evidence bundle writer and a verifier requiring SHA-bound real
-   connected-session replay proof. The PyQt terminal widget now exposes
-   Record/Stop/Cancel/Replay controls, captures actual operator-submitted input
-   events and injects recorded payloads back into the live pane with
-   `QTimer`-scheduled event timing and replay cancel support. Full parity still
-   needs accepted passing evidence bundles replaying recorded macros across
-   real connected servers on supported release targets.
+5. ROW provides a CLI-backed typed macro store and SSH replay workflow. The
+   PyQt terminal records submitted lines, printable keys typed into the
+   terminal, and Enter. A key or paste outside the supported typed input
+   cancels the recording so replay preserves the captured sequence. The replay
+   dialog identifies the destination and defaults to Cancel. Replay sends the
+   events in order with their recorded delays and stops if the session changes
+   or the terminal requests a password. The release-evidence checker validates
+   the bundle attachments and recorded assertions. Full parity still requires
+   accepted live replay evidence from supported release targets.
 6. Exact 26.4 SSH-browser behavior: smart-card auth, smart-card management
    contracts, SSH expert certificate selection, MobAgent handoff,
    same-parameter SFTP, smart-card SSH-browser multiplex plans, side-by-side

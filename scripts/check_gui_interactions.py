@@ -3881,7 +3881,23 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
     )
     capture("native-terminal-split-1180x720.png", window)
     if len(panes) >= 2:
-        first_pane, second_pane = panes[:2]
+        search_panes = panes[:2]
+        first_pane, second_pane = search_panes
+        # Finish the live shell checks before seeding search and copy text.
+        # A delayed ConPTY startup or resize frame can overwrite the fixture.
+        for pane in (first_pane, second_pane):
+            if pane.is_running():
+                pane.process.kill()
+                pane.process.waitForFinished(1000)
+        deadline = time.monotonic() + 2
+        app.processEvents()
+        while time.monotonic() < deadline and any(
+            pane.is_running() or pane.process_output_pending() for pane in search_panes
+        ):
+            QTest.qWait(10)
+        shells_drained = not any(
+            pane.is_running() or pane.process_output_pending() for pane in search_panes
+        )
         first_pane.set_terminal_transcript("pane-one-only\n")
         second_pane.set_terminal_transcript("pane-two-only-needle\n")
         window.raise_()
@@ -3898,7 +3914,8 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         app.processEvents()
         record(
             "find-control-preserves-second-split-pane-target",
-            second_was_focused
+            shells_drained
+            and second_was_focused
             and second_pane.output.textCursor().selectedText() == "pane-two-only-needle"
             and second_pane.output.hasFocus()
             and first_pane.output.textCursor().selectedText() == ""
@@ -3906,6 +3923,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             and window.statusBar().currentMessage()
             == "Found in active terminal: pane-two-only-needle",
             {
+                "shells_drained": shells_drained,
                 "first_selection": first_pane.output.textCursor().selectedText(),
                 "second_selection": second_pane.output.textCursor().selectedText(),
                 "second_was_focused": second_was_focused,
@@ -3925,10 +3943,6 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             pane.width() < 620 and compact,
             {"pane_width": pane.width(), "compact": compact},
         )
-        # Let the live shell publish its startup prompt before replacing the
-        # transcript with deterministic search evidence.  Python 3.15 on
-        # Windows can deliver the first ConPTY frame during this focus turn;
-        # seeding before that frame makes the prompt overwrite the fixture.
         pane.output.setFocus()
         app.processEvents()
         pane.set_terminal_transcript("alpha\nneedle-in-terminal\nomega\n")

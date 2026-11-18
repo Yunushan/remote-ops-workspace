@@ -464,6 +464,8 @@ def test_open_profile_store_applies_machine_policy_installed_after_startup(
     assert store.path.read_bytes() == original
     explicit.add(denied)
     assert explicit.load()[0].protocol == "telnet"
+    explicit.policy_path = None
+    assert explicit.policy_path == machine
 
 
 def test_non_regular_machine_policy_path_fails_closed_instead_of_using_portable_policy(

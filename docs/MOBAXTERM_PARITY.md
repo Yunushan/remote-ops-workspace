@@ -189,8 +189,10 @@ reviews, and the downloaded release assets. See the
   The administrator-owned OS machine-policy path is loaded ahead of the
   portable `ROW_HOME/policy.json` fallback by profile storage, GUI profile
   editing, quick connect, launcher and Web/PWA policy endpoints so a user-level
-  environment override cannot shadow installed locked values. The schema and
-  types are validated strictly and malformed installed policies fail closed.
+  environment override cannot shadow installed locked values. An open profile
+  editor or Web profile API applies a newly installed machine policy on the
+  next write. The schema and types are validated strictly and malformed
+  installed policies fail closed.
 
 ## Remaining parity articles
 

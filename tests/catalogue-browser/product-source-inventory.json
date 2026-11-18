@@ -1,5 +1,5 @@
 {
-  "baseline_head": "8eef6b579a344c6e035d47006c9eb28db1165ba0",
+  "baseline_head": "4dbf0117b99b77e2790147b5d50312a0c1f10fa2",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -293,8 +293,8 @@
     },
     {
       "path": "src/remote_ops_workspace/storage.py",
-      "sha256": "37f14d178f03fe6423b93ad298457e72267a4a4e7f015305fefc2dd7630f32b9",
-      "size": 25116
+      "sha256": "d0506788d591603d2b066ad8d4f5a523ffaa0c3c1c5b56aef6be725f8a3ae7aa",
+      "size": 25384
     },
     {
       "path": "src/remote_ops_workspace/sync.py",

@@ -545,7 +545,7 @@ name. Record the exact `version`, the covered `services`, and the notice's
 record can cover SSH and SFTP. Supply the unmodified notice as
 `notices/<package>.copyright` beside the manifest. Keep the same relative
 paths in the review attachments. The installer places these notices beneath
-`/usr/share/doc/remote-ops-workspace/server-notices`; the archive audit
+`/usr/share/doc/remote-ops-workspace/server-notices`. The archive audit
 checks their bytes against the manifest.
 
 For OpenSSH built with the package-owned libexec path, use the same daemon

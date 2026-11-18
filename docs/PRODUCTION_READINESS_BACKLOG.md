@@ -156,6 +156,8 @@ Rules:
   deferred terminal startup, and tab context menus.
   `gui_terminal_lifecycle.py` owns pane creation, process callbacks,
   tab shutdown, and process status updates.
+  `gui_operator_workflows.py` owns the status and action wiring for the
+  operator workflow dialogs.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
 

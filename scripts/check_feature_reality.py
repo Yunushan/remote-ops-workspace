@@ -149,7 +149,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "multiplex_mode",
                 "Production parity requires the supplied evidence files",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_operator_workflows.py": [
                 "show_moba_smartcards_status",
                 "build_smartcard_management_gui_surface",
                 "mobaSmartcardGuiManagementSchema",
@@ -168,7 +168,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_multiexec:build_moba_multiexec_plan",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/gui.py": ["show_moba_multiexec_status", "build_moba_multiexec_plan"],
+            "src/remote_ops_workspace/gui_operator_workflows.py": ["show_moba_multiexec_status", "build_moba_multiexec_plan"],
             "src/remote_ops_workspace/gui_designs.py": ["multiexec", "Preview broadcast command plans"],
         },
     },
@@ -368,7 +368,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "gui_controls",
                 "Full proprietary parity",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_operator_workflows.py": [
                 "show_moba_servers_status",
                 "build_moba_server_gui_config_surface",
                 "mobaEmbeddedServerGuiConfigSchema",
@@ -414,7 +414,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "services missing release evidence",
                 "Placeholder daemon requires replacement",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_operator_workflows.py": [
                 "show_moba_servers_status",
                 "mobaEmbeddedServerPackagedServiceCount",
                 "mobaEmbeddedServerGuiConfigControls",

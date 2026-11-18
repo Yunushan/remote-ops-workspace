@@ -104,6 +104,8 @@ main window stays a composition layer rather than a monolith:
   guards, deferred pane startup, and tab context menus.
 - `gui_terminal_lifecycle.py` opens terminal panes, handles process and SSH
   callbacks, and coordinates tab shutdown and session status.
+- `gui_operator_workflows.py` builds operator workflow dialogs for server
+  configuration, smart cards, MultiExec and related workspace tools.
 - `gui_layouts.py` owns saved layout actions, launch planning, splitter
   restoration and resize persistence. It uses the main window to open tabs
   and start terminal panes.

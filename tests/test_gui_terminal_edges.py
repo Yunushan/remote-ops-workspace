@@ -395,6 +395,15 @@ def test_terminal_macro_review_guards_ordered_keys_and_session_changes(gui_windo
     QTest.qWait(30)
     assert "did not accept the complete event" in pane.output.toPlainText()
 
+    def close_during_review(_recording):
+        pane.prepare_for_close()
+        return True
+
+    monkeypatch.setattr(pane, "confirm_macro_replay", close_during_review)
+    prior_input = process.written
+    pane.replay_macro_capture()
+    assert not pane.macro_replay_active and process.written == prior_input
+
 
 def test_terminal_finished_restart_waits_for_ordered_output_tail(
     gui_window,

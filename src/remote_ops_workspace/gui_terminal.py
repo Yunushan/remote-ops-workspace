@@ -1739,6 +1739,8 @@ class TerminalPane(QWidget):
         process, reviewed_sequence = self.process, self.macro_replay_sequence
         if not self.confirm_macro_replay(recording):
             return
+        if self._terminal_scroll_closed:
+            return
         # The modal question runs a nested event loop. Output, disconnects,
         # and restart can occur before the operator answers it.
         if (
@@ -2686,7 +2688,10 @@ class TerminalPane(QWidget):
         self._secret_prompt_active = active
         if active:
             self.input.clear()
-            self.invalidate_macro_session(announce=False)
+            if self.macro_replay_active:
+                self.cancel_macro_capture(announce=False)
+            else:
+                self.macro_replay_sequence += 1
         echo_mode = QLineEdit.EchoMode.Password if active else QLineEdit.EchoMode.Normal
         self.input.setEchoMode(echo_mode)
         self.input.setPlaceholderText(

@@ -409,17 +409,18 @@ def check_policy(
         )
 
         errors.extend(check_windows_xp_legacy_candidate_workflow(xp_workflow))
-    i386_capture = ""
+    native_capture = ""
     if LINUX_TARGETS.keys() & locks.keys():
         from check_extended_platform_evidence import (
-            I386_CAPTURE_PATH,
+            LINUX_CAPTURE_PATH,
             check_extended_platform_evidence,
+            native_capture_for_target,
         )
 
-        capture_path = ROOT / I386_CAPTURE_PATH
+        capture_path = ROOT / LINUX_CAPTURE_PATH
         if capture_path.is_file():
-            i386_capture = capture_path.read_text(encoding="utf-8")
-        errors.extend(check_extended_platform_evidence(extended_workflow, i386_capture=i386_capture))
+            native_capture = capture_path.read_text(encoding="utf-8")
+        errors.extend(check_extended_platform_evidence(extended_workflow, native_capture=native_capture))
     for target, raw_path in locks.items():
         if not safe_relative_path(raw_path):
             errors.append(f"release compliance lock for {target} has an unsafe path")
@@ -468,7 +469,7 @@ def check_policy(
             )
         errors.extend(
             check_native_job_lock_usage(
-                i386_capture if target == "linux-i386" else job_block,
+                native_capture_for_target(native_capture, target) if target in LINUX_TARGETS else job_block,
                 job,
                 target,
                 raw_path,
@@ -480,7 +481,7 @@ def check_policy(
                 ),
                 source_bootstrap_lock_path=source_bootstrap_lock,
                 lock_root=policy_root,
-                direct_script=target == "linux-i386",
+                direct_script=target in LINUX_TARGETS,
             )
         )
     verifier = policy.get("verifier_bootstrap")

@@ -42,8 +42,7 @@ for the remaining review inputs and the post-publication audit.
 
 Run the runner-readiness gate immediately before dispatch as well. It reads the
 repository self-hosted runner inventory and requires an idle Linux x64
-collector with the custom `i386` label, an idle native Linux armhf runner, and
-an idle modern `windows`, `xp-evidence` collector.
+collector with the custom `i386` and `armhf` labels, and an idle modern `windows`, `xp-evidence` collector.
 Install PowerShell 7 on the collector for the workflow's `pwsh` steps. The
 collector validates and packages smoke evidence captured separately on XP.
 The preflight intentionally
@@ -456,7 +455,7 @@ Required real evidence:
   on the native host.
 
   ```bash
-  bash scripts/capture_linux_i386_evidence.sh <release-tag> <asset-base-url> <workflow-run-url> <source-sha> <run-attempt>
+  bash scripts/capture_linux_platform_evidence.sh linux-i386 <release-tag> <asset-base-url> <workflow-run-url> <source-sha> <run-attempt>
   ```
 
   After the capture passes, transfer its complete
@@ -524,8 +523,20 @@ Required real evidence:
 - Dispatch it with `gh workflow run extended-platform-evidence.yml --repo <owner>/<repo> --ref v<project.version> -f target=linux-armhf -f release_tag=v<project.version> -f release_asset_base_url=<github-release-download-url>`.
 - Provide `release_tag` and an exact `release_asset_base_url` of
   `https://github.com/<owner>/<repo>/releases/download/vX.Y.Z`.
-- Required runner evidence: matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder.
-- Use a matching `[self-hosted, linux, armhf]` runner or equivalent real armv7l/armhf builder.
+- Use a native armv7l/armhf Linux builder with a separate self-hosted Linux x64 collector.
+  Register the collector with the custom `armhf` label. The Linux ARM runner
+  package bundles Node.js 20, while the pinned Actions here require Node.js 24.
+  [GitHub Actions runner runtime packaging](https://github.com/actions/runner/blob/v2.338.2/src/Misc/externals.sh#L169-L171)
+- Use the native capture and authenticated transfer process described for
+  [Linux i386](#linux-i386). Run the following command on a fresh armhf checkout
+  of the exact tag using the metadata printed by the collector.
+
+  ```bash
+  bash scripts/capture_linux_platform_evidence.sh linux-armhf <release-tag> <asset-base-url> <workflow-run-url> <source-sha> <run-attempt>
+  ```
+
+  Publish the completed `platform-evidence-staging/linux-armhf/<release-tag>`
+  directory on the collector after transferring it to a temporary sibling.
 - Capture builder identity evidence with `python3 scripts/check_extended_platform_builder.py --target linux-armhf --release-tag v<project.version> --workflow-run-url <github-actions-run-url> --workflow-run-attempt <github-actions-run-attempt> --source-head-sha <github-actions-head-sha> --out <target-release-evidence-dir>/builder-identity-linux-armhf.json`.
 - Builder identity must prove matching `platform.machine()` and `uname -m`, `dpkg --print-architecture=armhf`, `getconf LONG_BIT=32`, concrete `rpm` and `rpmbuild` tool paths, and `sudo -n true` non-interactive sudo.
 - Accepted evidence must include `builder_identity_sha256` matching that builder identity JSON, and the JSON must use the exact Linux builder identity schema with no scratch/private extras, including only the required tool path keys, bind the same `release_tag`, `workflow_run_url`, `workflow_run_attempt`, `workflow_ref` pointing at `.github/workflows/extended-platform-evidence.yml`, `workflow_sha`, `source_head_sha` and `observed_git_head_sha` as the accepted record's release source, record non-empty `os_release`, `kernel_release` and `glibc_version` runtime identity values that match the smoke log, prove `git_worktree_clean=true` before native build, include a sanitized target-scoped `host_identity` block with `operator_private_data_redacted=true`, include security patch evidence proving TLS 1.3 preferred, TLS 1.2 minimum, isolated legacy compatibility and CVE patch review with concrete security_update_channel and cve_review_reference update/advisory provenance, and prove modern Windows 10/11, Linux and macOS defaults remain hardened.
@@ -557,7 +568,7 @@ Generate, finalize and append only after review:
 
 ```bash
 python scripts/check_platform_goal_local_evidence.py --root . --release-tag v<project.version> --target linux-armhf --assets-dir <target-release-artifact-dir> --repository <owner>/<repo> --linux-builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --linux-workflow-run-url <github-actions-run-url> --linux-source-head-sha <github-actions-head-sha> --linux-source-run-attempt <github-actions-run-attempt>
-python scripts/make_platform_verified_evidence_record.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-armhf-v<project.version> --release-source-head-sha <github-actions-head-sha> --release-source-run-attempt <github-actions-run-attempt> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --local-evidence-root . --staged-upload-out-dir platform-evidence-upload/linux-armhf/v<project.version> --runner-label self-hosted --runner-label linux --runner-label armhf --out <platform-verified-evidence-linux-armhf.json>
+python scripts/make_platform_verified_evidence_record.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --release-asset-base-url <github-release-download-url> --workflow-run-url <github-actions-run-url> --release-source-artifact-name extended-linux-evidence-linux-armhf-v<project.version> --release-source-head-sha <github-actions-head-sha> --release-source-run-attempt <github-actions-run-attempt> --builder-evidence <builder-identity.json> --linux-smoke-evidence <native-smoke-log> --local-evidence-root . --staged-upload-out-dir platform-evidence-upload/linux-armhf/v<project.version> --runner-label self-hosted --runner-label linux --runner-label armhf --runner-label x64 --out <platform-verified-evidence-linux-armhf.json>
 python scripts/make_extended_linux_evidence_bundle.py --target linux-armhf --release-tag v<project.version> --assets-dir <target-release-artifact-dir> --builder-evidence <builder-identity.json> --smoke-evidence <native-smoke-log> --runtime-report <target-release-evidence-dir>/candidate-pip-inspect.json --candidate-record <platform-verified-evidence-linux-armhf.json> --out-dir <target-release-artifact-dir>
 python scripts/finalize_platform_verified_evidence_record.py --candidate-record <platform-verified-evidence-linux-armhf.json> --bundle-manifest <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>.json --bundle-archive <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>.zip --bundle-sha256s <target-release-artifact-dir>/extended-linux-evidence-bundle-linux-armhf-v<project.version>-SHA256SUMS.txt --out <target-release-artifact-dir>/platform-verified-evidence-linux-armhf-final.json --append-registry
 ```

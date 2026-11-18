@@ -170,9 +170,9 @@ Rules:
 
 ## Platform parity (about +7, or re-scope via D1)
 
-- [ ] **P1** Bring real hosts online: native i386 Linux with a separate
-  `self-hosted,linux,x64,i386` collector, native armhf Linux
-  (`self-hosted,linux,armhf`), and Windows XP SP3 x86 plus XP x64 with a modern
+- [ ] **P1** Bring real hosts online: native i386 and armhf Linux with a
+  separate Linux x64 collector labelled `i386` and `armhf`, and Windows XP SP3
+  x86 plus XP x64 with a modern
   `self-hosted,xp-evidence` collector. Validate:
   `python scripts/check_platform_evidence_runner_readiness.py --repository <owner/repo> --require-goal-targets --require-idle`.
 - [ ] **P2** Produce accepted release-bound records for the four protected

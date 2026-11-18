@@ -710,7 +710,7 @@ def check_protected_requirement_boundary(target: object, raw_boundary: object) -
 def expected_builder_or_host_evidence(target: str) -> str:
     return {
         "linux-i386": "native i386/i686 Linux builder with a separate self-hosted Linux x64 collector",
-        "linux-armhf": "matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder",
+        "linux-armhf": "native armv7l/armhf Linux builder with a separate self-hosted Linux x64 collector",
         "windows-xp-native-x86": (
             "Windows XP SP3 32-bit VM or physical host running scripts/xp_smoke_runner.cmd "
             "and artifact validation; collector: modern self-hosted xp-evidence collector "
@@ -870,7 +870,6 @@ def expected_workflow_dispatch_command(target: str) -> str:
 
 def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]:
     arch = "i386" if target == "linux-i386" else "armhf"
-    collector_label = "--runner-label x64 " if target == "linux-i386" else ""
     source_artifact = f"extended-linux-evidence-{target}-v<project.version>"
     candidate = f"platform-verified-evidence-{target}.json"
     bundle_stem = f"extended-linux-evidence-bundle-{target}-v<project.version>"
@@ -908,7 +907,7 @@ def expected_linux_protected_requirement_commands(target: str) -> dict[str, str]
             "--local-evidence-root . "
             f"--staged-upload-out-dir {upload_dir} "
             f"--runner-label self-hosted --runner-label linux --runner-label {arch} "
-            f"{collector_label}--out <{candidate}>"
+            f"--runner-label x64 --out <{candidate}>"
         ),
         "review_bundle_command": (
             "python scripts/make_extended_linux_evidence_bundle.py "

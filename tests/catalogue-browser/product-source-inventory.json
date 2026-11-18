@@ -1,5 +1,5 @@
 {
-  "baseline_head": "2aa9ab5b9b183e67c9bb308a0cd13b642aa8c828",
+  "baseline_head": "8eef6b579a344c6e035d47006c9eb28db1165ba0",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -78,8 +78,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
-      "sha256": "99c56a5c837622c87272c65c999dee14c9ba938864402039c447bdda126b5567",
-      "size": 258652
+      "sha256": "c5817136e315f9f95a274deb640fa69679fbdd2bb90782ea236f9a11f42a6bf1",
+      "size": 258724
     },
     {
       "path": "src/remote_ops_workspace/gui_designs.py",
@@ -163,8 +163,8 @@
     },
     {
       "path": "src/remote_ops_workspace/moba_connected.py",
-      "sha256": "c91c6bc476a1edfcfc703b36e710ed04e5a518bc76ffab0aef103f56f6871d33",
-      "size": 69806
+      "sha256": "fbbc98d9d82e2e12d679d5e34d5800c62214fc423198dc728503ab18815d2910",
+      "size": 70171
     },
     {
       "path": "src/remote_ops_workspace/moba_customizer.py",

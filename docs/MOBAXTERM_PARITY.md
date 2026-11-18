@@ -226,7 +226,8 @@ reviews, and the downloaded release assets. See the
    explicit file-open action. In the live connected workspace, opening a file
    runs an asynchronous SFTP download, loads the returned text into an
    editable editor, tracks the downloaded SHA-256 baseline, checks the remote
-   file again before saving and prompts on conflicts. An overwrite approval
+   file again before saving and prompts on conflicts. The browser resolves
+   OpenSSH listing paths against the directory it requested. An overwrite approval
    applies to the reviewed bytes. The editor downloads the remote file again
    after approval and requests fresh approval if the bytes change. The final
    check and the upload are separate SFTP requests. Full parity still needs

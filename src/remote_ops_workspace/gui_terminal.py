@@ -4,6 +4,7 @@ import codecs
 import ntpath
 import re
 import time
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable
 from dataclasses import replace
 from itertools import groupby
@@ -30,6 +31,7 @@ from PyQt6.QtGui import (
     QPalette,
     QTextCharFormat,
     QTextCursor,
+    QTextDocument,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -78,6 +80,7 @@ from .terminal import (
 )
 from .terminal_emulation import (
     DEFAULT_CURSOR_STYLE,
+    SOFT_LINE_BREAK,
     TERMINAL_EMULATOR_BACKEND,
     AnsiTerminalTranscript,
     AnsiTextStyle,
@@ -85,6 +88,7 @@ from .terminal_emulation import (
     TerminalScreenRow,
 )
 from .terminal_highlighting import (
+    TerminalHighlightSpan,
     default_terminal_syntax_rules,
     highlight_terminal_text,
     terminal_syntax_rule_keys,
@@ -124,6 +128,22 @@ def _qt_text_units(text: str) -> int:
     return len(text) if text.isascii() else len(text.encode("utf-16-le", "surrogatepass")) // 2
 
 
+def _logical_qt_position(display: str, position: int) -> int:
+    prefix = display.encode("utf-16-le", "surrogatepass")[: 2 * position]
+    return position - prefix.decode("utf-16-le", "surrogatepass").count(SOFT_LINE_BREAK)
+
+
+def _display_qt_position(display: str, position: int) -> int:
+    offset = 0
+    for line in display.split(SOFT_LINE_BREAK)[:-1]:
+        units = _qt_text_units(line)
+        if position <= units:
+            return offset + position
+        position -= units
+        offset += units + 1
+    return offset + position
+
+
 def _same_qt_selection(before: str, after: str, start: int, end: int) -> bool:
     if before.isascii() and after.isascii():
         return end <= len(before) and end <= len(after) and before[start:end] == after[start:end]
@@ -147,6 +167,34 @@ class TerminalTextEdit(QTextEdit):
         self._remote_cursor_blink.timeout.connect(self._toggle_remote_cursor_blink)
         style_hints = _required_gui_value(QApplication.styleHints(), "application style hints")
         style_hints.cursorFlashTimeChanged.connect(self._sync_remote_cursor_blink)
+
+    def toPlainText(self) -> str:  # noqa: N802
+        """Return logical terminal lines, as used by copy and search."""
+        document = _required_gui_value(self.document(), "terminal output document")
+        return document.toRawText().replace(SOFT_LINE_BREAK, "").replace("\u2029", "\n").replace("\u00a0", " ")
+
+    def find_terminal_text(self, needle: str) -> bool:
+        document = _required_gui_value(self.document(), "terminal output document")
+        display = document.toRawText()
+        if SOFT_LINE_BREAK not in display:
+            return self.find(needle)
+
+        # Search the same logical text that Copy returns, including a
+        # match whose characters straddle a soft wrap.
+        logical = QTextDocument()
+        logical.setPlainText(display.replace(SOFT_LINE_BREAK, "").replace("\u2029", "\n"))
+        start = _logical_qt_position(display, self.textCursor().selectionEnd())
+        found = logical.find(needle, start)
+        if found.isNull():
+            return False
+        cursor = QTextCursor(document)
+        cursor.setPosition(_display_qt_position(display, found.selectionStart()))
+        cursor.setPosition(
+            _display_qt_position(display, found.selectionEnd()),
+            QTextCursor.MoveMode.KeepAnchor,
+        )
+        self.setTextCursor(cursor)
+        return True
 
     def set_remote_cursor_state(
         self,
@@ -412,7 +460,9 @@ class TerminalPane(QWidget):
             "terminal vertical scroll bar",
         )
         terminal_scroll_bar.valueChanged.connect(self._on_terminal_scroll_value_changed)
-        self.terminal_emulator = AnsiTerminalTranscript()
+        self.terminal_emulator = AnsiTerminalTranscript(
+            primary_reflow=getattr(self.process, "transport_backend", None) in {"linux-pty", "windows-conpty"},
+        )
         self._terminal_mouse_mode = 0
         self._terminal_mouse_buttons: list[Qt.MouseButton] = []
         self._terminal_mouse_cell: tuple[int, int] | None = None
@@ -747,7 +797,7 @@ class TerminalPane(QWidget):
         # Apply the new grid and forward its dimensions in the same turn.
         # Viewport resize events can arrive inside a document update.
         self.terminal_emulator.set_screen_size(*pending)
-        if self.terminal_emulator.alternate_screen_active:
+        if self.terminal_emulator.primary_reflow or self.terminal_emulator.alternate_screen_active:
             self.render_terminal_transcript(self.terminal_emulator.screen_text())
         resize = getattr(self.process, "setTerminalSize", None)
         if resize is not None:
@@ -1359,7 +1409,9 @@ class TerminalPane(QWidget):
         )
 
     def copy_terminal_selection(self) -> None:
-        selection = self.output.textCursor().selectedText().replace("\u2029", "\n")
+        selection = (
+            self.output.textCursor().selectedText().replace(SOFT_LINE_BREAK, "").replace("\u2029", "\n")
+        )
         if selection:
             self.output.setProperty("terminalLastCopiedText", selection)
             clipboard = self._terminal_clipboard_provider()
@@ -1616,7 +1668,9 @@ class TerminalPane(QWidget):
         return result
 
     def copy_command(self) -> None:
-        selection = self.output.textCursor().selectedText().replace("\u2029", "\n")
+        selection = (
+            self.output.textCursor().selectedText().replace(SOFT_LINE_BREAK, "").replace("\u2029", "\n")
+        )
         clipboard_text = selection or self.plan.printable()
         self.append_text("\n[selected output copied]\n" if selection else "\n[command copied]\n")
         # Updating the transcript can invalidate delayed clipboard ownership
@@ -1668,7 +1722,7 @@ class TerminalPane(QWidget):
         if self.show_launch_command or not rewrite_current:
             return
         command_line = f"$ {self.plan.printable()}\n"
-        current = self._rendered_terminal_text
+        current = self._rendered_terminal_text.replace(SOFT_LINE_BREAK, "")
         if command_line not in current:
             return
         self.set_terminal_transcript(current.replace(command_line, "", 1))
@@ -1685,7 +1739,7 @@ class TerminalPane(QWidget):
         )
         if not inject_current or not self.startup_preamble:
             return
-        current = self._rendered_terminal_text
+        current = self._rendered_terminal_text.replace(SOFT_LINE_BREAK, "")
         if current.startswith(self.startup_preamble):
             return
         self.set_terminal_transcript(f"{self.startup_preamble}{current}")
@@ -2309,10 +2363,11 @@ class TerminalPane(QWidget):
             # Vim/ncurses owns the alternate screen, rewriting the
             # transcript would reset its cursor and make it appear stuck.
             self.disarm_initial_pty_clear_recovery()
+        logical = transcript.replace(SOFT_LINE_BREAK, "")
         if self._pty_initial_clear_pending and not alternate_screen_active:
             self._pty_startup_probe = (self._pty_startup_probe + text)[-16_384:]
             if self.is_initial_conpty_screen_clear(self._pty_startup_probe):
-                body = self.normalized_initial_pty_body(transcript)
+                body = self.normalized_initial_pty_body(logical)
                 self.disarm_initial_pty_clear_recovery()
                 self.set_terminal_transcript(f"{self.terminal_startup_context_text()}{body}")
                 self.output.setProperty(
@@ -2322,22 +2377,22 @@ class TerminalPane(QWidget):
                 return
             startup_context = self.terminal_startup_context_text()
             visible_tail = (
-                transcript[len(startup_context) :]
-                if transcript.startswith(startup_context)
-                else transcript
+                logical[len(startup_context) :]
+                if logical.startswith(startup_context)
+                else logical
             )
             if visible_tail.strip() or len(self._pty_startup_probe) >= 16_384:
                 self.disarm_initial_pty_clear_recovery()
-                normalized = self.normalized_initial_pty_transcript(transcript)
-                if normalized != transcript:
+                normalized = self.normalized_initial_pty_transcript(logical)
+                if normalized != logical:
                     self.set_terminal_transcript(normalized)
                     self.output.setProperty(
                         "terminalInitialPtyClearNormalized",
                         True,
                     )
                     return
-        normalized = self.normalized_initial_prompt_transcript(transcript)
-        if normalized != transcript:
+        normalized = self.normalized_initial_prompt_transcript(logical)
+        if normalized != logical:
             self.set_terminal_transcript(normalized)
             self.output.setProperty("terminalInitialPromptPaddingNormalized", True)
             return
@@ -2527,6 +2582,15 @@ class TerminalPane(QWidget):
             selected_cursor.hasSelection()
             and _same_qt_selection(previous, transcript, selection_start, selection_end)
         )
+        if (
+            selected_cursor.hasSelection()
+            and previous != transcript
+            and (SOFT_LINE_BREAK in previous or SOFT_LINE_BREAK in transcript)
+            and previous.replace(SOFT_LINE_BREAK, "") == transcript.replace(SOFT_LINE_BREAK, "")
+        ):
+            selection_anchor = _display_qt_position(transcript, _logical_qt_position(previous, selection_anchor))
+            selection_position = _display_qt_position(transcript, _logical_qt_position(previous, selection_position))
+            selection_text_unchanged = True
         scroll_bar = _required_gui_value(
             self.output.verticalScrollBar(),
             "terminal vertical scroll bar",
@@ -2676,11 +2740,22 @@ class TerminalPane(QWidget):
             start=replace_from if append_only else 0,
             screen=alternate_screen_active,
         )
-        syntax_spans = (
-            ()
-            if alternate_screen_active
-            else highlight_terminal_text(fragment_source, self.syntax_rules)
-        )
+        syntax_spans: tuple[TerminalHighlightSpan, ...] = ()
+        if not alternate_screen_active:
+            logical = fragment_source.replace(SOFT_LINE_BREAK, "")
+            syntax_spans = highlight_terminal_text(logical, self.syntax_rules)
+            if logical != fragment_source:
+                breaks = []
+                position = 0
+                for line in fragment_source.split(SOFT_LINE_BREAK)[:-1]:
+                    position += len(line)
+                    breaks.append(position)
+                syntax_spans = tuple(
+                    replace(span,
+                            start=span.start + bisect_right(breaks, span.start),
+                            end=span.end + bisect_left(breaks, span.end))
+                    for span in syntax_spans
+                )
         source_offset = replace_from if append_only else 0
         boundaries = {0, len(fragment_source)}
         ansi_ranges = []
@@ -2736,9 +2811,10 @@ class TerminalPane(QWidget):
     def update_remote_cursor_overlay(self, transcript: str) -> None:
         """Place the painted cursor at the emulator's active grid cell."""
 
-        lines = transcript.split("\n")
-        row = max(0, min(len(lines) - 1, self.terminal_emulator.cursor_row))
-        column = max(0, self.terminal_emulator.cursor_column)
+        lines = transcript.replace(SOFT_LINE_BREAK, "\n").split("\n")
+        grid_row, grid_column = self.terminal_emulator.cursor_display_position()
+        row = max(0, min(len(lines) - 1, grid_row))
+        column = max(0, grid_column)
         line = lines[row]
         offset, trailing_cells = self.terminal_emulator.cursor_text_column()
         document_position = sum(_qt_text_units(value) + 1 for value in lines[:row])
@@ -2864,6 +2940,7 @@ class TerminalPane(QWidget):
         )
 
     def refresh_terminal_input_security(self, transcript: str) -> None:
+        transcript = transcript.replace(SOFT_LINE_BREAK, "")
         active = self.terminal_secret_prompt_visible(transcript)
         if active == self._secret_prompt_active:
             return

@@ -218,6 +218,49 @@ def test_viewport_resize_refreshes_alternate_grid_without_waiting_for_output(gui
     assert sent == []
 
 
+def test_primary_viewport_reflow_preserves_selection_links_and_search(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QTextCursor
+
+    from remote_ops_workspace.terminal_emulation import SOFT_LINE_BREAK
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.terminal_emulator.primary_reflow = True
+    pane.terminal_emulator.set_screen_size(20, 6)
+    url = "https://example.test/reflow/path"
+    content = "a" * 18 + " " + url + " 😀界"
+    pane.append_process_text(content)
+    assert "\n" in pane.output.document().toPlainText()
+    assert pane.output.toPlainText() == content
+
+    cursor = pane.output.textCursor()
+    cursor.movePosition(QTextCursor.MoveOperation.Start)
+    pane.output.setTextCursor(cursor)
+    assert window.find_in_text_widget(pane.output, url)
+    assert pane.output.textCursor().selectedText().replace(SOFT_LINE_BREAK, "") == url
+    cursor.setPosition(20)
+    assert cursor.charFormat().anchorHref() == url
+
+    monkeypatch.setattr(pane, "terminal_cell_size", lambda: (10, 10))
+    monkeypatch.setattr(pane.output_viewport, "size", lambda: QSize(448, 88))
+    pane.resize_terminal_backend()
+    pane.flush_terminal_resize()
+    assert pane.output.toPlainText() == content
+    assert pane.output.document().toPlainText().count("\n") == 1
+    assert pane.output.textCursor().selectedText().replace(SOFT_LINE_BREAK, "") == url
+    assert pane.output.property("terminalSelectionPreservedOnOutput") is True
+    assert pane.output.property("terminalRemoteCursorRow") == 1
+    copied = []
+    monkeypatch.setattr(
+        pane, "_terminal_clipboard_provider",
+        lambda: SimpleNamespace(setText=copied.append, text=lambda: copied[-1]),
+    )
+    pane.copy_terminal_selection()
+    assert copied == [url]
+    assert not window.find_in_text_widget(pane.output, "missing needle")
+
+
 def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_window, monkeypatch) -> None:
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QTextCursor

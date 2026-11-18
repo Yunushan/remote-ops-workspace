@@ -11,7 +11,8 @@ and selecting output never exposes escape sequences.
 """
 
 from bisect import bisect_right
-from collections.abc import Sequence
+from collections import deque
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 from unicodedata import category, east_asian_width
@@ -86,6 +87,7 @@ TerminalScreenRow = tuple[str, tuple[AnsiTextStyle, ...]]
 # A wide glyph owns its following empty cell. Its combining marks stay in
 # the leading cell so cell edits never have to count Unicode code points.
 WIDE_CONTINUATION = ""
+SOFT_LINE_BREAK = "\u2028"
 MAX_CELL_CODEPOINTS = 32
 
 
@@ -128,11 +130,19 @@ def ansi_256_color(index: int) -> str:
     return f"#{grey:02x}{grey:02x}{grey:02x}"
 
 
+@dataclass(frozen=True, slots=True)
+class _PrimaryRow:
+    source_row: int
+    start: int
+    end: int
+
+
 @dataclass(slots=True)
 class AnsiTerminalTranscript:
     """A bounded line transcript with the cursor controls common in CLI output."""
 
     max_scrollback_lines: int = 10_000
+    primary_reflow: bool = False
     _lines: list[list[str]] = field(default_factory=list)
     _line_styles: list[list[AnsiTextStyle]] = field(default_factory=list)
     _line: list[str] = field(default_factory=list)
@@ -184,6 +194,7 @@ class AnsiTerminalTranscript:
         repr=False,
     )
     _text_cache: str | None = field(default=None, init=False, repr=False)
+    _primary_rows_cache: tuple[_PrimaryRow, ...] | None = field(default=None, init=False, repr=False)
     _full_redraw_hint: bool = field(default=False, init=False, repr=False)
     _alternate_margin_written: bool = field(default=False, init=False, repr=False)
 
@@ -297,14 +308,27 @@ class AnsiTerminalTranscript:
 
         return self._cursor_column()
 
+    def cursor_display_position(self) -> tuple[int, int]:
+        """Return the cursor row and column in the rendered scrollback."""
+        if self.primary_reflow and not self._alternate_screen:
+            index = self._primary_cursor_row_index()
+            span = self._primary_rows()[index]
+            column = min(self._screen_columns - 1, max(0, self._column - span.start))
+            return index, column
+        return self._cursor_row(), self._cursor_column()
+
     def cursor_text_column(self) -> tuple[int, int]:
         """Translate the grid cursor to a text offset and a cell displacement."""
         if self._alternate_screen:
             self._ensure_alternate_screen()
             cells = self._alternate_lines[self._alternate_row]
+        elif self.primary_reflow:
+            span = self._primary_rows()[self._primary_cursor_row_index()]
+            cells, _ = self._primary_source_row(span.source_row)
+            cells = cells[span.start:span.end]
         else:
             cells, _ = self._normal_cursor_line()
-        column = self._cursor_column()
+        _, column = self.cursor_display_position()
         if column < len(cells) and cells[column] == WIDE_CONTINUATION:
             return sum(map(len, cells[: column - 1])), 1
         return sum(map(len, cells[:column])), max(0, column - len(cells))
@@ -331,14 +355,7 @@ class AnsiTerminalTranscript:
         return hint
 
     def set_screen_size(self, columns: int, rows: int) -> None:
-        """Set the virtual terminal size used by alternate-screen programs.
-
-        The stream transcript does not need a size, but full-screen programs
-        use the reported rows and columns to decide where to redraw.  Keeping
-        this state in the emulator prevents ``htop``/``clear`` updates from
-        growing the document indefinitely while leaving normal output
-        behavior unchanged.
-        """
+        """Set the terminal geometry for grid layout and cursor addressing."""
 
         columns = max(20, int(columns))
         rows = max(5, int(rows))
@@ -375,9 +392,9 @@ class AnsiTerminalTranscript:
                 self._newline()
             elif char == "\b":
                 self._full_redraw_hint = True
-                self._set_cursor_column(max(0, self._cursor_column() - 1))
+                self._set_cursor_column(max(0, self._control_column() - 1))
             elif char == "\t":
-                for _ in range(8 - (self._cursor_column() % 8)):
+                for _ in range(8 - (self._control_column() % 8)):
                     self._write(" ")
             elif char.isprintable():
                 self._write(char)
@@ -409,9 +426,9 @@ class AnsiTerminalTranscript:
                     self._newline()
                 elif char == "\b":
                     self._full_redraw_hint = True
-                    self._set_cursor_column(max(0, self._cursor_column() - 1))
+                    self._set_cursor_column(max(0, self._control_column() - 1))
                 elif char == "\t":
-                    for _ in range(8 - (self._cursor_column() % 8)):
+                    for _ in range(8 - (self._control_column() % 8)):
                         self._write(" ")
                 elif char.isprintable():
                     self._write(char)
@@ -454,9 +471,14 @@ class AnsiTerminalTranscript:
         if self._alternate_screen:
             return "\n".join(line for line, _styles in self._alternate_render_rows())
         if self._text_cache is None:
-            self._text_cache = "\n".join(
-                row for row, _styles in self._cached_render_rows()
-            )
+            rows = self._cached_render_rows()
+            if self.primary_reflow:
+                self._text_cache = "".join(
+                    text + self._row_separator(index, len(rows))
+                    for index, (text, _styles) in enumerate(rows)
+                )
+            else:
+                self._text_cache = "\n".join(text for text, _styles in rows)
         return self._text_cache
 
     def screen_text(self) -> str:
@@ -551,7 +573,8 @@ class AnsiTerminalTranscript:
             else:
                 position += len(row)
             if row_index < len(rows) - 1:
-                append_character("\n", ANSI_DEFAULT_STYLE)
+                separator = "\n" if self._alternate_screen else self._row_separator(row_index, len(rows))
+                append_character(separator, ANSI_DEFAULT_STYLE)
                 position += 1
             if position >= upper:
                 break
@@ -573,8 +596,63 @@ class AnsiTerminalTranscript:
         self._render_rows_cache = None
         self._render_row_offsets_cache = None
         self._text_cache = None
+        self._primary_rows_cache = None
+
+    def _primary_source_row(self, index: int) -> tuple[list[str], list[AnsiTextStyle]]:
+        if index == len(self._lines):
+            return self._line, self._styles
+        return self._lines[index], self._line_styles[index]
+
+    def _primary_row_spans(self, cells: list[str], source_row: int) -> Iterator[_PrimaryRow]:
+        width = self._screen_columns
+        start = 0
+        end = min(width, len(cells))
+        while end < len(cells):
+            if cells[end] == WIDE_CONTINUATION:
+                end -= 1
+            yield _PrimaryRow(source_row, start, end)
+            start = end
+            end = min(start + width, len(cells))
+        yield _PrimaryRow(source_row, start, end)
+
+    def _primary_rows(self) -> tuple[_PrimaryRow, ...]:
+        if self._primary_rows_cache is None:
+            limit = max(self._screen_rows, self.max_scrollback_lines + 1)
+            rows: deque[_PrimaryRow] = deque()
+            # Keep just the rows still present in the display and scrollback.
+            for index in range(len(self._lines), -1, -1):
+                cells, _ = self._primary_source_row(index)
+                tail = deque(self._primary_row_spans(cells, index), maxlen=limit - len(rows))
+                rows.extendleft(reversed(tail))
+                if len(rows) == limit:
+                    break
+            self._primary_rows_cache = tuple(rows)
+        return self._primary_rows_cache
+
+    def _primary_cursor_row_index(self) -> int:
+        rows = self._primary_rows()
+        index = bisect_right(
+            rows, (self._normal_cursor_row, self._column),
+            key=lambda span: (span.source_row, span.start),
+        )
+        return max(0, index - 1)
+
+    def _row_separator(self, index: int, count: int) -> str:
+        if index + 1 == count:
+            return ""
+        if self.primary_reflow:
+            rows = self._primary_rows()
+            if rows[index].source_row == rows[index + 1].source_row:
+                return SOFT_LINE_BREAK
+        return "\n"
 
     def _cached_render_rows(self) -> tuple[tuple[str, list[AnsiTextStyle]], ...]:
+        if self._render_rows_cache is None and self.primary_reflow:
+            projected = []
+            for span in self._primary_rows():
+                cells, styles = self._primary_source_row(span.source_row)
+                projected.append(_display_cells(cells[span.start:span.end], styles[span.start:span.end]))
+            self._render_rows_cache = tuple(projected)
         if self._render_rows_cache is None:
             self._render_rows_cache = tuple(
                 [
@@ -767,10 +845,12 @@ class AnsiTerminalTranscript:
             if first == 5 and not private:
                 self._pending_responses.append(b"\x1b[0n")
             elif first == 6:
-                row = self._cursor_row()
+                row, column = self.cursor_display_position()
                 if self._alternate_screen and self._origin_mode:
                     row = max(0, row - self._alternate_top_margin)
-                column = min(self._cursor_column() + 1, self._screen_columns)
+                elif self.primary_reflow and not self._alternate_screen:
+                    row = max(0, row - max(0, len(self._primary_rows()) - self._screen_rows))
+                column = min(column + 1, self._screen_columns)
                 prefix = "?" if private else ""
                 self._pending_responses.append(f"\x1b[{prefix}{row + 1};{column}R".encode("ascii"))
             return
@@ -784,7 +864,12 @@ class AnsiTerminalTranscript:
             self._apply_sgr(params)
         elif self._alternate_screen:
             self._apply_alternate_csi(values, command)
+        elif self.primary_reflow and command in {"H", "f", "d", "A", "B", "C", "D", "E", "F", "G"}:
+            self._move_primary_cursor(values, command)
+        elif self.primary_reflow and command == "K":
+            self._erase_primary_row(first)
         elif command == "K":
+            self._primary_rows_cache = None
             line, styles = self._normal_cursor_line()
             if first in {0, 1}:  # end/beginning erase both preserve the cursor side.
                 if first == 0:
@@ -801,6 +886,7 @@ class AnsiTerminalTranscript:
                 styles.clear()
                 self._column = 0
         elif command == "J":
+            self._primary_rows_cache = None
             row = self._normal_cursor_row
             if first == 0:
                 line, styles = self._normal_cursor_line()
@@ -863,6 +949,52 @@ class AnsiTerminalTranscript:
             )
         elif command == "u" and self._normal_saved_cursor is not None:
             self._normal_cursor_row, self._column = self._normal_saved_cursor
+
+    def _move_primary_cursor(self, values: list[int], command: str) -> None:
+        row, column = self.cursor_display_position()
+        rows = self._primary_rows()
+        top = max(0, len(rows) - self._screen_rows)
+        first = (values[0] if values else 0) or 1
+        if command in {"H", "f", "d"}:
+            row = top + first - 1
+            if command != "d":
+                column = ((values[1] if len(values) > 1 else 0) or 1) - 1
+        elif command in {"A", "B", "E", "F"}:
+            row += -first if command in {"A", "F"} else first
+            if command in {"E", "F"}:
+                column = 0
+        elif command == "G":
+            column = first - 1
+        else:
+            column += first if command == "C" else -first
+
+        row = max(top, min(top + self._screen_rows - 1, row))
+        missing = row + 1 - len(rows)
+        if missing > 0:
+            for _ in range(missing):
+                self._commit_normal_row()
+            rows = self._primary_rows()
+            row = len(rows) - 1
+        span = rows[row]
+        self._normal_cursor_row = span.source_row
+        self._column = span.start + max(0, min(self._screen_columns - 1, column))
+
+    def _erase_primary_row(self, mode: int) -> None:
+        if mode not in {0, 1, 2}:
+            return
+        span = self._primary_rows()[self._primary_cursor_row_index()]
+        cells, styles = self._primary_source_row(span.source_row)
+        start = min(self._column, span.end) if mode == 0 else span.start
+        end = min(self._column + 1, span.end) if mode == 1 else span.end
+        _blank_wide_boundary(cells, start)
+        _blank_wide_boundary(cells, end)
+        if mode != 1 and span.start == 0 and end == len(cells):
+            del cells[start:end]
+            del styles[start:end]
+        else:
+            cells[start:end] = [" "] * (end - start)
+            styles[start:end] = [self._style] * (end - start)
+        self._primary_rows_cache = None
 
     def _apply_alternate_csi(self, values: list[int], command: str) -> None:
         """Apply cursor and erase controls to the bounded alternate screen."""
@@ -1088,10 +1220,25 @@ class AnsiTerminalTranscript:
     def _cursor_row(self) -> int:
         return self._alternate_row if self._alternate_screen else self._normal_cursor_row
 
+    def _current_primary_span(self) -> _PrimaryRow:
+        cells, _ = self._normal_cursor_line()
+        return next(
+            span for span in reversed(list(self._primary_row_spans(cells, self._normal_cursor_row)))
+            if span.start <= self._column
+        )
+
+    def _control_column(self) -> int:
+        if self.primary_reflow and not self._alternate_screen:
+            return min(self._screen_columns, self._column - self._current_primary_span().start)
+        return self._cursor_column()
+
     def _set_cursor_column(self, value: int) -> None:
         if self._alternate_screen:
             self._alternate_column = max(0, min(self._screen_columns - 1, int(value)))
             self._alternate_margin_written = False
+        elif self.primary_reflow:
+            span = self._current_primary_span()
+            self._column = span.start + max(0, min(self._screen_columns - 1, int(value)))
         else:
             self._column = max(0, int(value))
 
@@ -1341,6 +1488,13 @@ class AnsiTerminalTranscript:
             0,
             min(len(self._lines), self._normal_cursor_row),
         )
+        if self.primary_reflow:
+            cells, _ = self._normal_cursor_line()
+            if len(cells) > self._screen_columns:
+                span = self._primary_rows()[self._primary_cursor_row_index()]
+                if span.end < len(cells):
+                    self._column = span.end
+                    return
         if self._normal_cursor_row < len(self._lines):
             self._normal_cursor_row = min(
                 len(self._lines),
@@ -1348,9 +1502,16 @@ class AnsiTerminalTranscript:
             )
             self._column = 0
             return
+        self._commit_normal_row()
+
+    def _commit_normal_row(self) -> None:
+        self._primary_rows_cache = None
         self._lines.append(list(self._line))
         self._line_styles.append(list(self._styles))
-        overflow = len(self._lines) - self.max_scrollback_lines
+        limit = self.max_scrollback_lines
+        if self.primary_reflow:
+            limit = max(limit, self._screen_rows - 1)
+        overflow = len(self._lines) - limit
         if overflow > 0:
             del self._lines[:overflow]
             del self._line_styles[:overflow]
@@ -1391,6 +1552,7 @@ class AnsiTerminalTranscript:
                 )
             return
         line, styles = self._normal_cursor_line()
+        self._primary_rows_cache = None
         self._write_cells(line, styles, self._column, char, width)
         self._column += width
 

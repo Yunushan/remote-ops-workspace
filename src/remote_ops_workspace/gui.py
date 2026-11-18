@@ -260,7 +260,7 @@ def create_main_window(
         )
 
         from .gui_ssh_connection import SharedSshConnectionState
-        from .gui_terminal import TerminalPane
+        from .gui_terminal import TerminalPane, TerminalTextEdit
     except Exception as exc:  # pragma: no cover - optional dependency
         raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
 
@@ -6249,12 +6249,13 @@ def create_main_window(
 
         @staticmethod
         def find_in_text_widget(widget: QTextEdit, needle: str) -> bool:
-            if widget.find(needle):
+            find = widget.find_terminal_text if isinstance(widget, TerminalTextEdit) else widget.find
+            if find(needle):
                 return True
             cursor = widget.textCursor()
             cursor.movePosition(QTextCursor.MoveOperation.Start)
             widget.setTextCursor(cursor)
-            return widget.find(needle)
+            return find(needle)
 
         def remember_terminal_focus(self, _previous, current_focus) -> None:
             current = self.tabs.currentWidget()

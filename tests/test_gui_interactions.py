@@ -233,6 +233,9 @@ def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
         / "remote_ops_workspace"
         / "gui.py"
     ).read_text(encoding="utf-8")
+    tab_source = (
+        Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_session_tabs.py"
+    ).read_text(encoding="utf-8")
 
     assert 'assert_profile_launch_allowed(profile, surface="gui")' in source
     layout_source = (
@@ -242,8 +245,8 @@ def test_gui_policy_guards_every_profile_backed_execution_surface() -> None:
     assert 'assert_profile_launch_allowed(profile, surface="gui")' in layout_source
     assert "self.open_terminal_tab(pane_plan, profile=profile)" in source
     assert "pane = TerminalPane(plan, profile=profile)" in source
-    assert "widget.plan,\n                    profile=widget.profile," in source
-    assert "self.open_terminal_tab(\n                        plan,\n                        profile=profile," in source
+    assert "widget.plan,\n                profile=widget.profile," in tab_source
+    assert "self.open_terminal_tab(\n                    plan,\n                    profile=profile," in tab_source
     dialog_source = (
         Path(__file__).resolve().parents[1]
         / "src"
@@ -268,17 +271,21 @@ def test_gui_state_transitions_preserve_stable_identity_contracts() -> None:
         / "remote_ops_workspace"
         / "gui.py"
     ).read_text(encoding="utf-8")
+    tab_source = (
+        Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_session_tabs.py"
+    ).read_text(encoding="utf-8")
 
-    assert "tooltip = self.base_tab_tooltip(current_index) or title" in source
-    assert "if isinstance(widget, MobaConnectedSessionPanel):" in source
+    assert "tooltip = self.base_tab_tooltip(current_index) or title" in tab_source
+    assert "_connected_session_panel_type = MobaConnectedSessionPanel" in source
+    assert "if isinstance(widget, self._connected_session_panel_type):" in tab_source
     assert (
-        "self.current_design_is_moba() and isinstance(widget, MobaConnectedSessionPanel)"
-        not in source
+        "self.current_design_is_moba() and isinstance(widget, self._connected_session_panel_type)"
+        not in tab_source
     )
     assert "if current is not None and not self.profile_tree_item_is_visible(current):" in source
     assert "self.profile_list.setCurrentItem(None)" in source
-    assert "and plan.source == f\"profile:{profile.name}\"" in source
-    assert "and self.moba_connected_profile_supported(profile)" in source
+    assert "and plan.source == f\"profile:{profile.name}\"" in tab_source
+    assert "and self.moba_connected_profile_supported(profile)" in tab_source
     layout_source = (
         Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_layouts.py"
     ).read_text(encoding="utf-8")

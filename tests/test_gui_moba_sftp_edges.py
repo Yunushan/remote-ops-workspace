@@ -157,10 +157,13 @@ def test_dock_projects_managed_ssh_state_and_defers_automatic_tools(connected_wo
         assert dock.sftp_status_badge.property("sshConnectionState") == pending.properties()
         assert "Waiting for authentication" in dock.sftp_status_badge.toolTip()
 
-        ready = replace(pending, phase="connected")
-        connection.state = ready
         scheduled = []
         patch.setattr(dock, "schedule_background_state_activation", lambda: scheduled.append(True))
+        window.refresh_moba_shared_ssh_state(pane, pending)
+        assert scheduled == []
+
+        ready = replace(pending, phase="connected")
+        connection.state = ready
         window.refresh_moba_shared_ssh_state(SimpleNamespace(ssh_connection_key="different"), ready)
         assert scheduled == []
         window.refresh_moba_shared_ssh_state(pane, ready)

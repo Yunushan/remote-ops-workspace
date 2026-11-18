@@ -343,7 +343,7 @@ def test_mobaxterm_parity_evidence_rejects_provenance_drift() -> None:
     assert any("release_asset_bytes.sha256 must exactly match" in error for error in errors)
 
 
-def test_mobaxterm_generator_emits_candidate_and_has_no_registry_append(tmp_path: Path) -> None:
+def test_mobaxterm_generator_emits_candidate_and_has_no_registry_append(tmp_path: Path, monkeypatch) -> None:
     generator = _load_generator()
     evidence = tmp_path / "evidence.json"
     artifact = tmp_path / "bundle.zip"
@@ -356,9 +356,15 @@ def test_mobaxterm_generator_emits_candidate_and_has_no_registry_append(tmp_path
 
         @staticmethod
         def to_dict() -> dict[str, object]:
-            return {"passed": True, "errors": [], "summary": {"release_target": "windows-x64"}}
+            return {"passed": True, "errors": [], "summary": {
+                "release_target": "windows-x64", "release_tag": "v1.0.2",
+                "repository": "example/remote-ops-workspace", "source_head_sha": "d" * 40,
+                "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/1234",
+                "run_attempt": 2, "tested_release_asset": {"name": artifact.name, "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()},
+                "verified_windows_installers": {"org-setup.exe": "a" * 64, "org.msi": "b" * 64},
+            }}
 
-    generator.VALIDATORS["professional-deployment"] = lambda *_args, **_kwargs: PassingValidation()
+    monkeypatch.setitem(generator.VALIDATORS, "professional-deployment", lambda *_args, **_kwargs: PassingValidation())
     errors, record = generator.build_evidence_record(
         SimpleNamespace(
             article_id="professional-deployment",
@@ -425,6 +431,7 @@ def test_mobaxterm_finalizer_binds_reviewed_published_bytes(tmp_path: Path) -> N
     candidate = _complete_record(spec)
     candidate["status"] = "candidate"
     candidate["artifact_sha256"] = {published.name: digest}
+    candidate["validation_summary"]["summary"]["tested_release_asset"]["sha256"] = digest
     candidate.pop("release_source")
     candidate.pop("acceptance_review")
     candidate.pop("release_asset_bytes")
@@ -531,6 +538,11 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "moba-text-editor-diff":
             record["validation_summary"]["summary"].update(
                 verified_remote_edit=True, tested_release_asset={"name": name, "sha256": digest},
+            )
+        if article == "professional-deployment":
+            record["validation_summary"]["summary"].update(
+                verified_windows_installers={"org-setup.exe": "a" * 64, "org.msi": "b" * 64},
+                tested_release_asset={"name": name, "sha256": digest},
             )
         article_root = evidence_root / article
         article_root.mkdir()
@@ -649,6 +661,7 @@ def test_certification_rejects_other_release_and_changed_download(reviewed_relea
     stale = next(row for row in reviewed_release.records if row["article_id"] == "professional-deployment")
     stale["release_tag"] = "v1.0.1"
     stale["release_source"]["release_tag"] = "v1.0.1"
+    stale["validation_summary"]["summary"]["release_tag"] = "v1.0.1"
     stale["release_asset_urls"][0] = stale["release_asset_urls"][0].replace("/download/v1.0.2/", "/download/v1.0.1/")
     assert _load_checker().check_record(stale) == []
     reviewed_release.asset.write_bytes(b"changed download")
@@ -827,7 +840,14 @@ def _complete_record(spec):
         "validation_summary": {
             "passed": True,
             "errors": [],
-            "summary": {"release_target": "windows-x64", "brand_name": "Corp Ops"},
+            "summary": {
+                "release_target": "windows-x64", "brand_name": "Corp Ops", "release_tag": "v1.0.2",
+                "repository": "example/remote-ops-workspace", "source_head_sha": "d" * 40,
+                "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/1234",
+                "run_attempt": 2,
+                "tested_release_asset": {"name": "moba-professional-deployment.zip", "sha256": "c" * 64},
+                "verified_windows_installers": {"org-setup.exe": "a" * 64, "org.msi": "b" * 64},
+            },
         },
         "release_source": {
             "repository": "example/remote-ops-workspace",

@@ -275,9 +275,11 @@ reviews, and the downloaded release assets. See the
    HTTPS artifact metadata and local SHA-256 evidence. `row customizer
    evidence-bundle` copies supplied proof files plus signed update-manifest
    artifacts into a release evidence root and immediately validates the
-   resulting deployment evidence. Full parity requires accepted branded
-   Windows release artifacts and evidence for the policy surfaces and hosted
-   organization update channel.
+   resulting deployment evidence. The release audit ties both inspected
+   installer files to the signed organization manifest and validates the
+   recorded native metadata against the original customization. Full parity
+   requires accepted Windows deployment evidence and qualification of the
+   policy surfaces and hosted organization update channel.
 8. Shared authenticated transport and terminal-screen behavior. On POSIX
    hosts, the SFTP browser and monitoring can reuse a matching terminal's
    OpenSSH control socket after it appears. The Windows terminal uses ConPTY
@@ -299,6 +301,38 @@ reviews, and the downloaded release assets. See the
    fallback captures are rejected. This article still remains unaccepted: a
    validator is only a contract, and no real reviewed connected-release record
    has been added to `configs/mobaxterm_parity_evidence.json`.
+
+### Professional Windows installer release evidence
+
+Build both branded installers from the published source asset for the release
+under review. Record its `name` and SHA-256 in `release_asset` and record the
+GitHub repository, release tag, source SHA, workflow run URL and run attempt
+in `source`. Include both objects in the deployment evidence manifest and
+the `installer_branding` capture. Include the published source asset when
+generating the candidate record. Use the original customizer `manifest.json`
+for the `bundle_manifest` attachment and its manifest digest.
+
+Keep the EXE and MSI in the evidence bundle. The signed organization update
+manifest must record the release version, HTTPS update URL, and exactly one
+entry per branded installer with its name, target, HTTPS URL, relative
+`file` path, `sha256`, and `size_bytes`. Use the same organization as the
+customizer bundle.
+
+The `installer_branding` attachment uses schema
+`row.moba-professional.windows-installers.v1`. Its `installer_sha256` map
+records both installer filenames and digests computed before native
+inspection. Set `exe_icon_offset` to the extracted icon image's byte offset
+in the EXE resource section. Reference each capture file with `evidence_file` and
+`evidence_sha256` relative to the evidence root.
+
+| Field | Attachment |
+| --- | --- |
+| `build_manifest` | `enterprise-installers.json` from the native build |
+| `logo` and `welcome` | Original ICO and welcome text from the customizer bundle |
+| `exe_version` | EXE version resource values captured as JSON with `ProductName`, `CompanyName`, and `ProductVersion` |
+| `exe_icon` | Image bytes extracted from an EXE icon resource |
+| `msi_database` | WiX decompile XML from the branded MSI |
+| `msi_icon` and `msi_welcome` | Icon and welcome bytes exported from the MSI by WiX |
 
 ### Article 8 evidence contract
 

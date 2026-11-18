@@ -266,7 +266,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "Production parity requires the supplied evidence files",
             ],
             "scripts/check_moba_professional_deployment_evidence.py": [
-                "validate_professional_deployment_evidence",
+                "validate_professional_release_evidence",
                 "--assets-dir",
             ],
             "scripts/check_moba_professional_update_manifest.py": [

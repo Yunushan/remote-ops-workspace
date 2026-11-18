@@ -12,7 +12,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
-TESTED_ASSET_ARTICLES = frozenset({"embedded-server-suite", "macro-recorder", "moba-text-editor-diff"})
+TESTED_ASSET_ARTICLES = frozenset(
+    {"embedded-server-suite", "macro-recorder", "moba-text-editor-diff", "professional-deployment"}
+)
 SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES | {"shared-authenticated-transport-terminal-grid"}
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -470,6 +472,14 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
             errors.append("macro-recorder validation summary must record verified SSH timing and review for every replay")
     if article_id == "moba-text-editor-diff" and details.get("verified_remote_edit") is not True:
         errors.append("moba-text-editor-diff validation summary must record a verified SFTP edit")
+    if article_id == "professional-deployment":
+        installers = details.get("verified_windows_installers")
+        if (
+            not isinstance(installers, dict) or len(installers) != 2
+            or {Path(name).suffix for name in installers if isinstance(name, str)} != {".exe", ".msi"}
+            or any(not isinstance(digest, str) or not SHA256_RE.fullmatch(digest) for digest in installers.values())
+        ):
+            errors.append("professional-deployment validation summary must bind a verified EXE and MSI")
     return errors
 
 

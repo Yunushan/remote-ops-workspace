@@ -5,6 +5,7 @@ import json
 import os
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -395,8 +396,9 @@ def test_release_asset_validation_rejects_bad_paths_and_hashes(tmp_path: Path) -
         ("pyftpdlib", "ftp", "python.exe", "root", "127.0.0.1", [servers.sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]),
         ("pyftpdlib", "ftp", "pyftpdlib", "root", "127.0.0.1", [servers.sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]),
         ("ftpd", "ftp", "ftpd", "root", "127.0.0.1", ["ftpd", "-D"]),
-        ("tftpd", "tftp", "tftpd", "root", "127.0.0.1", ["tftpd", "--foreground"]),
-        ("atftpd", "tftp", "atftpd", "root", "127.0.0.1", ["atftpd", "--foreground"]),
+        ("tftpd", "tftp", "tftpd", "root", "127.0.0.1", ["tftpd", "--foreground", "--address", "127.0.0.1:2222"]),
+        ("tftpd", "tftp", "tftpd", "root", "::1", ["tftpd", "--foreground", "--address", "[::1]:2222"]),
+        ("atftpd", "tftp", "atftpd", "root", "127.0.0.1", ["atftpd", "--daemon", "--no-fork", "--bind-address", "127.0.0.1", "--port", "2222"]),
         ("sshd-sftp", "sftp", "sshd", None, "127.0.0.1", ["sshd", "-D"]),
         ("x11vnc", "vnc", "x11vnc", None, "127.0.0.1", ["x11vnc", "-listen"]),
         ("vncserver", "vnc", "vncserver", None, "127.0.0.1", ["vncserver", "-rfbport"]),
@@ -424,6 +426,29 @@ def test_file_server_runtime_commands_require_root(key: str) -> None:
     service = "http" if key == "python-http" else "tftp" if key == "tftpd" else "ftp"
     with pytest.raises(ValueError, match="requires a root directory"):
         servers._runtime_command(_runtime(key, service=service), "127.0.0.1", 1234, None)
+
+
+@pytest.mark.parametrize(("host", "public"), [("127.0.0.1", False), ("192.0.2.1", True)])
+def test_frozen_http_starts_an_independent_packaged_cli(tmp_path, monkeypatch, host, public) -> None:
+    helper = tmp_path / ("row.exe" if servers.os.name == "nt" else "row")
+    helper.touch()
+    monkeypatch.setattr(servers.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(servers.sys, "executable", str(helper))
+    monkeypatch.delenv("PYINSTALLER_RESET_ENVIRONMENT", raising=False)
+    plan = servers.build_moba_server_plan("http", host=host, port=8080, root=tmp_path, allow_public_bind=public)
+    command = [str(helper), "servers", "_http-runtime", "--host", host, "--port", "8080", "--root", str(tmp_path)]
+    if public:
+        command.append("--allow-public-bind")
+    assert plan.command == command
+    launched = []
+    process = SimpleNamespace(pid=2468, poll=lambda: None)
+    record = servers.start_moba_server(
+        plan, state_dir=tmp_path,
+        popen_factory=lambda argv, *, env: launched.append((argv, env)) or process,
+        identity_factory=lambda child: {"pid": child.pid},
+    )
+    assert record.pid == process.pid
+    assert launched[0][1]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
 
 
 def test_runtime_command_and_definition_validation(monkeypatch: pytest.MonkeyPatch) -> None:

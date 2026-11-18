@@ -1023,7 +1023,12 @@ def _start_moba_server_locked(
     identity_factory: Callable[[Any], dict[str, Any]] | None,
 ) -> MobaEmbeddedServerLifecycleRecord:
     factory = popen_hidden if popen_factory is None else popen_factory
-    process = factory(plan.command, env={**os.environ, **plan.environment})
+    environment = {**os.environ, **plan.environment}
+    if getattr(sys, "frozen", False) and plan.runtime.key in {"python-http", "pyftpdlib"}:
+        # The server outlives the CLI that starts it. A one-file PyInstaller
+        # child needs its own extraction directory after that CLI exits.
+        environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    process = factory(plan.command, env=environment)
     try:
         identity = (identity_factory or register_process)(process)
         if process.poll() is not None:
@@ -1150,6 +1155,24 @@ def validate_server_bind(host: str, *, allow_public_bind: bool = False) -> str:
             "use --allow-public-bind only for trusted networks"
         )
     return host
+
+
+def run_http_server(host: str, port: int, root: Path, *, allow_public_bind: bool = False) -> None:
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+    from socket import SOCK_STREAM, getaddrinfo
+
+    bind_host = validate_server_bind(host, allow_public_bind=allow_public_bind)
+    bind_port = safe.port(port, "server port")
+    directory = _resolve_root("http", root)
+    family, _, _, _, address = getaddrinfo(bind_host, bind_port, type=SOCK_STREAM)[0]
+
+    class BoundHTTPServer(ThreadingHTTPServer):
+        address_family = family
+
+    handler = partial(SimpleHTTPRequestHandler, directory=directory)
+    with BoundHTTPServer(address, handler) as server:
+        server.serve_forever()
 
 
 def _service_status(
@@ -1429,6 +1452,11 @@ def _runtime_command(
     if runtime.key == "python-http":
         if root is None:
             raise ValueError("http server requires a root directory")
+        if getattr(sys, "frozen", False):
+            command = [*_frozen_server_command("http", "HTTP"), "--host", host, "--port", str(port), "--root", str(root)]
+            if not _is_loopback_host(host.lower()):
+                command.append("--allow-public-bind")
+            return command
         return [executable, "-m", "http.server", str(port), "--bind", host, "--directory", str(root)]
     if runtime.key == "pyftpdlib":
         if root is None:
@@ -1443,7 +1471,10 @@ def _runtime_command(
     if runtime.key in {"tftpd", "atftpd"}:
         if root is None:
             raise ValueError("tftp server requires a root directory")
-        return [executable, "--foreground", "--address", f"{host}:{port}", str(root)]
+        if runtime.key == "atftpd":
+            return [executable, "--daemon", "--no-fork", "--bind-address", host, "--port", str(port), str(root)]
+        address = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+        return [executable, "--foreground", "--address", address, str(root)]
     if runtime.key == "sshd":
         return [executable, "-D", "-p", str(port), "-o", f"ListenAddress={host}", "-o", "PermitEmptyPasswords=no", "-o", "PermitRootLogin=no"]
     if runtime.key == "sshd-sftp":
@@ -1463,17 +1494,22 @@ def _runtime_command(
 def _ftp_runner_command() -> list[str]:
     if not getattr(sys, "frozen", False):
         return [sys.executable, "-m", "remote_ops_workspace.embedded_ftp"]
+    return _frozen_server_command("ftp", "authenticated FTP")
+
+
+def _frozen_server_command(service: str, label: str) -> list[str]:
     executable = Path(sys.executable)
+    arguments = ["servers", f"_{service}-runtime"]
     # The macOS app launcher already delegates all supplied arguments to the
     # CLI, whereas Windows has separate GUI and console entry points.
     if platform.system().lower() == "darwin" and executable.is_file():
-        return [str(executable), "servers", "_ftp-runtime"]
+        return [str(executable), *arguments]
     name = "row.exe" if os.name == "nt" else "row"
     candidates = (executable.with_name(name), executable.parent / "bin" / name)
     for candidate in candidates:
         if candidate.is_file():
-            return [str(candidate), "servers", "_ftp-runtime"]
-    raise ValueError("native authenticated FTP requires the packaged row CLI helper alongside the GUI")
+            return [str(candidate), *arguments]
+    raise ValueError(f"native {label} requires the packaged row CLI helper alongside the GUI")
 
 
 def _host_managed_config(service: str, host: str, port: int) -> dict[str, Any]:

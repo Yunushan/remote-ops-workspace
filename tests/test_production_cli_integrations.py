@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import http.server
+import socket
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,6 +30,30 @@ def test_packaged_ftp_runtime_preserves_exact_nonsecret_arguments(monkeypatch, t
     monkeypatch.setattr(embedded_ftp, "main", lambda argv: received.append(argv) or 7)
     assert cli.main(["servers", "_ftp-runtime", "--host", "127.0.0.1", "--port", "2121", "--root", str(tmp_path)]) == 7
     assert received == [["--host", "127.0.0.1", "--port", "2121", "--root", str(tmp_path)]]
+
+
+def test_packaged_http_runtime_selects_address_family_and_root(monkeypatch, tmp_path, capsys) -> None:
+    calls = []
+
+    class Server:
+        def __init__(self, address, handler):
+            calls.append((self.address_family, address, handler.func, handler.keywords))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            pass
+
+        def serve_forever(self):
+            calls.append("served")
+
+    monkeypatch.setattr(http.server, "ThreadingHTTPServer", Server)
+    arguments = ["servers", "_http-runtime", "--port", "18080", "--root", str(tmp_path), "--host"]
+    assert cli.main([*arguments, "::1"]) == 0
+    assert calls == [(socket.AF_INET6, ("::1", 18080, 0, 0), http.server.SimpleHTTPRequestHandler, {"directory": tmp_path}), "served"]
+    assert cli.main([*arguments, "0.0.0.0"]) == 1
+    assert "refuse non-loopback bind" in capsys.readouterr().err
 
 
 def test_source_gui_smoke_routes_to_real_smoke_module(monkeypatch, tmp_path) -> None:

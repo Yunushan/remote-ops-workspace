@@ -86,6 +86,7 @@ from .moba_servers import (
     build_moba_server_runtime_bundle_plan,
     build_moba_server_runtime_status,
     build_moba_server_suite_status,
+    run_http_server,
     start_moba_server,
     stop_moba_server,
     validate_moba_server_release_evidence,
@@ -993,6 +994,13 @@ def build_parser() -> argparse.ArgumentParser:
     servers_start.add_argument("--dry-run", action="store_true")
     servers_start.add_argument("--json", action="store_true")
     servers_start.set_defaults(func=cmd_servers_start)
+
+    http_runtime = servers_sub.add_parser("_http-runtime", help=argparse.SUPPRESS)
+    http_runtime.add_argument("--host", required=True)
+    http_runtime.add_argument("--port", required=True, type=int)
+    http_runtime.add_argument("--root", required=True, type=Path)
+    http_runtime.add_argument("--allow-public-bind", action="store_true")
+    http_runtime.set_defaults(func=cmd_servers_http_runtime)
 
     ftp_runtime = servers_sub.add_parser("_ftp-runtime", help=argparse.SUPPRESS)
     ftp_runtime.add_argument("--host", required=True)
@@ -2874,6 +2882,11 @@ def cmd_servers_start(args: argparse.Namespace) -> int:
     print(f"lifecycle: {record.state} pid={record.pid or 'none'} state={record.state_path}")
     for note in plan.notes:
         print(f"note: {note}")
+    return 0
+
+
+def cmd_servers_http_runtime(args: argparse.Namespace) -> int:
+    run_http_server(args.host, args.port, args.root, allow_public_bind=args.allow_public_bind)
     return 0
 
 

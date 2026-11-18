@@ -46,9 +46,12 @@ MOBAPT_WORKFLOW = ".github/workflows/mobapt-offline-evidence.yml"
 MOBAPT_JOB = "Qualify published Debian package"
 X11_WORKFLOW = ".github/workflows/x11-forwarding-evidence.yml"
 X11_JOB = "Qualify packaged X11 forwarding"
+EDITOR_WORKFLOW = ".github/workflows/connected-editor-evidence.yml"
+EDITOR_JOB = "Qualify the published wheel's connected editor"
 EVIDENCE_WORKFLOWS = {
     "mobapt-unix-runtime": ("MobApt", MOBAPT_WORKFLOW, MOBAPT_JOB),
     "embedded-x-server": ("X11", X11_WORKFLOW, X11_JOB),
+    "moba-text-editor-diff": ("Connected editor", EDITOR_WORKFLOW, EDITOR_JOB),
 }
 
 
@@ -169,7 +172,7 @@ def verify_workflow_run(
     if evidence_workflow is not None:
         label, _, job_name = evidence_workflow
         if sum(job.get("name") == job_name and job.get("conclusion") == "success" for job in jobs) != 1:
-            raise ValueError(f"{label} evidence attempt must contain one successful Debian qualification job")
+            raise ValueError(f"{label} evidence attempt must contain one successful qualification job")
     return max(timestamps)
 
 
@@ -271,6 +274,12 @@ def audit_release(
         if record["release_tag"] != tag or source["repository"] != repository or source["head_sha"] != release_sha:
             errors.append(f"{article} accepted record must bind the exact release repository, tag, and source SHA")
             continue
+        if article == "moba-text-editor-diff":
+            tested = record["validation_summary"]["summary"]["tested_release_asset"]
+            wheel = f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl"
+            if tested["name"] != wheel or record["release_target"] != "linux-x86_64":
+                errors.append(f"{article} must verify the published wheel on Linux x86_64")
+                continue
 
         for name, expected in record["artifact_sha256"].items():
             path = assets.get(name)

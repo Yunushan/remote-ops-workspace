@@ -520,6 +520,9 @@ def reviewed_release(tmp_path, monkeypatch):
     debian_asset = assets_dir / f"remote-ops-workspace-{tag}-linux-amd64.deb"
     debian_asset.write_bytes(b"published Debian installer")
     debian_digest = hashlib.sha256(debian_asset.read_bytes()).hexdigest()
+    wheel = assets_dir / f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl"
+    wheel.write_bytes(b"published wheel")
+    wheel_digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
 
     records = []
     for article, spec in release_parity.ARTICLE_SPECS.items():
@@ -530,12 +533,17 @@ def reviewed_release(tmp_path, monkeypatch):
         ]
         record["artifact_sha256"] = {name: digest}
         record["release_asset_bytes"]["sha256"] = {name: digest}
-        if article in release_parity.EVIDENCE_WORKFLOWS:
+        if article in {"mobapt-unix-runtime", "embedded-x-server"}:
             record["release_target"] = "linux-x86_64"
             record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{debian_asset.name}"]
             record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {debian_asset.name: debian_digest}
         if article == "embedded-x-server":
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1235"
+        if article == "moba-text-editor-diff":
+            record["release_target"] = "linux-x86_64"
+            record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1236"
+            record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"]
+            record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {wheel.name: wheel_digest}
         if article in SOURCE_BOUND_ARTICLES:
             record["validation_summary"]["summary"] = {
                 "repository": repository,
@@ -565,7 +573,7 @@ def reviewed_release(tmp_path, monkeypatch):
             )
         if article == "moba-text-editor-diff":
             record["validation_summary"]["summary"].update(
-                verified_remote_edit=True, tested_release_asset={"name": name, "sha256": digest},
+                verified_remote_edit=True, tested_release_asset={"name": wheel.name, "sha256": wheel_digest},
             )
         if article == "ssh-browser-26-4-smartcard":
             record["validation_summary"]["summary"].update(
@@ -593,6 +601,8 @@ def reviewed_release(tmp_path, monkeypatch):
     jobs = f"{run}/jobs?per_page=20&page=1"
     x11_run = "actions/runs/1235/attempts/2"
     x11_jobs = f"{x11_run}/jobs?per_page=20&page=1"
+    editor_run = "actions/runs/1236/attempts/2"
+    editor_jobs = f"{editor_run}/jobs?per_page=20&page=1"
     review = "pulls/42/reviews/99"
     responses = {
         "branches/main": {"name": "main", "protected": True, "commit": {"sha": main_tip}},
@@ -629,6 +639,10 @@ def reviewed_release(tmp_path, monkeypatch):
     responses[x11_run] = {**responses[run], "id": 1235, "path": release_parity.X11_WORKFLOW}
     responses[x11_jobs] = {
         "total_count": 1, "jobs": [{**responses[jobs]["jobs"][0], "name": release_parity.X11_JOB, "run_id": 1235}],
+    }
+    responses[editor_run] = {**responses[run], "id": 1236, "path": release_parity.EDITOR_WORKFLOW}
+    responses[editor_jobs] = {
+        "total_count": 1, "jobs": [{**responses[jobs]["jobs"][0], "name": release_parity.EDITOR_JOB, "run_id": 1236}],
     }
     for ancestor, descendant in ((release_sha, registry_commit), (registry_commit, main_tip)):
         responses[f"compare/{ancestor}...{descendant}?per_page=1"] = {
@@ -681,6 +695,7 @@ def reviewed_release(tmp_path, monkeypatch):
     return SimpleNamespace(
         args=args, asset=asset, records=records, responses=responses,
         on_main=on_main, run=run, jobs=jobs, x11_run=x11_run, x11_jobs=x11_jobs,
+        editor_run=editor_run, editor_jobs=editor_jobs,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
     )
@@ -725,7 +740,7 @@ def test_mobapt_certification_requires_the_successful_qualification_job(reviewed
     reviewed_release.responses[reviewed_release.jobs]["jobs"][0]["name"] = "An unrelated successful job"
 
     assert release_parity.audit_release(**reviewed_release.args) == [
-        "mobapt-unix-runtime MobApt evidence attempt must contain one successful Debian qualification job"
+        "mobapt-unix-runtime MobApt evidence attempt must contain one successful qualification job"
     ]
 
 
@@ -738,7 +753,33 @@ def test_x11_certification_refuses_the_wrong_workflow_or_job(reviewed_release) -
     run["path"] = release_parity.X11_WORKFLOW
     reviewed_release.responses[reviewed_release.x11_jobs]["jobs"][0]["name"] = release_parity.MOBAPT_JOB
     assert release_parity.audit_release(**reviewed_release.args) == [
-        "embedded-x-server X11 evidence attempt must contain one successful Debian qualification job"
+        "embedded-x-server X11 evidence attempt must contain one successful qualification job"
+    ]
+
+
+def test_editor_certification_refuses_the_wrong_workflow_or_job(reviewed_release) -> None:
+    run = reviewed_release.responses[reviewed_release.editor_run]
+    run["path"] = release_parity.X11_WORKFLOW
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "moba-text-editor-diff Connected editor evidence must come from its dedicated workflow dispatched at the release tag"
+    ]
+    run["path"] = release_parity.EDITOR_WORKFLOW
+    reviewed_release.responses[reviewed_release.editor_jobs]["jobs"][0]["name"] = release_parity.X11_JOB
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "moba-text-editor-diff Connected editor evidence attempt must contain one successful qualification job"
+    ]
+
+
+def test_editor_certification_requires_the_published_wheel(reviewed_release) -> None:
+    editor = next(row for row in reviewed_release.records if row["article_id"] == "moba-text-editor-diff")
+    debian = next(row for row in reviewed_release.records if row["article_id"] == "mobapt-unix-runtime")
+    for field in ("release_asset_urls", "artifact_sha256", "release_asset_bytes"):
+        editor[field] = debian[field]
+    editor["validation_summary"]["summary"]["tested_release_asset"] = (
+        debian["validation_summary"]["summary"]["tested_release_asset"]
+    )
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "moba-text-editor-diff must verify the published wheel on Linux x86_64"
     ]
 
 
@@ -802,8 +843,8 @@ def test_certification_checks_live_attempt_and_review(
 def test_certification_binds_review_time_to_completed_attempt_jobs(
     reviewed_release, field, value, expected,
 ) -> None:
-    reviewed_release.responses[reviewed_release.jobs]["jobs"][0][field] = value
-    reviewed_release.responses[reviewed_release.x11_jobs]["jobs"][0][field] = value
+    for jobs in (reviewed_release.jobs, reviewed_release.x11_jobs, reviewed_release.editor_jobs):
+        reviewed_release.responses[jobs]["jobs"][0][field] = value
 
     errors = release_parity.audit_release(**reviewed_release.args)
 

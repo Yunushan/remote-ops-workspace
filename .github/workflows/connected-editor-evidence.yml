@@ -1,0 +1,81 @@
+name: Connected editor release evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  EDITOR_IMAGE: row-editor-release-evidence:local
+
+jobs:
+  qualify-editor:
+    name: Qualify the published wheel's connected editor
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Require an exact release tag
+        shell: bash
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          printf 'EDITOR_WORK=%s/connected-editor-evidence\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.7"
+      - name: Verify the immutable wheel and its promotion provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          mkdir -p "$EDITOR_WORK/release" "$EDITOR_WORK/review"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$wheel" --dir "$EDITOR_WORK/release"
+          python scripts/check_release_provenance.py --asset "$EDITOR_WORK/release/$wheel" \
+            --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
+      - name: Prepare a hash-locked Qt and OpenSSH fixture
+        shell: bash
+        run: |
+          image_context="$EDITOR_WORK/image"
+          mkdir -p "$image_context/wheelhouse"
+          cp requirements-locks/source-linux-x86_64{,-bootstrap}.txt "$image_context/"
+          python -m venv "$EDITOR_WORK/download"
+          downloader="$EDITOR_WORK/download/bin/python"
+          "$downloader" -m pip install --require-hashes --only-binary=:all: \
+            -r "$image_context/source-linux-x86_64-bootstrap.txt"
+          "$downloader" -m pip download --require-hashes --no-deps --no-build-isolation \
+            --only-binary=:all: --no-binary=pyftpdlib --dest "$image_context/wheelhouse" \
+            -r "$image_context/source-linux-x86_64.txt"
+          docker build --platform linux/amd64 --tag "$EDITOR_IMAGE" \
+            -f docker/Dockerfile.editor-release-evidence "$image_context"
+      - name: Capture the packaged editor and its overwrite reviews
+        shell: bash
+        run: |
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          evidence="$EDITOR_WORK/review/moba-text-editor-diff"
+          python scripts/run_editor_release_fixture.py \
+            --image "$EDITOR_IMAGE" --wheel "$EDITOR_WORK/release/$wheel" --out "$evidence"
+          python scripts/make_mobaxterm_parity_evidence_record.py \
+            --article-id moba-text-editor-diff --release-tag "$GITHUB_REF_NAME" --release-target linux-x86_64 \
+            --evidence "$evidence/evidence.json" --assets-dir "$evidence" \
+            --release-asset-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$wheel" \
+            --artifact "$wheel=$EDITOR_WORK/release/$wheel" --out "$EDITOR_WORK/review/candidate.json"
+      - name: Retain the candidate and exact editor evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: connected-editor-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/connected-editor-evidence/review/
+          if-no-files-found: error
+          retention-days: 30

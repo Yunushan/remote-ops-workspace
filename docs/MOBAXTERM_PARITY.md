@@ -469,6 +469,12 @@ and checks the release bytes and GitHub workflow and reviewer provenance.
 
 ### Connected editor release evidence
 
+Dispatch `connected-editor-evidence.yml` at the published release tag. The
+workflow verifies the wheel's release provenance, installs those exact bytes
+and opens the editor against a disposable SSH peer on a private Docker
+network. It publishes a candidate and the bound captures for independent
+review.
+
 Run the connected Qt editor against an authenticated OpenSSH server using the
 release package under review. Use a UTF-8 test file. Open it from the SFTP
 browser, edit it locally and capture the displayed diff. Change the remote

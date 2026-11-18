@@ -600,6 +600,9 @@ def reviewed_release(tmp_path, monkeypatch):
             "id": 1234,
             "run_attempt": 2,
             "head_sha": release_sha,
+            "head_branch": tag,
+            "event": "workflow_dispatch",
+            "path": f"{release_parity.MOBAPT_WORKFLOW}@refs/tags/{tag}",
             "status": "completed",
             "conclusion": "success",
             "repository": {"full_name": repository},
@@ -608,7 +611,7 @@ def reviewed_release(tmp_path, monkeypatch):
         jobs: {
             "total_count": 2,
             "jobs": [
-                {"id": 1, "run_id": 1234, "run_attempt": 2, "head_sha": release_sha,
+                {"id": 1, "name": release_parity.MOBAPT_JOB, "run_id": 1234, "run_attempt": 2, "head_sha": release_sha,
                  "status": "completed", "conclusion": "success", "completed_at": "2026-08-23T12:30:00Z"},
                 {"id": 2, "run_id": 1234, "run_attempt": 2, "head_sha": release_sha,
                  "status": "completed", "conclusion": "skipped", "completed_at": None},
@@ -697,6 +700,27 @@ def test_hosted_delivery_failure_blocks_certification(reviewed_release, monkeypa
     monkeypatch.setattr(release_parity, "verify_hosted_professional_update", stale_delivery)
     assert release_parity.audit_release(**reviewed_release.args) == [
         "professional-deployment signed manifest HTTPS delivery SHA-256 differs from the reviewed bytes"
+    ]
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("event", "push"),
+    ("head_branch", "main"),
+    ("path", ".github/workflows/ci.yml"),
+])
+def test_mobapt_certification_refuses_successful_attempt_from_the_wrong_workflow(reviewed_release, field, value) -> None:
+    reviewed_release.responses[reviewed_release.run][field] = value
+
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "mobapt-unix-runtime MobApt evidence must come from its dedicated workflow dispatched at the release tag"
+    ]
+
+
+def test_mobapt_certification_requires_the_successful_qualification_job(reviewed_release) -> None:
+    reviewed_release.responses[reviewed_release.jobs]["jobs"][0]["name"] = "An unrelated successful job"
+
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "mobapt-unix-runtime MobApt evidence attempt must contain one successful Debian qualification job"
     ]
 
 

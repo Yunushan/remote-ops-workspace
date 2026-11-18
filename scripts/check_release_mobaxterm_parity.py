@@ -33,6 +33,7 @@ from check_release_provenance import (  # noqa: E402
     normalize_tag,
     run_gh_json,
     sha256_file,
+    workflow_path_matches,
 )
 
 from scripts.check_moba_professional_deployment_evidence import (  # noqa: E402
@@ -41,6 +42,8 @@ from scripts.check_moba_professional_deployment_evidence import (  # noqa: E402
 from scripts.make_mobaxterm_parity_evidence_record import VALIDATORS  # noqa: E402
 
 REGISTRY = "configs/mobaxterm_parity_evidence.json"
+MOBAPT_WORKFLOW = ".github/workflows/mobapt-offline-evidence.yml"
+MOBAPT_JOB = "Qualify published Debian package"
 
 
 def github_object(repository: str, resource: str) -> dict[str, Any]:
@@ -106,7 +109,7 @@ def load_registry(repository: str, release_sha: str, registry_commit: str) -> di
     return registry
 
 
-def verify_workflow_run(repository: str, source: dict[str, Any]) -> str:
+def verify_workflow_run(repository: str, source: dict[str, Any], *, require_mobapt_job: bool = False) -> str:
     match = GITHUB_WORKFLOW_RUN_RE.fullmatch(source["workflow_run_url"])
     assert match is not None  # The registry validator checked the URL.
     run_id = int(match.group(2))
@@ -130,6 +133,11 @@ def verify_workflow_run(repository: str, source: dict[str, Any]) -> str:
         owner = run.get(key)
         if not isinstance(owner, dict) or owner.get("full_name") != repository:
             raise ValueError(f"GitHub workflow attempt {key} differs from the release repository")
+    if require_mobapt_job and (
+        run.get("event") != "workflow_dispatch" or run.get("head_branch") != source["release_tag"]
+        or not workflow_path_matches(run.get("path"), MOBAPT_WORKFLOW, source["release_tag"])
+    ):
+        raise ValueError("MobApt evidence must come from its dedicated workflow dispatched at the release tag")
 
     jobs = collect_paginated_attempt_jobs(
         lambda page: github_object(repository, f"{endpoint}/jobs?per_page={JOBS_PAGE_SIZE}&page={page}")
@@ -150,6 +158,10 @@ def verify_workflow_run(repository: str, source: dict[str, Any]) -> str:
         timestamps.append(completed_at)
     if not timestamps or not any(job.get("conclusion") == "success" for job in jobs):
         raise ValueError("GitHub evidence attempt has no successful jobs with completion timestamps")
+    if require_mobapt_job and sum(
+        job.get("name") == MOBAPT_JOB and job.get("conclusion") == "success" for job in jobs
+    ) != 1:
+        raise ValueError("MobApt evidence attempt must contain one successful Debian qualification job")
     return max(timestamps)
 
 
@@ -243,7 +255,7 @@ def audit_release(
         return errors
 
     digests: dict[str, str] = {}
-    checked_runs: dict[tuple[str, int], str] = {}
+    checked_runs: dict[tuple[str, int, bool], str] = {}
     checked_reviews: dict[tuple[str, str, str], set[str]] = {}
     for record in registry["accepted_evidence"]:
         article = record["article_id"]
@@ -262,12 +274,13 @@ def audit_release(
             if digests[name] != expected:
                 errors.append(f"{article} SHA-256 differs from the downloaded release asset: {name}")
 
-        run_key = (source["workflow_run_url"], source["run_attempt"])
+        require_mobapt_job = article == "mobapt-unix-runtime"
+        run_key = (source["workflow_run_url"], source["run_attempt"], require_mobapt_job)
         review = record["acceptance_review"]
         review_key = (review["review_url"], review["reviewer"], review["reviewed_at"])
         try:
             if run_key not in checked_runs:
-                checked_runs[run_key] = verify_workflow_run(repository, source)
+                checked_runs[run_key] = verify_workflow_run(repository, source, require_mobapt_job=require_mobapt_job)
             if review["reviewed_at"] < checked_runs[run_key]:
                 raise ValueError("GitHub review predates completion of the evidence workflow attempt")
             if review_key not in checked_reviews:

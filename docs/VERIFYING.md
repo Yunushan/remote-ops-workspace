@@ -141,6 +141,24 @@ requires independently reviewed evidence for the published release.
 
 ### MobApt release evidence
 
+Once `.github/workflows/mobapt-offline-evidence.yml` is on `main` and in the
+published production tag, dispatch it against that tag:
+
+```bash
+gh workflow run mobapt-offline-evidence.yml --ref "$release_tag"
+```
+
+The job downloads the exact Linux x86_64 Debian asset and verifies its
+immutable-release digest, source SHA, and completed promotion provenance
+before installing it. Download `mobapt-offline-evidence-<run-id>-<attempt>`
+from the successful run. It contains `candidate.json` and the
+`mobapt-unix-runtime/` evidence directory. The independent reviewer uses the
+same published `.deb` for finalization and retains the evidence directory for
+the strict release audit.
+
+To reproduce the capture locally or assemble an input cache manually, use
+the steps below.
+
 For a Debian target, assemble the bundle with a real `bin/bash` for the target
 architecture and `.deb` archives from an authenticated package source. Prepare
 a disposable Debian image with Python, the matching architecture, and the

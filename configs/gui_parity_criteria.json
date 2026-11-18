@@ -1468,8 +1468,6 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "moba_connected_tab_chrome_items",
-              "mobaTabChromeKey",
-              "mobaTabIconKey",
               "apply_moba_tab_chrome"
             ],
             "scripts/check_real_gui_render.py": [
@@ -1479,6 +1477,10 @@
             ],
             "configs/gui_visual_metrics.json": [
               "connected-tab-strip"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "mobaTabChromeKey",
+              "mobaTabIconKey"
             ]
           }
         },
@@ -1496,11 +1498,6 @@
               "geometry.close_right_offset",
               "geometry.gap_after"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaTabStaticWidth",
-              "mobaTabCloseRightOffset",
-              "mobaTabChromeGeometryKeys"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_TAB_CHROME_GEOMETRY",
               "connected-tab-geometry",
@@ -1508,6 +1505,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style connected tab geometry"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "mobaTabStaticWidth",
+              "mobaTabCloseRightOffset",
+              "mobaTabChromeGeometryKeys"
             ]
           }
         },
@@ -2560,11 +2562,6 @@
               "mobaConnectedSessionTabContextMenu",
               "MobaConnectedSessionActionRoute"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "build_tab_context_menu",
-              "apply_session_action_menu_capture",
-              "session_action_menu_object_name"
-            ],
             "scripts/check_real_gui_render.py": [
               "build_tab_context_menu",
               "connected session action menu",
@@ -2576,6 +2573,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style connected session action menu route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "build_tab_context_menu",
+              "apply_session_action_menu_capture",
+              "session_action_menu_object_name"
             ]
           }
         },
@@ -4243,13 +4245,15 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "gui_design_workspace_surface",
-              "rebuild_welcome_tab",
               "workspaceSurfaceSubtitle"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_securecrt_workspace",
               "Session / SFTP",
               "draw_product_terminal"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "rebuild_welcome_tab"
             ]
           }
         },
@@ -4543,9 +4547,6 @@
               "gui_design_preset_reference_tab_route",
               "reference-profile-tab-can-be-active-surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "find_tab_by_label"
-            ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabActivatedLabel",
               "presetReferenceTabReturnedHomeLabel"
@@ -4562,6 +4563,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference tab activation route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "find_tab_by_label"
             ]
           }
         },
@@ -4635,7 +4639,6 @@
               "active-reference-session-actions"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "sessionTabContextActionKey",
               "apply_reference_session_action_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4652,6 +4655,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference session action route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "sessionTabContextActionKey"
             ]
           }
         },
@@ -6433,9 +6439,6 @@
               "gui_design_preset_reference_tab_route",
               "reference-profile-tab-can-be-active-surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "find_tab_by_label"
-            ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabActivatedLabel",
               "presetReferenceTabReturnedHomeLabel"
@@ -6452,6 +6455,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference tab activation route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "find_tab_by_label"
             ]
           }
         },
@@ -6525,7 +6531,6 @@
               "active-reference-session-actions"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "sessionTabContextActionKey",
               "apply_reference_session_action_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6542,6 +6547,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference session action route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "sessionTabContextActionKey"
             ]
           }
         },
@@ -8287,9 +8295,6 @@
               "gui_design_preset_reference_tab_route",
               "reference-profile-tab-can-be-active-surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "find_tab_by_label"
-            ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabActivatedLabel",
               "presetReferenceTabReturnedHomeLabel"
@@ -8306,6 +8311,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference tab activation route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "find_tab_by_label"
             ]
           }
         },
@@ -8379,7 +8387,6 @@
               "active-reference-session-actions"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "sessionTabContextActionKey",
               "apply_reference_session_action_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8396,6 +8403,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference session action route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "sessionTabContextActionKey"
             ]
           }
         },
@@ -9734,13 +9744,15 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "gui_design_workspace_surface",
-              "rebuild_welcome_tab",
               "workspaceSurfaceSubtitle"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_mremoteng_workspace",
               "draw_mremoteng_rdp_panel",
               "draw_mremoteng_property_grid"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "rebuild_welcome_tab"
             ]
           }
         },
@@ -10072,9 +10084,6 @@
               "gui_design_preset_reference_tab_route",
               "reference-profile-tab-can-be-active-surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "find_tab_by_label"
-            ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabActivatedLabel",
               "presetReferenceTabReturnedHomeLabel"
@@ -10091,6 +10100,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference tab activation route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "find_tab_by_label"
             ]
           }
         },
@@ -10164,7 +10176,6 @@
               "active-reference-session-actions"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "sessionTabContextActionKey",
               "apply_reference_session_action_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10181,6 +10192,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "reference session action route"
+            ],
+            "src/remote_ops_workspace/gui_workspace_tabs.py": [
+              "sessionTabContextActionKey"
             ]
           }
         },

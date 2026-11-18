@@ -179,7 +179,23 @@ def verify_bytes(path: Path, size: int, digest: str, *, copy_to=None) -> None:
     require(remaining == 0 and actual.hexdigest() == digest, "installer-digest-mismatch")
 
 
+def snapshot_matches(dest: Path, artifact) -> bool:
+    try:
+        dest.lstat()
+    except FileNotFoundError:
+        return False
+    try:
+        verify_bytes(dest, artifact.size, artifact.sha256)
+    except UpdateError as error:
+        raise UpdateError("transaction-snapshot-conflict") from error
+    return True
+
+
 def snapshot_deb(source: Path, artifact, dest: Path) -> None:
+    # The administrator-owned directory and transaction locks serialize
+    # publishers. A completed snapshot can survive a crash before journaling.
+    if snapshot_matches(dest, artifact):
+        return
     temporary = NamedTemporaryFile(dir=dest.parent, prefix=".update-", delete=False)
     path = Path(temporary.name)
     try:
@@ -187,7 +203,8 @@ def snapshot_deb(source: Path, artifact, dest: Path) -> None:
             verify_bytes(source, artifact.size, artifact.sha256, copy_to=temporary)
             temporary.flush()
             os.fsync(temporary.fileno())
-        os.replace(path, dest)
+        if not snapshot_matches(dest, artifact):
+            os.replace(path, dest)
         sync_directory(dest.parent)
     finally:
         path.unlink(missing_ok=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -76,13 +77,43 @@ def test_successful_rollback_checks_retained_package_before_install(tmp_path, mo
     ]
 
 
-def test_snapshot_rejects_same_size_replacement_without_overwriting_retained_bytes(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("name", [updater.PREVIOUS_PACKAGE, "candidate.deb"])
+def test_snapshot_refuses_to_replace_an_existing_unrelated_file(tmp_path: Path, monkeypatch, name):
     monkeypatch.setattr(updater, "trusted_path", lambda path, **_kw: path)
-    source = tmp_path / "candidate.deb"
-    source.write_bytes(b"changed")
+    stage = tmp_path / "stage.deb"
+    stage.write_bytes(b"approved")
+    retained = tmp_path / name
+    retained.write_bytes(b"existing")
+    artifact = SimpleNamespace(size=8, sha256=hashlib.sha256(b"approved").hexdigest())
+
+    with pytest.raises(updater.UpdateError, match="transaction-snapshot-conflict"):
+        updater.snapshot_deb(stage, artifact, retained)
+
+    assert retained.read_bytes() == b"existing"
+    assert set(tmp_path.iterdir()) == {stage, retained}
+
+
+def test_snapshot_reuses_identical_bytes_from_interrupted_preparation(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **_kw: path)
     retained = tmp_path / updater.PREVIOUS_PACKAGE
-    retained.write_bytes(b"original")
+    retained.write_bytes(b"approved")
+    original_inode = retained.stat().st_ino
+    artifact = SimpleNamespace(size=8, sha256=hashlib.sha256(b"approved").hexdigest())
+
+    updater.snapshot_deb(tmp_path / "not-needed.deb", artifact, retained)
+
+    assert retained.stat().st_ino == original_inode
+    assert retained.read_bytes() == b"approved"
+
+
+def test_snapshot_rejects_changed_staged_bytes_before_publication(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **_kw: path)
+    stage = tmp_path / "stage.deb"
+    stage.write_bytes(b"changed!")
+    retained = tmp_path / updater.PREVIOUS_PACKAGE
+    artifact = SimpleNamespace(size=8, sha256=hashlib.sha256(b"approved").hexdigest())
+
     with pytest.raises(updater.UpdateError, match="installer-digest-mismatch"):
-        updater.snapshot_deb(source, SimpleNamespace(size=7, sha256="0" * 64), retained)
-    assert retained.read_bytes() == b"original"
-    assert set(tmp_path.iterdir()) == {source, retained}
+        updater.snapshot_deb(stage, artifact, retained)
+
+    assert set(tmp_path.iterdir()) == {stage}

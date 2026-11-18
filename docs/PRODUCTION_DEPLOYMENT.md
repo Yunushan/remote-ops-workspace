@@ -268,10 +268,10 @@ production approval separately binds components actually present in every packag
 
 Enterprise update manifests use Ed25519 public keys only. Generate and protect
 the private key outside deployed clients; distribute only the base64-encoded
-32-byte public key as `ed25519:<public-key>`. The current command validates a
-staged manifest and assets. It does not fetch, install, or roll back updates,
-so use your existing endpoint-management system for staged deployment and
-rollback until a managed updater is introduced.
+32-byte public key as `ed25519:<public-key>`.
+The `row customizer update-verify` command validates a local manifest and assets.
+Use the Debian update controller below for managed DEB updates and your endpoint
+management system for other installation formats.
 
 Configure the trusted public key independently of the received manifest.
 `row customizer update-verify` and the standalone manifest checker reject an

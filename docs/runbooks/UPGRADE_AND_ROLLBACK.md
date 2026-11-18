@@ -102,7 +102,10 @@ python3 -I scripts/managed_linux_update.py apply --version 1.0.28 \
   --transaction /root/row-updates/transition-1.0.28
 ```
 
-Keep the transaction directory. The controller records the installation attempt
+Keep the transaction directory. Before creating its journal, the controller
+reuses retained installer files only if their bytes match the signed manifests.
+If a file conflicts, use a separate private transaction directory.
+The controller records the installation attempt
 before invoking `dpkg` and uses the retained installer if installation or its
 verification fails. If `apply` is interrupted, repeat it with the same
 transaction directory to recover the previous package. An automatic rollback

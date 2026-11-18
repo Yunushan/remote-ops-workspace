@@ -1,5 +1,5 @@
 {
-  "baseline_head": "c3461d11606326aa587781d4e1e4ed779180184e",
+  "baseline_head": "51b584cbcb2794ce6301e4b1ad1bf2b377369e61",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -373,8 +373,8 @@
     },
     {
       "path": "src/remote_ops_workspace/windows_conpty.py",
-      "sha256": "6ae74d81496b038f7ba31424105854efffbd4ef93cd85d65b6fde4eff2a1dcad",
-      "size": 53451
+      "sha256": "85df851db17443dcef7cbd7ab03c5452b6424f05d8f8adb9e9bf68655c129918",
+      "size": 53897
     },
     {
       "path": "src/remote_ops_workspace/windows_private_storage.py",

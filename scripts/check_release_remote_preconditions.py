@@ -21,6 +21,19 @@ TAG_RE = re.compile(r"v\d+\.\d+\.\d+")
 PRODUCTION_BRANCH = "main"
 MAX_JSON_BYTES = 20 * 1024 * 1024
 MAX_RELEASE_PAGES = 1000
+MAX_ENVIRONMENT_SECRETS = 100
+RELEASE_SIGNING_SECRETS = frozenset({
+    "ROW_WINDOWS_CERTIFICATE_BASE64",
+    "ROW_WINDOWS_CERTIFICATE_PASSWORD",
+    "ROW_WINDOWS_TIMESTAMP_URL",
+    "ROW_MACOS_CERTIFICATE_BASE64",
+    "ROW_MACOS_CERTIFICATE_PASSWORD",
+    "ROW_MACOS_SIGN_IDENTITY",
+    "ROW_MACOS_INSTALLER_SIGN_IDENTITY",
+    "ROW_MACOS_NOTARY_KEY_BASE64",
+    "ROW_MACOS_NOTARY_KEY_ID",
+    "ROW_MACOS_NOTARY_ISSUER",
+})
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -43,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
         child = subparsers.add_parser(command)
         child.add_argument("--repository", required=True)
         child.add_argument("--tag", required=True)
+    signing = subparsers.add_parser("signing", help="check required secret names in the release environment")
+    signing.add_argument("--repository", required=True)
     pre_tag = subparsers.add_parser("pre-tag", help="check the exact production source before creating a tag")
     pre_tag.add_argument("--repository", required=True)
     pre_tag.add_argument("--tag", required=True)
@@ -50,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         repository = normalize_repository(args.repository)
-        tag = normalize_tag(args.tag)
+        tag = normalize_tag(args.tag) if args.command != "signing" else ""
         api_root = normalize_api_root(os.environ.get("GITHUB_API_URL", "https://api.github.com"))
         if args.command == "immutable":
             token = require_token("ROW_RELEASE_IMMUTABILITY_TOKEN")
@@ -58,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "namespace":
             token = require_token("GITHUB_TOKEN")
             require_unused_namespace(api_root, repository, tag, token)
+        elif args.command == "signing":
+            require_signing_secret_inventory(api_root, repository, signing_inventory_token())
         else:
             if re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) is None:
                 raise ValueError("--sha must be a full 40-character commit SHA")
@@ -81,6 +98,7 @@ def require_pre_tag(api_root: str, repository: str, tag: str, sha: str) -> None:
 
     check_remote_pre_tag_refs(repository, tag, sha)
     require_immutable_enabled(api_root, repository, require_token("ROW_RELEASE_IMMUTABILITY_TOKEN"))
+    require_signing_secret_inventory(api_root, repository, signing_inventory_token())
     coordinates = ("--repository", repository, "--branch", PRODUCTION_BRANCH)
     run_release_check("check_python315_ci_evidence.py", *coordinates, "--sha", sha)
     run_release_check("check_repository_governance.py", *coordinates, "--sha", sha)
@@ -175,6 +193,11 @@ def require_token(name: str) -> str:
     return token
 
 
+def signing_inventory_token() -> str:
+    dedicated = "ROW_RELEASE_SIGNING_INVENTORY_TOKEN"
+    return require_token(dedicated if dedicated in os.environ else "GITHUB_TOKEN")
+
+
 def get_json(url: str, token: str, *, api_version: str) -> tuple[Any, Any]:
     request = urllib.request.Request(
         url,
@@ -214,6 +237,29 @@ def require_immutable_enabled(api_root: str, repository: str, token: str) -> Non
     )
     if not isinstance(payload, dict) or payload.get("enabled") is not True:
         raise RuntimeError("repository immutable releases setting is not enabled")
+
+
+def require_signing_secret_inventory(api_root: str, repository: str, token: str) -> None:
+    url = f"{api_root}/repos/{repository}/environments/release/secrets?per_page={MAX_ENVIRONMENT_SECRETS}"
+    try:
+        payload, _ = get_json(url, token, api_version="2026-03-10")
+    except (RuntimeError, ValueError) as exc:
+        raise RuntimeError("could not read release signing secret names with Environments read access") from exc
+    rows = payload.get("secrets") if isinstance(payload, dict) else None
+    count = payload.get("total_count") if isinstance(payload, dict) else None
+    if type(count) is not int or not isinstance(rows, list) or not 0 <= count == len(rows) <= MAX_ENVIRONMENT_SECRETS:
+        raise RuntimeError("GitHub returned an incomplete release signing secret inventory")
+    names = set()
+    for row in rows:
+        name = row.get("name") if isinstance(row, dict) else None
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Z_][A-Z0-9_]*", name):
+            raise RuntimeError("GitHub returned malformed release signing secret metadata")
+        if name in names:
+            raise RuntimeError("GitHub returned duplicate release signing secret names")
+        names.add(name)
+    missing = RELEASE_SIGNING_SECRETS - names
+    if missing:
+        raise RuntimeError("missing signing secrets in the release environment: " + ", ".join(sorted(missing)))
 
 
 def require_unused_namespace(

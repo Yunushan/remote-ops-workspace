@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from subprocess import CompletedProcess
 
 import pytest
@@ -14,6 +15,72 @@ FIRST_PAGE = f"{REPOSITORY_URL}/releases?per_page=100"
 SECOND_PAGE = f"{API_ROOT}{RELEASES_PATH}?per_page=100&page=2"
 RELEASE_TAG = "v1.2.3"
 RELEASE_SHA = "a" * 40
+
+
+def test_signing_inventory_matches_the_production_workflow() -> None:
+    workflow = (preconditions.ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    preflight = workflow.split("  release-preflight:\n", 1)[1].split("      - name: Detect release signing readiness\n", 1)
+    assert "    environment: release\n" in preflight[0]
+    step = preflight[1].split("      - name:", 1)[0]
+    configured = set(re.findall(r"\$\{\{ secrets\.(ROW_[A-Z0-9_]+) \}\}", step))
+    checked = {name for line in re.findall(r"(?m)^ +for name in ([^;]+); do$", step) for name in line.split()}
+    assert configured == checked == preconditions.RELEASE_SIGNING_SECRETS
+
+
+@pytest.mark.parametrize("missing", [set(), {"ROW_WINDOWS_TIMESTAMP_URL", "ROW_MACOS_NOTARY_KEY_ID"}])
+def test_signing_uses_the_protected_environment_and_reports_missing_names(monkeypatch, missing) -> None:
+    names = (preconditions.RELEASE_SIGNING_SECRETS - missing) | {"UNRELATED_ENTRY"}
+
+    def get_json(url, token, *, api_version):
+        assert url == f"{REPOSITORY_URL}/environments/release/secrets?per_page=100"
+        assert token == "fixture" and api_version == "2026-03-10"
+        return {"total_count": len(names), "secrets": [{"name": name} for name in names]}, {}
+
+    monkeypatch.setattr(preconditions, "get_json", get_json)
+    if missing:
+        with pytest.raises(RuntimeError, match="missing signing secrets") as exc:
+            preconditions.require_signing_secret_inventory(API_ROOT, REPOSITORY, "fixture")
+        assert all(name in str(exc.value) for name in missing)
+        assert "UNRELATED_ENTRY" not in str(exc.value)
+    else:
+        preconditions.require_signing_secret_inventory(API_ROOT, REPOSITORY, "fixture")
+
+
+@pytest.mark.parametrize(("payload", "error"), [
+    ({"total_count": 101, "secrets": [{"name": "KEY"}]}, "incomplete"),
+    ({"total_count": 2, "secrets": [{"name": "KEY"}]}, "incomplete"),
+    ({"total_count": True, "secrets": [{"name": "KEY"}]}, "incomplete"),
+    ({"total_count": 1, "secrets": [{"name": "private value"}]}, "malformed"),
+    ({"total_count": 2, "secrets": [{"name": "KEY"}, {"name": "KEY"}]}, "duplicate"),
+])
+def test_signing_rejects_unverified_inventory(monkeypatch, payload, error) -> None:
+    monkeypatch.setattr(preconditions, "get_json", lambda *args, **kwargs: (payload, {}))
+    with pytest.raises(RuntimeError, match=error):
+        preconditions.require_signing_secret_inventory(API_ROOT, REPOSITORY, "fixture")
+
+
+@pytest.mark.parametrize("dedicated_token", [False, True])
+def test_signing_command_can_run_before_other_pre_tag_checks(monkeypatch, capsys, dedicated_token) -> None:
+    monkeypatch.setenv("GITHUB_API_URL", API_ROOT)
+    monkeypatch.setenv("GITHUB_TOKEN", "default-fixture")
+    monkeypatch.delenv("ROW_RELEASE_SIGNING_INVENTORY_TOKEN", raising=False)
+    if dedicated_token:
+        monkeypatch.setenv("ROW_RELEASE_SIGNING_INVENTORY_TOKEN", "signing-fixture")
+    calls = []
+    monkeypatch.setattr(preconditions, "require_signing_secret_inventory", lambda *args: calls.append(args))
+    assert preconditions.main(["signing", "--repository", REPOSITORY]) == 0
+    assert calls == [(API_ROOT, REPOSITORY, "signing-fixture" if dedicated_token else "default-fixture")]
+    assert "signing passed" in capsys.readouterr().out
+
+
+def test_signing_access_failure_reports_the_required_permission(monkeypatch) -> None:
+    def denied(*args, **kwargs):
+        raise RuntimeError("remote response body")
+
+    monkeypatch.setattr(preconditions, "get_json", denied)
+    with pytest.raises(RuntimeError, match="Environments read access") as exc:
+        preconditions.require_signing_secret_inventory(API_ROOT, REPOSITORY, "fixture")
+    assert "remote response body" not in str(exc.value)
 
 
 @pytest.mark.parametrize("collision", [False, True])
@@ -132,13 +199,16 @@ def test_remote_pre_tag_binds_qualified_history_without_accepting_an_existing_ta
         preconditions.check_remote_pre_tag_refs(REPOSITORY, RELEASE_TAG, RELEASE_SHA)
 
 
-@pytest.mark.parametrize("tag_created_during_audit", [False, True])
-def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(monkeypatch, capsys, tag_created_during_audit) -> None:
+@pytest.mark.parametrize(("tag_created_during_audit", "signing_ready"), [(False, True), (True, True), (False, False)])
+def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
+    monkeypatch, capsys, tag_created_during_audit, signing_ready,
+) -> None:
     calls = []
     coordinates = ("--repository", REPOSITORY, "--branch", "main")
     monkeypatch.setenv("GITHUB_API_URL", API_ROOT)
     monkeypatch.setenv("GITHUB_TOKEN", "namespace-token")
     monkeypatch.setenv("GH_TOKEN", "governance-token")
+    monkeypatch.setenv("ROW_RELEASE_SIGNING_INVENTORY_TOKEN", "signing-token")
     monkeypatch.setenv("ROW_RELEASE_IMMUTABILITY_TOKEN", "immutability-token")
     monkeypatch.setenv("ROW_PLATFORM_RUNNER_INVENTORY_TOKEN", "runner-token")
     monkeypatch.setattr(preconditions, "check_local_pre_tag_refs", lambda *args: calls.append(("local", *args)))
@@ -156,9 +226,15 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(monkeypatch, ca
         else:
             assert env is None
 
+    def check_signing(*args):
+        calls.append(("signing", *args))
+        if not signing_ready:
+            raise RuntimeError("missing signing secrets in the release environment")
+
     monkeypatch.setattr(preconditions, "check_remote_pre_tag_refs", check_remote)
     monkeypatch.setattr(preconditions, "run_release_check", check_script)
     monkeypatch.setattr(preconditions, "require_immutable_enabled", lambda *args: calls.append(("immutable", *args)))
+    monkeypatch.setattr(preconditions, "require_signing_secret_inventory", check_signing)
     monkeypatch.setattr(preconditions, "require_unused_namespace", lambda *args, require_push: calls.append(("namespace", *args, require_push)))
 
     result = preconditions.main(["pre-tag", "--repository", REPOSITORY, "--tag", RELEASE_TAG, "--sha", RELEASE_SHA])
@@ -171,13 +247,23 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(monkeypatch, ca
         ("check_release_license_compliance.py", "--check-policy-only"),
         ("remote", REPOSITORY, RELEASE_TAG, RELEASE_SHA),
         ("immutable", API_ROOT, REPOSITORY, "immutability-token"),
+        ("signing", API_ROOT, REPOSITORY, "signing-token"),
+    ]
+    captured = capsys.readouterr()
+    if not signing_ready:
+        assert result == 1
+        assert "missing signing secrets in the release environment" in captured.err
+        assert captured.out == ""
+        assert calls == expected
+        return
+
+    expected += [
         ("check_python315_ci_evidence.py", *coordinates, "--sha", RELEASE_SHA),
         ("check_repository_governance.py", *coordinates, "--sha", RELEASE_SHA),
         ("check_repository_governance.py", *coordinates, "--release-tag", RELEASE_TAG),
         ("check_platform_evidence_runner_readiness.py", "--repository", REPOSITORY, "--require-goal-targets", "--require-idle"),
         ("namespace", API_ROOT, REPOSITORY, RELEASE_TAG, "namespace-token", True),
     ]
-    captured = capsys.readouterr()
     if tag_created_during_audit:
         assert result == 1
         assert "remote tag created during audit" in captured.err

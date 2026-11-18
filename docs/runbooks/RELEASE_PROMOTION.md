@@ -123,6 +123,18 @@ Use the following credentials for their respective checks.
 - Export `ROW_RELEASE_IMMUTABILITY_TOKEN` for the repository setting check
   and `ROW_PLATFORM_RUNNER_INVENTORY_TOKEN` for the protected runner check.
   [GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
+- Give `GITHUB_TOKEN` Environments read access for the signing inventory check,
+  or export a separate `ROW_RELEASE_SIGNING_INVENTORY_TOKEN` with that access.
+  [GitHub environment secret listing permissions](https://docs.github.com/en/rest/actions/secrets#list-environment-secrets)
+
+You can check the protected `release` environment while other approvals are
+pending. This command verifies the presence of the Windows and macOS signing
+secret names. The native builds validate and use the credential values.
+
+```bash
+python scripts/check_release_remote_preconditions.py signing \
+  --repository "$release_repository"
+```
 
 ```bash
 python scripts/check_release_remote_preconditions.py pre-tag \
@@ -130,8 +142,9 @@ python scripts/check_release_remote_preconditions.py pre-tag \
 ```
 
 The command checks production metadata, policy, exact-commit CI and governance,
-immutable release settings, runner availability, and the unused tag and release
-namespace. After it passes, cut the tag at the same explicit `release_sha`.
+immutable release settings, signing secret names, runner availability, and the
+unused tag and release namespace. After it passes, cut the tag at the same
+explicit `release_sha`.
 The artifact-specific approval uses
 the resulting tag, commit, and signed installer bytes. The production
 candidate job repeats the policy check against the tagged source before

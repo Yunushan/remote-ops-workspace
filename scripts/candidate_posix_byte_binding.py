@@ -16,6 +16,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.release_evidence_file import replace_evidence_file  # noqa: E402
+
 REPORT_NAME = "candidate-runtime-byte-binding.json"
 APPIMAGE_LAUNCHER = "build/native/linux/Remote_Ops_Workspace.AppDir/AppRun"
 
@@ -66,7 +72,7 @@ def save(path, value):
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(value, stream, indent=2, sort_keys=True)
             stream.write("\n")
-        temporary.replace(path)
+        replace_evidence_file(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
 

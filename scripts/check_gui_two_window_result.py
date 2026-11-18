@@ -16,6 +16,11 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.release_evidence_file import replace_evidence_file  # noqa: E402
+
 TEST_NODE = "tests/test_gui_terminal_io_edges.py::test_shared_terminal_component_keeps_two_window_ownership_independent"
 SOURCE_FILES = (
     "src/remote_ops_workspace/gui.py",
@@ -167,7 +172,7 @@ def persist_receipt(output: Path, receipt: dict[str, object]) -> None:
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, output)
+        replace_evidence_file(temporary, output)
         temporary = None
     finally:
         if temporary is not None:

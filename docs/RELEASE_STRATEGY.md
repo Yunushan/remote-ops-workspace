@@ -670,6 +670,17 @@ Implementation:
   portable users can start the desktop UI without opening a terminal.
 - Builds an interactive installer with Inno Setup.
 - Builds an MSI installer with WiX.
+- For an enterprise build, generate a bundle with `row customizer build
+  --out <bundle> --brand-name <name> --organization <publisher>
+  --logo <logo.ico>`. Then run
+  `scripts/make_windows_native.ps1 -Arch x64 -EnterpriseBundle <bundle>
+  -EnterpriseDeploymentId <guid>` with the standard x64 build toolchain.
+  Keep the deployment GUID for subsequent versions. The build writes the
+  branded EXE, MSI and their SHA-256 manifest under
+  `native-dist/windows/enterprise/<guid>/x64/v<version>/`. The EXE shows the welcome
+  message during setup, and both packages include it in `docs/welcome.txt`.
+  Deploy any policy and seed profiles with the customizer bundle's documented
+  apply workflow.
 - Runs `scripts/smoke_windows_native.ps1` to smoke install, verify, upgrade and
   uninstall the native portable `.zip`, `.exe` and `.msi` artifacts before
   upload, including `Remote Ops Workspace GUI.exe` in portable zips and

@@ -263,9 +263,11 @@ reviews, and the downloaded release assets. See the
    profile expert setting, MobAgent handoff and smart-card SSH-browser session.
    Full parity still needs accepted release evidence bundles showing those
    behaviors in a real connected SSH/SFTP session with an actual smart card.
-7. Professional deployment depth: the ROW customizer now builds a branded
-   enterprise bundle and exposes deployment-depth plans, evidence-bundle
-   assembly and evidence validation for MSI/EXE rebranding, hard lock
+7. Professional deployment depth: the ROW customizer builds a branded
+   enterprise bundle. The Windows native build can use its product name,
+   publisher, icon and welcome text to compile enterprise EXE and MSI
+   installers with a deployment-specific upgrade identity. ROW also exposes
+   evidence-bundle assembly and evidence validation for MSI/EXE rebranding, hard lock
    enforcement in CLI/GUI/Web/profile-editor/quick-connect/launcher surfaces
    and signed organization update channels. Runtime policy consumption now
    exists for profile storage, GUI profile editing, quick connect, launcher and
@@ -273,9 +275,9 @@ reviews, and the downloaded release assets. See the
    HTTPS artifact metadata and local SHA-256 evidence. `row customizer
    evidence-bundle` copies supplied proof files plus signed update-manifest
    artifacts into a release evidence root and immediately validates the
-   resulting deployment evidence. Full parity still needs actual branded
-   Windows installer artifacts, a hosted organization update channel and
-   accepted passing release evidence from supported targets.
+   resulting deployment evidence. Full parity requires accepted branded
+   Windows release artifacts and evidence for the policy surfaces and hosted
+   organization update channel.
 8. Shared authenticated transport and terminal-screen behavior. On POSIX
    hosts, the SFTP browser and monitoring can reuse a matching terminal's
    OpenSSH control socket after it appears. The Windows terminal uses ConPTY

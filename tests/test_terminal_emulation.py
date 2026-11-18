@@ -87,6 +87,20 @@ def test_primary_grid_line_controls_stay_on_the_addressed_visual_row() -> None:
     assert terminal.text().split(SOFT_LINE_BREAK)[2] == " " * 3
 
 
+def test_primary_grid_keeps_viewport_top_when_resize_hides_blank_rows() -> None:
+    terminal = AnsiTerminalTranscript(primary_reflow=True)
+    terminal.set_screen_size(25, 9)
+    terminal.feed("header\r\n" + "x" * 22 + "\x1b[9;1H\x1b[2;5H")
+    terminal.set_screen_size(20, 5)
+    terminal.feed("\x1b[Hnew")
+    display = terminal.screen_text().replace(SOFT_LINE_BREAK, "\n")
+    assert display.split("\n") == ["newder", "x" * 20, "xx", "", ""]
+    assert terminal.cursor_display_position() == (0, 3)
+    terminal.feed("\x1b[5;1H\nnext\x1b[H\x1b[6n")
+    assert terminal.take_pending_responses() == (b"\x1b[1;1R",)
+    assert terminal.text().splitlines()[0] == "newder"
+
+
 def test_ansi_transcript_replaces_normal_readline_history_rows() -> None:
     terminal = AnsiTerminalTranscript()
 

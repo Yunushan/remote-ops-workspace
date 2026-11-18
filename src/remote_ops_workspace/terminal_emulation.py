@@ -195,6 +195,7 @@ class AnsiTerminalTranscript:
     )
     _text_cache: str | None = field(default=None, init=False, repr=False)
     _primary_rows_cache: tuple[_PrimaryRow, ...] | None = field(default=None, init=False, repr=False)
+    _primary_view_start: tuple[int, int] = field(default=(0, 0), init=False, repr=False)
     _full_redraw_hint: bool = field(default=False, init=False, repr=False)
     _alternate_margin_written: bool = field(default=False, init=False, repr=False)
 
@@ -210,6 +211,7 @@ class AnsiTerminalTranscript:
         self._styles.clear()
         self._column = 0
         self._normal_cursor_row = 0
+        self._primary_view_start = (0, 0)
         self._normal_saved_cursor = None
         self._escape = None
         self._style = ANSI_DEFAULT_STYLE
@@ -629,13 +631,27 @@ class AnsiTerminalTranscript:
             self._primary_rows_cache = tuple(rows)
         return self._primary_rows_cache
 
-    def _primary_cursor_row_index(self) -> int:
-        rows = self._primary_rows()
+    def _primary_row_index(self, position: tuple[int, int]) -> int:
         index = bisect_right(
-            rows, (self._normal_cursor_row, self._column),
+            self._primary_rows(), position,
             key=lambda span: (span.source_row, span.start),
         )
         return max(0, index - 1)
+
+    def _primary_cursor_row_index(self) -> int:
+        return self._primary_row_index((self._normal_cursor_row, self._column))
+
+    def _primary_view_top(self) -> int:
+        rows = self._primary_rows()
+        cursor = self._primary_cursor_row_index()
+        current_top = self._primary_row_index(self._primary_view_start)
+        # Resize changes physical row numbers. Follow the logical top
+        # until the cursor actually scrolls the viewport.
+        top = min(current_top, cursor, max(0, len(rows) - self._screen_rows))
+        top = max(top, cursor - self._screen_rows + 1)
+        span = rows[top]
+        self._primary_view_start = (span.source_row, span.start)
+        return top
 
     def _row_separator(self, index: int, count: int) -> str:
         if index + 1 == count:
@@ -649,7 +665,8 @@ class AnsiTerminalTranscript:
     def _cached_render_rows(self) -> tuple[tuple[str, list[AnsiTextStyle]], ...]:
         if self._render_rows_cache is None and self.primary_reflow:
             projected = []
-            for span in self._primary_rows():
+            visible_end = self._primary_view_top() + self._screen_rows
+            for span in self._primary_rows()[:visible_end]:
                 cells, styles = self._primary_source_row(span.source_row)
                 projected.append(_display_cells(cells[span.start:span.end], styles[span.start:span.end]))
             self._render_rows_cache = tuple(projected)
@@ -849,7 +866,7 @@ class AnsiTerminalTranscript:
                 if self._alternate_screen and self._origin_mode:
                     row = max(0, row - self._alternate_top_margin)
                 elif self.primary_reflow and not self._alternate_screen:
-                    row = max(0, row - max(0, len(self._primary_rows()) - self._screen_rows))
+                    row -= self._primary_view_top()
                 column = min(column + 1, self._screen_columns)
                 prefix = "?" if private else ""
                 self._pending_responses.append(f"\x1b[{prefix}{row + 1};{column}R".encode("ascii"))
@@ -911,6 +928,7 @@ class AnsiTerminalTranscript:
                 self._line.clear()
                 self._styles.clear()
                 self._normal_cursor_row = 0
+                self._primary_view_start = (0, 0)
                 self._column = 0
         elif command in {"G", "C"}:
             amount = first or 1
@@ -953,7 +971,7 @@ class AnsiTerminalTranscript:
     def _move_primary_cursor(self, values: list[int], command: str) -> None:
         row, column = self.cursor_display_position()
         rows = self._primary_rows()
-        top = max(0, len(rows) - self._screen_rows)
+        top = self._primary_view_top()
         first = (values[0] if values else 0) or 1
         if command in {"H", "f", "d"}:
             row = top + first - 1
@@ -1515,6 +1533,8 @@ class AnsiTerminalTranscript:
         if overflow > 0:
             del self._lines[:overflow]
             del self._line_styles[:overflow]
+            top_row, top_column = self._primary_view_start
+            self._primary_view_start = (top_row - overflow, top_column) if top_row >= overflow else (0, 0)
         self._line.clear()
         self._styles.clear()
         self._column = 0

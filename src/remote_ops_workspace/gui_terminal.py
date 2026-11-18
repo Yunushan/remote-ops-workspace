@@ -461,7 +461,9 @@ class TerminalPane(QWidget):
         )
         terminal_scroll_bar.valueChanged.connect(self._on_terminal_scroll_value_changed)
         self.terminal_emulator = AnsiTerminalTranscript(
-            primary_reflow=getattr(self.process, "transport_backend", None) in {"linux-pty", "windows-conpty"},
+            # Linux delivers the PTY byte stream. ConPTY also emits console
+            # repaint frames during resize, which need separate handling.
+            primary_reflow=getattr(self.process, "transport_backend", None) == "linux-pty",
         )
         self._terminal_mouse_mode = 0
         self._terminal_mouse_buttons: list[Qt.MouseButton] = []
@@ -2586,11 +2588,18 @@ class TerminalPane(QWidget):
             selected_cursor.hasSelection()
             and previous != transcript
             and (SOFT_LINE_BREAK in previous or SOFT_LINE_BREAK in transcript)
-            and previous.replace(SOFT_LINE_BREAK, "") == transcript.replace(SOFT_LINE_BREAK, "")
         ):
-            selection_anchor = _display_qt_position(transcript, _logical_qt_position(previous, selection_anchor))
-            selection_position = _display_qt_position(transcript, _logical_qt_position(previous, selection_position))
-            selection_text_unchanged = True
+            anchor = _logical_qt_position(previous, selection_anchor)
+            position = _logical_qt_position(previous, selection_position)
+            if _same_qt_selection(
+                previous.replace(SOFT_LINE_BREAK, ""),
+                transcript.replace(SOFT_LINE_BREAK, ""),
+                min(anchor, position),
+                max(anchor, position),
+            ):
+                selection_anchor = _display_qt_position(transcript, anchor)
+                selection_position = _display_qt_position(transcript, position)
+                selection_text_unchanged = True
         scroll_bar = _required_gui_value(
             self.output.verticalScrollBar(),
             "terminal vertical scroll bar",

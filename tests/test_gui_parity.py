@@ -1749,6 +1749,7 @@ def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
 def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1770,7 +1771,8 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     assert '"arrow-left"' in main_window_source
     assert '"arrow-right"' in main_window_source
     assert '"close"' in main_window_source
-    assert "activate_adjacent_tab" in gui_source
+    assert "SessionTabActions" in main_window_source.splitlines()[0]
+    assert "def activate_adjacent_tab" in session_tabs_source
     assert "EXPECTED_MOBA_BOTTOM_EDGE_KEYS" in checker_source
     assert "expected_moba_bottom_edge_controls" in checker_source
     assert "bottom-edge navigation controls" in docs_source

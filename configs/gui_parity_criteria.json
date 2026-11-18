@@ -2701,7 +2701,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "mobaBottomEdgeControls",
-              "mobaBottomEdgeControl",
+              "mobaBottomEdgeControl"
+            ],
+            "src/remote_ops_workspace/gui_session_tabs.py": [
               "activate_adjacent_tab"
             ],
             "scripts/check_real_gui_render.py": [

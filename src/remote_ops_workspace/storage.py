@@ -52,8 +52,17 @@ class ProfileStore:
         lock_timeout_seconds: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
     ) -> None:
         self.path = path or (ensure_data_dir() / "profiles.json")
-        self.policy_path = policy_path or enterprise_policy_path(self.path.parent)
+        self._policy_path = policy_path
         self.lock_timeout_seconds = lock_timeout_seconds
+
+    @property
+    def policy_path(self) -> Path:
+        """Resolve the default machine policy for each policy check."""
+        return self._policy_path or enterprise_policy_path(self.path.parent)
+
+    @policy_path.setter
+    def policy_path(self, path: Path | None) -> None:
+        self._policy_path = path
 
     def init(
         self,

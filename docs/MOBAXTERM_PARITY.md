@@ -304,8 +304,11 @@ reviews, and the downloaded release assets. See the
    panes use a controlling pseudoterminal. OpenSSH receives the initial viewport
    dimensions and forwards later resizes to its remote PTY. The Windows
    terminal uses ConPTY when available, and background tools authenticate
-   separately. The renderer implements a bounded transcript and a
-   cursor-addressed alternate screen.
+   separately. The renderer lays out primary-screen output from native PTYs
+   in cell-width rows backed by bounded scrollback. Resizing reflows soft
+   wraps while preserving hard line breaks, wide characters, ANSI styles,
+   and logical copy and search results. The alternate screen keeps its own
+   cursor-addressed grid.
    Both account for wide characters and combining marks in cursor positions,
    erasure and colored output. The alternate screen also keeps wide characters
    intact when wrapping or clipping at the right edge. When the viewport

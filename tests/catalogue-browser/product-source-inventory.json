@@ -1,5 +1,5 @@
 {
-  "baseline_head": "d7a34898c95110e9cc06baad0bf3dcf18b863860",
+  "baseline_head": "3c0a6f19f5f2751464a81ef939e34895005c4d62",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -73,8 +73,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "532ed3d334955a8773272ef44253d7b53ed579ee3cec510dd2389da689a9f467",
-      "size": 621193
+      "sha256": "4d35f8111d3b6b83b2f54e3797e87f01cac8e2415a2848b17fb62716db99a279",
+      "size": 621299
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
@@ -143,8 +143,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal.py",
-      "sha256": "9083d6b3c18bcc93746a45ef06f82b849f41770e6204ee044c1d2fb83b1f18f7",
-      "size": 134236
+      "sha256": "bc99338d9cae70ca733c2bb8ac60028e0d2e8dc6b249f9a60cb1133101a639e2",
+      "size": 137893
     },
     {
       "path": "src/remote_ops_workspace/gui_values.py",
@@ -338,8 +338,8 @@
     },
     {
       "path": "src/remote_ops_workspace/terminal_emulation.py",
-      "sha256": "9155c8efbf7703e6dee6a4c132f40de430c8c1074c0f1605289ca23171edf0c5",
-      "size": 59357
+      "sha256": "6c369e365f0da7fb715fc0d0b3eeaf60fa80a70d6b83e45a31f71dab7e0d8cbc",
+      "size": 66553
     },
     {
       "path": "src/remote_ops_workspace/terminal_highlighting.py",

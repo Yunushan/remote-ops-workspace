@@ -146,9 +146,12 @@ architecture and `.deb` archives from an authenticated package source. Prepare
 a disposable Debian image with Python, the matching architecture, and the
 archives' dependencies. The cached packages themselves must be absent from
 the image. Use a trusted image and archives because the capture runs Debian
-maintainer scripts as container root. Mount the checkout and bundle read-only
-and mount a separate writable output directory. For example, with `tree`
-in the bundle and a locally prepared image in `MOBAPT_IMAGE`, run:
+maintainer scripts as container root. For release evidence, run this from a
+GitHub Actions job checked out at the release tag. Set `MOBAPT_DEB_NAME` to the
+native `.deb` filename and `MOBAPT_RELEASE_ASSETS` to the directory containing
+the exact staged or published installer. Mount it read-only along with the
+checkout and bundle. For example, with `tree` in the bundle and a locally
+prepared image in `MOBAPT_IMAGE`, run:
 
 ```bash
 docker run --rm --pull never --network none \
@@ -156,9 +159,12 @@ docker run --rm --pull never --network none \
   --security-opt no-new-privileges \
   --mount "type=bind,source=$PWD,target=/src,readonly" \
   --mount "type=bind,source=$MOBAPT_BUNDLE,target=/bundle,readonly" \
+  --mount "type=bind,source=$MOBAPT_RELEASE_ASSETS,target=/release,readonly" \
   --mount "type=bind,source=$MOBAPT_OUTPUT,target=/proof" \
+  --env GITHUB_ACTIONS --env GITHUB_REF --env GITHUB_REPOSITORY \
+  --env GITHUB_SHA --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
   "$MOBAPT_IMAGE" python /src/scripts/capture_mobapt_offline_evidence.py \
-  --bundle /bundle --out /proof/review --probe-package tree \
+  --bundle /bundle --out /proof/review --release-deb "/release/$MOBAPT_DEB_NAME" --probe-package tree \
   --probe-executable /usr/bin/tree --probe-arg=--version
 
 python scripts/check_mobapt_cache_evidence.py \
@@ -166,13 +172,18 @@ python scripts/check_mobapt_cache_evidence.py \
 ```
 
 The collector records the actual `dpkg` installation and invokes the installed
-executable through bundled Bash on a pseudo-terminal. It writes the validated
-receipts, runtime manifest, cache index, and exact bytes to a new `review`
-directory. For other runtimes, capture the equivalent install and terminal
-commands under the same offline conditions using the
-`row.mobapt.offline-execution.v1` receipt format consumed by the checker.
-Independent review must bind those receipts and bytes to the exact release
-and workflow attempt.
+executable through bundled Bash on a pseudo-terminal. It installs the test
+release's `.deb` in the same offline container and runs that package's
+`row mobapt cache-verify` against `evidence.json`. The `review` directory holds
+the execution receipts, runtime manifest, index, exact offline cache bytes,
+and the packaged CLI result bound to the evidence and installer hashes.
+Give the parity candidate generator the tested `.deb` as `--artifact` and its
+exact GitHub release asset URL as `--release-asset-url`. Independent review and
+the published asset audit confirm the release bytes and Actions attempt.
+
+For a local qualification, use `--local-execution` on the checker. The collector
+can omit `--release-deb` when checking the cache and terminal only. The strict
+checker always requires the native CLI result and exact Actions source identity.
 
 For dependency-constrained environments, run:
 

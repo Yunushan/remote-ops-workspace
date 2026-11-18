@@ -13,7 +13,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
 TESTED_ASSET_ARTICLES = frozenset(
-    {"embedded-server-suite", "macro-recorder", "moba-text-editor-diff", "professional-deployment", "ssh-browser-26-4-smartcard"}
+    {
+        "embedded-server-suite", "macro-recorder", "moba-text-editor-diff", "mobapt-unix-runtime",
+        "professional-deployment", "ssh-browser-26-4-smartcard",
+    }
 )
 SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES | {"shared-authenticated-transport-terminal-grid"}
 PROFESSIONAL_POLICY_SURFACES = ("cli", "gui", "launcher", "profile-editor", "quick-connect", "web")

@@ -16,9 +16,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.check_mobapt_cache_evidence import (  # noqa: E402
+    DEBIAN_TARGETS,
     EXECUTION_SCHEMA,
+    NATIVE_PROBE_ARGV,
+    NATIVE_PROBE_PATH,
+    NATIVE_PROBE_SCHEMA,
     check_runtime_and_cache,
+    release_deb_version,
     validate_mobapt_cache_evidence,
+    validate_mobapt_offline_execution,
     validate_mobapt_release_cache_evidence,
 )
 from scripts.check_release_license_compliance import (  # noqa: E402
@@ -27,13 +33,8 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     sha256_file,
 )
 
-DEBIAN_TARGETS = {
-    "amd64": "linux-x86_64",
-    "arm64": "linux-arm64",
-    "i386": "linux-i386",
-    "armhf": "linux-armhf",
-}
 RUNTIME = "bin/bash"
+PRODUCT_PACKAGE = "remote-ops-workspace"
 PROCESS_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C", "SHELL": "/bin/sh", "TERM": "dumb"}
 # Linux capability numbers from linux/capability.h.
 NETWORK_OR_NAMESPACE_CAPABILITIES = (1 << 12) | (1 << 13) | (1 << 21)
@@ -123,7 +124,56 @@ def write_receipt(
     }
 
 
-def capture(bundle: Path, output: Path, package: str, executable: str, arguments: list[str]) -> None:
+def actions_source(tag: str) -> dict[str, Any] | None:
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return None
+    if os.environ.get("GITHUB_REF") != f"refs/tags/{tag}":
+        raise ValueError("MobApt release capture must run from the tested Debian package's GitHub release tag")
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    return {
+        "repository": repository, "release_tag": tag, "head_sha": os.environ.get("GITHUB_SHA", ""),
+        "workflow_run_url": f"https://github.com/{repository}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}",
+        "run_attempt": int(os.environ.get("GITHUB_RUN_ATTEMPT", "0")),
+    }
+
+
+def capture_native_probe(root: Path, data: dict[str, Any], installer: Path, architecture: str) -> bool:
+    version = release_deb_version(installer.name, data["release_target"])
+    source = actions_source(f"v{version}")
+    package = installer.resolve(strict=True)
+    digest = sha256_file(package)
+    row = Path(NATIVE_PROBE_ARGV[0])
+    if row.exists() or row.is_symlink() or package_status(root, PRODUCT_PACKAGE) is not None:
+        raise ValueError("native MobApt probe requires a clean image without a preinstalled row command")
+    fields = run(["dpkg-deb", "--field", str(package), "Package", "Version", "Architecture"], root).stdout
+    if fields != f"Package: {PRODUCT_PACKAGE}\nVersion: {version}\nArchitecture: {architecture}\n":
+        raise ValueError("tested Debian asset metadata differs from the release package name, version or architecture")
+    run(["dpkg", "--install", "--", str(package)], root)
+    if package_status(root, PRODUCT_PACKAGE) != f"install ok installed\n{version}" or sha256_file(package) != digest:
+        raise ValueError("native MobApt installer did not install the exact expected Debian package")
+    if str(row) not in run(["dpkg-query", "--listfiles", "--", PRODUCT_PACKAGE], root).stdout.splitlines():
+        raise ValueError("installed Debian release package does not own /usr/bin/row")
+
+    data["release_asset"] = {"name": installer.name, "sha256": digest}
+    if source is not None:
+        data["source"] = source
+    evidence = root / "evidence.json"
+    write_json(evidence, data)
+    evidence_digest = sha256_file(evidence)
+    proof = run(NATIVE_PROBE_ARGV, root)
+    if sha256_file(evidence) != evidence_digest:
+        raise ValueError("packaged row changed the cache evidence during verification")
+    write_json(root / NATIVE_PROBE_PATH, {
+        "schema": NATIVE_PROBE_SCHEMA, "argv": proof.args, "exit_code": proof.returncode,
+        "stderr": proof.stderr, "output": json.loads(proof.stdout), "installed_version": version,
+        "evidence_sha256": evidence_digest, "release_asset_sha256": digest,
+    })
+    return source is not None
+
+
+def capture(
+    bundle: Path, output: Path, package: str, executable: str, arguments: list[str], *, release_deb: Path | None = None,
+) -> None:
     require_offline_container()
     evidence, error = secure_regular_file(bundle, "mobapt-cache-evidence.json", "MobApt assembly evidence")
     if evidence is None:
@@ -159,8 +209,12 @@ def capture(bundle: Path, output: Path, package: str, executable: str, arguments
             write_receipt(root, "offline-install", row, manifest_sha, installation) for row in packages.values()
         ]
         data["terminal_probe"] = write_receipt(root, "terminal-probe", packages[package], manifest_sha, terminal)
-        write_json(root / "evidence.json", data)
-        result = validate_mobapt_release_cache_evidence(root / "evidence.json", assets_dir=root)
+        validate = validate_mobapt_offline_execution
+        if release_deb is None:
+            write_json(root / "evidence.json", data)
+        elif capture_native_probe(root, data, release_deb, architecture):
+            validate = validate_mobapt_release_cache_evidence
+        result = validate(root / "evidence.json", assets_dir=root)
         if not result.passed:
             raise ValueError(f"offline execution evidence failed validation: {result.errors}")
         root.rename(output)
@@ -170,12 +224,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Capture real offline MobApt package installation and terminal evidence.")
     parser.add_argument("--bundle", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--release-deb", type=Path, help="install and smoke-test the exact Debian release candidate")
     parser.add_argument("--probe-package", required=True)
     parser.add_argument("--probe-executable", required=True)
     parser.add_argument("--probe-arg", action="append", default=[])
     args = parser.parse_args()
     try:
-        capture(args.bundle, args.out, args.probe_package, args.probe_executable, args.probe_arg)
+        capture(args.bundle, args.out, args.probe_package, args.probe_executable, args.probe_arg, release_deb=args.release_deb)
     except subprocess.CalledProcessError as exc:
         print(f"MobApt offline capture: {exc}\n{exc.stdout or ''}{exc.stderr or ''}", file=sys.stderr)
         return 1

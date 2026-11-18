@@ -77,9 +77,25 @@ def test_mobapt_registry_requires_the_release_execution_validator() -> None:
     assert generator.VALIDATORS["mobapt-unix-runtime"].__name__ == "validate_mobapt_release_cache_evidence"
     record = _complete_record(checker.ARTICLE_SPECS["mobapt-unix-runtime"])
     record["article_id"] = "mobapt-unix-runtime"
+    name = "remote-ops-workspace-v1.0.2-linux-amd64.deb"
+    record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {name: "a" * 64}
+    record["release_asset_urls"][0] = record["release_asset_urls"][0].replace("moba-professional-deployment.zip", name)
+    record["release_target"] = "linux-x86_64"
+    source = record["release_source"]
+    summary = record["validation_summary"]["summary"] = {
+        "release_target": record["release_target"], "repository": source["repository"],
+        "release_tag": source["release_tag"], "workflow_run_url": source["workflow_run_url"],
+        "run_attempt": source["run_attempt"], "source_head_sha": source["head_sha"],
+        "tested_release_asset": {"name": name, "sha256": "a" * 64},
+    }
     assert checker.check_record(record) == ["mobapt-unix-runtime validation summary must record verified offline execution receipts"]
-    record["validation_summary"]["summary"]["offline_execution_receipts_verified"] = True
+    summary["offline_execution_receipts_verified"] = True
     assert checker.check_record(record) == []
+    summary["tested_release_asset"]["sha256"] = "b" * 64
+    assert checker.check_record(record) == ["mobapt-unix-runtime tested release asset must match the record artifact name and SHA-256"]
+    summary["tested_release_asset"]["sha256"] = "a" * 64
+    summary["run_attempt"] = 1
+    assert checker.check_record(record) == ["mobapt-unix-runtime release_source.run_attempt must match validation summary provenance"]
 
 
 def test_xserver_registry_requires_the_live_forwarding_validator() -> None:
@@ -508,6 +524,9 @@ def reviewed_release(tmp_path, monkeypatch):
     asset = assets_dir / name
     asset.write_bytes(b"published release asset bytes")
     digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+    mobapt_asset = assets_dir / f"remote-ops-workspace-{tag}-linux-amd64.deb"
+    mobapt_asset.write_bytes(b"published MobApt installer")
+    mobapt_digest = hashlib.sha256(mobapt_asset.read_bytes()).hexdigest()
 
     records = []
     for article, spec in release_parity.ARTICLE_SPECS.items():
@@ -518,6 +537,10 @@ def reviewed_release(tmp_path, monkeypatch):
         ]
         record["artifact_sha256"] = {name: digest}
         record["release_asset_bytes"]["sha256"] = {name: digest}
+        if article == "mobapt-unix-runtime":
+            record["release_target"] = "linux-x86_64"
+            record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{mobapt_asset.name}"]
+            record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {mobapt_asset.name: mobapt_digest}
         if article in SOURCE_BOUND_ARTICLES:
             record["validation_summary"]["summary"] = {
                 "repository": repository,
@@ -528,7 +551,10 @@ def reviewed_release(tmp_path, monkeypatch):
                 "run_attempt": 2,
             }
         if article == "mobapt-unix-runtime":
-            record["validation_summary"]["summary"]["offline_execution_receipts_verified"] = True
+            record["validation_summary"]["summary"].update(
+                offline_execution_receipts_verified=True,
+                tested_release_asset={"name": mobapt_asset.name, "sha256": mobapt_digest},
+            )
         if article == "embedded-x-server":
             record["validation_summary"]["summary"]["live_forwarding_receipt_verified"] = True
         if article == "embedded-server-suite":
@@ -674,7 +700,7 @@ def test_hosted_delivery_failure_blocks_certification(reviewed_release, monkeypa
     ]
 
 
-@pytest.mark.parametrize("observed_target", ["linux-x86_64", None])
+@pytest.mark.parametrize("observed_target", ["linux-arm64", None])
 def test_parity_evidence_for_each_article_must_bind_its_tested_target(reviewed_release, observed_target) -> None:
     checker = _load_checker()
     for record in reviewed_release.records:

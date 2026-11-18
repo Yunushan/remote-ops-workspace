@@ -13,6 +13,10 @@ from remote_ops_workspace.moba_mobapt import (
 from scripts import capture_mobapt_offline_evidence as capture
 from scripts.check_mobapt_cache_evidence import (
     EXECUTION_SCHEMA,
+    NATIVE_PROBE_ARGV,
+    NATIVE_PROBE_PATH,
+    NATIVE_PROBE_SCHEMA,
+    validate_mobapt_offline_execution,
     validate_mobapt_release_cache_evidence,
 )
 from scripts.check_release_license_compliance import sha256_file
@@ -76,8 +80,67 @@ def test_assembly_passes_local_check_but_cannot_certify_release(tmp_path, shims,
 
 def test_release_checker_binds_runtime_cache_and_receipts(captured_bundle):
     evidence, _, _ = captured_bundle
-    result = validate_mobapt_release_cache_evidence(evidence)
+    result = validate_mobapt_offline_execution(evidence)
     assert result.passed and result.summary["offline_execution_receipts_verified"] is True
+    result = validate_mobapt_release_cache_evidence(evidence)
+    assert not result.passed and "requires a native Debian release asset probe" in result.errors[0]
+
+
+@pytest.fixture
+def native_capture(captured_bundle):
+    evidence, payload, _ = captured_bundle
+    payload["release_asset"] = {
+        "name": "remote-ops-workspace-v1.0.28-linux-amd64.deb", "sha256": "1" * 64,
+    }
+    payload["source"] = {
+        "repository": "example/workspace", "release_tag": "v1.0.28", "head_sha": "2" * 40,
+        "workflow_run_url": "https://github.com/example/workspace/actions/runs/123", "run_attempt": 2,
+    }
+    write_json(evidence, payload)
+    probe = evidence.parent / NATIVE_PROBE_PATH
+    receipt = {
+        "schema": NATIVE_PROBE_SCHEMA, "argv": NATIVE_PROBE_ARGV, "exit_code": 0, "installed_version": "1.0.28",
+        "evidence_sha256": sha256_file(evidence), "release_asset_sha256": "1" * 64, "stderr": "",
+        "output": validate_mobapt_cache_evidence(evidence).to_dict(),
+    }
+    write_json(probe, receipt)
+    return evidence, payload, probe, receipt
+
+
+def test_strict_capture_binds_installer_and_workflow_attempt(native_capture):
+    evidence, payload, _, _ = native_capture
+    result = validate_mobapt_release_cache_evidence(evidence)
+    assert result.passed
+    assert result.summary["tested_release_asset"] == payload["release_asset"]
+    assert result.summary["source_head_sha"] == payload["source"]["head_sha"]
+    assert result.summary["run_attempt"] == 2
+
+
+@pytest.mark.parametrize("field", ["evidence_sha256", "release_asset_sha256", "installed_version", "argv"])
+def test_strict_capture_rejects_receipt_from_different_execution(native_capture, field):
+    evidence, _, probe, receipt = native_capture
+    receipt[field] = "different"
+    write_json(probe, receipt)
+    assert not validate_mobapt_release_cache_evidence(evidence).passed
+
+
+@pytest.mark.parametrize(("source", "expected"), [
+    (None, "requires source and release_asset objects"),
+    ({"release_tag": "v1.0.27"}, "must match the exact MobApt release tag"),
+    ({"head_sha": "branch"}, "requires exact repository, tag, source SHA and workflow attempt"),
+])
+def test_local_native_capture_cannot_supply_unverified_release_identity(native_capture, source, expected):
+    evidence, payload, probe, receipt = native_capture
+    if source is None:
+        payload.pop("source")
+    else:
+        payload["source"].update(source)
+    write_json(evidence, payload)
+    receipt["evidence_sha256"] = sha256_file(evidence)
+    write_json(probe, receipt)
+    assert validate_mobapt_offline_execution(evidence).passed
+    result = validate_mobapt_release_cache_evidence(evidence)
+    assert not result.passed and expected in result.errors[0]
 
 
 @pytest.mark.parametrize(("kind", "change", "expected"), [
@@ -156,7 +219,7 @@ def test_capture_publishes_only_validated_execution_receipts(tmp_path, monkeypat
 
     if probe_passes:
         capture.capture(evidence.parent, output, "tree", str(executable), ["--version"])
-        result = validate_mobapt_release_cache_evidence(output / "evidence.json")
+        result = validate_mobapt_offline_execution(output / "evidence.json")
         assert result.passed and result.summary["offline_execution_receipts_verified"] is True
         assert not list(output.rglob("*.txt"))
     else:

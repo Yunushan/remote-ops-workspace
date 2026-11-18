@@ -221,6 +221,42 @@ def test_server_runtime_roots_include_environment_and_deduplicate(
     assert extra in roots
 
 
+@pytest.mark.parametrize(
+    ("platform_name", "frozen", "has_manifest", "expected"),
+    [
+        ("linux", True, True, True),
+        ("linux", True, False, False),
+        ("linux", False, True, False),
+        ("win32", True, True, False),
+    ],
+)
+def test_frozen_linux_launcher_discovers_the_installed_server_payload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    platform_name: str,
+    frozen: bool,
+    has_manifest: bool,
+    expected: bool,
+) -> None:
+    prefix = tmp_path / "usr"
+    root = prefix / "lib" / "remote-ops-workspace" / "servers"
+    daemon = root / "linux" / "ssh" / "bin" / "sshd"
+    daemon.parent.mkdir(parents=True)
+    daemon.write_bytes(b"Debian runtime fixture")
+    if has_manifest:
+        (root / servers.SERVER_RUNTIME_MANIFEST_NAME).write_text("{}", encoding="utf-8")
+    monkeypatch.delenv(servers.SERVER_RUNTIME_DIR_ENV, raising=False)
+    monkeypatch.setattr(servers.sys, "executable", str(prefix / "bin" / "row"))
+    monkeypatch.setattr(servers.sys, "platform", platform_name)
+    monkeypatch.setattr(servers.sys, "frozen", frozen, raising=False)
+
+    status = servers.build_moba_server_runtime_status(system="linux")
+
+    assert (str(root) in status.roots) is expected
+    assert status.service_coverage["ssh"] is expected
+    assert [runtime.executable for runtime in status.runtimes] == ([str(daemon)] if expected else [])
+
+
 def test_public_server_config_and_gui_actions(tmp_path: Path) -> None:
     config = servers.build_moba_server_config_plan(
         "http",

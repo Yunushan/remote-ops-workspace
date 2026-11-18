@@ -552,6 +552,25 @@ echo "native installer smoke: DEB install"
 sudo -n dpkg -i "$DEB"
 echo "native installer smoke: DEB verify"
 verify_row /usr/bin/row direct "DEB verify" deb/usr/bin/row install
+debian_server_manifest=/usr/lib/remote-ops-workspace/servers/servers-runtime.json
+if [[ -f "$debian_server_manifest" ]]; then
+  server_status="$SMOKE_ROOT/debian-server-status.json"
+  env -u ROW_SERVER_RUNTIME_DIR /usr/bin/row servers runtime-status --json > "$server_status"
+  python3 - "$debian_server_manifest" "$server_status" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest, status_path = map(Path, sys.argv[1:])
+status = json.loads(status_path.read_bytes())
+services = json.loads(manifest.read_bytes())["services"]
+discovered = {(runtime["service"], runtime["executable"]) for runtime in status["runtimes"]}
+expected = {(row["service"], str(manifest.parent / row["runtime"]["executable"])) for row in services}
+if len(expected) != 8 or not expected <= discovered:
+    raise SystemExit("Installed Debian launcher did not discover all eight shipped server runtimes")
+PY
+  echo "native installer smoke: DEB server runtime discovery"
+fi
 echo "native installer smoke: DEB upgrade"
 sudo -n dpkg -i "$DEB"
 verify_row /usr/bin/row direct "DEB upgrade" deb/usr/bin/row reinstall

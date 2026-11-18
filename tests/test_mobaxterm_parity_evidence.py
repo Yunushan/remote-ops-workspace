@@ -16,6 +16,7 @@ import pytest
 from remote_ops_workspace.moba_servers import build_moba_server_config_plan
 from scripts import check_moba_server_release_evidence as server_evidence
 from scripts import check_release_mobaxterm_parity as release_parity
+from scripts.check_mobaxterm_parity_evidence import SOURCE_BOUND_ARTICLES
 from scripts.write_release_notes import moba_counts
 
 
@@ -506,7 +507,7 @@ def reviewed_release(tmp_path, monkeypatch):
         ]
         record["artifact_sha256"] = {name: digest}
         record["release_asset_bytes"]["sha256"] = {name: digest}
-        if article in {"embedded-server-suite", "macro-recorder", "shared-authenticated-transport-terminal-grid"}:
+        if article in SOURCE_BOUND_ARTICLES:
             record["validation_summary"]["summary"] = {
                 "repository": repository,
                 "release_tag": tag,
@@ -526,6 +527,10 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "macro-recorder":
             record["validation_summary"]["summary"].update(
                 verified_macro_replays=1, replay_sessions=1, tested_release_asset={"name": name, "sha256": digest},
+            )
+        if article == "moba-text-editor-diff":
+            record["validation_summary"]["summary"].update(
+                verified_remote_edit=True, tested_release_asset={"name": name, "sha256": digest},
             )
         article_root = evidence_root / article
         article_root.mkdir()

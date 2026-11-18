@@ -469,7 +469,16 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_connected:build_moba_connected_text_editor_state",
             "remote_ops_workspace.moba_connected:moba_connected_text_editor_route",
         ],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["QPlainTextEdit"], "src/remote_ops_workspace/gui_connected.py": ["MobaTextEditorHighlighter", "mobaTextEditor", "handle_moba_text_editor_open_from_item", "mobaTextEditorSaveAction"]},
+        "source_tokens": {
+            "src/remote_ops_workspace/gui.py": ["QPlainTextEdit"],
+            "src/remote_ops_workspace/gui_connected.py": [
+                "MobaTextEditorHighlighter", "mobaTextEditor",
+                "handle_moba_text_editor_open_from_item", "mobaTextEditorSaveAction",
+            ],
+            "scripts/check_moba_text_remote_edit_evidence.py": [
+                "validate_remote_editor_release_evidence", "--assets-dir",
+            ],
+        },
     },
     "moba.ssh-browser-26-4-state": {
         "cli": [

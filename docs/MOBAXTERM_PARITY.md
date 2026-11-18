@@ -221,8 +221,8 @@ reviews, and the downloaded release assets. See the
 4. MobaTextEditor/MobaDiff parity: ROW now has a CLI-backed text editor/diff
    workflow for local files, SFTP remote edit staging plans, connected
    editor-tab open plans, direct save conflict reviews, a release-evidence
-   bundle writer and a verifier requiring SHA-bound real connected-session
-   proof. The PyQt Moba SFTP dock keeps its editor surface hidden until an
+   bundle writer and a release verifier for recorded connected-session
+   evidence. The PyQt Moba SFTP dock keeps its editor surface hidden until an
    explicit file-open action. In the live connected workspace, opening a file
    runs an asynchronous SFTP download, loads the returned text into an
    editable editor, tracks the downloaded SHA-256 baseline, checks the remote
@@ -230,9 +230,13 @@ reviews, and the downloaded release assets. See the
    OpenSSH listing paths against the directory it requested. An overwrite approval
    applies to the reviewed bytes. The editor downloads the remote file again
    after approval and requests fresh approval if the bytes change. The final
-   check and the upload are separate SFTP requests. Full parity still needs
-   accepted passing evidence bundles from supported release targets proving
-   those real remote edits.
+   check and the upload are separate SFTP requests. The release audit
+   verifies the displayed diff, a declined overwrite, a remote change during
+   approval that triggers a fresh review, and a successful upload that matches
+   an independent server readback. It ties these observations to the
+   authenticated SFTP connection and the exact release package and workflow
+   attempt. Full parity requires accepted evidence from supported release
+   targets.
 5. ROW provides a CLI-backed typed macro store and SSH replay workflow. The
    PyQt terminal records submitted lines, printable keys typed into the
    terminal, and Enter. A key or paste outside the supported typed input
@@ -350,6 +354,45 @@ Keep credential values out of the recorded arguments and captures.
 Use the same release asset with `--artifact` when generating the candidate. The
 published-release audit re-runs the capture checks on the reviewed attachments
 and checks the release bytes and GitHub workflow and reviewer provenance.
+
+### Connected editor release evidence
+
+Run the connected Qt editor against an authenticated OpenSSH server using the
+release package under review. Use a UTF-8 test file. Open it from the SFTP
+browser, edit it locally and capture the displayed diff. Change the remote
+file and decline the overwrite. Attempt to save again while changing the
+remote file a second time inside the approval prompt. Approve the first
+prompt, decline the fresh prompt and verify that both declines leave the
+corresponding server version intact. Then approve the save and read the file
+back separately from the server.
+
+Use the downloaded file, dialog capture and saved remote file as the
+`open_action`, `save_review` and `save_action` attachments. Record the dialog
+sequence in a JSON array with `title`, `decision`, `text`, `detail`,
+`default_is_no` and `remote_sha256_at_answer` on each entry. The diff entry
+contains the full displayed diff. The four overwrite entries record
+`No`, `Yes`, `No` and `Yes` in that order.
+
+The `connected_session` attachment uses schema
+`row.moba-text.connected-edit-capture.v1` and records `status` as `passed`.
+Include the same `profile`, `remote_path`, `release_target`, `source` and
+`release_asset` as the evidence manifest. The `source` object identifies the
+`repository`, `release_tag`, `head_sha`, `workflow_run_url` and `run_attempt`.
+The `release_asset` object contains the package `name` and `sha256`.
+Record the `ssh_login`, `declined_remote_sha256` and
+`changed_during_approval_remote_sha256` observed after the two declines.
+
+Store these attachments in the evidence root and reference each one from the
+connected capture with `evidence_file` and `evidence_sha256`. Use nonempty
+captures of at most 1 MiB per file.
+
+| Attachment | Contents |
+| --- | --- |
+| `first_conflict` and `second_conflict` | The distinct server snapshots preserved by the two declines |
+| `staged` | Editor bytes staged for upload |
+| `server_readback` | An independent server read after the approved save |
+| `diagnostics` | Qt capture JSON with `status`, `errors` and `sftp_output` |
+| `sshd_log` | OpenSSH server log showing the connection, authentication and SFTP subsystem for the same login and socket |
 
 ### Macro replay release evidence
 

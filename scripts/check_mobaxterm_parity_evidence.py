@@ -12,7 +12,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
-TESTED_ASSET_ARTICLES = frozenset({"embedded-server-suite", "macro-recorder"})
+TESTED_ASSET_ARTICLES = frozenset({"embedded-server-suite", "macro-recorder", "moba-text-editor-diff"})
 SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES | {"shared-authenticated-transport-terminal-grid"}
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -468,6 +468,8 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
         sessions = details.get("replay_sessions")
         if type(count) is not int or type(sessions) is not int or count < 1 or count != sessions:
             errors.append("macro-recorder validation summary must record verified SSH timing and review for every replay")
+    if article_id == "moba-text-editor-diff" and details.get("verified_remote_edit") is not True:
+        errors.append("moba-text-editor-diff validation summary must record a verified SFTP edit")
     return errors
 
 

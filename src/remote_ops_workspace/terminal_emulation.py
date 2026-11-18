@@ -81,6 +81,7 @@ class AnsiTextStyle:
 
 
 ANSI_DEFAULT_STYLE = AnsiTextStyle()
+TerminalScreenRow = tuple[str, tuple[AnsiTextStyle, ...]]
 
 # A wide glyph owns its following empty cell. Its combining marks stay in
 # the leading cell so cell edits never have to count Unicode code points.
@@ -466,6 +467,10 @@ class AnsiTerminalTranscript:
             return self.text()
         self._ensure_alternate_screen()
         return "\n".join("".join(line) for line in self._alternate_lines)
+
+    def styled_alternate_rows(self) -> tuple[TerminalScreenRow, ...]:
+        """Snapshot the alternate viewport, including blank rows and per-character styles."""
+        return tuple((text, tuple(styles)) for text, styles in self._alternate_all_render_rows())
 
     def styled_fragments(
         self,

@@ -84,6 +84,76 @@ def test_unicode_terminal_append_selection_and_grid_cursor(gui_window) -> None:
     assert pane.output.textCursor().hasSelection() is False
 
 
+def test_alternate_screen_changes_only_dirty_rows_and_keeps_the_shell(gui_window) -> None:
+    from PyQt6.QtGui import QTextCursor
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.terminal_emulator.set_screen_size(40, 5)
+    pane.append_process_text("shell\x1b[?1049h\x1b[1;1H😀keep\x1b[2;1H\x1b[31mrow\x1b[3;1H\x1b[0mtail")
+    document = pane.output.document()
+    first = document.findBlockByNumber(0)
+    middle = document.findBlockByNumber(1)
+    last = document.findBlockByNumber(2)
+    first.setUserState(17)
+    last.setUserState(23)
+    cursor = QTextCursor(last)
+    cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+    pane.output.setTextCursor(cursor)
+    changes: list[tuple[int, int, int]] = []
+    document.contentsChange.connect(lambda *geometry: changes.append(geometry))
+
+    pane.append_process_text("\x1b[2;1H\x1b[32mrow")
+    assert changes == [(middle.position(), 3, 3)]
+    assert middle.begin().fragment().charFormat().foreground().color().name() == "#0dbc79"
+    changes.clear()
+    pane.append_process_text("\x1b[2;1H\x1b[6 q\x1b[?25l")
+    assert changes == []
+    assert pane.output.property("terminalRemoteCursorRow") == 1
+    assert pane.output.property("terminalRemoteCursorVisible") is False
+
+    pane.append_process_text("\x1b[2;1H\x1b[0m\x1b[2K界e\u0301x")
+    assert changes == [(middle.position(), 3, 4)]
+    assert pane.output.toPlainText() == "😀keep\n界e\u0301x\ntail\n\n"
+    assert (first.userState(), last.userState()) == (17, 23)
+    assert pane.output.textCursor().selectedText() == "tail"
+
+    changes.clear()
+    pane.append_process_text("\x1b[2;1H\x1b[2K")
+    assert changes == [(middle.position(), 4, 0)]
+    assert pane.output.toPlainText() == "😀keep\n\ntail\n\n"
+    pane.terminal_emulator.set_screen_size(40, 6)
+    pane.append_process_text("\x1b[6 q")
+    assert document.blockCount() == 6
+    assert pane.output.toPlainText() == "😀keep\n\ntail\n\n\n"
+    pane.append_process_text("\x1b[?1049l")
+    assert pane.output.toPlainText() == "shell"
+
+
+def test_alternate_screen_redraw_recovers_after_document_edit_error(gui_window, monkeypatch) -> None:
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.set_terminal_transcript("\x1b[?1049h\x1b[2;1Hold")
+    document = pane.output.document()
+    assert document.blockCount() > 2
+
+    def fail(_changes):
+        document.clear()
+        raise RuntimeError("test interrupted document edit")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pane, "_patch_alternate_screen", fail)
+        with pytest.raises(RuntimeError, match="interrupted document edit"):
+            pane.append_process_text("\x1b[2;1Hnew")
+    assert pane.output.updatesEnabled()
+    assert not pane.output.property("terminalAlternateScreenRedraw")
+    pane.append_process_text("\x1b[2;1H")
+    assert pane.output.toPlainText().split("\n")[1] == "new"
+    document.clear()
+    pane.append_process_text("\x1b[2;4H!")
+    assert pane.output.toPlainText().split("\n")[1] == "new!"
+
+
 def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_window, monkeypatch) -> None:
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QTextCursor

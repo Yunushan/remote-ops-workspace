@@ -5,6 +5,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from itertools import groupby
 
 from PyQt6.QtCore import (
     QEvent,
@@ -79,6 +80,7 @@ from .terminal_emulation import (
     AnsiTerminalTranscript,
     AnsiTextStyle,
     TerminalCursorStyle,
+    TerminalScreenRow,
 )
 from .terminal_highlighting import (
     default_terminal_syntax_rules,
@@ -308,6 +310,7 @@ class TerminalPane(QWidget):
         self._restart_after_stop = False
         self._rendered_terminal_text = ""
         self._rendered_terminal_revision = -1
+        self._rendered_alternate_rows: tuple[TerminalScreenRow, ...] | None = None
         self._pending_terminal_transcript: str | None = None
         self._pty_initial_clear_pending = False
         self._pty_startup_probe = ""
@@ -1456,8 +1459,7 @@ class TerminalPane(QWidget):
                 self.update_process_actions()
                 return
         self.invalidate_macro_session()
-        self.output.clear()
-        self._rendered_terminal_text = ""
+        self._clear_terminal_document()
         self.terminal_emulator.reset()
         self.sync_terminal_emulator_mode_properties()
         self._terminal_follow_output = True
@@ -1607,8 +1609,7 @@ class TerminalPane(QWidget):
         self._terminal_follow_output = True
         self._terminal_force_follow_output = False
         self.output.setProperty("terminalFollowOutput", True)
-        self.output.clear()
-        self._rendered_terminal_text = ""
+        self._clear_terminal_document()
         self.terminal_emulator.reset()
         self.sync_terminal_emulator_mode_properties()
         self.reset_process_output_pipeline()
@@ -2417,11 +2418,52 @@ class TerminalPane(QWidget):
         self._terminal_force_follow_output = False
         self.output.setProperty("terminalFollowOutput", True)
         self.terminal_emulator.reset()
-        self.output.clear()
-        self._rendered_terminal_text = ""
+        self._clear_terminal_document()
         transcript = self.terminal_emulator.feed(text)
+        if self.terminal_emulator.alternate_screen_active:
+            transcript = self.terminal_emulator.screen_text()
         self.sync_terminal_emulator_mode_properties()
         self.render_terminal_transcript(transcript)
+
+    def _clear_terminal_document(self) -> None:
+        self.output.clear()
+        self._rendered_terminal_text = ""
+        self._rendered_terminal_revision = -1
+        self._rendered_alternate_rows = None
+
+    def _alternate_screen_changes(
+        self, rows: tuple[TerminalScreenRow, ...] | None,
+    ) -> list[tuple[int, TerminalScreenRow]] | None:
+        previous = self._rendered_alternate_rows
+        if rows is None or previous is None or len(rows) != len(previous):
+            return None
+        document = _required_gui_value(self.output.document(), "terminal text document")
+        if len(rows) != document.blockCount():
+            return None
+        return [
+            (index, row)
+            for index, (old_row, row) in enumerate(zip(previous, rows, strict=True))
+            if old_row != row
+        ]
+
+    def _patch_alternate_screen(self, changes: list[tuple[int, TerminalScreenRow]]) -> None:
+        document = _required_gui_value(self.output.document(), "terminal text document")
+        edit = QTextCursor(document)
+        edit.beginEditBlock()
+        try:
+            for index, (text, styles) in changes:
+                cursor = QTextCursor(document.findBlockByNumber(index))
+                cursor.movePosition(
+                    QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor,
+                )
+                cursor.removeSelectedText()
+                start = 0
+                for style, run in groupby(styles):
+                    end = start + sum(1 for _ in run)
+                    cursor.insertText(text[start:end], self.terminal_text_format(style, ""))
+                    start = end
+        finally:
+            edit.endEditBlock()
 
     def render_terminal_transcript(self, transcript: str) -> None:
         if bool(self.output.property("terminalTabPaintFrozen")):
@@ -2477,10 +2519,15 @@ class TerminalPane(QWidget):
             alternate_screen_active,
         )
         terminal_revision = int(getattr(self.terminal_emulator, "_render_revision", 0))
-        if transcript == previous and terminal_revision == self._rendered_terminal_revision:
+        alternate_rows = self.terminal_emulator.styled_alternate_rows() if alternate_screen_active else None
+        alternate_changes = self._alternate_screen_changes(alternate_rows)
+        if alternate_changes == [] or (
+            transcript == previous and terminal_revision == self._rendered_terminal_revision
+        ):
             # Cursor/selection state can change without changing a frame's
             # text. Avoid rebuilding the document in that case; this is a
             # common path for htop's cursor and status queries.
+            self._rendered_terminal_revision = terminal_revision
             self.update_remote_cursor_overlay(transcript)
             self.refresh_terminal_input_security(transcript)
             return
@@ -2490,6 +2537,69 @@ class TerminalPane(QWidget):
         # including normal shell output arriving beside an alternate screen.
         self.output.setProperty("terminalAlternateScreenRedraw", True)
         self.output.setUpdatesEnabled(False)
+        try:
+            if alternate_changes is None:
+                self._replace_terminal_document(transcript, previous, full_redraw_hint, alternate_screen_active)
+            else:
+                self._patch_alternate_screen(alternate_changes)
+        except Exception:
+            self._rendered_terminal_text = ""
+            self._rendered_terminal_revision = -1
+            self._rendered_alternate_rows = None
+            self.output.setProperty("terminalAlternateScreenRedraw", False)
+            self.output.setUpdatesEnabled(updates_were_enabled)
+            raise
+        self._rendered_alternate_rows = alternate_rows
+        self._rendered_terminal_text = transcript
+        self._rendered_terminal_revision = terminal_revision
+        if alternate_screen_active:
+            # The retained screen is a viewport, not scrollback.  Always
+            # anchor it at row zero even if the previous shell page had a
+            # large scrollbar value.
+            self._set_terminal_scroll_value(0)
+            self._terminal_follow_output = False
+            self._terminal_force_follow_output = False
+            self.output.setProperty("terminalFollowOutput", False)
+        elif self._terminal_force_follow_output:
+            self._terminal_force_follow_output = False
+            self.scroll_terminal_to_end()
+        elif selection_text_unchanged:
+            restored = QTextCursor(self.output.document())
+            restored.setPosition(selection_anchor)
+            restored.setPosition(
+                selection_position,
+                QTextCursor.MoveMode.KeepAnchor,
+            )
+            self.output.setTextCursor(restored)
+            self._set_terminal_scroll_value(scroll_value)
+            self._terminal_follow_output = follow_output
+            self.output.setProperty("terminalFollowOutput", follow_output)
+            self.output.setProperty("terminalSelectionPreservedOnOutput", True)
+        elif follow_output:
+            self.scroll_terminal_to_end()
+        else:
+            self._set_terminal_scroll_value(scroll_value)
+            self._terminal_follow_output = False
+            self.output.setProperty("terminalFollowOutput", False)
+        if not alternate_screen_active:
+            self.output.setProperty(
+                "terminalAlternateScreenScrollbarsHidden",
+                False,
+            )
+        self.output.setProperty("terminalAlternateScreenRedraw", False)
+        self.output.setUpdatesEnabled(updates_were_enabled)
+        self.output_viewport.update()
+        self.output.update()
+        self.update_remote_cursor_overlay(transcript)
+        self.refresh_terminal_input_security(transcript)
+
+    def _replace_terminal_document(
+        self,
+        transcript: str,
+        previous: str,
+        full_redraw_hint: bool,
+        alternate_screen_active: bool,
+    ) -> None:
         append_only = bool(
             previous
             and transcript.startswith(previous)
@@ -2573,48 +2683,6 @@ class TerminalPane(QWidget):
                     ),
                 ),
             )
-        self._rendered_terminal_text = transcript
-        self._rendered_terminal_revision = terminal_revision
-        if alternate_screen_active:
-            # The retained screen is a viewport, not scrollback.  Always
-            # anchor it at row zero even if the previous shell page had a
-            # large scrollbar value.
-            self._set_terminal_scroll_value(0)
-            self._terminal_follow_output = False
-            self._terminal_force_follow_output = False
-            self.output.setProperty("terminalFollowOutput", False)
-        elif self._terminal_force_follow_output:
-            self._terminal_force_follow_output = False
-            self.scroll_terminal_to_end()
-        elif selection_text_unchanged:
-            restored = QTextCursor(self.output.document())
-            restored.setPosition(selection_anchor)
-            restored.setPosition(
-                selection_position,
-                QTextCursor.MoveMode.KeepAnchor,
-            )
-            self.output.setTextCursor(restored)
-            self._set_terminal_scroll_value(scroll_value)
-            self._terminal_follow_output = follow_output
-            self.output.setProperty("terminalFollowOutput", follow_output)
-            self.output.setProperty("terminalSelectionPreservedOnOutput", True)
-        elif follow_output:
-            self.scroll_terminal_to_end()
-        else:
-            self._set_terminal_scroll_value(scroll_value)
-            self._terminal_follow_output = False
-            self.output.setProperty("terminalFollowOutput", False)
-        if not alternate_screen_active:
-            self.output.setProperty(
-                "terminalAlternateScreenScrollbarsHidden",
-                False,
-            )
-        self.output.setProperty("terminalAlternateScreenRedraw", False)
-        self.output.setUpdatesEnabled(updates_were_enabled)
-        self.output_viewport.update()
-        self.output.update()
-        self.update_remote_cursor_overlay(transcript)
-        self.refresh_terminal_input_security(transcript)
 
     def update_remote_cursor_overlay(self, transcript: str) -> None:
         """Place the painted cursor at the emulator's active grid cell."""

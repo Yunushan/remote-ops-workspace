@@ -699,7 +699,7 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
     monkeypatch.setattr(gui.sys, "platform", original_platform)
 
     literal_message_box = _closure_value(
-        type(window).connect_selected,
+        type(window).show_message,
         "_literal_message_box",
     )
 
@@ -738,8 +738,7 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
         "QMessageBox",
         _MessageBox,
     )
-    result = literal_message_box(
-        window,
+    result = window.show_message(
         QMessageBox.Icon.Question,
         "Literal title",
         "<b>literal body</b>",

@@ -5,7 +5,9 @@ from types import SimpleNamespace
 import pytest
 
 import remote_ops_workspace.launcher as launcher
+from remote_ops_workspace.file_transfer import build_sftp_get_plan
 from remote_ops_workspace.launcher import LauncherError
+from remote_ops_workspace.moba_smartcards import build_smartcard_ssh_browser_plan
 from remote_ops_workspace.models import Profile, Tunnel
 
 
@@ -74,6 +76,24 @@ def test_smartcard_provider_conflicts_empty_values_and_agent_notes() -> None:
         {"mobagent_smartcard": "true", "identity_agent": "/tmp/agent.sock"}
     )
     assert any("MobAgent smart-card handoff" in note for note in notes)
+
+
+def test_smartcard_browser_and_scp_pass_the_provider_as_an_openssh_config_option(tmp_path) -> None:
+    provider = r"C:\Token Middleware\provider.dll"
+    profile = Profile(name="token", protocol="ssh", host="127.0.0.1", username="operator")
+    browser = build_smartcard_ssh_browser_plan(profile, "token", provider=f"pkcs11:{provider}")
+    token_profile = Profile.from_dict({**profile.to_dict(), "options": browser.profile_options})
+    batch = build_sftp_get_plan(token_profile, "document.txt", tmp_path / "copy.txt").command
+    scp = launcher.build_launch_plan(
+        Profile.from_dict({**token_profile.to_dict(), "protocol": "scp"})
+    ).command
+
+    assert browser.terminal_command[-3:-1] == ["-I", provider]
+    option = r'PKCS11Provider="C:\\Token Middleware\\provider.dll"'
+    for command in (browser.sftp_command, batch, scp):
+        assert "-I" not in command
+        assert command[-3:-1] == ["-o", option]
+        assert command[-1] == "operator@127.0.0.1"
 
 
 def test_remote_and_invalid_ssh_tunnels() -> None:

@@ -485,8 +485,8 @@ def test_same_parameters_sftp_plan_preserves_ssh_options() -> None:
 
     assert plan.command[:3] == ["sftp", "-P", "2222"]
     assert "-C" in plan.command
-    assert "-I" in plan.command
-    assert "/usr/lib/opensc-pkcs11.so" in plan.command
+    assert "-I" not in plan.command
+    assert 'PKCS11Provider="/usr/lib/opensc-pkcs11.so"' in plan.command
     assert "CertificateFile=/home/operator/.ssh/id_ed25519-cert.pub" in plan.command
     assert "IdentityAgent=/tmp/agent.sock" in plan.command
     assert plan.command[-1] == "operator@example.internal"

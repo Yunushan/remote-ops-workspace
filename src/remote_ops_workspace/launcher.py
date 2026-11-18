@@ -264,8 +264,8 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
                 # OpenSSH parses each -o value as a config line even though the
                 # process receives argv. Quote a helper installed under a path
                 # such as Program Files for that second parsing boundary.
-                location = safe.path_arg(xauth_location, "XAuthLocation").replace("\\", "\\\\").replace('"', '\\"')
-                cmd.extend(["-o", f'XAuthLocation="{location}"'])
+                location = safe.path_arg(xauth_location, "XAuthLocation")
+                cmd.extend(["-o", _ssh_config_path_option("XAuthLocation", location)])
             notes.append("X11 forwarding requested. Ensure XQuartz, Xorg or VcXsrv is running locally.")
         if _option_bool(profile.options, "agent_forward", "forward_agent"):
             cmd.append("-A")
@@ -275,7 +275,7 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
     if protocol == "sftp":
         cmd = ["sftp", "-P", str(port)]
         cmd.extend(_ssh_identity_args(profile))
-        cmd.extend(_ssh_connection_option_args(profile.options))
+        cmd.extend(_ssh_connection_option_args(profile.options, file_transfer=True))
         notes.extend(_ssh_smartcard_notes(profile.options))
         cmd.extend(_ssh_proxy_args(profile, notes))
         cmd.append(target)
@@ -283,7 +283,7 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
 
     cmd = ["scp", "-P", str(port)]
     cmd.extend(_ssh_identity_args(profile))
-    cmd.extend(_ssh_connection_option_args(profile.options))
+    cmd.extend(_ssh_connection_option_args(profile.options, file_transfer=True))
     notes.extend(_ssh_smartcard_notes(profile.options))
     cmd.extend(_ssh_proxy_args(profile, notes))
     cmd.append(target)
@@ -297,7 +297,12 @@ def _ssh_identity_args(profile: Profile) -> list[str]:
     return ["-i", safe.path_arg(profile.identity_file, "identity file")]
 
 
-def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
+def _ssh_config_path_option(keyword: str, path: str) -> str:
+    quoted = path.replace("\\", "\\\\").replace('"', '\\"')
+    return f'{keyword}="{quoted}"'
+
+
+def _ssh_connection_option_args(options: Mapping[str, str], *, file_transfer: bool = False) -> list[str]:
     args: list[str] = []
     if _option_bool(options, "compression"):
         args.append("-C")
@@ -358,7 +363,10 @@ def _ssh_connection_option_args(options: Mapping[str, str]) -> list[str]:
         raise LauncherError("pkcs11_provider and smartcard_provider must reference the same provider when both are set")
     provider_path = provider_path or smartcard_provider_path
     if provider_path:
-        args.extend(["-I", provider_path])
+        if file_transfer:
+            args.extend(["-o", _ssh_config_path_option("PKCS11Provider", provider_path)])
+        else:
+            args.extend(["-I", provider_path])
 
     log_level = _option_enum(
         options,

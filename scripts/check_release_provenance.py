@@ -40,6 +40,8 @@ from check_release_license_compliance import (  # noqa: E402
     check_tag_governance_attestation,
     parse_timestamp,
     read_json_object,
+    secure_regular_file,
+    valid_evidence_record,
     verify_tag_governance_signature,
 )
 from check_release_publish_assets import (  # noqa: E402
@@ -48,6 +50,10 @@ from check_release_publish_assets import (  # noqa: E402
 )
 from check_release_tag_governance import check_redistribution_approval  # noqa: E402
 from fetch_release_tag_governance import promotion_transaction, require_transaction  # noqa: E402
+from release_candidate_inventory import (  # noqa: E402
+    MAX_JSON_BYTES,
+    validate_managed_release_qualification,
+)
 
 PREDICATE_TYPE = "https://slsa.dev/provenance/v1"
 RELEASE_WORKFLOW = ".github/workflows/release-promotion.yml"
@@ -154,6 +160,8 @@ def main(
             }
         if audited_inputs is not None and not verify_governance:
             raise ValueError("audited input checks require verified governance")
+        if args.candidate_inventory is not None and approval is None:
+            raise ValueError("--candidate-inventory requires the signed redistribution approval")
         if audited_policy is not None and (check_published_at is None or not audited_inputs):
             raise ValueError("audited policy requires a delegated compliance audit")
         policy_snapshot = (
@@ -210,6 +218,8 @@ def main(
             )
             if approval_errors:
                 raise ValueError("; ".join(approval_errors))
+            if args.candidate_inventory is None and "linux-x86_64" in policy.get("production_targets", ()):
+                raise ValueError("the audited candidate inventory is required for Debian release qualification")
         errors = check_release_asset_bytes(
             release,
             local_assets,
@@ -243,6 +253,16 @@ def main(
             item["name"]: item["digest"].removeprefix("sha256:")
             for item in release["assets"] if item["name"] in local_assets
         }
+        if args.candidate_inventory is not None:
+            assert approval is not None and audited_inputs is not None
+            deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
+            if deb_name not in release_digests:
+                raise ValueError("published release is missing the qualified Debian amd64 installer")
+            digest = check_approved_candidate_inventory(
+                args.candidate_inventory, approval[1], repository=repository, tag=tag,
+                sha=sha, deb_sha256=release_digests[deb_name],
+            )
+            audited_inputs[args.candidate_inventory] = digest
         invocations_by_asset: dict[str, set[RunInvocation]] = {}
         for name in sorted(local_assets):
             path = local_assets[name]
@@ -408,6 +428,29 @@ def main(
     return 0
 
 
+def check_approved_candidate_inventory(
+    path: Path, approval: dict[str, Any], *, repository: str, tag: str, sha: str, deb_sha256: str,
+) -> str:
+    record = approval.get("candidate_inventory")
+    if not valid_evidence_record(record) or record["size_bytes"] > MAX_JSON_BYTES:
+        raise ValueError("signed redistribution approval has no valid candidate inventory record")
+    candidate, error = secure_regular_file(path.parent, path.name, "audited candidate inventory")
+    if candidate is None:
+        raise ValueError(error)
+    with candidate.open("rb") as stream:
+        raw = stream.read(MAX_JSON_BYTES + 1)
+    digest = hashlib.sha256(raw).hexdigest()
+    if len(raw) != record["size_bytes"] or digest != record["sha256"]:
+        raise ValueError("audited candidate inventory does not match the signed redistribution approval")
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("audited candidate inventory must contain an object")
+    validate_managed_release_qualification(
+        value, repository=repository, release_tag=tag, release_sha=sha, deb_sha256=deb_sha256,
+    )
+    return digest
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -440,6 +483,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--governance-signature", type=Path)
     parser.add_argument("--redistribution-evidence", type=Path)
     parser.add_argument("--redistribution-signature", type=Path)
+    parser.add_argument("--candidate-inventory", type=Path)
     return parser.parse_args(argv)
 
 

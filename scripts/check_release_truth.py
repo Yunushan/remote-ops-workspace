@@ -621,13 +621,14 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 "--governance-signature release-governance-publish/tag-governance-attestation.sig.json",
                 '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
                 '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
+                '--candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
             ),
             ("--help",),
             frozenset({
                 "--assets-dir", "--repository", "--tag", "--sha", "--published-release-id",
                 "--current-transaction-run-id", "--current-transaction-run-attempt",
                 "--governance-attestation", "--governance-signature",
-                "--redistribution-evidence", "--redistribution-signature",
+                "--redistribution-evidence", "--redistribution-signature", "--candidate-inventory",
             }),
         ),
         "Verify attestation and download exact candidate artifact IDs": (
@@ -906,6 +907,14 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 allowed_flags=allowed_flags,
             )
         )
+    candidate_proof = (
+        "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}"
+        "/bundle/release-candidate-inventory.json"
+    )
+    for step_name in ("Attest the audited redistribution approval", "Retain the audited redistribution approval"):
+        step = workflow_step_block(block, f"name: {step_name}")
+        if candidate_proof not in {line.strip() for line in step.splitlines()}:
+            errors.append(f"{step_name} must include the audited candidate inventory")
     if "environment: release-compliance-review" not in block:
         errors.append("promotion must use the protected release-compliance-review environment")
     return errors
@@ -999,7 +1008,8 @@ def check_certification_truth(workflow: str) -> list[str]:
         '--governance-attestation "$RUNNER_TEMP/publication-governance/tag-governance-attestation.json" '
         '--governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json" '
         '--redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json" '
-        '--redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json"',
+        '--redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json" '
+        '--candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json"',
     ]
     if (
         executable_step_commands(audit) != expected_audit

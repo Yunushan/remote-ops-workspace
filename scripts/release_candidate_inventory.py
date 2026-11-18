@@ -451,6 +451,21 @@ def require_managed_deb(records: list[dict[str, Any]], release_tag: str, sha256:
         raise ValueError("managed Debian receipt must bind the exact candidate DEB")
 
 
+def validate_managed_release_qualification(
+    inventory: dict[str, Any], *, repository: str, release_tag: str, release_sha: str, deb_sha256: str,
+) -> None:
+    if inventory.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("production Debian qualification requires the current sealed candidate inventory")
+    run_id = inventory.get("build_run_id")
+    if type(run_id) is not int or run_id < 1:
+        raise ValueError("production Debian qualification requires a numeric candidate build run")
+    records = validate_inventory(
+        inventory, repository=repository, release_tag=release_tag, release_sha=release_sha,
+        run_id=run_id, run_attempt=1,
+    )
+    require_managed_deb(records, release_tag, deb_sha256)
+
+
 def validate_runtime_report(report: bytes, label: str) -> None:
     if not 0 < len(report) <= MAX_JSON_BYTES:
         raise ValueError(f"{label} pip inspect report exceeds the allowed size or is empty")

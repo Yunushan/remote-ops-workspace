@@ -130,7 +130,8 @@ jobs:
             --governance-attestation "$RUNNER_TEMP/publication-governance/tag-governance-attestation.json" \
             --governance-signature "$RUNNER_TEMP/publication-governance/tag-governance-attestation.sig.json" \
             --redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json" \
-            --redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json"
+            --redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json" \
+            --candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json"
       - name: Verify published production release notes
         env:
           GH_TOKEN: ${{ github.token }}

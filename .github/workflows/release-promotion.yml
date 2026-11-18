@@ -222,6 +222,7 @@ jobs:
           subject-path: |
             release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.json
             release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.sig.json
+            release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/bundle/release-candidate-inventory.json
       - name: Retain the audited redistribution approval
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -229,6 +230,7 @@ jobs:
           path: |
             release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.json
             release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/release-evidence.sig.json
+            release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/bundle/release-candidate-inventory.json
           if-no-files-found: error
           retention-days: 90
       - name: Generate boundary-aware release notes
@@ -524,6 +526,7 @@ jobs:
           --governance-signature release-governance-publish/tag-governance-attestation.sig.json
           --redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"
           --redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
+          --candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"
       - name: Verify published release notes
         env:
           GH_TOKEN: ${{ github.token }}

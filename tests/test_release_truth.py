@@ -473,6 +473,26 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     ]
     changed = workflow.replace("production-redistribution-approval-", "other-")
     assert any("attempt-specific redistribution approval" in error for error in checker.check_certification_truth(changed))
+    changed = workflow.replace(
+        '--candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json"',
+        '--candidate-inventory "$RUNNER_TEMP/unverified.json"',
+    )
+    assert any("exact immutable publication audit" in error for error in checker.check_certification_truth(changed))
+
+
+def test_promotion_attests_and_retains_the_exact_audited_candidate_inventory() -> None:
+    workflow = (ROOT / ".github/workflows/release-promotion.yml").read_text(encoding="utf-8")
+    checker = load_script("check_release_truth")
+    assert checker.check_promotion_truth(workflow) == []
+    path = (
+        "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}"
+        "/bundle/release-candidate-inventory.json"
+    )
+    for step in ("Attest the audited redistribution approval", "Retain the audited redistribution approval"):
+        step_marker = f"      - name: {step}\n"
+        before, after = workflow.split(step_marker, 1)
+        changed = before + step_marker + after.replace(path, "unverified.json", 1)
+        assert f"{step} must include the audited candidate inventory" in checker.check_promotion_truth(changed)
 
 
 @pytest.mark.parametrize(

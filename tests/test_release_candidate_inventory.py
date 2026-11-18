@@ -367,14 +367,20 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     assert managed["receipt"]["candidate_sha256"] == deb_sha
     assert managed["receipt"]["candidate_has_server_bundle"] is bundled
     coordinates = dict(repository="example/project", release_tag=tag, release_sha=sha, run_id=123, run_attempt=1)
+    public_coordinates = {key: coordinates[key] for key in ("repository", "release_tag", "release_sha")}
     with pytest.raises(ValueError, match="managed Debian receipt is missing"):
         candidate.validate_inventory(inventory, **coordinates)
     # Historical inventory bytes remain readable when their tag's workflow
     # predated the managed Debian qualification.
     inventory["schema_version"] = candidate.LEGACY_SCHEMA_VERSION
     candidate.validate_inventory(inventory, **coordinates)
+    with pytest.raises(ValueError, match="requires the current sealed candidate inventory"):
+        candidate.validate_managed_release_qualification(inventory, **public_coordinates, deb_sha256=deb_sha)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["managed_debian_update"] = managed
+    candidate.validate_managed_release_qualification(inventory, **public_coordinates, deb_sha256=deb_sha)
+    with pytest.raises(ValueError, match="must bind the exact candidate DEB"):
+        candidate.validate_managed_release_qualification(inventory, **public_coordinates, deb_sha256="9" * 64)
     inventory["runtime_reports"]["windows-x86"]["artifact_id"] = records[0]["id"]
     with pytest.raises(ValueError, match="runtime report windows-x86 artifact id is duplicated"):
         candidate.validate_inventory(

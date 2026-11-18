@@ -39,6 +39,7 @@ from release_candidate_inventory import (  # noqa: E402
     MAX_JSON_BYTES,
     RUNTIME_REPORT_ARTIFACT_NAMES,
     RUNTIME_REPORT_NAME,
+    validate_managed_release_qualification,
     validate_runtime_report,
 )
 
@@ -173,6 +174,12 @@ def main(argv: list[str] | None = None) -> int:
             assert args.tag_governance_signature is not None
             from check_release_provenance import main as verify_release_provenance
 
+            audited_inputs = {
+                args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
+                args.signature: hashlib.sha256(signature_bytes).hexdigest(),
+            }
+            if "linux-x86_64" in policy["production_targets"]:
+                audited_inputs[args.candidate_inventory] = evidence["candidate_inventory"]["sha256"]
             if verify_release_provenance([
                 "--assets-dir", str(args.assets_dir),
                 "--repository", repository,
@@ -183,10 +190,7 @@ def main(argv: list[str] | None = None) -> int:
             ],
                 check_published_at=lambda published_at: check_review_window(evidence, now=published_at),
                 audited_policy=(policy_bytes, policy),
-                audited_inputs={
-                    args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
-                    args.signature: hashlib.sha256(signature_bytes).hexdigest(),
-                },
+                audited_inputs=audited_inputs,
             ):
                 raise RuntimeError("published release provenance and governance verification failed")
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
@@ -721,6 +725,19 @@ def check_evidence(
             reports = sealed_candidate.get("runtime_reports")
             if isinstance(reports, dict):
                 runtime_reports = reports
+            if "linux-x86_64" in policy["production_targets"]:
+                name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
+                deb, deb_error = secure_regular_file(assets_dir, name, "managed Debian release installer")
+                if deb is None:
+                    errors.append(deb_error or "managed Debian release installer is missing")
+                else:
+                    try:
+                        validate_managed_release_qualification(
+                            sealed_candidate, repository=repository, release_tag=tag, release_sha=sha,
+                            deb_sha256=sha256_file(deb),
+                        )
+                    except (OSError, ValueError) as error:
+                        errors.append(f"managed Debian release qualification: {error}")
 
     registry_record = evidence.get("protected_platform_registry")
     protected_registry: dict[str, Any] = {}

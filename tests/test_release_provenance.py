@@ -805,7 +805,7 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
     repository, tag, sha = "example/project", "v1.2.3", "a" * 40
     root = tmp_path / "release-assets"
     root.mkdir()
-    asset = root / "release.bin"
+    asset = root / f"remote-ops-workspace-{tag}-linux-amd64.deb"
     asset.write_bytes(b"release asset")
     release = {**_release(checker, root, repository, tag), "published_at": published_at}
     attestation = tmp_path / "governance.json"
@@ -937,8 +937,8 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         approved = tmp_path / "release-evidence.json"
         approved_sig = tmp_path / "release-evidence.sig.json"
 
-        def write_approval(expires_at):
-            approved.write_text(json.dumps({
+        def write_approval(expires_at, candidate=None):
+            approval = {
                 "schema_version": 1,
                 "decision": "approved",
                 "repository": repository,
@@ -947,7 +947,15 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
                 "policy_sha256": checker.sha256_file(policy),
                 "reviewed_at": "2026-11-01T11:00:00Z",
                 "expires_at": expires_at,
-            }), encoding="utf-8")
+            }
+            if candidate is not None:
+                approval["candidate_inventory"] = {
+                    "reference": "attested sealed candidate inventory",
+                    "file": candidate.name,
+                    "size_bytes": candidate.stat().st_size,
+                    "sha256": checker.sha256_file(candidate),
+                }
+            approved.write_text(json.dumps(approval), encoding="utf-8")
             approved_sig.write_text(json.dumps({
                 "schema_version": 1,
                 "algorithm": "ed25519",
@@ -1018,6 +1026,46 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert checker.main([*current_args, *approval_args]) == 1
         assert "signed redistribution approval must share" in capsys.readouterr().err
         monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+
+        prior_policy = policy.read_bytes()
+        debian_policy = {**json.loads(prior_policy), "production_targets": ["linux-x86_64"]}
+        policy.write_text(json.dumps(debian_policy), encoding="utf-8")
+        candidate = tmp_path / "release-candidate-inventory.json"
+        candidate.write_text('{"sealed_candidate_fixture": true}', encoding="utf-8")
+        write_approval("2026-11-01T12:02:30Z", candidate)
+        qualified = []
+
+        def verify_exact_deb(value, **kwargs):
+            assert value == {"sealed_candidate_fixture": True}
+            qualified.append(kwargs)
+
+        monkeypatch.setattr(checker, "validate_managed_release_qualification", verify_exact_deb)
+        assert checker.main(exact_completed) == 1
+        assert "audited candidate inventory is required" in capsys.readouterr().err
+        candidate_args = [*exact_completed, "--candidate-inventory", str(candidate)]
+        assert checker.main(candidate_args) == 0
+        assert qualified == [{
+            "repository": repository, "release_tag": tag, "release_sha": sha,
+            "deb_sha256": checker.sha256_file(asset),
+        }]
+
+        def candidate_attested_by_other_attempt(path: Path, **kwargs):
+            if path == candidate:
+                return _attestation(
+                    checker, repository=repository, sha=sha, tag=tag,
+                    digest=checker.sha256_file(path), attempt=2,
+                )
+            return attestation_api(path, **kwargs)
+
+        monkeypatch.setattr(checker, "verify_attestation", candidate_attested_by_other_attempt)
+        assert checker.main(candidate_args) == 1
+        assert "must share the successful promotion attempt" in capsys.readouterr().err
+        monkeypatch.setattr(checker, "verify_attestation", attestation_api)
+        candidate.write_text("{}", encoding="utf-8")
+        assert checker.main(candidate_args) == 1
+        assert "does not match the signed redistribution approval" in capsys.readouterr().err
+        policy.write_bytes(prior_policy)
+
         write_approval("2026-11-01T12:01:59Z")
         assert checker.main(exact_completed) == 1
         assert "expired" in capsys.readouterr().err

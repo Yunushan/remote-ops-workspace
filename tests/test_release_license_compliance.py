@@ -595,6 +595,29 @@ def test_signed_evidence_still_rejects_local_artifact_drift(tmp_path: Path) -> N
     assert checker.main(args) == 1
 
 
+@pytest.mark.parametrize("published", [False, True])
+def test_debian_compliance_requires_managed_qualification_in_the_signed_inventory(
+    tmp_path: Path, published: bool,
+) -> None:
+    checker = _load_checker()
+    args = checker.parse_args(_positive_fixture(tmp_path, checker))
+    raw_policy, policy = checker.read_json_object(args.policy, "policy fixture")
+    policy["production_targets"].append("linux-x86_64")
+    _, evidence = checker.read_json_object(args.evidence, "approved evidence fixture")
+    installer = args.assets_dir / f"remote-ops-workspace-{args.tag}-linux-amd64.deb"
+    installer.write_bytes(b"Debian installer fixture")
+
+    errors = checker.check_evidence(
+        evidence, policy=policy, policy_sha256=hashlib.sha256(raw_policy).hexdigest(), policy_root=tmp_path,
+        toolchain=json.loads(checker.TOOLCHAIN_PATH.read_bytes()), matrix=json.loads(checker.MATRIX_PATH.read_bytes()),
+        assets_dir=args.assets_dir, evidence_root=args.evidence_root,
+        protected_platform_registry=args.protected_platform_registry, candidate_inventory=args.candidate_inventory,
+        repository=args.repository, tag=args.tag, sha=args.sha, verify_review_window=False, published_audit=published,
+    )
+
+    assert any("requires the current sealed candidate inventory" in error for error in errors)
+
+
 def test_component_version_matching_is_case_and_separator_normalized() -> None:
     checker = _load_checker()
     versions = checker.required_versions(

@@ -613,13 +613,14 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                 "--governance-signature release-governance-publish/tag-governance-attestation.sig.json",
                 '--redistribution-evidence "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.json"',
                 '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
+                '--candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
             ),
             ("--help",),
             frozenset({
                 "--assets-dir", "--repository", "--tag", "--sha", "--published-release-id",
                 "--current-transaction-run-id", "--current-transaction-run-attempt",
                 "--governance-attestation", "--governance-signature",
-                "--redistribution-evidence", "--redistribution-signature",
+                "--redistribution-evidence", "--redistribution-signature", "--candidate-inventory",
             }),
         ),
         "Verify attestation and download exact candidate artifact IDs": (

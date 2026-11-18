@@ -339,9 +339,11 @@ directory. Push its two files together to the new printed ref. Keep the exact
 publication proof and signature for the aggregate audit. The workflow also
 retains a copy as `production-tag-governance-<run ID>-<attempt>`. After a
 successful promotion, the certification workflow retrieves that copy and
-verifies that the proof, the signed redistribution approval, and all
-immutable release assets share the triggering run and attempt. It verifies
-both independent signatures and checks their validity at publication.
+verifies that the proof, the signed redistribution approval, the audited
+candidate inventory, and all immutable release assets share the triggering
+run and attempt. It verifies both independent signatures at publication
+time and checks that the embedded Debian rollback receipt matches the
+published amd64 installer.
 
 ## Download the publication evidence
 
@@ -360,10 +362,11 @@ gh run download "$promotion_run_id" --repo "$release_repository" \
 ```
 
 Use the downloaded governance JSON and signature for the aggregate audit.
-The redistribution artifact contains the approval and signature. The
-aggregate also needs the matching signed evidence bundle and sealed candidate
-inventory from the pinned evidence commit, and the original protected-platform
-Actions ZIPs retained during [source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites).
+The redistribution artifact contains the approval, signature, and the
+audited candidate inventory under `bundle/`. The aggregate also needs
+the matching signed evidence bundle from the pinned evidence commit and
+the original protected-platform Actions ZIPs retained during
+[source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites).
 
 ## Verify a published artifact
 

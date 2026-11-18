@@ -154,6 +154,28 @@ def test_alternate_screen_redraw_recovers_after_document_edit_error(gui_window, 
     assert pane.output.toPlainText().split("\n")[1] == "new!"
 
 
+def test_alternate_screen_palette_change_updates_inverse_colors(gui_window) -> None:
+    from PyQt6.QtGui import QColor, QPalette
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.append_process_text("\x1b[?1049h\x1b[7mselected")
+    document = pane.output.document()
+    palette = pane.output.palette()
+    initial = document.firstBlock().begin().fragment().charFormat()
+    assert initial.foreground().color() == palette.color(QPalette.ColorRole.Base)
+    assert initial.background().color() == palette.color(QPalette.ColorRole.Text)
+    palette.setColor(QPalette.ColorRole.Base, QColor("#102030"))
+    palette.setColor(QPalette.ColorRole.Text, QColor("#a1b2c3"))
+    pane.output.setPalette(palette)
+
+    pane.render_terminal_transcript(pane.terminal_emulator.screen_text())
+    updated = document.firstBlock().begin().fragment().charFormat()
+    assert updated.foreground().color().name() == "#102030"
+    assert updated.background().color().name() == "#a1b2c3"
+    assert pane.output.toPlainText().split("\n")[0] == "selected"
+
+
 def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_window, monkeypatch) -> None:
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QTextCursor

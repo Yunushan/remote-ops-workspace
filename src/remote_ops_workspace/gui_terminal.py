@@ -311,6 +311,7 @@ class TerminalPane(QWidget):
         self._rendered_terminal_text = ""
         self._rendered_terminal_revision = -1
         self._rendered_alternate_rows: tuple[TerminalScreenRow, ...] | None = None
+        self._rendered_alternate_palette: tuple[str, str] | None = None
         self._pending_terminal_transcript: str | None = None
         self._pty_initial_clear_pending = False
         self._pty_startup_probe = ""
@@ -2430,12 +2431,19 @@ class TerminalPane(QWidget):
         self._rendered_terminal_text = ""
         self._rendered_terminal_revision = -1
         self._rendered_alternate_rows = None
+        self._rendered_alternate_palette = None
 
     def _alternate_screen_changes(
         self, rows: tuple[TerminalScreenRow, ...] | None,
+        palette: tuple[str, str] | None,
     ) -> list[tuple[int, TerminalScreenRow]] | None:
         previous = self._rendered_alternate_rows
-        if rows is None or previous is None or len(rows) != len(previous):
+        if (
+            rows is None
+            or previous is None
+            or len(rows) != len(previous)
+            or palette != self._rendered_alternate_palette
+        ):
             return None
         document = _required_gui_value(self.output.document(), "terminal text document")
         if len(rows) != document.blockCount():
@@ -2520,9 +2528,12 @@ class TerminalPane(QWidget):
         )
         terminal_revision = int(getattr(self.terminal_emulator, "_render_revision", 0))
         alternate_rows = self.terminal_emulator.styled_alternate_rows() if alternate_screen_active else None
-        alternate_changes = self._alternate_screen_changes(alternate_rows)
+        alternate_palette = self._terminal_document_palette() if alternate_screen_active else None
+        alternate_changes = self._alternate_screen_changes(alternate_rows, alternate_palette)
         if alternate_changes == [] or (
-            transcript == previous and terminal_revision == self._rendered_terminal_revision
+            not alternate_screen_active
+            and transcript == previous
+            and terminal_revision == self._rendered_terminal_revision
         ):
             # Cursor/selection state can change without changing a frame's
             # text. Avoid rebuilding the document in that case; this is a
@@ -2546,10 +2557,12 @@ class TerminalPane(QWidget):
             self._rendered_terminal_text = ""
             self._rendered_terminal_revision = -1
             self._rendered_alternate_rows = None
+            self._rendered_alternate_palette = None
             self.output.setProperty("terminalAlternateScreenRedraw", False)
             self.output.setUpdatesEnabled(updates_were_enabled)
             raise
         self._rendered_alternate_rows = alternate_rows
+        self._rendered_alternate_palette = alternate_palette
         self._rendered_terminal_text = transcript
         self._rendered_terminal_revision = terminal_revision
         if alternate_screen_active:
@@ -2779,11 +2792,7 @@ class TerminalPane(QWidget):
         """Translate retained SGR state into a Qt document character format."""
 
         text_format = QTextCharFormat()
-        palette = self.output.palette()
-        foreground, background = ansi_style.resolved_colors(
-            palette.color(QPalette.ColorRole.Text).name(),
-            palette.color(QPalette.ColorRole.Base).name(),
-        )
+        foreground, background = ansi_style.resolved_colors(*self._terminal_document_palette())
         if foreground:
             text_format.setForeground(QColor(foreground))
         elif syntax_color:
@@ -2803,6 +2812,10 @@ class TerminalPane(QWidget):
             text_format.setAnchorHref(link_target)
             text_format.setFontUnderline(True)
         return text_format
+
+    def _terminal_document_palette(self) -> tuple[str, str]:
+        palette = self.output.palette()
+        return palette.color(QPalette.ColorRole.Text).name(), palette.color(QPalette.ColorRole.Base).name()
 
     @staticmethod
     def terminal_secret_prompt_visible(transcript: str) -> bool:

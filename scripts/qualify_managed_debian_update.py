@@ -290,6 +290,27 @@ def qualify(args, root: Path) -> dict:
         if name == "candidate":
             if checked(launcher, "--version") != f"{PACKAGE} {candidate}" or sha256(launcher) != receipt["candidate_launcher_sha256"]:
                 raise RuntimeError("The installed candidate launcher does not match the transaction")
+            journal = transaction / "managed-update.json"
+            applied_journal = journal.read_bytes()
+            # Alter only the disposable container's installation. Leave dpkg's
+            # package record at the candidate version while changing its bytes.
+            size = launcher.stat().st_size
+            with launcher.open("ab") as output:
+                output.write(b"\nROW rollback qualification canary\n")
+            changed_launcher = sha256(launcher)
+            try:
+                rejected = update(
+                    "changed-launcher-rollback", "rollback", "--transaction", transaction,
+                    phase="refused", code=1,
+                )
+                if (rejected.get("refusal") != "installed-launcher-digest-refused"
+                        or journal.read_bytes() != applied_journal
+                        or sha256(launcher) != changed_launcher):
+                    raise RuntimeError("Rollback refusal changed the installation or transaction")
+            finally:
+                if launcher.is_file() and sha256(launcher) == changed_launcher:
+                    with launcher.open("r+b") as output:
+                        output.truncate(size)
             update("explicit-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
         if checked(launcher, "--version") != f"{PACKAGE} {previous}" or sha256(launcher) != previous_launcher:
             raise RuntimeError("Rollback did not restore the original launcher")

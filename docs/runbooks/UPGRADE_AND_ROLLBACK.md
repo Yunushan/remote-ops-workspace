@@ -113,7 +113,9 @@ reports `rolled-back` with a nonzero exit status for the failed apply.
 
 To roll the package back explicitly, close the application and run the following
 command from the same verified checkout. It rechecks the retained DEB and the
-installed launcher offline.
+installed launcher offline. A completed transaction can roll back only the
+exact candidate it installed. A different launcher with the same version
+causes a refusal before the journal or installation changes.
 
 ```bash
 python3 -I scripts/managed_linux_update.py rollback \
@@ -130,8 +132,10 @@ using the byte-verified previous release and exact candidate DEBs. It stages the
 packages through certificate-validated HTTPS inside an isolated Debian
 container, shuts down the feed, and exercises offline apply, operator-requested
 rollback, and automatic rollback after a controlled `dpkg` configuration
-failure. It also interrupts the controller during package configuration and
-checks that retrying the persisted transaction restores the previous launcher.
+failure. It checks that changing the launcher under the same installed
+version prevents explicit rollback. It also interrupts the controller during
+package configuration and checks that retrying the persisted transaction
+restores the previous launcher.
 The retained `managed-debian-update.json` records the package digests,
 candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in

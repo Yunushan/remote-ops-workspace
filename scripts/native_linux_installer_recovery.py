@@ -1042,10 +1042,11 @@ def managed_debian_report(commands: Commands, private: Path, source_sha: str,
     expected_steps = {"previous": ("authenticated-staged", 0), "candidate": ("authenticated-staged", 0),
                       "failing": ("authenticated-staged", 0), "interrupted": ("authenticated-staged", 0),
                       "candidate-apply": ("applied", 0), "explicit-rollback": ("rolled-back", 0),
+                      "changed-launcher-rollback": ("refused", 1),
                       "failing-apply": ("rolled-back", 1), "interrupted-apply": ("rolled-back", 1)}
     if set(steps) != set(expected_steps) or any(
         (steps[name]["phase"], steps[name]["exit_code"]) != expected for name, expected in expected_steps.items()
-    ):
+    ) or steps["changed-launcher-rollback"].get("refusal") != "installed-launcher-digest-refused":
         raise EvidenceError("managed-debian-receipt-binding-mismatch")
     return {**receipt, "source_sha": source_sha, "source_archive_sha256": digest(archive),
             "container_image": MANAGED_IMAGE, "run_id": os.environ["GITHUB_RUN_ID"],

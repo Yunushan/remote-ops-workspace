@@ -77,6 +77,23 @@ def test_successful_rollback_checks_retained_package_before_install(tmp_path, mo
     ]
 
 
+@pytest.mark.parametrize(("observed", "launcher_digest", "refusal"), [
+    (("installed", "1.0.28"), "f" * 64, "installed-launcher-digest-refused"),
+    (("installed", "1.0.24"), "c" * 64, "installed-package-identity-refused"),
+])
+def test_explicit_rollback_refuses_a_changed_completed_installation(
+    tmp_path, monkeypatch, observed, launcher_digest, refusal,
+):
+    monkeypatch.setattr(updater, "installed_package", lambda _arch: observed)
+    monkeypatch.setattr(updater, "installed_launcher_sha256", lambda: launcher_digest)
+    monkeypatch.setattr(updater, "verify_bytes", lambda *_a: pytest.fail("rollback package accessed"))
+    monkeypatch.setattr(updater, "journal_write", lambda *_a: pytest.fail("journal advanced"))
+    monkeypatch.setattr(updater, "install_deb", lambda *_a: pytest.fail("installation attempted"))
+
+    with pytest.raises(updater.UpdateError, match=refusal):
+        updater.rollback(tmp_path / updater.JOURNAL, state("applied"), "amd64")
+
+
 @pytest.mark.parametrize("name", [updater.PREVIOUS_PACKAGE, "candidate.deb"])
 def test_snapshot_refuses_to_replace_an_existing_unrelated_file(tmp_path: Path, monkeypatch, name):
     monkeypatch.setattr(updater, "trusted_path", lambda path, **_kw: path)

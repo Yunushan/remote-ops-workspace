@@ -251,13 +251,20 @@ def install_deb(path: Path, architecture: str, version: str, launcher_sha256: st
 
 
 def rollback(journal: Path, state: dict, architecture: str) -> dict:
-    actual = installed_package(architecture)
     previous = state["previous_version"]
     launcher_sha256 = state["previous_launcher_sha256"]
-    require(actual[1] in (previous, state["candidate_version"]), "installed-package-changed")
-    if state["phase"] == "rolled-back":
+    phase = state["phase"]
+    if phase == "rolled-back":
         verify_installation(architecture, previous, launcher_sha256)
         return state
+    candidate = state["candidate_version"]
+    if phase == "applied":
+        # A completed transaction grants rollback only for the exact
+        # installation it verified. Recovery of an interrupted transaction
+        # must still tolerate an incomplete launcher or package status.
+        verify_installation(architecture, candidate, state["candidate_launcher_sha256"])
+    else:
+        require(installed_package(architecture)[1] in (previous, candidate), "installed-package-changed")
     retained = journal.parent / PREVIOUS_PACKAGE
     verify_bytes(retained, state["previous_size"], state["previous_sha256"])
     state = journal_write(journal, state, "rolling-back")

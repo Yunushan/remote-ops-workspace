@@ -28,6 +28,8 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     read_json_object,
     secure_regular_file,
 )
+from scripts.debian_release_fixture import release_deb_version  # noqa: E402
+from scripts.moba_debian_server_payload import verify_debian_payload  # noqa: E402
 
 CLIENT_CAPTURE_SCHEMA = "row.moba-servers.live-client.v1"
 CLIENTS = {
@@ -259,6 +261,15 @@ def validate_live_server_release_evidence(
     result = validate_moba_server_release_evidence(evidence_path, assets_dir=root)
     result.summary.update(summary)
     return result
+
+
+def verify_packaged_debian_server_evidence(package: Path, root: Path, target: str) -> None:
+    evidence = read_capture_json(root / "evidence.json", "server release evidence")
+    source = evidence.get("source")
+    if not isinstance(source, dict) or source.get("release_tag") != f"v{release_deb_version(package.name, target)}":
+        raise ValueError("the Debian server package must match the reviewed release tag")
+    manifest = asset(root, evidence.get("runtime_manifest"), "reviewed server runtime manifest")
+    verify_debian_payload(package, manifest, target)
 
 
 def main() -> int:

@@ -45,6 +45,9 @@ from check_release_provenance import (  # noqa: E402
 from scripts.check_moba_professional_deployment_evidence import (  # noqa: E402
     verify_hosted_professional_update,
 )
+from scripts.check_moba_server_release_evidence import (  # noqa: E402
+    verify_packaged_debian_server_evidence,
+)
 from scripts.make_mobaxterm_parity_evidence_record import VALIDATORS  # noqa: E402
 from scripts.release_candidate_inventory import (  # noqa: E402
     DIGEST_RE,
@@ -486,6 +489,11 @@ def audit_release(
             if review_acceptance_line(record) not in checked_reviews[review_key]:
                 raise ValueError("GitHub review does not explicitly accept this exact article evidence")
             verify_article_evidence(record, evidence_root)
+            if article == "embedded-server-suite" and record["release_target"].startswith("linux-"):
+                name = record["validation_summary"]["summary"]["tested_release_asset"]["name"]
+                package = assets.get(name)
+                if package is not None and digests.get(name) == record["artifact_sha256"][name]:
+                    verify_packaged_debian_server_evidence(package, evidence_root / article, record["release_target"])
             if evidence_workflow is not None:
                 assert archive_window is not None
                 verify_hosted_evidence(repository, record, evidence_root, evidence_workflow, archive_window)

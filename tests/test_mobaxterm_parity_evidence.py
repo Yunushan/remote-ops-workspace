@@ -535,7 +535,7 @@ def reviewed_release(tmp_path, monkeypatch):
         ]
         record["artifact_sha256"] = {name: digest}
         record["release_asset_bytes"]["sha256"] = {name: digest}
-        if article in {"mobapt-unix-runtime", "embedded-x-server"}:
+        if article in {"mobapt-unix-runtime", "embedded-x-server", "embedded-server-suite"}:
             record["release_target"] = "linux-x86_64"
             record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{debian_asset.name}"]
             record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {debian_asset.name: debian_digest}
@@ -577,7 +577,7 @@ def reviewed_release(tmp_path, monkeypatch):
             )
         if article == "embedded-server-suite":
             record["validation_summary"]["summary"].update(
-                live_client_proof_count=8, tested_release_asset={"name": name, "sha256": digest},
+                live_client_proof_count=8, tested_release_asset={"name": debian_asset.name, "sha256": debian_digest},
             )
         if article == "shared-authenticated-transport-terminal-grid":
             record["validation_summary"]["summary"].update(
@@ -738,6 +738,11 @@ def reviewed_release(tmp_path, monkeypatch):
         return SimpleNamespace(to_dict=lambda: {"passed": True, "summary": summary})
 
     monkeypatch.setattr(release_parity, "VALIDATORS", dict.fromkeys(release_parity.ARTICLE_SPECS, validate))
+    server_payload_calls = []
+    monkeypatch.setattr(
+        release_parity, "verify_packaged_debian_server_evidence",
+        lambda *values: server_payload_calls.append(values),
+    )
     delivery_calls = []
 
     def verify_delivery(evidence, **requirements):
@@ -763,6 +768,7 @@ def reviewed_release(tmp_path, monkeypatch):
         hosted_archives=hosted_archives,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
+        server_payload_calls=server_payload_calls,
     )
 
 
@@ -776,6 +782,24 @@ def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_r
         "evidence_sha256": article["evidence_file_sha256"],
         "verified_installers": article["validation_summary"]["summary"]["verified_windows_installers"],
     })]
+
+
+def test_linux_server_certification_requires_the_reviewed_payload_in_the_release_debian_package(
+    reviewed_release, monkeypatch,
+) -> None:
+    assert release_parity.audit_release(**reviewed_release.args) == []
+    package, root, target = reviewed_release.server_payload_calls[0]
+    assert package.name == "remote-ops-workspace-v1.0.2-linux-amd64.deb"
+    assert root.name == "embedded-server-suite"
+    assert target == "linux-x86_64"
+
+    def reject_unshipped_runtime(*_args):
+        raise ValueError("reviewed daemon differs from published Debian payload")
+
+    monkeypatch.setattr(release_parity, "verify_packaged_debian_server_evidence", reject_unshipped_runtime)
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "embedded-server-suite reviewed daemon differs from published Debian payload"
+    ]
 
 
 def test_hosted_delivery_failure_blocks_certification(reviewed_release, monkeypatch) -> None:

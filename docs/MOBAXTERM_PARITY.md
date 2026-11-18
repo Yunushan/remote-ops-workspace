@@ -519,6 +519,17 @@ service policies and client tests, and these release bindings.
   `row servers bundle-runtime`. Include the native executable bytes for all eight
   manifest entries and record their relative paths and hashes in the service records.
 
+For Debian, supply the approved six external daemons to the normal native
+packager through `ROW_RELEASE_SERVER_BUNDLE`. Its input manifest covers
+TFTP, SSH, SFTP, Telnet, VNC, and NFS for the selected architecture. The
+packager adds HTTP and FTP from the exact built ROW launcher and ships the
+eight entries under `/usr/lib/remote-ops-workspace/servers`. Set
+`ROW_SERVER_RUNTIME_DIR` to that installed directory when capturing the
+client sessions. The release audit compares the reviewed manifest and
+all eight daemon digests with the downloaded Debian package, including
+the shared HTTP and FTP launcher bytes. Redistribution approval and the
+live client captures remain required.
+
 Point each `client_test.evidence_file` and `evidence_sha256` at a
 `row.moba-servers.live-client.v1` receipt. Include `service`, `runtime_sha256`,
 `release_asset_sha256`, `source_head_sha`, `workflow_run_url`, `run_attempt`, the

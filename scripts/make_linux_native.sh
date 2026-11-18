@@ -140,6 +140,15 @@ EOF
 DEB_ROOT="$BUILD_DIR/debroot"
 mkdir -p "$DEB_ROOT"
 cp -a "$PKGROOT/." "$DEB_ROOT/"
+if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
+  case "$DEB_ARCH" in
+    amd64) server_target="linux-x86_64" ;;
+    arm64|i386|armhf) server_target="linux-$DEB_ARCH" ;;
+    *) echo "Embedded server bundle is unsupported for Debian $DEB_ARCH" >&2; exit 1 ;;
+  esac
+  "$PYTHON_BIN" scripts/moba_debian_server_payload.py \
+    --bundle "$ROW_RELEASE_SERVER_BUNDLE" --debian-root "$DEB_ROOT" --target "$server_target"
+fi
 mkdir -p "$DEB_ROOT/DEBIAN"
 INSTALLED_SIZE="$(du -ks "$DEB_ROOT/usr" | awk '{print $1}')"
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
@@ -158,6 +167,10 @@ EOF
 
 DEB="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${DEB_ARCH}.deb"
 dpkg-deb --root-owner-group --build "$DEB_ROOT" "$DEB"
+if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
+  "$PYTHON_BIN" scripts/moba_debian_server_payload.py \
+    --bundle "$DEB_ROOT/usr/lib/remote-ops-workspace/servers" --deb "$DEB" --target "$server_target"
+fi
 
 RPMBUILD="$BUILD_DIR/rpmbuild"
 mkdir -p "$RPMBUILD/BUILD" "$RPMBUILD/BUILDROOT" "$RPMBUILD/RPMS" "$RPMBUILD/SOURCES" "$RPMBUILD/SPECS" "$RPMBUILD/SRPMS"

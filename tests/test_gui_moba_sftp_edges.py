@@ -172,8 +172,13 @@ def test_dock_projects_managed_ssh_state_and_defers_automatic_tools(connected_wo
 
         connection.state = replace(ready, phase="closing", disconnect_reason="operator-stop")
         window.refresh_moba_shared_ssh_state(pane, connection.state)
-        assert scheduled == [True]
+        assert scheduled == [True, True]
         assert dock.shared_ssh_control_path() == ""
+        _set_checked(status, True)
+        dock.request_remote_monitoring_refresh()
+        assert dock.property("mobaRemoteMonitoringRuntimeState") == "auth-required"
+        dock.request_sftp_refresh(reason="path-change")
+        assert dock.property("mobaSftpRuntimeState") == "auth-required"
         connection.state = replace(connection.state, phase="closed")
         assert dock.sync_shared_ssh_connection() == connection.state
         patch.setattr(dock, "sftp_status_badge", None)

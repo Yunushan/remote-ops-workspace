@@ -11358,8 +11358,8 @@ def create_main_window(
             dock = self.moba_connected_dock
             if dock is None or dock.state.ssh_connection_key != pane.ssh_connection_key:
                 return
-            dock.sync_shared_ssh_connection()
-            if state.phase == "connected":
+            selected = dock.sync_shared_ssh_connection()
+            if state == selected and state.phase in {"connected", "connection-lost", "closing", "closed"}:
                 dock.schedule_background_state_activation()
 
         def refresh_moba_background_after_terminal_start(self, pane: TerminalPane) -> None:

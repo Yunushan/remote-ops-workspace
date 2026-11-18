@@ -971,6 +971,10 @@ def create_moba_connected_classes(
             description = str(self.property("sshConnectionDescription") or "")
             return _safe_tooltip_html("\n".join(filter(None, (message, description, self.background_ssh_auth_detail()))))
 
+        def _waiting_for_shared_ssh(self) -> bool:
+            snapshot = self.property("sshConnectionState")
+            return isinstance(snapshot, dict) and snapshot["phase"] != "connected"
+
         def background_ssh_auth_capability(self, profile: Profile | None) -> tuple[bool, str]:
             """Return whether an automatic, non-interactive SSH child is defensible."""
 
@@ -1348,8 +1352,8 @@ def create_moba_connected_classes(
             if self.runtime_shutting_down:
                 return
             profile = self.profile_for_sftp_action()
-            shared = self.sync_shared_ssh_connection()
-            if shared is not None and shared.phase in {"idle", "connecting", "authenticating"}:
+            self.sync_shared_ssh_connection()
+            if self._waiting_for_shared_ssh():
                 available, detail = False, "waiting for the managed terminal SSH connection"
             else:
                 available, detail = self.background_ssh_auth_capability(profile)
@@ -2855,6 +2859,12 @@ def create_moba_connected_classes(
             manual_request = bool(allow_prompt)
             if control is None or (not control.isChecked() and not manual_request):
                 return
+            if not manual_request and self._waiting_for_shared_ssh():
+                self.set_remote_monitoring_status(
+                    "Monitoring is waiting for the managed SSH connection",
+                    state="auth-required",
+                )
+                return
             if manual_request:
                 auth_ready = self.ensure_background_authentication_for_request(
                     allow_prompt=True,
@@ -3247,6 +3257,12 @@ def create_moba_connected_classes(
 
         def request_sftp_refresh(self, *, reason: str = "manual") -> None:
             if self.runtime_shutting_down:
+                return
+            if reason in {"initial-key-agent-auth", "follow-enabled", "path-change"} and self._waiting_for_shared_ssh():
+                self.set_sftp_runtime_status(
+                    "SFTP is waiting for the managed SSH connection",
+                    state="auth-required",
+                )
                 return
             if not self.ensure_background_authentication_for_request():
                 return

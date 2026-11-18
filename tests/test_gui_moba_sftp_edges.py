@@ -1546,6 +1546,15 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     assert dock.text_editor_remote_path == "/etc/service.conf"
     assert editor.toPlainText() == "line one\nline two\nunsaved replacement\n"
 
+    def invalidate_open_review(_dialog):
+        dock.cancel_text_editor_sftp_operation()
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "exec", invalidate_open_review)
+    dock.handle_moba_text_editor_open_from_item(another_item, 0)
+    assert len(started) == started_before_cancelled_open
+    assert dock.text_editor_remote_path == "/etc/service.conf"
+
     editor.setPlainText("line one\nline two\nline three\n")
     dock.handle_moba_text_editor_changed()
     assert editor.property("mobaTextEditorDirty") is True
@@ -2706,7 +2715,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     dock.text_editor_cache_sha256 = dock.text_editor_file_sha256(cache_path)
     dock.text_editor_original_remote_sha256 = "old-digest"
     conflict_probe = tmp_path / "conflict.remote-check"
-    conflict_probe.write_text("remote\n", encoding="utf-8")
+    conflict_probe.write_bytes(b"remote\n")
     dock.text_editor_probe_path = str(conflict_probe)
     dock.text_editor_tab_plan = tab_plan
     monkeypatch.setattr(
@@ -2726,7 +2735,30 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
         lambda operation, _plan: upload_calls.append(operation) or True,
     )
     real_finish_text_editor_save_check(dock)
-    assert upload_calls == ["upload"]
+    assert upload_calls == ["save-check"]
+    Path(dock.text_editor_probe_path).write_bytes(b"remote\n")
+    real_finish_text_editor_save_check(dock)
+    assert upload_calls == ["save-check", "upload"]
+
+    def changed_during_review(_dialog):
+        dock.handle_moba_text_editor_save()
+        dock.cancel_text_editor_sftp_operation()
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "exec", changed_during_review)
+    conflict_probe.write_bytes(b"later revision\n")
+    dock.text_editor_probe_path = str(conflict_probe)
+    real_finish_text_editor_save_check(dock)
+    assert upload_calls == ["save-check", "upload"]
+    assert dock.text_editor_approved_remote_sha256 == ""
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(dock, "profile_for_sftp_action", lambda: None)
+        scoped.setattr(QMessageBox, "exec", lambda _dialog: QMessageBox.StandardButton.Yes)
+        conflict_probe.write_bytes(b"another revision\n")
+        dock.text_editor_probe_path = str(conflict_probe)
+        real_finish_text_editor_save_check(dock)
+        assert "connected profile changed during review" in window.statusBar().currentMessage()
 
     clean_probe = tmp_path / "clean.remote-check"
     clean_probe.write_bytes(cache_path.read_bytes())

@@ -678,7 +678,8 @@ def create_moba_connected_classes(
             self.text_editor_baseline_text = ""
             self.text_editor_original_remote_sha256 = ""
             self.text_editor_cache_sha256 = ""
-            self.text_editor_save_force = False
+            self.text_editor_approved_remote_sha256 = ""
+            self.text_editor_review_in_progress = False
             frame = gui_design_moba_connected_dock_frame()
             density = gui_design_moba_sftp_dock_layout()
             follow_route = gui_design_moba_sftp_follow_folder_route()
@@ -1561,6 +1562,7 @@ def create_moba_connected_classes(
                 and bool(editor.property("mobaTextEditorDirty"))
             ):
                 current_path = self.text_editor_remote_path or "the current document"
+                generation = self.text_editor_generation
                 choice = _literal_message_box(
                     self,
                     QMessageBox.Icon.Warning,
@@ -1577,6 +1579,8 @@ def create_moba_connected_classes(
                 )
                 if choice != QMessageBox.StandardButton.Yes:
                     self.show_sftp_status("Opening the file was cancelled; unsaved changes were kept")
+                    return
+                if self.runtime_shutting_down or self.text_editor_generation != generation:
                     return
             profile = self.profile_for_sftp_action()
             if profile is None:
@@ -1598,7 +1602,7 @@ def create_moba_connected_classes(
             self.text_editor_baseline_text = ""
             self.text_editor_original_remote_sha256 = ""
             self.text_editor_cache_sha256 = ""
-            self.text_editor_save_force = False
+            self.text_editor_approved_remote_sha256 = ""
             self.update_text_editor_state_from_plan(
                 plan,
                 source_row_name=item.text(0),
@@ -1689,7 +1693,7 @@ def create_moba_connected_classes(
             if not bool(editor.property("mobaTextEditorDirty")):
                 self.show_sftp_status("Text editor has no unsaved changes")
                 return
-            if self.text_editor_active_generation:
+            if self.text_editor_active_generation or self.text_editor_review_in_progress:
                 self.show_sftp_status("Text editor is still transferring")
                 return
             profile = self.profile_for_sftp_action()
@@ -1698,6 +1702,10 @@ def create_moba_connected_classes(
                 return
             if not self.ensure_background_authentication_for_request():
                 return
+            self.text_editor_approved_remote_sha256 = ""
+            self.request_text_editor_remote_check(profile)
+
+        def request_text_editor_remote_check(self, profile: Profile) -> None:
             local_path = Path(self.text_editor_local_path)
             probe_path = local_path.with_name(f"{local_path.name}.remote-check")
             try:
@@ -1711,7 +1719,6 @@ def create_moba_connected_classes(
                 self.show_sftp_status(f"Text editor save unavailable: {exc}")
                 return
             self.text_editor_probe_path = str(probe_path)
-            self.text_editor_save_force = False
             self.set_text_editor_runtime_state(
                 status="checking-remote",
                 dirty=True,
@@ -1875,6 +1882,7 @@ def create_moba_connected_classes(
             self.text_editor_generation += 1
             self.text_editor_active_generation = 0
             self.text_editor_pending_sftp = None
+            self.text_editor_approved_remote_sha256 = ""
             self.text_editor_timeout.stop()
             self.text_editor_auth_probe_timer.stop()
             self.clear_text_editor_probe_file()
@@ -2067,23 +2075,25 @@ def create_moba_connected_classes(
                 current_digest = self.text_editor_file_sha256(probe)
             finally:
                 self.clear_text_editor_probe_file()
-            conflict = current_digest != self.text_editor_original_remote_sha256
-            self.text_editor_save_force = conflict
-            if conflict:
-                choice = _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Warning,
-                    "Remote file changed",
-                    (
-                        f"{self.text_editor_remote_path} changed after it was opened. "
-                        "Overwrite the newer remote version?"
-                    ),
-                    buttons=(
-                        QMessageBox.StandardButton.Yes
-                        | QMessageBox.StandardButton.No
-                    ),
-                    default_button=QMessageBox.StandardButton.No,
-                )
+            if current_digest not in (self.text_editor_original_remote_sha256, self.text_editor_approved_remote_sha256):
+                generation = self.text_editor_generation
+                self.text_editor_review_in_progress = True
+                try:
+                    choice = _literal_message_box(
+                        self,
+                        QMessageBox.Icon.Warning,
+                        "Remote file changed",
+                        (
+                            f"{self.text_editor_remote_path} changed after it was opened. "
+                            "Overwrite the reviewed remote version?"
+                        ),
+                        buttons=(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No),
+                        default_button=QMessageBox.StandardButton.No,
+                    )
+                finally:
+                    self.text_editor_review_in_progress = False
+                if self.runtime_shutting_down or generation != self.text_editor_generation:
+                    return
                 if choice != QMessageBox.StandardButton.Yes:
                     self.set_text_editor_runtime_state(
                         status="conflict",
@@ -2093,6 +2103,14 @@ def create_moba_connected_classes(
                     )
                     self.show_sftp_status("Text editor save cancelled after remote conflict")
                     return
+                profile = self.profile_for_sftp_action()
+                if profile is None:
+                    self.set_text_editor_runtime_state(status="conflict", operation="idle")
+                    self.show_sftp_status("Text editor save unavailable: connected profile changed during review")
+                    return
+                self.text_editor_approved_remote_sha256 = current_digest
+                self.request_text_editor_remote_check(profile)
+                return
             editor = self.text_editor
             try:
                 result = write_text_document(

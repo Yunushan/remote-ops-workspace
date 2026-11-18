@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
 TESTED_ASSET_ARTICLES = frozenset(
     {
-        "embedded-server-suite", "macro-recorder", "moba-text-editor-diff", "mobapt-unix-runtime",
+        "embedded-server-suite", "embedded-x-server", "macro-recorder", "moba-text-editor-diff", "mobapt-unix-runtime",
         "professional-deployment", "ssh-browser-26-4-smartcard",
     }
 )

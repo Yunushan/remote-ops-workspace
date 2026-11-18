@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shlex
 import sys
 from pathlib import Path
@@ -24,7 +23,10 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
     read_json_object,
     secure_regular_file,
-    sha256_file,
+)
+from scripts.debian_release_fixture import (  # noqa: E402
+    release_deb_version,
+    validate_native_debian_probe,
 )
 
 EXECUTION_SCHEMA = "row.mobapt.offline-execution.v1"
@@ -33,12 +35,6 @@ NATIVE_PROBE_PATH = "evidence/row-native-cache-verify.json"
 NATIVE_PROBE_ARGV = [
     "/usr/bin/row", "mobapt", "cache-verify", "--evidence", "evidence.json", "--assets-dir", ".", "--json",
 ]
-DEBIAN_TARGETS = {
-    "amd64": "linux-x86_64",
-    "arm64": "linux-arm64",
-    "i386": "linux-i386",
-    "armhf": "linux-armhf",
-}
 
 
 def check_runtime_and_cache(root: Path, data: dict[str, Any]) -> tuple[set[str], dict[str, dict[str, Any]]]:
@@ -104,43 +100,6 @@ def execution_argv(root: Path, test: dict[str, Any], kind: str, runtime_sha: str
     return arguments
 
 
-def release_deb_version(name: str, target: str) -> str:
-    match = re.fullmatch(r"remote-ops-workspace-v(\d+\.\d+\.\d+)-linux-(amd64|arm64|i386|armhf)\.deb", name)
-    if match is None or DEBIAN_TARGETS[match[2]] != target:
-        raise ValueError("tested release asset must be the native Debian package for the capture target")
-    return match[1]
-
-
-def check_native_probe(
-    root: Path, evidence: Path, data: dict[str, Any], expected_summary: dict[str, Any],
-) -> dict[str, str]:
-    asset = data.get("release_asset")
-    if not isinstance(asset, dict) or not isinstance(asset.get("name"), str):
-        raise ValueError("native MobApt probe requires a Debian release asset name and SHA-256")
-    digest = asset.get("sha256")
-    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-        raise ValueError("native MobApt probe requires a Debian release asset name and SHA-256")
-    version = release_deb_version(asset["name"], data["release_target"])
-    path, error = secure_regular_file(root, NATIVE_PROBE_PATH, "native MobApt probe receipt")
-    if path is None:
-        raise ValueError(error)
-    _, receipt = read_json_object(path, "native MobApt probe receipt")
-    if (
-        receipt.get("schema") != NATIVE_PROBE_SCHEMA or receipt.get("argv") != NATIVE_PROBE_ARGV
-        or type(receipt.get("exit_code")) is not int or receipt["exit_code"] != 0
-        or receipt.get("release_asset_sha256") != digest or receipt.get("installed_version") != version
-        or receipt.get("evidence_sha256") != sha256_file(evidence)
-    ):
-        raise ValueError("native MobApt probe must verify the exact evidence with the installed Debian release asset")
-    output = receipt.get("output")
-    if (
-        not isinstance(output, dict) or output.get("passed") is not True or output.get("errors") != []
-        or output.get("summary") != expected_summary or not isinstance(receipt.get("stderr"), str)
-    ):
-        raise ValueError("native MobApt cache-verify output must match the offline cache result")
-    return {"name": asset["name"], "sha256": digest}
-
-
 def validate_mobapt_cache_execution(
     evidence_path: Path, *, assets_dir: Path | None, require_release_source: bool,
 ) -> MobAptCacheEvidenceValidation:
@@ -171,7 +130,10 @@ def validate_mobapt_cache_execution(
         if arguments[0] not in paths:
             raise ValueError("terminal probe must invoke a verified bundled runtime executable")
         if "release_asset" in data:
-            result.summary["tested_release_asset"] = check_native_probe(root, evidence_file, data, result.summary)
+            result.summary["tested_release_asset"] = validate_native_debian_probe(
+                root, evidence_file, data, result.summary,
+                schema=NATIVE_PROBE_SCHEMA, receipt_path=NATIVE_PROBE_PATH, argv=NATIVE_PROBE_ARGV,
+            )
         if require_release_source:
             if "tested_release_asset" not in result.summary:
                 raise ValueError("strict MobApt evidence requires a native Debian release asset probe")

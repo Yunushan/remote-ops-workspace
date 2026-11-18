@@ -25,16 +25,26 @@ from remote_ops_workspace.launcher import build_launch_plan  # noqa: E402
 from remote_ops_workspace.models import Profile  # noqa: E402
 from scripts.check_moba_xserver_release_evidence import (  # noqa: E402
     FORWARDING_SCHEMA,
+    NATIVE_PROBE_ARGV,
+    NATIVE_PROBE_PATH,
+    NATIVE_PROBE_SCHEMA,
     REMOTE_DISPLAY_PROBE,
     validate_moba_x_server_live_release_evidence,
+    validate_moba_x_server_release_asset_evidence,
 )
 from scripts.check_release_license_compliance import sha256_file  # noqa: E402
+from scripts.debian_release_fixture import (  # noqa: E402
+    ROW_EXECUTABLE,
+    capture_native_debian_probe,
+    install_release_deb,
+)
 from scripts.isolated_linux_fixture import require_offline_container  # noqa: E402
 
 DISPLAY = ":16"
 PORT = 22222
 USER = "row-x11-proof"
 TITLE = "Remote Ops Workspace forwarded X11 clock"
+TARGET = "linux-x86_64"
 APP = ["/usr/bin/xclock", "-title", TITLE, "-geometry", "280x280+40+45"]
 
 
@@ -150,11 +160,10 @@ def wait_for_window(process: subprocess.Popen, env: dict[str, str]) -> str:
     raise ValueError("no forwarded X11 clock appeared on the managed display")
 
 
-def capture(row: Path, output: Path) -> None:
+def capture(row: Path, output: Path, *, release_deb: Path | None = None) -> None:
     require_offline_container()
     if os.uname().machine != "x86_64":
         raise ValueError("this qualification uses a Linux x86_64 Xvfb runtime")
-    row = row.resolve(strict=True)
     if output.exists() or output.is_symlink():
         raise ValueError("output must be a new directory")
     with (TemporaryDirectory(prefix="row-x11-", dir="/run") as private,
@@ -162,11 +171,19 @@ def capture(row: Path, output: Path) -> None:
         scratch = Path(private)
         root = Path(staging) / "capture"
         root.mkdir()
+        release = {}
+        if release_deb is not None:
+            asset, source = install_release_deb(root, release_deb, TARGET)
+            release["release_asset"] = asset
+            row = Path(ROW_EXECUTABLE)
+            if source is not None:
+                release["source"] = source
+        row = row.resolve(strict=True)
         bundle = root / "bundle"
         env = {**os.environ, "LC_ALL": "C", "DISPLAY": DISPLAY, "ROW_HOME": str(scratch / "row"),
                "XAUTHORITY": str(scratch / "Xauthority"), "ROW_XSERVER_RUNTIME_DIR": str(bundle)}
         run([str(row), "x11", "bundle-runtime", "--out", str(bundle), "--runtime", "xvfb",
-             "--source", "/usr/bin/Xvfb", "--system", "linux", "--release-target", "linux-x86_64"], env=env)
+             "--source", "/usr/bin/Xvfb", "--system", "linux", "--release-target", TARGET], env=env)
         config = prepare_sshd(scratch)
         daemon_log = scratch / "sshd.log"
         with daemon_log.open("w", encoding="utf-8") as log:
@@ -190,8 +207,13 @@ def capture(row: Path, output: Path) -> None:
                 raise ValueError(f"{exc}\n{exc.stderr or ''}{daemon_log.read_text(encoding='utf-8')}") from exc
             finally:
                 stop_process(daemon)
-        finish_evidence(root, receipt)
-        result = validate_moba_x_server_live_release_evidence(root / "evidence.json", assets_dir=root)
+        finish_evidence(root, receipt, release)
+        if release_deb is not None:
+            capture_native_debian_probe(root, release["release_asset"], TARGET, schema=NATIVE_PROBE_SCHEMA,
+                                        receipt_path=NATIVE_PROBE_PATH, argv=NATIVE_PROBE_ARGV, env=env)
+        validator = (validate_moba_x_server_release_asset_evidence if "source" in release
+                     else validate_moba_x_server_live_release_evidence)
+        result = validator(root / "evidence.json", assets_dir=root)
         if not result.passed:
             raise ValueError(f"forwarded X11 evidence failed its release checks: {result.errors}")
         root.rename(output)
@@ -207,7 +229,7 @@ def capture_smoke(row: Path, root: Path, env: dict[str, str]) -> None:
     raise ValueError("packaged Xvfb did not accept the authenticated display probe")
 
 
-def finish_evidence(root: Path, receipt: dict[str, Any]) -> None:
+def finish_evidence(root: Path, receipt: dict[str, Any], release: dict[str, Any]) -> None:
     manifest_name = "bundle/xserver-runtime.json"
     manifest_path = root / manifest_name
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -219,6 +241,7 @@ def finish_evidence(root: Path, receipt: dict[str, Any]) -> None:
     receipt.update(runtime_sha256=runtime["sha256"], start_sha256=runtime["start_sha256"], smoke_sha256=smoke_sha256)
     write_json(root / "forwarding.json", receipt)
     write_json(root / "evidence.json", {
+        **release,
         "schema": "row.moba-xserver.release-evidence.v1", "release_target": manifest["release_target"],
         "platform": "linux", "display": DISPLAY, "runtime": runtime,
         "smoke": {"passed": True, "status": "passed", "evidence_file": "smoke.json", "evidence_sha256": smoke_sha256},
@@ -232,11 +255,13 @@ def finish_evidence(root: Path, receipt: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--row", type=Path, default=Path("/usr/bin/row"), help="installed native ROW executable")
+    native = parser.add_mutually_exclusive_group()
+    native.add_argument("--row", type=Path, help="preinstalled ROW executable for local capture")
+    native.add_argument("--release-deb", type=Path, help="install and qualify the exact Debian release asset")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
     try:
-        capture(args.row, args.out)
+        capture(args.row or Path(ROW_EXECUTABLE), args.out, release_deb=args.release_deb)
     except subprocess.CalledProcessError as exc:
         print(f"X11 capture: {exc}\n{exc.stderr or ''}", file=sys.stderr)
         return 1

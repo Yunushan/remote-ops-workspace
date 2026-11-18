@@ -72,11 +72,17 @@ def test_mobaxterm_record_generator_registers_eighth_article_validator() -> None
     assert validator.__name__ == "validate_moba_transport_terminal_evidence"
 
 
-def test_mobapt_registry_requires_the_release_execution_validator() -> None:
+@pytest.mark.parametrize(("article", "validator_name", "flag", "missing_receipt"), [
+    ("mobapt-unix-runtime", "validate_mobapt_release_cache_evidence", "offline_execution_receipts_verified",
+     "must record verified offline execution receipts"),
+    ("embedded-x-server", "validate_moba_x_server_release_asset_evidence", "live_forwarding_receipt_verified",
+     "must record a verified live forwarding receipt"),
+])
+def test_registry_binds_native_debian_evidence_to_asset_and_source(article, validator_name, flag, missing_receipt) -> None:
     checker, generator = _load_checker(), _load_generator()
-    assert generator.VALIDATORS["mobapt-unix-runtime"].__name__ == "validate_mobapt_release_cache_evidence"
-    record = _complete_record(checker.ARTICLE_SPECS["mobapt-unix-runtime"])
-    record["article_id"] = "mobapt-unix-runtime"
+    assert generator.VALIDATORS[article].__name__ == validator_name
+    record = _complete_record(checker.ARTICLE_SPECS[article])
+    record["article_id"] = article
     name = "remote-ops-workspace-v1.0.2-linux-amd64.deb"
     record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {name: "a" * 64}
     record["release_asset_urls"][0] = record["release_asset_urls"][0].replace("moba-professional-deployment.zip", name)
@@ -88,27 +94,14 @@ def test_mobapt_registry_requires_the_release_execution_validator() -> None:
         "run_attempt": source["run_attempt"], "source_head_sha": source["head_sha"],
         "tested_release_asset": {"name": name, "sha256": "a" * 64},
     }
-    assert checker.check_record(record) == ["mobapt-unix-runtime validation summary must record verified offline execution receipts"]
-    summary["offline_execution_receipts_verified"] = True
+    assert checker.check_record(record) == [f"{article} validation summary {missing_receipt}"]
+    summary[flag] = True
     assert checker.check_record(record) == []
     summary["tested_release_asset"]["sha256"] = "b" * 64
-    assert checker.check_record(record) == ["mobapt-unix-runtime tested release asset must match the record artifact name and SHA-256"]
+    assert checker.check_record(record) == [f"{article} tested release asset must match the record artifact name and SHA-256"]
     summary["tested_release_asset"]["sha256"] = "a" * 64
     summary["run_attempt"] = 1
-    assert checker.check_record(record) == ["mobapt-unix-runtime release_source.run_attempt must match validation summary provenance"]
-
-
-def test_xserver_registry_requires_the_live_forwarding_validator() -> None:
-    checker, generator = _load_checker(), _load_generator()
-    validator = generator.VALIDATORS["embedded-x-server"]
-    assert validator.__name__ == "validate_moba_x_server_live_release_evidence"
-    record = _complete_record(checker.ARTICLE_SPECS["embedded-x-server"])
-    record["article_id"] = "embedded-x-server"
-    assert checker.check_record(record) == [
-        "embedded-x-server validation summary must record a verified live forwarding receipt",
-    ]
-    record["validation_summary"]["summary"]["live_forwarding_receipt_verified"] = True
-    assert checker.check_record(record) == []
+    assert checker.check_record(record) == [f"{article} release_source.run_attempt must match validation summary provenance"]
 
 
 @pytest.fixture
@@ -524,9 +517,9 @@ def reviewed_release(tmp_path, monkeypatch):
     asset = assets_dir / name
     asset.write_bytes(b"published release asset bytes")
     digest = hashlib.sha256(asset.read_bytes()).hexdigest()
-    mobapt_asset = assets_dir / f"remote-ops-workspace-{tag}-linux-amd64.deb"
-    mobapt_asset.write_bytes(b"published MobApt installer")
-    mobapt_digest = hashlib.sha256(mobapt_asset.read_bytes()).hexdigest()
+    debian_asset = assets_dir / f"remote-ops-workspace-{tag}-linux-amd64.deb"
+    debian_asset.write_bytes(b"published Debian installer")
+    debian_digest = hashlib.sha256(debian_asset.read_bytes()).hexdigest()
 
     records = []
     for article, spec in release_parity.ARTICLE_SPECS.items():
@@ -537,10 +530,12 @@ def reviewed_release(tmp_path, monkeypatch):
         ]
         record["artifact_sha256"] = {name: digest}
         record["release_asset_bytes"]["sha256"] = {name: digest}
-        if article == "mobapt-unix-runtime":
+        if article in release_parity.EVIDENCE_WORKFLOWS:
             record["release_target"] = "linux-x86_64"
-            record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{mobapt_asset.name}"]
-            record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {mobapt_asset.name: mobapt_digest}
+            record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{debian_asset.name}"]
+            record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {debian_asset.name: debian_digest}
+        if article == "embedded-x-server":
+            record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1235"
         if article in SOURCE_BOUND_ARTICLES:
             record["validation_summary"]["summary"] = {
                 "repository": repository,
@@ -553,10 +548,13 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "mobapt-unix-runtime":
             record["validation_summary"]["summary"].update(
                 offline_execution_receipts_verified=True,
-                tested_release_asset={"name": mobapt_asset.name, "sha256": mobapt_digest},
+                tested_release_asset={"name": debian_asset.name, "sha256": debian_digest},
             )
         if article == "embedded-x-server":
-            record["validation_summary"]["summary"]["live_forwarding_receipt_verified"] = True
+            record["validation_summary"]["summary"].update(
+                live_forwarding_receipt_verified=True,
+                tested_release_asset={"name": debian_asset.name, "sha256": debian_digest},
+            )
         if article == "embedded-server-suite":
             record["validation_summary"]["summary"].update(
                 live_client_proof_count=8, tested_release_asset={"name": name, "sha256": digest},
@@ -593,6 +591,8 @@ def reviewed_release(tmp_path, monkeypatch):
     on_main = f"compare/{registry_commit}...{main_tip}?per_page=1"
     run = "actions/runs/1234/attempts/2"
     jobs = f"{run}/jobs?per_page=20&page=1"
+    x11_run = "actions/runs/1235/attempts/2"
+    x11_jobs = f"{x11_run}/jobs?per_page=20&page=1"
     review = "pulls/42/reviews/99"
     responses = {
         "branches/main": {"name": "main", "protected": True, "commit": {"sha": main_tip}},
@@ -625,6 +625,10 @@ def reviewed_release(tmp_path, monkeypatch):
             "body": "\n".join(release_parity.review_acceptance_line(record) for record in records),
             "user": {"login": "release-reviewer"},
         },
+    }
+    responses[x11_run] = {**responses[run], "id": 1235, "path": release_parity.X11_WORKFLOW}
+    responses[x11_jobs] = {
+        "total_count": 1, "jobs": [{**responses[jobs]["jobs"][0], "name": release_parity.X11_JOB, "run_id": 1235}],
     }
     for ancestor, descendant in ((release_sha, registry_commit), (registry_commit, main_tip)):
         responses[f"compare/{ancestor}...{descendant}?per_page=1"] = {
@@ -676,7 +680,8 @@ def reviewed_release(tmp_path, monkeypatch):
     }
     return SimpleNamespace(
         args=args, asset=asset, records=records, responses=responses,
-        on_main=on_main, run=run, jobs=jobs, review=review, validator_calls=validator_calls,
+        on_main=on_main, run=run, jobs=jobs, x11_run=x11_run, x11_jobs=x11_jobs,
+        review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
     )
 
@@ -721,6 +726,19 @@ def test_mobapt_certification_requires_the_successful_qualification_job(reviewed
 
     assert release_parity.audit_release(**reviewed_release.args) == [
         "mobapt-unix-runtime MobApt evidence attempt must contain one successful Debian qualification job"
+    ]
+
+
+def test_x11_certification_refuses_the_wrong_workflow_or_job(reviewed_release) -> None:
+    run = reviewed_release.responses[reviewed_release.x11_run]
+    run["path"] = release_parity.MOBAPT_WORKFLOW
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "embedded-x-server X11 evidence must come from its dedicated workflow dispatched at the release tag"
+    ]
+    run["path"] = release_parity.X11_WORKFLOW
+    reviewed_release.responses[reviewed_release.x11_jobs]["jobs"][0]["name"] = release_parity.MOBAPT_JOB
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "embedded-x-server X11 evidence attempt must contain one successful Debian qualification job"
     ]
 
 
@@ -785,6 +803,7 @@ def test_certification_binds_review_time_to_completed_attempt_jobs(
     reviewed_release, field, value, expected,
 ) -> None:
     reviewed_release.responses[reviewed_release.jobs]["jobs"][0][field] = value
+    reviewed_release.responses[reviewed_release.x11_jobs]["jobs"][0][field] = value
 
     errors = release_parity.audit_release(**reviewed_release.args)
 

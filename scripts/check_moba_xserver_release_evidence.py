@@ -21,14 +21,23 @@ from remote_ops_workspace.x11 import (  # noqa: E402
     validate_moba_x_server_release_evidence,
 )
 from scripts.check_gui_visual_metrics import read_png_rgb  # noqa: E402
+from scripts.check_mobaxterm_parity_evidence import capture_release_identity  # noqa: E402
 from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
     read_json_object,
     secure_regular_file,
 )
+from scripts.debian_release_fixture import (  # noqa: E402
+    ROW_EXECUTABLE,
+    release_deb_version,
+    validate_native_debian_probe,
+)
 
 FORWARDING_SCHEMA = "row.moba-xserver.ssh-forwarding.v1"
 REMOTE_DISPLAY_PROBE = 'printf "remote_display=%s\\n" "$DISPLAY"'
+NATIVE_PROBE_SCHEMA = "row.x11.native-evidence-verify.v1"
+NATIVE_PROBE_PATH = "row-native-evidence-verify.json"
+NATIVE_PROBE_ARGV = [ROW_EXECUTABLE, "x11", "evidence-verify", "--evidence", "evidence.json", "--assets-dir", ".", "--json"]
 
 
 def check_packaged_runtime(root: Path, evidence: dict[str, Any]) -> None:
@@ -183,10 +192,11 @@ def check_forwarded_window(root: Path, evidence: dict[str, Any], screenshot: Pat
         raise ValueError("forwarded window screenshot must contain visible content")
 
 
-def validate_moba_x_server_live_release_evidence(
+def validate_forwarding_capture(
     evidence_path: Path,
     *,
-    assets_dir: Path | None = None,
+    assets_dir: Path | None,
+    require_release_source: bool,
 ) -> XServerReleaseEvidenceValidation:
     root = assets_dir if assets_dir is not None else evidence_path.parent
     try:
@@ -214,12 +224,37 @@ def validate_moba_x_server_live_release_evidence(
         check_packaged_runtime(root, evidence)
         check_display_probe(probe, evidence)
         check_forwarded_window(root, evidence, image)
+        if "release_asset" in evidence:
+            result.summary["tested_release_asset"] = validate_native_debian_probe(
+                root, evidence_file, evidence, result.summary,
+                schema=NATIVE_PROBE_SCHEMA, receipt_path=NATIVE_PROBE_PATH, argv=NATIVE_PROBE_ARGV,
+            )
+        if require_release_source:
+            if "tested_release_asset" not in result.summary:
+                raise ValueError("strict X11 evidence requires a native Debian release asset probe")
+            identity = capture_release_identity(evidence, "X11 release evidence")
+            version = release_deb_version(identity["tested_release_asset"]["name"], evidence["release_target"])
+            if identity["release_tag"] != f"v{version}":
+                raise ValueError("tested Debian package version must match the exact X11 release tag")
+            result.summary.update(identity)
     except (KeyError, OSError, ValueError, struct.error, zlib.error) as exc:
         return XServerReleaseEvidenceValidation(
             str(evidence_path), str(root), False, [str(exc)], [], {}
         )
     result.summary["live_forwarding_receipt_verified"] = True
     return result
+
+
+def validate_moba_x_server_live_release_evidence(
+    evidence_path: Path, *, assets_dir: Path | None = None,
+) -> XServerReleaseEvidenceValidation:
+    return validate_forwarding_capture(evidence_path, assets_dir=assets_dir, require_release_source=False)
+
+
+def validate_moba_x_server_release_asset_evidence(
+    evidence_path: Path, *, assets_dir: Path | None = None,
+) -> XServerReleaseEvidenceValidation:
+    return validate_forwarding_capture(evidence_path, assets_dir=assets_dir, require_release_source=True)
 
 
 def main() -> int:
@@ -229,9 +264,11 @@ def main() -> int:
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--assets-dir", type=Path)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--local-capture", action="store_true", help="qualify forwarding without exact release provenance")
     args = parser.parse_args()
 
-    result = validate_moba_x_server_live_release_evidence(args.evidence, assets_dir=args.assets_dir)
+    validator = validate_moba_x_server_live_release_evidence if args.local_capture else validate_moba_x_server_release_asset_evidence
+    result = validator(args.evidence, assets_dir=args.assets_dir)
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
     elif result.passed:

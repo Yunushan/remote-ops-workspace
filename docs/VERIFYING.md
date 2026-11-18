@@ -119,21 +119,37 @@ The full verifier runs:
 
 ### Embedded X server release evidence
 
-For the Linux x86_64 qualification, use a disposable Debian Docker image with
-the native `.deb`, Python, `xvfb`, `xauth`, `x11-apps`, `x11-utils`,
-`openssh-server`, `openssh-client`, and ImageMagick installed. Verify the
-release installer before installing it. Run the collector with the checkout
-mounted read-only and a separate writable evidence directory:
+Once `.github/workflows/x11-forwarding-evidence.yml` is on `main` and in the
+published production tag, dispatch it against that tag:
 
 ```bash
+gh workflow run x11-forwarding-evidence.yml --ref "$release_tag"
+```
+
+The job verifies the immutable Linux x86_64 Debian asset and its promotion
+provenance before installing it. Download `x11-forwarding-evidence-<run-id>-<attempt>`
+from the successful run. It contains `candidate.json` and the
+`embedded-x-server/` evidence directory. Use the same published `.deb` for
+independent finalization and retain the evidence directory for the strict audit.
+
+To qualify a Debian candidate locally, build the fixture image, then mount
+the checkout and installer directory read-only with a separate writable
+evidence directory. Set `X11_RELEASE_ASSETS` to the installer directory and
+`X11_DEB_NAME` to the native `.deb` filename.
+
+```bash
+docker build --platform linux/amd64 --pull --tag row-x11-evidence:local - \
+  < docker/Dockerfile.x11-release-evidence
 docker run --rm --pull never --network none \
   --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
   --security-opt no-new-privileges \
   --mount "type=bind,source=$PWD,target=/src,readonly" \
+  --mount "type=bind,source=$X11_RELEASE_ASSETS,target=/release,readonly" \
   --mount "type=bind,source=$X11_OUTPUT,target=/proof" \
-  "$X11_IMAGE" python /src/scripts/capture_moba_xserver_forwarding.py --out /proof/review
+  row-x11-evidence:local python /src/scripts/capture_moba_xserver_forwarding.py \
+  --out /proof/review --release-deb "/release/$X11_DEB_NAME"
 
-python scripts/check_moba_xserver_release_evidence.py \
+python scripts/check_moba_xserver_release_evidence.py --local-capture \
   --evidence "$X11_OUTPUT/review/evidence.json" --assets-dir "$X11_OUTPUT/review"
 ```
 
@@ -141,9 +157,11 @@ The collector uses the installed `row` command to bundle, start, probe, and
 stop Xvfb. It generates short-lived SSH keys in the container, pins the local
 SSH daemon's host key, and captures a real forwarded clock window. The matched
 control session uses the same SSH settings with `-x` and must report an empty
-remote `DISPLAY`. Only the validated evidence files are written to `review`.
+remote `DISPLAY`. The packaged CLI also verifies the captured evidence. Its
+receipt binds the evidence file to the tested installer hash. Only the
+validated evidence files are written to `review`.
 
-For an equivalent capture on another platform, use the following inputs.
+For a local capture on another platform, use the following inputs.
 
 Assemble the real X server with `row x11 bundle-runtime --out <runtime-root>
 --runtime <key> --source <binary> --release-target <target> --system <system>`.

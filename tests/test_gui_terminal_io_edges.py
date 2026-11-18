@@ -258,7 +258,10 @@ def test_primary_viewport_reflow_preserves_selection_links_and_search(gui_window
     )
     pane.copy_terminal_selection()
     assert copied == [url]
-    assert not window.find_in_text_widget(pane.output, "missing needle")
+
+    pane.append_process_text("\x1b[1;20HX")
+    assert not pane.output.textCursor().hasSelection()
+    assert not window.find_in_text_widget(pane.output, url)
 
 
 def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_window, monkeypatch) -> None:

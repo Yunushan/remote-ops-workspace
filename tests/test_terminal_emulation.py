@@ -85,6 +85,8 @@ def test_primary_grid_line_controls_stay_on_the_addressed_visual_row() -> None:
     terminal.feed("\x1b[3;1H\x1b[2K")
     assert terminal.cursor_display_position() == (2, 0)
     assert terminal.text().split(SOFT_LINE_BREAK)[2] == " " * 3
+    terminal.feed("\r\nfresh")
+    assert terminal.text().endswith(" " * 3 + "\nfresh")
 
 
 def test_primary_grid_keeps_viewport_top_when_resize_hides_blank_rows() -> None:

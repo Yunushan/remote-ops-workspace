@@ -170,14 +170,33 @@ def test_unverifiable_daemon_bind_cannot_be_started(service, executable, tmp_pat
     assert next(row for row in suite.services if row.key == service).startable is False
     if service in {"telnet", "nfs"}:
         assert plan.command == []
-        config = moba_servers.build_moba_server_config_plan(service, port=plan.port)
+        config = moba_servers.build_moba_server_config_plan(service, port=plan.port, require_auth=False)
+        assert config.auth_required is True
         assert config.settings["execution"]["mode"] == "host-managed"
         settings = config.settings["host_config"]
         if service == "telnet":
+            assert config.settings["auth"]["source"] == "system-pam-login"
             assert settings["service"]["bind"] == "127.0.0.1"
             assert settings["service"]["disable"] == "yes"
         else:
+            assert config.settings["auth"]["source"] == "kerberos-rpcsec-gss"
             assert settings["nfs.conf"]["nfsd"]["host"] == "127.0.0.1"
+
+
+@pytest.mark.parametrize(("service", "installed"), [("telnet", "in.telnetd"), ("nfs", "rpc.nfsd")])
+def test_linux_host_managed_runtime_status_discovers_native_daemon_names(service, installed):
+    executable = f"/usr/sbin/{installed}"
+    (runtime,) = moba_servers.discover_moba_server_runtimes(
+        service, system="linux", packaged_roots=[], which=lambda name: executable if name == installed else None,
+    )
+    assert runtime.available and runtime.executable == executable
+
+
+@pytest.mark.parametrize(("legacy_exists", "daemon"), [(False, "telnetd"), (True, "in.telnetd")])
+def test_host_managed_telnet_plan_chooses_a_system_daemon(monkeypatch, legacy_exists, daemon):
+    monkeypatch.setattr(Path, "is_file", lambda path: legacy_exists and path.name == "in.telnetd")
+    config = moba_servers.build_moba_server_config_plan("telnet")
+    assert config.settings["host_config"]["service"]["server"] == f"/usr/sbin/{daemon}"
 
 
 def test_strict_private_refuses_public_bind_even_with_opt_in(tmp_path):

@@ -51,7 +51,7 @@ SERVER_DEFAULT_PORTS: dict[str, int] = {
 }
 
 FILE_ROOT_SERVICES = {"http", "ftp", "tftp"}
-AUTH_CAPABLE_SERVICES = {"ftp", "ssh", "sftp", "telnet", "vnc"}
+AUTH_CAPABLE_SERVICES = {"ftp", "ssh", "sftp", "telnet", "vnc", "nfs"}
 
 
 @dataclass(slots=True)
@@ -456,7 +456,12 @@ def discover_moba_server_runtimes(
             resolved = sys.executable
             available = bool(sys.executable)
         else:
-            resolved = which(executable)
+            if system_key == "linux" and key == "nfsd":
+                resolved = which("rpc.nfsd") or which(executable)
+            elif system_key == "linux" and key == "telnetd":
+                resolved = which(executable) or which("in.telnetd")
+            else:
+                resolved = which(executable)
             available = resolved is not None
         runtimes.append(
             MobaEmbeddedServerRuntime(
@@ -791,6 +796,11 @@ def build_moba_server_config_plan(
         settings["transport"]["certificate_env"] = "ROW_FTP_TLS_CERT"
         settings["transport"]["private_key_env"] = "ROW_FTP_TLS_KEY"
     if service_key in {"telnet", "nfs"}:
+        settings["auth"] = {
+            "required": True,
+            "source": "system-pam-login" if service_key == "telnet" else "kerberos-rpcsec-gss",
+            "passwords_in_config": False,
+        }
         settings["execution"] = {
             "mode": "host-managed", "managed_start_supported": False,
             "reason": "portable daemon adapter cannot enforce listener binding and system authentication",
@@ -1515,10 +1525,12 @@ def _frozen_server_command(service: str, label: str) -> list[str]:
 def _host_managed_config(service: str, host: str, port: int) -> dict[str, Any]:
     """Concrete administrator settings, separate from managed process claims."""
     if service == "telnet":
+        legacy_daemon = "/usr/sbin/in.telnetd"
+        daemon = legacy_daemon if Path(legacy_daemon).is_file() else "/usr/sbin/telnetd"
         return {
             "implementation": "xinetd", "service": {
                 "type": "UNLISTED", "socket_type": "stream", "protocol": "tcp",
-                "wait": "no", "user": "root", "server": "/usr/sbin/in.telnetd",
+                "wait": "no", "user": "root", "server": daemon,
                 "bind": host, "port": port,
                 "only_from": "127.0.0.0/8 ::1" if _is_loopback_host(host.lower()) else "ADMINISTRATOR_CLIENT_ALLOWLIST_REQUIRED",
                 "disable": "yes",

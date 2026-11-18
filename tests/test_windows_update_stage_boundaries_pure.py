@@ -629,7 +629,7 @@ def test_complete_validator_is_called_with_all_final_names_retained(monkeypatch)
     for index, name in enumerate(names):
         scene.data[STAGE + "\\" + name], scene.ids[STAGE + "\\" + name] = b"x", index + 1
 
-    def verify_held(*_args):
+    def verify_held(*_args, **_kwargs):
         scene.events.append(("full-validator",))
         assert len([row for row in scene.events if row[0] == "named-enter"]) == 3
         assert not any(row[0] == "named-close" for row in scene.events)

@@ -118,6 +118,38 @@ def test_new_stage_requires_running_stable_newer_version(accepted_signature, ver
         channel.authenticate_manifest(manifest_bytes(data), policy(), now=NOW)
 
 
+def test_exact_version_stage_retains_and_recovers_authenticated_prior_bytes(
+    tmp_path, monkeypatch, accepted_signature, private_boundary,
+):
+    data = manifest_data()
+    data["version"] = "1.0.24"
+    raw = manifest_bytes(data)
+    config = policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": "1.0.24"})
+    actual_authenticate = channel.authenticate_manifest
+    private_boundary.stage(tmp_path)
+    monkeypatch.setattr(channel, "exclusive_file_lock", lambda path, **_kwargs: mock_lease(path))
+    monkeypatch.setattr(channel, "authenticate_manifest", lambda body, trust, **kwargs: actual_authenticate(
+        body, trust, now=NOW, **kwargs,
+    ))
+    monkeypatch.setattr(channel, "validate_professional_update_manifest", lambda *_a, **_kw: SimpleNamespace(passed=True))
+
+    def chunks(url, *_args):
+        yield raw if url.endswith("/manifest.json") else ASSETS[url.rsplit("/", 1)[-1]]
+
+    monkeypatch.setattr(channel, "_chunks", chunks)
+    settings = {"current_home": tmp_path / "home", "expected_version": "1.0.24"}
+    assert channel.stage_update(config, tmp_path, **settings)["version"] == "1.0.24"
+    private_boundary.stage(tmp_path)
+    recovered = channel.recover_update(config, tmp_path, **settings)
+    assert recovered["authenticity_checked"] and not recovered["install_permitted"]
+    private_boundary.stage(tmp_path)
+    with pytest.raises(channel.UpdateError, match="update-version-does-not-match"):
+        channel.recover_update(config, tmp_path, **{**settings, "expected_version": "1.0.25"})
+    private_boundary.stage(tmp_path)
+    with pytest.raises(channel.UpdateError, match="update-version-not-newer"):
+        channel.recover_update(config, tmp_path, current_home=settings["current_home"])
+
+
 @pytest.mark.parametrize("minimum", ["1.0.28", "1.0.9"])
 def test_v2_policy_accepts_the_exact_target_set_at_or_above_the_minimum(accepted_signature, minimum):
     config = policy({**policy_data(), "schema": channel.POLICY_SCHEMA_V2, "minimum_version": minimum})

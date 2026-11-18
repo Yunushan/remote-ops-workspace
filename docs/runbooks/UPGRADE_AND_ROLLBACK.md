@@ -72,6 +72,56 @@ For the deployment model, see [`../PRODUCTION_DEPLOYMENT.md`](../PRODUCTION_DEPL
    row servers status --json
    ```
 
+## Managed Debian package updates
+
+Use `scripts/managed_linux_update.py` from a root-owned, verified release
+checkout for an existing `remote-ops-workspace` DEB installation. Run it as a
+Linux administrator. Put both v2 trust policies, the staging directories and
+the transaction directory under root-owned paths with no writable or symlinked
+ancestors. Create the two staging directories and the transaction directory with
+mode `0700` outside `ROW_HOME`.
+
+The previous policy points to the signed manifest for the currently installed
+version. Both policies use the same signer, organization, channel and selected
+target. The candidate policy's minimum version must allow the retained previous
+version. Set the policy's freshness window to cover staging and installation.
+Close the application and take the [encrypted workspace backup](WORKSPACE_BACKUP_AND_RESTORE.md)
+before installing.
+
+```bash
+python3 -I scripts/managed_linux_update.py stage-previous \
+  --workspace /home/operator/.config/remote-ops-workspace \
+  --policy /root/row-updates/previous.json --stage /root/row-updates/previous
+python3 -I scripts/managed_linux_update.py stage-candidate --version 1.0.28 \
+  --workspace /home/operator/.config/remote-ops-workspace \
+  --policy /root/row-updates/candidate.json --stage /root/row-updates/candidate
+python3 -I scripts/managed_linux_update.py apply --version 1.0.28 \
+  --workspace /home/operator/.config/remote-ops-workspace \
+  --policy /root/row-updates/candidate.json --stage /root/row-updates/candidate \
+  --previous-policy /root/row-updates/previous.json --previous-stage /root/row-updates/previous \
+  --transaction /root/row-updates/transition-1.0.28
+```
+
+Keep the transaction directory. The controller records the installation attempt
+before invoking `dpkg` and uses the retained installer if installation or its
+verification fails. If `apply` is interrupted, repeat it with the same
+transaction directory to recover the previous package. An automatic rollback
+reports `rolled-back` with a nonzero exit status for the failed apply.
+
+To roll the package back explicitly, close the application and run the following
+command from the same verified checkout. It rechecks the retained DEB and the
+installed launcher offline.
+
+```bash
+python3 -I scripts/managed_linux_update.py rollback \
+  --workspace /home/operator/.config/remote-ops-workspace \
+  --transaction /root/row-updates/transition-1.0.28
+```
+
+Before opening the previous application, restore the encrypted backup into a
+private sibling workspace if the newer version used `ROW_HOME`. Follow the data
+restore and validation steps below.
+
 ## Rollback
 
 1. Close the upgraded application, terminals, and managed helpers. Preserve

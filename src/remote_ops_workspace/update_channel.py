@@ -19,6 +19,7 @@ import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from sysconfig import get_platform
 
@@ -284,7 +285,7 @@ class AuthenticatedManifest:
         return AssetSetBinding(digest, tuple(StageBinding(digest, row.name, row.sha256, row.size) for row in self.artifacts))
 
 
-def authenticate_manifest(raw, policy, *, now=None):
+def authenticate_manifest(raw, policy, *, now=None, expected_version=None):
     _need(type(policy) is UpdatePolicy, "invalid-trust-policy")
     settings = policy.settings
     data = _decode(raw, settings["limits"]["manifest_bytes"])
@@ -311,7 +312,10 @@ def authenticate_manifest(raw, policy, *, now=None):
                                           signature_value=signature["value"], payload=payload, errors=errors)
           and not errors, "manifest-authentication-refused")
     version = _release_version(data["version"])
-    _need(version > _release_version(__version__), "update-version-not-newer")
+    if expected_version is None:
+        _need(version > _release_version(__version__), "update-version-not-newer")
+    else:
+        _need(version == _release_version(expected_version), "update-version-does-not-match")
     if settings["schema"] == POLICY_SCHEMA_V2:
         _need(version >= _release_version(settings["minimum_version"]), "update-version-below-policy-minimum")
     stamp = data["generated_at"]
@@ -477,12 +481,12 @@ def _transaction(root, manifest, deadline, private_guard=None):
                                checkpoint=lambda: _deadline(deadline), private_guard=private_guard)
 
 
-def _verify_complete(transaction, manifest, policy, deadline):
+def _verify_complete(transaction, manifest, policy, deadline, *, authenticate=None):
     with transaction._verified_files():
-        return _verify_complete_held(transaction, manifest, policy, deadline)
+        return _verify_complete_held(transaction, manifest, policy, deadline, authenticate=authenticate)
 
 
-def _verify_complete_held(transaction, manifest, policy, deadline):
+def _verify_complete_held(transaction, manifest, policy, deadline, *, authenticate=None):
     _deadline(deadline)
     transaction._root()
     transaction._inventory()
@@ -494,7 +498,7 @@ def _verify_complete_held(transaction, manifest, policy, deadline):
     _need(result.passed is True, "staged-manifest-verification-refused")
     observed = transaction._read(MANIFEST, settings["limits"]["manifest_bytes"])
     _need(observed == manifest.original, "staged-manifest-changed")
-    authenticate_manifest(observed, policy)
+    (authenticate or authenticate_manifest)(observed, policy)
     transaction._check_inputs()
     _deadline(deadline)
     return {"phase": "authenticated-staged", "manifest_sha256": manifest.binding.manifest_sha256,
@@ -510,21 +514,23 @@ def _verify_complete_held(transaction, manifest, policy, deadline):
             "power_loss_or_hostile_host_safe": False, "readiness_credit": 0}
 
 
-def stage_update(policy, stage_root, *, current_home):
+def stage_update(policy, stage_root, *, current_home, expected_version=None):
     _need(type(policy) is UpdatePolicy, "invalid-trust-policy")
     settings = policy.settings
+    authenticate = (authenticate_manifest if expected_version is None
+                    else partial(authenticate_manifest, expected_version=expected_version))
     deadline = time.monotonic() + settings["limits"]["operation_timeout_seconds"]
     try:
         with _stage_boundary(stage_root, current_home, recover=False) as (root, guard):
             with _stage_lease(root / JOURNAL, min(30, settings["limits"]["operation_timeout_seconds"]), guard):
                 raw = b"".join(_chunks(settings["manifest_url"], settings, deadline, settings["limits"]["manifest_bytes"]))
-                manifest = authenticate_manifest(raw, policy)
+                manifest = authenticate(raw, policy)
                 transaction = (_transaction(root, manifest, deadline) if guard is None
                                    else _transaction(root, manifest, deadline, private_guard=guard))
                 streams = {row.name: _chunks(row.url, settings, deadline, row.size, row.size) for row in manifest.artifacts}
                 try:
                     transaction.prepare(manifest.original, streams)
-                    return _verify_complete(transaction, manifest, policy, deadline)
+                    return _verify_complete(transaction, manifest, policy, deadline, authenticate=authenticate)
                 finally:
                     # A failed atomic write can stop iteration before HTTP EOF.
                     # Close every owned generator; partial files remain evidence.
@@ -536,9 +542,11 @@ def stage_update(policy, stage_root, *, current_home):
         raise UpdateError("update-stage-io-refused") from exc
 
 
-def recover_update(policy, stage_root, *, current_home):
+def recover_update(policy, stage_root, *, current_home, expected_version=None):
     _need(type(policy) is UpdatePolicy, "invalid-trust-policy")
     settings = policy.settings
+    authenticate = (authenticate_manifest if expected_version is None
+                    else partial(authenticate_manifest, expected_version=expected_version))
     deadline = time.monotonic() + settings["limits"]["operation_timeout_seconds"]
     try:
         with _stage_boundary(stage_root, current_home, recover=True) as (root, guard):
@@ -546,11 +554,11 @@ def recover_update(policy, stage_root, *, current_home):
                 # Journal authenticity fields never authorize recovery. Reapply the
                 # current operator policy and exact original signature from scratch.
                 raw = _read_stage_manifest(root, settings["limits"]["manifest_bytes"], guard)
-                manifest = authenticate_manifest(raw, policy)
+                manifest = authenticate(raw, policy)
                 transaction = (_transaction(root, manifest, deadline) if guard is None
                                    else _transaction(root, manifest, deadline, private_guard=guard))
                 transaction.recover()
-                return _verify_complete(transaction, manifest, policy, deadline)
+                return _verify_complete(transaction, manifest, policy, deadline, authenticate=authenticate)
     except StagingError as exc:
         raise UpdateError("update-stage-refused") from exc
     except OSError as exc:

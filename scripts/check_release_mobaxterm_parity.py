@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
+import stat
+import subprocess
 import sys
-from pathlib import Path
-from typing import Any
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from tempfile import TemporaryDirectory
+from typing import Any, BinaryIO
 
 SCRIPTS = Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
@@ -40,6 +46,15 @@ from scripts.check_moba_professional_deployment_evidence import (  # noqa: E402
     verify_hosted_professional_update,
 )
 from scripts.make_mobaxterm_parity_evidence_record import VALIDATORS  # noqa: E402
+from scripts.release_candidate_inventory import (  # noqa: E402
+    DIGEST_RE,
+    MAX_ARCHIVE_BYTES,
+    MAX_EXPANDED_BYTES,
+    MAX_JSON_BYTES,
+    MAX_MEMBERS,
+    GitHubClient,
+    safe_name,
+)
 
 REGISTRY = "configs/mobaxterm_parity_evidence.json"
 MOBAPT_WORKFLOW = ".github/workflows/mobapt-offline-evidence.yml"
@@ -48,10 +63,22 @@ X11_WORKFLOW = ".github/workflows/x11-forwarding-evidence.yml"
 X11_JOB = "Qualify packaged X11 forwarding"
 EDITOR_WORKFLOW = ".github/workflows/connected-editor-evidence.yml"
 EDITOR_JOB = "Qualify the published wheel's connected editor"
+
+
+@dataclass(frozen=True)
+class EvidenceWorkflow:
+    label: str
+    path: str
+    job: str
+    artifact_prefix: str
+
+
 EVIDENCE_WORKFLOWS = {
-    "mobapt-unix-runtime": ("MobApt", MOBAPT_WORKFLOW, MOBAPT_JOB),
-    "embedded-x-server": ("X11", X11_WORKFLOW, X11_JOB),
-    "moba-text-editor-diff": ("Connected editor", EDITOR_WORKFLOW, EDITOR_JOB),
+    "mobapt-unix-runtime": EvidenceWorkflow("MobApt", MOBAPT_WORKFLOW, MOBAPT_JOB, "mobapt-offline-evidence"),
+    "embedded-x-server": EvidenceWorkflow("X11", X11_WORKFLOW, X11_JOB, "x11-forwarding-evidence"),
+    "moba-text-editor-diff": EvidenceWorkflow(
+        "Connected editor", EDITOR_WORKFLOW, EDITOR_JOB, "connected-editor-evidence",
+    ),
 }
 
 
@@ -119,8 +146,8 @@ def load_registry(repository: str, release_sha: str, registry_commit: str) -> di
 
 
 def verify_workflow_run(
-    repository: str, source: dict[str, Any], *, evidence_workflow: tuple[str, str, str] | None = None,
-) -> str:
+    repository: str, source: dict[str, Any], *, evidence_workflow: EvidenceWorkflow | None = None,
+) -> tuple[str, tuple[str, str] | None]:
     match = GITHUB_WORKFLOW_RUN_RE.fullmatch(source["workflow_run_url"])
     assert match is not None  # The registry validator checked the URL.
     run_id = int(match.group(2))
@@ -146,9 +173,9 @@ def verify_workflow_run(
             raise ValueError(f"GitHub workflow attempt {key} differs from the release repository")
     if evidence_workflow is not None and (
         run.get("event") != "workflow_dispatch" or run.get("head_branch") != source["release_tag"]
-        or not workflow_path_matches(run.get("path"), evidence_workflow[1], source["release_tag"])
+        or not workflow_path_matches(run.get("path"), evidence_workflow.path, source["release_tag"])
     ):
-        raise ValueError(f"{evidence_workflow[0]} evidence must come from its dedicated workflow dispatched at the release tag")
+        raise ValueError(f"{evidence_workflow.label} evidence must come from its dedicated workflow dispatched at the release tag")
 
     jobs = collect_paginated_attempt_jobs(
         lambda page: github_object(repository, f"{endpoint}/jobs?per_page={JOBS_PAGE_SIZE}&page={page}")
@@ -169,11 +196,18 @@ def verify_workflow_run(
         timestamps.append(completed_at)
     if not timestamps or not any(job.get("conclusion") == "success" for job in jobs):
         raise ValueError("GitHub evidence attempt has no successful jobs with completion timestamps")
+    archive_window = None
     if evidence_workflow is not None:
-        label, _, job_name = evidence_workflow
-        if sum(job.get("name") == job_name and job.get("conclusion") == "success" for job in jobs) != 1:
-            raise ValueError(f"{label} evidence attempt must contain one successful qualification job")
-    return max(timestamps)
+        qualification = [job for job in jobs if job.get("name") == evidence_workflow.job
+                         and job.get("conclusion") == "success"]
+        if len(qualification) != 1:
+            raise ValueError(f"{evidence_workflow.label} evidence attempt must contain one successful qualification job")
+        started = qualification[0].get("started_at")
+        completed = qualification[0]["completed_at"]
+        if not valid_utc_timestamp(started) or started > completed:
+            raise ValueError("GitHub qualification job has an invalid start timestamp")
+        archive_window = started, completed
+    return max(timestamps), archive_window
 
 
 def verify_review(repository: str, review: dict[str, Any]) -> set[str]:
@@ -244,6 +278,135 @@ def verify_article_evidence(record: dict[str, Any], evidence_root: Path) -> None
         raise ValueError("article validator results differ from the reviewed summary")
 
 
+def download_workflow_archive(repository: str, artifact_id: int, path: Path, size: int) -> None:
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        try:
+            login = subprocess.run(
+                ["gh", "auth", "token", "--hostname", "github.com"],
+                capture_output=True, check=True, timeout=15, text=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            raise ValueError("GitHub Actions archive download requires GitHub CLI authentication") from None
+        token = login.stdout.strip()
+    if not token:
+        raise ValueError("GitHub Actions archive download requires GitHub CLI authentication")
+    client = GitHubClient(repository, token, api_url="https://api.github.com")
+    client.download(f"actions/artifacts/{artifact_id}/zip", path, max_bytes=size)
+
+
+def stream_sha256(stream: BinaryIO) -> str:
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_archive_contents(path: Path, record: dict[str, Any], size: int, digest: str) -> None:
+    article = record["article_id"]
+    expected = {f"{article}/{name}": checksum for name, checksum in record["evidence_assets_sha256"].items()}
+    expected_directories = {
+        parent.as_posix() + "/" for name in expected
+        for parent in PurePosixPath(name).parents if parent.as_posix() != "."
+    }
+    candidate_fields = (
+        "article_id", "evidence_type", "release_tag", "release_target", "validation_command",
+        "evidence_file_sha256", "evidence_assets_sha256", "release_asset_urls", "artifact_sha256",
+        "checks", "validation_summary",
+    )
+    candidate = {field: record[field] for field in candidate_fields}
+    candidate["status"] = "candidate"
+    try:
+        with path.open("rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_size != size:
+                raise ValueError("workflow artifact ZIP size differs from GitHub")
+            if "sha256:" + stream_sha256(stream) != digest:
+                raise ValueError("workflow artifact ZIP digest differs from GitHub")
+            stream.seek(0)
+            with zipfile.ZipFile(stream) as archive:
+                members = archive.infolist()
+                if len(members) > MAX_MEMBERS or sum(member.file_size for member in members) > MAX_EXPANDED_BYTES:
+                    raise ValueError("workflow artifact ZIP exceeds the expansion limits")
+                seen: set[str] = set()
+                for member in members:
+                    name = member.filename
+                    mode = stat.S_IFMT(member.external_attr >> 16)
+                    if (
+                        name != member.orig_filename or name.casefold() in seen or member.flag_bits & 1
+                        or not all(safe_name(part) for part in name.rstrip("/").split("/"))
+                    ):
+                        raise ValueError(f"workflow artifact ZIP has an unsafe or duplicate entry: {name!r}")
+                    seen.add(name.casefold())
+                    if member.is_dir():
+                        if name not in expected_directories or mode not in (0, stat.S_IFDIR) or member.file_size:
+                            raise ValueError(f"workflow artifact ZIP has an unexpected directory: {name!r}")
+                    elif mode not in (0, stat.S_IFREG) or member.external_attr & 0x10:
+                        raise ValueError(f"workflow artifact ZIP has a non-regular file: {name!r}")
+                    elif name == "candidate.json":
+                        if member.file_size > MAX_JSON_BYTES or json.loads(archive.read(member)) != candidate:
+                            raise ValueError("workflow artifact candidate differs from the reviewed record")
+                    elif name not in expected:
+                        raise ValueError(f"workflow artifact ZIP has an unexpected file: {name!r}")
+                    else:
+                        with archive.open(member) as item:
+                            if stream_sha256(item) != expected.pop(name):
+                                raise ValueError(f"workflow artifact bytes differ from the reviewed evidence: {name}")
+                if expected or "candidate.json" not in seen:
+                    raise ValueError("workflow artifact ZIP is missing the candidate or reviewed evidence")
+            after = os.fstat(stream.fileno())
+            if (after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (
+                before.st_size, before.st_mtime_ns, before.st_ctime_ns,
+            ):
+                raise ValueError("workflow artifact ZIP changed during verification")
+    except zipfile.BadZipFile as exc:
+        raise ValueError("workflow artifact is not a valid ZIP archive") from exc
+
+
+def verify_hosted_evidence(
+    repository: str, record: dict[str, Any], evidence_root: Path,
+    workflow: EvidenceWorkflow, archive_window: tuple[str, str],
+) -> None:
+    source = record["release_source"]
+    match = GITHUB_WORKFLOW_RUN_RE.fullmatch(source["workflow_run_url"])
+    assert match is not None
+    run_id = int(match.group(2))
+    name = f"{workflow.artifact_prefix}-{run_id}-{source['run_attempt']}"
+    listing = github_object(repository, f"actions/runs/{run_id}/artifacts?name={name}&per_page=100")
+    artifacts = listing.get("artifacts")
+    if (type(listing.get("total_count")) is not int or listing["total_count"] != 1
+            or not isinstance(artifacts, list) or len(artifacts) != 1 or not isinstance(artifacts[0], dict)):
+        raise ValueError(f"GitHub must report one workflow artifact named {name}")
+    artifact = artifacts[0]
+    artifact_id, size, digest = (artifact.get(field) for field in ("id", "size_in_bytes", "digest"))
+    run = artifact.get("workflow_run")
+    created = artifact.get("created_at")
+    if (
+        artifact.get("name") != name or type(artifact_id) is not int or artifact_id < 1
+        or type(size) is not int or not 0 < size <= MAX_ARCHIVE_BYTES
+        or not isinstance(digest, str) or DIGEST_RE.fullmatch(digest) is None
+        or type(artifact.get("expired")) is not bool
+        or not isinstance(run, dict) or type(run.get("id")) is not int or run["id"] != run_id
+        or run.get("head_sha") != source["head_sha"]
+        or not valid_utc_timestamp(created) or not archive_window[0] <= created <= archive_window[1]
+    ):
+        raise ValueError(f"GitHub workflow artifact {name} does not match the exact evidence attempt")
+
+    relative = f"workflow-artifacts/{name}.zip"
+    if os.path.lexists(evidence_root / relative):
+        archived, error = secure_regular_file(evidence_root, relative, "retained workflow artifact")
+        if archived is None or error:
+            raise ValueError(error)
+        verify_archive_contents(archived, record, size, digest)
+    else:
+        if artifact["expired"]:
+            raise ValueError(f"GitHub workflow artifact expired; retain its original ZIP at {relative}")
+        with TemporaryDirectory(prefix="row-parity-artifact-") as scratch:
+            archive = Path(scratch) / "artifact.zip"
+            download_workflow_archive(repository, artifact_id, archive, size)
+            verify_archive_contents(archive, record, size, digest)
+
+
 def audit_release(
     *,
     repository: str,
@@ -266,7 +429,7 @@ def audit_release(
         return errors
 
     digests: dict[str, str] = {}
-    checked_runs: dict[tuple[str, int, tuple[str, str, str] | None], str] = {}
+    checked_runs: dict[tuple[str, int, EvidenceWorkflow | None], tuple[str, tuple[str, str] | None]] = {}
     checked_reviews: dict[tuple[str, str, str], set[str]] = {}
     for record in registry["accepted_evidence"]:
         article = record["article_id"]
@@ -298,13 +461,17 @@ def audit_release(
         try:
             if run_key not in checked_runs:
                 checked_runs[run_key] = verify_workflow_run(repository, source, evidence_workflow=evidence_workflow)
-            if review["reviewed_at"] < checked_runs[run_key]:
+            completed, archive_window = checked_runs[run_key]
+            if review["reviewed_at"] < completed:
                 raise ValueError("GitHub review predates completion of the evidence workflow attempt")
             if review_key not in checked_reviews:
                 checked_reviews[review_key] = verify_review(repository, review)
             if review_acceptance_line(record) not in checked_reviews[review_key]:
                 raise ValueError("GitHub review does not explicitly accept this exact article evidence")
             verify_article_evidence(record, evidence_root)
+            if evidence_workflow is not None:
+                assert archive_window is not None
+                verify_hosted_evidence(repository, record, evidence_root, evidence_workflow, archive_window)
         except (OSError, RuntimeError, ValueError) as exc:
             errors.append(f"{article} {exc}")
     if not errors:

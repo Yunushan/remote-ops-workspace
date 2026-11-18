@@ -377,6 +377,15 @@ directory as `--assets-dir`. The strict gate checks the directory's exact file
 inventory and hashes, runs the article validator again, and compares its
 results with the reviewed summary.
 
+For MobApt, X11 forwarding and the connected editor, the audit also verifies
+the original GitHub Actions ZIP from the successful qualification job. It
+checks the archive's size and SHA-256 against GitHub and compares its
+candidate record and every evidence file with the reviewed record. While the
+artifact is available, the audit downloads it if needed. Retain the original
+ZIP as `workflow-artifacts/<artifact-name>.zip` under the reviewed parity
+evidence directory so the audit can use it after downloads expire. GitHub
+must still report the artifact's metadata for the exact run attempt.
+
 The target prints `production readiness: 100/100 gates passed` only after the
 production metadata, tag/SHA/checkout equality, and clean-tree checks; the full local pytest, Ruff, mypy, CLI, and real-GUI
 quality profile; the exact-SHA successful `ci` push run; app-, suite-, and

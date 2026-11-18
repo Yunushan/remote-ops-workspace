@@ -7,6 +7,7 @@ import json
 import shlex
 import struct
 import sys
+import zipfile
 import zlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -514,6 +515,7 @@ def reviewed_release(tmp_path, monkeypatch):
     evidence_root = tmp_path / "reviewed"
     assets_dir.mkdir()
     evidence_root.mkdir()
+    (evidence_root / "workflow-artifacts").mkdir()
     asset = assets_dir / name
     asset.write_bytes(b"published release asset bytes")
     digest = hashlib.sha256(asset.read_bytes()).hexdigest()
@@ -622,7 +624,8 @@ def reviewed_release(tmp_path, monkeypatch):
             "total_count": 2,
             "jobs": [
                 {"id": 1, "name": release_parity.MOBAPT_JOB, "run_id": 1234, "run_attempt": 2, "head_sha": release_sha,
-                 "status": "completed", "conclusion": "success", "completed_at": "2026-08-23T12:30:00Z"},
+                 "status": "completed", "conclusion": "success",
+                 "started_at": "2026-08-23T12:20:00Z", "completed_at": "2026-08-23T12:30:00Z"},
                 {"id": 2, "run_id": 1234, "run_attempt": 2, "head_sha": release_sha,
                  "status": "completed", "conclusion": "skipped", "completed_at": None},
             ],
@@ -644,6 +647,35 @@ def reviewed_release(tmp_path, monkeypatch):
     responses[editor_jobs] = {
         "total_count": 1, "jobs": [{**responses[jobs]["jobs"][0], "name": release_parity.EDITOR_JOB, "run_id": 1236}],
     }
+    hosted_archives = {}
+    for record in records:
+        article = record["article_id"]
+        if article not in release_parity.EVIDENCE_WORKFLOWS:
+            continue
+        run_id = int(record["release_source"]["workflow_run_url"].rsplit("/", 1)[1])
+        prefix = release_parity.EVIDENCE_WORKFLOWS[article].artifact_prefix
+        artifact_name = f"{prefix}-{run_id}-2"
+        archive = evidence_root / "workflow-artifacts" / f"{artifact_name}.zip"
+        candidate = {key: value for key, value in record.items()
+                     if key not in {"release_source", "acceptance_review", "release_asset_bytes"}}
+        candidate["status"] = "candidate"
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as payload:
+            payload.writestr("candidate.json", json.dumps(candidate))
+            payload.writestr(f"{article}/", b"")
+            for relative in record["evidence_assets_sha256"]:
+                payload.write(evidence_root / article / relative, f"{article}/{relative}")
+        metadata = {
+            "id": run_id + 5000, "name": artifact_name,
+            "created_at": "2026-08-23T12:29:59Z", "expired": False,
+            "size_in_bytes": archive.stat().st_size,
+            "digest": "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest(),
+            "workflow_run": {"id": run_id, "head_sha": release_sha},
+        }
+        listing = {"total_count": 1, "artifacts": [metadata]}
+        responses[f"actions/runs/{run_id}/artifacts?name={artifact_name}&per_page=100"] = listing
+        hosted_archives[article] = SimpleNamespace(
+            path=archive, metadata=metadata, candidate=candidate, listing=listing,
+        )
     for ancestor, descendant in ((release_sha, registry_commit), (registry_commit, main_tip)):
         responses[f"compare/{ancestor}...{descendant}?per_page=1"] = {
             "status": "ahead",
@@ -696,6 +728,7 @@ def reviewed_release(tmp_path, monkeypatch):
         args=args, asset=asset, records=records, responses=responses,
         on_main=on_main, run=run, jobs=jobs, x11_run=x11_run, x11_jobs=x11_jobs,
         editor_run=editor_run, editor_jobs=editor_jobs,
+        hosted_archives=hosted_archives,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
     )
@@ -781,6 +814,83 @@ def test_editor_certification_requires_the_published_wheel(reviewed_release) -> 
     assert release_parity.audit_release(**reviewed_release.args) == [
         "moba-text-editor-diff must verify the published wheel on Linux x86_64"
     ]
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("created_at", "2026-08-23T12:19:59Z"),
+    ("created_at", "2026-08-23T12:30:01Z"),
+    ("name", "connected-editor-evidence-1236-1"),
+    ("workflow_run", {"id": 1237, "head_sha": "d" * 40}),
+])
+def test_certification_binds_the_uploaded_archive_to_its_attempt(reviewed_release, field, value) -> None:
+    archive = reviewed_release.hosted_archives["moba-text-editor-diff"]
+    archive.metadata[field] = value
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "moba-text-editor-diff GitHub workflow artifact connected-editor-evidence-1236-2 "
+        "does not match the exact evidence attempt"
+    ]
+
+
+def test_certification_rejects_an_ambiguous_hosted_archive(reviewed_release) -> None:
+    archive = reviewed_release.hosted_archives["moba-text-editor-diff"]
+    archive.listing["total_count"] = 2
+    archive.listing["artifacts"].append({**archive.metadata, "id": 7000})
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "moba-text-editor-diff GitHub must report one workflow artifact named connected-editor-evidence-1236-2"
+    ]
+
+
+@pytest.mark.parametrize(("mutation", "detail"), [
+    ("archive-digest", "workflow artifact ZIP digest differs from GitHub"),
+    ("candidate", "workflow artifact candidate differs from the reviewed record"),
+    ("member", "workflow artifact bytes differ from the reviewed evidence: moba-text-editor-diff/evidence.json"),
+    ("extra", "workflow artifact ZIP has an unexpected file: 'moba-text-editor-diff/unreviewed.txt'"),
+])
+def test_certification_rejects_substituted_archive_contents(reviewed_release, mutation, detail) -> None:
+    article = "moba-text-editor-diff"
+    archive = reviewed_release.hosted_archives[article]
+    if mutation == "archive-digest":
+        archive.metadata["digest"] = "sha256:" + "a" * 64
+    else:
+        candidate = {**archive.candidate, "release_target": "linux-arm64"} if mutation == "candidate" else archive.candidate
+        reviewed = reviewed_release.args["evidence_root"] / article / "evidence.json"
+        with zipfile.ZipFile(archive.path, "w") as payload:
+            payload.writestr("candidate.json", json.dumps(candidate))
+            payload.writestr(f"{article}/evidence.json", b"substituted" if mutation == "member" else reviewed.read_bytes())
+            if mutation == "extra":
+                payload.writestr(f"{article}/unreviewed.txt", b"extra")
+        archive.metadata.update(
+            size_in_bytes=archive.path.stat().st_size,
+            digest="sha256:" + hashlib.sha256(archive.path.read_bytes()).hexdigest(),
+        )
+    assert release_parity.audit_release(**reviewed_release.args) == [f"{article} {detail}"]
+
+
+def test_certification_can_reuse_an_expired_artifacts_original_zip(reviewed_release, monkeypatch) -> None:
+    archive = reviewed_release.hosted_archives["embedded-x-server"]
+    archive.metadata["expired"] = True
+    monkeypatch.setattr(release_parity, "download_workflow_archive", lambda *_args: pytest.fail("unnecessary download"))
+    assert release_parity.audit_release(**reviewed_release.args) == []
+    archive.path.unlink()
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "embedded-x-server GitHub workflow artifact expired; retain its original ZIP at "
+        "workflow-artifacts/x11-forwarding-evidence-1235-2.zip"
+    ]
+
+
+def test_certification_downloads_only_the_exact_artifact_when_needed(reviewed_release, monkeypatch) -> None:
+    archive = reviewed_release.hosted_archives["mobapt-unix-runtime"]
+    data = archive.path.read_bytes()
+    archive.path.unlink()
+    requested = []
+
+    def download(repository, artifact_id, destination, size):
+        requested.append((repository, artifact_id, size))
+        destination.write_bytes(data)
+
+    monkeypatch.setattr(release_parity, "download_workflow_archive", download)
+    assert release_parity.audit_release(**reviewed_release.args) == []
+    assert requested == [(reviewed_release.args["repository"], archive.metadata["id"], len(data))]
 
 
 @pytest.mark.parametrize("observed_target", ["linux-arm64", None])

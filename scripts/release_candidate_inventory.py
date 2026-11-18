@@ -159,8 +159,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 class GitHubClient:
-    def __init__(self, repository: str, token: str) -> None:
-        api_root = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    def __init__(self, repository: str, token: str, *, api_url: str | None = None) -> None:
+        api_root = (api_url or os.environ.get("GITHUB_API_URL", "https://api.github.com")).rstrip("/")
         self.base = f"{api_root}/repos/{repository}"
         self.api_origin = origin(self.base)
         self.headers = {

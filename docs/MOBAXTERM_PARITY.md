@@ -102,10 +102,11 @@ reviews, and the downloaded release assets. See the
   CryptoAPI/PKCS#11 inventory, OpenSSH public-key retrieval, SSH expert
   certificate selection, MobAgent handoff, same-parameter SSH-browser multiplex
   plans and SHA-bound release evidence bundles. The Moba-style PyQt Tools
-  dialog displays the certificate data saved in the profile and previews the
-  inventory, OpenSSH public-key export, SSH selection and handoff commands.
-  Live inventory, add/remove controls and agent handoff from that dialog
-  remain open.
+  dialog displays certificate data saved in the profile. Its PKCS#11 inventory
+  opens an installed library, lists its OpenSSH public keys by fingerprint,
+  and copies the selected public key. Operators can load or remove the
+  provider's keys using the configured SSH agent. Persistent SSH certificate
+  selection uses the profile's existing options.
   Connected Moba-style sessions now carry the selected smart-card certificate,
   provider, MobAgent handoff flag and public-key metadata into serialized GUI
   state so the PyQt SFTP dock can render the same selection context.
@@ -265,10 +266,11 @@ reviews, and the downloaded release assets. See the
    persisted 26.4 browser preferences and smart-card selection state directly,
    including browser visibility, saved table widths, overwrite-confirmation
    mode, selected certificate metadata and MobAgent handoff flags. The PyQt
-   Tools dialog displays saved certificate metadata and command previews for
-   certificate inventory, OpenSSH public-key export, SSH expert selection and
-   the same-parameter browser. Its actions open the profile editor or run
-   diagnostics. `row smartcard
+   Tools dialog displays saved certificate metadata and opens the live PKCS#11
+   inventory. Refresh reads public keys from the selected provider and the
+   copy action exports the selected OpenSSH record. Loading into the SSH
+   agent uses a masked PIN prompt. Removing the provider asks for confirmation
+   and leaves unrelated agent keys in place. `row smartcard
    evidence-bundle` now assembles SHA-bound proof for the management UI,
    profile expert setting, MobAgent handoff and smart-card SSH-browser session.
    The release validator matches the card certificate to the agent key and the
@@ -519,6 +521,11 @@ hex digits>.txt` and refresh the desktop file browser to show it.
 
 Capture the outputs below during the session. Use a dedicated agent and a test
 card whose public certificate and token metadata can be shared with the reviewer.
+Open **Tools → Smart cards → PKCS#11 inventory**, choose the installed vendor
+library, and refresh. Use **Copy public key** to capture the OpenSSH record and
+**Load into SSH agent** to load the provider's keys. If the profile sets
+`IdentityAgent`, the dialog uses that socket. Otherwise it uses the active
+OpenSSH agent. Confirm removal during cleanup to unload the provider's keys.
 
 | Bundle action | Required attachment |
 | --- | --- |

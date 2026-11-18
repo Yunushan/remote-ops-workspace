@@ -1,5 +1,5 @@
 {
-  "baseline_head": "9b633d90aa181e8eafcc06f308202fad1bcaf689",
+  "baseline_head": "82a0db42065592953dabd49243c2c85e7fae0272",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -73,8 +73,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "e332d3497a1dd1e3276f5e58f8eb16a4a5c56886b14885589ea0f81073cf318e",
-      "size": 629204
+      "sha256": "44f4f97ed392356739688d3b3d17faa9e4a28eefd327a971da63f651a0710782",
+      "size": 629717
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
@@ -122,14 +122,19 @@
       "size": 3756
     },
     {
+      "path": "src/remote_ops_workspace/gui_smartcards.py",
+      "sha256": "506f8b929cc5c22de8c9fe126afea55e275e8ef283e9feb59ea920c494e3ec24",
+      "size": 10478
+    },
+    {
       "path": "src/remote_ops_workspace/gui_smoke.py",
       "sha256": "50471087a9a0895fa84969c831149796ddb9428ba268a16495d81356e6b13401",
       "size": 5675
     },
     {
       "path": "src/remote_ops_workspace/gui_terminal.py",
-      "sha256": "08283d4818e86023651a0ca38eb5072e13b78dedead9534dbca07ac087daff99",
-      "size": 124932
+      "sha256": "1b30040cb268f52592f81303419c30183e6e58d6b66840b46ff807686dfbc92e",
+      "size": 125015
     },
     {
       "path": "src/remote_ops_workspace/gui_values.py",
@@ -148,8 +153,8 @@
     },
     {
       "path": "src/remote_ops_workspace/launcher.py",
-      "sha256": "aac6fece3cffec3d35a1384b39a22e01d3001f7b19d1e46d1cf22231be7460e0",
-      "size": 43779
+      "sha256": "9ec9279f3b768a152e0ccef90b39a4fc100f90146db749bae34d0e5ea6dc2687",
+      "size": 43886
     },
     {
       "path": "src/remote_ops_workspace/layouts.py",
@@ -193,8 +198,8 @@
     },
     {
       "path": "src/remote_ops_workspace/moba_smartcards.py",
-      "sha256": "4eeeb16a92a8dba7ef15ade2f2f0d25072190820bfc5427b25856df9d00952a8",
-      "size": 40638
+      "sha256": "4a6355495ea58463d8e6c32692311e9d11dd9292e9a9e0bb9f7146aba76e90fe",
+      "size": 41714
     },
     {
       "path": "src/remote_ops_workspace/moba_ssh_browser.py",

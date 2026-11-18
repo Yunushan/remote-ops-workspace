@@ -23,7 +23,7 @@ def test_inventory_strips_provider_prefix_and_parses_only_valid_unique_public_ke
         ["ssh-keygen", "-D", "/a path/provider.so"],
     ]
     assert smartcard_public_keys(b"\n".join((
-        b"notice", b"tool AAAA", b"ssh-rsa invalid=", b"ssh-rsa " + base64.b64encode(WIRE),
+        b"notice", b"tool AAAA", b"ssh-rsa @@@!", b"ssh-rsa " + base64.b64encode(WIRE),
         ALGORITHM + b" " + base64.b64encode(WIRE[:15]), KEY + b" token label", KEY + b" another comment",
     ))) == [(FINGERPRINT, KEY.decode())]
 
@@ -171,4 +171,4 @@ def test_windows_inventory_leaves_unix_process_flags_unset(dialog, monkeypatch):
     dialog.process.setUnixProcessParameters.reset_mock()
     inventory = dialog.module.SmartCardDialog(dialog.parent, "", None)
     dialog.process.setUnixProcessParameters.assert_not_called()
-    inventory.close()
+    inventory.done(int(dialog.module.QDialog.DialogCode.Rejected))

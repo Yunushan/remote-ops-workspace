@@ -734,7 +734,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     },
     "terminal.splits": {
         "module_attrs": ["remote_ops_workspace.terminal:split_shell_plans"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["def add_split"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_session_tabs.py": ["def add_split"]},
     },
     "terminal.layouts": {
         "cli": ["layout save", "layout run"],

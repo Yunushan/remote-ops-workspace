@@ -1509,7 +1509,7 @@ class AnsiTerminalTranscript:
         if self.primary_reflow:
             cells, _ = self._normal_cursor_line()
             if len(cells) > self._screen_columns:
-                span = self._primary_rows()[self._primary_cursor_row_index()]
+                span = self._current_primary_span()
                 if span.end < len(cells):
                     self._column = span.end
                     return

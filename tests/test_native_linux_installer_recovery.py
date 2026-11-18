@@ -1087,10 +1087,60 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     assert (
         "timeout-minutes: 35" in step and "scripts/native_linux_installer_recovery.py run" in step
     )
+    assert "if [[ -f scripts/qualify_managed_debian_update.py ]]; then" in step
+    assert "options+=(--qualify-managed-update)" in step
     upload = section[
         section.index("      - name: Retain unreleased candidate proof and artifacts") :
     ]
     assert ".tmp/" not in upload and "build/native-smoke/linux-${{ matrix.arch }}/" in upload
+
+
+@pytest.mark.parametrize("observed_digest", ["b" * 64, "c" * 64])
+def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, observed_digest):
+    previous = tmp_path / "previous.deb"
+    candidate = tmp_path / "candidate.deb"
+    head = "d" * 40
+    calls = []
+    monkeypatch.setenv("GITHUB_RUN_ID", "1234")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+
+    def capture(argv, **kwargs):
+        calls.append(argv)
+        if argv[0] == "/usr/bin/git":
+            return b"candidate archive"
+        if argv[1] == "pull":
+            return b"image pull progress"
+        return json.dumps({
+            "schema": "row.managed-debian-qualification.v1", "status": "passed", "target": module.TARGET,
+            "production_acceptance": False, "previous_sha256": "a" * 64, "candidate_sha256": observed_digest,
+            "controller_sha256": module.digest(module.ROOT / "scripts/managed_linux_update.py"),
+            "download_server_closed_before_apply": True, "workspace_unchanged": True,
+            "receipts": {name: {"phase": phase, "exit_code": code} for name, phase, code in (
+                ("previous", "authenticated-staged", 0), ("candidate", "authenticated-staged", 0),
+                ("failing", "authenticated-staged", 0), ("candidate-apply", "applied", 0),
+                ("explicit-rollback", "rolled-back", 0), ("failing-apply", "rolled-back", 1),
+            )},
+        }).encode()
+
+    def qualify():
+        return module.managed_debian_report(
+            SimpleNamespace(capture=capture), tmp_path, head, previous, candidate, "a" * 64, "b" * 64,
+        )
+
+    if observed_digest == "b" * 64:
+        report = qualify()
+        assert report["source_sha"] == head and report["run_attempt"] == "2"
+        assert report["source_archive_sha256"] == module.digest(tmp_path / "managed-source.tar")
+    else:
+        with pytest.raises(module.EvidenceError, match="managed-debian-receipt-binding-mismatch"):
+            qualify()
+    assert calls[0] == ["/usr/bin/git", "archive", "--format=tar", head]
+    assert calls[1] == ["/usr/bin/docker", "pull", "--platform", "linux/amd64", module.MANAGED_IMAGE]
+    docker = calls[2]
+    assert docker[:5] == ["/usr/bin/docker", "run", "--rm", "--network", "none"]
+    assert "--pull=never" in docker and module.MANAGED_IMAGE in docker
+    mounts = [docker[index + 1] for index, item in enumerate(docker) if item == "--mount"]
+    assert len(mounts) == 4 and all(mount.endswith(",readonly") for mount in mounts)
 
 
 @pytest.mark.parametrize(

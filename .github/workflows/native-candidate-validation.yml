@@ -547,9 +547,13 @@ jobs:
         timeout-minutes: 35
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          python scripts/native_linux_installer_recovery.py run
-          --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}"
+        run: |
+          options=()
+          if [[ -f scripts/qualify_managed_debian_update.py ]]; then
+            options+=(--qualify-managed-update)
+          fi
+          python scripts/native_linux_installer_recovery.py run \
+            --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}" "${options[@]}"
       - name: Retain unreleased candidate proof and artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

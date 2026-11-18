@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import threading
 import time
@@ -36,6 +37,8 @@ SCHEMA = "row.linux-deb-upgrade-rollback.v1"
 MAX_FILE = 150 * 1024 * 1024
 MAX_PAYLOAD = 180 * 1024 * 1024
 REPORT = Path("build/native-smoke/linux-x86_64/native-upgrade-rollback.json")
+MANAGED_REPORT = REPORT.with_name("managed-debian-update.json")
+MANAGED_IMAGE = "python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d"
 PINS = Path("configs/native_linux_previous_release_pins.json")
 ROW = Path("/usr/bin/row")
 DOCS = Path("/usr/share/doc/remote-ops-workspace")
@@ -1002,6 +1005,52 @@ def bound_deb_hashes(pins: dict, finish: dict, version: str) -> tuple[str, str]:
     return old[0], new[0]
 
 
+def managed_debian_report(commands: Commands, private: Path, source_sha: str,
+                          previous: Path, candidate: Path, previous_sha: str, candidate_sha: str) -> dict:
+    archive = private / "managed-source.tar"
+    archive.write_bytes(commands.capture(
+        ["/usr/bin/git", "archive", "--format=tar", source_sha], timeout=45, limit=64 * 1024 * 1024,
+    ))
+    previous_input = "/input/" + previous.name
+    candidate_input = "/input/" + candidate.name
+    dependencies = sysconfig.get_path("platlib")
+    entrypoint = (
+        'umask 077; mkdir /root/row-source; tar -xf /source.tar -C /root/row-source; '
+        'exec python -I /root/row-source/scripts/qualify_managed_debian_update.py "$@"'
+    )
+    commands.capture(["/usr/bin/docker", "pull", "--platform", "linux/amd64", MANAGED_IMAGE], timeout=180)
+    receipt = json.loads(commands.capture([
+        "/usr/bin/docker", "run", "--rm", "--network", "none", "--pull=never", "--platform", "linux/amd64",
+        "--security-opt", "no-new-privileges",
+        "--mount", f"type=bind,source={archive},target=/source.tar,readonly",
+        "--mount", f"type=bind,source={previous},target={previous_input},readonly",
+        "--mount", f"type=bind,source={candidate},target={candidate_input},readonly",
+        "--mount", f"type=bind,source={dependencies},target=/usr/local/lib/python3.14/site-packages,readonly",
+        MANAGED_IMAGE, "sh", "-ec", entrypoint, "managed-debian-update",
+        "--previous-deb", previous_input, "--previous-sha256", previous_sha,
+        "--candidate-deb", candidate_input, "--candidate-sha256", candidate_sha,
+    ], timeout=420, limit=65536))
+    if (receipt.get("schema") != "row.managed-debian-qualification.v1"
+            or receipt.get("status") != "passed" or receipt.get("target") != TARGET
+            or receipt.get("production_acceptance") is not False
+            or receipt.get("previous_sha256") != previous_sha or receipt.get("candidate_sha256") != candidate_sha
+            or receipt.get("download_server_closed_before_apply") is not True
+            or receipt.get("workspace_unchanged") is not True
+            or receipt.get("controller_sha256") != digest(ROOT / "scripts/managed_linux_update.py")):
+        raise EvidenceError("managed-debian-receipt-binding-mismatch")
+    steps = receipt["receipts"]
+    expected_steps = {"previous": ("authenticated-staged", 0), "candidate": ("authenticated-staged", 0),
+                      "failing": ("authenticated-staged", 0), "candidate-apply": ("applied", 0),
+                      "explicit-rollback": ("rolled-back", 0), "failing-apply": ("rolled-back", 1)}
+    if set(steps) != set(expected_steps) or any(
+        (steps[name]["phase"], steps[name]["exit_code"]) != expected for name, expected in expected_steps.items()
+    ):
+        raise EvidenceError("managed-debian-receipt-binding-mismatch")
+    return {**receipt, "source_sha": source_sha, "source_archive_sha256": digest(archive),
+            "container_image": MANAGED_IMAGE, "run_id": os.environ["GITHUB_RUN_ID"],
+            "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"]}
+
+
 class Drill(native.Drill):
     def __init__(self, private: Path, commands: Commands, sha: str):
         self.root, self.commands, self.sha = private, commands, sha
@@ -1438,6 +1487,12 @@ def run(args) -> dict:
             fixture,
             lambda value: setattr(args, "phase", value),
         )
+        managed_report = None
+        if args.qualify_managed_update:
+            args.phase = "managed-debian-update-and-rollback"
+            managed_report = managed_debian_report(
+                commands, private, args.candidate_source_sha, old, new, old_sha, new_sha,
+            )
         args.phase = "final-source-input-artifact-revalidation"
         assets_again, finish_again, row_again = candidate_assets(
             commands, args.candidate_source_sha, version
@@ -1457,6 +1512,8 @@ def run(args) -> dict:
             ):
                 raise EvidenceError("prior-input-changed-during-transition")
         assert_absent(commands)
+        if managed_report is not None:
+            save(ROOT / MANAGED_REPORT, managed_report)
         return {
             "schema": SCHEMA,
             "status": "passed",
@@ -1513,6 +1570,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", nargs="?", choices=("plan", "run"), default="plan")
     parser.add_argument("--candidate-source-sha", default="")
+    parser.add_argument("--qualify-managed-update", action="store_true")
     args = parser.parse_args(argv)
     if args.action == "plan":
         print(

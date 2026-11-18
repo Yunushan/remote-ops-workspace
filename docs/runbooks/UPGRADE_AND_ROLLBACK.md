@@ -125,6 +125,16 @@ Before opening the previous application, restore the encrypted backup into a
 private sibling workspace if the newer version used `ROW_HOME`. Follow the data
 restore and validation steps below.
 
+The x86-64 all-modern native candidate job also runs an automated update drill
+using the byte-verified previous release and exact candidate DEBs. It stages the
+packages through certificate-validated HTTPS inside an isolated Debian
+container, shuts down the feed, and exercises offline apply, operator-requested
+rollback, and automatic rollback after a controlled `dpkg` configuration
+failure. The retained `managed-debian-update.json` records the package digests,
+candidate source SHA, run attempt, and observed outcomes. The drill uses an
+ephemeral test signer. Production approval uses the release-bound evidence in
+the [release promotion runbook](RELEASE_PROMOTION.md).
+
 ## Rollback
 
 1. Close the upgraded application, terminals, and managed helpers. Preserve

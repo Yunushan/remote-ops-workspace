@@ -126,6 +126,9 @@ def test_shared_ssh_requires_successful_probe_and_clears_metadata_on_restart(lea
     check.complete()
     assert not session._timeout.active
     assert session.state.description() == "Shared SSH · Authenticated"
+    session._poll_socket()
+    check.complete()
+    assert events[-1].phase == "connected"
     session.begin_close("restart-requested")
     session.begin_close("tab-closed")
     session.finish(1, "NormalExit")

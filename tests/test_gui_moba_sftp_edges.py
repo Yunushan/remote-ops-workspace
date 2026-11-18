@@ -176,6 +176,8 @@ def test_dock_projects_managed_ssh_state_and_defers_automatic_tools(connected_wo
         assert dock.shared_ssh_control_path() == ""
         connection.state = replace(connection.state, phase="closed")
         assert dock.sync_shared_ssh_connection() == connection.state
+        patch.setattr(dock, "sftp_status_badge", None)
+        assert dock.sync_shared_ssh_connection() == connection.state
 
 
 def test_connected_dock_refuses_an_edited_ssh_identity(connected_workspace, monkeypatch) -> None:

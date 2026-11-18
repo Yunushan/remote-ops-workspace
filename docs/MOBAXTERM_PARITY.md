@@ -235,7 +235,8 @@ reviews, and the downloaded release assets. See the
    cancels the recording so replay preserves the captured sequence. The replay
    dialog identifies the destination and defaults to Cancel. Replay sends the
    events in order with their recorded delays and stops if the session changes
-   or the terminal requests a password. The release-evidence checker validates
+   or the terminal requests a password. Recording skips masked password input.
+   The release-evidence checker validates
    the bundle attachments and recorded assertions. Full parity still requires
    accepted live replay evidence from supported release targets.
 6. Exact 26.4 SSH-browser behavior: smart-card auth, smart-card management

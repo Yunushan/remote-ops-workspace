@@ -50,8 +50,9 @@ def test_unicode_cell_width_and_combining_styles(screen: str) -> None:
     assert transcript.take_pending_responses() == (b"\x1b[1;2R",)
     assert transcript.cursor_text_column() == (0, 1)
     assert transcript.feed("X") == " Xe\u0301Ａ"
-    assert transcript.feed("\x1b[4GZ") == " Xe\u0301Z "
-    assert transcript.feed("\x1b[9G\u0301") == " Xe\u0301Z "
+    assert transcript.feed("\x1b[4Gé") == " Xe\u0301é "
+    assert transcript.cursor_column == 4
+    assert transcript.feed("\x1b[9G\u0301") == " Xe\u0301é "
     assert transcript.cursor_text_column() == (6, 3)
 
 

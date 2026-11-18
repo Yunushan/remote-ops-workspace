@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import command_safety as safe
 from .file_safety import write_json_atomic
@@ -1171,7 +1171,7 @@ def run_http_server(host: str, port: int, root: Path, *, allow_public_bind: bool
         address_family = family
 
     handler = partial(SimpleHTTPRequestHandler, directory=directory)
-    with BoundHTTPServer(address, handler) as server:
+    with BoundHTTPServer(cast(tuple[str, int] | tuple[str, int, int, int], address), handler) as server:
         server.serve_forever()
 
 

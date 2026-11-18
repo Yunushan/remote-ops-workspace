@@ -297,7 +297,10 @@ reviews, and the downloaded release assets. See the
    policy surfaces and hosted organization update channel.
 8. Shared authenticated transport and terminal-screen behavior. On POSIX
    hosts, the SFTP browser and monitoring can reuse a matching terminal's
-   OpenSSH control socket after it appears. Linux interactive SSH and SFTP
+   OpenSSH control connection after a local master check succeeds. A managed
+   session exposes connection, authentication, closure and reconnect state
+   through the terminal, SFTP and monitoring controls. Automatic tools wait
+   while the terminal authenticates. Linux interactive SSH and SFTP
    panes use a controlling pseudoterminal. OpenSSH receives the initial viewport
    dimensions and forwards later resizes to its remote PTY. The Windows
    terminal uses ConPTY when available, and background tools authenticate

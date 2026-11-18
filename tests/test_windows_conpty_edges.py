@@ -495,6 +495,37 @@ def test_flush_timeout_unbounded_wait_and_final_error() -> None:
         process.flush()
 
 
+def test_resize_worker_skips_applied_dimensions_and_retries_failures(monkeypatch) -> None:
+    calls = []
+    expected_error = _error("ResizePseudoConsole")
+
+    def resize(_handle, dimensions):
+        calls.append((dimensions.X, dimensions.Y))
+        return -1 if len(calls) == 1 else 0
+
+    process = _started_process(SimpleNamespace(ResizePseudoConsole=resize))
+    process._applied_size = (process.columns, process.rows)
+    sizes = iter([(120, 30), (132, 40), (132, 40), (132, 40), (80, 24), (80, 24)])
+
+    def deliver(_timeout):
+        pending = next(sizes, None)
+        if pending is None:
+            process._resize_closing.set()
+            return False
+        process.resize(*pending)
+        return True
+
+    process._resize_event = SimpleNamespace(wait=deliver, clear=lambda: None, set=lambda: None)
+    monkeypatch.setattr(conpty, "_hresult_error", lambda *_args: expected_error)
+
+    process._resize_main()
+
+    assert calls == [(132, 40), (132, 40), (80, 24)]
+    assert process._applied_size == (80, 24)
+    assert (process.columns, process.rows) == (80, 24)
+    assert process.take_resize_error() is expected_error
+
+
 def test_close_input_output_shutdown_and_resize_guards(monkeypatch: pytest.MonkeyPatch) -> None:
     process = _started_process()
     process.close_input()

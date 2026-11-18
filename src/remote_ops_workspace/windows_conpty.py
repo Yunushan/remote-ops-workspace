@@ -652,6 +652,7 @@ class WindowsConPtyProcess:
         self._resize_lock = threading.Lock()
         self._resize_event = threading.Event()
         self._pending_resize: tuple[int, int] | None = None
+        self._applied_size: tuple[int, int] | None = None
 
     @property
     def pid(self) -> int | None:
@@ -733,8 +734,9 @@ class WindowsConPtyProcess:
                 ):
                     raise _last_error("CreatePipe(stdout)")
 
+                size = (self.columns, self.rows)
                 hresult = api.CreatePseudoConsole(
-                    _COORD(self.columns, self.rows),
+                    _COORD(*size),
                     input_read,
                     output_write,
                     0,
@@ -742,6 +744,7 @@ class WindowsConPtyProcess:
                 )
                 if hresult < 0:
                     raise _hresult_error("CreatePseudoConsole", hresult)
+                self._applied_size = size
 
                 attribute_size = ctypes.c_size_t()
                 api.InitializeProcThreadAttributeList(
@@ -1189,10 +1192,10 @@ class WindowsConPtyProcess:
                 raise RuntimeError("ConPTY process is closed")
             self.columns = columns
             self.rows = rows
-        # ResizePseudoConsole can block on older Windows builds.  Never call
-        # it from the Qt event loop; keep only the newest viewport dimensions.
-        with self._resize_lock:
-            self._pending_resize = (columns, rows)
+            # Keep the latest requested dimensions with the pending update.
+            # ResizePseudoConsole runs on the worker because it can block.
+            with self._resize_lock:
+                self._pending_resize = (columns, rows)
         self._resize_event.set()
 
     def _resize_main(self) -> None:
@@ -1215,14 +1218,20 @@ class WindowsConPtyProcess:
                         or not _handle_is_open(self._pseudo_console)
                     ):
                         return
+                    # Windows can emit another viewport repaint for an
+                    # unchanged size. Only suppress sizes the OS accepted.
+                    if pending == self._applied_size:
+                        continue
                     hresult = api.ResizePseudoConsole(
                         self._pseudo_console,
                         _COORD(columns, rows),
                     )
-                if hresult < 0:
-                    self._record_resize_error(
-                        _hresult_error("ResizePseudoConsole", hresult)
-                    )
+                    if hresult >= 0:
+                        self._applied_size = pending
+                        continue
+                self._record_resize_error(
+                    _hresult_error("ResizePseudoConsole", hresult)
+                )
 
     def poll(self) -> int | None:
         api = self._require_started()

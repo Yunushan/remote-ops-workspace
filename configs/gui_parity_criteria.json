@@ -1332,9 +1332,11 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "density=\"moba-shell\"",
-              "profile_width=395",
-              "tab_padding=\"4px 13px\"",
-              "tree_padding=\"3px 5px\""
+              "profile_width=395"
+            ],
+            "src/remote_ops_workspace/assets/workspace-styles.json": [
+              "\"tab_padding\": \"4px 13px\"",
+              "\"tree_padding\": \"3px 5px\""
             ],
             "scripts/render_gui_design_previews.py": [
               "side_w = frame.side_width",
@@ -3859,8 +3861,10 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "tab_position=\"north\"",
-              "tab_padding=\"6px 14px\"",
               "Start Page"
+            ],
+            "src/remote_ops_workspace/assets/workspace-styles.json": [
+              "\"tab_padding\": \"6px 14px\""
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_tabs",

@@ -101,10 +101,10 @@ main window stays a composition layer rather than a monolith:
 - `gui_layouts.py` owns saved layout actions, launch planning, splitter
   restoration and resize persistence. It uses the main window to open tabs
   and start terminal panes.
-- `gui_designs.py` holds the six view presets (Native, MobaXterm-style,
-  SecureCRT-style, Termius-style, Remmina-style, mRemoteNG-style) and their
-  shared stylesheet/geometry metadata. The same metadata feeds both the live
-  window and the static preview renderer.
+- `gui_designs.py` defines the six view presets and their geometry. It renders
+  the packaged `assets/workspace.qss` template with colors, corner radii and
+  control padding from `assets/workspace-styles.json`. The live window and
+  static preview renderer use the same preset data.
 - `gui_workspace.py` and `gui_connected.py` build the connected-session
   workspace and its monitoring panels.
 - `gui_icons.py` paints the generated toolbar, profile tree, and control icons.

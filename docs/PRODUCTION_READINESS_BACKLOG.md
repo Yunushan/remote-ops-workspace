@@ -150,6 +150,8 @@ Rules:
   `gui_profile_actions.py` owns profile context actions, editing, import
   previews, connection launch and file and queue dispatch. The window
   supplies the dialogs and opens the requested terminal tabs.
+  `assets/workspace-styles.json` supplies the colors, corner radii and
+  padding for all six presets in the shared `workspace.qss` template.
 
 ## Phase 6 - Internal certification gates (about +3)
 

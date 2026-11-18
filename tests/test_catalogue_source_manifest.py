@@ -51,6 +51,7 @@ def test_catalogue_inventory_covers_each_product_module_and_selected_inputs():
         for path in (ROOT / "src" / "remote_ops_workspace").glob("*.py")
     }
     assert set(pinned) == modules | {
+        "src/remote_ops_workspace/assets/workspace-styles.json",
         "src/remote_ops_workspace/assets/workspace.qss",
         "src/remote_ops_workspace/py.typed",
     }

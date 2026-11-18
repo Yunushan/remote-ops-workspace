@@ -31,10 +31,16 @@ def test_protected_linux_uses_exact_hash_locked_build_inputs(target: str) -> Non
     workflow = compliance.EXTENDED_WORKFLOW_PATH.read_text(encoding="utf-8")
     job = f"{target}-native-evidence"
     block = compliance.workflow_job_block(workflow, job)
+    direct_script = target == "linux-i386"
+    if direct_script:
+        from scripts.check_extended_platform_evidence import I386_CAPTURE_PATH
+
+        block = (checker.ROOT / I386_CAPTURE_PATH).read_text(encoding="utf-8")
     lock_dir = compliance.PROTECTED_LINUX_LOCK_DIR
     options = {
         "bootstrap_lock_path": f"{lock_dir}/{target}-bootstrap.txt",
         "source_bootstrap_lock_path": compliance.PROTECTED_LINUX_CFFI_LOCK,
+        "direct_script": direct_script,
     }
     assert compliance.check_native_job_lock_usage(block, job, target, f"{lock_dir}/{target}.txt", **options) == []
 

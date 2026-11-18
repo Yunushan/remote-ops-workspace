@@ -293,7 +293,7 @@ def test_terminal_macro_capture_replay_and_cancel_edges(
     from PyQt6.QtCore import QProcess
     from PyQt6.QtTest import QTest
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_terminal
     from remote_ops_workspace.moba_macros import MobaMacroEvent, MobaMacroRecording
 
     _app, window = gui_window
@@ -336,7 +336,7 @@ def test_terminal_macro_capture_replay_and_cancel_edges(
     first_delay = pane.macro_event_delay_ms()
     pane.macro_last_event_at = 10.0
     values = iter([9.0, 12.5])
-    monkeypatch.setattr(gui.time, "monotonic", lambda: next(values))
+    monkeypatch.setattr(gui_terminal.time, "monotonic", lambda: next(values))
     second_delay = pane.macro_event_delay_ms()
     assert first_delay >= 0
     assert second_delay == 0

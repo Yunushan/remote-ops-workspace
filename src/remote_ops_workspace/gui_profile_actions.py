@@ -58,7 +58,7 @@ class ProfileActions:
             tab_title: str, tab_status: str,
         ) -> ConnectedSessionPanel: ...
         def open_terminal_tab(
-            self, plan: TerminalPanePlan, *, profile: Profile,
+            self, plan: TerminalPanePlan, *, profile: Profile | None = None,
             tab_title: str | None = None, tab_status: str | None = None,
         ) -> None: ...
 

@@ -1964,7 +1964,7 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
 ) -> None:
     from PyQt6.QtWidgets import QWidget
 
-    from remote_ops_workspace import gui_workspace_tabs
+    from remote_ops_workspace import gui_terminal_lifecycle, gui_workspace_tabs
 
     _app, window = gui_window
 
@@ -2011,12 +2011,7 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
         lambda: status_updates.append("updated"),
     )
     with monkeypatch.context() as scoped:
-        _set_closure_value(
-            scoped,
-            type(window).new_terminal_pane,
-            "TerminalPane",
-            _FakePane,
-        )
+        scoped.setattr(gui_terminal_lifecycle, "TerminalPane", _FakePane)
         fake_pane = window.new_terminal_pane(
             TerminalPanePlan(title="startup-error", command=[], source="test"),
             autostart=False,

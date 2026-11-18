@@ -154,6 +154,8 @@ Rules:
   filters, and selection restoration after refresh.
   `gui_workspace_tabs.py` owns workspace page selection, paint guards,
   deferred terminal startup, and tab context menus.
+  `gui_terminal_lifecycle.py` owns pane creation, process callbacks,
+  tab shutdown, and process status updates.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
 

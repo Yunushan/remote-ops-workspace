@@ -4213,6 +4213,7 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
+    lifecycle_source = Path("src/remote_ops_workspace/gui_terminal_lifecycle.py").read_text(encoding="utf-8")
     workspace_tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
 
     assert "def profile_tab_label" in source
@@ -4230,7 +4231,7 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     assert "mobaSshBannerCapabilityKey" in connected_source
     assert "mobaSshBannerFooter" in connected_source
     assert "mobaBannerWidth" in connected_source
-    assert "def profile_tab_status" in source
+    assert "def profile_tab_status" in lifecycle_source
     assert "build_product_workspace_surface_evidence" in source
     assert "mobaRailRole" in source
     assert "MobaRailLabel" in source

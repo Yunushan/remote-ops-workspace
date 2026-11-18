@@ -1290,10 +1290,13 @@ class AnsiTerminalTranscript:
         self._normal_cursor_row = len(self._lines)
 
     def _write(self, char: str) -> None:
-        if not char.isascii() and category(char) in {"Mn", "Me", "Mc"}:
-            self._combine_at_cursor(char)
-            return
-        width = 2 if not char.isascii() and east_asian_width(char) in {"W", "F"} else 1
+        width = 1
+        if not char.isascii():
+            if category(char) in {"Mn", "Me", "Mc"}:
+                self._combine_at_cursor(char)
+                return
+            if east_asian_width(char) in {"W", "F"}:
+                width = 2
         if self._alternate_screen:
             self._ensure_alternate_screen()
             if self._alternate_column + width > self._screen_columns:
@@ -1338,6 +1341,16 @@ class AnsiTerminalTranscript:
         if width == 1 and column == len(line):
             line.append(char)
             styles.append(self._style)
+            return
+        # Most full-screen updates overwrite ordinary cells in place.
+        if (
+            width == 1
+            and not insert
+            and line[column]
+            and (column + 1 == len(line) or line[column + 1])
+        ):
+            line[column] = char
+            styles[column] = self._style
             return
         _blank_wide_boundary(line, column)
         glyph = [char, WIDE_CONTINUATION] if width == 2 else [char]

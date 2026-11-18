@@ -108,6 +108,12 @@ reviews, and the downloaded release assets. See the
   Connected Moba-style sessions now carry the selected smart-card certificate,
   provider, MobAgent handoff flag and public-key metadata into serialized GUI
   state so the PyQt SFTP dock can render the same selection context.
+  OpenSSH SFTP and SCP receive the selected provider through `PKCS11Provider`,
+  with quoting for paths that contain spaces. Local qualification with a SoftHSM
+  software token verified direct SSH, interactive SFTP, agent-backed batch SFTP
+  and SCP. The Linux Qt file browser listed a remote file over the same
+  token-authenticated connection as the terminal through the managed Unix
+  control socket. Hardware smart-card release acceptance remains pending.
 - MultiExec-style SSH broadcast preview backed by the same broadcast planner as
   the CLI.
 - Terminal tabs, split panes, local shell profiles, search, shortcuts, snippets,

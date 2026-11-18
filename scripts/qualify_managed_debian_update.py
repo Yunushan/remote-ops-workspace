@@ -37,6 +37,7 @@ from remote_ops_workspace.update_channel import (  # noqa: E402
 PACKAGE = "remote-ops-workspace"
 TARGET = "linux-x86_64"
 MANAGER = ROOT / "scripts/managed_linux_update.py"
+SERVER_MANIFEST = Path("/usr/lib/remote-ops-workspace/servers/servers-runtime.json")
 
 
 def sha256(path: Path) -> str:
@@ -268,6 +269,7 @@ def qualify(args, root: Path) -> dict:
 
     env.pop("SSL_CERT_FILE")
     previous_policy, previous_stage = stages["previous"]
+    bundled_servers = False
     packages = {"candidate": args.candidate_sha256, "failing": sha256(broken), "interrupted": sha256(suspended)}
     for name, expected_candidate in packages.items():
         policy, stage = stages[name]
@@ -292,25 +294,30 @@ def qualify(args, root: Path) -> dict:
                 raise RuntimeError("The installed candidate launcher does not match the transaction")
             journal = transaction / "managed-update.json"
             applied_journal = journal.read_bytes()
-            # Alter only the disposable container's installation. Leave dpkg's
-            # package record at the candidate version while changing its bytes.
-            size = launcher.stat().st_size
-            with launcher.open("ab") as output:
-                output.write(b"\nROW rollback qualification canary\n")
-            changed_launcher = sha256(launcher)
-            try:
-                rejected = update(
-                    "changed-launcher-rollback", "rollback", "--transaction", transaction,
-                    phase="refused", code=1,
-                )
-                if (rejected.get("refusal") != "installed-launcher-digest-refused"
-                        or journal.read_bytes() != applied_journal
-                        or sha256(launcher) != changed_launcher):
-                    raise RuntimeError("Rollback refusal changed the installation or transaction")
-            finally:
-                if launcher.is_file() and sha256(launcher) == changed_launcher:
-                    with launcher.open("r+b") as output:
-                        output.truncate(size)
+            bundled_servers = SERVER_MANIFEST.is_file()
+            changed_files = [(launcher, "launcher", "installed-launcher-digest-refused")]
+            if bundled_servers:
+                changed_files.append((SERVER_MANIFEST, "server-manifest", "installed-runtime-payload-refused"))
+            # Keep dpkg's installed version unchanged while altering files in
+            # the disposable container, then restore each before the real rollback.
+            for path, label, refusal in changed_files:
+                size = path.stat().st_size
+                with path.open("ab") as output:
+                    output.write(b"\nROW rollback qualification canary\n")
+                changed = sha256(path)
+                try:
+                    rejected = update(
+                        f"changed-{label}-rollback", "rollback", "--transaction", transaction,
+                        phase="refused", code=1,
+                    )
+                    if (rejected.get("refusal") != refusal
+                            or journal.read_bytes() != applied_journal
+                            or sha256(path) != changed):
+                        raise RuntimeError("Rollback refusal changed the installation or transaction")
+                finally:
+                    if path.is_file() and sha256(path) == changed:
+                        with path.open("r+b") as output:
+                            output.truncate(size)
             update("explicit-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
         if checked(launcher, "--version") != f"{PACKAGE} {previous}" or sha256(launcher) != previous_launcher:
             raise RuntimeError("Rollback did not restore the original launcher")
@@ -320,7 +327,8 @@ def qualify(args, root: Path) -> dict:
     return {"schema": "row.managed-debian-qualification.v1", "status": "passed", "target": TARGET,
             "controller_sha256": sha256(MANAGER), "previous_sha256": args.previous_sha256,
             "candidate_sha256": args.candidate_sha256, "download_server_closed_before_apply": True,
-            "workspace_unchanged": True, "production_acceptance": False, "receipts": receipts}
+            "workspace_unchanged": True, "candidate_has_server_bundle": bundled_servers,
+            "production_acceptance": False, "receipts": receipts}
 
 
 def main() -> None:

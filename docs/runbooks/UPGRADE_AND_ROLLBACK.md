@@ -86,7 +86,8 @@ version. Both policies use the same signer, organization, channel and selected
 target. The candidate policy's minimum version must allow the retained previous
 version. Set the policy's freshness window to cover staging and installation.
 Close the application and take the [encrypted workspace backup](WORKSPACE_BACKUP_AND_RESTORE.md)
-before installing.
+before installing. Use the distribution's package manager to install any new
+dependencies declared by the candidate DEB before running the offline apply.
 
 ```bash
 python3 -I scripts/managed_linux_update.py stage-previous \
@@ -112,10 +113,10 @@ transaction directory to recover the previous package. An automatic rollback
 reports `rolled-back` with a nonzero exit status for the failed apply.
 
 To roll the package back explicitly, close the application and run the following
-command from the same verified checkout. It rechecks the retained DEB and the
-installed launcher offline. A completed transaction can roll back only the
-exact candidate it installed. A different launcher with the same version
-causes a refusal before the journal or installation changes.
+command from the same verified checkout. It verifies both retained DEBs
+offline and compares the installed launcher and any bundled server files with
+the candidate DEB. A change to those bytes causes a refusal before the journal
+or installation changes, even when the installed version matches.
 
 ```bash
 python3 -I scripts/managed_linux_update.py rollback \
@@ -133,9 +134,10 @@ packages through certificate-validated HTTPS inside an isolated Debian
 container, shuts down the feed, and exercises offline apply, operator-requested
 rollback, and automatic rollback after a controlled `dpkg` configuration
 failure. It checks that changing the launcher under the same installed
-version prevents explicit rollback. It also interrupts the controller during
-package configuration and checks that retrying the persisted transaction
-restores the previous launcher.
+version prevents explicit rollback. For candidates with an embedded server
+bundle, it also checks changes to the installed manifest. It interrupts
+the controller during package configuration and checks that retrying the
+persisted transaction restores the previous launcher.
 The retained `managed-debian-update.json` records the package digests,
 candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in

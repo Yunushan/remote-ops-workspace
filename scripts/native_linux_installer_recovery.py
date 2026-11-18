@@ -1036,6 +1036,7 @@ def managed_debian_report(commands: Commands, private: Path, source_sha: str,
             or receipt.get("previous_sha256") != previous_sha or receipt.get("candidate_sha256") != candidate_sha
             or receipt.get("download_server_closed_before_apply") is not True
             or receipt.get("workspace_unchanged") is not True
+            or type(receipt.get("candidate_has_server_bundle")) is not bool
             or receipt.get("controller_sha256") != digest(ROOT / "scripts/managed_linux_update.py")):
         raise EvidenceError("managed-debian-receipt-binding-mismatch")
     steps = receipt["receipts"]
@@ -1044,9 +1045,14 @@ def managed_debian_report(commands: Commands, private: Path, source_sha: str,
                       "candidate-apply": ("applied", 0), "explicit-rollback": ("rolled-back", 0),
                       "changed-launcher-rollback": ("refused", 1),
                       "failing-apply": ("rolled-back", 1), "interrupted-apply": ("rolled-back", 1)}
+    if receipt["candidate_has_server_bundle"]:
+        expected_steps["changed-server-manifest-rollback"] = ("refused", 1)
     if set(steps) != set(expected_steps) or any(
         (steps[name]["phase"], steps[name]["exit_code"]) != expected for name, expected in expected_steps.items()
-    ) or steps["changed-launcher-rollback"].get("refusal") != "installed-launcher-digest-refused":
+    ) or steps["changed-launcher-rollback"].get("refusal") != "installed-launcher-digest-refused" or (
+        receipt["candidate_has_server_bundle"]
+        and steps["changed-server-manifest-rollback"].get("refusal") != "installed-runtime-payload-refused"
+    ):
         raise EvidenceError("managed-debian-receipt-binding-mismatch")
     return {**receipt, "source_sha": source_sha, "source_archive_sha256": digest(archive),
             "container_image": MANAGED_IMAGE, "run_id": os.environ["GITHUB_RUN_ID"],

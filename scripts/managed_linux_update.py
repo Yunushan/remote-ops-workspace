@@ -12,7 +12,7 @@ import subprocess
 import sys
 import tarfile
 from contextlib import contextmanager
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile, TemporaryFile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +37,9 @@ PACKAGE = "remote-ops-workspace"
 SCHEMA = "row.debian-update.v1"
 JOURNAL = "managed-update.json"
 PREVIOUS_PACKAGE = "rollback.deb"
+CANDIDATE_PACKAGE = "candidate.deb"
+LAUNCHER = PurePosixPath("usr/bin/row")
+SERVER_ROOT = PurePosixPath("usr/lib/remote-ops-workspace/servers")
 SYSTEM_LOCK_ROOT = Path("/var/lib/remote-ops-workspace-managed-update")
 DPKG = "/usr/bin/dpkg"
 DPKG_DEB = "/usr/bin/dpkg-deb"
@@ -115,27 +118,68 @@ def stream_sha256(stream) -> str:
     return digest.hexdigest()
 
 
-def deb_launcher_sha256(path: Path) -> str:
+def deb_runtime_digests(path: Path) -> dict[PurePosixPath, str]:
     with TemporaryFile(dir=path.parent) as payload:
         subprocess.run((DPKG_DEB, "--fsys-tarfile", str(path)), env=COMMAND_ENV, cwd="/",
                        stdin=subprocess.DEVNULL, stdout=payload, stderr=subprocess.DEVNULL,
                        check=True, timeout=300)
         payload.seek(0)
-        observed = None
+        digests = {}
+        directories = set()
         with tarfile.open(fileobj=payload, mode="r:") as archive:
             for entry in archive:
-                if entry.name.removeprefix("./") == "usr/bin/row":
-                    require(observed is None and entry.isfile() and 0 < entry.size <= MAX_ARTIFACT_BYTES,
-                            "deb-launcher-payload-refused")
-                    with archive.extractfile(entry) as launcher:
-                        observed = stream_sha256(launcher)
-        require(observed is not None, "deb-launcher-payload-refused")
-        return observed
+                name = entry.name.removeprefix("./")
+                relative = PurePosixPath(name.lstrip("/"))
+                if relative != LAUNCHER and not relative.is_relative_to(SERVER_ROOT):
+                    continue
+                require(
+                    name == relative.as_posix() and ".." not in relative.parts
+                    and relative not in directories and relative not in digests
+                    and entry.uid == 0 and entry.gid == 0 and not entry.mode & 0o7022,
+                    "deb-runtime-payload-refused",
+                )
+                if entry.isdir() and relative != LAUNCHER:
+                    directories.add(relative)
+                    continue
+                require(
+                    relative != SERVER_ROOT and entry.isfile() and entry.sparse is None
+                    and 0 < entry.size <= MAX_ARTIFACT_BYTES,
+                    "deb-runtime-payload-refused",
+                )
+                with archive.extractfile(entry) as stream:
+                    digests[relative] = stream_sha256(stream)
+        require(LAUNCHER in digests, "deb-launcher-payload-refused")
+        return digests
 
 
 def installed_launcher_sha256() -> str:
     with trusted_path(Path("/usr/bin/row")).open("rb") as stream:
         return stream_sha256(stream)
+
+
+def verify_installed_servers(digests: dict[PurePosixPath, str], root: Path = Path("/") / SERVER_ROOT) -> None:
+    expected = {Path(path.relative_to(SERVER_ROOT)): sha for path, sha in digests.items() if path != LAUNCHER}
+    try:
+        if not expected and not root.exists() and not root.is_symlink():
+            return
+        directories = [root]
+        while directories:
+            current = trusted_path(directories.pop(), directory=True)
+            for path in current.iterdir():
+                if stat.S_ISDIR(path.lstat().st_mode):
+                    directories.append(path)
+                    continue
+                digest = expected.pop(path.relative_to(root), None)
+                require(digest is not None, "installed-runtime-payload-refused")
+                with trusted_path(path).open("rb") as stream:
+                    require(
+                        0 < os.fstat(stream.fileno()).st_size <= MAX_ARTIFACT_BYTES
+                        and stream_sha256(stream) == digest,
+                        "installed-runtime-payload-refused",
+                    )
+        require(not expected, "installed-runtime-payload-refused")
+    except OSError as error:
+        raise UpdateError("installed-runtime-payload-refused") from error
 
 
 def load_policy(path: Path):
@@ -236,39 +280,56 @@ def read_journal(path: Path, architecture: str) -> dict:
     return document
 
 
-def verify_installation(architecture: str, version: str, launcher_sha256: str) -> None:
+def verify_installation(architecture: str, version: str, digests: dict[PurePosixPath, str]) -> None:
     require(installed_package(architecture) == ("installed", version), "installed-package-identity-refused")
-    require(installed_launcher_sha256() == launcher_sha256, "installed-launcher-digest-refused")
+    require(installed_launcher_sha256() == digests[LAUNCHER], "installed-launcher-digest-refused")
+    verify_installed_servers(digests)
 
 
-def install_deb(path: Path, architecture: str, version: str, launcher_sha256: str) -> None:
+def install_deb(path: Path, architecture: str, version: str, digests: dict[PurePosixPath, str]) -> None:
     check_deb(path, architecture, version)
     native_command(DPKG, "--install", str(path), frontend_locked=True)
-    verify_installation(architecture, version, launcher_sha256)
+    verify_installation(architecture, version, digests)
     launcher = trusted_path(Path("/usr/bin/row"))
     result = native_command(str(launcher), "--version")
     require(result.stdout.strip() == f"{PACKAGE} {version}", "installed-launcher-version-refused")
 
 
+def retained_runtime(
+    path: Path, sha256: str, launcher_sha256: str, size: int | None = None,
+) -> dict[PurePosixPath, str]:
+    if size is None:
+        size = trusted_path(path, private=True).stat().st_size
+    require(0 < size <= MAX_ARTIFACT_BYTES, "installer-size-mismatch")
+    verify_bytes(path, size, sha256)
+    digests = deb_runtime_digests(path)
+    require(digests[LAUNCHER] == launcher_sha256, "update-journal-refused")
+    return digests
+
+
 def rollback(journal: Path, state: dict, architecture: str) -> dict:
     previous = state["previous_version"]
-    launcher_sha256 = state["previous_launcher_sha256"]
     phase = state["phase"]
-    if phase == "rolled-back":
-        verify_installation(architecture, previous, launcher_sha256)
-        return state
     candidate = state["candidate_version"]
     if phase == "applied":
         # A completed transaction grants rollback only for the exact
         # installation it verified. Recovery of an interrupted transaction
         # must still tolerate an incomplete launcher or package status.
-        verify_installation(architecture, candidate, state["candidate_launcher_sha256"])
-    else:
+        candidate_runtime = retained_runtime(
+            journal.parent / CANDIDATE_PACKAGE, state["candidate_sha256"], state["candidate_launcher_sha256"],
+        )
+        verify_installation(architecture, candidate, candidate_runtime)
+    elif phase != "rolled-back":
         require(installed_package(architecture)[1] in (previous, candidate), "installed-package-changed")
     retained = journal.parent / PREVIOUS_PACKAGE
-    verify_bytes(retained, state["previous_size"], state["previous_sha256"])
+    previous_runtime = retained_runtime(
+        retained, state["previous_sha256"], state["previous_launcher_sha256"], state["previous_size"],
+    )
+    if phase == "rolled-back":
+        verify_installation(architecture, previous, previous_runtime)
+        return state
     state = journal_write(journal, state, "rolling-back")
-    install_deb(retained, architecture, previous, launcher_sha256)
+    install_deb(retained, architecture, previous, previous_runtime)
     return journal_write(journal, state, "rolled-back")
 
 
@@ -277,7 +338,10 @@ def apply(args, journal: Path, architecture: str) -> dict:
         state = read_journal(journal, architecture)
         require(state["candidate_version"] == args.version, "existing-update-transaction")
         if state["phase"] == "applied":
-            verify_installation(architecture, args.version, state["candidate_launcher_sha256"])
+            runtime = retained_runtime(
+                journal.parent / CANDIDATE_PACKAGE, state["candidate_sha256"], state["candidate_launcher_sha256"],
+            )
+            verify_installation(architecture, args.version, runtime)
             return state
         return rollback(journal, state, architecture)
 
@@ -294,22 +358,22 @@ def apply(args, journal: Path, architecture: str) -> dict:
     source, candidate = verified_deb(policy, args.stage, args.workspace, architecture, args.version)
     old_source, prior = verified_deb(previous_policy, args.previous_stage, args.workspace, architecture, previous)
     old = journal.parent / PREVIOUS_PACKAGE
-    new = journal.parent / "candidate.deb"
+    new = journal.parent / CANDIDATE_PACKAGE
     snapshot_deb(old_source, prior, old)
     snapshot_deb(source, candidate, new)
     check_deb(old, architecture, previous)
     check_deb(new, architecture, args.version)
-    previous_launcher_sha256 = deb_launcher_sha256(old)
-    candidate_launcher_sha256 = deb_launcher_sha256(new)
-    verify_installation(architecture, previous, previous_launcher_sha256)
+    previous_runtime = deb_runtime_digests(old)
+    candidate_runtime = deb_runtime_digests(new)
+    verify_installation(architecture, previous, previous_runtime)
     state = journal_write(journal, {
         "schema": SCHEMA, "architecture": architecture, "previous_version": previous,
         "candidate_version": args.version, "previous_sha256": prior.sha256, "previous_size": prior.size,
         "candidate_sha256": candidate.sha256,
-        "previous_launcher_sha256": previous_launcher_sha256, "candidate_launcher_sha256": candidate_launcher_sha256,
+        "previous_launcher_sha256": previous_runtime[LAUNCHER], "candidate_launcher_sha256": candidate_runtime[LAUNCHER],
     }, "applying")
     try:
-        install_deb(new, architecture, args.version, candidate_launcher_sha256)
+        install_deb(new, architecture, args.version, candidate_runtime)
     except (OSError, subprocess.SubprocessError, ValueError):
         return rollback(journal, state, architecture)
     return journal_write(journal, state, "applied")

@@ -58,8 +58,10 @@ def test_rollback_will_not_install_after_external_replacement_or_payload_change(
 
 def test_successful_rollback_checks_retained_package_before_install(tmp_path, monkeypatch):
     events = []
+    runtime = {updater.LAUNCHER: "c" * 64}
     monkeypatch.setattr(updater, "installed_package", lambda _arch: ("half-configured", "1.0.28"))
     monkeypatch.setattr(updater, "verify_bytes", lambda *args: events.append(("verify", *args)))
+    monkeypatch.setattr(updater, "deb_runtime_digests", lambda _path: runtime)
     monkeypatch.setattr(updater, "install_deb", lambda *args: events.append(("install", *args)))
 
     def write(_journal, document, phase):
@@ -72,7 +74,7 @@ def test_successful_rollback_checks_retained_package_before_install(tmp_path, mo
     assert events == [
         ("verify", retained, 123, "a" * 64),
         ("rolling-back",),
-        ("install", retained, "amd64", "1.0.24", "c" * 64),
+        ("install", retained, "amd64", "1.0.24", runtime),
         ("rolled-back",),
     ]
 
@@ -86,11 +88,57 @@ def test_explicit_rollback_refuses_a_changed_completed_installation(
 ):
     monkeypatch.setattr(updater, "installed_package", lambda _arch: observed)
     monkeypatch.setattr(updater, "installed_launcher_sha256", lambda: launcher_digest)
+    monkeypatch.setattr(updater, "retained_runtime", lambda *_args: {updater.LAUNCHER: "d" * 64})
     monkeypatch.setattr(updater, "verify_bytes", lambda *_a: pytest.fail("rollback package accessed"))
     monkeypatch.setattr(updater, "journal_write", lambda *_a: pytest.fail("journal advanced"))
     monkeypatch.setattr(updater, "install_deb", lambda *_a: pytest.fail("installation attempted"))
 
     with pytest.raises(updater.UpdateError, match=refusal):
+        updater.rollback(tmp_path / updater.JOURNAL, state("applied"), "amd64")
+
+
+@pytest.mark.parametrize("change", [None, "changed", "missing", "untracked"])
+def test_installed_servers_must_match_the_signers_runtime_inventory(tmp_path, monkeypatch, change):
+    relative = updater.SERVER_ROOT / "linux/ssh/bin/sshd"
+    daemon = tmp_path / relative.relative_to(updater.SERVER_ROOT)
+    daemon.parent.mkdir(parents=True)
+    daemon.write_bytes(b"digest-pinned daemon")
+    digests = {updater.LAUNCHER: "d" * 64, relative: hashlib.sha256(daemon.read_bytes()).hexdigest()}
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **_kwargs: path)
+
+    if change == "changed":
+        daemon.write_bytes(b"same-version replacement")
+    elif change == "missing":
+        daemon.unlink()
+    elif change == "untracked":
+        (daemon.parent / "extra").write_bytes(b"untracked")
+    if change is None:
+        updater.verify_installed_servers(digests, tmp_path)
+    else:
+        with pytest.raises(updater.UpdateError, match="installed-runtime-payload-refused"):
+            updater.verify_installed_servers(digests, tmp_path)
+
+
+def test_rollback_refuses_changed_candidate_runtime_before_changing_state(tmp_path, monkeypatch):
+    runtime = {updater.LAUNCHER: "d" * 64}
+    candidate = tmp_path / updater.CANDIDATE_PACKAGE
+
+    def retained(path, digest, launcher):
+        assert (path, digest, launcher) == (candidate, "b" * 64, "d" * 64)
+        return runtime
+
+    def changed_runtime(digests):
+        assert digests == runtime
+        raise updater.UpdateError("installed-runtime-payload-refused")
+
+    monkeypatch.setattr(updater, "retained_runtime", retained)
+    monkeypatch.setattr(updater, "installed_package", lambda _arch: ("installed", "1.0.28"))
+    monkeypatch.setattr(updater, "installed_launcher_sha256", lambda: "d" * 64)
+    monkeypatch.setattr(updater, "verify_installed_servers", changed_runtime)
+    monkeypatch.setattr(updater, "journal_write", lambda *_a: pytest.fail("journal advanced"))
+    monkeypatch.setattr(updater, "install_deb", lambda *_a: pytest.fail("installation attempted"))
+
+    with pytest.raises(updater.UpdateError, match="installed-runtime-payload-refused"):
         updater.rollback(tmp_path / updater.JOURNAL, state("applied"), "amd64")
 
 

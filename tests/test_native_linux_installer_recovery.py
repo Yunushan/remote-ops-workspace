@@ -1095,8 +1095,12 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     assert ".tmp/" not in upload and "build/native-smoke/linux-${{ matrix.arch }}/" in upload
 
 
-@pytest.mark.parametrize("mismatch", [None, "digest", "interruption", "changed-launcher-reason"])
-def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, mismatch):
+@pytest.mark.parametrize(("bundled", "mismatch"), [
+    (False, None), (True, None), (False, "digest"), (False, "interruption"),
+    (False, "changed-launcher-reason"), (True, "changed-server-manifest-reason"),
+    (True, "changed-server-manifest-missing"),
+])
+def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, bundled, mismatch):
     previous = tmp_path / "previous.deb"
     candidate = tmp_path / "candidate.deb"
     head = "d" * 40
@@ -1122,12 +1126,19 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
             "refusal": "unrelated" if mismatch == "changed-launcher-reason"
             else "installed-launcher-digest-refused",
         }
+        if bundled and mismatch != "changed-server-manifest-missing":
+            steps["changed-server-manifest-rollback"] = {
+                "phase": "refused", "exit_code": 1,
+                "refusal": "unrelated" if mismatch == "changed-server-manifest-reason"
+                else "installed-runtime-payload-refused",
+            }
         return json.dumps({
             "schema": "row.managed-debian-qualification.v1", "status": "passed", "target": module.TARGET,
             "production_acceptance": False, "previous_sha256": "a" * 64,
             "candidate_sha256": "c" * 64 if mismatch == "digest" else "b" * 64,
             "controller_sha256": module.digest(module.ROOT / "scripts/managed_linux_update.py"),
             "download_server_closed_before_apply": True, "workspace_unchanged": True,
+            "candidate_has_server_bundle": bundled,
             "receipts": steps,
         }).encode()
 

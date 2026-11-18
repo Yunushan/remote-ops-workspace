@@ -306,7 +306,7 @@ reviews, and the downloaded release assets. See the
    Applications can set and query block, underline and bar cursor styles.
    The cursor uses the desktop's blink timing and restores the primary-screen
    style when an application leaves the alternate screen.
-   While the alternate viewport keeps the same row count, Qt updates only the
+   With a stable row count and palette, Qt updates only the alternate screen
    rows with changed text or ANSI styling. Cursor-only updates leave the
    document intact.
    Full parity requires evidence of shared authenticated transport, structured

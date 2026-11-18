@@ -114,6 +114,51 @@ def test_end_of_stream_and_screen_text_on_primary_screen() -> None:
     assert transcript.screen_text() == "primary"
 
 
+@pytest.mark.parametrize(
+    ("code", "style", "report"),
+    [
+        ("", ("block", True), "1"),
+        ("0", ("block", True), "1"),
+        ("1", ("block", True), "1"),
+        ("2", ("block", False), "2"),
+        ("3", ("underline", True), "3"),
+        ("4", ("underline", False), "4"),
+        ("5", ("bar", True), "5"),
+        ("06", ("bar", False), "6"),
+    ],
+)
+def test_terminal_cursor_style_and_status_query(code, style, report) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    assert transcript.feed(f"x\x1b[{code} ") == "x"
+    assert transcript.cursor_style == terminal.DEFAULT_CURSOR_STYLE
+    assert transcript.feed("q\x1bP$q ") == "x"
+    assert transcript.cursor_style == style
+    assert transcript.cursor_column == 1
+    assert not transcript.consume_full_redraw_hint()
+    assert transcript.feed("q\x1b\\") == "x"
+    assert transcript.take_pending_responses() == (f"\x1bP1$r{report} q\x1b\\".encode("ascii"),)
+
+
+def test_terminal_cursor_style_restores_after_full_screen_and_stream_exit() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.feed("shell\x1b[4 q\x1b[1\"q\x1b[99 q\x1b[?5 q\x1b[5;2 q")
+    assert transcript.cursor_style == ("underline", False)
+    assert transcript.cursor_visible
+    transcript.feed("\x1b[?1049hvim\x1b[2 q\x1b[?12h\x1b[?25l")
+    assert transcript.cursor_style == ("block", True)
+    assert not transcript.cursor_visible
+    transcript.feed("\x1b[?12l")
+    assert transcript.cursor_style == ("block", False)
+    assert transcript.feed("\x1b[?1049l") == "shell"
+    assert transcript.cursor_style == ("underline", False)
+    assert transcript.cursor_visible
+    transcript.feed("\x1b[?1049h\x1b[5 q")
+    assert transcript.end_of_stream() == "shell"
+    assert transcript.cursor_style == terminal.DEFAULT_CURSOR_STYLE
+    transcript.feed("\x1b[3 q\x1bc")
+    assert transcript.cursor_style == terminal.DEFAULT_CURSOR_STYLE
+
+
 def test_styled_fragments_cover_screen_rows_empty_ranges_and_cache_reuse() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.feed("one\ntwo")

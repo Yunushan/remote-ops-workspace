@@ -84,6 +84,85 @@ def test_unicode_terminal_append_selection_and_grid_cursor(gui_window) -> None:
     assert pane.output.textCursor().hasSelection() is False
 
 
+def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QTextCursor
+    from PyQt6.QtWidgets import QApplication
+
+    app, window = gui_window
+    pane = _new_pane(window)
+    pane.setParent(window, Qt.WindowType.Window)
+    pane.resize(640, 360)
+    pane.show()
+    app.processEvents()
+    output = pane.output
+    viewport = output.viewport()
+    flash_time = 4000
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pane, "is_running", lambda: True)
+        patch.setattr(QApplication, "cursorFlashTime", staticmethod(lambda: flash_time))
+        pane.append_process_text("\x1b[2J\x1b[?25l")
+        app.processEvents()
+        assert output.isVisible()
+        rect = output.cursorRect(QTextCursor(output.document()))
+        middle_x = rect.x() + output.fontMetrics().horizontalAdvance("M") // 2
+        middle_y = rect.y() + rect.height() // 2
+        bottom_y = rect.bottom() - 1
+        positions = [(rect.x(), middle_y), (middle_x, middle_y), (middle_x, bottom_y)]
+
+        def samples():
+            frame = viewport.grab()
+            image = frame.toImage()
+            ratio = frame.devicePixelRatio()
+            return tuple(image.pixelColor(round(x * ratio), round(y * ratio)) for x, y in positions)
+
+        hidden = samples()
+
+        def changed_pixels():
+            return tuple(actual != clean for actual, clean in zip(samples(), hidden, strict=True))
+
+        pane.append_process_text("\x1b[?25h\x1b[6 q")
+        assert output.property("terminalRemoteCursorVisible") is True
+        assert output.property("terminalRemoteCursorDocumentPosition") == 0
+        assert not output.property("terminalTabPaintFrozen")
+        app.processEvents()
+        assert changed_pixels() == (True, False, False)
+        assert output.property("terminalRemoteCursorShape") == "bar"
+        pane.append_process_text("\x1b[4 q")
+        assert changed_pixels() == (False, False, True)
+        assert output.property("terminalRemoteCursorShape") == "underline"
+        pane.append_process_text("\x1b[2 q")
+        assert changed_pixels() == (True, True, True)
+        assert output.property("terminalRemoteCursorShape") == "block"
+
+        pane.append_process_text("\x1b[1 q")
+        timer = output._remote_cursor_blink
+        assert output.property("terminalRemoteCursorBlinking") is True
+        assert timer.isActive() and timer.interval() == 2000
+        assert changed_pixels() == (True, True, True)
+        timer.timeout.emit()
+        assert changed_pixels() == (False, False, False)
+        pane.append_process_text("\x1b[1 q")
+        assert changed_pixels() == (False, False, False)
+        timer.timeout.emit()
+        assert changed_pixels() == (True, True, True)
+
+        output.hide()
+        assert not timer.isActive()
+        output.show()
+        assert timer.isActive()
+        hints = QApplication.styleHints()
+        assert hints is not None
+        flash_time = 5000
+        hints.cursorFlashTimeChanged.emit(flash_time)
+        assert timer.interval() == 2500
+        flash_time = -1
+        hints.cursorFlashTimeChanged.emit(flash_time)
+        assert not timer.isActive()
+        assert changed_pixels() == (True, True, True)
+
+
 def test_terminal_auth_prompt_transitions_are_notified_once(gui_window) -> None:
     _app, window = gui_window
     pane_without_handler = _new_pane(window)

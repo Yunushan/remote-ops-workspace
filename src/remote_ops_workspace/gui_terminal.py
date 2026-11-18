@@ -6,7 +6,17 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 
-from PyQt6.QtCore import QEvent, QEventLoop, QPoint, QProcess, QProcessEnvironment, Qt, QTimer, QUrl
+from PyQt6.QtCore import (
+    QEvent,
+    QEventLoop,
+    QPoint,
+    QProcess,
+    QProcessEnvironment,
+    QRect,
+    Qt,
+    QTimer,
+    QUrl,
+)
 from PyQt6.QtGui import (
     QClipboard,
     QColor,
@@ -63,7 +73,13 @@ from .terminal import (
     ssh_connection_key,
     ssh_control_path_for_profile,
 )
-from .terminal_emulation import TERMINAL_EMULATOR_BACKEND, AnsiTerminalTranscript, AnsiTextStyle
+from .terminal_emulation import (
+    DEFAULT_CURSOR_STYLE,
+    TERMINAL_EMULATOR_BACKEND,
+    AnsiTerminalTranscript,
+    AnsiTextStyle,
+    TerminalCursorStyle,
+)
 from .terminal_highlighting import (
     default_terminal_syntax_rules,
     highlight_terminal_text,
@@ -121,6 +137,12 @@ class TerminalTextEdit(QTextEdit):
         self._remote_cursor_position: int | None = None
         self._remote_cursor_trailing_cells = 0
         self._remote_cursor_visible = False
+        self._remote_cursor_style = DEFAULT_CURSOR_STYLE
+        self._remote_cursor_phase_visible = True
+        self._remote_cursor_blink = QTimer(self)
+        self._remote_cursor_blink.timeout.connect(self._toggle_remote_cursor_blink)
+        style_hints = _required_gui_value(QApplication.styleHints(), "application style hints")
+        style_hints.cursorFlashTimeChanged.connect(self._sync_remote_cursor_blink)
 
     def set_remote_cursor_state(
         self,
@@ -128,6 +150,7 @@ class TerminalTextEdit(QTextEdit):
         *,
         trailing_cells: int = 0,
         visible: bool,
+        style: TerminalCursorStyle = DEFAULT_CURSOR_STYLE,
     ) -> None:
         document = _required_gui_value(
             self.document(),
@@ -137,6 +160,11 @@ class TerminalTextEdit(QTextEdit):
         self._remote_cursor_position = max(0, min(maximum, int(position)))
         self._remote_cursor_trailing_cells = max(0, int(trailing_cells))
         self._remote_cursor_visible = bool(visible)
+        if self._remote_cursor_style != style:
+            self._remote_cursor_blink.stop()
+            self._remote_cursor_style = style
+        self.setProperty("terminalRemoteCursorShape", style[0])
+        self.setProperty("terminalRemoteCursorBlinking", style[1])
         self.setProperty("terminalRemoteCursorVisible", self._remote_cursor_visible)
         self.setProperty(
             "terminalRemoteCursorDocumentPosition",
@@ -146,16 +174,41 @@ class TerminalTextEdit(QTextEdit):
             "terminalRemoteCursorTrailingCells",
             self._remote_cursor_trailing_cells,
         )
-        _required_gui_value(
-            self.viewport(),
-            "terminal text viewport",
-        ).update()
+        self._sync_remote_cursor_blink()
+
+    def _sync_remote_cursor_blink(self) -> None:
+        flash_time = QApplication.cursorFlashTime() if self._remote_cursor_style[1] else 0
+        if self._remote_cursor_visible and self.isVisible() and flash_time > 0:
+            interval = max(1, flash_time // 2)
+            if not self._remote_cursor_blink.isActive() or self._remote_cursor_blink.interval() != interval:
+                self._remote_cursor_phase_visible = True
+                self._remote_cursor_blink.start(interval)
+        else:
+            self._remote_cursor_blink.stop()
+            self._remote_cursor_phase_visible = True
+        _required_gui_value(self.viewport(), "terminal text viewport").update()
+
+    def _toggle_remote_cursor_blink(self) -> None:
+        self._remote_cursor_phase_visible = not self._remote_cursor_phase_visible
+        _required_gui_value(self.viewport(), "terminal text viewport").update()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._sync_remote_cursor_blink()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        self._sync_remote_cursor_blink()
 
     def paintEvent(self, event) -> None:  # noqa: N802
         if bool(self.property("terminalTabPaintFrozen")):
             return
         super().paintEvent(event)
-        if not self._remote_cursor_visible or self._remote_cursor_position is None:
+        if (
+            not self._remote_cursor_visible
+            or self._remote_cursor_position is None
+            or not self._remote_cursor_phase_visible
+        ):
             return
         viewport = _required_gui_value(
             self.viewport(),
@@ -173,26 +226,26 @@ class TerminalTextEdit(QTextEdit):
             )
         )
         rectangle = self.cursorRect(cursor)
-        if self._remote_cursor_trailing_cells:
-            cell_width = max(1, self.fontMetrics().horizontalAdvance("M"))
-            rectangle.translate(
-                self._remote_cursor_trailing_cells * cell_width,
-                0,
-            )
+        cell_width = max(1, self.fontMetrics().horizontalAdvance("M"))
+        thickness = max(2, round(self.devicePixelRatioF()))
+        x = rectangle.x() + self._remote_cursor_trailing_cells * cell_width
+        y = rectangle.y() + 1
+        height = max(1, rectangle.height() - 2)
+        shape = self._remote_cursor_style[0]
+        if shape == "block":
+            rectangle = QRect(x, y, cell_width, height)
+        elif shape == "underline":
+            line_height = min(thickness, height)
+            rectangle = QRect(x, y + height - line_height, cell_width, line_height)
+        else:
+            rectangle = QRect(x, y, thickness, height)
         if not rectangle.intersects(viewport.rect()):
             return
         color = self.palette().color(QPalette.ColorRole.Text)
-        color.setAlpha(230)
+        color.setAlpha(120 if shape == "block" else 230)
         painter = QPainter(viewport)
         try:
-            cursor_width = max(2, round(self.devicePixelRatioF()))
-            painter.fillRect(
-                rectangle.x(),
-                rectangle.y() + 1,
-                cursor_width,
-                max(1, rectangle.height() - 2),
-                color,
-            )
+            painter.fillRect(rectangle, color)
         finally:
             painter.end()
 
@@ -2583,6 +2636,7 @@ class TerminalPane(QWidget):
             document_position,
             trailing_cells=trailing_cells,
             visible=self.terminal_emulator.cursor_visible and self.is_running(),
+            style=self.terminal_emulator.cursor_style,
         )
 
     def scroll_terminal_to_end(self) -> None:

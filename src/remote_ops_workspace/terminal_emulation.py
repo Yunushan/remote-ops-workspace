@@ -13,9 +13,23 @@ and selecting output never exposes escape sequences.
 from bisect import bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Literal
 from unicodedata import category, east_asian_width
 
 TERMINAL_EMULATOR_BACKEND = "ansi-transcript-v1"
+
+TerminalCursorStyle = tuple[Literal["bar", "block", "underline"], bool]
+DEFAULT_CURSOR_STYLE: TerminalCursorStyle = ("bar", False)
+_CURSOR_STYLES: dict[str, TerminalCursorStyle] = {
+    "0": ("block", True),
+    "1": ("block", True),
+    "2": ("block", False),
+    "3": ("underline", True),
+    "4": ("underline", False),
+    "5": ("bar", True),
+    "6": ("bar", False),
+}
+_CURSOR_STYLE_REPORTS = {style: code for code, style in _CURSOR_STYLES.items()}
 
 # A high-contrast ANSI palette suitable for the dark embedded terminal.  The
 # first eight entries are normal colors and the remaining eight are bright.
@@ -140,6 +154,7 @@ class AnsiTerminalTranscript:
     _bracketed_paste: bool = False
     _application_cursor_keys: bool = False
     _cursor_visible: bool = True
+    _cursor_style: TerminalCursorStyle = DEFAULT_CURSOR_STYLE
     _origin_mode: bool = False
     _insert_mode: bool = False
     _auto_wrap: bool = True
@@ -155,7 +170,7 @@ class AnsiTerminalTranscript:
         int,
         tuple[int, int] | None,
     ] | None = None
-    _saved_normal_modes: tuple[bool, bool, bool, bool, bool, bool] | None = None
+    _saved_normal_modes: tuple[bool, bool, bool, TerminalCursorStyle, bool, bool, bool] | None = None
     _render_revision: int = field(default=0, init=False, repr=False)
     _render_rows_cache: tuple[tuple[str, list[AnsiTextStyle]], ...] | None = field(
         default=None,
@@ -198,6 +213,7 @@ class AnsiTerminalTranscript:
         self._bracketed_paste = False
         self._application_cursor_keys = False
         self._cursor_visible = True
+        self._cursor_style = DEFAULT_CURSOR_STYLE
         self._origin_mode = False
         self._insert_mode = False
         self._auto_wrap = True
@@ -231,6 +247,11 @@ class AnsiTerminalTranscript:
         """Whether the remote application requested a visible cursor."""
 
         return self._cursor_visible
+
+    @property
+    def cursor_style(self) -> TerminalCursorStyle:
+        """Return the requested cursor shape and blink setting."""
+        return self._cursor_style
 
     @property
     def origin_mode_active(self) -> bool:
@@ -415,6 +436,7 @@ class AnsiTerminalTranscript:
         self._bracketed_paste = False
         self._application_cursor_keys = False
         self._cursor_visible = True
+        self._cursor_style = DEFAULT_CURSOR_STYLE
         self._origin_mode = False
         self._insert_mode = False
         self._auto_wrap = True
@@ -631,6 +653,9 @@ class AnsiTerminalTranscript:
                 self._escape = sequence
             return
         if sequence.startswith(("]", "P", "^", "_")):
+            if sequence == "P$q q\x1b\\":
+                style = _CURSOR_STYLE_REPORTS[self._cursor_style]
+                self._pending_responses.append(f"\x1bP1$r{style} q\x1b\\".encode("ascii"))
             if char == "\a" or sequence.endswith("\x1b\\") or len(sequence) > 4096:
                 self._escape = None
             else:
@@ -666,6 +691,11 @@ class AnsiTerminalTranscript:
             self._escape = None
 
     def _apply_csi(self, params: str, command: str) -> None:
+        if command == "q" and params.endswith(" "):
+            style = _CURSOR_STYLES.get(params[:-1].lstrip("0") or "0")
+            if style is not None:
+                self._cursor_style = style
+            return
         private = params.startswith("?")
         raw_params = params[1:] if private else params
         values = [
@@ -690,6 +720,8 @@ class AnsiTerminalTranscript:
             for mode in values:
                 if mode == 1:
                     self._application_cursor_keys = enabled
+                elif mode == 12:
+                    self._cursor_style = (self._cursor_style[0], enabled)
                 elif mode == 25:
                     self._cursor_visible = enabled
                 elif mode == 6:
@@ -1195,6 +1227,7 @@ class AnsiTerminalTranscript:
             self._bracketed_paste,
             self._application_cursor_keys,
             self._cursor_visible,
+            self._cursor_style,
             self._origin_mode,
             self._insert_mode,
             self._auto_wrap,
@@ -1231,6 +1264,7 @@ class AnsiTerminalTranscript:
                 self._bracketed_paste,
                 self._application_cursor_keys,
                 self._cursor_visible,
+                self._cursor_style,
                 self._origin_mode,
                 self._insert_mode,
                 self._auto_wrap,
@@ -1241,6 +1275,7 @@ class AnsiTerminalTranscript:
             self._bracketed_paste = False
             self._application_cursor_keys = False
             self._cursor_visible = True
+            self._cursor_style = DEFAULT_CURSOR_STYLE
             self._origin_mode = False
             self._insert_mode = False
             self._auto_wrap = True

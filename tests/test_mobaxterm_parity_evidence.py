@@ -624,6 +624,13 @@ def reviewed_release(tmp_path, monkeypatch):
         return SimpleNamespace(to_dict=lambda: {"passed": True, "summary": summary})
 
     monkeypatch.setattr(release_parity, "VALIDATORS", dict.fromkeys(release_parity.ARTICLE_SPECS, validate))
+    delivery_calls = []
+
+    def verify_delivery(evidence, **requirements):
+        assert set(validator_calls) == set(release_parity.ARTICLE_SPECS)
+        delivery_calls.append((evidence, requirements))
+
+    monkeypatch.setattr(release_parity, "verify_hosted_professional_update", verify_delivery)
     args = {
         "repository": repository,
         "tag": tag,
@@ -631,16 +638,35 @@ def reviewed_release(tmp_path, monkeypatch):
         "registry_commit": registry_commit,
         "assets_dir": assets_dir,
         "evidence_root": evidence_root,
+        "professional_update_origins": ["https://updates.example.com"],
     }
     return SimpleNamespace(
         args=args, asset=asset, records=records, responses=responses,
         on_main=on_main, run=run, jobs=jobs, review=review, validator_calls=validator_calls,
+        delivery_calls=delivery_calls,
     )
 
 
 def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_release) -> None:
     assert release_parity.audit_release(**reviewed_release.args) == []
     assert set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
+    article = next(row for row in reviewed_release.records if row["article_id"] == "professional-deployment")
+    directory = reviewed_release.args["evidence_root"] / "professional-deployment"
+    assert reviewed_release.delivery_calls == [(directory / "evidence.json", {
+        "assets_dir": directory, "published": True, "origins": ["https://updates.example.com"],
+        "evidence_sha256": article["evidence_file_sha256"],
+        "verified_installers": article["validation_summary"]["summary"]["verified_windows_installers"],
+    })]
+
+
+def test_hosted_delivery_failure_blocks_certification(reviewed_release, monkeypatch) -> None:
+    def stale_delivery(*_args, **_kwargs):
+        raise ValueError("signed manifest HTTPS delivery SHA-256 differs from the reviewed bytes")
+
+    monkeypatch.setattr(release_parity, "verify_hosted_professional_update", stale_delivery)
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "professional-deployment signed manifest HTTPS delivery SHA-256 differs from the reviewed bytes"
+    ]
 
 
 @pytest.mark.parametrize("observed_target", ["linux-x86_64", None])
@@ -675,6 +701,7 @@ def test_certification_rejects_other_release_and_changed_download(reviewed_relea
 
     assert any("professional-deployment accepted record must bind the exact release" in error for error in errors)
     assert any("SHA-256 differs from the downloaded release asset" in error for error in errors)
+    assert reviewed_release.delivery_calls == []
 
 
 @pytest.mark.parametrize(

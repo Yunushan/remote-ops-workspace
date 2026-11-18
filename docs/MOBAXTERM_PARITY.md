@@ -320,6 +320,12 @@ entry per branded installer with its name, target, HTTPS URL, relative
 `file` path, `sha256`, and `size_bytes`. Use the same organization as the
 customizer bundle.
 
+Preflight delivery with `check_moba_professional_deployment_evidence.py`
+and one `--update-origin <https-origin>` per independently approved origin.
+The check uses certificate-verified HTTPS and compares the bytes served for
+the manifest and each reviewed installer. The published release audit
+repeats the downloads with the release operator's approved origin list.
+
 The `installer_branding` attachment uses schema
 `row.moba-professional.windows-installers.v1`. Its `installer_sha256` map
 records both installer filenames and digests computed before native

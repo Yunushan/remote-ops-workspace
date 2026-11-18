@@ -7,6 +7,8 @@ def test_make_production_readiness_is_fail_closed_for_quality_and_exact_sha() ->
 
     assert 'test -n "$(RELEASE_SHA)"' in target
     assert 'test -n "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)"' in target
+    assert "export RELEASE_PROFESSIONAL_UPDATE_ORIGINS ?=" in makefile
+    assert 'test -n "$$RELEASE_PROFESSIONAL_UPDATE_ORIGINS"' in target
     tag_resolution = 'git rev-parse --verify --end-of-options "refs/tags/$(RELEASE_TAG)^{commit}"'
     assert target.count(tag_resolution) == 2
     assert target.count('test "$$tag_sha" = "$(RELEASE_SHA)"') == 2

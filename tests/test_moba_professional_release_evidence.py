@@ -282,3 +282,59 @@ def test_release_gate_rejects_incomplete_policy_surface_observations(professiona
     result = gate.validate_professional_release_evidence(path)
     assert not result.passed
     assert any(message in error for error in result.errors), result.errors
+
+
+@pytest.mark.parametrize(("mutation", "expected"), [
+    ("", ""),
+    ("different-installer", ".msi HTTPS delivery SHA-256 differs"),
+    ("different-manifest", "signed manifest HTTPS delivery SHA-256 differs"),
+    ("unsigned-review-edit", "reviewed deployment evidence SHA-256 differs"),
+    ("unapproved-cdn", "URL must use an approved professional update origin"),
+    ("missing-origins", "supply at least one independently approved"),
+    ("local-published-origin", "requires a hosted HTTPS origin"),
+])
+def test_hosted_delivery_binds_all_reviewed_bytes_and_origin(professional_bundle, monkeypatch, mutation, expected):
+    item = professional_bundle
+    origins = ["https://updates.example.com"]
+    if mutation == "missing-origins":
+        origins = []
+    if mutation == "local-published-origin":
+        origins = ["https://127.0.0.1:1234"]
+    if mutation == "unapproved-cdn":
+        for row in item.update["artifacts"]:
+            row["url"] = row["url"].replace("updates.", "cdn.")
+    evidence = item.write_bundle()
+    digest = hashlib.sha256(evidence.read_bytes()).hexdigest()
+    if mutation == "unsigned-review-edit":
+        evidence.write_bytes(evidence.read_bytes() + b"\n")
+    manifest_url = item.update["update_url"]
+    responses = {manifest_url: (item.root / "update.json").read_bytes()}
+    responses.update({row["url"]: (item.root / row["file"]).read_bytes() for row in item.update["artifacts"]})
+    if mutation == "different-installer":
+        url = next(url for url in responses if url.endswith(".msi"))
+        responses[url] = b"!" + responses[url][1:]
+    if mutation == "different-manifest":
+        responses[manifest_url] = b"!" + responses[manifest_url][1:]
+    calls = []
+
+    def chunks(url, settings, deadline, maximum, *, expected):
+        calls.append(url)
+        assert deadline > 0
+        assert settings["allowed_origins"] == set(origins)
+        assert maximum == expected == len(responses[url])
+        yield responses[url][:6]
+        yield responses[url][6:]
+
+    monkeypatch.setattr(gate.update_channel, "_chunks", chunks)
+    kwargs = {
+        "assets_dir": item.root, "evidence_sha256": digest,
+        "verified_installers": item.capture["installer_sha256"], "origins": origins, "published": True,
+    }
+    if expected:
+        with pytest.raises(ValueError, match=expected):
+            gate.verify_hosted_professional_update(evidence, **kwargs)
+    else:
+        gate.verify_hosted_professional_update(evidence, **kwargs)
+        assert set(calls) == set(responses) and calls[0] == manifest_url
+    if mutation in {"unapproved-cdn", "missing-origins", "local-published-origin", "unsigned-review-edit"}:
+        assert calls == []

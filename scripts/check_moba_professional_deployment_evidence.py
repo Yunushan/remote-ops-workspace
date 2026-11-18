@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import struct
 import sys
+import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID
 from xml.etree import ElementTree
 
@@ -16,6 +19,7 @@ for location in (ROOT, SRC):
     if str(location) not in sys.path:
         sys.path.insert(0, str(location))
 
+from remote_ops_workspace import update_channel  # noqa: E402
 from remote_ops_workspace.moba_customizer import (  # noqa: E402
     MobaProfessionalDeploymentEvidenceValidation,
     build_installer_branding_plan,
@@ -28,6 +32,7 @@ from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
 from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
     secure_regular_file,
+    sha256_file,
     valid_sha256,
 )
 
@@ -48,14 +53,18 @@ def read_small(path: Path, label: str) -> bytes:
     return data
 
 
-def read_object(path: Path, label: str) -> dict[str, Any]:
+def decode_object(raw: bytes, label: str) -> dict[str, Any]:
     try:
-        data = json.loads(read_small(path, label))
+        data = json.loads(raw)
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"{label} must contain valid JSON") from exc
     if not isinstance(data, dict):
         raise ValueError(f"{label} must be a JSON object")
     return data
+
+
+def read_object(path: Path, label: str) -> dict[str, Any]:
+    return decode_object(read_small(path, label), label)
 
 
 def attachment(root: Path, ref: Any, label: str) -> Path:
@@ -356,6 +365,102 @@ def verify_policy_surfaces(root: Path, bundle: dict[str, Any], capture: dict[str
     return {"verified_policy_surfaces": list(PROFESSIONAL_POLICY_SURFACES), "verified_machine_policy_sha256": deployed}
 
 
+def approved_update_origins(origins: list[str], *, published: bool) -> set[str]:
+    if not origins:
+        raise ValueError("supply at least one independently approved professional update HTTPS origin")
+    approved: set[str] = set()
+    for origin in origins:
+        try:
+            parsed = urlsplit(origin)
+            canonical = update_channel._origin(origin)
+        except ValueError as exc:
+            raise ValueError("approved professional update origin must be a canonical HTTPS origin") from exc
+        if origin != canonical or parsed.path or parsed.query:
+            raise ValueError("approved professional update origin must be a canonical HTTPS origin")
+        host = parsed.hostname or ""
+        try:
+            literal = ipaddress.ip_address(host)
+        except ValueError:
+            literal = None
+        if published and (
+            host == "localhost" or host.endswith(".localhost")
+            or (literal is not None and (literal.is_loopback or literal.is_unspecified))
+        ):
+            raise ValueError("published professional update channel requires a hosted HTTPS origin")
+        approved.add(origin)
+    return approved
+
+
+def reviewed_delivery_object(root: Path, name: Any, digest: Any, label: str) -> tuple[dict[str, Any], int]:
+    path, error = secure_regular_file(root, name, label)
+    if path is None:
+        raise ValueError(error)
+    raw = read_small(path, label)
+    if not valid_sha256(digest) or hashlib.sha256(raw).hexdigest() != digest:
+        raise ValueError(f"{label} SHA-256 differs from the evidence")
+    return decode_object(raw, label), len(raw)
+
+
+def approved_delivery_target(
+    label: str, url: Any, digest: Any, size: Any, origins: set[str],
+) -> tuple[str, str, str, int]:
+    if not isinstance(url, str) or update_channel._origin(url) not in origins:
+        raise ValueError(f"{label} URL must use an approved professional update origin")
+    if not isinstance(digest, str) or not valid_sha256(digest):
+        raise ValueError(f"{label} has an invalid delivery digest")
+    if type(size) is not int or not 1 <= size <= update_channel.MAX_ARTIFACT_BYTES:
+        raise ValueError(f"{label} has an invalid delivery byte limit")
+    return label, url, digest, size
+
+
+def verify_hosted_professional_update(
+    evidence_path: Path, *, assets_dir: Path, evidence_sha256: str,
+    verified_installers: dict[str, str], origins: list[str], published: bool,
+) -> None:
+    """Compare actual HTTPS response bytes after the underlying release evidence passed."""
+    approved = approved_update_origins(origins, published=published)
+    relative = evidence_path.absolute().relative_to(assets_dir.absolute()).as_posix()
+    evidence, _ = reviewed_delivery_object(
+        assets_dir, relative, evidence_sha256, "reviewed deployment evidence",
+    )
+    channel = policy_observation(evidence.get("update_channel"), "signed update channel")
+    manifest_digest = channel.get("manifest_sha256")
+    update, manifest_size = reviewed_delivery_object(
+        assets_dir, channel.get("manifest_file"), manifest_digest, "reviewed update manifest",
+    )
+    if (
+        len(verified_installers) != 2
+        or {Path(name).suffix for name in verified_installers} != {".exe", ".msi"}
+        or any(not valid_sha256(digest) for digest in verified_installers.values())
+    ):
+        raise ValueError("hosted delivery requires the verified EXE and MSI")
+
+    entries = update.get("artifacts")
+    if not isinstance(entries, list):
+        raise ValueError("reviewed update manifest must include installer entries")
+    # Approve the whole request set before contacting any endpoint.
+    targets = [approved_delivery_target(
+        "signed manifest", update.get("update_url"), manifest_digest, manifest_size, approved,
+    )]
+    for name, digest in sorted(verified_installers.items()):
+        matching = [row for row in entries if isinstance(row, dict) and row.get("name") == name]
+        if len(matching) != 1 or matching[0].get("sha256") != digest:
+            raise ValueError(f"reviewed installer {name} must be bound by the signed update manifest")
+        row = matching[0]
+        targets.append(approved_delivery_target(name, row.get("url"), digest, row.get("size_bytes"), approved))
+    settings = {"allowed_origins": approved, "limits": {"redirects": 3, "http_timeout_seconds": 20}}
+    deadline = time.monotonic() + 300
+    for label, url, digest, size in targets:
+        actual = hashlib.sha256()
+        try:
+            for chunk in update_channel._chunks(url, settings, deadline, size, expected=size):
+                actual.update(chunk)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{label} HTTPS delivery failed: {exc}") from exc
+        if actual.hexdigest() != digest:
+            raise ValueError(f"{label} HTTPS delivery SHA-256 differs from the reviewed bytes")
+
+
 def validate_professional_release_evidence(
     evidence_path: Path, *, assets_dir: Path | None = None,
 ) -> MobaProfessionalDeploymentEvidenceValidation:
@@ -405,9 +510,23 @@ def main() -> int:
     parser.add_argument("--evidence", required=True, type=Path)
     parser.add_argument("--assets-dir", type=Path)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--update-origin", action="append", default=[], help="approved HTTPS origin for a live delivery check")
     args = parser.parse_args()
 
     result = validate_professional_release_evidence(args.evidence, assets_dir=args.assets_dir)
+    if result.passed and args.update_origin:
+        root = args.assets_dir or args.evidence.parent
+        try:
+            verify_hosted_professional_update(
+                args.evidence, assets_dir=root, evidence_sha256=sha256_file(args.evidence),
+                verified_installers=result.summary["verified_windows_installers"],
+                origins=args.update_origin, published=False,
+            )
+            result.summary["verified_update_delivery"] = True
+        except (OSError, ValueError) as exc:
+            result = MobaProfessionalDeploymentEvidenceValidation(
+                str(args.evidence), str(root), False, [str(exc)], [], {},
+            )
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
     elif result.passed:

@@ -12,6 +12,7 @@ RELEASE_PLATFORM_EVIDENCE_REGISTRY ?=
 RELEASE_PLATFORM_SOURCE_ARCHIVES ?=
 RELEASE_MOBAXTERM_REGISTRY_COMMIT ?=
 RELEASE_MOBAXTERM_EVIDENCE_ROOT ?=
+export RELEASE_PROFESSIONAL_UPDATE_ORIGINS ?=
 RELEASE_TAG_GOVERNANCE_ATTESTATION ?=
 RELEASE_TAG_GOVERNANCE_SIGNATURE ?=
 
@@ -49,6 +50,7 @@ production-readiness:
 	@test -d "$(RELEASE_PLATFORM_SOURCE_ARCHIVES)" || (echo "RELEASE_PLATFORM_SOURCE_ARCHIVES must point to the retained original Actions ZIP directory" >&2; exit 2)
 	@test -n "$(RELEASE_MOBAXTERM_REGISTRY_COMMIT)" || (echo "RELEASE_MOBAXTERM_REGISTRY_COMMIT=<reviewed parity registry commit on main> is required" >&2; exit 2)
 	@test -d "$(RELEASE_MOBAXTERM_EVIDENCE_ROOT)" || (echo "RELEASE_MOBAXTERM_EVIDENCE_ROOT must point to the reviewed parity evidence directory" >&2; exit 2)
+	@test -n "$$RELEASE_PROFESSIONAL_UPDATE_ORIGINS" || (echo "RELEASE_PROFESSIONAL_UPDATE_ORIGINS must list the approved HTTPS origins for Professional update delivery" >&2; exit 2)
 	@test -f "$(RELEASE_TAG_GOVERNANCE_ATTESTATION)" && test -s "$(RELEASE_TAG_GOVERNANCE_ATTESTATION)" || (echo "RELEASE_TAG_GOVERNANCE_ATTESTATION must point to a nonempty signed tag ruleset snapshot JSON file" >&2; exit 2)
 	@test -f "$(RELEASE_TAG_GOVERNANCE_SIGNATURE)" && test -s "$(RELEASE_TAG_GOVERNANCE_SIGNATURE)" || (echo "RELEASE_TAG_GOVERNANCE_SIGNATURE must point to a nonempty detached tag-governance signature JSON file" >&2; exit 2)
 	@tag_sha="$$(git rev-parse --verify --end-of-options "refs/tags/$(RELEASE_TAG)^{commit}" 2>/dev/null)" && test "$$tag_sha" = "$(RELEASE_SHA)" || (echo "RELEASE_SHA must be the full commit SHA tagged by RELEASE_TAG" >&2; exit 2)

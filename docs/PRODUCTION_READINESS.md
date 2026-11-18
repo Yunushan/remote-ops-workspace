@@ -21,7 +21,7 @@ not close a native-host or release-trust requirement by itself.
 | Third-party redistribution and realized runtime | An independently signed approval binds the exact native manifest and artifact hashes, the complete `pip inspect` environment, component classifications, packaged license-file extraction scans, and a per-platform fully hashed lock actually consumed by the mandatory tagged build workflow. GUI bundles additionally identify the PyQt/Qt channel and bind either both commercial licenses or the open-source application-license review, corresponding source, and relink mechanism | `check_release_license_compliance.py --verify-published-release` with the signed approval and bundle, sealed candidate inventory, signed platform registry, original Actions ZIPs, and publication governance proof supplied to the aggregate |
 | Production signing | Windows Authenticode and macOS Developer ID/notarization proofs are present | Native build signing and smoke jobs, and `check_release_publish_assets.py` in `production-signed` mode |
 | Protected platform parity | Finalized, release-bound accepted records for Linux i386, Linux armhf, Windows XP x86 and Windows XP x64, including real host smoke and release-byte provenance | `python scripts/check_platform_verified_evidence.py --registry <signed-registry.json> --require-goal-targets --require-review-bundles --release-tag <tag>` and the asset-backed protected-goal gate |
-| Strict MobaXterm depth | Eight accepted records from a pinned registry commit on protected `main`, bound to the release SHA, reviewed workflow attempts and published artifact hashes | `python scripts/check_release_mobaxterm_parity.py --repository <owner/repo> --tag <tag> --sha <release-sha> --registry-commit <commit> --assets-dir <release-assets> --evidence-root <reviewed-evidence>` |
+| Strict MobaXterm depth | Eight accepted records from a pinned registry commit on protected `main`, bound to exact release artifacts and reviewed workflow attempts, with live Professional update delivery verification | `python scripts/check_release_mobaxterm_parity.py --repository <owner/repo> --tag <tag> --sha <release-sha> --registry-commit <commit> --assets-dir <release-assets> --evidence-root <reviewed-evidence> --professional-update-origin <approved-https-origin>` |
 | Repository governance | Required checks (including the stable `Python 3.15 readiness` and `Native Windows readiness` aggregates), conversation resolution, linear history, and no force-push/deletion are enabled on `main`; every required check is bound in branch protection to the configured GitHub App and resolves through that app's exact check suite to a successful `push` run of `.github/workflows/ci.yml` or `.github/workflows/codeql.yml` at the release SHA; an active, applicable tag ruleset prevents update and deletion of the exact release tag without bypass actors; pull-request approvals and signed commits remain optional controls | `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-sha> --release-tag <tag>` (live GitHub branch-protection, check-run, check-suite, Actions-run, and inherited tag-ruleset APIs, not a local manifest). Add `--require-review --require-signed-commits` for the stricter policy. |
 
 The protected-platform gate must report `4/4` accepted targets and the strict
@@ -337,6 +337,7 @@ make production-readiness \
   RELEASE_PLATFORM_SOURCE_ARCHIVES="<capture-directory>/archives" \
   RELEASE_MOBAXTERM_REGISTRY_COMMIT="<merged-parity-registry-commit-sha>" \
   RELEASE_MOBAXTERM_EVIDENCE_ROOT="<reviewed-parity-evidence-directory>" \
+  RELEASE_PROFESSIONAL_UPDATE_ORIGINS="<approved-HTTPS-origin-list>" \
   RELEASE_TAG_GOVERNANCE_ATTESTATION="<tag-governance-attestation.json>" \
   RELEASE_TAG_GOVERNANCE_SIGNATURE="<tag-governance-attestation.sig.json>"
 ```
@@ -353,6 +354,14 @@ the release source and be reachable from protected `main`. The audit compares
 the accepted records with the release identity, live GitHub reviews and run
 attempts, and SHA-256 hashes of the same downloaded assets checked by the
 release provenance gate.
+
+Supply `RELEASE_PROFESSIONAL_UPDATE_ORIGINS` as a space-separated list of
+independently approved HTTPS origins for the organization's update channel,
+including any origins reached by its approved redirects. Each item is an
+origin such as `https://updates.example.org`. After evidence and provenance
+checks pass, the release audit downloads the signed manifest and both branded
+Windows installers. Their sizes and SHA-256 digests must match the reviewed
+bytes before certification can succeed.
 
 Use the exact publication proof and detached signature retained by the promotion
 for the aggregate. It verifies their signatures and attested

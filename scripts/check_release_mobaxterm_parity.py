@@ -35,6 +35,9 @@ from check_release_provenance import (  # noqa: E402
     sha256_file,
 )
 
+from scripts.check_moba_professional_deployment_evidence import (  # noqa: E402
+    verify_hosted_professional_update,
+)
 from scripts.make_mobaxterm_parity_evidence_record import VALIDATORS  # noqa: E402
 
 REGISTRY = "configs/mobaxterm_parity_evidence.json"
@@ -226,6 +229,7 @@ def audit_release(
     registry_commit: str,
     assets_dir: Path,
     evidence_root: Path,
+    professional_update_origins: list[str],
 ) -> list[str]:
     registry = load_registry(repository, release_sha, registry_commit)
     errors = check_mobaxterm_parity_evidence(registry=registry, require_complete=True)
@@ -273,6 +277,17 @@ def audit_release(
             verify_article_evidence(record, evidence_root)
         except (OSError, RuntimeError, ValueError) as exc:
             errors.append(f"{article} {exc}")
+    if not errors:
+        professional = next(row for row in registry["accepted_evidence"] if row["article_id"] == "professional-deployment")
+        root = evidence_root / "professional-deployment"
+        try:
+            verify_hosted_professional_update(
+                root / "evidence.json", assets_dir=root, evidence_sha256=professional["evidence_file_sha256"],
+                verified_installers=professional["validation_summary"]["summary"]["verified_windows_installers"],
+                origins=professional_update_origins, published=True,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            errors.append(f"professional-deployment {exc}")
     return errors
 
 
@@ -284,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--registry-commit", required=True, help="reviewed parity registry commit merged to main")
     parser.add_argument("--assets-dir", type=Path, required=True)
     parser.add_argument("--evidence-root", type=Path, required=True)
+    parser.add_argument("--professional-update-origin", action="append", help="independently approved HTTPS origin for the organization update channel")
     args = parser.parse_args(argv)
     try:
         repository = normalize_repository(args.repository)
@@ -296,6 +312,10 @@ def main(argv: list[str] | None = None) -> int:
             registry_commit=normalize_sha(args.registry_commit),
             assets_dir=args.assets_dir,
             evidence_root=args.evidence_root,
+            professional_update_origins=(
+                args.professional_update_origin
+                or os.environ.get("RELEASE_PROFESSIONAL_UPDATE_ORIGINS", "").split()
+            ),
         )
     except (OSError, RuntimeError, ValueError) as exc:
         errors = [str(exc)]

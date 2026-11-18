@@ -152,6 +152,8 @@ Rules:
   supplies the dialogs and opens the requested terminal tabs.
   `gui_profile_tree.py` owns profile grouping, preset labels and row metadata,
   filters, and selection restoration after refresh.
+  `gui_workspace_tabs.py` owns workspace page selection, paint guards,
+  deferred terminal startup, and tab context menus.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
 

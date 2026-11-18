@@ -100,6 +100,8 @@ main window stays a composition layer rather than a monolith:
   import previews, connection launches and file and transfer queue actions.
 - `gui_session_tabs.py` handles terminal splitting, tab navigation,
   duplication and recent-session recovery.
+- `gui_workspace_tabs.py` handles workspace page selection, terminal paint
+  guards, deferred pane startup, and tab context menus.
 - `gui_layouts.py` owns saved layout actions, launch planning, splitter
   restoration and resize persistence. It uses the main window to open tabs
   and start terminal panes.

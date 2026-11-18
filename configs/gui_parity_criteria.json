@@ -1287,9 +1287,11 @@
               "\"mobaxterm\": ("
             ],
             "src/remote_ops_workspace/gui.py": [
-              "gui_design_tree_root_copy",
               "profile_tree_label",
               "show_moba_profile_tree"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
+              "gui_design_tree_root_copy"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_tree_rows"
@@ -1311,7 +1313,7 @@
               "chrome.profile_target_x",
               "chrome.selected_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "mobaSessionTreeProfileRowHeight",
               "TREE_ROW_STATIC_HEIGHT_ROLE",
               "GENERATED_PROFILE_TREE_ICON_PRESETS"
@@ -1729,7 +1731,7 @@
               "sftp-file-row-icons",
               "expected_moba_sftp_file_row_icons"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "generated-pixmap"
             ],
             "src/remote_ops_workspace/gui_connected.py": [
@@ -4012,8 +4014,10 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "secureCrtSessionFilterRouteKey",
-              "SECURECRT_FILTER_ROUTE_MATCHED_ROLE",
               "filter_profile_tree"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
+              "SECURECRT_FILTER_ROUTE_MATCHED_ROLE"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_securecrt_session_manager_filter_route",
@@ -4041,8 +4045,10 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "secureCrtSftpTabRouteKey",
-              "SECURECRT_SFTP_ROUTE_TAB_ROLE",
               "secureCrtSftpTabRouteTransferState"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
+              "SECURECRT_SFTP_ROUTE_TAB_ROLE"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_securecrt_sftp_tab_route",
@@ -4126,7 +4132,7 @@
               "edge-prod (SSH2)",
               "files-prod (SFTP)"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "profile_group_label",
               "profile_tree_tooltip",
               "Session Manager entry"
@@ -4158,7 +4164,7 @@
               "GUI_DESIGN_TREE_ROW_ICONS",
               "GuiDesignTreeRowIcon"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "apply_profile_tree_icon",
               "profile_tree_generated_icon",
               "TREE_ICON_RENDER_ROLE"
@@ -5910,7 +5916,7 @@
               "prod-cluster",
               "deploy-check"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "Vault /",
               "Vault host",
               "profile_tree_tooltip"
@@ -5930,7 +5936,7 @@
               "prod-cluster",
               "deploy-check"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "GENERATED_PROFILE_TREE_ICON_PRESETS",
               "profile_tree_generated_icon",
               "generated-pixmap"
@@ -6322,7 +6328,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "termiusHostRouteKey",
-              "termiusHostRouteActiveTab",
+              "termiusHostRouteActiveTab"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "TERMIUS_HOST_ROUTE_SELECTED_ROLE"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -7755,7 +7763,7 @@
               "lab-desktop",
               "linux-console"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "Group:",
               "Connection profile",
               "profile_tree_tooltip"
@@ -7775,7 +7783,7 @@
               "lab-desktop",
               "linux-console"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "GENERATED_PROFILE_TREE_ICON_PRESETS",
               "profile_tree_generated_icon",
               "generated-pixmap"
@@ -9557,9 +9565,11 @@
               "nested group item"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "Container:",
-              "Connection tree node",
               "profile_tree_label"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
+              "Container:",
+              "Connection tree node"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_tree_rows"
@@ -9575,7 +9585,7 @@
               "Connections.xml",
               "edge-prod [SSH]"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "GENERATED_PROFILE_TREE_ICON_PRESETS",
               "profile_tree_generated_icon",
               "generated-pixmap"
@@ -9928,7 +9938,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "mRemoteNgDocumentFilterRouteKey",
-              "filter_input.textChanged.connect",
+              "filter_input.textChanged.connect"
+            ],
+            "src/remote_ops_workspace/gui_profile_tree.py": [
               "MREMOTENG_FILTER_ROUTE_KEY_ROLE"
             ],
             "scripts/render_gui_design_previews.py": [

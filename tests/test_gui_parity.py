@@ -1079,7 +1079,7 @@ def test_mobaxterm_rail_uses_role_based_generated_icons() -> None:
 
 def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -1092,7 +1092,7 @@ def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
     assert "draw_moba_monitor_icon" in renderer_source
     assert "apply_sftp_file_row_icon" in connected_source
     assert "SFTP_ROW_ICON_RENDER_ROLE" in connected_source
-    assert "generated-pixmap" in gui_source
+    assert "generated-pixmap" in tree_source
     assert "EXPECTED_MOBA_SFTP_FILE_ROW_ICONS" in live_checker_source
     assert "expected_moba_sftp_file_row_icons" in live_checker_source
     assert "sftp-file-row-icons" in live_checker_source
@@ -1933,6 +1933,7 @@ def test_gui_parity_tracks_product_specific_session_trees() -> None:
 
 def test_live_and_static_renderers_share_session_tree_copy() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -1944,14 +1945,14 @@ def test_live_and_static_renderers_share_session_tree_copy() -> None:
     assert "GUI_DESIGN_TREE_ROW_ICONS" in design_source
     assert "GuiMobaSessionTreeChrome" in design_source
     assert "GUI_DESIGN_MOBA_SESSION_TREE_CHROME" in design_source
-    assert "profile_group_label" in gui_source
-    assert "profile_tree_tooltip" in gui_source
-    assert "apply_profile_tree_icon" in gui_source
-    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in gui_source
+    assert "profile_group_label" in tree_source
+    assert "profile_tree_tooltip" in tree_source
+    assert "apply_profile_tree_icon" in tree_source
+    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in tree_source
     for preset_id in ("mobaxterm", "securecrt", "termius", "remmina", "mremoteng"):
         assert f'"{preset_id}"' in gui_source
-    assert "mobaSessionTreeProfileRowHeight" in gui_source
-    assert "TREE_ROW_STATIC_HEIGHT_ROLE" in gui_source
+    assert "mobaSessionTreeProfileRowHeight" in tree_source
+    assert "TREE_ROW_STATIC_HEIGHT_ROLE" in tree_source
     assert "gui_design_tree_rows" in renderer_source
     assert "gui_design_tree_row_icon_key" in renderer_source
     assert "gui_design_moba_session_tree_chrome" in renderer_source
@@ -1966,7 +1967,7 @@ def test_static_renderer_tracks_product_specific_sidebar_glyphs() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
     expected = {
@@ -1984,8 +1985,8 @@ def test_static_renderer_tracks_product_specific_sidebar_glyphs() -> None:
     assert "gui_design_tree_row_icon_key" in renderer_source
     assert "ssh2" in renderer_source
     assert "command" in renderer_source
-    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in gui_source
-    assert "profile_tree_generated_icon" in gui_source
+    assert "GENERATED_PROFILE_TREE_ICON_PRESETS" in tree_source
+    assert "profile_tree_generated_icon" in tree_source
     assert "EXPECTED_PRODUCT_TREE_ICON_ROWS" in live_checker_source
     assert "check_product_tree_icon_metadata" in live_checker_source
     assert "termius-tree-icons" in live_checker_source
@@ -2054,6 +2055,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     visual_metrics_source = Path("configs/gui_visual_metrics.json").read_text(encoding="utf-8")
@@ -2214,7 +2216,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mRemoteNgDocumentFilterRouteKey" in gui_source
     assert "mRemoteNgInheritanceRouteKey" in gui_source
     assert "mRemoteNgInheritanceRouteInheritedValue" in gui_source
-    assert "MREMOTENG_FILTER_ROUTE_KEY_ROLE" in gui_source
+    assert "MREMOTENG_FILTER_ROUTE_KEY_ROLE" in tree_source
     assert "mremoteng_document_control_icon" in gui_source
     assert "build_mremoteng_property_grid_evidence" in gui_source
     assert "mRemoteNgPropertyRowKey" in gui_source
@@ -2385,6 +2387,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     visual_metrics_source = Path("configs/gui_visual_metrics.json").read_text(encoding="utf-8")
@@ -2599,9 +2602,9 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "secureCrtSessionRouteActive" in gui_source
     assert "secureCrtSessionRouteActiveTab" in gui_source
     assert "secureCrtSessionFilterRouteKey" in gui_source
-    assert "SECURECRT_FILTER_ROUTE_MATCHED_ROLE" in gui_source
+    assert "SECURECRT_FILTER_ROUTE_MATCHED_ROLE" in tree_source
     assert "secureCrtSftpTabRouteKey" in gui_source
-    assert "SECURECRT_SFTP_ROUTE_TAB_ROLE" in gui_source
+    assert "SECURECRT_SFTP_ROUTE_TAB_ROLE" in tree_source
     assert "secureCrtSftpTabRouteTransferState" in gui_source
     assert "secureCrtSftpBrowserRouteKey" in gui_source
     assert "secureCrtSftpBrowserPath" in gui_source
@@ -2640,7 +2643,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "apply_termius_files_sync_route_properties" in gui_source
     assert "handle_termius_files_sync" in gui_source
     assert "route.live_triggered_property" in gui_source
-    assert "TERMIUS_HOST_ROUTE_SELECTED_ROLE" in gui_source
+    assert "TERMIUS_HOST_ROUTE_SELECTED_ROLE" in tree_source
     assert "secureCrtCommandWindowKey" in gui_source
     assert "secureCrtSessionManagerActionKey" in gui_source
     assert "draw_securecrt_command_window" in renderer_source

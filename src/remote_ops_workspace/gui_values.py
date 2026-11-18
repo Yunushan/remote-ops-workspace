@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import html
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
+
+if TYPE_CHECKING:
+    from PyQt6.QtWidgets import QStyle, QWidget
 
 _GuiValue = TypeVar("_GuiValue")
 
@@ -17,3 +20,7 @@ def _required_gui_value(value: _GuiValue | None, label: str) -> _GuiValue:
     if value is None:
         raise RuntimeError(f"required GUI value is unavailable: {label}")
     return value
+
+
+def _widget_style(widget: QWidget) -> QStyle:
+    return _required_gui_value(widget.style(), f"style for {type(widget).__name__}")

@@ -270,8 +270,11 @@ def test_gui_state_transitions_preserve_stable_identity_contracts() -> None:
         "self.current_design_is_moba() and isinstance(widget, self._connected_session_panel_type)"
         not in tab_source
     )
-    assert "if current is not None and not self.profile_tree_item_is_visible(current):" in source
-    assert "self.profile_list.setCurrentItem(None)" in source
+    tree_source = Path(
+        Path(__file__).resolve().parents[1] / "src" / "remote_ops_workspace" / "gui_profile_tree.py"
+    ).read_text(encoding="utf-8")
+    assert "if current is not None and not self.profile_tree_item_is_visible(current):" in tree_source
+    assert "self.profile_list.setCurrentItem(None)" in tree_source
     assert "and plan.source == f\"profile:{profile.name}\"" in tab_source
     assert "and self.moba_connected_profile_supported(profile)" in tab_source
     layout_source = (

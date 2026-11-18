@@ -92,9 +92,11 @@ until they have a caller path equivalent to the protocol-launch path above.
 The PyQt6 desktop shell is split across a family of `gui_*` modules so that the
 main window stays a composition layer rather than a monolith:
 
-- `gui.py` builds the `MainWindow` shell, profile tree, toolbars and activity
-  log, and wires signals to their handlers.
-- `gui_profile_actions.py` handles profile selection, context menus, edits,
+- `gui.py` builds the `MainWindow` shell, toolbars and activity log, and
+  wires signals to their handlers.
+- `gui_profile_tree.py` renders saved profiles and groups, applies preset
+  row metadata and icons, and maintains filtering and visible selection.
+- `gui_profile_actions.py` handles profile context menus, edits,
   import previews, connection launches and file and transfer queue actions.
 - `gui_session_tabs.py` handles terminal splitting, tab navigation,
   duplication and recent-session recovery.

@@ -150,6 +150,8 @@ Rules:
   `gui_profile_actions.py` owns profile context actions, editing, import
   previews, connection launch and file and queue dispatch. The window
   supplies the dialogs and opens the requested terminal tabs.
+  `gui_profile_tree.py` owns profile grouping, preset labels and row metadata,
+  filters, and selection restoration after refresh.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
 

@@ -14,8 +14,6 @@ from .profile_importers import import_profiles
 from .terminal import terminal_plan_for_profile, terminal_plan_for_sftp_browser
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     from PyQt6.QtCore import QPoint
     from PyQt6.QtWidgets import QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem, QWidget
 
@@ -39,6 +37,8 @@ class ProfileActions:
 
         def show_message(self, icon: QMessageBox.Icon, title: object, message: object) -> QMessageBox.StandardButton: ...
         def confirm_action(self, title: str, message: str) -> bool: ...
+        def selected_profile_name(self) -> str | None: ...
+        def select_profile(self, name: str) -> None: ...
         def refresh_profiles(self) -> None: ...
         def current_design_id(self) -> str: ...
         def set_toolbar_widget_enabled(self, widget: QToolButton, enabled: bool) -> None: ...
@@ -61,12 +61,6 @@ class ProfileActions:
             self, plan: TerminalPanePlan, *, profile: Profile,
             tab_title: str | None = None, tab_status: str | None = None,
         ) -> None: ...
-
-    def selected_profile_name(self) -> str | None:
-        item = self.profile_list.currentItem()
-        if not item or not self.profile_tree_item_is_visible(item):
-            return None
-        return item.data(0, Qt.ItemDataRole.UserRole)
 
     def build_profile_context_menu(
         self,
@@ -133,15 +127,6 @@ class ProfileActions:
         )
         menu.exec(viewport.mapToGlobal(position))
         menu.deleteLater()
-
-    @staticmethod
-    def profile_tree_item_is_visible(item: QTreeWidgetItem) -> bool:
-        current: QTreeWidgetItem | None = item
-        while current is not None:
-            if current.isHidden():
-                return False
-            current = current.parent()
-        return True
 
     def activate_profile_item(self, item: QTreeWidgetItem, _column: int = 0) -> None:
         profile_name = item.data(0, Qt.ItemDataRole.UserRole)
@@ -308,39 +293,6 @@ class ProfileActions:
             sorted(profiles, key=lambda item: (item.group, item.name)),
             surface="profile-editor",
         )
-
-    def select_profile(self, name: str) -> None:
-        for item in self.iter_profile_tree_items():
-            if (
-                item.data(0, Qt.ItemDataRole.UserRole) == name
-                and self.profile_tree_item_is_visible(item)
-            ):
-                self.profile_list.setCurrentItem(item)
-                parent = item.parent()
-                while parent is not None:
-                    parent.setExpanded(True)
-                    parent = parent.parent()
-                return
-
-    def select_profile_tree_label(self, label: str) -> bool:
-        for item in self.iter_profile_tree_items():
-            if label in item.text(0) and self.profile_tree_item_is_visible(item):
-                self.profile_list.setCurrentItem(item)
-                parent = item.parent()
-                while parent is not None:
-                    parent.setExpanded(True)
-                    parent = parent.parent()
-                return True
-        return False
-
-    def iter_profile_tree_items(self) -> Iterator[QTreeWidgetItem]:
-        def walk(item):
-            yield item
-            for child_index in range(item.childCount()):
-                yield from walk(item.child(child_index))
-
-        for index in range(self.profile_list.topLevelItemCount()):
-            yield from walk(self.profile_list.topLevelItem(index))
 
     def connect_selected(self, dry_run: bool) -> None:
         name = self.selected_profile_name()

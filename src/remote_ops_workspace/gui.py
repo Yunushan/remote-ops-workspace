@@ -263,6 +263,7 @@ def create_main_window(
             QWidget,
         )
 
+        from .gui_ssh_connection import SharedSshConnectionState
         from .gui_terminal import TerminalPane
     except Exception as exc:  # pragma: no cover - optional dependency
         raise GuiDependencyError("PyQt6 is not installed. Install with: pip install -e '.[desktop]'") from exc
@@ -11313,6 +11314,11 @@ def create_main_window(
                 set_authentication_handler(
                     self.refresh_moba_background_after_terminal_auth
                 )
+            ssh_connection = getattr(pane, "ssh_connection", None)
+            if ssh_connection is not None:
+                ssh_connection.changed.connect(
+                    lambda state, terminal_pane=pane: self.refresh_moba_shared_ssh_state(terminal_pane, state),
+                )
             self.apply_terminal_mouse_paste_policy_for_design(
                 pane,
                 self.current_design_id(),
@@ -11345,6 +11351,16 @@ def create_main_window(
             if callable(error_string_getter) and error_string_getter():
                 self.update_session_status()
             return pane
+
+        def refresh_moba_shared_ssh_state(
+            self, pane: TerminalPane, state: SharedSshConnectionState,
+        ) -> None:
+            dock = self.moba_connected_dock
+            if dock is None or dock.state.ssh_connection_key != pane.ssh_connection_key:
+                return
+            dock.sync_shared_ssh_connection()
+            if state.phase == "connected":
+                dock.schedule_background_state_activation()
 
         def refresh_moba_background_after_terminal_start(self, pane: TerminalPane) -> None:
             """Give an interactive SSH prompt time to authenticate before reuse."""

@@ -100,6 +100,7 @@ from .gui_designs import (
     gui_design_moba_terminal_transcript_row_geometry,
 )
 from .gui_processes import _background_process
+from .gui_ssh_connection import SharedSshConnectionState
 from .gui_terminal import TerminalPane
 from .gui_values import _required_gui_value, _safe_tooltip_html
 from .launcher import LauncherError, pinned_smartcard_uses_agent
@@ -146,6 +147,8 @@ if TYPE_CHECKING:
         def initialize_background_state(self) -> None: ...
         @abstractmethod
         def schedule_background_state_activation(self, delay_ms: int = 0) -> None: ...
+        @abstractmethod
+        def sync_shared_ssh_connection(self) -> SharedSshConnectionState | None: ...
         @abstractmethod
         def shutdown_runtime(self) -> None: ...
 
@@ -904,23 +907,26 @@ def create_moba_connected_classes(
 
             return tuple(entry for entry in entries if entry.name.strip() not in {".", ".."})
 
-        def shared_ssh_control_path(self) -> str:
-            """Find an available OpenSSH control socket for this session."""
-
+        def _shared_ssh_panes(self) -> list[TerminalPane]:
             main_window = self.main_window()
             key = self.state.ssh_connection_key
             if not key or main_window is None or not hasattr(main_window, "tabs"):
-                return ""
+                return []
+            current = main_window.tabs.currentWidget()
+            visible = main_window.terminal_panes_in(current) if current is not None else []
             pane_provider = getattr(main_window, "all_terminal_panes", None)
-            if callable(pane_provider):
-                panes = pane_provider()
-            else:
-                current = main_window.tabs.currentWidget()
-                if current is None:
-                    return ""
-                panes = main_window.terminal_panes_in(current)
-            for pane in panes:
-                if getattr(pane, "ssh_connection_key", "") != key or not pane.is_running():
+            other_panes = [pane for pane in pane_provider() if pane not in visible] if callable(pane_provider) else []
+            panes = [*visible, *other_panes]
+            return [pane for pane in panes if getattr(pane, "ssh_connection_key", "") == key]
+
+        def shared_ssh_control_path(self) -> str:
+            """Find an available OpenSSH control socket for this session."""
+
+            for pane in self._shared_ssh_panes():
+                if not pane.is_running():
+                    continue
+                connection = getattr(pane, "ssh_connection", None)
+                if connection is not None and connection.state.phase != "connected":
                     continue
                 control_path = str(getattr(pane, "ssh_control_path", "") or "")
                 if not control_path:
@@ -933,6 +939,37 @@ def create_moba_connected_classes(
                 if stat.S_ISSOCK(mode):
                     return control_path
             return ""
+
+        def sync_shared_ssh_connection(self) -> SharedSshConnectionState | None:
+            states = [
+                connection.state
+                for pane in self._shared_ssh_panes()
+                if (connection := getattr(pane, "ssh_connection", None)) is not None
+            ]
+            selected = next((state for state in states if state.phase == "connected"), None)
+            if selected is None and states:
+                selected = next((state for state in states if state.phase not in {"idle", "closed"}), states[0])
+            snapshot = selected.properties() if selected is not None else None
+            description = selected.description() if selected is not None else ""
+            self.setProperty("sshConnectionDescription", description)
+            sftp_status = getattr(self, "sftp_status_badge", None)
+            monitoring = self.monitoring_control_widgets.get("remote-monitoring")
+            for widget in (self, self.browser, sftp_status, self.remote_monitoring_panel, monitoring):
+                if widget is not None:
+                    widget.setProperty("sshConnectionState", snapshot)
+            for badge, message_key in (
+                (sftp_status, "mobaSftpStatusBadgeMessage"),
+                (monitoring, "mobaMonitoringStatusBadgeMessage"),
+            ):
+                if badge is not None:
+                    message = str(badge.property(message_key) or "")
+                    badge.setToolTip(self._background_ssh_tooltip(message))
+                    badge.setAccessibleDescription("\n".join(filter(None, (message, description))))
+            return selected
+
+        def _background_ssh_tooltip(self, message: str) -> str:
+            description = str(self.property("sshConnectionDescription") or "")
+            return _safe_tooltip_html("\n".join(filter(None, (message, description, self.background_ssh_auth_detail()))))
 
         def background_ssh_auth_capability(self, profile: Profile | None) -> tuple[bool, str]:
             """Return whether an automatic, non-interactive SSH child is defensible."""
@@ -1311,7 +1348,11 @@ def create_moba_connected_classes(
             if self.runtime_shutting_down:
                 return
             profile = self.profile_for_sftp_action()
-            available, detail = self.background_ssh_auth_capability(profile)
+            shared = self.sync_shared_ssh_connection()
+            if shared is not None and shared.phase in {"idle", "connecting", "authenticating"}:
+                available, detail = False, "waiting for the managed terminal SSH connection"
+            else:
+                available, detail = self.background_ssh_auth_capability(profile)
             auth_gate_forced_monitoring_off = bool(
                 self.property("mobaBackgroundSshAuthGateForcedMonitoringOff")
             )
@@ -1376,16 +1417,12 @@ def create_moba_connected_classes(
 
         def set_sftp_runtime_status(self, message: str, *, state: str) -> None:
             badge = getattr(self, "sftp_status_badge", None)
-            auth_detail = self.background_ssh_auth_detail()
-            tooltip = (
-                f"{message}\n"
-                f"{auth_detail}"
-            )
+            tooltip = self._background_ssh_tooltip(message)
             if badge is not None:
                 badge.setProperty("state", state)
                 badge.setProperty("mobaSftpStatusBadgeState", state)
                 badge.setProperty("mobaSftpStatusBadgeMessage", message)
-                badge.setToolTip(_safe_tooltip_html(tooltip))
+                badge.setToolTip(tooltip)
                 badge.setAccessibleDescription(message)
                 status_icon = {
                     "pending": QStyle.StandardPixmap.SP_BrowserReload,
@@ -1413,7 +1450,7 @@ def create_moba_connected_classes(
                     widget.setProperty("mobaSftpRuntimeMessage", message)
             table = getattr(self, "file_table", None)
             if table is not None:
-                table.setToolTip(_safe_tooltip_html(tooltip))
+                table.setToolTip(tooltip)
 
         def build_text_editor_toolbar(self) -> QFrame:
             toolbar = QFrame()
@@ -2643,15 +2680,10 @@ def create_moba_connected_classes(
                 label.update()
             control = self.monitoring_control_widgets.get("remote-monitoring")
             if control is not None:
-                auth_detail = self.background_ssh_auth_detail()
-                tooltip = (
-                    f"{message}\n"
-                    f"{auth_detail}"
-                )
                 control.setProperty("state", state)
                 control.setProperty("mobaMonitoringStatusBadgeState", state)
                 control.setProperty("mobaMonitoringStatusBadgeMessage", message)
-                control.setToolTip(_safe_tooltip_html(tooltip))
+                control.setToolTip(self._background_ssh_tooltip(message))
                 control.setAccessibleDescription(message)
                 status_icon = {
                     "starting": QStyle.StandardPixmap.SP_BrowserReload,

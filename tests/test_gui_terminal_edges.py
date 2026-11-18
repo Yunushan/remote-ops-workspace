@@ -104,6 +104,70 @@ def _new_pane(window, *, command: list[str] | None = None):
     )
 
 
+def test_managed_ssh_pane_tracks_start_stop_exit_and_launch_failure(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import QProcess
+
+    from remote_ops_workspace import gui_terminal
+    from remote_ops_workspace.gui_lifecycle import ProcessStopResult
+
+    _app, window = gui_window
+    profile = Profile(name="managed", protocol="ssh", host="managed.example.invalid")
+    monkeypatch.setattr(gui_terminal, "ssh_control_path_for_profile", lambda _profile: "/managed/socket")
+    monkeypatch.setattr(
+        gui_terminal, "ssh_command_with_control_path",
+        lambda command, _path, **_kwargs: [*command, "-managed"],
+    )
+    pane = window.new_terminal_pane(
+        TerminalPanePlan("managed", ["ssh", "managed.example.invalid"], "test"),
+        profile=profile,
+        autostart=False,
+    )
+    session = pane.ssh_connection
+    assert session is not None
+    assert pane.status.property("sshConnectionState")["phase"] == "idle"
+    assert "Ready to connect" in pane.status.toolTip()
+    process = _FakeProcess()
+    pane.process = process
+    pane.start()
+    pane.on_started()
+    assert session.state.phase == "authenticating"
+    assert pane.request_stop(restart=True)
+    assert session.state.disconnect_reason == "restart-requested"
+    pane._restart_after_stop = False
+    process.process_state = QProcess.ProcessState.NotRunning
+    pane.on_finished(-15, QProcess.ExitStatus.CrashExit)
+    assert pane.output.property("sshConnectionState")["exit_code"] == -15
+    assert session.state.phase == "closed"
+
+    pane.start()
+    process.process_state = QProcess.ProcessState.NotRunning
+    process.errorString = lambda: "controlled missing executable"
+    pane.on_error(QProcess.ProcessError.FailedToStart)
+    assert session.state.disconnect_reason == "launch-failed"
+    assert session.state.exit_code is None
+
+    pane.start()
+    monkeypatch.setattr(
+        gui_terminal, "stop_process",
+        lambda *_args, **_kwargs: ProcessStopResult(
+            was_running=True, terminate_requested=True, kill_requested=False, finished=True,
+        ),
+    )
+    pane.stop()
+    assert session.state.disconnect_reason == "operator-stop"
+    pane.prepare_for_close()
+    assert session.state.disconnect_reason == "operator-stop"
+    process.process_state = QProcess.ProcessState.NotRunning
+
+    sftp = window.new_terminal_pane(
+        TerminalPanePlan("managed SFTP", ["sftp", "managed.example.invalid"], "test"),
+        profile=profile,
+        autostart=False,
+    )
+    assert sftp.ssh_connection is not None
+    assert sftp.ssh_connection._check.program() == "ssh"
+
+
 def test_terminal_start_restart_and_nonblocking_stop_edges(
     gui_window,
     monkeypatch,

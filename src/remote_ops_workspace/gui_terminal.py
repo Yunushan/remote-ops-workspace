@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import codecs
+import ntpath
 import re
 import time
 from collections.abc import Callable
@@ -50,6 +51,7 @@ from PyQt6.QtWidgets import (
 from .enterprise_policy import assert_profile_launch_allowed
 from .gui_lifecycle import ProcessStopPolicy, ProcessStopResult, stop_process
 from .gui_processes import _terminal_process_backend
+from .gui_ssh_connection import SharedSshConnection, SharedSshConnectionState
 from .gui_values import _required_gui_value, _safe_tooltip_html
 from .moba_macros import (
     MOBA_MACRO_TERMINAL_CAPTURE_SCHEMA,
@@ -651,6 +653,13 @@ class TerminalPane(QWidget):
         self.process.started.connect(self.on_started)
         self.process.errorOccurred.connect(self.on_error)
         self.process.finished.connect(self.on_finished)
+        self.ssh_connection: SharedSshConnection | None = None
+        if self.ssh_control_path:
+            program = self.plan.command[0]
+            ssh = program if ntpath.basename(program).lower() in {"ssh", "ssh.exe"} else "ssh"
+            self.ssh_connection = SharedSshConnection(self.ssh_control_path, ssh, self)
+            self.ssh_connection.changed.connect(self.publish_ssh_connection)
+            self.publish_ssh_connection(self.ssh_connection.state)
         self.set_status("ready", "ready")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
@@ -1504,6 +1513,8 @@ class TerminalPane(QWidget):
             self.process.setProcessEnvironment(environment)
         self.resize_terminal_backend()
         self.flush_terminal_resize()
+        if self.ssh_connection is not None:
+            self.ssh_connection.start_attempt()
         self.process.start()
         self.update_process_actions()
 
@@ -1536,6 +1547,8 @@ class TerminalPane(QWidget):
         self.set_status("stopping", "stopping")
         self.stop_button.setEnabled(False)
         self.append_text("\n[process stopping]\n")
+        if self.ssh_connection is not None:
+            self.ssh_connection.begin_close("restart-requested" if restart else "operator-stop")
         self.process.terminate()
         self._stop_timer.start(active_policy.terminate_timeout_ms)
         return True
@@ -1553,6 +1566,8 @@ class TerminalPane(QWidget):
         self._terminal_scroll_generation += 1
         self._terminal_scroll_timer.stop()
         self.setProperty("terminalClosing", True)
+        if self.ssh_connection is not None:
+            self.ssh_connection.begin_close("tab-closed")
         self.invalidate_macro_session()
         self._stop_timer.stop()
         self.reset_process_output_pipeline()
@@ -1574,6 +1589,8 @@ class TerminalPane(QWidget):
         self.set_status("stopping", "stopping")
         self.stop_button.setEnabled(False)
         self.append_text("\n[process stopping]\n")
+        if self.ssh_connection is not None:
+            self.ssh_connection.begin_close("operator-stop")
         result = stop_process(
             self.process,
             not_running_state=QProcess.ProcessState.NotRunning,
@@ -2869,7 +2886,16 @@ class TerminalPane(QWidget):
             # transcript widget, so restore focus before the user types.
             QTimer.singleShot(0, self.focus_terminal_input)
 
+    def publish_ssh_connection(self, state: SharedSshConnectionState) -> None:
+        properties = state.properties()
+        for widget in (self, self.output, self.status):
+            widget.setProperty("sshConnectionState", properties)
+        self.status.setToolTip(_safe_tooltip_html(state.description()))
+        self.status.setAccessibleDescription(state.description())
+
     def on_started(self) -> None:
+        if self.ssh_connection is not None:
+            self.ssh_connection.process_started()
         self.set_status("running", "running")
         self.update_process_actions()
         QTimer.singleShot(0, self.resize_terminal_backend)
@@ -2886,6 +2912,8 @@ class TerminalPane(QWidget):
     def on_error(self, error) -> None:
         if self.process.state() == QProcess.ProcessState.NotRunning:
             self.mark_process_output_end()
+            if self.ssh_connection is not None and error == QProcess.ProcessError.FailedToStart:
+                self.ssh_connection.finish(None, error.name)
         self.set_status("error", "error")
         detail = str(self.process.errorString()).strip()
         suffix = f": {detail}" if detail and detail != error.name else ""
@@ -2895,6 +2923,8 @@ class TerminalPane(QWidget):
 
     def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
         self._stop_timer.stop()
+        if self.ssh_connection is not None:
+            self.ssh_connection.finish(exit_code, exit_status.name)
         self.invalidate_macro_session()
         self.mark_process_output_end()
         self.refresh_terminal_input_security("")

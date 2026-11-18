@@ -125,6 +125,59 @@ def _set_checked(control, checked: bool) -> None:
     control.blockSignals(False)
 
 
+def test_dock_projects_managed_ssh_state_and_defers_automatic_tools(connected_workspace, monkeypatch) -> None:
+    from remote_ops_workspace.gui_ssh_connection import SharedSshConnectionState
+
+    _app, window, panel, dock, profile = connected_workspace
+    pane = panel.terminal_pane
+    key = ssh_connection_key(profile)
+    assert key == dock.state.ssh_connection_key
+    socket_path = Path("/managed/control")
+    pending = SharedSshConnectionState(phase="authenticating", attempt=2)
+    old = SimpleNamespace(
+        ssh_connection_key=key, ssh_control_path="unused", is_running=lambda: False,
+        ssh_connection=SimpleNamespace(state=SharedSshConnectionState(phase="closed", attempt=1)),
+    )
+    connection = SimpleNamespace(state=pending)
+    real_lstat = Path.lstat
+
+    def lstat(path):
+        return SimpleNamespace(st_mode=stat.S_IFSOCK) if path == socket_path else real_lstat(path)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pane, "ssh_connection_key", key)
+        patch.setattr(pane, "ssh_control_path", str(socket_path))
+        patch.setattr(pane, "ssh_connection", connection)
+        patch.setattr(pane, "is_running", lambda: True)
+        patch.setattr(window, "all_terminal_panes", lambda: [old, pane])
+        patch.setattr(Path, "lstat", lstat)
+        assert dock.shared_ssh_control_path() == ""
+        dock._apply_initial_background_state(start_runtime=False)
+        assert dock.property("mobaBackgroundSshWaitingForTerminalAuth") is True
+        assert dock.sftp_status_badge.property("sshConnectionState") == pending.properties()
+        assert "Waiting for authentication" in dock.sftp_status_badge.toolTip()
+
+        ready = replace(pending, phase="connected")
+        connection.state = ready
+        scheduled = []
+        patch.setattr(dock, "schedule_background_state_activation", lambda: scheduled.append(True))
+        window.refresh_moba_shared_ssh_state(SimpleNamespace(ssh_connection_key="different"), ready)
+        assert scheduled == []
+        window.refresh_moba_shared_ssh_state(pane, ready)
+        assert scheduled == [True]
+        assert dock.shared_ssh_control_path() == str(socket_path)
+        status = dock.monitoring_control_widgets["remote-monitoring"]
+        assert status.property("sshConnectionState") == ready.properties()
+        assert "Authenticated" in status.toolTip()
+
+        connection.state = replace(ready, phase="closing", disconnect_reason="operator-stop")
+        window.refresh_moba_shared_ssh_state(pane, connection.state)
+        assert scheduled == [True]
+        assert dock.shared_ssh_control_path() == ""
+        connection.state = replace(connection.state, phase="closed")
+        assert dock.sync_shared_ssh_connection() == connection.state
+
+
 def test_connected_dock_refuses_an_edited_ssh_identity(connected_workspace, monkeypatch) -> None:
     _app, window, _panel, dock, profile = connected_workspace
     relabeled = replace(profile, description="Updated description")

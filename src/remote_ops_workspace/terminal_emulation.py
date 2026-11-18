@@ -13,6 +13,7 @@ and selecting output never exposes escape sequences.
 from bisect import bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from unicodedata import category, east_asian_width
 
 TERMINAL_EMULATOR_BACKEND = "ansi-transcript-v1"
 
@@ -66,6 +67,24 @@ class AnsiTextStyle:
 
 
 ANSI_DEFAULT_STYLE = AnsiTextStyle()
+
+# A wide glyph owns its following empty cell. Its combining marks stay in
+# the leading cell so cell edits never have to count Unicode code points.
+WIDE_CONTINUATION = ""
+MAX_CELL_CODEPOINTS = 32
+
+
+def _display_cells(cells: list[str], styles: list[AnsiTextStyle]) -> tuple[str, list[AnsiTextStyle]]:
+    text = "".join(cells)
+    if text.isascii():
+        return text, styles
+    return text, [style for cell, style in zip(cells, styles, strict=True) for _ in cell]
+
+
+def _blank_wide_boundary(cells: list[str], column: int) -> None:
+    """Erase both halves if an edit cuts through a wide glyph."""
+    if 0 < column < len(cells) and cells[column] == WIDE_CONTINUATION:
+        cells[column - 1 : column + 1] = [" ", " "]
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +169,7 @@ class AnsiTerminalTranscript:
     )
     _text_cache: str | None = field(default=None, init=False, repr=False)
     _full_redraw_hint: bool = field(default=False, init=False, repr=False)
+    _alternate_margin_written: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.max_scrollback_lines < 1:
@@ -171,6 +191,7 @@ class AnsiTerminalTranscript:
         self._alternate_line_styles.clear()
         self._alternate_row = 0
         self._alternate_column = 0
+        self._alternate_margin_written = False
         self._alternate_top_margin = 0
         self._alternate_bottom_margin = 0
         self._alternate_saved_cursor = None
@@ -253,6 +274,18 @@ class AnsiTerminalTranscript:
         """Return the zero-based cursor column in the active screen buffer."""
 
         return self._cursor_column()
+
+    def cursor_text_column(self) -> tuple[int, int]:
+        """Translate the grid cursor to a text offset and a cell displacement."""
+        if self._alternate_screen:
+            self._ensure_alternate_screen()
+            cells = self._alternate_lines[self._alternate_row]
+        else:
+            cells, _ = self._normal_cursor_line()
+        column = self._cursor_column()
+        if column < len(cells) and cells[column] == WIDE_CONTINUATION:
+            return sum(map(len, cells[: column - 1])), 1
+        return sum(map(len, cells[:column])), max(0, column - len(cells))
 
     def take_pending_responses(self) -> tuple[bytes, ...]:
         """Return and clear terminal-query responses requested by the child."""
@@ -514,14 +547,14 @@ class AnsiTerminalTranscript:
             self._render_rows_cache = tuple(
                 [
                     *(
-                        ("".join(line), styles)
+                        _display_cells(line, styles)
                         for line, styles in zip(
                             self._lines,
                             self._line_styles,
                             strict=True,
                         )
                     ),
-                    ("".join(self._line), self._styles),
+                    _display_cells(self._line, self._styles),
                 ]
             )
         return self._render_rows_cache
@@ -544,10 +577,10 @@ class AnsiTerminalTranscript:
             return self._alternate_render_rows()
         return [
             *(
-                ("".join(line), styles)
+                _display_cells(line, styles)
                 for line, styles in zip(self._lines, self._line_styles, strict=True)
             ),
-            ("".join(self._line), self._styles),
+            _display_cells(self._line, self._styles),
         ]
 
     def _alternate_render_rows(self) -> list[tuple[str, list[AnsiTextStyle]]]:
@@ -560,7 +593,7 @@ class AnsiTerminalTranscript:
             if line or styles:
                 last = index
         return [
-            ("".join(line), styles)
+            _display_cells(line, styles)
             for line, styles in zip(
                 self._alternate_lines[: last + 1],
                 self._alternate_line_styles[: last + 1],
@@ -571,7 +604,7 @@ class AnsiTerminalTranscript:
     def _alternate_all_render_rows(self) -> list[tuple[str, list[AnsiTextStyle]]]:
         self._ensure_alternate_screen()
         return [
-            ("".join(line), styles)
+            _display_cells(line, styles)
             for line, styles in zip(
                 self._alternate_lines,
                 self._alternate_line_styles,
@@ -619,6 +652,7 @@ class AnsiTerminalTranscript:
                     )
                 elif self._alternate_saved_cursor is not None:
                     self._alternate_row, self._alternate_column = self._alternate_saved_cursor
+                    self._alternate_margin_written = False
             self._escape = None
             return
         if sequence == "c":
@@ -645,6 +679,7 @@ class AnsiTerminalTranscript:
         # repaint makes fast terminal programs unnecessarily sluggish.
         if command not in {"m", "n", "c"}:
             self._full_redraw_hint = True
+            self._alternate_margin_written = False
         if private and command in {"h", "l"} and any(
             mode in {47, 1047, 1049} for mode in values
         ):
@@ -702,9 +737,11 @@ class AnsiTerminalTranscript:
             line, styles = self._normal_cursor_line()
             if first in {0, 1}:  # end/beginning erase both preserve the cursor side.
                 if first == 0:
+                    _blank_wide_boundary(line, self._column)
                     del line[self._column :]
                     del styles[self._column :]
                 else:
+                    _blank_wide_boundary(line, self._column + 1)
                     for index in range(min(self._column + 1, len(line))):
                         line[index] = " "
                         styles[index] = self._style
@@ -716,6 +753,7 @@ class AnsiTerminalTranscript:
             row = self._normal_cursor_row
             if first == 0:
                 line, styles = self._normal_cursor_line()
+                _blank_wide_boundary(line, self._column)
                 del line[self._column :]
                 del styles[self._column :]
                 for index in range(row + 1, len(self._lines)):
@@ -726,6 +764,7 @@ class AnsiTerminalTranscript:
                     self._lines[index].clear()
                     self._line_styles[index].clear()
                 line, styles = self._normal_cursor_line()
+                _blank_wide_boundary(line, self._column + 1)
                 for index in range(min(self._column + 1, len(line))):
                     line[index] = " "
                     styles[index] = self._style
@@ -803,9 +842,11 @@ class AnsiTerminalTranscript:
             styles = self._alternate_line_styles[self._alternate_row]
             column = self._alternate_column
             if mode == 0:
+                _blank_wide_boundary(line, column)
                 del line[column:]
                 del styles[column:]
             elif mode == 1:
+                _blank_wide_boundary(line, column + 1)
                 for index in range(min(column + 1, len(line))):
                     line[index] = " "
                     styles[index] = self._style
@@ -821,6 +862,7 @@ class AnsiTerminalTranscript:
             elif mode == 0:
                 line = self._alternate_lines[self._alternate_row]
                 styles = self._alternate_line_styles[self._alternate_row]
+                _blank_wide_boundary(line, self._alternate_column)
                 del line[self._alternate_column:]
                 del styles[self._alternate_column:]
                 for row in range(self._alternate_row + 1, self._screen_rows):
@@ -830,6 +872,7 @@ class AnsiTerminalTranscript:
                     self._blank_alternate_row(row)
                 line = self._alternate_lines[self._alternate_row]
                 styles = self._alternate_line_styles[self._alternate_row]
+                _blank_wide_boundary(line, self._alternate_column + 1)
                 for index in range(min(self._alternate_column + 1, len(line))):
                     line[index] = " "
                     styles[index] = self._style
@@ -997,6 +1040,7 @@ class AnsiTerminalTranscript:
     def _set_cursor_column(self, value: int) -> None:
         if self._alternate_screen:
             self._alternate_column = max(0, min(self._screen_columns - 1, int(value)))
+            self._alternate_margin_written = False
         else:
             self._column = max(0, int(value))
 
@@ -1027,10 +1071,12 @@ class AnsiTerminalTranscript:
         self._alternate_lines = [[] for _ in range(self._screen_rows)]
         self._alternate_line_styles = [[] for _ in range(self._screen_rows)]
         for row in range(min(len(old_lines), self._screen_rows)):
+            _blank_wide_boundary(old_lines[row], self._screen_columns)
             self._alternate_lines[row] = list(old_lines[row][: self._screen_columns])
             self._alternate_line_styles[row] = old_styles[row][: self._screen_columns]
         self._alternate_row = min(self._alternate_row, self._screen_rows - 1)
         self._alternate_column = min(self._alternate_column, self._screen_columns - 1)
+        self._alternate_margin_written = False
         self._alternate_top_margin = max(
             0,
             min(self._alternate_top_margin, self._screen_rows - 1),
@@ -1101,20 +1147,24 @@ class AnsiTerminalTranscript:
             padding = column - len(line)
             line.extend(" " for _ in range(padding))
             styles.extend(ANSI_DEFAULT_STYLE for _ in range(padding))
+        _blank_wide_boundary(line, column)
         if command == "@":
             line[column:column] = [" "] * count
             styles[column:column] = [self._style] * count
         elif command == "P":
+            _blank_wide_boundary(line, column + count)
             del line[column : column + count]
             del styles[column : column + count]
         else:  # X: erase characters without shifting the remainder.
             end = min(self._screen_columns, column + count)
+            _blank_wide_boundary(line, end)
             if end > len(line):
                 line.extend(" " for _ in range(end - len(line)))
                 styles.extend(ANSI_DEFAULT_STYLE for _ in range(end - len(styles)))
             for index in range(column, end):
                 line[index] = " "
                 styles[index] = self._style
+        _blank_wide_boundary(line, self._screen_columns)
         self._alternate_lines[self._alternate_row] = line[: self._screen_columns]
         self._alternate_line_styles[self._alternate_row] = styles[: self._screen_columns]
 
@@ -1206,6 +1256,7 @@ class AnsiTerminalTranscript:
         if self._alternate_screen:
             self._ensure_alternate_screen()
             self._alternate_column = 0
+            self._alternate_margin_written = False
             bottom = self._alternate_bottom_margin or self._screen_rows - 1
             top = min(self._alternate_top_margin, bottom)
             if self._alternate_row < bottom:
@@ -1239,51 +1290,81 @@ class AnsiTerminalTranscript:
         self._normal_cursor_row = len(self._lines)
 
     def _write(self, char: str) -> None:
+        if not char.isascii() and category(char) in {"Mn", "Me", "Mc"}:
+            self._combine_at_cursor(char)
+            return
+        width = 2 if not char.isascii() and east_asian_width(char) in {"W", "F"} else 1
         if self._alternate_screen:
             self._ensure_alternate_screen()
-            if self._alternate_column >= self._screen_columns:
+            if self._alternate_column + width > self._screen_columns:
                 if self._auto_wrap:
                     self._newline()
                 else:
                     self._alternate_column = self._screen_columns - 1
+                    if width == 2:
+                        char, width = " ", 1
             line = self._alternate_lines[self._alternate_row]
             styles = self._alternate_line_styles[self._alternate_row]
-            if self._alternate_column > len(line):
-                padding = self._alternate_column - len(line)
-                line.extend(" " for _ in range(padding))
-                styles.extend(ANSI_DEFAULT_STYLE for _ in range(padding))
-            if self._insert_mode:
-                line[self._alternate_column : self._alternate_column] = [char]
-                styles[self._alternate_column : self._alternate_column] = [self._style]
-                del line[self._screen_columns :]
-                del styles[self._screen_columns :]
-            elif self._alternate_column == len(line):
-                line.append(char)
-                styles.append(self._style)
-            else:
-                line[self._alternate_column] = char
-                styles[self._alternate_column] = self._style
-            self._alternate_lines[self._alternate_row] = line
+            self._write_cells(line, styles, self._alternate_column, char, width, insert=self._insert_mode)
             if self._auto_wrap:
-                self._alternate_column = min(
-                    self._screen_columns,
-                    self._alternate_column + 1,
-                )
+                self._alternate_column += width
             else:
+                # With autowrap disabled the cursor stays on the last written
+                # cell. A following combining mark still belongs on that cell.
+                self._alternate_margin_written = self._alternate_column + width == self._screen_columns
                 self._alternate_column = min(
                     self._screen_columns - 1,
-                    self._alternate_column + 1,
+                    self._alternate_column + width,
                 )
             return
         line, styles = self._normal_cursor_line()
-        if self._column > len(line):
-            padding = self._column - len(line)
+        self._write_cells(line, styles, self._column, char, width)
+        self._column += width
+
+    def _write_cells(
+        self,
+        line: list[str],
+        styles: list[AnsiTextStyle],
+        column: int,
+        char: str,
+        width: int,
+        *,
+        insert: bool = False,
+    ) -> None:
+        if column > len(line):
+            padding = column - len(line)
             line.extend(" " for _ in range(padding))
             styles.extend(ANSI_DEFAULT_STYLE for _ in range(padding))
-        if self._column == len(line):
+        if width == 1 and column == len(line):
             line.append(char)
             styles.append(self._style)
+            return
+        _blank_wide_boundary(line, column)
+        glyph = [char, WIDE_CONTINUATION] if width == 2 else [char]
+        if insert:
+            line[column:column] = glyph
+            styles[column:column] = [self._style] * width
+            _blank_wide_boundary(line, self._screen_columns)
+            del line[self._screen_columns :]
+            del styles[self._screen_columns :]
         else:
-            line[self._column] = char
-            styles[self._column] = self._style
-        self._column += 1
+            end = column + width
+            _blank_wide_boundary(line, end)
+            line[column:end] = glyph
+            styles[column:end] = [self._style] * width
+
+    def _combine_at_cursor(self, mark: str) -> None:
+        if self._alternate_screen:
+            self._ensure_alternate_screen()
+            line = self._alternate_lines[self._alternate_row]
+            column = self._alternate_column - (0 if self._alternate_margin_written else 1)
+        else:
+            line, _ = self._normal_cursor_line()
+            column = self._column - 1
+        if not 0 <= column < len(line):
+            return
+        if line[column] == WIDE_CONTINUATION:
+            column -= 1
+        if len(line[column]) < MAX_CELL_CODEPOINTS:
+            line[column] += mark
+            self._full_redraw_hint = True

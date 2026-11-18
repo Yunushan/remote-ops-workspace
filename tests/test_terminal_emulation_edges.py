@@ -34,6 +34,78 @@ def test_feed_and_literal_handle_tabs_controls_and_cursor_rewrites() -> None:
     assert transcript.feed_literal("\rB\bC\tD\x00") == "C       D"
 
 
+@pytest.mark.parametrize("screen", ["", "\x1b[?1049h"])
+def test_unicode_cell_width_and_combining_styles(screen: str) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.feed(screen + "\u0301\x1b[31m界e\x1b[32m")
+    assert transcript.cursor_column == 3
+    assert transcript.feed("\u0301Ａ") == "界e\u0301Ａ"
+    assert transcript.cursor_text_column() == (4, 0)
+    fragments = transcript.styled_fragments(end=4, screen=bool(screen))
+    assert [(fragment.text, fragment.style.foreground) for fragment in fragments] == [
+        ("界e\u0301", terminal.ANSI_16_COLOR_PALETTE[1]),
+        ("Ａ", terminal.ANSI_16_COLOR_PALETTE[2]),
+    ]
+    assert transcript.feed("\x1b[2G\x1b[6n") == "界e\u0301Ａ"
+    assert transcript.take_pending_responses() == (b"\x1b[1;2R",)
+    assert transcript.cursor_text_column() == (0, 1)
+    assert transcript.feed("X") == " Xe\u0301Ａ"
+    assert transcript.feed("\x1b[4GZ") == " Xe\u0301Z "
+    assert transcript.feed("\x1b[9G\u0301") == " Xe\u0301Z "
+    assert transcript.cursor_text_column() == (6, 3)
+
+
+def test_combining_mark_on_wide_glyph_is_bounded_and_preserves_tab_stops() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    marks = "\u0301" * (terminal.MAX_CELL_CODEPOINTS - 1)
+    assert transcript.feed("界" + marks + "\u0301\tX") == "界" + marks + "      X"
+    assert transcript.cursor_column == 9
+
+
+@pytest.mark.parametrize("screen", ["", "\x1b[?1049h"])
+@pytest.mark.parametrize(
+    ("edit", "expected"),
+    [
+        ("\x1b[3G\x1b[K", "a "),
+        ("\x1b[2G\x1b[1K", "   b"),
+        ("\x1b[3G\x1b[J", "a "),
+        ("\x1b[2G\x1b[1J", "   b"),
+    ],
+)
+def test_unicode_cell_erase_clears_the_whole_glyph(screen: str, edit: str, expected: str) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    assert transcript.feed(screen + "a界b" + edit) == expected
+
+
+@pytest.mark.parametrize(
+    ("edit", "expected"),
+    [
+        ("\x1b[3G\x1b[@", "a   b"),
+        ("\x1b[2G\x1b[P", "a b"),
+        ("\x1b[2G\x1b[X", "a  b"),
+        ("\x1b[3G\x1b[4h界", "a 界 b"),
+    ],
+)
+def test_alternate_cell_edits_preserve_wide_cell_pairs(edit: str, expected: str) -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    assert transcript.feed("\x1b[?1049ha界b" + edit) == expected
+
+
+def test_alternate_wide_glyph_wraps_and_resize_clips_the_entire_glyph() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(21, 5)
+    prefix = "." * 19
+    assert transcript.feed("\x1b[?1049h" + prefix + "界") == prefix + "界"
+    transcript.set_screen_size(20, 5)
+    assert transcript.text() == prefix + " "
+    assert transcript.feed("\x1b[1;20H界\u0301") == prefix + " \n界\u0301"
+    assert transcript.cursor_text_column() == (2, 0)
+    assert transcript.feed("\x1b[?7l\x1b[2;20H界") == prefix + " \n界\u0301" + " " * 18
+    assert transcript.cursor_column == 19
+    assert transcript.feed("X") == prefix + " \n界\u0301" + " " * 17 + "X"
+    assert transcript.feed("\x1b[31m\u0301") == prefix + " \n界\u0301" + " " * 17 + "X\u0301"
+
+
 def test_end_of_stream_and_screen_text_on_primary_screen() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.feed("primary")

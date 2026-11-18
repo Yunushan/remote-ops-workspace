@@ -100,6 +100,19 @@ def _widget_style(widget: QWidget) -> QStyle:
     return _required_gui_value(widget.style(), f"style for {type(widget).__name__}")
 
 
+def _qt_text_units(text: str) -> int:
+    return len(text) if text.isascii() else len(text.encode("utf-16-le", "surrogatepass")) // 2
+
+
+def _same_qt_selection(before: str, after: str, start: int, end: int) -> bool:
+    if before.isascii() and after.isascii():
+        return end <= len(before) and end <= len(after) and before[start:end] == after[start:end]
+    old_units = before.encode("utf-16-le", "surrogatepass")
+    new_units = after.encode("utf-16-le", "surrogatepass")
+    lower, upper = 2 * start, 2 * end
+    return upper <= len(old_units) and upper <= len(new_units) and old_units[lower:upper] == new_units[lower:upper]
+
+
 class TerminalTextEdit(QTextEdit):
     """Read-only transcript view with a stable remote-terminal cursor overlay."""
 
@@ -2373,9 +2386,7 @@ class TerminalPane(QWidget):
         selection_end = selected_cursor.selectionEnd()
         selection_text_unchanged = bool(
             selected_cursor.hasSelection()
-            and selection_end <= len(previous)
-            and selection_end <= len(transcript)
-            and previous[selection_start:selection_end] == transcript[selection_start:selection_end]
+            and _same_qt_selection(previous, transcript, selection_start, selection_end)
         )
         scroll_bar = _required_gui_value(
             self.output.verticalScrollBar(),
@@ -2436,7 +2447,7 @@ class TerminalPane(QWidget):
         if append_only:
             replace_from = previous.rfind("\n") + 1
             cursor = self.output.textCursor()
-            cursor.setPosition(replace_from)
+            cursor.setPosition(_qt_text_units(previous[:replace_from]))
             cursor.movePosition(
                 QTextCursor.MoveOperation.End,
                 QTextCursor.MoveMode.KeepAnchor,
@@ -2559,9 +2570,9 @@ class TerminalPane(QWidget):
         row = max(0, min(len(lines) - 1, self.terminal_emulator.cursor_row))
         column = max(0, self.terminal_emulator.cursor_column)
         line = lines[row]
-        document_position = sum(len(value) + 1 for value in lines[:row])
-        document_position += min(column, len(line))
-        trailing_cells = max(0, column - len(line))
+        offset, trailing_cells = self.terminal_emulator.cursor_text_column()
+        document_position = sum(_qt_text_units(value) + 1 for value in lines[:row])
+        document_position += _qt_text_units(line[:offset])
         self.output.setProperty("terminalRemoteCursorRow", row)
         self.output.setProperty("terminalRemoteCursorColumn", column)
         self.output.setProperty(

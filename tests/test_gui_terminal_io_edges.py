@@ -56,6 +56,34 @@ def _new_pane(window):
     )
 
 
+def test_unicode_terminal_append_selection_and_grid_cursor(gui_window) -> None:
+    from PyQt6.QtGui import QTextCursor
+
+    _app, window = gui_window
+    pane = _new_pane(window)
+    pane.append_process_text("😀\r\ne\u0301界")
+    cursor = pane.output.textCursor()
+    cursor.setPosition(5)
+    cursor.setPosition(6, QTextCursor.MoveMode.KeepAnchor)
+    pane.output.setTextCursor(cursor)
+    assert cursor.selectedText() == "界"
+
+    pane.append_process_text("X")
+    assert pane.output.toPlainText() == "😀\ne\u0301界X"
+    assert pane.output.textCursor().selectedText() == "界"
+    assert pane.output.property("terminalSelectionPreservedOnOutput") is True
+    assert pane.output.property("terminalRemoteCursorDocumentPosition") == 7
+
+    pane.append_process_text("\x1b[3G")
+    assert pane.output.property("terminalRemoteCursorColumn") == 2
+    assert pane.output.property("terminalRemoteCursorDocumentPosition") == 5
+    assert pane.output.property("terminalRemoteCursorTrailingCells") == 1
+
+    pane.append_process_text("Z")
+    assert pane.output.toPlainText() == "😀\ne\u0301 ZX"
+    assert pane.output.textCursor().hasSelection() is False
+
+
 def test_terminal_auth_prompt_transitions_are_notified_once(gui_window) -> None:
     _app, window = gui_window
     pane_without_handler = _new_pane(window)

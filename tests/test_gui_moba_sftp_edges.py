@@ -1301,7 +1301,7 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     assert "Waiting for terminal SSH authentication" in window.statusBar().currentMessage()
 
     applied: list[tuple[list[object], str]] = []
-    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", lambda _output: [])
+    monkeypatch.setattr(gui_connected, "parse_sftp_ls_output", lambda _output, *, directory: [])
     dock.filtered_sftp_entries = lambda entries: list(entries)
     dock.apply_live_sftp_entries = (
         lambda entries, *, request_path, plan: applied.append(

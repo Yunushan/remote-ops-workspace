@@ -3385,7 +3385,9 @@ def create_moba_connected_classes(
                 self.schedule_background_auth_retry()
                 self.schedule_pending_sftp_refresh()
                 return
-            entries = self.filtered_sftp_entries(parse_sftp_ls_output(output))
+            entries = self.filtered_sftp_entries(
+                parse_sftp_ls_output(output, directory=self.sftp_refresh_request_path)
+            )
             self.apply_live_sftp_entries(
                 entries,
                 request_path=self.sftp_refresh_request_path,

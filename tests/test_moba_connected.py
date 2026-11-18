@@ -506,6 +506,15 @@ def test_sftp_listing_parser_extracts_file_table_rows() -> None:
         {"name": "deploy.log", "kind": "file", "size_kb": 2, "modified": "Jun 06 12:02"},
     ]
 
+    live_rows = parse_sftp_ls_output(
+        "drwx------    ? rowedit rowedit 4096 Nov 18 03:20 /home/rowedit/.\n"
+        "drwxr-xr-x    ? root root 4096 Nov 18 03:20 /home/rowedit/..\n"
+        "-rw-r--r--    ? rowedit rowedit 16 Nov 18 03:20 /home/rowedit/document copy.txt\n"
+        "-rw-r--r--    ? rowedit rowedit 16 Nov 18 03:20 /home/rowedit-other/unrelated.txt\n",
+        directory="/home/rowedit/",
+    )
+    assert [row.name for row in live_rows] == ["document copy.txt"]
+
 
 def test_remote_monitoring_parser_uses_users_as_connection_count() -> None:
     snapshot = parse_remote_monitoring_output("cpu=7 mem_mb=256/1024 disk_mb=512/4096 users=3 processes=91")

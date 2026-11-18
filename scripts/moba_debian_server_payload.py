@@ -24,6 +24,7 @@ from remote_ops_workspace.moba_servers import (  # noqa: E402
 )
 from scripts.check_linux_native_elf import validate_elf  # noqa: E402
 from scripts.check_release_license_compliance import secure_regular_file, sha256_file  # noqa: E402
+from scripts.debian_native_dependencies import debian_dependencies, dependency_field  # noqa: E402
 from scripts.debian_release_fixture import release_deb_version  # noqa: E402
 
 PAYLOAD = PurePosixPath("usr/lib/remote-ops-workspace/servers")
@@ -112,7 +113,7 @@ def server_payload(
     return document, digests
 
 
-def stage_payload(source: Path, package_root: Path, target: str) -> None:
+def stage_payload(source: Path, package_root: Path, target: str) -> str:
     document, expected = server_payload(source, target, EXTERNAL_SERVICES)
     destination = package_root / PAYLOAD
     launcher = package_root / LAUNCHER
@@ -140,7 +141,10 @@ def stage_payload(source: Path, package_root: Path, target: str) -> None:
                 "source": "packaged", "bundled": True, "placeholder": False, "sha256": launcher_digest,
             },
         })
+    document["debian_depends"] = debian_dependencies(launcher, (destination / name for name in expected))
+    depends = dependency_field(document["debian_depends"])
     (destination / MANIFEST).write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return depends
 
 
 def compare_payload_tar(archive: tarfile.TarFile, expected: dict[str, str]) -> None:
@@ -200,7 +204,7 @@ def verify_debian_payload(package: Path, manifest: Path, target: str) -> None:
     release_deb_version(package.name, target)
     if manifest.name != MANIFEST:
         raise ValueError("reviewed embedded server manifest must be named servers-runtime.json")
-    _, expected = server_payload(manifest.parent, target)
+    document, expected = server_payload(manifest.parent, target)
     try:
         with TemporaryFile() as payload:
             subprocess.run(
@@ -210,6 +214,12 @@ def verify_debian_payload(package: Path, manifest: Path, target: str) -> None:
             payload.seek(0)
             with tarfile.open(fileobj=payload, mode="r:") as archive:
                 compare_payload_tar(archive, expected)
+        if "debian_depends" in document:
+            depends = subprocess.check_output(
+                ["dpkg-deb", "--field", str(package.resolve()), "Depends"], text=True, timeout=30,
+            )
+            if " ".join(depends.split()) != dependency_field(document["debian_depends"]):
+                raise ValueError("published Debian Depends differs from the reviewed server runtime dependencies")
     except (subprocess.SubprocessError, tarfile.TarError) as exc:
         raise ValueError("could not read the published Debian server payload") from exc
 
@@ -225,7 +235,7 @@ def main() -> int:
     if args.deb:
         verify_debian_payload(args.deb, args.bundle / MANIFEST, args.target)
     else:
-        stage_payload(args.bundle, args.debian_root, args.target)
+        print(stage_payload(args.bundle, args.debian_root, args.target))
     return 0
 
 

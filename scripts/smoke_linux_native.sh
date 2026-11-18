@@ -548,8 +548,16 @@ prepare_appimage_probe() {
   APPIMAGE_LAUNCHER="$extraction/squashfs-root/AppRun"
 }
 
+install_debian_package() {
+  if [[ -n "$(dpkg-deb -f "$DEB" Depends)" ]]; then
+    sudo -n apt-get --no-install-recommends --reinstall -y install "$DEB"
+  else
+    sudo -n dpkg -i "$DEB"
+  fi
+}
+
 echo "native installer smoke: DEB install"
-sudo -n dpkg -i "$DEB"
+install_debian_package
 echo "native installer smoke: DEB verify"
 verify_row /usr/bin/row direct "DEB verify" deb/usr/bin/row install
 debian_server_manifest=/usr/lib/remote-ops-workspace/servers/servers-runtime.json
@@ -572,7 +580,7 @@ PY
   echo "native installer smoke: DEB server runtime discovery"
 fi
 echo "native installer smoke: DEB upgrade"
-sudo -n dpkg -i "$DEB"
+install_debian_package
 verify_row /usr/bin/row direct "DEB upgrade" deb/usr/bin/row reinstall
 echo "native installer smoke: DEB uninstall"
 sudo -n dpkg -r remote-ops-workspace

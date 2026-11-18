@@ -42,12 +42,13 @@ def approved_bundle(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def staged_debian(tmp_path: Path, approved_bundle: Path) -> Path:
+def staged_debian(tmp_path: Path, approved_bundle: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     package = tmp_path / "debian"
     launcher = package / payload.LAUNCHER
     launcher.parent.mkdir(parents=True)
     launcher.write_bytes(make_elf(b"the actual ROW launcher"))
-    payload.stage_payload(approved_bundle, package, TARGET)
+    monkeypatch.setattr(payload, "debian_dependencies", lambda *_: ["libc6 (>= 2.38)", "libpam0g"])
+    assert payload.stage_payload(approved_bundle, package, TARGET) == "libc6 (>= 2.38), libpam0g"
     return package
 
 
@@ -72,6 +73,7 @@ def make_tar(root: Path, *, substitute: str | None = None, link: Path | None = N
 
 def test_debian_staging_includes_six_approved_daemons_and_both_row_runtime_roles(staged_debian: Path) -> None:
     document, digests = payload.server_payload(staged_debian / payload.PAYLOAD, TARGET)
+    assert document["debian_depends"] == ["libc6 (>= 2.38)", "libpam0g"]
     assert {service["service"] for service in document["services"]} == payload.SERVICES
     launcher = payload.sha256_file(staged_debian / payload.LAUNCHER)
     assert digests["linux/http/bin/python"] == digests["linux/ftp/bin/pyftpdlib"] == launcher
@@ -134,12 +136,13 @@ def private_openssh_bundle(approved_bundle: Path) -> Path:
 
 
 def test_debian_stages_and_audits_both_private_openssh_helpers(
-    private_openssh_bundle: Path, tmp_path: Path,
+    private_openssh_bundle: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     package = tmp_path / "debian"
     launcher = package / payload.LAUNCHER
     launcher.parent.mkdir(parents=True)
     launcher.write_bytes(make_elf(b"launcher"))
+    monkeypatch.setattr(payload, "debian_dependencies", lambda *_: ["libc6 (>= 2.38)", "libpam0g"])
     payload.stage_payload(private_openssh_bundle, package, TARGET)
     _, expected = payload.server_payload(package / payload.PAYLOAD, TARGET)
     helpers = {f"{payload.SERVER_OPENSSH_HELPER_DIR}/{name}" for name in ("sshd-session", "sshd-auth")}
@@ -190,3 +193,18 @@ def test_debian_rejects_unbound_openssh_helpers(private_openssh_bundle: Path, da
 
     with pytest.raises(ValueError, match=reason):
         payload.server_payload(root, TARGET, payload.EXTERNAL_SERVICES)
+
+
+def test_debian_archive_audit_checks_the_control_dependency_field(
+    staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    manifest = staged_debian / payload.PAYLOAD / payload.MANIFEST
+    contents = make_tar(staged_debian)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: "libc6 (>= 2.38),\n libpam0g\n")
+    payload.verify_debian_payload(package, manifest, TARGET)
+
+    monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: "libc6 (>= 2.38)\n")
+    with pytest.raises(ValueError, match="Depends differs from the reviewed server runtime dependencies"):
+        payload.verify_debian_payload(package, manifest, TARGET)

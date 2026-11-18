@@ -531,6 +531,14 @@ manifest and all eight daemon digests with the downloaded Debian package,
 including the shared HTTP and FTP launcher bytes. Redistribution approval and
 the live client captures remain required.
 
+The Debian packager derives `Depends` from the staged ELF files and the
+PyInstaller launcher, including its embedded GLIBC symbol requirements.
+It records the same dependency list as `debian_depends` in the installed
+manifest. The release audit compares that list with the package control
+field. Use apt to install the Debian package so it can resolve those
+libraries from the distro repositories. Configure the host-managed server
+policies and accounts before running the client captures.
+
 For OpenSSH built with the package-owned libexec path, use the same daemon
 bytes for the SSH and SFTP roles. Put `sshd-session` and `sshd-auth` under
 `linux/openssh/libexec` in the bundle and add their SHA-256 digests to the

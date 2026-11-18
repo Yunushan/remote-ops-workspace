@@ -304,8 +304,8 @@ reviews, and the downloaded release assets. See the
    panes use a controlling pseudoterminal. OpenSSH receives the initial viewport
    dimensions and forwards later resizes to its remote PTY. The Windows
    terminal uses ConPTY when available, and background tools authenticate
-   separately. The renderer lays out primary-screen output from native PTYs
-   in cell-width rows backed by bounded scrollback. Resizing reflows soft
+   separately. Linux SSH and SFTP panes lay out primary-screen output in
+   cell-width rows backed by bounded scrollback. Resizing reflows soft
    wraps while preserving hard line breaks, wide characters, ANSI styles,
    and logical copy and search results. The alternate screen keeps its own
    cursor-addressed grid.

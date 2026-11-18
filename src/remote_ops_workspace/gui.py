@@ -133,6 +133,7 @@ from .process_status import ProcessStatusError
 from .smartcard_keys import PINNED_SMARTCARD_KEY
 from .storage import ProfileStore
 from .terminal import TerminalPanePlan, default_shell_plan
+from .terminal import terminal_plan_for_profile as terminal_plan_for_profile
 from .terminal_output import _ByteChunkQueue  # noqa: F401 - existing queue seam
 
 # Qt requires QApplication to outlive every widget. Keep a process-wide Python

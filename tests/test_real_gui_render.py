@@ -4213,13 +4213,14 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
+    workspace_tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
 
     assert "def profile_tab_label" in source
     assert '"SSH2" if protocol == "SSH" else protocol' in source
     assert 'return f"{protocol} - {profile.name}"' in source
     assert 'return f"{profile.name} [{protocol}]"' in source
     assert "moba_connected_tab_chrome_items" in source
-    assert "mobaTabChromeKey" in source
+    assert "mobaTabChromeKey" in workspace_tabs_source
     assert "mobaRightUtilityKey" in connected_source
     assert "mobaSessionEdgeKey" in connected_source
     assert "mobaBottomEdgeKey" in source

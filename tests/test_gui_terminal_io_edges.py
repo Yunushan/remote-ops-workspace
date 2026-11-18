@@ -1964,6 +1964,8 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
 ) -> None:
     from PyQt6.QtWidgets import QWidget
 
+    from remote_ops_workspace import gui_workspace_tabs
+
     _app, window = gui_window
 
     class _Signal:
@@ -2081,12 +2083,7 @@ def test_remaining_terminal_window_lifecycle_and_deferred_transition_edges(
         singleShot=lambda _delay, callback: scheduled.append(callback),
     )
     with monkeypatch.context() as scoped:
-        _set_closure_value(
-            scoped,
-            type(window).handle_tab_changed,
-            "QTimer",
-            fake_timer,
-        )
+        scoped.setattr(gui_workspace_tabs, "QTimer", fake_timer)
         type(window).handle_tab_changed(transition_owner, 2)
     assert len(scheduled) == 3
 

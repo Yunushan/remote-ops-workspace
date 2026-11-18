@@ -285,6 +285,7 @@ def test_terminal_macro_capture_replay_and_cancel_edges(
     assert "process is not running" in pane.output.toPlainText()
 
     process.process_state = QProcess.ProcessState.Running
+    monkeypatch.setattr(pane, "confirm_macro_replay", lambda _recording: True)
     pane.replay_macro_capture()
     assert pane.macro_replay_active is True
     QTest.qWait(20)
@@ -313,6 +314,86 @@ def test_terminal_macro_capture_replay_and_cancel_edges(
     assert pane.macro_replay_active is True
     pane.finish_macro_replay_queue(sequence)
     assert pane.macro_replay_active is False
+
+
+def test_terminal_macro_review_guards_ordered_keys_and_session_changes(gui_window, monkeypatch) -> None:
+    from PyQt6.QtCore import QTimer
+    from PyQt6.QtTest import QTest
+    from PyQt6.QtWidgets import QMessageBox
+
+    app, window = gui_window
+    pane = _new_pane(window, command=["ssh", "macro.example.invalid"])
+    process = _FakeProcess(running=True)
+    pane.process = process
+    pane.start_macro_capture()
+    pane.send_raw_input(b"a", record_macro=True)
+    pane.send_raw_input(b"\n", record_macro=True)
+    pane.stop_macro_capture()
+    assert pane.macro_last_recording is not None
+    recording = pane.macro_last_recording
+    assert [(event.text, event.enter) for event in recording.events] == [("a", False), ("", True)]
+    process.written = b""
+
+    observed_defaults = []
+
+    def choose(button):
+        dialog = app.activeModalWidget()
+        assert isinstance(dialog, QMessageBox)
+        observed_defaults.append(dialog.defaultButton() is dialog.button(QMessageBox.StandardButton.Cancel))
+        dialog.button(button).click()
+
+    QTimer.singleShot(0, lambda: choose(QMessageBox.StandardButton.Cancel))
+    pane.replay_macro_capture()
+    QTest.qWait(15)
+    assert process.written == b""
+
+    process.is_pty = True
+    QTimer.singleShot(0, lambda: choose(QMessageBox.StandardButton.Yes))
+    pane.replay_macro_capture()
+    assert not pane.macro_replay_button.isEnabled()
+    pane.replay_macro_capture()
+    QTest.qWait(35)
+    assert observed_defaults == [True, True]
+    assert process.written == b"a\r"
+    process.written = b""
+
+    def change_during_review(_recording):
+        pane.invalidate_macro_session()
+        return True
+
+    monkeypatch.setattr(pane, "confirm_macro_replay", change_during_review)
+    pane.replay_macro_capture()
+    assert process.written == b""
+    assert "session changed during review" in pane.output.toPlainText()
+
+    recording.events[0].delay_ms = 55
+    monkeypatch.setattr(pane, "confirm_macro_replay", lambda _recording: True)
+    pane.replay_macro_capture()
+    pane.refresh_terminal_input_security("Password: ")
+    QTest.qWait(80)
+    assert pane._secret_prompt_active and pane.macro_replay_cancelled
+    assert process.written == b""
+    pane.refresh_terminal_input_security("")
+
+    pane.replay_macro_capture()
+    pane._secret_prompt_active = True
+    pane.write_macro_replay_payload("not sent", pane.macro_replay_sequence)
+    assert process.written == b"" and not pane.macro_replay_active
+    pane.refresh_terminal_input_security("")
+
+    pane.start_macro_capture()
+    pane.send_raw_input(b"\x7f", record_macro=True)
+    assert pane.macro_capture_state is None
+    assert "unsupported terminal key" in pane.output.toPlainText()
+
+    recording.events[0].delay_ms = 0
+    monkeypatch.setattr(process, "write", lambda _payload: 0)
+    pane.start_macro_capture()
+    pane.send_raw_input(b"partial", record_macro=True)
+    assert pane.macro_capture_state is None
+    pane.replay_macro_capture()
+    QTest.qWait(30)
+    assert "did not accept the complete event" in pane.output.toPlainText()
 
 
 def test_terminal_finished_restart_waits_for_ordered_output_tail(

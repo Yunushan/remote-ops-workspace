@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QMessageBox,
     QSizePolicy,
     QStyle,
     QTextEdit,
@@ -801,7 +802,7 @@ class TerminalPane(QWidget):
         if watched in terminal_targets and event.type() == QEvent.Type.InputMethod:
             committed = event.commitString()
             if committed:
-                self.send_raw_input(committed.encode("utf-8"))
+                self.send_raw_input(committed.encode("utf-8"), record_macro=True)
                 event.accept()
                 return True
         if watched in terminal_targets and event.type() == QEvent.Type.KeyPress:
@@ -851,7 +852,7 @@ class TerminalPane(QWidget):
                 # transcript.  Collapse the stale selection first so the
                 # next output update starts from an unambiguous cursor.
                 self.clear_terminal_selection_for_remote_input()
-                self.send_raw_input(payload)
+                self.send_raw_input(payload, record_macro=True)
                 return True
         return super().eventFilter(watched, event)
 
@@ -1162,7 +1163,7 @@ class TerminalPane(QWidget):
             payload = text.encode("utf-8")
         return b"\x1b" + payload if alt and payload != b"\x1b" else payload
 
-    def send_raw_input(self, payload: bytes) -> None:
+    def send_raw_input(self, payload: bytes, *, record_macro: bool = False) -> None:
         if not payload:
             return
         if not self.is_running():
@@ -1171,6 +1172,11 @@ class TerminalPane(QWidget):
         accepted = self.process.write(payload)
         if accepted is None:
             accepted = len(payload)
+        if record_macro:
+            if accepted == len(payload):
+                self.capture_macro_terminal_payload(payload)
+            else:
+                self.invalidate_macro_session()
         self.output.setProperty("terminalLastInputBytesRequested", len(payload))
         self.output.setProperty("terminalLastInputBytesAccepted", int(accepted))
         # Rendering the process response decides whether the user was
@@ -1233,7 +1239,7 @@ class TerminalPane(QWidget):
                 self.output.setProperty("terminalLastPasteWasBracketed", True)
             else:
                 self.output.setProperty("terminalLastPasteWasBracketed", False)
-            self.send_raw_input(payload)
+            self.send_raw_input(payload, record_macro=True)
             return
         self.input.insert(text)
         self.input.setFocus(Qt.FocusReason.OtherFocusReason)
@@ -1383,6 +1389,7 @@ class TerminalPane(QWidget):
                 self.append_text(f"[policy blocked] {exc}\n")
                 self.update_process_actions()
                 return
+        self.invalidate_macro_session()
         self.output.clear()
         self._rendered_terminal_text = ""
         self.terminal_emulator.reset()
@@ -1451,6 +1458,7 @@ class TerminalPane(QWidget):
             self.update_process_actions()
             return False
         active_policy = policy or self.STOP_POLICY
+        self.invalidate_macro_session()
         self.set_status("stopping", "stopping")
         self.stop_button.setEnabled(False)
         self.append_text("\n[process stopping]\n")
@@ -1471,6 +1479,7 @@ class TerminalPane(QWidget):
         self._terminal_scroll_generation += 1
         self._terminal_scroll_timer.stop()
         self.setProperty("terminalClosing", True)
+        self.invalidate_macro_session()
         self._stop_timer.stop()
         self.reset_process_output_pipeline()
         self._restart_when_output_drained = False
@@ -1487,6 +1496,7 @@ class TerminalPane(QWidget):
                 kill_requested=False,
                 finished=True,
             )
+        self.invalidate_macro_session()
         self.set_status("stopping", "stopping")
         self.stop_button.setEnabled(False)
         self.append_text("\n[process stopping]\n")
@@ -1642,12 +1652,23 @@ class TerminalPane(QWidget):
         self.macro_last_event_at = now
         return max(0, int((now - previous) * 1000))
 
-    def capture_macro_input(self, line: str) -> None:
+    def capture_macro_input(self, line: str, *, enter: bool = True) -> None:
         state = self.macro_capture_state
         if state is None or not state.active:
             return
-        capture_terminal_macro_input(state, line, delay_ms=self.macro_event_delay_ms())
+        capture_terminal_macro_input(state, line, enter=enter, delay_ms=self.macro_event_delay_ms())
         self.apply_moba_macro_runtime_properties()
+
+    def capture_macro_terminal_payload(self, payload: bytes) -> None:
+        state = self.macro_capture_state
+        if self._secret_prompt_active or state is None or not state.active:
+            return
+        enter = payload in (b"\r", b"\n")
+        try:
+            self.capture_macro_input("" if enter else payload.decode("utf-8"), enter=enter)
+        except ValueError:
+            self.cancel_macro_capture(announce=False)
+            self.append_text("\n[macro recording stopped on an unsupported terminal key or paste]\n")
 
     def stop_macro_capture(self) -> None:
         state = self.macro_capture_state
@@ -1668,54 +1689,92 @@ class TerminalPane(QWidget):
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
 
-    def cancel_macro_capture(self) -> None:
+    def cancel_macro_capture(self, *, announce: bool = True) -> None:
+        self.macro_replay_sequence += 1
         state = self.macro_capture_state
         if state is not None and state.active:
             cancel_terminal_macro_capture(state)
-            self.append_text("\n[macro recording cancelled]\n")
+            if announce:
+                self.append_text("\n[macro recording cancelled]\n")
             self.macro_capture_state = None
             self.macro_last_event_at = None
         elif self.macro_replay_active:
             self.macro_replay_cancelled = True
-            self.macro_replay_sequence += 1
             self.macro_replay_active = False
-            self.append_text("\n[macro replay cancelled]\n")
+            if announce:
+                self.append_text("\n[macro replay cancelled]\n")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
+
+    def invalidate_macro_session(self, *, announce: bool = True) -> None:
+        if self.macro_capture_state is not None or self.macro_replay_active:
+            self.cancel_macro_capture(announce=announce)
+        else:
+            self.macro_replay_sequence += 1
+
+    def confirm_macro_replay(self, recording: MobaMacroRecording) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.setWindowTitle("Replay terminal macro")
+        dialog.setTextFormat(Qt.TextFormat.PlainText)
+        dialog.setText(f"Replay {recording.name} in {self.plan.title}?")
+        dialog.setInformativeText(f"This sends {len(recording.events)} recorded events to the running session.")
+        dialog.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+        dialog.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        return dialog.exec() == QMessageBox.StandardButton.Yes
 
     def replay_macro_capture(self) -> None:
         if self._secret_prompt_active:
             self.append_text("\n[macro replay unavailable during secret input]\n")
             return
-        if self.macro_last_recording is None:
+        recording = self.macro_last_recording
+        if recording is None:
             self.append_text("\n[macro replay unavailable: no recorded macro]\n")
             return
-        if not self.is_running():
+        if self.process.state() != QProcess.ProcessState.Running:
             self.append_text("\n[macro replay unavailable: process is not running]\n")
             return
-        injection = build_terminal_macro_replay_injection(
-            self.macro_last_recording, pane_id=self.macro_pane_id()
-        )
+        if self.macro_replay_active:
+            return
+        process, reviewed_sequence = self.process, self.macro_replay_sequence
+        if not self.confirm_macro_replay(recording):
+            return
+        # The modal question runs a nested event loop. Output, disconnects,
+        # and restart can occur before the operator answers it.
+        if (
+            reviewed_sequence != self.macro_replay_sequence
+            or process is not self.process
+            or process.state() != QProcess.ProcessState.Running
+            or recording is not self.macro_last_recording
+        ):
+            self.append_text("\n[macro replay cancelled because the session changed during review]\n")
+            return
+        injection = build_terminal_macro_replay_injection(recording, pane_id=self.macro_pane_id())
         self.macro_last_injection = injection
         self.macro_replay_sequence += 1
         self.macro_replay_cancelled = False
         self.macro_replay_active = True
         sequence = self.macro_replay_sequence
-        for step, payload in zip(injection.steps, injection.injected_payloads, strict=False):
-            delay = max(0, int(step.scheduled_after_ms))
-            QTimer.singleShot(
-                delay,
-                lambda payload=payload, sequence=sequence: self.write_macro_replay_payload(
-                    payload, sequence
-                ),
-            )
-        QTimer.singleShot(
-            max(0, int(injection.total_delay_ms)) + 1,
-            lambda sequence=sequence: self.finish_macro_replay_queue(sequence),
-        )
+        self._schedule_macro_replay_step(injection, sequence, 0)
         self.append_text(f"\n[macro replay queued: {injection.event_count} event(s)]\n")
         self.apply_moba_macro_runtime_properties()
         self.update_process_actions()
+
+    def _schedule_macro_replay_step(
+        self, injection: MobaMacroTerminalReplayInjection, sequence: int, index: int,
+    ) -> None:
+        def send_next() -> None:
+            if sequence != self.macro_replay_sequence or not self.macro_replay_active:
+                return
+            self.write_macro_replay_payload(injection.injected_payloads[index], sequence)
+            if not self.macro_replay_active:
+                return
+            if index + 1 == injection.event_count:
+                self.finish_macro_replay_queue(sequence)
+            else:
+                self._schedule_macro_replay_step(injection, sequence, index + 1)
+
+        QTimer.singleShot(injection.steps[index].delay_ms, Qt.TimerType.PreciseTimer, send_next)
 
     def write_macro_replay_payload(self, payload: str, sequence: int) -> None:
         if sequence != self.macro_replay_sequence or self.macro_replay_cancelled:
@@ -1724,7 +1783,17 @@ class TerminalPane(QWidget):
             self.append_text("\n[macro replay stopped: process is not running]\n")
             self.finish_macro_replay_queue(sequence)
             return
-        self.process.write(payload.encode("utf-8"))
+        if self._secret_prompt_active:
+            self.invalidate_macro_session(announce=False)
+            return
+        if bool(getattr(self.process, "is_pty", False)) and payload.endswith("\n"):
+            payload = payload[:-1] + "\r"
+        data = payload.encode("utf-8")
+        accepted = self.process.write(data)
+        if accepted is not None and accepted != len(data):
+            self.append_text("\n[macro replay stopped: terminal did not accept the complete event]\n")
+            self.invalidate_macro_session()
+            return
         self.setProperty("mobaMacroReplayInjectedPayload", payload)
         self.input.setProperty("mobaMacroReplayInjectedPayload", payload)
         self.output.setProperty("mobaMacroReplayInjectedPayload", payload)
@@ -2617,6 +2686,7 @@ class TerminalPane(QWidget):
         self._secret_prompt_active = active
         if active:
             self.input.clear()
+            self.invalidate_macro_session(announce=False)
         echo_mode = QLineEdit.EchoMode.Password if active else QLineEdit.EchoMode.Normal
         self.input.setEchoMode(echo_mode)
         self.input.setPlaceholderText(
@@ -2667,6 +2737,7 @@ class TerminalPane(QWidget):
 
     def on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
         self._stop_timer.stop()
+        self.invalidate_macro_session()
         self.mark_process_output_end()
         self.refresh_terminal_input_security("")
         state = "ready" if exit_code == 0 else "error"
@@ -2711,6 +2782,7 @@ class TerminalPane(QWidget):
             running
             and self.macro_last_recording is not None
             and not capture_active
+            and not self.macro_replay_active
             and not self._secret_prompt_active
         )
         self.apply_moba_macro_runtime_properties()

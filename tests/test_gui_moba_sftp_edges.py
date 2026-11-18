@@ -2382,7 +2382,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
 
     monkeypatch.setattr(pane, "is_running", lambda: True)
     sent: list[bytes] = []
-    monkeypatch.setattr(pane, "send_raw_input", sent.append)
+    monkeypatch.setattr(pane, "send_raw_input", lambda payload, **_kwargs: sent.append(payload))
     pane.terminal_emulator.feed("\x1b[?2004h")
     pane.paste_text_to_terminal("first\nsecond", gesture="test")
     assert sent == [b"\x1b[200~first\nsecond\x1b[201~"]

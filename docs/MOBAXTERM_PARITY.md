@@ -269,8 +269,10 @@ reviews, and the downloaded release assets. See the
    selection and same-parameter SSH-browser command previews. `row smartcard
    evidence-bundle` now assembles SHA-bound proof for the management UI,
    profile expert setting, MobAgent handoff and smart-card SSH-browser session.
-   Full parity still needs accepted release evidence bundles showing those
-   behaviors in a real connected SSH/SFTP session with an actual smart card.
+   The release validator matches the card certificate to the agent key and the
+   remote server's authentication log, then checks that the file browser uses
+   the terminal's SSH connection. Full parity still needs an accepted capture
+   from a physical card. See [smart-card release capture](#smart-card-release-capture).
 7. Professional deployment depth: the ROW customizer builds a branded
    enterprise bundle. The Windows native build can use its product name,
    publisher, icon and welcome text to compile enterprise EXE and MSI
@@ -501,3 +503,37 @@ starts the session with `ROW_MACRO_READY_<pid>` followed on the same line by
 the client IP and port and the server IP and port from `SSH_CONNECTION`.
 Capture the SSH server log for those two public-key-authenticated remote PTYs.
 Use disposable accounts and test input to keep credentials out of the capture.
+
+### Smart-card release capture
+
+Use the installed release package on a desktop that supports OpenSSH Unix
+control sockets. Connect to a separate OpenSSH server with a disposable login
+and a test hardware card. Use the server's IP address and explicit port in the
+SSH profile. Authorize the card's key for that login and capture the server log
+at `LogLevel VERBOSE` with `sshd -E <file>`. The log must show the card key
+authenticating the interactive terminal and the SFTP subsystem starting on that
+same connection. Create a fresh remote file named `row-smartcard-<32 lowercase
+hex digits>.txt` and refresh the desktop file browser to show it.
+
+Capture the outputs below during the session. Use a dedicated agent and a test
+card whose public certificate and token metadata can be shared with the reviewer.
+
+| Bundle action | Required attachment |
+| --- | --- |
+| `management_interface` | JSON with `token_url`, `exported_openssh_public_key`, `certificate_der`, `present_tokens` and `removed_tokens`. The last three are file references. Export the public certificate in DER from the selected token. Save stdout from successful `LC_ALL=C p11tool --provider "$provider" --list-tokens` runs with the card inserted and removed. The removed inventory can be empty. |
+| `ssh_session_selection` | The saved SSH profile JSON with the selected `smartcard_certificate_id`, absolute `pkcs11:` provider in `smartcard_provider`, and `add_smartcard_to_mobagent` set to the string `true` in `options`. |
+| `mobagent` | Raw `ssh-add -L` output from the dedicated agent after handing off the selected card. |
+| `ssh_browser` | JSON with schema `row.moba-smartcard.connected-capture.v1`, the same `source`, `release_asset` and `release_target` as the envelope, and `profile` set to the saved profile name. Include the executed `terminal_argv` and `sftp_argv` arrays, their `control_path`, the `fixture_name`, and `file_rows` as the displayed filenames. Include `sshd_log` and `sftp_listing` file references for the server log and the raw listing from that browser refresh. |
+
+Use `row smartcard evidence-bundle` to assemble the four action attachments.
+Keep the nested captures inside the same evidence root and reference them by
+relative `evidence_file` and `evidence_sha256`. Add `source` and `release_asset`
+to the bundle's `evidence.json`. The `source` object contains `repository`,
+`release_tag`, `head_sha`, `workflow_run_url` and `run_attempt`. The
+`release_asset` object contains the tested package `name` and `sha256`.
+
+Run `python scripts/check_moba_smartcard_evidence.py --evidence <evidence.json>
+--assets-dir <artifact-dir>` with the project's `security` extra installed.
+The parity record generator and certification audit use the same validator.
+An independent reviewer checks the physical-card run and the published package
+before accepting the resulting record.

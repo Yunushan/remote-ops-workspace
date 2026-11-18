@@ -543,6 +543,11 @@ def reviewed_release(tmp_path, monkeypatch):
             record["validation_summary"]["summary"].update(
                 verified_remote_edit=True, tested_release_asset={"name": name, "sha256": digest},
             )
+        if article == "ssh-browser-26-4-smartcard":
+            record["validation_summary"]["summary"].update(
+                verified_hardware_smartcard=True, verified_multiplexed_sftp=True,
+                openssh_key_fingerprint="SHA256:" + "a" * 43, tested_release_asset={"name": name, "sha256": digest},
+            )
         if article == "professional-deployment":
             record["validation_summary"]["summary"].update(
                 verified_windows_installers={"org-setup.exe": "a" * 64, "org.msi": "b" * 64},

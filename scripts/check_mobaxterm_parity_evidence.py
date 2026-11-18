@@ -13,7 +13,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
 TESTED_ASSET_ARTICLES = frozenset(
-    {"embedded-server-suite", "macro-recorder", "moba-text-editor-diff", "professional-deployment"}
+    {"embedded-server-suite", "macro-recorder", "moba-text-editor-diff", "professional-deployment", "ssh-browser-26-4-smartcard"}
 )
 SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES | {"shared-authenticated-transport-terminal-grid"}
 PROFESSIONAL_POLICY_SURFACES = ("cli", "gui", "launcher", "profile-editor", "quick-connect", "web")
@@ -473,6 +473,14 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
             errors.append("macro-recorder validation summary must record verified SSH timing and review for every replay")
     if article_id == "moba-text-editor-diff" and details.get("verified_remote_edit") is not True:
         errors.append("moba-text-editor-diff validation summary must record a verified SFTP edit")
+    if article_id == "ssh-browser-26-4-smartcard":
+        fingerprint = details.get("openssh_key_fingerprint")
+        if (
+            details.get("verified_hardware_smartcard") is not True
+            or details.get("verified_multiplexed_sftp") is not True
+            or not isinstance(fingerprint, str) or not re.fullmatch(r"SHA256:[A-Za-z0-9+/]{43}", fingerprint)
+        ):
+            errors.append("ssh-browser-26-4-smartcard validation summary must bind the hardware key and shared SSH/SFTP connection")
     if article_id == "professional-deployment":
         installers = details.get("verified_windows_installers")
         if (

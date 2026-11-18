@@ -15,7 +15,6 @@ if str(SRC) not in sys.path:
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from remote_ops_workspace.moba_smartcards import validate_smartcard_release_evidence  # noqa: E402
 from scripts.check_moba_macro_live_evidence import (  # noqa: E402
     validate_macro_release_replay_evidence,
 )
@@ -24,6 +23,9 @@ from scripts.check_moba_professional_deployment_evidence import (  # noqa: E402
 )
 from scripts.check_moba_server_release_evidence import (  # noqa: E402
     validate_live_server_release_evidence,
+)
+from scripts.check_moba_smartcard_evidence import (  # noqa: E402
+    validate_smartcard_connected_release_evidence,
 )
 from scripts.check_moba_text_remote_edit_evidence import (  # noqa: E402
     validate_remote_editor_release_evidence,
@@ -50,7 +52,7 @@ VALIDATORS: dict[str, Validator] = {
     "embedded-server-suite": validate_live_server_release_evidence,
     "moba-text-editor-diff": validate_remote_editor_release_evidence,
     "macro-recorder": validate_macro_release_replay_evidence,
-    "ssh-browser-26-4-smartcard": validate_smartcard_release_evidence,
+    "ssh-browser-26-4-smartcard": validate_smartcard_connected_release_evidence,
     "professional-deployment": validate_professional_release_evidence,
     "shared-authenticated-transport-terminal-grid": validate_moba_transport_terminal_evidence,
 }

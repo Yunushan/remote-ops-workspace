@@ -279,6 +279,43 @@ def test_alternate_cursor_motion_absolute_and_origin_bounds() -> None:
     assert transcript._alternate_bottom_margin == 5
 
 
+def test_alternate_index_and_reverse_index_respect_scroll_margins_and_columns() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(20, 6)
+    transcript.feed("shell\x1b[?1049h")
+    for row, content in enumerate(("header", "\x1b[31mone\x1b[0m", "two", "three", "four", "footer"), 1):
+        transcript.feed(f"\x1b[{row};1H{content}")
+    first_style = transcript.styled_alternate_rows()[1][1]
+    transcript.feed("\x1b[2;5r\x1b[2;3H\x1bMR")
+    assert transcript.screen_text().split("\n") == ["header", "  R", "one", "two", "three", "footer"]
+    assert transcript.styled_alternate_rows()[2][1] == first_style
+    assert (transcript.cursor_row, transcript.cursor_column) == (1, 3)
+
+    transcript.feed("\x1b[5;4H\x1bDF\x1b[3;12H\x1bEN")
+    assert transcript.screen_text().split("\n") == ["header", "one", "two", "Nhree", "   F", "footer"]
+    assert transcript.styled_alternate_rows()[1][1] == first_style
+    assert (transcript.cursor_row, transcript.cursor_column) == (3, 1)
+
+    before = transcript.screen_text()
+    transcript.feed("\x1b[1;2H\x1bM")
+    assert (transcript.cursor_row, transcript.cursor_column) == (0, 1)
+    transcript.feed("\x1b[6;9H\x1bD\n")
+    assert (transcript.cursor_row, transcript.cursor_column) == (5, 0)
+    assert transcript.screen_text() == before
+    assert transcript.feed("\x1b[?1049l\x1bD\x1bM") == "shell"
+
+
+def test_cursor_report_uses_origin_relative_row_and_clamps_pending_wrap_column() -> None:
+    transcript = terminal.AnsiTerminalTranscript()
+    transcript.set_screen_size(20, 6)
+    transcript.feed("\x1b[?1049h\x1b[2;5r\x1b[?6h\x1b[2;20Hx")
+    assert (transcript.cursor_row, transcript.cursor_column) == (2, 20)
+    transcript.feed("\x1b[6n\x1b[?6n\x1b[?5n")
+    assert transcript.take_pending_responses() == (b"\x1b[2;20R", b"\x1b[?2;20R")
+    transcript.feed("\x1bD!")
+    assert transcript.screen_text().split("\n")[3] == " " * 19 + "!"
+
+
 def test_alternate_insert_delete_scroll_and_column_edits() -> None:
     transcript = terminal.AnsiTerminalTranscript()
     transcript.set_screen_size(20, 5)

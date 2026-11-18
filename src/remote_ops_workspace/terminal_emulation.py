@@ -671,6 +671,12 @@ class AnsiTerminalTranscript:
             else:
                 self._escape = sequence
             return
+        if sequence in {"D", "E", "M"}:
+            if self._alternate_screen:
+                self._full_redraw_hint = True
+                self._index_alternate(reverse=sequence == "M", carriage_return=sequence == "E")
+            self._escape = None
+            return
         if sequence == "Z":
             # DEC identification query (ESC Z), used by older Vim builds.
             self._pending_responses.append(b"\x1b[?1;2c")
@@ -758,12 +764,15 @@ class AnsiTerminalTranscript:
                         self._mouse_encoding = mode if enabled else 0
             return
         if command == "n":
-            if first == 5:
+            if first == 5 and not private:
                 self._pending_responses.append(b"\x1b[0n")
             elif first == 6:
-                row = self._cursor_row() + 1
-                column = self._cursor_column() + 1
-                self._pending_responses.append(f"\x1b[{row};{column}R".encode("ascii"))
+                row = self._cursor_row()
+                if self._alternate_screen and self._origin_mode:
+                    row = max(0, row - self._alternate_top_margin)
+                column = min(self._cursor_column() + 1, self._screen_columns)
+                prefix = "?" if private else ""
+                self._pending_responses.append(f"\x1b[{prefix}{row + 1};{column}R".encode("ascii"))
             return
         if command == "c":
             if params.startswith(">"):
@@ -1307,20 +1316,26 @@ class AnsiTerminalTranscript:
         self._alternate_bottom_margin = 0
         self._alternate_saved_cursor = None
 
+    def _index_alternate(self, *, reverse: bool, carriage_return: bool) -> None:
+        self._ensure_alternate_screen()
+        if carriage_return:
+            self._alternate_column = 0
+        else:
+            self._alternate_column = min(self._alternate_column, self._screen_columns - 1)
+        self._alternate_margin_written = False
+
+        # The screen stops at its own edges when the cursor is outside the
+        # scrolling region. Only an index at a region margin scrolls its rows.
+        margin = self._alternate_top_margin if reverse else self._alternate_bottom_margin
+        if self._alternate_row == margin:
+            self._scroll_alternate_region(1, down=reverse)
+        else:
+            step = -1 if reverse else 1
+            self._alternate_row = max(0, min(self._screen_rows - 1, self._alternate_row + step))
+
     def _newline(self) -> None:
         if self._alternate_screen:
-            self._ensure_alternate_screen()
-            self._alternate_column = 0
-            self._alternate_margin_written = False
-            bottom = self._alternate_bottom_margin or self._screen_rows - 1
-            top = min(self._alternate_top_margin, bottom)
-            if self._alternate_row < bottom:
-                self._alternate_row += 1
-            else:
-                self._alternate_lines.pop(top)
-                self._alternate_line_styles.pop(top)
-                self._alternate_lines.insert(bottom, [])
-                self._alternate_line_styles.insert(bottom, [])
+            self._index_alternate(reverse=False, carriage_return=True)
             return
         self._normal_cursor_row = max(
             0,

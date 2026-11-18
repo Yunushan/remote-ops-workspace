@@ -51,6 +51,7 @@ or `GITHUB_TOKEN` with repository administration read access.
 
 Before dispatching the evidence workflows, configure the `platform-evidence`
 GitHub environment to allow only `v*` tags, with no deployment branch rule.
+Verify the live rule with the [deployment environment audit](runbooks/RELEASE_PROMOTION.md#prepare-the-policy-before-tagging).
 Set its `ROW_PLATFORM_RUNNER_INVENTORY_TOKEN` secret to a fine-grained token
 limited to this repository with Administration read access. The hosted
 preflight uses it only for the inventory step and requires the dispatch ref to

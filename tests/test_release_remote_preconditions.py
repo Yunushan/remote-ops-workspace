@@ -83,6 +83,92 @@ def test_signing_access_failure_reports_the_required_permission(monkeypatch) -> 
     assert "remote response body" not in str(exc.value)
 
 
+@pytest.mark.parametrize(("change", "error"), [
+    (None, None),
+    ("unrestricted", "release environment must use selected"),
+    ("platform-branch", "platform-evidence environment must allow only"),
+    ("promotion-branch", "release-compliance-review environment is missing the v\\* deployment tag policy"),
+    ("missing-type", "did not identify a deployment policy's ref type"),
+])
+def test_deployment_environments_audit_the_typed_tag_rules_without_credentials(monkeypatch, capsys, change, error):
+    monkeypatch.setenv("GITHUB_API_URL", API_ROOT)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    if change is None:
+        monkeypatch.setenv("GITHUB_TOKEN", "")
+    calls = []
+    environments = {
+        "release": [{"name": "main", "type": "branch"}, {"name": "v*", "type": "tag"}],
+        "release-compliance-review": [{"name": "v*", "type": "tag"}],
+        "platform-evidence": [{"name": "v*", "type": "tag"}],
+    }
+    if change == "platform-branch":
+        environments["platform-evidence"].append({"name": "main", "type": "branch"})
+    if change == "promotion-branch":
+        environments["release-compliance-review"][0]["type"] = "branch"
+    if change == "missing-type":
+        del environments["release"][1]["type"]
+
+    def get_json(url, token, *, api_version):
+        assert token is None and api_version == "2026-03-10"
+        environment, _, endpoint = url.removeprefix(f"{REPOSITORY_URL}/environments/").partition("/")
+        calls.append((environment, endpoint))
+        if endpoint:
+            assert endpoint == "deployment-branch-policies?per_page=100&page=1"
+            rules = environments[environment]
+            return {"total_count": len(rules), "branch_policies": rules}, {}
+        policy = {"protected_branches": False, "custom_branch_policies": True}
+        return {"name": environment, "deployment_branch_policy": None if change == "unrestricted" else policy}, {}
+
+    monkeypatch.setattr(preconditions, "get_json", get_json)
+    result = preconditions.main(["environments", "--repository", REPOSITORY, "--tag", RELEASE_TAG])
+    output = capsys.readouterr()
+    if error:
+        assert result == 1 and re.search(error, output.err)
+        assert output.out == ""
+    else:
+        assert result == 0 and f"environments passed for {REPOSITORY} and {RELEASE_TAG}" in output.out
+        assert calls == [(name, endpoint) for name in environments
+                         for endpoint in ("", "deployment-branch-policies?per_page=100&page=1")]
+
+
+@pytest.mark.parametrize(("last_page", "error"), [
+    ([{"name": "v*", "type": "tag"}], None),
+    ([{"name": "branch-0", "type": "branch"}], "duplicate"),
+    ([], "incomplete"),
+])
+def test_deployment_policy_inventory_proves_all_pages(monkeypatch, last_page, error):
+    base = f"{REPOSITORY_URL}/environments/release"
+    items = iter([[{"name": f"branch-{i}", "type": "branch"} for i in range(100)], last_page])
+    urls = []
+
+    def get_json(url, token, *, api_version):
+        urls.append(url)
+        return {"total_count": 101, "branch_policies": next(items)}, {}
+
+    monkeypatch.setattr(preconditions, "get_json", get_json)
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            preconditions.read_deployment_policies(base, None)
+    else:
+        rules = preconditions.read_deployment_policies(base, None)
+        assert len(rules) == 101 and ("tag", "v*") in rules
+    assert urls == [f"{base}/deployment-branch-policies?per_page=100&page={page}" for page in (1, 2)]
+
+
+@pytest.mark.parametrize(("environment", "secret"), [
+    ("release-compliance-review", "ROW_RELEASE_IMMUTABILITY_TOKEN"),
+    ("platform-evidence", "ROW_PLATFORM_RUNNER_INVENTORY_TOKEN"),
+])
+def test_environment_tokens_are_required_in_their_own_environment(monkeypatch, environment, secret):
+    def get_json(url, token, *, api_version):
+        assert url == f"{REPOSITORY_URL}/environments/{environment}/secrets?per_page=100"
+        return {"total_count": 0, "secrets": []}, {}
+
+    monkeypatch.setattr(preconditions, "get_json", get_json)
+    with pytest.raises(RuntimeError, match=f"missing required secrets in the {environment} environment: {secret}"):
+        preconditions.require_environment_secret_inventory(API_ROOT, REPOSITORY, environment, {secret}, "auth")
+
+
 @pytest.mark.parametrize("collision", [False, True])
 @pytest.mark.parametrize("require_push", [False, True])
 def test_namespace_checks_numeric_pages_and_accepts_terminal_link(monkeypatch, collision, require_push) -> None:
@@ -234,7 +320,9 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
     monkeypatch.setattr(preconditions, "check_remote_pre_tag_refs", check_remote)
     monkeypatch.setattr(preconditions, "run_release_check", check_script)
     monkeypatch.setattr(preconditions, "require_immutable_enabled", lambda *args: calls.append(("immutable", *args)))
+    monkeypatch.setattr(preconditions, "require_deployment_environment_policies", lambda *args: calls.append(("environments", *args)))
     monkeypatch.setattr(preconditions, "require_signing_secret_inventory", check_signing)
+    monkeypatch.setattr(preconditions, "require_environment_secret_inventory", lambda *args: calls.append(("environment-secrets", *args)))
     monkeypatch.setattr(preconditions, "require_unused_namespace", lambda *args, require_push: calls.append(("namespace", *args, require_push)))
 
     result = preconditions.main(["pre-tag", "--repository", REPOSITORY, "--tag", RELEASE_TAG, "--sha", RELEASE_SHA])
@@ -247,6 +335,7 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
         ("check_release_license_compliance.py", "--check-policy-only"),
         ("remote", REPOSITORY, RELEASE_TAG, RELEASE_SHA),
         ("immutable", API_ROOT, REPOSITORY, "immutability-token"),
+        ("environments", API_ROOT, REPOSITORY, "namespace-token"),
         ("signing", API_ROOT, REPOSITORY, "signing-token"),
     ]
     captured = capsys.readouterr()
@@ -258,6 +347,8 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
         return
 
     expected += [
+        ("environment-secrets", API_ROOT, REPOSITORY, "release-compliance-review", {"ROW_RELEASE_IMMUTABILITY_TOKEN"}, "signing-token"),
+        ("environment-secrets", API_ROOT, REPOSITORY, "platform-evidence", {"ROW_PLATFORM_RUNNER_INVENTORY_TOKEN"}, "signing-token"),
         ("check_python315_ci_evidence.py", *coordinates, "--sha", RELEASE_SHA),
         ("check_repository_governance.py", *coordinates, "--sha", RELEASE_SHA),
         ("check_repository_governance.py", *coordinates, "--release-tag", RELEASE_TAG),

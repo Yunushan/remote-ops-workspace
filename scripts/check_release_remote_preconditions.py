@@ -22,6 +22,7 @@ PRODUCTION_BRANCH = "main"
 MAX_JSON_BYTES = 20 * 1024 * 1024
 MAX_RELEASE_PAGES = 1000
 MAX_ENVIRONMENT_SECRETS = 100
+DEPLOYMENT_ENVIRONMENTS = ("release", "release-compliance-review", "platform-evidence")
 RELEASE_SIGNING_SECRETS = frozenset({
     "ROW_WINDOWS_CERTIFICATE_BASE64",
     "ROW_WINDOWS_CERTIFICATE_PASSWORD",
@@ -52,7 +53,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for command in ("immutable", "namespace"):
+    for command in ("immutable", "namespace", "environments"):
         child = subparsers.add_parser(command)
         child.add_argument("--repository", required=True)
         child.add_argument("--tag", required=True)
@@ -73,6 +74,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "namespace":
             token = require_token("GITHUB_TOKEN")
             require_unused_namespace(api_root, repository, tag, token)
+        elif args.command == "environments":
+            token = require_token("GITHUB_TOKEN") if os.environ.get("GITHUB_TOKEN") else None
+            require_deployment_environment_policies(api_root, repository, token)
         elif args.command == "signing":
             require_signing_secret_inventory(api_root, repository, signing_inventory_token())
         else:
@@ -83,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"release remote precondition: {exc}", file=sys.stderr)
         return 1
     scope = f" for {repository}@{args.sha.lower()} and {tag}" if args.command == "pre-tag" else ""
+    if args.command == "environments":
+        scope = f" for {repository} and {tag}"
     print(f"release remote precondition {args.command} passed{scope}")
     return 0
 
@@ -98,7 +104,16 @@ def require_pre_tag(api_root: str, repository: str, tag: str, sha: str) -> None:
 
     check_remote_pre_tag_refs(repository, tag, sha)
     require_immutable_enabled(api_root, repository, require_token("ROW_RELEASE_IMMUTABILITY_TOKEN"))
-    require_signing_secret_inventory(api_root, repository, signing_inventory_token())
+    namespace_token = require_token("GITHUB_TOKEN")
+    require_deployment_environment_policies(api_root, repository, namespace_token)
+    inventory_token = signing_inventory_token()
+    require_signing_secret_inventory(api_root, repository, inventory_token)
+    require_environment_secret_inventory(
+        api_root, repository, "release-compliance-review", {"ROW_RELEASE_IMMUTABILITY_TOKEN"}, inventory_token,
+    )
+    require_environment_secret_inventory(
+        api_root, repository, "platform-evidence", {"ROW_PLATFORM_RUNNER_INVENTORY_TOKEN"}, inventory_token,
+    )
     coordinates = ("--repository", repository, "--branch", PRODUCTION_BRANCH)
     run_release_check("check_python315_ci_evidence.py", *coordinates, "--sha", sha)
     run_release_check("check_repository_governance.py", *coordinates, "--sha", sha)
@@ -110,7 +125,7 @@ def require_pre_tag(api_root: str, repository: str, tag: str, sha: str) -> None:
         "check_platform_evidence_runner_readiness.py", "--repository", repository,
         "--require-goal-targets", "--require-idle", env={**os.environ, "GH_TOKEN": runner_token},
     )
-    require_unused_namespace(api_root, repository, tag, require_token("GITHUB_TOKEN"), require_push=True)
+    require_unused_namespace(api_root, repository, tag, namespace_token, require_push=True)
     check_remote_pre_tag_refs(repository, tag, sha)
     run_release_check("check_repository_cleanup.py", "--require-clean")
     check_local_pre_tag_refs(tag, sha)
@@ -198,16 +213,15 @@ def signing_inventory_token() -> str:
     return require_token(dedicated if dedicated in os.environ else "GITHUB_TOKEN")
 
 
-def get_json(url: str, token: str, *, api_version: str) -> tuple[Any, Any]:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "remote-ops-release-preconditions/1",
-            "X-GitHub-Api-Version": api_version,
-        },
-    )
+def get_json(url: str, token: str | None, *, api_version: str) -> tuple[Any, Any]:
+    request_headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "remote-ops-release-preconditions/1",
+        "X-GitHub-Api-Version": api_version,
+    }
+    if token is not None:
+        request_headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(url, headers=request_headers)
     opener = urllib.request.build_opener(NoRedirect())
     try:
         response = opener.open(request, timeout=60)
@@ -240,26 +254,79 @@ def require_immutable_enabled(api_root: str, repository: str, token: str) -> Non
 
 
 def require_signing_secret_inventory(api_root: str, repository: str, token: str) -> None:
-    url = f"{api_root}/repos/{repository}/environments/release/secrets?per_page={MAX_ENVIRONMENT_SECRETS}"
+    require_environment_secret_inventory(api_root, repository, "release", RELEASE_SIGNING_SECRETS, token)
+
+
+def require_environment_secret_inventory(
+    api_root: str, repository: str, environment: str, required: set[str] | frozenset[str], token: str,
+) -> None:
+    url = f"{api_root}/repos/{repository}/environments/{environment}/secrets?per_page={MAX_ENVIRONMENT_SECRETS}"
     try:
         payload, _ = get_json(url, token, api_version="2026-03-10")
     except (RuntimeError, ValueError) as exc:
-        raise RuntimeError("could not read release signing secret names with Environments read access") from exc
+        raise RuntimeError(f"could not read {environment} secret names with Environments read access") from exc
     rows = payload.get("secrets") if isinstance(payload, dict) else None
     count = payload.get("total_count") if isinstance(payload, dict) else None
     if type(count) is not int or not isinstance(rows, list) or not 0 <= count == len(rows) <= MAX_ENVIRONMENT_SECRETS:
-        raise RuntimeError("GitHub returned an incomplete release signing secret inventory")
+        raise RuntimeError(f"GitHub returned an incomplete {environment} secret inventory")
     names = set()
     for row in rows:
         name = row.get("name") if isinstance(row, dict) else None
         if not isinstance(name, str) or not re.fullmatch(r"[A-Z_][A-Z0-9_]*", name):
-            raise RuntimeError("GitHub returned malformed release signing secret metadata")
+            raise RuntimeError(f"GitHub returned malformed {environment} secret metadata")
         if name in names:
-            raise RuntimeError("GitHub returned duplicate release signing secret names")
+            raise RuntimeError(f"GitHub returned duplicate {environment} secret names")
         names.add(name)
-    missing = RELEASE_SIGNING_SECRETS - names
+    missing = required - names
     if missing:
-        raise RuntimeError("missing signing secrets in the release environment: " + ", ".join(sorted(missing)))
+        label = "missing signing secrets" if environment == "release" else "missing required secrets"
+        raise RuntimeError(f"{label} in the {environment} environment: " + ", ".join(sorted(missing)))
+
+
+def read_deployment_policies(base_url: str, token: str | None) -> set[tuple[str, str]]:
+    policies: set[tuple[str, str]] = set()
+    total = None
+    for page in range(1, MAX_RELEASE_PAGES + 1):
+        payload, _ = get_json(f"{base_url}/deployment-branch-policies?per_page=100&page={page}", token,
+                              api_version="2026-03-10")
+        count = payload.get("total_count") if isinstance(payload, dict) else None
+        rows = payload.get("branch_policies") if isinstance(payload, dict) else None
+        if type(count) is not int or count < 0 or not isinstance(rows, list):
+            raise RuntimeError("GitHub returned malformed deployment policy metadata")
+        if total is None:
+            total = count
+        if count != total or len(rows) != min(100, total - len(policies)):
+            raise RuntimeError("GitHub returned an incomplete deployment policy inventory")
+        for row in rows:
+            kind = row.get("type") if isinstance(row, dict) else None
+            name = row.get("name") if isinstance(row, dict) else None
+            if kind not in ("branch", "tag") or not isinstance(name, str) or not name:
+                raise RuntimeError("GitHub did not identify a deployment policy's ref type and name")
+            policy = (kind, name)
+            if policy in policies:
+                raise RuntimeError("GitHub returned duplicate deployment policies")
+            policies.add(policy)
+        if len(policies) == total:
+            return policies
+    raise RuntimeError("GitHub deployment policy pagination exceeded the safety limit")
+
+
+def require_deployment_environment_policies(api_root: str, repository: str, token: str | None) -> None:
+    required = ("tag", "v*")
+    for environment in DEPLOYMENT_ENVIRONMENTS:
+        base_url = f"{api_root}/repos/{repository}/environments/{environment}"
+        metadata, _ = get_json(base_url, token, api_version="2026-03-10")
+        if not isinstance(metadata, dict) or metadata.get("name") != environment:
+            raise RuntimeError(f"GitHub did not identify the {environment} deployment environment")
+        policy = metadata.get("deployment_branch_policy")
+        if (not isinstance(policy, dict) or policy.get("custom_branch_policies") is not True
+                or policy.get("protected_branches") is not False):
+            raise RuntimeError(f"the {environment} environment must use selected deployment branches and tags")
+        policies = read_deployment_policies(base_url, token)
+        if required not in policies:
+            raise RuntimeError(f"the {environment} environment is missing the v* deployment tag policy")
+        if environment == "platform-evidence" and policies != {required}:
+            raise RuntimeError("the platform-evidence environment must allow only the v* deployment tag policy")
 
 
 def require_unused_namespace(

@@ -125,7 +125,20 @@ Use the following credentials for their respective checks.
   [GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
 - Give `GITHUB_TOKEN` Environments read access for the signing inventory check,
   or export a separate `ROW_RELEASE_SIGNING_INVENTORY_TOKEN` with that access.
+  The same permission covers the required promotion and platform runner secret
+  names in their own environments.
   [GitHub environment secret listing permissions](https://docs.github.com/en/rest/actions/secrets#list-environment-secrets)
+
+Check the deployment rules before the signing and review credentials are ready.
+The command verifies the `v*` tag rule in all three release environments and
+the tag-only restriction in `platform-evidence`. For a public repository,
+the deployment metadata is readable without a token. Private repositories
+require `GITHUB_TOKEN` with Actions read access.
+
+```bash
+python scripts/check_release_remote_preconditions.py environments \
+  --repository "$release_repository" --tag "$release_tag"
+```
 
 You can check the protected `release` environment while other approvals are
 pending. This command verifies the presence of the Windows and macOS signing
@@ -142,9 +155,9 @@ python scripts/check_release_remote_preconditions.py pre-tag \
 ```
 
 The command checks production metadata, policy, exact-commit CI and governance,
-immutable release settings, signing secret names, runner availability, and the
-unused tag and release namespace. After it passes, cut the tag at the same
-explicit `release_sha`.
+immutable release settings, deployment tag rules, required environment secret
+names, runner availability, and the unused tag and release namespace. After it
+passes, cut the tag at the same explicit `release_sha`.
 The artifact-specific approval uses
 the resulting tag, commit, and signed installer bytes. The production
 candidate job repeats the policy check against the tagged source before

@@ -143,6 +143,8 @@ Rules:
   painters. `gui_preset_properties.py` applies and clears Qt route properties
   as the active preset changes. The native render and interaction checks
   exercise these modules through the desktop entry point.
+  `gui_layouts.py` owns saved layout editing, launch, splitter construction,
+  and resize persistence. The window wires toolbar and menu actions to it.
 
 ## Phase 6 - Internal certification gates (about +3)
 

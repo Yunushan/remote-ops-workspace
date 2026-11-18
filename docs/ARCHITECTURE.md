@@ -93,7 +93,10 @@ The PyQt6 desktop shell is split across a family of `gui_*` modules so that the
 main window stays a composition layer rather than a monolith:
 
 - `gui.py` owns the `MainWindow` shell: menus, toolbars, the profile tree,
-  tab/split-pane layout, activity log and the top-level event wiring.
+  ad hoc tabs and splits, the activity log and the top-level event wiring.
+- `gui_layouts.py` owns saved layout actions, launch planning, splitter
+  restoration and resize persistence. It uses the main window to open tabs
+  and start terminal panes.
 - `gui_designs.py` holds the six view presets (Native, MobaXterm-style,
   SecureCRT-style, Termius-style, Remmina-style, mRemoteNG-style) and their
   shared stylesheet/geometry metadata. The same metadata feeds both the live

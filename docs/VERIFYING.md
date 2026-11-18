@@ -141,27 +141,38 @@ requires independently reviewed evidence for the published release.
 
 ### MobApt release evidence
 
-Assemble the bundle with real tools and package archives. In an isolated
-environment for the declared release target, disable networking, install each
-cached archive, then invoke a bundled terminal executable to run an installed
-package. Capture each process's argument list, exit code, standard output and
-standard error. Keep the runtime manifest and archives used by those processes.
+For a Debian target, assemble the bundle with a real `bin/bash` for the target
+architecture and `.deb` archives from an authenticated package source. Prepare
+a disposable Debian image with Python, the matching architecture, and the
+archives' dependencies. The cached packages themselves must be absent from
+the image. Use a trusted image and archives because the capture runs Debian
+maintainer scripts as container root. Mount the checkout and bundle read-only
+and mount a separate writable output directory. For example, with `tree`
+in the bundle and a locally prepared image in `MOBAPT_IMAGE`, run:
 
-Save each capture as a JSON receipt with `schema` set to
-`row.mobapt.offline-execution.v1` and `kind` set to `offline-install` or
-`terminal-probe`. Include `argv`, `exit_code`, `stdout`, `stderr`,
-`network_disabled: true`, `package`, `runtime_manifest_sha256`, and
-`package_archive_sha256`. Use the bundle as the working directory. The install
-argument list must include the archive's bundle-relative path. The terminal
-argument list starts with the executable's bundle-relative path and must
-produce output from the installed package.
+```bash
+docker run --rm --pull never --network none \
+  --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
+  --security-opt no-new-privileges \
+  --mount "type=bind,source=$PWD,target=/src,readonly" \
+  --mount "type=bind,source=$MOBAPT_BUNDLE,target=/bundle,readonly" \
+  --mount "type=bind,source=$MOBAPT_OUTPUT,target=/proof" \
+  "$MOBAPT_IMAGE" python /src/scripts/capture_mobapt_offline_evidence.py \
+  --bundle /bundle --out /proof/review --probe-package tree \
+  --probe-executable /usr/bin/tree --probe-arg=--version
 
-In `mobapt-cache-evidence.json`, update each `install_tests` entry and the
-`terminal_probe` object to reference the receipt filename and SHA-256. Record
-the same command as a shell-quoted argument list and name the tested package
-in `terminal_probe.package`. Run the release checker above. The independent
-review still binds the receipts and package bytes to the exact release and
-workflow attempt.
+python scripts/check_mobapt_cache_evidence.py \
+  --evidence "$MOBAPT_OUTPUT/review/evidence.json" --assets-dir "$MOBAPT_OUTPUT/review"
+```
+
+The collector records the actual `dpkg` installation and invokes the installed
+executable through bundled Bash on a pseudo-terminal. It writes the validated
+receipts, runtime manifest, cache index, and exact bytes to a new `review`
+directory. For other runtimes, capture the equivalent install and terminal
+commands under the same offline conditions using the
+`row.mobapt.offline-execution.v1` receipt format consumed by the checker.
+Independent review must bind those receipts and bytes to the exact release
+and workflow attempt.
 
 For dependency-constrained environments, run:
 

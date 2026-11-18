@@ -1,5 +1,6 @@
 import json
 import shlex
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from remote_ops_workspace.moba_mobapt import (
     validate_mobapt_cache_evidence,
     write_mobapt_runtime_bundle,
 )
+from scripts import capture_mobapt_offline_evidence as capture
 from scripts.check_mobapt_cache_evidence import (
     EXECUTION_SCHEMA,
     validate_mobapt_release_cache_evidence,
@@ -112,3 +114,54 @@ def test_matching_index_hash_does_not_allow_cache_disagreement(captured_bundle):
     write_json(evidence, payload)
     result = validate_mobapt_release_cache_evidence(evidence)
     assert not result.passed and "must list the same packages" in result.errors[0]
+
+
+@pytest.mark.parametrize("probe_passes", [True, False])
+def test_capture_publishes_only_validated_execution_receipts(tmp_path, monkeypatch, probe_passes):
+    evidence = assemble(tmp_path)
+    original = evidence.read_bytes()
+    output = tmp_path / "capture"
+    monkeypatch.setattr(capture, "require_offline_container", lambda: None)
+    calls = []
+
+    def run(arguments, cwd, *, check=True):
+        calls.append(arguments)
+        binary, *args = arguments
+        if args == ["--print-architecture"]:
+            return subprocess.CompletedProcess(arguments, 0, "amd64\n", "")
+        assert cwd != evidence.parent
+        archive = "packages/tree-2.2.1.deb"
+        if binary == "dpkg-query" and args[0] == "--show":
+            assert check is False
+            if any(cmd[:2] == ["dpkg", "--install"] for cmd in calls):
+                return subprocess.CompletedProcess(arguments, 0, "install ok installed\n2.2.1", "")
+            return subprocess.CompletedProcess(arguments, 1, "", "no packages found")
+        if binary == "dpkg-deb":
+            assert args == ["--field", archive, "Package", "Version"]
+            return subprocess.CompletedProcess(arguments, 0, "Package: tree\nVersion: 2.2.1\n", "")
+        if binary == "dpkg":
+            assert args == ["--install", "--", archive]
+            return subprocess.CompletedProcess(arguments, 0, "Setting up tree", "")
+        if args == ["--listfiles", "--", "tree"]:
+            return subprocess.CompletedProcess(arguments, 0, f"{tmp_path / 'tree'}\n", "")
+        assert binary == "script"
+        assert "--return" in args and "bin/bash" in args[args.index("--command") + 1]
+        if not probe_passes:
+            raise subprocess.CalledProcessError(7, arguments)
+        return subprocess.CompletedProcess(arguments, 0, "tree 2.2.1\n", "")
+
+    executable = tmp_path / "tree"
+    executable.touch()
+    monkeypatch.setattr(capture, "run", run)
+
+    if probe_passes:
+        capture.capture(evidence.parent, output, "tree", str(executable), ["--version"])
+        result = validate_mobapt_release_cache_evidence(output / "evidence.json")
+        assert result.passed and result.summary["offline_execution_receipts_verified"] is True
+        assert not list(output.rglob("*.txt"))
+    else:
+        with pytest.raises(subprocess.CalledProcessError):
+            capture.capture(evidence.parent, output, "tree", str(executable), ["--version"])
+        assert not output.exists()
+        assert not list(tmp_path.glob(".mobapt-capture-*"))
+    assert evidence.read_bytes() == original

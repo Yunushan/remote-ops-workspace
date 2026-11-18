@@ -138,6 +138,7 @@ class _Output:
 def _pane():
     pane = _load_selected_methods()()
     pane.initialize_scroll()
+    pane.ssh_connection = None
     pane.output = _Output()
     pane.terminal_emulator = SimpleNamespace(alternate_screen_active=False)
     pane._terminal_follow_output = True

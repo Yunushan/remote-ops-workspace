@@ -102,9 +102,10 @@ reviews, and the downloaded release assets. See the
   CryptoAPI/PKCS#11 inventory, OpenSSH public-key retrieval, SSH expert
   certificate selection, MobAgent handoff, same-parameter SSH-browser multiplex
   plans and SHA-bound release evidence bundles. The Moba-style PyQt Tools
-  workflow now opens a smart-card management surface for provider selection,
-  certificate rows, add/remove controls, OpenSSH public-key export, SSH profile
-  selection and MobAgent handoff previews.
+  dialog displays the certificate data saved in the profile and previews the
+  inventory, OpenSSH public-key export, SSH selection and handoff commands.
+  Live inventory, add/remove controls and agent handoff from that dialog
+  remain open.
   Connected Moba-style sessions now carry the selected smart-card certificate,
   provider, MobAgent handoff flag and public-key metadata into serialized GUI
   state so the PyQt SFTP dock can render the same selection context.
@@ -264,9 +265,10 @@ reviews, and the downloaded release assets. See the
    persisted 26.4 browser preferences and smart-card selection state directly,
    including browser visibility, saved table widths, overwrite-confirmation
    mode, selected certificate metadata and MobAgent handoff flags. The PyQt
-   Tools workflow now exposes a smart-card management surface for certificate
-   inventory, add/remove controls, OpenSSH public-key export, SSH expert
-   selection and same-parameter SSH-browser command previews. `row smartcard
+   Tools dialog displays saved certificate metadata and command previews for
+   certificate inventory, OpenSSH public-key export, SSH expert selection and
+   the same-parameter browser. Its actions open the profile editor or run
+   diagnostics. `row smartcard
    evidence-bundle` now assembles SHA-bound proof for the management UI,
    profile expert setting, MobAgent handoff and smart-card SSH-browser session.
    The release validator matches the card certificate to the agent key and the

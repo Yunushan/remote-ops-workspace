@@ -1516,6 +1516,8 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tabs_path = "src/remote_ops_workspace/gui_workspace_tabs.py"
+    tabs_source = Path(tabs_path).read_text(encoding="utf-8")
     preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1570,14 +1572,14 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     assert "moba_connected_tab_chrome_geometry_for" in renderer_source
     assert "geometry.close_right_offset" in renderer_source
     assert "geometry.gap_after" in renderer_source
-    assert "mobaTabStaticWidth" in gui_source
-    assert "mobaTabCloseRightOffset" in gui_source
-    assert "mobaTabChromeGeometryKeys" in gui_source
+    assert "mobaTabStaticWidth" in tabs_source
+    assert "mobaTabCloseRightOffset" in tabs_source
+    assert "mobaTabChromeGeometryKeys" in tabs_source
     assert "mobaConnectedSessionActionRouteKey" in preset_properties_source
     assert "apply_moba_connected_session_action_route_to_tab" in gui_source
-    assert "build_tab_context_menu" in gui_source
-    assert "apply_session_action_menu_capture" in gui_source
-    assert "session_action_menu_object_name" in gui_source
+    assert "build_tab_context_menu" in tabs_source
+    assert "apply_session_action_menu_capture" in tabs_source
+    assert "session_action_menu_object_name" in tabs_source
     assert "EXPECTED_MOBA_TAB_CHROME_GEOMETRY" in checker_source
     assert "EXPECTED_MOBA_CONNECTED_SESSION_ACTION_ROUTE" in checker_source
     assert "check_live_moba_connected_session_action_route" in checker_source
@@ -1590,7 +1592,7 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     assert "MobaXterm-style connected session action menu route" in docs_source
     assert (
         "mobaTabStaticWidth"
-        in geometry_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in geometry_requirement["source_tokens"][tabs_path]
     )
     assert (
         "route.captured_enabled_keys_property"
@@ -1598,11 +1600,11 @@ def test_mobaxterm_static_renderer_uses_connected_tab_chrome_metadata() -> None:
     )
     assert (
         "apply_session_action_menu_capture"
-        in action_menu_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in action_menu_route_requirement["source_tokens"][tabs_path]
     )
     assert (
         "session_action_menu_object_name"
-        in action_menu_route_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in action_menu_route_requirement["source_tokens"][tabs_path]
     )
 
 
@@ -1750,6 +1752,7 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
+    tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1762,7 +1765,7 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     assert "mobaBottomEdgeControls" in gui_source
     assert "mobaBottomEdgeControl" in gui_source
     assert 'box.setProperty("designPreset", self.current_design_id())' in gui_source
-    assert 'home_widget_preset != self.current_design_id()' in gui_source
+    assert 'home_widget_preset != self.current_design_id()' in tabs_source
     main_window_source = gui_source.split("class MainWindow", 1)[1]
     assert "def moba_utility_icon" in main_window_source
     assert main_window_source.index("def moba_utility_icon") < main_window_source.index(
@@ -1771,7 +1774,9 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     assert '"arrow-left"' in main_window_source
     assert '"arrow-right"' in main_window_source
     assert '"close"' in main_window_source
-    assert "SessionTabActions" in main_window_source.splitlines()[0]
+    main_window_bases = main_window_source.split("):", 1)[0]
+    assert "SessionTabActions" in main_window_bases
+    assert "WorkspaceTabs" in main_window_bases
     assert "def activate_adjacent_tab" in session_tabs_source
     assert "EXPECTED_MOBA_BOTTOM_EDGE_KEYS" in checker_source
     assert "expected_moba_bottom_edge_controls" in checker_source
@@ -2890,7 +2895,7 @@ def test_gui_parity_tracks_reference_tab_activation_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
     preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -2916,7 +2921,7 @@ def test_gui_parity_tracks_reference_tab_activation_routes() -> None:
     assert "reference-profile-tab-can-be-active-surface" in design_source
     assert "presetReferenceTabActivatedLabel" in preset_properties_source
     assert "presetReferenceTabReturnedHomeLabel" in preset_properties_source
-    assert "find_tab_by_label" in gui_source
+    assert "find_tab_by_label" in tabs_source
     assert "preset_reference_tab_route" in renderer_source
     assert "reference_tab_route.active_tab_label" in renderer_source
     assert "reference_tab_route.home_tab_label" in renderer_source
@@ -3237,6 +3242,7 @@ def test_gui_parity_tracks_reference_session_action_routes() -> None:
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -3258,7 +3264,7 @@ def test_gui_parity_tracks_reference_session_action_routes() -> None:
     assert "GuiPresetReferenceSessionActionRoute" in design_source
     assert "gui_design_preset_reference_session_action_route" in design_source
     assert "active-reference-session-actions" in design_source
-    assert "sessionTabContextActionKey" in gui_source
+    assert "sessionTabContextActionKey" in tabs_source
     assert "apply_reference_session_action_route_to_terminal_tab" in gui_source
     assert "preset_reference_session_action_route" in renderer_source
     assert "reference_session_action_route.expected_action_keys" in renderer_source

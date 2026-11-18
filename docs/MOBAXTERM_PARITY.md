@@ -300,7 +300,7 @@ reviews, and the downloaded release assets. See the
    OpenSSH control connection after a local master check succeeds. A managed
    session exposes connection, authentication, closure and reconnect state
    through the terminal, SFTP and monitoring controls. Automatic tools wait
-   while the terminal authenticates. Linux interactive SSH and SFTP
+   for a verified connection and pause when it closes. Linux interactive SSH and SFTP
    panes use a controlling pseudoterminal. OpenSSH receives the initial viewport
    dimensions and forwards later resizes to its remote PTY. The Windows
    terminal uses ConPTY when available, and background tools authenticate

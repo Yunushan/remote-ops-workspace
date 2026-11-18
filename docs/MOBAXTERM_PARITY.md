@@ -311,7 +311,9 @@ reviews, and the downloaded release assets. See the
    intact when wrapping or clipping at the right edge. When the viewport
    resizes, the visible alternate screen updates even if the remote
    application is quiet. Saved cursor positions and scrolling regions stay
-   within the resized grid.
+   within the resized grid. Index and reverse index scroll only at the
+   configured region boundaries. Cursor-position reports respect origin mode
+   and keep delayed wrap within the visible columns.
    Applications can set and query block, underline and bar cursor styles.
    The cursor uses the desktop's blink timing and restores the primary-screen
    style when an application leaves the alternate screen.

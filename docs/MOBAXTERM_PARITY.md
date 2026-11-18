@@ -156,9 +156,13 @@ reviews, and the downloaded release assets. See the
   `ROW_SERVER_RUNTIME_DIR`, `row servers bundle-runtime` assembles
   release-owned packaged daemon roots from supplied service binaries,
   `row servers config-plan` emits first-class auth/hardening configuration
-  plans, and `row servers evidence-verify` fails closed unless every embedded
-  service has bundled daemon hashes plus passed real-client evidence. The
-  Moba-style PyQt Servers ribbon action now opens a typed GUI configuration
+  plans. On Linux, administrators manage the Telnet and NFS daemons through
+  the host service manager. The Telnet plan leaves xinetd disabled by default
+  and requires system PAM login and explicit approval for cleartext use. The
+  NFS plan specifies NFSv4 over TCP and requires administrator-scoped exports
+  with Kerberos privacy (`sec=krb5p`). `row servers evidence-verify` checks the
+  bundled daemon hashes and hashed client-test attachments for every service.
+  The Moba-style PyQt Servers ribbon action opens a typed GUI configuration
   surface backed by the same status, packaged-runtime, hardening, start/stop
   and evidence command contracts.
 - X11 forwarding, external X server helper launch plans and MobaXterm-style

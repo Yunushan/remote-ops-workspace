@@ -1,5 +1,5 @@
 {
-  "baseline_head": "44058373ff67afc7485dac42232cea626134bfcf",
+  "baseline_head": "c2224dbc89d309cde5d948224416c7dcd45dce21",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -188,8 +188,8 @@
     },
     {
       "path": "src/remote_ops_workspace/moba_servers.py",
-      "sha256": "cbbbfce279191ec98fe263437c2dd5921b2d956424130edd8941397c069b58b8",
-      "size": 68486
+      "sha256": "3135bd17f8c6246c7082471ddfd3189d7fb034e8bc8fcd2dce2eb5e99c3d643f",
+      "size": 69093
     },
     {
       "path": "src/remote_ops_workspace/moba_smartcards.py",

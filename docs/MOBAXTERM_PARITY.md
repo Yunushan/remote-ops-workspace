@@ -308,7 +308,10 @@ reviews, and the downloaded release assets. See the
    cursor-addressed alternate screen.
    Both account for wide characters and combining marks in cursor positions,
    erasure and colored output. The alternate screen also keeps wide characters
-   intact when wrapping or clipping at the right edge.
+   intact when wrapping or clipping at the right edge. When the viewport
+   resizes, the visible alternate screen updates even if the remote
+   application is quiet. Saved cursor positions and scrolling regions stay
+   within the resized grid.
    Applications can set and query block, underline and bar cursor styles.
    The cursor uses the desktop's blink timing and restores the primary-screen
    style when an application leaves the alternate screen.

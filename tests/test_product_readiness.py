@@ -693,7 +693,7 @@ def test_product_readiness_rejects_wrong_linux_builder_or_host_evidence(monkeypa
 
     assert (
         "linux-armhf protected platform requirement builder_or_host_evidence must be "
-        "matching self-hosted armv7l/armhf Linux runner or equivalent real armhf builder"
+        "native armv7l/armhf Linux builder with a separate self-hosted Linux x64 collector"
     ) in errors
 
 

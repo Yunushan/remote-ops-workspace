@@ -41,13 +41,17 @@ def _terminal_process_backend(
     plan: TerminalPanePlan,
     _profile: Profile | None,
 ):
-    """Select a real local pseudo-console for interactive Windows sessions."""
+    """Select a native terminal transport for supported interactive sessions."""
 
     # Saved Windows profiles can carry an absolute backslash-delimited
     # executable path even when a POSIX-hosted render/evidence check is
     # exercising the native-Windows selection logic.
     program_name = ntpath.basename(plan.command[0]).lower() if plan.command else ""
     openssh_program = program_name in {"ssh", "ssh.exe", "sftp", "sftp.exe"}
+    if sys.platform == "linux" and openssh_program:
+        from .qt_terminal_process import QtLinuxPtyProcess
+
+        return QtLinuxPtyProcess(parent), ""
     local_shell_program = bool(
         plan.source == "shell"
         and program_name

@@ -423,7 +423,11 @@ class TerminalPane(QWidget):
         )
         self.output.setProperty(
             "terminalProcessBackend",
-            "windows-conpty" if bool(getattr(self.process, "is_pty", False)) else "qt-process-pipe",
+            getattr(
+                self.process,
+                "transport_backend",
+                "windows-conpty" if bool(getattr(self.process, "is_pty", False)) else "qt-process-pipe",
+            ),
         )
         process_property = getattr(self.process, "property", lambda _name: None)
         self.output.setProperty(
@@ -1499,6 +1503,7 @@ class TerminalPane(QWidget):
                 environment.insert(key, value)
             self.process.setProcessEnvironment(environment)
         self.resize_terminal_backend()
+        self.flush_terminal_resize()
         self.process.start()
         self.update_process_actions()
 
@@ -2242,7 +2247,9 @@ class TerminalPane(QWidget):
 
     def arm_initial_pty_clear_recovery(self) -> None:
         armed = bool(
-            getattr(self.process, "is_pty", False) and self.terminal_startup_context_text()
+            getattr(self.process, "is_pty", False)
+            and getattr(self.process, "transport_backend", "windows-conpty") == "windows-conpty"
+            and self.terminal_startup_context_text()
         )
         self._pty_initial_clear_pending = armed
         self._pty_startup_probe = ""

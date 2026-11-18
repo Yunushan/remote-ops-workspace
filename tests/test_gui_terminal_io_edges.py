@@ -520,6 +520,7 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
     from PyQt6.QtWidgets import QMessageBox
 
     from remote_ops_workspace import gui, gui_processes, windows_conpty
+    from remote_ops_workspace.qt_terminal_process import QtLinuxPtyProcess
 
     _app, window = gui_window
     _pane = _new_pane(window)
@@ -536,7 +537,12 @@ def test_terminal_backend_fallback_and_literal_message_box_edges(
         ),
         None,
     )
-    assert isinstance(linux_process, QProcess)
+    assert isinstance(linux_process, QtLinuxPtyProcess)
+    assert warning == ""
+    linux_pipe, warning = backend(
+        window, TerminalPanePlan("linux helper", ["python", "-V"], "test"), None,
+    )
+    assert isinstance(linux_pipe, QProcess)
     assert warning == ""
 
     monkeypatch.setattr(gui.sys, "platform", "win32")

@@ -1,4 +1,4 @@
-"""Qt signal adapter for the dependency-free Windows ConPTY transport."""
+"""Qt signal adapters for interactive terminals and hidden processes."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from typing import Any, Final
 
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, pyqtSignal
 
+from .linux_pty import LinuxPtyProcess
 from .process_launch import hidden_process_options
 from .windows_conpty import (
-    ConPtyProcessError,
     WindowsConPtyProcess,
     conpty_support,
 )
@@ -49,8 +49,8 @@ def _take_buffer_prefix(buffer: bytearray, max_bytes: int) -> bytes:
     return payload
 
 
-class QtConPtyProcess(QObject):
-    """Expose :class:`WindowsConPtyProcess` through the QProcess subset used by the GUI."""
+class _QtPtyProcess(QObject):
+    """Expose a native pseudoterminal through the Qt process interface."""
 
     readyReadStandardOutput = pyqtSignal()
     readyReadStandardError = pyqtSignal()
@@ -59,6 +59,8 @@ class QtConPtyProcess(QObject):
     finished = pyqtSignal(int, object)
 
     is_pty = True
+    transport_backend = "windows-conpty"
+    transport_name = "ConPTY"
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -66,7 +68,7 @@ class QtConPtyProcess(QObject):
         self._arguments: list[str] = []
         self._environment: dict[str, str] | None = None
         self._state = QProcess.ProcessState.NotRunning
-        self._session: WindowsConPtyProcess | None = None
+        self._session: WindowsConPtyProcess | LinuxPtyProcess | None = None
         self._stdout = bytearray()
         self._output_paused = False
         self._error_string = ""
@@ -85,7 +87,7 @@ class QtConPtyProcess(QObject):
         self._disposed = False
         self._pending_start: tuple[
             int,
-            WindowsConPtyProcess | None,
+            WindowsConPtyProcess | LinuxPtyProcess | None,
             BaseException | None,
         ] | None = None
         self._start_thread: threading.Thread | None = None
@@ -97,8 +99,9 @@ class QtConPtyProcess(QObject):
         # ConPTY owns the child console surface. Keep the policy explicit so
         # GUI diagnostics and native smoke tests detect a regression to a
         # visible helper window during tab transitions.
-        self.setProperty("terminalConsoleSuppressed", True)
-        self.setProperty("terminalChildWindowPolicy", "conpty-hidden")
+        conpty = self.transport_backend == "windows-conpty"
+        self.setProperty("terminalConsoleSuppressed", conpty)
+        self.setProperty("terminalChildWindowPolicy", "conpty-hidden" if conpty else "controlling-pty")
         self._columns = 120
         self._rows = 30
         self._poll_timer = QTimer(self)
@@ -140,7 +143,7 @@ class QtConPtyProcess(QObject):
         if self._state != QProcess.ProcessState.NotRunning:
             return
         if self._disposed:
-            self._fail_start("ConPTY process has been disposed")
+            self._fail_start(f"{self.transport_name} process has been disposed")
             return
         if not self._program:
             self._fail_start("empty terminal program")
@@ -169,7 +172,7 @@ class QtConPtyProcess(QObject):
         self._start_thread = threading.Thread(
             target=self._start_session_worker,
             args=(generation, argv, columns, rows, self._environment),
-            name="remote-ops-conpty-starter",
+            name=f"remote-ops-{self.transport_backend}-starter",
             daemon=True,
         )
         self._start_thread.start()
@@ -183,13 +186,14 @@ class QtConPtyProcess(QObject):
         rows: int,
         environment: dict[str, str] | None = None,
     ) -> None:
-        session: WindowsConPtyProcess | None = None
+        session: WindowsConPtyProcess | LinuxPtyProcess | None = None
         error: BaseException | None = None
         try:
+            session_type = LinuxPtyProcess if self.transport_backend == "linux-pty" else WindowsConPtyProcess
             if environment is None:
-                session = WindowsConPtyProcess(argv, columns=columns, rows=rows)
+                session = session_type(argv, columns=columns, rows=rows)
             else:
-                session = WindowsConPtyProcess(argv, columns=columns, rows=rows, env=environment)
+                session = session_type(argv, columns=columns, rows=rows, env=environment)
             session.start()
         except Exception as exc:  # pragma: no cover - platform-specific failure
             error = exc
@@ -227,7 +231,7 @@ class QtConPtyProcess(QObject):
                 self._close_session_async(session, terminate=True)
             return
         if error is not None or session is None:
-            self._fail_start(str(error) if error is not None else "ConPTY process failed to start")
+            self._fail_start(str(error) if error is not None else f"{self.transport_name} process failed to start")
             return
         self._session = session
         self._state = QProcess.ProcessState.Running
@@ -241,7 +245,7 @@ class QtConPtyProcess(QObject):
                 session.write(pending_input)
             if close_write:
                 session.close_input()
-        except (BlockingIOError, BrokenPipeError, ConPtyProcessError, RuntimeError) as exc:
+        except (OSError, RuntimeError) as exc:
             self._fail_session(
                 session,
                 str(exc),
@@ -264,7 +268,7 @@ class QtConPtyProcess(QObject):
     def _fail_start(self, detail: str) -> None:
         self._finished_emitted = True
         self._state = QProcess.ProcessState.NotRunning
-        self._error_string = detail or "ConPTY process failed to start"
+        self._error_string = detail or f"{self.transport_name} process failed to start"
         self.errorOccurred.emit(QProcess.ProcessError.FailedToStart)
 
     def _poll_session(self) -> None:
@@ -305,7 +309,7 @@ class QtConPtyProcess(QObject):
             self._reported_io_error = io_error
             process_error = (
                 QProcess.ProcessError.WriteError
-                if io_error.operation.startswith("WriteFile")
+                if io_error.operation == "write" or io_error.operation.startswith("WriteFile")
                 else QProcess.ProcessError.ReadError
             )
             self._fail_session(
@@ -320,7 +324,7 @@ class QtConPtyProcess(QObject):
             if deadline is not None and time.monotonic() >= deadline:
                 self._fail_session(
                     session,
-                    "timed out waiting for forced ConPTY termination",
+                    f"timed out waiting for forced {self.transport_name} termination",
                     QProcess.ProcessError.Crashed,
                     terminate=True,
                 )
@@ -338,7 +342,7 @@ class QtConPtyProcess(QObject):
             if deadline is not None and time.monotonic() >= deadline:
                 self._fail_session(
                     session,
-                    "timed out while draining final ConPTY output after child exit",
+                    f"timed out while draining final {self.transport_name} output after child exit",
                     QProcess.ProcessError.ReadError,
                     terminate=False,
                 )
@@ -346,7 +350,7 @@ class QtConPtyProcess(QObject):
         self._drain_output(session, force=True)
         self._finish_session(session)
 
-    def _finish_session(self, session: WindowsConPtyProcess) -> None:
+    def _finish_session(self, session: WindowsConPtyProcess | LinuxPtyProcess) -> None:
         if session is not self._session or self._finished_emitted:
             return
         returncode = self._pending_returncode
@@ -359,7 +363,7 @@ class QtConPtyProcess(QObject):
         self._forced_termination_deadline = None
         exit_status = (
             QProcess.ExitStatus.CrashExit
-            if self._forced_termination
+            if self._forced_termination or returncode < 0
             else QProcess.ExitStatus.NormalExit
         )
         self._dispose_session(terminate=False)
@@ -367,7 +371,7 @@ class QtConPtyProcess(QObject):
 
     def _fail_session(
         self,
-        session: WindowsConPtyProcess,
+        session: WindowsConPtyProcess | LinuxPtyProcess,
         detail: str,
         process_error: QProcess.ProcessError,
         *,
@@ -381,7 +385,7 @@ class QtConPtyProcess(QObject):
         self._finished_emitted = True
         self._poll_timer.stop()
         self._state = QProcess.ProcessState.NotRunning
-        self._error_string = detail or "ConPTY transport failed"
+        self._error_string = detail or f"{self.transport_name} transport failed"
         self._output_shutdown_deadline = None
         self._forced_termination_deadline = None
         self._dispose_session(terminate=terminate)
@@ -393,7 +397,7 @@ class QtConPtyProcess(QObject):
             QProcess.ExitStatus.CrashExit,
         )
 
-    def _begin_output_shutdown(self, session: WindowsConPtyProcess) -> bool:
+    def _begin_output_shutdown(self, session: WindowsConPtyProcess | LinuxPtyProcess) -> bool:
         if self._output_shutdown_started:
             return True
         try:
@@ -412,7 +416,7 @@ class QtConPtyProcess(QObject):
         )
         return True
 
-    def _drain_output(self, session: WindowsConPtyProcess, *, force: bool = False) -> None:
+    def _drain_output(self, session: WindowsConPtyProcess | LinuxPtyProcess, *, force: bool = False) -> None:
         if self._output_paused and not force:
             return
         payload = session.read_all()
@@ -461,11 +465,11 @@ class QtConPtyProcess(QObject):
             return len(data)
         session = self._session
         if session is None or self._state != QProcess.ProcessState.Running:
-            self._error_string = "ConPTY process is not running"
+            self._error_string = f"{self.transport_name} process is not running"
             return -1
         try:
             return session.write(data)
-        except (BlockingIOError, BrokenPipeError, ConPtyProcessError, RuntimeError) as exc:
+        except (OSError, RuntimeError) as exc:
             self._error_string = str(exc)
             self.errorOccurred.emit(QProcess.ProcessError.WriteError)
             return -1
@@ -588,7 +592,7 @@ class QtConPtyProcess(QObject):
             if drain_deadline is not None and time.monotonic() >= drain_deadline:
                 self._fail_session(
                     session,
-                    "timed out while draining final ConPTY output after child exit",
+                    f"timed out while draining final {self.transport_name} output after child exit",
                     QProcess.ProcessError.ReadError,
                     terminate=False,
                 )
@@ -617,11 +621,7 @@ class QtConPtyProcess(QObject):
         return self._finished_emitted
 
     def close(self) -> None:
-        with self._lifecycle_lock:
-            self._generation += 1
-            self._pending_start = None
-            self._pending_start_input.clear()
-            self._pending_start_close_write = False
+        self._discard_pending_start()
         self._startup_timer.stop()
         self._poll_timer.stop()
         self._output_paused = False
@@ -634,19 +634,26 @@ class QtConPtyProcess(QObject):
         self._dispose_session(terminate=True)
 
     def _cancel_pending_start(self) -> bool:
-        """Cancel a ConPTY creation that has not yet adopted its child."""
+        """Cancel a PTY creation that has not yet adopted its child."""
 
         with self._lifecycle_lock:
             if self._state != QProcess.ProcessState.Starting:
                 return False
-            self._generation += 1
-            self._pending_start = None
-            self._pending_start_input.clear()
-            self._pending_start_close_write = False
+            self._discard_pending_start()
         self._startup_timer.stop()
         self._state = QProcess.ProcessState.NotRunning
         self._finished_emitted = True
         return True
+
+    def _discard_pending_start(self) -> None:
+        with self._lifecycle_lock:
+            self._generation += 1
+            pending = self._pending_start
+            self._pending_start = None
+            self._pending_start_input.clear()
+            self._pending_start_close_write = False
+        if pending is not None and pending[1] is not None:
+            self._close_session_async(pending[1], terminate=True)
 
     def _dispose_session(self, *, terminate: bool) -> None:
         session = self._session
@@ -657,7 +664,7 @@ class QtConPtyProcess(QObject):
 
     def _close_session_async(
         self,
-        session: WindowsConPtyProcess,
+        session: WindowsConPtyProcess | LinuxPtyProcess,
         *,
         terminate: bool,
     ) -> None:
@@ -672,7 +679,7 @@ class QtConPtyProcess(QObject):
 
         threading.Thread(
             target=close_session,
-            name="remote-ops-conpty-closer",
+            name=f"remote-ops-{self.transport_backend}-closer",
             daemon=True,
         ).start()
 
@@ -680,6 +687,32 @@ class QtConPtyProcess(QObject):
         self._disposed = True
         self.close()
         super().deleteLater()
+
+
+class QtConPtyProcess(_QtPtyProcess):
+    """Qt adapter for the Windows pseudoconsole."""
+
+
+class QtLinuxPtyProcess(_QtPtyProcess):
+    """Qt adapter for a controlling Linux PTY."""
+
+    transport_backend = "linux-pty"
+    transport_name = "Linux PTY"
+
+    def waitForFinished(self, milliseconds: int = 30000) -> bool:  # noqa: N802
+        # The master is drained by the Qt adapter. Waiting for the PID without
+        # draining it first could deadlock a child that is writing its final output.
+        self.setOutputPaused(False)
+        deadline = None if milliseconds < 0 else time.monotonic() + milliseconds / 1000
+        while self._state != QProcess.ProcessState.NotRunning:
+            self._poll_startup()
+            self._poll_session()
+            if self._state == QProcess.ProcessState.NotRunning:
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(0.005)
+        return True
 
 
 def hidden_process_creation_flags(system_name: str | None = None) -> int:

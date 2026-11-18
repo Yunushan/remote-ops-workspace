@@ -43,8 +43,8 @@ def test_tools_opens_live_inventory_for_default_and_configured_provider(gui_wind
     deleted = []
     actions = {}
 
-    def open_dialog(_parent, provider, agent):
-        return SimpleNamespace(exec=lambda: dialogs.append((provider, agent)), deleteLater=lambda: deleted.append(True))
+    def open_dialog(_parent, provider, agent, **kwargs):
+        return SimpleNamespace(exec=lambda: dialogs.append((provider, agent, kwargs)), deleteLater=lambda: deleted.append(True))
 
     _set_closure_value(monkeypatch, window.open_moba_pkcs11_inventory, "SmartCardDialog", open_dialog)
     monkeypatch.setattr(window, "show_workflow_dialog", lambda *_args, **kwargs: actions.update(kwargs["actions"]))
@@ -57,8 +57,50 @@ def test_tools_opens_live_inventory_for_default_and_configured_provider(gui_wind
     monkeypatch.setattr(window, "selected_profile_for_workflow", lambda: selected)
     window.show_moba_smartcards_status()
     actions["PKCS#11 inventory"]()
-    assert dialogs == [("", None), ("pkcs11:/opt/Card Middleware/provider.so", "agent-socket")]
+    assert [(provider, agent) for provider, agent, _ in dialogs] == [("", None), ("pkcs11:/opt/Card Middleware/provider.so", "agent-socket")]
+    assert dialogs[0][2] == {}
+    assert dialogs[1][2]["profile_name"] == "live-card"
+    assert dialogs[1][2]["pinned_key"] == ""
     assert deleted == [True, True]
+
+
+def test_inventory_saves_against_current_profile_and_rejects_stale_selection(gui_window, monkeypatch):
+    from base64 import b64encode
+    from dataclasses import replace
+
+    from remote_ops_workspace.smartcard_keys import PINNED_SMARTCARD_KEY
+
+    _app, window = gui_window
+    dialogs = []
+    key = "ssh-ed25519 " + b64encode(b"\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20" + b"q" * 32).decode()
+    observed = Profile(name="card", protocol="ssh", host="example.invalid", username="operator", identity_file="existing")
+    other = Profile(name="other", protocol="ssh", host="other.invalid")
+    window.store.save([other, observed])
+
+    def open_dialog(_parent, _provider, _agent, **kwargs):
+        dialogs.append(kwargs)
+        return SimpleNamespace(exec=lambda: None, deleteLater=lambda: None)
+
+    _set_closure_value(monkeypatch, window.open_moba_pkcs11_inventory, "SmartCardDialog", open_dialog)
+    window.open_moba_pkcs11_inventory("/opt/vendor.so", observed)
+    save = dialogs[-1]["save_profile_key"]
+    window.store.replace_named(observed.name, replace(observed, description="changed concurrently"))
+    save("/opt/vendor.so", key)
+    reloaded = window.store.get(observed.name)
+    assert reloaded.options[PINNED_SMARTCARD_KEY] == key
+    assert reloaded.description == "changed concurrently" and reloaded.identity_file == "existing"
+    window.open_moba_pkcs11_inventory("/opt/vendor.so", reloaded)
+    assert dialogs[-1]["pinned_key"] == key
+    save("", None)
+    assert PINNED_SMARTCARD_KEY not in window.store.get(observed.name).options
+    with pytest.raises(ValueError, match="SSH profile changed"):
+        dialogs[-1]["save_profile_key"]("", None)
+    window.store.replace_named(observed.name, replace(observed, host="new.invalid"))
+    with pytest.raises(ValueError, match="SSH profile changed"):
+        save("/opt/vendor.so", key)
+    window.store.remove(observed.name, surface="profile-editor")
+    with pytest.raises(KeyError, match="no longer exists"):
+        save("/opt/vendor.so", key)
 
 
 def test_quick_connect_suggestions_execution_and_status_surfaces(

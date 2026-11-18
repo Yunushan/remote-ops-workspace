@@ -84,6 +84,7 @@ def test_inventory_launches_directly_refreshes_and_copies_public_keys(dialog, mo
     widget.browse.click()
     assert widget.provider.text() == "invalid-relative"
     widget.copy_key()
+    widget.change_profile_key(clear=False)
 
     process.readAllStandardOutput.side_effect = None
     widget.provider.setText(dialog.path)
@@ -171,4 +172,32 @@ def test_windows_inventory_leaves_unix_process_flags_unset(dialog, monkeypatch):
     dialog.process.setUnixProcessParameters.reset_mock()
     inventory = dialog.module.SmartCardDialog(dialog.parent, "", None)
     dialog.process.setUnixProcessParameters.assert_not_called()
+    inventory.done(int(dialog.module.QDialog.DialogCode.Rejected))
+
+
+def test_profile_key_controls_follow_selection_and_surface_store_errors(dialog):
+    other_key = ALGORITHM + b" " + base64.b64encode(WIRE[:-1] + b"b")
+    save = Mock()
+    inventory = dialog.module.SmartCardDialog(dialog.parent, dialog.path, None, profile_name="card",
+                                             pinned_key=other_key.decode(), save_profile_key=save)
+    assert not inventory.use_key.isEnabled()
+    inventory.change_profile_key(clear=False)
+    save.assert_not_called()
+    inventory.refresh.click()
+    dialog.process.readAllStandardOutput.return_value = KEY + b"\n" + other_key + b"\n"
+    inventory.finish(0, dialog.qt.ExitStatus.NormalExit)
+    assert inventory.keys.currentRow() == 1
+    assert inventory.clear_key.isEnabled()
+    inventory.keys.setCurrentRow(0)
+    inventory.use_key.click()
+    save.assert_called_once_with(dialog.path, KEY.decode())
+    assert inventory.pinned_key == KEY.decode()
+    save.side_effect = ValueError("write rejected by policy")
+    inventory.clear_key.click()
+    assert "write rejected by policy" in inventory.status.text()
+    assert inventory.pinned_key == KEY.decode()
+    save.side_effect = None
+    inventory.clear_key.click()
+    save.assert_called_with("", None)
+    assert not inventory.clear_key.isEnabled()
     inventory.done(int(dialog.module.QDialog.DialogCode.Rejected))

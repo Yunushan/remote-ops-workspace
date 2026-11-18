@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt, QTimer
@@ -21,17 +22,29 @@ from PyQt6.QtWidgets import (
 )
 
 from .gui_processes import _background_process
-from .moba_smartcards import build_smartcard_inventory_plan, smartcard_public_keys
+from .moba_smartcards import build_smartcard_inventory_plan
+from .smartcard_keys import smartcard_public_keys
 
 
 class SmartCardDialog(QDialog):
     """Discover a configured provider and manage its keys in the SSH agent."""
 
-    def __init__(self, parent: QWidget, provider: str, identity_agent: str | None) -> None:
+    def __init__(
+        self,
+        parent: QWidget,
+        provider: str,
+        identity_agent: str | None,
+        *,
+        profile_name: str = "",
+        pinned_key: str = "",
+        save_profile_key: Callable[[str, str | None], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("PKCS#11 smart cards")
         self.resize(680, 365)
         self.identity_agent = identity_agent
+        self.pinned_key = pinned_key
+        self.save_profile_key = save_profile_key
         self.operation: str | None = None
         self.close_result: int | None = None
         self.failure = ""
@@ -77,6 +90,24 @@ class SmartCardDialog(QDialog):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
+        self.use_key = QPushButton("Use key for profile", self)
+        self.use_key.setAutoDefault(False)
+        self.use_key.clicked.connect(lambda: self.change_profile_key(clear=False))
+        self.clear_key = QPushButton("Clear saved selection", self)
+        self.clear_key.setAutoDefault(False)
+        self.clear_key.clicked.connect(lambda: self.change_profile_key(clear=True))
+        if save_profile_key is not None:
+            profile_row = QHBoxLayout()
+            profile_label = QLabel(f"SSH profile: {profile_name}")
+            profile_label.setTextFormat(Qt.TextFormat.PlainText)
+            profile_row.addWidget(profile_label, 1)
+            profile_row.addWidget(self.use_key)
+            profile_row.addWidget(self.clear_key)
+            layout.addLayout(profile_row)
+        else:
+            self.use_key.hide()
+            self.clear_key.hide()
+
         action_row = QHBoxLayout()
         self.refresh = QPushButton("Refresh keys")
         self.refresh.clicked.connect(self.discover)
@@ -98,7 +129,10 @@ class SmartCardDialog(QDialog):
         idle = self.operation is None
         for control in (self.provider, self.browse, self.refresh, self.load, self.unload):
             control.setEnabled(idle)
-        self.copy.setEnabled(idle and self.keys.currentItem() is not None)
+        has_key = self.keys.currentItem() is not None
+        self.copy.setEnabled(idle and has_key)
+        self.use_key.setEnabled(idle and self.save_profile_key is not None and has_key)
+        self.clear_key.setEnabled(idle and bool(self.pinned_key))
 
     def choose_library(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Select PKCS#11 library", "", "Libraries (*.dll *.so *.dylib);;All files (*)")
@@ -128,6 +162,27 @@ class SmartCardDialog(QDialog):
         if item is not None and clipboard is not None:
             clipboard.setText(str(item.data(Qt.ItemDataRole.UserRole)))
             self.status.setText("OpenSSH public key copied.")
+
+    def change_profile_key(self, *, clear: bool) -> None:
+        if self.save_profile_key is None:
+            return
+        item = self.keys.currentItem()
+        if not clear and item is None:
+            return
+        try:
+            if clear:
+                self.save_profile_key("", None)
+                self.pinned_key = ""
+                self.status.setText("Saved smart-card key selection cleared.")
+            else:
+                assert item is not None
+                key = str(item.data(Qt.ItemDataRole.UserRole))
+                self.save_profile_key(self.library_path(), key)
+                self.pinned_key = key
+                self.status.setText(f"Saved {item.text()} for this SSH profile.")
+        except (KeyError, OSError, ValueError) as exc:
+            self.status.setText(str(exc))
+        self.update_controls()
 
     def change_agent(self, *, load: bool) -> None:
         try:
@@ -223,12 +278,15 @@ class SmartCardDialog(QDialog):
         elif exit_code or exit_status != QProcess.ExitStatus.NormalExit:
             self.status.setText("OpenSSH failed. Check the card, library, and SSH agent configuration.")
         elif operation == "discover":
-            for fingerprint, key in smartcard_public_keys(bytes(self.output)):
+            selected_row = 0
+            for row, (fingerprint, key) in enumerate(smartcard_public_keys(bytes(self.output))):
                 item = QListWidgetItem(f"{key.split()[0]}  {fingerprint}")
                 item.setData(Qt.ItemDataRole.UserRole, key)
                 self.keys.addItem(item)
+                if key == self.pinned_key:
+                    selected_row = row
             if self.keys.count():
-                self.keys.setCurrentRow(0)
+                self.keys.setCurrentRow(selected_row)
                 self.status.setText(f"Found {self.keys.count()} OpenSSH public key(s).")
             else:
                 self.status.setText("The provider returned no OpenSSH public keys.")

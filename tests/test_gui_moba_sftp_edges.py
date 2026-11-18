@@ -509,6 +509,36 @@ def test_background_password_submission_handles_rejected_write_and_missing_profi
     assert dock._background_auth_password_sent["monitoring"] is False
 
 
+def test_saved_smartcard_waits_for_shared_socket_before_background_sftp(connected_workspace, monkeypatch):
+    from dataclasses import replace
+
+    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace.smartcard_keys import PINNED_SMARTCARD_KEY
+
+    _app, _window, _panel, dock, profile = connected_workspace
+    pinned = replace(profile, options={PINNED_SMARTCARD_KEY: "selected", "identity_agent": "/tmp/agent.sock"})
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: pinned)
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "")
+    monkeypatch.setattr(gui_connected, "ssh_control_path_for_profile", lambda _profile: "/tmp/future-socket")
+    assert "waiting for the terminal" in dock.background_ssh_auth_detail()
+    assert not dock.authenticate_background_tools()
+    refreshed = []
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda **_kwargs: refreshed.append(True))
+    dock.activate_initial_background_state()
+    assert not refreshed and dock.background_auth_retry_timer.isActive()
+    dock.background_auth_retry_timer.stop()
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "/tmp/live-socket")
+    dock.retry_background_authentication()
+    assert refreshed == [True]
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "")
+    monkeypatch.setattr(gui_connected, "ssh_control_path_for_profile", lambda _profile: "")
+    assert dock.background_ssh_auth_capability(pinned)[0]
+    no_agent = replace(pinned, options={**pinned.options, "identity_agent": "none"})
+    assert not dock.background_ssh_auth_capability(no_agent)[0]
+    invalid = replace(pinned, options={PINNED_SMARTCARD_KEY: "selected", "add_smartcard_to_mobagent": "invalid"})
+    assert "must be true or false" in dock.background_ssh_auth_capability(invalid)[1]
+
+
 def test_background_auth_capability_gate_and_retry_edges(
     connected_workspace,
     monkeypatch,

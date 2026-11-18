@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import platform
 import re
 import shutil
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,8 @@ from . import command_safety as safe
 from .file_safety import write_json_atomic
 from .launcher import build_launch_plan
 from .models import Profile
+from .smartcard_keys import PINNED_SMARTCARD_KEY, parse_pinned_smartcard_key
+from .smartcard_keys import smartcard_public_keys as smartcard_public_keys
 
 MOBA_SMARTCARD_INVENTORY_SCHEMA = "row.moba-smartcard.inventory-plan.v1"
 MOBA_SMARTCARD_SELECTION_SCHEMA = "row.moba-smartcard.selection-review.v1"
@@ -373,24 +374,35 @@ def build_smartcard_inventory_plan(provider: str = "microsoft-capi") -> MobaSmar
     )
 
 
-def smartcard_public_keys(output: bytes) -> list[tuple[str, str]]:
-    """Return the OpenSSH fingerprints and public records printed by ssh-keygen."""
-    keys: dict[str, str] = {}
-    for line in output.splitlines():
-        fields = line.split(maxsplit=2)
-        if len(fields) < 2 or not re.fullmatch(rb"(?:ssh|ecdsa|sk)-[A-Za-z0-9@_.+-]+", fields[0]):
-            continue
-        algorithm, encoded = fields[:2]
-        try:
-            blob = base64.b64decode(encoded, validate=True)
-        except ValueError:
-            continue
-        header = len(algorithm).to_bytes(4, "big") + algorithm
-        if not blob.startswith(header) or len(blob) <= len(header):
-            continue
-        fingerprint = base64.b64encode(hashlib.sha256(blob).digest()).decode("ascii").rstrip("=")
-        keys[f"SHA256:{fingerprint}"] = b" ".join((algorithm, encoded)).decode("ascii")
-    return list(keys.items())
+def update_smartcard_profile_key(profile: Profile, provider: str, public_key: str | None) -> Profile:
+    """Bind the chosen OpenSSH key while keeping unrelated profile settings."""
+    if profile.protocol.lower() != "ssh":
+        raise ValueError("Select an SSH profile before saving a smart-card key.")
+    options = dict(profile.options)
+    if public_key is None:
+        if PINNED_SMARTCARD_KEY not in options:
+            return profile
+        for name in (
+            PINNED_SMARTCARD_KEY, "smartcard_public_key", "smartcard_certificate_id",
+            "smartcard_certificate_label", "smartcard_fingerprint_sha256",
+        ):
+            options.pop(name, None)
+    else:
+        fingerprint, key = parse_pinned_smartcard_key(public_key)
+        old_key = str(options.get("smartcard_public_key", "")).split()[:2]
+        if old_key != key.split():
+            options.pop("smartcard_fingerprint_sha256", None)
+        for name in ("pkcs11_provider", "smartcard_pkcs11_provider", "smart_card_pkcs11_provider", "smart_card_provider"):
+            options.pop(name, None)
+        options.update({
+            PINNED_SMARTCARD_KEY: key,
+            "smartcard_public_key": key,
+            "smartcard_provider": f"pkcs11:{safe.path_arg(provider, 'PKCS#11 provider')}",
+            "smartcard_auth": "true",
+            "smartcard_certificate_id": fingerprint,
+            "smartcard_certificate_label": fingerprint,
+        })
+    return replace(profile, options=options)
 
 
 def build_smartcard_management_gui_surface(

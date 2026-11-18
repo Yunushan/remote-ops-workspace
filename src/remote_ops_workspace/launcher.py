@@ -15,6 +15,7 @@ from .enterprise_policy import assert_profile_launch_allowed
 from .models import Profile, Tunnel
 from .plugins import LoadedPlugin, load_plugin_registry
 from .profile_validation import CLEARTEXT_PROTOCOL_OPT_IN, CLEARTEXT_PROTOCOLS, prepare_profile
+from .smartcard_keys import PINNED_SMARTCARD_KEY, materialize_pinned_smartcard_key
 from .x11 import managed_x11_environment, managed_xauth_location
 
 
@@ -292,6 +293,16 @@ def _build_ssh_family(profile: Profile, protocol: str) -> LaunchPlan:
 
 
 def _ssh_identity_args(profile: Profile) -> list[str]:
+    if PINNED_SMARTCARD_KEY in profile.options:
+        try:
+            identity = materialize_pinned_smartcard_key(profile.options[PINNED_SMARTCARD_KEY])
+        except (OSError, ValueError) as exc:
+            raise LauncherError(f"Cannot use the saved smart-card key: {exc}") from exc
+        path = safe.path_arg(str(identity), "smart-card identity file").replace("%", "%%")
+        # A saved key requires a new authentication unless ROW attaches to its
+        # own control socket, which is keyed to the current profile options.
+        return ["-o", _ssh_config_path_option("IdentityFile", path), "-o", "IdentitiesOnly=yes",
+                "-o", "ControlMaster=no", "-o", "ControlPath=none"]
     if not profile.identity_file:
         return []
     return ["-i", safe.path_arg(profile.identity_file, "identity file")]
@@ -330,7 +341,11 @@ def _ssh_connection_option_args(options: Mapping[str, str], *, file_transfer: bo
     if user_known_hosts_file:
         args.extend(["-o", f"UserKnownHostsFile={safe.path_arg(user_known_hosts_file, 'user_known_hosts_file')}"])
 
+    pinned = PINNED_SMARTCARD_KEY in options
+    agent_for_pinned_key = pinned and pinned_smartcard_uses_agent(options)
     identity_agent = ssh_identity_agent(options)
+    if pinned:
+        identity_agent = (identity_agent or "SSH_AUTH_SOCK") if agent_for_pinned_key else "none"
     if identity_agent:
         args.extend(["-o", f"IdentityAgent={safe.path_arg(identity_agent, 'identity_agent')}"])
 
@@ -355,18 +370,24 @@ def _ssh_connection_option_args(options: Mapping[str, str], *, file_transfer: bo
             ]
         )
 
-    pkcs11_provider = _option(options, "pkcs11_provider", "smartcard_pkcs11_provider", "smart_card_pkcs11_provider")
-    smartcard_provider = _option(options, "smartcard_provider", "smart_card_provider")
-    provider_path = _smartcard_provider_path(pkcs11_provider, "pkcs11_provider")
-    smartcard_provider_path = _smartcard_provider_path(smartcard_provider, "smartcard_provider")
-    if provider_path and smartcard_provider_path and provider_path != smartcard_provider_path:
-        raise LauncherError("pkcs11_provider and smartcard_provider must reference the same provider when both are set")
-    provider_path = provider_path or smartcard_provider_path
-    if provider_path:
-        if file_transfer:
-            args.extend(["-o", _ssh_config_path_option("PKCS11Provider", provider_path)])
-        else:
-            args.extend(["-I", provider_path])
+    if agent_for_pinned_key:
+        # OpenSSH can match an agent's keys against every identity supplied by
+        # a directly loaded provider, before applying its provider key filter.
+        args.extend(["-o", "PKCS11Provider=none"])
+    else:
+        pkcs11_provider = _option(options, "pkcs11_provider", "smartcard_pkcs11_provider", "smart_card_pkcs11_provider")
+        smartcard_provider = _option(options, "smartcard_provider", "smart_card_provider")
+        provider_path = _smartcard_provider_path(smartcard_provider, "smartcard_provider")
+        if not pinned or not provider_path:
+            legacy_provider = _smartcard_provider_path(pkcs11_provider, "pkcs11_provider")
+            if legacy_provider and provider_path and legacy_provider != provider_path:
+                raise LauncherError("pkcs11_provider and smartcard_provider must reference the same provider when both are set")
+            provider_path = legacy_provider or provider_path
+        if provider_path:
+            if file_transfer:
+                args.extend(["-o", _ssh_config_path_option("PKCS11Provider", provider_path)])
+            else:
+                args.extend(["-I", provider_path])
 
     log_level = _option_enum(
         options,
@@ -392,6 +413,13 @@ def _ssh_connection_option_args(options: Mapping[str, str], *, file_transfer: bo
 
 def ssh_identity_agent(options: Mapping[str, str]) -> str | None:
     return _option(options, "identity_agent", "ssh_identity_agent", "mobagent_socket")
+
+
+def pinned_smartcard_uses_agent(options: Mapping[str, str]) -> bool:
+    agent = ssh_identity_agent(options)
+    if agent is not None:
+        return agent.strip().casefold() != "none"
+    return _option_bool(options, "mobagent_smartcard", "add_smartcard_to_mobagent")
 
 
 def _smartcard_provider_path(value: str | None, label: str) -> str | None:

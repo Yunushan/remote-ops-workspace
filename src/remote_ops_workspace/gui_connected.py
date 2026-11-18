@@ -102,6 +102,7 @@ from .gui_designs import (
 from .gui_processes import _background_process
 from .gui_terminal import TerminalPane
 from .gui_values import _required_gui_value, _safe_tooltip_html
+from .launcher import LauncherError, pinned_smartcard_uses_agent
 from .moba_connected import (
     MobaConnectedSessionState,
     moba_connected_session_identity_route,
@@ -122,11 +123,13 @@ from .moba_text import (
     write_text_document,
 )
 from .models import Profile
+from .smartcard_keys import PINNED_SMARTCARD_KEY
 from .terminal import (
     openssh_command_with_overrides,
     openssh_command_without_windows_connection_sharing,
     ssh_command_with_control_path,
     ssh_connection_key,
+    ssh_control_path_for_profile,
 )
 
 if TYPE_CHECKING:
@@ -936,6 +939,17 @@ def create_moba_connected_classes(
 
             if profile is None:
                 return False, "connected profile was not found"
+            if PINNED_SMARTCARD_KEY in profile.options:
+                if self.shared_ssh_control_path():
+                    return True, "active terminal SSH connection (shared control socket)"
+                if ssh_control_path_for_profile(profile):
+                    return False, "waiting for the terminal to authenticate with the saved smart-card key"
+                try:
+                    if pinned_smartcard_uses_agent(profile.options):
+                        return True, "configured SSH agent for the saved smart-card key"
+                except LauncherError as exc:
+                    return False, str(exc)
+                return False, "the saved smart-card key needs an authenticated terminal or a configured SSH agent"
             if self._background_password and self.background_auth_password_supported():
                 return True, "encrypted-vault credential loaded for this session"
             if self.shared_ssh_control_path():
@@ -986,6 +1000,9 @@ def create_moba_connected_classes(
         def background_ssh_auth_detail(self) -> str:
             """Describe the authentication route currently used by background tools."""
 
+            profile = self.profile_for_sftp_action()
+            if profile is not None and PINNED_SMARTCARD_KEY in profile.options:
+                return self.background_ssh_auth_capability(profile)[1]
             if self._background_password and self.background_auth_password_supported():
                 source = str(self.property("mobaBackgroundSshCredentialSource") or "")
                 source_detail = (
@@ -1143,6 +1160,9 @@ def create_moba_connected_classes(
                 self.set_remote_monitoring_status(message, state="auth-required")
                 self.show_sftp_status(message)
                 return False
+            if PINNED_SMARTCARD_KEY in profile.options:
+                self.show_sftp_status(self.background_ssh_auth_capability(profile)[1])
+                return False
             credential_ref = str(profile.credential_ref or "").strip() if profile else ""
             if not self.background_auth_password_supported():
                 message = (
@@ -1239,14 +1259,14 @@ def create_moba_connected_classes(
                 return False
             return True
 
-        def schedule_background_auth_retry(self) -> None:
+        def schedule_background_auth_retry(self, *, waiting_for_smartcard: bool = False) -> None:
             """Retry background clients after the interactive SSH prompt completes."""
 
             if self.runtime_shutting_down:
                 return
             profile = self.profile_for_sftp_action()
             available, _detail = self.background_ssh_auth_capability(profile)
-            if not available:
+            if not available and not waiting_for_smartcard:
                 return
             self.setProperty("mobaBackgroundSshWaitingForTerminalAuth", True)
             self.background_auth_retry_attempt = min(
@@ -1350,6 +1370,9 @@ def create_moba_connected_classes(
                 f"Monitoring not started automatically: {detail}",
                 state="auth-required",
             )
+            if (start_runtime and profile is not None and PINNED_SMARTCARD_KEY in profile.options
+                and self.background_auth_retry_attempt < 5 and ssh_control_path_for_profile(profile)):
+                self.schedule_background_auth_retry(waiting_for_smartcard=True)
 
         def set_sftp_runtime_status(self, message: str, *, state: str) -> None:
             badge = getattr(self, "sftp_status_badge", None)
@@ -3229,7 +3252,7 @@ def create_moba_connected_classes(
                 return
             try:
                 plan = build_sftp_list_plan(profile, request_path)
-            except ValueError as exc:
+            except (LauncherError, ValueError) as exc:
                 self.set_sftp_runtime_status(
                     f"SFTP refresh unavailable: {exc}",
                     state="error",

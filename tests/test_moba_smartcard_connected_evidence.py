@@ -112,6 +112,32 @@ def test_smartcard_capture_is_replayed_by_candidate_and_release_audit(capture):
     assert any("tested release asset must match" in error for error in errors)
 
 
+@pytest.mark.parametrize("agent", ["none", "/tmp/agent.sock"])
+def test_saved_card_release_capture_requires_identity_file_and_exclusive_auth(capture, agent):
+    from remote_ops_workspace.smartcard_keys import PINNED_SMARTCARD_KEY
+
+    certificate = capture.bundle["certificate"]
+    capture.profile["options"].update({PINNED_SMARTCARD_KEY: certificate["openssh_public_key"], "identity_agent": agent})
+    capture.bundle["ssh_session_selection"].update(capture.save("ssh_session_selection.json", capture.profile))
+    browser = capture.browser
+    for name in ("terminal_argv", "sftp_argv"):
+        argv = browser[name]
+        if agent != "none":
+            index = argv.index("-I") if name == "terminal_argv" else 3
+            argv[index:index + 2] = ["-o", "PKCS11Provider=none"]
+        argv[-1:-1] = ["-o", 'IdentityFile="/tmp/chosen.pub"', "-o", "IdentitiesOnly=yes", "-o", f"IdentityAgent={agent}"]
+    capture.bundle["ssh_browser"].update(capture.save("ssh_browser.json", browser))
+    capture.save("evidence.json", capture.bundle)
+    result = smartcard.validate_smartcard_connected_release_evidence(capture.root / "evidence.json")
+    assert result.passed, result.errors
+
+    browser["sftp_argv"] = [arg for arg in browser["sftp_argv"] if arg != 'IdentityFile="/tmp/chosen.pub"']
+    capture.bundle["ssh_browser"].update(capture.save("ssh_browser.json", browser))
+    capture.save("evidence.json", capture.bundle)
+    result = smartcard.validate_smartcard_connected_release_evidence(capture.root / "evidence.json")
+    assert not result.passed and "shared socket" in result.errors[0]
+
+
 @pytest.mark.parametrize(("case", "message"), [
     ("software-token", "selected hardware token only while inserted"),
     ("always-present", "selected hardware token only while inserted"),

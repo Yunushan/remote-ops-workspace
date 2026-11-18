@@ -126,12 +126,17 @@ from .moba_connected import (
 )
 from .moba_multiexec import DEFAULT_MOBA_MULTIEXEC_COMMAND, build_moba_multiexec_plan
 from .moba_servers import build_moba_server_gui_config_surface
-from .moba_smartcards import MobaSmartCardCertificate, build_smartcard_management_gui_surface
+from .moba_smartcards import (
+    MobaSmartCardCertificate,
+    build_smartcard_management_gui_surface,
+    update_smartcard_profile_key,
+)
 from .moba_ssh_browser import load_moba_ssh_browser_preferences
 from .models import Profile
 from .paths import ensure_data_dir
 from .process_status import ProcessStatusError
 from .profile_importers import import_profiles
+from .smartcard_keys import PINNED_SMARTCARD_KEY
 from .storage import ProfileStore
 from .terminal import (
     TerminalPanePlan,
@@ -4347,7 +4352,8 @@ def create_main_window(
                 provider=provider,
                 certificates=certificates,
                 selected_certificate_id=selected_id,
-                profile=profile if profile is not None and selected_id else None,
+                profile=(profile if profile is not None and selected_id and profile.protocol == "ssh"
+                         and PINNED_SMARTCARD_KEY not in profile.options else None),
                 add_to_mobagent=add_to_mobagent,
                 force=True,
             )
@@ -4378,7 +4384,7 @@ def create_main_window(
                     "Smart-card management",
                     f"Schema: {surface.schema}",
                     f"Provider: {surface.provider}",
-                    f"Selected profile: {surface.selected_profile or 'none'}",
+                    f"Selected profile: {profile.name if profile is not None else 'none'}",
                     f"Selected certificate: {surface.selected_certificate_id}",
                     "GUI controls: " + ", ".join(surface.gui_controls),
                     "",
@@ -4400,7 +4406,37 @@ def create_main_window(
 
         def open_moba_pkcs11_inventory(self, provider: str, profile: Profile | None) -> None:
             initial_path = "" if provider == "microsoft-capi" else provider
-            dialog = SmartCardDialog(self, initial_path, ssh_identity_agent(profile.options) if profile else None)
+            if profile is not None and profile.protocol == "ssh":
+                bound_profile = profile
+                previous_key = profile.options.get(PINNED_SMARTCARD_KEY)
+
+                def save_key(library: str, public_key: str | None) -> None:
+                    nonlocal previous_key
+
+                    def update(profiles: list[Profile], defaults: dict[str, dict[str, object]]) -> list[Profile]:
+                        for index, stored in enumerate(profiles):
+                            if stored.name != bound_profile.name:
+                                continue
+                            username = stored.username or defaults.get(stored.group, {}).get("username")
+                            if ((stored.protocol, stored.host, stored.port, username)
+                                != (bound_profile.protocol, bound_profile.host, bound_profile.port, bound_profile.username)
+                                or stored.options.get(PINNED_SMARTCARD_KEY) != previous_key):
+                                raise ValueError("The SSH profile changed. Reopen the inventory to review its current selection.")
+                            profiles[index] = update_smartcard_profile_key(stored, library, public_key)
+                            return profiles
+                        raise KeyError(f"SSH profile {bound_profile.name} no longer exists.")
+
+                    self.store.update_profiles(update, surface="profile-editor")
+                    previous_key = public_key
+                    self.refresh_profiles()
+                    self.select_profile(bound_profile.name)
+
+                dialog = SmartCardDialog(
+                    self, initial_path, ssh_identity_agent(profile.options), profile_name=profile.name,
+                    pinned_key=previous_key or "", save_profile_key=save_key,
+                )
+            else:
+                dialog = SmartCardDialog(self, initial_path, ssh_identity_agent(profile.options) if profile else None)
             dialog.exec()
             dialog.deleteLater()
 

@@ -17,9 +17,18 @@ for location in (ROOT, SRC):
     if str(location) not in sys.path:
         sys.path.insert(0, str(location))
 
+from remote_ops_workspace.launcher import (  # noqa: E402
+    LauncherError,
+    pinned_smartcard_uses_agent,
+    ssh_identity_agent,
+)
 from remote_ops_workspace.moba_smartcards import (  # noqa: E402
     MobaSmartCardReleaseEvidenceValidation,
     validate_smartcard_release_evidence,
+)
+from remote_ops_workspace.smartcard_keys import (  # noqa: E402
+    PINNED_SMARTCARD_KEY,
+    parse_pinned_smartcard_key,
 )
 from scripts.check_mobaxterm_parity_evidence import capture_release_identity  # noqa: E402
 from scripts.check_release_license_compliance import secure_regular_file  # noqa: E402
@@ -156,10 +165,29 @@ def verify_browser(root: Path, browser: dict[str, Any], profile: dict[str, Any],
     target = f"{profile['username']}@{profile['host']}"
     port = str(profile["port"])
     control_path = ("-o", f"ControlPath={socket}")
+    terminal_auth = (("-I", provider),)
+    sftp_auth = (("-o", f'PKCS11Provider="{quoted}"'),)
+    options = profile["options"]
+    if PINNED_SMARTCARD_KEY in options:
+        identity_options = [arg for arg in terminal if isinstance(arg, str) and arg.startswith("IdentityFile=")] if isinstance(terminal, list) else []
+        if len(identity_options) != 1:
+            raise ValueError("terminal capture must show the single saved smart-card IdentityFile")
+        configured_identity = ("-o", identity_options[0])
+        shared_auth = (("-o", "IdentitiesOnly=yes"), configured_identity)
+        if pinned_smartcard_uses_agent(options):
+            agent = ssh_identity_agent(options) or "SSH_AUTH_SOCK"
+            agent_only = (("-o", f"IdentityAgent={agent}"), ("-o", "PKCS11Provider=none"))
+            terminal_auth = sftp_auth = (*shared_auth, *agent_only)
+            if "-I" in terminal:
+                raise ValueError("agent-backed smart-card capture must disable direct PKCS#11 authentication")
+        else:
+            direct_only = ("-o", "IdentityAgent=none")
+            terminal_auth = (*terminal_auth, *shared_auth, direct_only)
+            sftp_auth = (*sftp_auth, *shared_auth, direct_only)
     if not (
-        uses_options(terminal, "ssh", target, (("-p", port), ("-I", provider), control_path, ("-o", "ControlMaster=auto")))
-        and uses_options(sftp, "sftp", target, (("-P", port), ("-o", f'PKCS11Provider="{quoted}"'), control_path,
-                                                ("-o", "ControlMaster=no"), ("-o", "BatchMode=yes")))
+        uses_options(terminal, "ssh", target, (("-p", port), control_path, ("-o", "ControlMaster=auto"), *terminal_auth))
+        and uses_options(sftp, "sftp", target, (("-P", port), control_path, ("-o", "ControlMaster=no"),
+                                                ("-o", "BatchMode=yes"), *sftp_auth))
     ):
         raise ValueError("terminal and SFTP commands must use the selected provider, target and shared socket")
     listing = attachment(root, browser.get("sftp_listing"), "SFTP listing").decode()
@@ -205,6 +233,10 @@ def validate_smartcard_connected_release_evidence(
         ):
             raise ValueError("saved SSH profile must select the card provider, certificate and agent handoff")
         fingerprint = verify_card_key(root, certificate, management, actions["mobagent"])
+        if PINNED_SMARTCARD_KEY in options:
+            pinned_key = options[PINNED_SMARTCARD_KEY]
+            if not isinstance(pinned_key, str) or parse_pinned_smartcard_key(pinned_key)[0] != fingerprint:
+                raise ValueError("the saved OpenSSH key must match the card certificate")
         verify_browser(root, browser, profile, provider.removeprefix("pkcs11:"))
         verify_transport(
             attachment(root, browser.get("sshd_log"), "SSH server log").decode(),
@@ -213,7 +245,7 @@ def validate_smartcard_connected_release_evidence(
         result.summary.update(identity, verified_hardware_smartcard=True, verified_multiplexed_sftp=True,
                               openssh_key_fingerprint=fingerprint)
         return result
-    except (OSError, ValueError) as exc:
+    except (LauncherError, OSError, ValueError) as exc:
         return MobaSmartCardReleaseEvidenceValidation(str(evidence_path), str(root), False, [str(exc)], [], {})
 
 

@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import gzip
 import io
 import json
+import shutil
 import struct
 import tarfile
+import zipfile
 from pathlib import Path, PurePosixPath
+from unittest.mock import Mock
 
 import pytest
 
 from scripts import moba_debian_server_payload as payload
+from scripts import stage_debian_server_bundle as staging
 from scripts.debian_server_notices import NOTICE_DIR, notice_path, read_verified_debian_notices
 
 TARGET = "linux-x86_64"
@@ -81,6 +86,94 @@ def make_tar(root: Path, *, substitute: str | None = None, link: Path | None = N
                 info.size = len(content)
                 archive.addfile(info, io.BytesIO(content))
     return data.getvalue()
+
+
+@pytest.fixture
+def bundle_archive(tmp_path: Path, approved_bundle: Path) -> Path:
+    archive = tmp_path / staging.ARCHIVE_NAME
+    archive.write_bytes(gzip.compress(make_tar(approved_bundle)))
+    return archive
+
+
+def test_portable_bundle_stages_only_the_reviewed_bytes(
+    approved_bundle: Path, bundle_archive: Path, tmp_path: Path,
+) -> None:
+    output = tmp_path / "staged"
+    staging.stage_bundle(bundle_archive, payload.sha256_file(bundle_archive), TARGET, output)
+    assert {
+        file.relative_to(output): file.read_bytes() for file in output.rglob("*") if file.is_file()
+    } == {
+        file.relative_to(approved_bundle): file.read_bytes()
+        for file in approved_bundle.rglob("*") if file.is_file()
+    }
+    with pytest.raises(ValueError, match="output already exists"):
+        staging.stage_bundle(bundle_archive, payload.sha256_file(bundle_archive), TARGET, output)
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        ("digest", "does not match the approved archive"),
+        ("link", "must be a regular file"),
+        ("extra", "outside the reviewed manifest"),
+        ("notice", "differs from reviewed evidence"),
+        ("architecture", "exact Linux target"),
+    ],
+)
+def test_portable_bundle_rejects_unreviewed_content(
+    approved_bundle: Path, bundle_archive: Path, tmp_path: Path, damage: str, reason: str,
+) -> None:
+    target = TARGET
+    if damage == "link":
+        linked = next((approved_bundle / "notices").iterdir())
+        bundle_archive.write_bytes(gzip.compress(make_tar(approved_bundle, link=linked)))
+    elif damage == "extra":
+        (approved_bundle / "notices" / "extra.copyright").write_bytes(b"extra")
+        bundle_archive.write_bytes(gzip.compress(make_tar(approved_bundle)))
+    elif damage == "notice":
+        notice = next((approved_bundle / "notices").iterdir())
+        bundle_archive.write_bytes(gzip.compress(make_tar(approved_bundle, substitute=f"notices/{notice.name}")))
+    elif damage == "architecture":
+        target = "linux-arm64"
+    digest = "0" * 64 if damage == "digest" else payload.sha256_file(bundle_archive)
+    output = tmp_path / "stage"
+    with pytest.raises(ValueError, match=reason):
+        staging.stage_bundle(bundle_archive, digest, target, output)
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("damage", [None, "expired", "digest", "entry"])
+def test_actions_bundle_download_binds_zip_metadata_and_its_only_file(
+    bundle_archive: Path, tmp_path: Path, damage: str | None,
+) -> None:
+    zipped = tmp_path / "source.zip"
+    with zipfile.ZipFile(zipped, mode="w") as archive:
+        archive.write(bundle_archive, "unexpected.tar.gz" if damage == "entry" else staging.ARCHIVE_NAME)
+    digest = f"sha256:{payload.sha256_file(zipped)}"
+    client = Mock(spec=staging.GitHubClient)
+    client.json.return_value = {
+        "id": 123, "expired": damage == "expired", "size_in_bytes": zipped.stat().st_size,
+        "digest": "sha256:" + "0" * 64 if damage == "digest" else digest,
+    }
+
+    def download(endpoint: str, destination: Path, *, max_bytes: int) -> str:
+        assert endpoint == "actions/artifacts/123/zip"
+        assert max_bytes == zipped.stat().st_size
+        shutil.copyfile(zipped, destination)
+        return digest
+
+    client.download.side_effect = download
+    if damage is None:
+        extracted = staging.download_bundle(client, 123, tmp_path)
+        assert extracted.read_bytes() == bundle_archive.read_bytes()
+    else:
+        with pytest.raises(ValueError, match={
+            "expired": "expired", "digest": "do not match GitHub", "entry": "contain only",
+        }[damage]):
+            staging.download_bundle(client, 123, tmp_path)
+    client.json.assert_called_once_with("actions/artifacts/123")
+    if damage == "expired":
+        client.download.assert_not_called()
 
 
 def test_debian_staging_includes_six_approved_daemons_and_both_row_runtime_roles(staged_debian: Path) -> None:

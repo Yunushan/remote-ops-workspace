@@ -33,6 +33,8 @@ jobs:
       macos_release_signing_ready: ${{ steps.signing-readiness.outputs.macos_ready }}
       signed_native_publish_ready: ${{ steps.signing-readiness.outputs.signed_native_ready }}
       candidate_build_ready: ${{ steps.signing-readiness.outputs.candidate_build_ready }}
+      debian_amd64_bundle_artifact_id: ${{ steps.debian-amd64-bundle.outputs.artifact_id }}
+      debian_amd64_bundle_sha256: ${{ steps.debian-amd64-bundle.outputs.sha256 }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -76,6 +78,21 @@ jobs:
         run: python scripts/check_release_version.py --release-tag "$RELEASE_TAG"
       - name: Require production maturity metadata
         run: python scripts/check_release_maturity.py --release-tag "$RELEASE_TAG"
+      - name: Freeze the reviewed Debian amd64 server bundle selection
+        id: debian-amd64-bundle
+        shell: bash
+        env:
+          SERVER_BUNDLE_SELECTION: ${{ vars.ROW_DEBIAN_AMD64_SERVER_BUNDLE }}
+        run: |
+          if [[ -z "$SERVER_BUNDLE_SELECTION" ]]; then
+            exit 0
+          fi
+          selection_pattern='^(v[0-9]+\.[0-9]+\.[0-9]+) ([1-9][0-9]*) ([0-9a-f]{64})$'
+          if [[ ! "$SERVER_BUNDLE_SELECTION" =~ $selection_pattern || "${BASH_REMATCH[1]}" != "$RELEASE_TAG" ]]; then
+            echo "ROW_DEBIAN_AMD64_SERVER_BUNDLE must contain this release tag, a positive artifact ID and the reviewed SHA-256" >&2
+            exit 1
+          fi
+          printf 'artifact_id=%s\nsha256=%s\n' "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
       - name: Detect release signing readiness
         id: signing-readiness
         shell: bash
@@ -636,8 +653,21 @@ jobs:
         run: |
           python -X utf8 -m pip inspect --local > candidate-pip-inspect.json
           python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
+      - name: Stage the reviewed Debian amd64 server bundle
+        id: debian-amd64-bundle
+        if: ${{ matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_bundle_artifact_id != '' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SERVER_BUNDLE_ARTIFACT_ID: ${{ needs.release-preflight.outputs.debian_amd64_bundle_artifact_id }}
+          SERVER_BUNDLE_SHA256: ${{ needs.release-preflight.outputs.debian_amd64_bundle_sha256 }}
+        run: |
+          bundle="$RUNNER_TEMP/debian-amd64-server-bundle"
+          python scripts/stage_debian_server_bundle.py --artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" \
+            --sha256 "$SERVER_BUNDLE_SHA256" --target linux-x86_64 --out "$bundle"
+          printf 'path=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
       - name: Build Linux DEB, RPM and AppImage packages
         env:
+          ROW_RELEASE_SERVER_BUNDLE: ${{ steps.debian-amd64-bundle.outputs.path }}
           APPIMAGETOOL_VERSION: "1.9.1"
           APPIMAGETOOL_SHA256: ${{ matrix.appimagetool_sha256 }}
           APPIMAGE_RUNTIME_VERSION: "20251108"

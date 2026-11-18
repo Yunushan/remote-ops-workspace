@@ -87,6 +87,32 @@ payload size and payload SHA-256. Use those exact report bytes in the review
 bundle. See the [protected source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites)
 for the registry's original Actions archives.
 
+### Select an optional Debian amd64 server bundle
+
+Prepare and review a gzip-compressed tar archive containing
+`servers-runtime.json`, the native files it lists under `linux/`, and the
+reviewed copyright attachments under `notices/`. After the review and upload
+are authorized, retain the exact bytes as the single file
+`server-bundle.tar.gz` in a GitHub Actions artifact in the release repository.
+Keep the artifact available until the candidate build finishes.
+
+Before tagging, set `ROW_DEBIAN_AMD64_SERVER_BUNDLE` in the protected
+`release` environment to three space-separated fields. Use the release tag,
+the numeric Actions artifact ID, and the lowercase SHA-256 of the inner
+`server-bundle.tar.gz` file. Preflight freezes the selection for that tag.
+The Linux x86_64 build verifies the artifact ZIP and the pinned tarball,
+validates the exact native files and notice bytes, and passes the verified
+directory to the Debian packager. Remove the selection when preparing a tag
+that will ship the standard Debian package.
+
+The same archive can be checked locally before requesting a candidate build.
+
+```bash
+python scripts/stage_debian_server_bundle.py \
+  --archive server-bundle.tar.gz --sha256 "$server_bundle_sha256" \
+  --target linux-x86_64 --out "$verified_bundle"
+```
+
 For a Debian asset with the embedded server bundle, include its distro
 components with their exact Debian versions in the signed native inventory.
 Record each packaged notice by its installed path, size, and SHA-256 in that

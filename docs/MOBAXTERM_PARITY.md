@@ -309,7 +309,9 @@ reviews, and the downloaded release assets. See the
    Linux SSH and SFTP panes lay out primary-screen output in
    cell-width rows backed by bounded scrollback. Resizing reflows soft
    wraps while preserving hard line breaks, wide characters, ANSI styles,
-   and logical copy and search results. The alternate screen keeps its own
+   and logical copy and search results. Clearing the primary display keeps
+   scrollback. Clearing saved lines keeps the visible cells and cursor.
+   The alternate screen keeps its own
    cursor-addressed grid.
    Both account for wide characters and combining marks in cursor positions,
    erasure and colored output. The alternate screen also keeps wide characters

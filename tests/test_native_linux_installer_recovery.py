@@ -1105,6 +1105,8 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
     candidate = tmp_path / "candidate.deb"
     head = "d" * 40
     calls = []
+    depends = "libc6 (>= 2.38), libvncserver1" if bundled else ""
+    build_image = "sha256:" + "f" * 64
     monkeypatch.setenv("GITHUB_RUN_ID", "1234")
     monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
 
@@ -1114,6 +1116,15 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
             return b"candidate archive"
         if argv[1] == "pull":
             return b"image pull progress"
+        if argv[1] == "build":
+            context = Path(argv[-1])
+            assert {path.name for path in context.iterdir()} == {"Dockerfile"}
+            dockerfile = (context / "Dockerfile").read_text()
+            assert f"FROM {module.MANAGED_IMAGE}" in dockerfile
+            assert 'satisfy "$ROW_DRILL_DEPENDS"' in dockerfile
+            assert f"ROW_DRILL_DEPENDS={depends}" in argv
+            Path(argv[argv.index("--iidfile") + 1]).write_text(build_image)
+            return b"image build progress"
         steps = {name: {"phase": phase, "exit_code": code} for name, phase, code in (
             ("previous", "authenticated-staged", 0), ("candidate", "authenticated-staged", 0),
             ("failing", "authenticated-staged", 0), ("interrupted", "authenticated-staged", 0),
@@ -1145,6 +1156,7 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
     def qualify():
         return module.managed_debian_report(
             SimpleNamespace(capture=capture), tmp_path, head, previous, candidate, "a" * 64, "b" * 64,
+            depends=depends,
         )
 
     if mismatch is None:
@@ -1156,11 +1168,19 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
             qualify()
     assert calls[0] == ["/usr/bin/git", "archive", "--format=tar", head]
     assert calls[1] == ["/usr/bin/docker", "pull", "--platform", "linux/amd64", module.MANAGED_IMAGE]
-    docker = calls[2]
+    assert [call[1] for call in calls[2:]] == (["build", "run"] if bundled else ["run"])
+    docker = calls[-1]
     assert docker[:5] == ["/usr/bin/docker", "run", "--rm", "--network", "none"]
-    assert "--pull=never" in docker and module.MANAGED_IMAGE in docker
+    assert "--pull=never" in docker and (build_image if bundled else module.MANAGED_IMAGE) in docker
     mounts = [docker[index + 1] for index, item in enumerate(docker) if item == "--mount"]
     assert len(mounts) == 4 and all(mount.endswith(",readonly") for mount in mounts)
+
+
+@pytest.mark.parametrize("depends", ["curl", "libssl3t64, libc6", "libc6, libc6"])
+def test_managed_drill_image_requires_audited_package_relationships(module, tmp_path, depends):
+    commands = SimpleNamespace(capture=lambda *_args, **_kwargs: pytest.fail("Docker started"))
+    with pytest.raises((ValueError, module.EvidenceError), match="Debian runtime metadata|outside-library-inventory"):
+        module.managed_drill_image(commands, tmp_path, depends)
 
 
 @pytest.mark.parametrize(

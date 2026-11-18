@@ -607,7 +607,7 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04
             lock: requirements-locks/linux-x86_64.txt
             bootstrap_lock: requirements-locks/linux-x86_64-bootstrap.txt
             appimagetool_sha256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
@@ -675,6 +675,25 @@ jobs:
         run: TARGET_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/make_linux_native.sh
       - name: Run Linux native installer smoke tests
         run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
+      - name: Qualify managed Debian upgrade and rollback
+        if: ${{ matrix.arch == 'x86_64' }}
+        timeout-minutes: 25
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+          EXPECT_SERVER_BUNDLE: ${{ steps.debian-amd64-bundle.outputs.path != '' && 'true' || 'false' }}
+        run: >-
+          python scripts/native_linux_installer_recovery.py managed-release
+          --candidate-source-sha "$EXPECTED_RELEASE_SHA"
+          --server-bundle "$EXPECT_SERVER_BUNDLE"
+      - name: Retain managed Debian upgrade and rollback results
+        if: ${{ matrix.arch == 'x86_64' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-managed-debian-update
+          path: build/native-smoke/linux-x86_64/managed-debian-update.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Retain Linux candidate runtime inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

@@ -20,6 +20,7 @@ import subprocess
 import sys
 import sysconfig
 import tarfile
+import tempfile
 import threading
 import time
 import uuid
@@ -29,6 +30,16 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path.cwd().resolve()
 HERE = Path(__file__).resolve().parent
+if str(HERE.parent) not in sys.path:
+    sys.path.insert(0, str(HERE.parent))
+
+from scripts.debian_native_dependencies import LIBRARY_PACKAGES, dependency_field  # noqa: E402
+from scripts.managed_debian_qualification import (  # noqa: E402
+    MANAGED_IMAGE,
+    REPORT_NAME,
+    validate_receipt,
+)
+
 REPO = "Yunushan/remote-ops-workspace"
 PREVIOUS = "1.0.24"
 TARGET = "linux-x86_64"
@@ -37,8 +48,7 @@ SCHEMA = "row.linux-deb-upgrade-rollback.v1"
 MAX_FILE = 150 * 1024 * 1024
 MAX_PAYLOAD = 180 * 1024 * 1024
 REPORT = Path("build/native-smoke/linux-x86_64/native-upgrade-rollback.json")
-MANAGED_REPORT = REPORT.with_name("managed-debian-update.json")
-MANAGED_IMAGE = "python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d"
+MANAGED_REPORT = REPORT.with_name(REPORT_NAME)
 PINS = Path("configs/native_linux_previous_release_pins.json")
 ROW = Path("/usr/bin/row")
 DOCS = Path("/usr/share/doc/remote-ops-workspace")
@@ -147,6 +157,10 @@ PUBLIC_FAILURE_CODES = frozenset(
         "command-pipe-lifetime-or-bound",
         "command-stdin-bound",
         "command-timeout",
+        "managed-debian-bundle-selection-mismatch",
+        "managed-debian-dependencies-outside-library-inventory",
+        "managed-debian-dependency-image-id-invalid",
+        "managed-debian-receipt-binding-mismatch",
         "command-unexpected-exit",
         "control-archive-bound",
         "deb-bytes-mismatch-before-inspection",
@@ -914,15 +928,7 @@ def candidate_assets(commands: Commands, sha: str, version: str) -> tuple[dict, 
     verifier.validate_posix_byte_binding(
         json.loads(regular(paths["binding"])), archives, TARGET, finish["assets"], launchers
     )
-    suffixes = (
-        "linux-amd64.deb",
-        "linux-x86_64.rpm",
-        "linux-x86_64.AppImage",
-        "linux-x86_64-native.tar.gz",
-        "linux-x86_64-native-manifest.json",
-        "linux-x86_64-native-SHA256SUMS.txt",
-    )
-    expected_names = {f"remote-ops-workspace-v{version}-{suffix}" for suffix in suffixes}
+    expected_names = set(native_asset_names(version))
     assets = {}
     for row in finish["assets"]:
         name = PurePosixPath(row["path"]).name
@@ -940,6 +946,17 @@ def candidate_assets(commands: Commands, sha: str, version: str) -> tuple[dict, 
         raise EvidenceError("candidate-assets-incomplete")
     verify_manifest(assets, version)
     return assets, finish, digest(original)
+
+
+def native_asset_names(version: str) -> tuple[str, ...]:
+    return tuple(f"remote-ops-workspace-v{version}-{suffix}" for suffix in (
+        "linux-amd64.deb",
+        "linux-x86_64.rpm",
+        "linux-x86_64.AppImage",
+        "linux-x86_64-native.tar.gz",
+        "linux-x86_64-native-manifest.json",
+        "linux-x86_64-native-SHA256SUMS.txt",
+    ))
 
 
 def verify_manifest(paths: dict[str, Path], version: str) -> None:
@@ -1005,8 +1022,38 @@ def bound_deb_hashes(pins: dict, finish: dict, version: str) -> tuple[str, str]:
     return old[0], new[0]
 
 
-def managed_debian_report(commands: Commands, private: Path, source_sha: str,
-                          previous: Path, candidate: Path, previous_sha: str, candidate_sha: str) -> dict:
+def managed_drill_image(commands: Commands, private: Path, depends: str) -> str:
+    if not depends:
+        return MANAGED_IMAGE
+    rows = depends.split(", ")
+    if dependency_field(rows) != depends or {row.split()[0] for row in rows} - {"libc6", *LIBRARY_PACKAGES.values()}:
+        raise EvidenceError("managed-debian-dependencies-outside-library-inventory")
+    context = private / "apt-image"
+    context.mkdir()
+    (context / "Dockerfile").write_text(
+        f"FROM {MANAGED_IMAGE}\n"
+        "ARG ROW_DRILL_DEPENDS\n"
+        "RUN apt-get update && "
+        'DEBIAN_FRONTEND=noninteractive apt-get --no-install-recommends --no-remove -y satisfy "$ROW_DRILL_DEPENDS"\n',
+        encoding="utf-8",
+    )
+    image_id = private / "dependency-image-id"
+    # The connected build receives only the generated Dockerfile and validated
+    # relationships. The installers and the update feed enter the offline run.
+    commands.capture([
+        "/usr/bin/docker", "build", "--platform", "linux/amd64", "--iidfile", str(image_id),
+        "--build-arg", f"ROW_DRILL_DEPENDS={depends}", str(context),
+    ], timeout=300)
+    image = regular(image_id, 128).decode("ascii").strip()
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
+        raise EvidenceError("managed-debian-dependency-image-id-invalid")
+    return image
+
+
+def managed_debian_report(
+    commands: Commands, private: Path, source_sha: str, previous: Path, candidate: Path,
+    previous_sha: str, candidate_sha: str, *, depends: str = "",
+) -> dict:
     archive = private / "managed-source.tar"
     archive.write_bytes(commands.capture(
         ["/usr/bin/git", "archive", "--format=tar", source_sha], timeout=45, limit=64 * 1024 * 1024,
@@ -1019,6 +1066,7 @@ def managed_debian_report(commands: Commands, private: Path, source_sha: str,
         'exec python -I /root/row-source/scripts/qualify_managed_debian_update.py "$@"'
     )
     commands.capture(["/usr/bin/docker", "pull", "--platform", "linux/amd64", MANAGED_IMAGE], timeout=180)
+    image = managed_drill_image(commands, private, depends)
     receipt = json.loads(commands.capture([
         "/usr/bin/docker", "run", "--rm", "--network", "none", "--pull=never", "--platform", "linux/amd64",
         "--security-opt", "no-new-privileges",
@@ -1026,37 +1074,58 @@ def managed_debian_report(commands: Commands, private: Path, source_sha: str,
         "--mount", f"type=bind,source={previous},target={previous_input},readonly",
         "--mount", f"type=bind,source={candidate},target={candidate_input},readonly",
         "--mount", f"type=bind,source={dependencies},target=/usr/local/lib/python3.14/site-packages,readonly",
-        MANAGED_IMAGE, "sh", "-ec", entrypoint, "managed-debian-update",
+        image, "sh", "-ec", entrypoint, "managed-debian-update",
         "--previous-deb", previous_input, "--previous-sha256", previous_sha,
         "--candidate-deb", candidate_input, "--candidate-sha256", candidate_sha,
     ], timeout=420, limit=65536))
-    if (receipt.get("schema") != "row.managed-debian-qualification.v1"
-            or receipt.get("status") != "passed" or receipt.get("target") != TARGET
-            or receipt.get("production_acceptance") is not False
-            or receipt.get("previous_sha256") != previous_sha or receipt.get("candidate_sha256") != candidate_sha
-            or receipt.get("download_server_closed_before_apply") is not True
-            or receipt.get("workspace_unchanged") is not True
-            or type(receipt.get("candidate_has_server_bundle")) is not bool
-            or receipt.get("controller_sha256") != digest(ROOT / "scripts/managed_linux_update.py")):
-        raise EvidenceError("managed-debian-receipt-binding-mismatch")
-    steps = receipt["receipts"]
-    expected_steps = {"previous": ("authenticated-staged", 0), "candidate": ("authenticated-staged", 0),
-                      "failing": ("authenticated-staged", 0), "interrupted": ("authenticated-staged", 0),
-                      "candidate-apply": ("applied", 0), "explicit-rollback": ("rolled-back", 0),
-                      "changed-launcher-rollback": ("refused", 1),
-                      "failing-apply": ("rolled-back", 1), "interrupted-apply": ("rolled-back", 1)}
-    if receipt["candidate_has_server_bundle"]:
-        expected_steps["changed-server-manifest-rollback"] = ("refused", 1)
-    if set(steps) != set(expected_steps) or any(
-        (steps[name]["phase"], steps[name]["exit_code"]) != expected for name, expected in expected_steps.items()
-    ) or steps["changed-launcher-rollback"].get("refusal") != "installed-launcher-digest-refused" or (
-        receipt["candidate_has_server_bundle"]
-        and steps["changed-server-manifest-rollback"].get("refusal") != "installed-runtime-payload-refused"
-    ):
+    try:
+        validate_receipt(receipt, previous_sha=previous_sha, candidate_sha=candidate_sha)
+    except ValueError as error:
+        raise EvidenceError(str(error)) from error
+    if receipt.get("controller_sha256") != digest(ROOT / "scripts/managed_linux_update.py"):
         raise EvidenceError("managed-debian-receipt-binding-mismatch")
     return {**receipt, "source_sha": source_sha, "source_archive_sha256": digest(archive),
-            "container_image": MANAGED_IMAGE, "run_id": os.environ["GITHUB_RUN_ID"],
+            "container_image": MANAGED_IMAGE, "drill_image": image, "debian_depends": depends,
+            "run_id": os.environ["GITHUB_RUN_ID"],
             "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"]}
+
+
+def qualify_release_debian(args) -> None:
+    import tomllib
+    import truststore
+
+    sha = args.candidate_source_sha
+    validate_host_claims(sha)
+    commands = Commands()
+    if os.environ["GITHUB_RUN_ATTEMPT"] != "1" or git_output(commands, "rev-parse", "HEAD") != sha or git_output(
+        commands, "status", "--porcelain", "--untracked-files=no"
+    ):
+        raise EvidenceError("candidate-source-not-exact-clean")
+    version = tomllib.loads(regular(ROOT / "pyproject.toml").decode("utf-8"))["project"]["version"]
+    require_newer_version(version)
+    candidates = {name: ROOT / "native-dist/linux" / name for name in native_asset_names(version)}
+    verify_manifest(candidates, version)
+    candidate = candidates[f"remote-ops-workspace-v{version}-linux-amd64.deb"]
+    candidate_sha = digest(candidate)
+    depends = commands.capture(["/usr/bin/dpkg-deb", "--field", str(candidate), "Depends"], limit=4096).decode().strip()
+    truststore.inject_into_ssl()
+    with tempfile.TemporaryDirectory(prefix="row-managed-release-") as work:
+        private = Path(work)
+        prior, pins = previous_assets(private)
+        name = f"remote-ops-workspace-v{PREVIOUS}-linux-amd64.deb"
+        previous = prior[name]
+        previous_sha = next(row["digest"].removeprefix("sha256:") for row in pins["assets"] if row["name"] == name)
+        report = managed_debian_report(commands, private, sha, previous, candidate, previous_sha, candidate_sha, depends=depends)
+        if digest(candidate) != candidate_sha or digest(previous) != previous_sha:
+            raise EvidenceError("final-source-proof-or-candidate-changed")
+    if report["candidate_has_server_bundle"] != (args.server_bundle == "true"):
+        raise EvidenceError("managed-debian-bundle-selection-mismatch")
+    if git_output(commands, "rev-parse", "HEAD") != sha or git_output(
+        commands, "status", "--porcelain", "--untracked-files=no"
+    ):
+        raise EvidenceError("final-source-proof-or-candidate-changed")
+    verify_manifest(candidates, version)
+    save(ROOT / MANAGED_REPORT, report)
 
 
 class Drill(native.Drill):
@@ -1576,10 +1645,21 @@ EXPECTED_PINS = '{"assets":[{"browser_download_url":"https://github.com/Yunushan
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", nargs="?", choices=("plan", "run"), default="plan")
+    parser.add_argument("action", nargs="?", choices=("plan", "run", "managed-release"), default="plan")
     parser.add_argument("--candidate-source-sha", default="")
     parser.add_argument("--qualify-managed-update", action="store_true")
+    parser.add_argument("--server-bundle", choices=("true", "false"))
     args = parser.parse_args(argv)
+    if args.action == "managed-release":
+        if args.server_bundle is None:
+            parser.error("managed-release requires --server-bundle")
+        try:
+            qualify_release_debian(args)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+            print(f"Release Debian managed update failed ({public_failure_code(error)})", file=sys.stderr)
+            return 1
+        print("Release Debian managed update and rollback passed")
+        return 0
     if args.action == "plan":
         print(
             json.dumps(

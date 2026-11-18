@@ -87,6 +87,21 @@ payload size and payload SHA-256. Use those exact report bytes in the review
 bundle. See the [protected source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites)
 for the registry's original Actions archives.
 
+### Review the Debian amd64 upgrade and rollback result
+
+The Linux x86_64 release job runs the managed update drill against the
+byte-pinned v1.0.24 DEB and the exact candidate installer. When the candidate
+declares shared libraries, the job first provisions them from the Debian
+repositories in an image built from a digest-pinned base. The update drill
+runs with networking disabled and serves the test feed on loopback.
+
+The release job retains `managed-debian-update.json` in
+`release-managed-debian-update`. The sealed candidate inventory embeds the
+receipt and binds its archive and file digests to the release source, the
+Actions attempt, and the candidate DEB. Review the offline upgrade and
+rollback outcomes there, including the manifest-change refusal when the
+optional server bundle is present. The drill uses a test signer.
+
 ### Select an optional Debian amd64 server bundle
 
 Prepare and review a gzip-compressed tar archive containing

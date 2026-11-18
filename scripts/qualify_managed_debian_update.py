@@ -8,10 +8,13 @@ import hashlib
 import json
 import os
 import re
+import shlex
+import signal
 import ssl
 import subprocess
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -151,16 +154,62 @@ def stage_policy(root: Path, name: str, package: Path, version: str, minimum: st
     return policy_file, stage
 
 
-def failing_package(candidate: Path, root: Path) -> Path:
+def package_with_postinst(candidate: Path, root: Path, script: str) -> Path:
+    root.mkdir(mode=0o700)
     fault = root / candidate.name
-    tree = root / "failure-package"
+    tree = root / "tree"
     checked("/usr/bin/dpkg-deb", "--raw-extract", candidate, tree)
     post_install = tree / "DEBIAN/postinst"
     post_install.unlink(missing_ok=True)
-    post_install.write_text("#!/bin/sh\nexit 42\n", encoding="ascii")
+    post_install.write_text("#!/bin/sh\nset -eu\n" + script, encoding="ascii")
     post_install.chmod(0o755)
     checked("/usr/bin/dpkg-deb", "--root-owner-group", "--build", tree, fault)
     return fault
+
+
+def await_condition(predicate, message: str) -> None:
+    deadline = time.monotonic() + 40
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.1)
+    raise RuntimeError(message)
+
+
+def configured_and_unlocked(version: str) -> bool:
+    import fcntl
+
+    with Path("/var/lib/dpkg/lock").open("rb+") as database_lock:
+        try:
+            fcntl.lockf(database_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        return checked("/usr/bin/dpkg-query", "--show", "--showformat=${db:Status-Status} ${Version}", PACKAGE
+                       ) == f"installed {version}"
+
+
+def interrupt_controller(command_line, env, entered: Path, resume: Path, transaction: Path, version: str) -> None:
+    journal = transaction / "managed-update.json"
+    with subprocess.Popen(command_line, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as process:
+        try:
+            await_condition(lambda: entered.is_file() or process.poll() is not None,
+                            "The candidate maintainer script did not reach its pause")
+            if not entered.is_file() or process.poll() is not None:
+                raise RuntimeError("The controller exited before the interruption point")
+            if json.loads(journal.read_bytes())["phase"] != "applying":
+                raise RuntimeError("The interrupted install did not have a persisted applying journal")
+            process.terminate()
+            if process.wait(timeout=10) != -signal.SIGTERM:
+                raise RuntimeError("The controller did not exit from the controlled interruption")
+        finally:
+            resume.touch()
+            if process.poll() is None:
+                process.kill()
+    # The owned controller has exited. Its dpkg child finishes configuring
+    # the package after the pause; wait for the database to be quiescent.
+    await_condition(lambda: configured_and_unlocked(version), "dpkg did not finish the interrupted installation")
+    if json.loads(journal.read_bytes())["phase"] != "applying":
+        raise RuntimeError("The interrupted transaction journal advanced unexpectedly")
 
 
 def qualify(args, root: Path) -> dict:
@@ -168,7 +217,16 @@ def qualify(args, root: Path) -> dict:
     candidate = validate_deb(args.candidate_deb, args.candidate_sha256)
     if tuple(map(int, candidate.split("."))) <= tuple(map(int, previous.split("."))):
         raise ValueError("The candidate installer must be newer than the previous installer")
-    broken = failing_package(args.candidate_deb, root)
+    broken = package_with_postinst(args.candidate_deb, root / "failure", "exit 42\n")
+    entered = root / "postinst-entered"
+    resume = root / "postinst-resume"
+    suspended = package_with_postinst(
+        args.candidate_deb, root / "interruption",
+        f"touch {shlex.quote(str(entered))}\n"
+        "for attempt in $(seq 1 300); do\n"
+        f"  if [ -f {shlex.quote(str(resume))} ]; then exit 0; fi\n"
+        "  sleep 0.1\ndone\nexit 43\n",
+    )
     checked("/usr/bin/dpkg", "--install", args.previous_deb)
     launcher = Path("/usr/bin/row")
     previous_launcher = sha256(launcher)
@@ -180,8 +238,11 @@ def qualify(args, root: Path) -> dict:
     receipts = {}
     env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"}
 
+    def argv(action, *arguments):
+        return (sys.executable, "-I", MANAGER, action, "--workspace", workspace, *arguments)
+
     def update(name, action, *arguments, phase, code=0):
-        result = command(sys.executable, "-I", MANAGER, action, "--workspace", workspace, *arguments, env=env)
+        result = command(*argv(action, *arguments), env=env)
         receipt = json.loads(result.stdout)
         if result.returncode != code or receipt.get("phase") != phase:
             raise RuntimeError(f"{name} expected {phase} ({code}), got {result.returncode}: {receipt}")
@@ -195,7 +256,8 @@ def qualify(args, root: Path) -> dict:
     with https_feed(root, payloads, now) as (origin, certificate):
         env["SSL_CERT_FILE"] = str(certificate)
         for name, path, version in (("previous", args.previous_deb, previous),
-                                    ("candidate", args.candidate_deb, candidate), ("failing", broken, candidate)):
+                                    ("candidate", args.candidate_deb, candidate), ("failing", broken, candidate),
+                                    ("interrupted", suspended, candidate)):
             policy, stage = stage_policy(root, name, path, version, previous, origin=origin,
                                          now=now, signer=signer, payloads=payloads)
             stages[name] = (policy, stage)
@@ -206,18 +268,23 @@ def qualify(args, root: Path) -> dict:
 
     env.pop("SSL_CERT_FILE")
     previous_policy, previous_stage = stages["previous"]
-    for name in ("candidate", "failing"):
+    packages = {"candidate": args.candidate_sha256, "failing": sha256(broken), "interrupted": sha256(suspended)}
+    for name, expected_candidate in packages.items():
         policy, stage = stages[name]
         transaction = root / f"{name}-transaction"
         transaction.mkdir(mode=0o700)
         outcome = "applied" if name == "candidate" else "rolled-back"
         code = 0 if name == "candidate" else 1
-        receipt = update(f"{name}-apply", "apply", "--version", candidate, "--policy", policy, "--stage", stage,
-                         "--previous-policy", previous_policy, "--previous-stage", previous_stage,
-                         "--transaction", transaction, phase=outcome, code=code)
+        arguments = ("--version", candidate, "--policy", policy, "--stage", stage,
+                     "--previous-policy", previous_policy, "--previous-stage", previous_stage,
+                     "--transaction", transaction)
+        if name == "interrupted":
+            interrupt_controller(argv("apply", *arguments), env, entered, resume, transaction, candidate)
+            if checked(launcher, "--version") != f"{PACKAGE} {candidate}" or sha256(launcher) == previous_launcher:
+                raise RuntimeError("The interrupted transaction never installed the candidate launcher")
+        receipt = update(f"{name}-apply", "apply", *arguments, phase=outcome, code=code)
         if receipt["previous_sha256"] != args.previous_sha256:
             raise RuntimeError("The transaction used a different rollback package")
-        expected_candidate = args.candidate_sha256 if name == "candidate" else sha256(broken)
         if receipt["candidate_sha256"] != expected_candidate:
             raise RuntimeError("The transaction used a different candidate package")
         if name == "candidate":

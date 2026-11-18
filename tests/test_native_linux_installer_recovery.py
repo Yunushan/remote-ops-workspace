@@ -1095,8 +1095,8 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     assert ".tmp/" not in upload and "build/native-smoke/linux-${{ matrix.arch }}/" in upload
 
 
-@pytest.mark.parametrize("observed_digest", ["b" * 64, "c" * 64])
-def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, observed_digest):
+@pytest.mark.parametrize("mismatch", [None, "digest", "interruption"])
+def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, mismatch):
     previous = tmp_path / "previous.deb"
     candidate = tmp_path / "candidate.deb"
     head = "d" * 40
@@ -1112,13 +1112,16 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
             return b"image pull progress"
         return json.dumps({
             "schema": "row.managed-debian-qualification.v1", "status": "passed", "target": module.TARGET,
-            "production_acceptance": False, "previous_sha256": "a" * 64, "candidate_sha256": observed_digest,
+            "production_acceptance": False, "previous_sha256": "a" * 64,
+            "candidate_sha256": "c" * 64 if mismatch == "digest" else "b" * 64,
             "controller_sha256": module.digest(module.ROOT / "scripts/managed_linux_update.py"),
             "download_server_closed_before_apply": True, "workspace_unchanged": True,
             "receipts": {name: {"phase": phase, "exit_code": code} for name, phase, code in (
                 ("previous", "authenticated-staged", 0), ("candidate", "authenticated-staged", 0),
-                ("failing", "authenticated-staged", 0), ("candidate-apply", "applied", 0),
-                ("explicit-rollback", "rolled-back", 0), ("failing-apply", "rolled-back", 1),
+                ("failing", "authenticated-staged", 0), ("interrupted", "authenticated-staged", 0),
+                ("candidate-apply", "applied", 0), ("explicit-rollback", "rolled-back", 0),
+                ("failing-apply", "rolled-back", 1),
+                ("interrupted-apply", "applied" if mismatch == "interruption" else "rolled-back", 1),
             )},
         }).encode()
 
@@ -1127,7 +1130,7 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
             SimpleNamespace(capture=capture), tmp_path, head, previous, candidate, "a" * 64, "b" * 64,
         )
 
-    if observed_digest == "b" * 64:
+    if mismatch is None:
         report = qualify()
         assert report["source_sha"] == head and report["run_attempt"] == "2"
         assert report["source_archive_sha256"] == module.digest(tmp_path / "managed-source.tar")

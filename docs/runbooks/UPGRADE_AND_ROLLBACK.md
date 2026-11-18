@@ -130,7 +130,9 @@ using the byte-verified previous release and exact candidate DEBs. It stages the
 packages through certificate-validated HTTPS inside an isolated Debian
 container, shuts down the feed, and exercises offline apply, operator-requested
 rollback, and automatic rollback after a controlled `dpkg` configuration
-failure. The retained `managed-debian-update.json` records the package digests,
+failure. It also interrupts the controller during package configuration and
+checks that retrying the persisted transaction restores the previous launcher.
+The retained `managed-debian-update.json` records the package digests,
 candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in
 the [release promotion runbook](RELEASE_PROMOTION.md).

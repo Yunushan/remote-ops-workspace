@@ -1,5 +1,5 @@
 {
-  "baseline_head": "f5b29ea30b6305ca7845d40782d0bc08dc3169b6",
+  "baseline_head": "d2ef1dee874fa5a56752675684b32470374c20ba",
   "files": [
     {
       "path": "src/remote_ops_workspace/__init__.py",
@@ -73,8 +73,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "4d35f8111d3b6b83b2f54e3797e87f01cac8e2415a2848b17fb62716db99a279",
-      "size": 621299
+      "sha256": "74ac54425d3fecd13af423cbf714814f2e524ff8931a8be66a6d0aded3c6605e",
+      "size": 605266
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
@@ -125,6 +125,11 @@
       "path": "src/remote_ops_workspace/gui_processes.py",
       "sha256": "5204fbf6ef4c88863b69a149cd596c4df935fe4dc041c6c4200ec20266b50adc",
       "size": 3915
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_session_tabs.py",
+      "sha256": "3dce7635b9cadaaca3e732cd90faa878b117592d5d87aaa659a9eb7a529871f9",
+      "size": 18140
     },
     {
       "path": "src/remote_ops_workspace/gui_smartcards.py",

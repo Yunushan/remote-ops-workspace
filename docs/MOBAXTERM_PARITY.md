@@ -105,8 +105,9 @@ reviews, and the downloaded release assets. See the
   dialog displays certificate data saved in the profile. Its PKCS#11 inventory
   opens an installed library, lists its OpenSSH public keys by fingerprint,
   and copies the selected public key. Operators can load or remove the
-  provider's keys using the configured SSH agent. Persistent SSH certificate
-  selection uses the profile's existing options.
+  provider's keys using the configured SSH agent. **Use key for profile** saves
+  the chosen public key for SSH and SFTP, and **Clear saved selection** restores
+  normal profile identity selection. The private key stays on the card.
   Connected Moba-style sessions now carry the selected smart-card certificate,
   provider, MobAgent handoff flag and public-key metadata into serialized GUI
   state so the PyQt SFTP dock can render the same selection context.
@@ -523,9 +524,18 @@ Capture the outputs below during the session. Use a dedicated agent and a test
 card whose public certificate and token metadata can be shared with the reviewer.
 Open **Tools → Smart cards → PKCS#11 inventory**, choose the installed vendor
 library, and refresh. Use **Copy public key** to capture the OpenSSH record and
-**Load into SSH agent** to load the provider's keys. If the profile sets
+**Use key for profile** to save the chosen key. ROW writes an OpenSSH public
+identity file from the saved record and requests `IdentitiesOnly=yes`. An
+explicit `IdentityAgent` or the profile's agent handoff setting selects the
+agent as the private key source. With direct card authentication, ROW disables
+agent authentication for that launch. OpenSSH can also offer identities
+explicitly listed in SSH configuration.
+
+Use **Load into SSH agent** to load the provider's keys. If the profile sets
 `IdentityAgent`, the dialog uses that socket. Otherwise it uses the active
 OpenSSH agent. Confirm removal during cleanup to unload the provider's keys.
+On systems with a managed control socket, the file browser waits for the
+authenticated terminal connection.
 
 | Bundle action | Required attachment |
 | --- | --- |

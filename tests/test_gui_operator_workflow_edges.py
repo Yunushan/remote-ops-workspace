@@ -450,16 +450,11 @@ def test_launch_files_find_and_recover_session_edges(gui_window, monkeypatch) ->
     _app, window = gui_window
     messages: list[str] = []
 
-    def fake_message_box(_parent, _icon, _title, text, **_kwargs):
+    def fake_message_box(_icon, _title, text, **_kwargs):
         messages.append(str(text))
         return QMessageBox.StandardButton.Ok
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).connect_selected,
-        "_literal_message_box",
-        fake_message_box,
-    )
+    monkeypatch.setattr(window, "show_message", fake_message_box)
 
     custom = Profile(
         name="custom-edge",

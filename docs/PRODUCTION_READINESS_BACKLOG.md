@@ -135,7 +135,6 @@ Rules:
   `python scripts/check_gui_interactions.py --require-pyqt6`.
   Workflow and transfer dialogs, the common QSS, Quick Connect parsing, and
   shared Qt top menus have moved into dedicated modules or packaged assets.
-  The main window still owns launch and action dispatch.
   [PR #159](https://github.com/Yunushan/remote-ops-workspace/pull/159) ·
   [PR #183](https://github.com/Yunushan/remote-ops-workspace/pull/183) ·
   [PR #187](https://github.com/Yunushan/remote-ops-workspace/pull/187)
@@ -148,6 +147,9 @@ Rules:
   `gui_session_tabs.py` owns terminal splits, tab duplication and navigation,
   pane discovery, and recent-session recovery. The window supplies the
   connected-session panel type created for its Qt workspace.
+  `gui_profile_actions.py` owns profile context actions, editing, import
+  previews, connection launch and file and queue dispatch. The window
+  supplies the dialogs and opens the requested terminal tabs.
 
 ## Phase 6 - Internal certification gates (about +3)
 

@@ -236,7 +236,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "assert_settings_write_allowed",
                 "policy_path",
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_profile_actions.py": [
                 "assert_profile_launch_allowed",
                 "surface=\"profile-editor\"",
                 "surface=\"quick-connect\"",
@@ -792,7 +792,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     },
     "session.quick-connect": {
         "cli": ["connect"],
-        "source_tokens": {"src/remote_ops_workspace/gui.py": ["def connect_selected"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_profile_actions.py": ["def connect_selected"]},
     },
     "session.import-export": {
         "cli": ["export", "import"],

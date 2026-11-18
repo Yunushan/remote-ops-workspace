@@ -8,7 +8,6 @@ from pathlib import Path
 
 from . import quick_connect as _quick_connect
 from .doctor import run_doctor
-from .enterprise_policy import assert_profile_launch_allowed
 from .file_safety import (
     write_bytes_atomic,
     write_json_atomic,
@@ -105,7 +104,7 @@ from .gui_designs import (
 )
 from .gui_lifecycle import ProcessStopPolicy
 from .gui_values import _required_gui_value, _safe_tooltip_html
-from .launcher import LauncherError, build_launch_plan, ssh_identity_agent
+from .launcher import LauncherError, ssh_identity_agent
 from .layouts import Layout, LayoutStore
 from .moba_connected import (
     MobaConnectedSessionState,
@@ -131,15 +130,9 @@ from .moba_ssh_browser import load_moba_ssh_browser_preferences
 from .models import Profile
 from .paths import ensure_data_dir
 from .process_status import ProcessStatusError
-from .profile_importers import import_profiles
 from .smartcard_keys import PINNED_SMARTCARD_KEY
 from .storage import ProfileStore
-from .terminal import (
-    TerminalPanePlan,
-    default_shell_plan,
-    terminal_plan_for_profile,
-    terminal_plan_for_sftp_browser,
-)
+from .terminal import TerminalPanePlan, default_shell_plan
 from .terminal_output import _ByteChunkQueue  # noqa: F401 - existing queue seam
 
 # Qt requires QApplication to outlive every widget. Keep a process-wide Python
@@ -231,7 +224,6 @@ def create_main_window(
             QApplication,
             QComboBox,
             QDialog,
-            QFileDialog,
             QFrame,
             QHBoxLayout,
             QLabel,
@@ -292,6 +284,7 @@ def create_main_window(
     )
     from .gui_layouts import SavedLayoutActions
     from .gui_menus import add_moba_top_menu, add_primary_menu_action, add_reference_top_menu
+    from .gui_profile_actions import ProfileActions
     from .gui_session_tabs import SessionTabActions
     from .gui_smartcards import SmartCardDialog
     from .gui_workspace import MobaRailLabel, MobaWorkspaceTabBar, ResponsiveWorkspaceTabs
@@ -476,7 +469,7 @@ def create_main_window(
         connected_services,
     )
 
-    class MainWindow(QMainWindow, SavedLayoutActions, SessionTabActions):
+    class MainWindow(QMainWindow, ProfileActions, SavedLayoutActions, SessionTabActions):
         _connected_session_panel_type = MobaConnectedSessionPanel
         CLOSE_STOP_POLICY = ProcessStopPolicy(terminate_timeout_ms=300, kill_timeout_ms=0)
         CLOSE_FORCE_CLOSE_DELAY_MS = 750
@@ -5705,109 +5698,6 @@ def create_main_window(
                     count += 1
             return count
 
-        def selected_profile_name(self) -> str | None:
-            item = self.profile_list.currentItem()
-            if not item or not self.profile_tree_item_is_visible(item):
-                return None
-            return item.data(0, Qt.ItemDataRole.UserRole)
-
-        def build_profile_context_menu(
-            self,
-            item: QTreeWidgetItem | None = None,
-        ) -> QMenu:
-            if item is not None:
-                self.profile_list.setCurrentItem(item)
-            selected = item or self.profile_list.currentItem()
-            profile_name = (
-                selected.data(0, Qt.ItemDataRole.UserRole)
-                if selected is not None
-                else None
-            )
-            has_profile = isinstance(profile_name, str) and bool(profile_name)
-            menu = QMenu(self.profile_list)
-            menu.setObjectName("profileTreeContextMenu")
-            connect_action = _required_gui_value(
-                menu.addAction(
-                    "Connect",
-                    lambda: self.connect_selected(False),
-                ),
-                "profile context connect action",
-            )
-            dry_run_action = _required_gui_value(
-                menu.addAction(
-                    "Preview command",
-                    lambda: self.connect_selected(True),
-                ),
-                "profile context preview action",
-            )
-            files_action = _required_gui_value(
-                menu.addAction(
-                    "Open files / SFTP",
-                    self.open_files_selected,
-                ),
-                "profile context files action",
-            )
-            for action in (connect_action, dry_run_action, files_action):
-                action.setEnabled(has_profile)
-            menu.addSeparator()
-            edit_action = _required_gui_value(
-                menu.addAction("Edit profile", self.edit_selected_profile),
-                "profile context edit action",
-            )
-            remove_action = _required_gui_value(
-                menu.addAction("Remove profile", self.remove_selected_profile),
-                "profile context remove action",
-            )
-            edit_action.setEnabled(has_profile)
-            remove_action.setEnabled(has_profile)
-            menu.addSeparator()
-            menu.addAction("New profile", self.create_profile)
-            menu.addAction("Refresh profiles", self.refresh_profiles)
-            return menu
-
-        def show_profile_context_menu(self, position: QPoint) -> None:
-            item = self.profile_list.itemAt(position)
-            if item is not None:
-                self.profile_list.setCurrentItem(item)
-            menu = self.build_profile_context_menu(item)
-            viewport = _required_gui_value(
-                self.profile_list.viewport(),
-                "profile list viewport",
-            )
-            menu.exec(viewport.mapToGlobal(position))
-            menu.deleteLater()
-
-        @staticmethod
-        def profile_tree_item_is_visible(item: QTreeWidgetItem) -> bool:
-            current: QTreeWidgetItem | None = item
-            while current is not None:
-                if current.isHidden():
-                    return False
-                current = current.parent()
-            return True
-
-        def activate_profile_item(self, item: QTreeWidgetItem, _column: int = 0) -> None:
-            profile_name = item.data(0, Qt.ItemDataRole.UserRole)
-            if not profile_name:
-                return
-            self.profile_list.setCurrentItem(item)
-            self.connect_selected(False)
-
-        def update_profile_action_states(self) -> None:
-            has_profile = bool(self.selected_profile_name())
-            for key in ("edit", "remove", "connect", "files", "queue", "dry-run"):
-                button = self.product_toolbar_button_by_key[key]
-                self.set_toolbar_widget_enabled(button, has_profile)
-                current_state = str(button.property("interactionState") or "normal")
-                if not has_profile:
-                    self.set_interaction_state(button, "disabled")
-                elif current_state == "disabled":
-                    design_state = gui_design_interaction_state(self.current_design_id())
-                    self.set_interaction_state(
-                        button,
-                        self.toolbar_interaction_state(key, design_state),
-                    )
-
         def update_layout_action_states(self, *_args) -> None:
             has_layout = self.layout_select.currentIndex() >= 0
             for button in (
@@ -5845,185 +5735,8 @@ def create_main_window(
                 default_button=QMessageBox.StandardButton.No,
             ) == QMessageBox.StandardButton.Yes
 
-        def create_profile(self) -> None:
-            dialog = self.create_profile_dialog()
-            while dialog.exec() == QDialog.DialogCode.Accepted:
-                try:
-                    profile = dialog.profile()
-                    self.store.add(profile, surface="profile-editor")
-                except (OSError, ValueError) as exc:
-                    dialog.show_validation_error(str(exc))
-                    continue
-                self.refresh_profiles()
-                self.select_profile(profile.name)
-                self.log.append(f"PROFILE SAVED: {profile.name}")
-                return
-
-        def import_profiles_with_preview(self) -> None:
-            source, _selected_filter = QFileDialog.getOpenFileName(
-                self,
-                "Preview profile import",
-                "",
-                "Profile exports (*.json *.xml *.ini *.conf *.mxtsessions);;All files (*)",
-            )
-            if not source:
-                return
-            try:
-                result = import_profiles(Path(source), source_format="auto")
-            except (OSError, ValueError) as exc:
-                self.show_message(
-                    QMessageBox.Icon.Warning,
-                    "Profile import failed",
-                    str(exc),
-                )
-                return
-            if not result.profiles:
-                self.show_message(
-                    QMessageBox.Icon.Information,
-                    "Profile import",
-                    "The import contains no supported profiles.",
-                )
-                return
-            dialog = self.create_profile_import_preview_dialog(source, result)
-            while dialog.exec() == QDialog.DialogCode.Accepted:
-                try:
-                    imported = self.store.add_many(
-                        result.profiles,
-                        skip_existing=True,
-                        surface="profile-editor",
-                    )
-                except (OSError, ValueError) as exc:
-                    self.show_message(QMessageBox.Icon.Warning, "Profile import failed", str(exc))
-                    continue
-                imported_names = {profile.name for profile in imported}
-                skipped = [
-                    f"{profile.name}: profile already exists"
-                    for profile in result.profiles if profile.name not in imported_names
-                ]
-                self.refresh_profiles()
-                self.log.append(f"PROFILE IMPORTED: {len(imported)} from {result.source_format}")
-                if skipped:
-                    self.show_message(
-                        QMessageBox.Icon.Warning,
-                        "Profile import",
-                        "Some profiles were skipped:\n" + "\n".join(skipped),
-                    )
-                return
-
         def create_profile_import_preview_dialog(self, source: str, result):
             return ProfileImportPreviewDialog(source, result, self, services=dialog_services)
-
-        def edit_selected_profile(self) -> None:
-            name = self.selected_profile_name()
-            if not name:
-                self.show_message(
-                    QMessageBox.Icon.Information,
-                    "Remote Ops Workspace",
-                    "Select a profile first.",
-                )
-                return
-            try:
-                current = self.store.get(name)
-            except (KeyError, OSError, ValueError) as exc:
-                self.show_message(
-                    QMessageBox.Icon.Warning,
-                    "Profile failed",
-                    str(exc),
-                )
-                return
-            dialog = self.create_profile_dialog(current)
-            while dialog.exec() == QDialog.DialogCode.Accepted:
-                try:
-                    profile = dialog.profile()
-                    self.save_profile(profile, original_name=name)
-                except (KeyError, OSError, ValueError) as exc:
-                    dialog.show_validation_error(str(exc))
-                    continue
-                self.refresh_profiles()
-                self.select_profile(profile.name)
-                self.log.append(f"PROFILE UPDATED: {profile.name}")
-                return
-
-        def remove_selected_profile(self) -> None:
-            name = self.selected_profile_name()
-            if not name:
-                self.show_message(
-                    QMessageBox.Icon.Information,
-                    "Remote Ops Workspace",
-                    "Select a profile first.",
-                )
-                return
-            if not self.confirm_action("Remove profile", f"Remove profile {name}?"):
-                return
-            try:
-                self.store.remove(name, surface="profile-editor")
-                self.refresh_profiles()
-                self.log.append(f"PROFILE REMOVED: {name}")
-            except (KeyError, OSError, ValueError) as exc:
-                self.show_message(
-                    QMessageBox.Icon.Warning,
-                    "Profile failed",
-                    str(exc),
-                )
-
-        def save_profile(self, profile, original_name: str) -> None:
-            replace_named = getattr(self.store, "replace_named", None)
-            if callable(replace_named):
-                replace_named(
-                    original_name,
-                    profile,
-                    surface="profile-editor",
-                )
-                return
-            # Keep compatibility with lightweight editor stores used by
-            # integrations while preserving the same duplicate/name checks as
-            # ProfileStore.replace_named.
-            profiles = list(self.store.load(resolve=False))
-            if not any(item.name == original_name for item in profiles):
-                raise KeyError(original_name)
-            if profile.name != original_name and any(
-                item.name == profile.name for item in profiles
-            ):
-                raise ValueError(f"profile already exists: {profile.name}")
-            profiles = [item for item in profiles if item.name != original_name]
-            profiles.append(profile)
-            self.store.save(
-                sorted(profiles, key=lambda item: (item.group, item.name)),
-                surface="profile-editor",
-            )
-
-        def select_profile(self, name: str) -> None:
-            for item in self.iter_profile_tree_items():
-                if (
-                    item.data(0, Qt.ItemDataRole.UserRole) == name
-                    and self.profile_tree_item_is_visible(item)
-                ):
-                    self.profile_list.setCurrentItem(item)
-                    parent = item.parent()
-                    while parent is not None:
-                        parent.setExpanded(True)
-                        parent = parent.parent()
-                    return
-
-        def select_profile_tree_label(self, label: str) -> bool:
-            for item in self.iter_profile_tree_items():
-                if label in item.text(0) and self.profile_tree_item_is_visible(item):
-                    self.profile_list.setCurrentItem(item)
-                    parent = item.parent()
-                    while parent is not None:
-                        parent.setExpanded(True)
-                        parent = parent.parent()
-                    return True
-            return False
-
-        def iter_profile_tree_items(self):
-            def walk(item):
-                yield item
-                for child_index in range(item.childCount()):
-                    yield from walk(item.child(child_index))
-
-            for index in range(self.profile_list.topLevelItemCount()):
-                yield from walk(self.profile_list.topLevelItem(index))
 
         def filter_profile_tree(self, text: str) -> None:
             needle = text.strip().lower()
@@ -6096,122 +5809,6 @@ def create_main_window(
                     str(row.property("remminaProfileStatus") or ""),
                 ]
                 row.setVisible(not needle or any(needle in value.lower() for value in values))
-
-        def connect_selected(self, dry_run: bool) -> None:
-            name = self.selected_profile_name()
-            if not name:
-                _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Information,
-                    "Remote Ops Workspace",
-                    "Select a profile first.",
-                )
-                return
-            try:
-                profile = self.store.get(name)
-                self.launch_profile(profile, dry_run=dry_run, prefix="DRY RUN" if dry_run else "LAUNCHED")
-            except (KeyError, LauncherError, OSError, ValueError) as exc:
-                _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Warning,
-                    "Launch failed",
-                    str(exc),
-                )
-
-        def launch_profile(self, profile: Profile, *, dry_run: bool, prefix: str) -> None:
-            assert_profile_launch_allowed(
-                profile,
-                surface="quick-connect" if profile.group == "quick-connect" else "launcher",
-            )
-            plan = build_launch_plan(profile)
-            if dry_run:
-                self.log.append(f"{prefix}: {plan.printable()}")
-                for note in plan.notes:
-                    self.log.append(f"  note: {note}")
-                return
-            pane_plan = terminal_plan_for_profile(profile)
-            tab_title = self.profile_tab_label(profile)
-            tab_status = self.profile_tab_status()
-            if self.moba_connected_profile_supported(profile):
-                self.open_moba_connected_session_tab(
-                    profile,
-                    pane_plan,
-                    remote_path=self.moba_connected_remote_path_for_profile(profile),
-                    tab_title=tab_title,
-                    tab_status=tab_status,
-                )
-            else:
-                self.open_terminal_tab(
-                    pane_plan,
-                    profile=profile,
-                    tab_title=tab_title,
-                    tab_status=tab_status,
-                )
-            self.log.append(f"{prefix}: {pane_plan.printable()}")
-
-        def open_files_selected(self) -> None:
-            name = self.selected_profile_name()
-            if not name:
-                _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Information,
-                    "Remote Ops Workspace",
-                    "Select a profile first.",
-                )
-                return
-            try:
-                profile = self.store.get(name)
-                assert_profile_launch_allowed(profile, surface="gui")
-                if self.moba_connected_profile_supported(profile):
-                    pane_plan = terminal_plan_for_profile(profile)
-                    self.open_moba_connected_session_tab(
-                        profile,
-                        pane_plan,
-                        remote_path=self.moba_connected_remote_path_for_profile(profile),
-                        tab_title=self.profile_tab_label(profile),
-                        tab_status=self.profile_tab_status(),
-                    )
-                else:
-                    pane_plan = terminal_plan_for_sftp_browser(profile)
-                    self.open_terminal_tab(pane_plan, profile=profile)
-                self.log.append(f"FILES: {pane_plan.printable()}")
-            except (KeyError, LauncherError, OSError, ValueError) as exc:
-                _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Warning,
-                    "SFTP failed",
-                    str(exc),
-                )
-
-        def open_transfer_queue_selected(self) -> None:
-            name = self.selected_profile_name()
-            if not name:
-                _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Information,
-                    "Remote Ops Workspace",
-                    "Select a profile first.",
-                )
-                return
-            try:
-                profile = self.store.get(name)
-                assert_profile_launch_allowed(profile, surface="gui")
-                dialog = self.create_transfer_queue_dialog(profile)
-                if dialog.exec() != QDialog.DialogCode.Accepted:
-                    return
-                plan = dialog.queue_plan()
-                self.log.append(f"QUEUE: {plan.printable()}")
-                for command in plan.batch_commands:
-                    self.log.append(f"  {command}")
-                for note in plan.notes:
-                    self.log.append(f"  note: {note}")
-            except (KeyError, LauncherError, OSError, ValueError) as exc:
-                _literal_message_box(
-                    self,
-                    QMessageBox.Icon.Warning,
-                    "Transfer queue failed",
-                    str(exc),
-                )
 
         def create_transfer_queue_dialog(
             self, profile: Profile, *, process_factory=None,

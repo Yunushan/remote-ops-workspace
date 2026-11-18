@@ -156,7 +156,7 @@ IMPLEMENTED_ITEMS = (
         evidence=(
             Evidence("src/remote_ops_workspace/gui_editors.py", "PROTOCOL_PRESETS"),
             Evidence("src/remote_ops_workspace/gui_dialogs.py", "class ProfileImportPreviewDialog"),
-            Evidence("src/remote_ops_workspace/gui.py", "def import_profiles_with_preview"),
+            Evidence("src/remote_ops_workspace/gui_profile_actions.py", "def import_profiles_with_preview"),
             Evidence("tests/test_gui_editors.py", "test_protocol_preset_editor_data_uses_safe_protocol_defaults"),
         ),
     ),

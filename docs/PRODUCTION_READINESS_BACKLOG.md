@@ -145,6 +145,9 @@ Rules:
   exercise these modules through the desktop entry point.
   `gui_layouts.py` owns saved layout editing, launch, splitter construction,
   and resize persistence. The window wires toolbar and menu actions to it.
+  `gui_session_tabs.py` owns terminal splits, tab duplication and navigation,
+  pane discovery, and recent-session recovery. The window supplies the
+  connected-session panel type created for its Qt workspace.
 
 ## Phase 6 - Internal certification gates (about +3)
 

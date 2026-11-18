@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import platform
@@ -355,7 +356,8 @@ def build_smartcard_inventory_plan(provider: str = "microsoft-capi") -> MobaSmar
             "The inventory plan is declarative; release evidence must prove the GUI listed a real certificate.",
         ]
     else:
-        commands = [["ssh-keygen", "-D", provider_key]]
+        path = provider_key.split(":", 1)[1] if provider_key.lower().startswith("pkcs11:") else provider_key
+        commands = [["ssh-keygen", "-D", safe.option_value(path.strip(), "PKCS#11 provider path")]]
         notes = [
             "OpenSC/PKCS#11 smart-card inventory uses ssh-keygen -D provider discovery.",
             "Release evidence must include the OpenSSH public key exported from the card.",
@@ -369,6 +371,26 @@ def build_smartcard_inventory_plan(provider: str = "microsoft-capi") -> MobaSmar
         retrieves_openssh_public_key=True,
         notes=notes,
     )
+
+
+def smartcard_public_keys(output: bytes) -> list[tuple[str, str]]:
+    """Return the OpenSSH fingerprints and public records printed by ssh-keygen."""
+    keys: dict[str, str] = {}
+    for line in output.splitlines():
+        fields = line.split(maxsplit=2)
+        if len(fields) < 2 or not re.fullmatch(rb"(?:ssh|ecdsa|sk)-[A-Za-z0-9@_.+-]+", fields[0]):
+            continue
+        algorithm, encoded = fields[:2]
+        try:
+            blob = base64.b64decode(encoded, validate=True)
+        except ValueError:
+            continue
+        header = len(algorithm).to_bytes(4, "big") + algorithm
+        if not blob.startswith(header) or len(blob) <= len(header):
+            continue
+        fingerprint = base64.b64encode(hashlib.sha256(blob).digest()).decode("ascii").rstrip("=")
+        keys[f"SHA256:{fingerprint}"] = b" ".join((algorithm, encoded)).decode("ascii")
+    return list(keys.items())
 
 
 def build_smartcard_management_gui_surface(

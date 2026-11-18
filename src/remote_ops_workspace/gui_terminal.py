@@ -1611,8 +1611,8 @@ class TerminalPane(QWidget):
         if not secret_input:
             self.capture_macro_input(raw_line)
             line = normalise_local_shell_input(raw_line, self.plan)
-        self.input.setProperty("terminalLastSubmittedText", raw_line)
-        self.input.setProperty("terminalLastCommandSent", line)
+        self.input.setProperty("terminalLastSubmittedText", "" if secret_input else raw_line)
+        self.input.setProperty("terminalLastCommandSent", "" if secret_input else line)
         self.input.setProperty("terminalLastCommandTranslated", line != raw_line)
         # A terminal Enter key is carriage return.  Preserve LF for the
         # ordinary pipe backend so conventional line readers still receive
@@ -2676,7 +2676,7 @@ class TerminalPane(QWidget):
         tail = transcript[-512:]
         return bool(
             re.search(
-                r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
+                r"(?i)(?:(?:password|passphrase)[^:\r\n]{0,240}|\benter pin for [^\r\n]{1,240}):\s*$",
                 tail,
             )
         )

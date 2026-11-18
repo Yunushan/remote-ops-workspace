@@ -184,6 +184,7 @@ def validate_posix_byte_binding(report, archives, target, assets, launchers=()):
 GUI_PYZ_REQUIRED_MODULES = (
     "remote_ops_workspace.gui_terminal",
     "remote_ops_workspace.gui_processes",
+    "remote_ops_workspace.gui_smartcards",
     "remote_ops_workspace.gui_values",
     "remote_ops_workspace.terminal_output",
     "remote_ops_workspace.gui_workspace",

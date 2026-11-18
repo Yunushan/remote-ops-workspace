@@ -330,7 +330,7 @@ def _ssh_connection_option_args(options: Mapping[str, str], *, file_transfer: bo
     if user_known_hosts_file:
         args.extend(["-o", f"UserKnownHostsFile={safe.path_arg(user_known_hosts_file, 'user_known_hosts_file')}"])
 
-    identity_agent = _option(options, "identity_agent", "ssh_identity_agent", "mobagent_socket")
+    identity_agent = ssh_identity_agent(options)
     if identity_agent:
         args.extend(["-o", f"IdentityAgent={safe.path_arg(identity_agent, 'identity_agent')}"])
 
@@ -388,6 +388,10 @@ def _ssh_connection_option_args(options: Mapping[str, str], *, file_transfer: bo
             args.extend(["-o", f"{open_ssh_name}={_option_token(algorithm_value, option_name)}"])
 
     return args
+
+
+def ssh_identity_agent(options: Mapping[str, str]) -> str | None:
+    return _option(options, "identity_agent", "ssh_identity_agent", "mobagent_socket")
 
 
 def _smartcard_provider_path(value: str | None, label: str) -> str | None:

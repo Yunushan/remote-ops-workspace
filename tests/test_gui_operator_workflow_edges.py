@@ -37,6 +37,30 @@ def gui_window(monkeypatch, tmp_path):
     app.processEvents()
 
 
+def test_tools_opens_live_inventory_for_default_and_configured_provider(gui_window, monkeypatch):
+    _app, window = gui_window
+    dialogs = []
+    deleted = []
+    actions = {}
+
+    def open_dialog(_parent, provider, agent):
+        return SimpleNamespace(exec=lambda: dialogs.append((provider, agent)), deleteLater=lambda: deleted.append(True))
+
+    _set_closure_value(monkeypatch, window.open_moba_pkcs11_inventory, "SmartCardDialog", open_dialog)
+    monkeypatch.setattr(window, "show_workflow_dialog", lambda *_args, **kwargs: actions.update(kwargs["actions"]))
+    monkeypatch.setattr(window, "selected_profile_for_workflow", lambda: None)
+    window.show_moba_smartcards_status()
+    actions["PKCS#11 inventory"]()
+    selected = Profile(name="live-card", protocol="ssh", host="example.invalid", options={
+        "smartcard_provider": "pkcs11:/opt/Card Middleware/provider.so", "mobagent_socket": "agent-socket",
+    })
+    monkeypatch.setattr(window, "selected_profile_for_workflow", lambda: selected)
+    window.show_moba_smartcards_status()
+    actions["PKCS#11 inventory"]()
+    assert dialogs == [("", None), ("pkcs11:/opt/Card Middleware/provider.so", "agent-socket")]
+    assert deleted == [True, True]
+
+
 def test_quick_connect_suggestions_execution_and_status_surfaces(
     gui_window,
     monkeypatch,

@@ -105,7 +105,7 @@ from .gui_designs import (
 )
 from .gui_lifecycle import ProcessStopPolicy
 from .gui_values import _required_gui_value, _safe_tooltip_html
-from .launcher import LauncherError, build_launch_plan
+from .launcher import LauncherError, build_launch_plan, ssh_identity_agent
 from .layouts import (
     Layout,
     LayoutStore,
@@ -290,6 +290,7 @@ def create_main_window(
         draw_securecrt_toolbar_icon,
     )
     from .gui_menus import add_moba_top_menu, add_primary_menu_action, add_reference_top_menu
+    from .gui_smartcards import SmartCardDialog
     from .gui_workspace import MobaRailLabel, MobaWorkspaceTabBar, ResponsiveWorkspaceTabs
 
     def _application_clipboard() -> QClipboard:
@@ -4369,7 +4370,7 @@ def create_main_window(
                     (
                         "Certificate inventory",
                         surface.provider,
-                        "Refresh inventory to list Microsoft CryptoAPI or PKCS#11 smart-card certificates.",
+                        "Open PKCS#11 inventory to read public keys from an installed provider.",
                     )
                 ]
             detail = "\n".join(
@@ -4391,10 +4392,17 @@ def create_main_window(
                 rows,
                 detail,
                 actions=[
+                    ("PKCS#11 inventory", lambda: self.open_moba_pkcs11_inventory(surface.provider, profile)),
                     ("Edit profile", self.edit_selected_profile),
                     ("Run doctor", self.show_doctor),
                 ],
             )
+
+        def open_moba_pkcs11_inventory(self, provider: str, profile: Profile | None) -> None:
+            initial_path = "" if provider == "microsoft-capi" else provider
+            dialog = SmartCardDialog(self, initial_path, ssh_identity_agent(profile.options) if profile else None)
+            dialog.exec()
+            dialog.deleteLater()
 
         def show_moba_games_status(self, *_args) -> None:
             self.show_workflow_dialog(

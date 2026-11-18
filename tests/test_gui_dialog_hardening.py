@@ -1696,9 +1696,8 @@ def test_moba_ssh_line_input_uses_terminal_enter_for_pty_backend(gui_window) -> 
     pane.deleteLater()
 
 
-def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
-    gui_window,
-) -> None:
+@pytest.mark.parametrize("prompt", ["operator@example.invalid's password: ", "Enter PIN for 'ROW token': "])
+def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(gui_window, prompt) -> None:
     from PyQt6.QtCore import QProcess
     from PyQt6.QtWidgets import QApplication, QLineEdit
 
@@ -1718,7 +1717,7 @@ def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
     pane.input.setFocus()
     pane.start_macro_capture()
 
-    pane.append_text("operator@example.invalid's password: ")
+    pane.append_text(prompt)
     app = QApplication.instance()
     assert app is not None
     app.processEvents()
@@ -1735,6 +1734,8 @@ def test_moba_ssh_secret_prompt_masks_line_input_and_skips_macro_capture(
     assert process.written == b"controlled-secret\r"
     assert pane.input.text() == ""
     assert pane.input.property("terminalLastSubmissionWasSecret") is True
+    assert pane.input.property("terminalLastSubmittedText") == ""
+    assert pane.input.property("terminalLastCommandSent") == ""
     assert "controlled-secret" not in pane.output.toPlainText()
     assert pane.macro_capture_state is not None
     assert pane.macro_capture_state.events == []

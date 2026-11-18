@@ -115,6 +115,7 @@ def project_version() -> str:
 GUI_SOURCE_MODULES = (
     "gui_terminal",
     "gui_processes",
+    "gui_smartcards",
     "gui_values",
     "terminal_output",
     "gui_workspace",

@@ -59,12 +59,16 @@ def professional_bundle(tmp_path):
         for name, content in ((exe_name, exe), (msi_name, msi))
     ]
     logo_ref, welcome_ref = put("logo.ico", logo), put("welcome.txt", welcome)
+    locks = [{"key": "protocol", "value": "ssh"}]
+    policy_data = json.dumps({"schema_version": 1, "locked_settings": locks}).encode()
+    policy_file = put("enterprise-policy.json", policy_data)
+    policy_digest = policy_file["evidence_sha256"]
     bundle_manifest = {
         "schema_version": 1, "brand_name": brand, "organization": publisher, "project_version": version,
         "files": [
             {"path": name, "sha256": ref["evidence_sha256"], "size_bytes": len(data)}
             for name, ref, data in (("branding/logo.ico", logo_ref, logo), ("welcome.txt", welcome_ref, welcome))
-        ],
+        ] + [{"path": "config/policy.json", "sha256": policy_digest, "size_bytes": len(policy_data)}],
     }
     build_manifest = {
         "deployment_id": deployment_id, "product_name": title, "publisher": publisher,
@@ -92,6 +96,42 @@ def professional_bundle(tmp_path):
         "msi_database": put("msi.wxs", msi_database), "msi_icon": put("msi-icon.ico", logo),
         "msi_welcome": put("msi-welcome.txt", welcome),
     }
+
+    def denial(surface, action):
+        return (
+            f"enterprise policy blocked {surface} {action}: "
+            f"{surface} cannot use locked enterprise setting protocol='telnet'; required 'ssh'"
+        )
+
+    writes = {
+        "store_before": "1" * 64, "store_after_denial": "1" * 64,
+        "store_after_allowance": "2" * 64, "saved_protocol": "ssh",
+    }
+    policy_capture = {
+        **identity, "schema": gate.POLICY_CAPTURE_SCHEMA, "policy_document": policy_file,
+        "installed_policy_sha256": policy_digest, "machine_policy_sha256": policy_digest,
+        "machine_policy_write_refused": True, "machine_policy_unchanged": True,
+        "portable_policy_writable": True, "gui_and_web_started_before_machine_install": True,
+        "attempts": {"allowed_protocol": "ssh", "denied_protocol": "telnet"},
+        "public_policy_before": {"status": 200, "body": {"active": False, "locked_settings": []}},
+        "public_policy": {"status": 200, "body": {"active": True, "locked_settings": locks}},
+        "gui_process": {"before": 14, "after": 14}, "web_process": {"before": 16, "after": 16},
+        "web": {
+            **writes, "denied": {"status": 400, "body": {"error": denial("web", "add")}},
+            "allowed": {"status": 201, "body": {"protocol": "ssh"}},
+        },
+        "cli": {**writes, "denied": {"exit": 1, "stderr": denial("cli", "add")}, "allowed": {"exit": 0}},
+        "profile-editor": {**writes, "denied": [denial("profile-editor", "add")]},
+        "launcher": {
+            "denied": denial("launcher", "launch"), "allowed_protocol": "ssh",
+            "allowed_argv": ["ssh", "127.0.0.1"],
+        },
+    }
+    for surface in ("gui", "quick-connect"):
+        policy_capture[surface] = {
+            "denied": [{"text": denial(surface, "launch")}],
+            "tabs_before": 1, "tabs_after_denial": 1, "tabs_after_allowance": 2,
+        }
     update = {
         "schema": "row.moba-professional.update-manifest.v1", "channel": "stable", "organization": publisher,
         "version": version, "update_url": "https://updates.example.com/channel.json",
@@ -104,8 +144,8 @@ def professional_bundle(tmp_path):
         **identity, "schema": "row.moba-professional.deployment-evidence.v1", "release_target": "windows-x64",
         "brand_name": brand, "version": version,
         "policy_locks": {
-            **put("policy.txt", b"fixture policy observations"), "status": "passed", "command": "review policy",
-            "locked_settings": ["ssh.require_host_key"], "surfaces": dict.fromkeys(REQUIRED_POLICY_SURFACES, True),
+            "status": "passed", "command": "review policy",
+            "locked_settings": locks, "surfaces": dict.fromkeys(REQUIRED_POLICY_SURFACES, True),
         },
         "installer_branding": {
             "status": "passed", "command": "inspect Windows packages", "windows_exe_rebranded": True,
@@ -133,12 +173,13 @@ def professional_bundle(tmp_path):
         signed = put("update.json", update)
         envelope["update_channel"].update(manifest_file=signed["evidence_file"], manifest_sha256=signed["evidence_sha256"])
         envelope["installer_branding"].update(put("installer-capture.json", capture))
+        envelope["policy_locks"].update(put("policy-capture.json", policy_capture))
         put("evidence.json", envelope)
         return root / "evidence.json"
 
     return SimpleNamespace(
         root=root, source_asset=source_asset, source=source, capture=capture, build=build_manifest,
-        update=update, envelope=envelope, put=put, write_bundle=write_bundle,
+        update=update, envelope=envelope, policy_capture=policy_capture, put=put, write_bundle=write_bundle,
     )
 
 
@@ -152,7 +193,9 @@ def test_candidate_and_published_audit_bind_exact_branded_installer_pair(profess
     )
     errors, candidate = generator.build_evidence_record(args)
     assert errors == []
-    assert candidate["validation_summary"]["summary"]["verified_windows_installers"] == item.capture["installer_sha256"]
+    summary = candidate["validation_summary"]["summary"]
+    assert summary["verified_windows_installers"] == item.capture["installer_sha256"]
+    assert summary["verified_policy_surfaces"] == sorted(REQUIRED_POLICY_SURFACES)
     published.verify_article_evidence(candidate, item.root.parent)
     item.source_asset.write_bytes(b"stale release source")
     errors, _ = generator.build_evidence_record(args)
@@ -194,6 +237,46 @@ def test_professional_release_rejects_incomplete_branding_captures(professional_
         item.put("fixture-1.0.28.msi", b"another installer")
     if mutation == "old-flags":
         item.envelope["installer_branding"].update(item.put("unstructured.txt", b"Branding passed"))
+        item.put(path.name, item.envelope)
+        assert validate_professional_deployment_evidence(path).passed
+    result = gate.validate_professional_release_evidence(path)
+    assert not result.passed
+    assert any(message in error for error in result.errors), result.errors
+
+
+@pytest.mark.parametrize(("mutation", "message"), [
+    ("policy-flags-only", "valid JSON"),
+    ("policy-wrong-source", "machine policy capture must bind the exact release source"),
+    ("policy-wrong-file", "installed machine policy must match"),
+    ("machine-writable", "must show protected policy"),
+    ("web-restarted", "same web process"),
+    ("web-allowed-denied-protocol", "HTTP 400 and 201"),
+    ("editor-mutated-on-refusal", "profile-editor store must remain unchanged"),
+    ("quick-connect-opened-denied-tab", "quick-connect must open one tab only"),
+    ("launcher-vague-denial", "launcher denial must show the observed protocol lock"),
+])
+def test_release_gate_rejects_incomplete_policy_surface_observations(professional_bundle, mutation, message):
+    item = professional_bundle
+    capture = item.policy_capture
+    if mutation == "policy-wrong-source":
+        capture["source"] = {**item.source, "run_attempt": 4}
+    if mutation == "policy-wrong-file":
+        capture["machine_policy_sha256"] = "f" * 64
+    if mutation == "machine-writable":
+        capture["machine_policy_write_refused"] = False
+    if mutation == "web-restarted":
+        capture["web_process"]["after"] = 39
+    if mutation == "web-allowed-denied-protocol":
+        capture["web"]["denied"]["status"] = 201
+    if mutation == "editor-mutated-on-refusal":
+        capture["profile-editor"]["store_after_denial"] = "f" * 64
+    if mutation == "quick-connect-opened-denied-tab":
+        capture["quick-connect"]["tabs_after_denial"] = 2
+    if mutation == "launcher-vague-denial":
+        capture["launcher"]["denied"] = "blocked"
+    path = item.write_bundle()
+    if mutation == "policy-flags-only":
+        item.envelope["policy_locks"].update(item.put("policy.txt", b"All policy surfaces passed"))
         item.put(path.name, item.envelope)
         assert validate_professional_deployment_evidence(path).passed
     result = gate.validate_professional_release_evidence(path)

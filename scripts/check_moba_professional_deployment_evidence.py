@@ -21,7 +21,10 @@ from remote_ops_workspace.moba_customizer import (  # noqa: E402
     build_installer_branding_plan,
     validate_professional_deployment_evidence,
 )
-from scripts.check_mobaxterm_parity_evidence import capture_release_identity  # noqa: E402
+from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
+    PROFESSIONAL_POLICY_SURFACES,
+    capture_release_identity,
+)
 from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
     secure_regular_file,
@@ -29,6 +32,7 @@ from scripts.check_release_license_compliance import (  # noqa: E402
 )
 
 INSTALLER_CAPTURE_SCHEMA = "row.moba-professional.windows-installers.v1"
+POLICY_CAPTURE_SCHEMA = "row.moba-professional.policy-surfaces.v1"
 STOCK_INSTALLER_IDS = {
     "00000000-0000-0000-0000-000000000000",
     "5C887096-F4E5-4AB8-8D6F-65052D08D284",
@@ -227,6 +231,131 @@ def verify_windows_capture(
     return {"verified_windows_installers": digests, "deployment_id": deployment}
 
 
+def policy_observation(value: Any, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"machine policy capture requires a structured {label} observation")
+    return value
+
+
+def require_policy_denial(
+    message: Any, surface: str, action: str, allowed: str, denied: str,
+) -> None:
+    reason = (
+        f"enterprise policy blocked {surface} {action}: "
+        f"{surface} cannot use locked enterprise setting protocol={denied!r}; required {allowed!r}"
+    )
+    if not isinstance(message, str) or reason not in message:
+        raise ValueError(f"{surface} denial must show the observed protocol lock")
+
+
+def verify_policy_surfaces(root: Path, bundle: dict[str, Any], capture: dict[str, Any]) -> dict[str, Any]:
+    if capture.get("schema") != POLICY_CAPTURE_SCHEMA:
+        raise ValueError(f"machine policy capture schema must be {POLICY_CAPTURE_SCHEMA}")
+    document = attachment(root, capture.get("policy_document"), "deployed policy document")
+    policy = read_object(document, "deployed policy document")
+    deployed = hashlib.sha256(read_small(document, "deployed policy document")).hexdigest()
+    manifest = read_object(attachment(root, bundle.get("bundle_manifest"), "customizer manifest"), "customizer manifest")
+    files = manifest.get("files")
+    rows = [
+        row for row in files if isinstance(row, dict) and row.get("path") == "config/policy.json"
+    ] if isinstance(files, list) else []
+    if (
+        len(rows) != 1 or rows[0].get("sha256") != deployed or rows[0].get("size_bytes") != document.stat().st_size
+        or capture.get("installed_policy_sha256") != deployed or capture.get("machine_policy_sha256") != deployed
+    ):
+        raise ValueError("installed machine policy must match config/policy.json in the customizer manifest")
+    if any(capture.get(key) is not True for key in (
+        "machine_policy_write_refused", "machine_policy_unchanged", "portable_policy_writable",
+        "gui_and_web_started_before_machine_install",
+    )):
+        raise ValueError("machine policy capture must show protected policy and a writable portable fallback in an open workspace")
+
+    attempts = policy_observation(capture.get("attempts"), "protocol attempts")
+    allowed, denied = attempts.get("allowed_protocol"), attempts.get("denied_protocol")
+    if not isinstance(allowed, str) or not allowed or not isinstance(denied, str) or not denied or allowed == denied:
+        raise ValueError("machine policy capture requires distinct allowed and denied protocols")
+    locks = policy.get("locked_settings")
+    lock = {"key": "protocol", "value": allowed}
+    declared = policy_observation(bundle.get("policy_locks"), "declared policy locks")
+    if not isinstance(locks, list) or lock not in locks or declared.get("locked_settings") != locks:
+        raise ValueError("observed locked protocol must match the declared deployed policy")
+
+    before = policy_observation(capture.get("public_policy_before"), "pre-install Web policy")
+    after = policy_observation(capture.get("public_policy"), "installed Web policy")
+    before_body = policy_observation(before.get("body"), "pre-install Web policy body")
+    after_body = policy_observation(after.get("body"), "installed Web policy body")
+    if (
+        before.get("status") != 200 or before_body.get("locked_settings") != []
+        or after.get("status") != 200 or after_body.get("active") is not True
+        or after_body.get("locked_settings") != [lock]
+    ):
+        raise ValueError("running Web endpoint must expose the protocol lock after machine policy installation")
+    for process in ("web", "gui"):
+        ids = policy_observation(capture.get(f"{process}_process"), f"{process} process")
+        if (
+            type(ids.get("before")) is not int or type(ids.get("after")) is not int
+            or ids["before"] <= 0 or ids.get("after") != ids["before"]
+        ):
+            raise ValueError(f"machine policy capture must retain the same {process} process across installation")
+
+    for surface in ("web", "cli", "profile-editor"):
+        row = policy_observation(capture.get(surface), surface)
+        original = row.get("store_before")
+        saved = row.get("store_after_allowance")
+        if (
+            not valid_sha256(original) or row.get("store_after_denial") != original
+            or not valid_sha256(saved) or saved == original or row.get("saved_protocol") != allowed
+        ):
+            raise ValueError(f"{surface} store must remain unchanged on denial and persist the allowed protocol")
+        if surface == "web":
+            refusal = policy_observation(row.get("denied"), "Web refusal")
+            success = policy_observation(row.get("allowed"), "Web success")
+            if refusal.get("status") != 400 or success.get("status") != 201:
+                raise ValueError("Web write capture must record HTTP 400 and 201")
+            confirmed = policy_observation(success.get("body"), "Web successful profile")
+            if confirmed.get("protocol") != allowed:
+                raise ValueError("Web response must return the allowed profile")
+            denial = policy_observation(refusal.get("body"), "Web error body").get("error")
+        elif surface == "cli":
+            refusal = policy_observation(row.get("denied"), "CLI refusal")
+            success = policy_observation(row.get("allowed"), "CLI success")
+            if (
+                type(refusal.get("exit")) is not int or type(success.get("exit")) is not int
+                or refusal["exit"] == 0 or success["exit"] != 0
+            ):
+                raise ValueError("CLI capture must show failing and successful exit statuses")
+            denial = refusal.get("stderr")
+        else:
+            notices = row.get("denied")
+            denial = notices[0] if isinstance(notices, list) and len(notices) == 1 else None
+        require_policy_denial(denial, surface, "add", allowed, denied)
+
+    for surface in ("gui", "quick-connect"):
+        row = policy_observation(capture.get(surface), surface)
+        original_tabs, denied_tabs, allowed_tabs = (
+            row.get(key) for key in ("tabs_before", "tabs_after_denial", "tabs_after_allowance")
+        )
+        if (
+            type(original_tabs) is not int or type(denied_tabs) is not int or type(allowed_tabs) is not int
+            or original_tabs < 0 or original_tabs != denied_tabs or allowed_tabs != original_tabs + 1
+        ):
+            raise ValueError(f"{surface} must open one tab only for the allowed operation")
+        notices = row.get("denied")
+        if not isinstance(notices, list) or len(notices) != 1:
+            raise ValueError(f"{surface} must display a policy refusal")
+        require_policy_denial(policy_observation(notices[0], surface).get("text"), surface, "launch", allowed, denied)
+
+    launcher = policy_observation(capture.get("launcher"), "launcher")
+    require_policy_denial(launcher.get("denied"), "launcher", "launch", allowed, denied)
+    plan = launcher.get("allowed_argv")
+    if (
+        launcher.get("allowed_protocol") != allowed or not isinstance(plan, list) or not plan
+        or any(not isinstance(value, str) or not value for value in plan)
+    ):
+        raise ValueError("launcher must return a plan for the allowed profile")
+    return {"verified_policy_surfaces": list(PROFESSIONAL_POLICY_SURFACES), "verified_machine_policy_sha256": deployed}
+
+
 def validate_professional_release_evidence(
     evidence_path: Path, *, assets_dir: Path | None = None,
 ) -> MobaProfessionalDeploymentEvidenceValidation:
@@ -238,13 +367,16 @@ def validate_professional_release_evidence(
             raise ValueError(error)
         bundle = read_object(evidence, "professional release evidence")
         identity = capture_release_identity(bundle, "professional release evidence")
-        for stage in ("bundle_manifest", "policy_locks", "update_channel"):
+        for stage in ("bundle_manifest", "update_channel"):
             attachment(root, bundle.get(stage), stage)
         capture = read_object(attachment(root, bundle.get("installer_branding"), "Windows installer capture"), "Windows installer capture")
         if capture_release_identity(capture, "Windows installer capture") != identity or (
             identity["release_tag"] != f"v{bundle.get('version')}"
         ):
             raise ValueError("Windows installer capture must bind the exact release source, tag and public artifact")
+        policy_capture = read_object(attachment(root, bundle.get("policy_locks"), "machine policy capture"), "machine policy capture")
+        if capture_release_identity(policy_capture, "machine policy capture") != identity:
+            raise ValueError("machine policy capture must bind the exact release source, tag and public artifact")
         channel = bundle["update_channel"]
         update = read_object(
             bound_evidence_file(root, channel.get("manifest_file"), channel.get("manifest_sha256"), "signed update manifest"),
@@ -260,6 +392,7 @@ def validate_professional_release_evidence(
         result = validate_professional_deployment_evidence(evidence, assets_dir=root)
         if result.passed:
             result.summary.update(identity, **verify_windows_capture(root, bundle, capture, update))
+            result.summary.update(verify_policy_surfaces(root, bundle, policy_capture))
         return result
     except (OSError, ValueError, ElementTree.ParseError) as exc:
         return MobaProfessionalDeploymentEvidenceValidation(str(evidence_path), str(root), False, [str(exc)], [], {})

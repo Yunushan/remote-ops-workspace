@@ -16,6 +16,7 @@ TESTED_ASSET_ARTICLES = frozenset(
     {"embedded-server-suite", "macro-recorder", "moba-text-editor-diff", "professional-deployment"}
 )
 SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES | {"shared-authenticated-transport-terminal-grid"}
+PROFESSIONAL_POLICY_SURFACES = ("cli", "gui", "launcher", "profile-editor", "quick-connect", "web")
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -480,6 +481,12 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
             or any(not isinstance(digest, str) or not SHA256_RE.fullmatch(digest) for digest in installers.values())
         ):
             errors.append("professional-deployment validation summary must bind a verified EXE and MSI")
+        policy_digest = details.get("verified_machine_policy_sha256")
+        if (
+            details.get("verified_policy_surfaces") != list(PROFESSIONAL_POLICY_SURFACES)
+            or not isinstance(policy_digest, str) or not SHA256_RE.fullmatch(policy_digest)
+        ):
+            errors.append("professional-deployment validation summary must bind all six verified runtime policy surfaces")
     return errors
 
 

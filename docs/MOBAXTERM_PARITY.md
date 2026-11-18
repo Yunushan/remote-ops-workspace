@@ -336,6 +336,34 @@ in the EXE resource section. Reference each capture file with `evidence_file` an
 | `msi_database` | WiX decompile XML from the branded MSI |
 | `msi_icon` and `msi_welcome` | Icon and welcome bytes exported from the MSI by WiX |
 
+The `policy_locks` attachment uses schema
+`row.moba-professional.policy-surfaces.v1` and carries the same `source` and
+`release_asset` objects as the installer capture. Reference the original
+`config/policy.json` as `policy_document` and declare its exact
+`locked_settings` in the evidence manifest. Use a policy with a protocol lock
+and exercise distinct `allowed_protocol` and `denied_protocol` values under
+`attempts`.
+
+Start the GUI and authenticated Web API before installing the machine policy.
+Record the stable process IDs in `gui_process` and `web_process`, with
+`before` and `after` values. Capture the policy endpoint's HTTP status and
+JSON body under `public_policy_before` and `public_policy`. As an unprivileged
+operator, confirm the machine policy denies write access and retains its
+digest while the portable fallback is writable. Record these observations as
+`machine_policy_write_refused`, `machine_policy_unchanged`,
+`portable_policy_writable`, and `gui_and_web_started_before_machine_install`.
+Both `installed_policy_sha256` and `machine_policy_sha256` bind the deployed
+document.
+
+| Surface | Runtime observations |
+| --- | --- |
+| Web, CLI and profile editor | `store_before`, `store_after_denial` and `store_after_allowance` SHA-256 values and `saved_protocol` read back from storage |
+| Web | `denied` and `allowed` HTTP status and body |
+| CLI | `denied` and `allowed` exit status as `exit`, with refusal text in `stderr` |
+| Profile editor | `denied` list containing the displayed refusal |
+| Saved layouts and Quick Connect | `gui` and `quick-connect` each contain the `denied` dialog text and the counts `tabs_before`, `tabs_after_denial` and `tabs_after_allowance` |
+| Launcher | `denied` refusal text, `allowed_protocol` and `allowed_argv` from the plan for the allowed profile |
+
 ### Article 8 evidence contract
 
 The top-level evidence schema is

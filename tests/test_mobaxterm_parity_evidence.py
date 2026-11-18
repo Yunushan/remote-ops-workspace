@@ -16,7 +16,10 @@ import pytest
 from remote_ops_workspace.moba_servers import build_moba_server_config_plan
 from scripts import check_moba_server_release_evidence as server_evidence
 from scripts import check_release_mobaxterm_parity as release_parity
-from scripts.check_mobaxterm_parity_evidence import SOURCE_BOUND_ARTICLES
+from scripts.check_mobaxterm_parity_evidence import (
+    PROFESSIONAL_POLICY_SURFACES,
+    SOURCE_BOUND_ARTICLES,
+)
 from scripts.write_release_notes import moba_counts
 
 
@@ -362,6 +365,7 @@ def test_mobaxterm_generator_emits_candidate_and_has_no_registry_append(tmp_path
                 "workflow_run_url": "https://github.com/example/remote-ops-workspace/actions/runs/1234",
                 "run_attempt": 2, "tested_release_asset": {"name": artifact.name, "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()},
                 "verified_windows_installers": {"org-setup.exe": "a" * 64, "org.msi": "b" * 64},
+                "verified_policy_surfaces": list(PROFESSIONAL_POLICY_SURFACES), "verified_machine_policy_sha256": "e" * 64,
             }}
 
     monkeypatch.setitem(generator.VALIDATORS, "professional-deployment", lambda *_args, **_kwargs: PassingValidation())
@@ -542,6 +546,7 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "professional-deployment":
             record["validation_summary"]["summary"].update(
                 verified_windows_installers={"org-setup.exe": "a" * 64, "org.msi": "b" * 64},
+                verified_policy_surfaces=list(PROFESSIONAL_POLICY_SURFACES), verified_machine_policy_sha256="e" * 64,
                 tested_release_asset={"name": name, "sha256": digest},
             )
         article_root = evidence_root / article
@@ -847,6 +852,7 @@ def _complete_record(spec):
                 "run_attempt": 2,
                 "tested_release_asset": {"name": "moba-professional-deployment.zip", "sha256": "c" * 64},
                 "verified_windows_installers": {"org-setup.exe": "a" * 64, "org.msi": "b" * 64},
+                "verified_policy_surfaces": list(PROFESSIONAL_POLICY_SURFACES), "verified_machine_policy_sha256": "e" * 64,
             },
         },
         "release_source": {

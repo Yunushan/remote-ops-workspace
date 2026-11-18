@@ -545,6 +545,8 @@ Keep credential values out of the recorded arguments and captures.
   content. A server challenge file is optional for this receipt.
 - For NFS, attach the bytes read from the export, the `mount_options` output
   showing TCP NFSv4 with `sec=krb5p`, and the `rejected_sys_mount` output.
+  Remove inherited RDMA settings and startup flags when applying the
+  TCP-only configuration, then verify the effective kernel listeners.
 
 Use the same release asset with `--artifact` when generating the candidate. The
 published-release audit re-runs the capture checks on the reviewed attachments

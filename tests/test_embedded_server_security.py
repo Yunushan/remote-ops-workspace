@@ -180,7 +180,10 @@ def test_unverifiable_daemon_bind_cannot_be_started(service, executable, tmp_pat
             assert settings["service"]["disable"] == "yes"
         else:
             assert config.settings["auth"]["source"] == "kerberos-rpcsec-gss"
-            assert settings["nfs.conf"]["nfsd"]["host"] == "127.0.0.1"
+            assert settings["nfs.conf"]["nfsd"] == {
+                "host": "127.0.0.1", "port": plan.port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y",
+            }
+            assert any("remove rdma and rdma-port" in requirement for requirement in settings["requirements"])
 
 
 @pytest.mark.parametrize(("service", "installed"), [("telnet", "in.telnetd"), ("nfs", "rpc.nfsd")])

@@ -1537,11 +1537,19 @@ def _host_managed_config(service: str, host: str, port: int) -> dict[str, Any]:
             },
             "requirements": ["administrator-approved patched telnetd", "system PAM/login authentication", "explicit insecure-protocol approval", "verify effective listener and client allowlist before enabling"],
         }
+    # Older rpc.nfsd builds interpret every nonempty rdma value as a legacy
+    # port name when it does not enable RDMA as a boolean.
     return {
         "implementation": "Linux nfs-utils", "nfs.conf": {
-            "nfsd": {"host": host, "port": port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y", "rdma": "n"},
+            "nfsd": {"host": host, "port": port, "vers3": "n", "vers4": "y", "udp": "n", "tcp": "y"},
         },
-        "requirements": ["administrator-approved exports with explicit client and sec=krb5p policy", "stop existing nfsd before applying listener changes", "verify mountd/rpcbind/lockd auxiliary listeners and firewall", "verify effective server configuration after restart"],
+        "requirements": [
+            "administrator-approved exports with explicit client and sec=krb5p policy",
+            "stop existing nfsd before applying listener changes",
+            "remove rdma and rdma-port settings and --rdma flags from the effective NFS configuration",
+            "verify mountd/rpcbind/lockd auxiliary listeners and firewall",
+            "verify effective server configuration after restart",
+        ],
     }
 
 

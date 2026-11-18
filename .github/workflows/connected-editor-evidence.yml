@@ -47,19 +47,7 @@ jobs:
             --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
       - name: Prepare a hash-locked Qt and OpenSSH fixture
         shell: bash
-        run: |
-          image_context="$EDITOR_WORK/image"
-          mkdir -p "$image_context/wheelhouse"
-          cp requirements-locks/source-linux-x86_64{,-bootstrap}.txt "$image_context/"
-          python -m venv "$EDITOR_WORK/download"
-          downloader="$EDITOR_WORK/download/bin/python"
-          "$downloader" -m pip install --require-hashes --only-binary=:all: \
-            -r "$image_context/source-linux-x86_64-bootstrap.txt"
-          "$downloader" -m pip download --require-hashes --no-deps --no-build-isolation \
-            --only-binary=:all: --no-binary=pyftpdlib --dest "$image_context/wheelhouse" \
-            -r "$image_context/source-linux-x86_64.txt"
-          docker build --platform linux/amd64 --tag "$EDITOR_IMAGE" \
-            -f docker/Dockerfile.editor-release-evidence "$image_context"
+        run: bash scripts/build_qt_release_fixture.sh "$EDITOR_WORK" "$EDITOR_IMAGE"
       - name: Capture the packaged editor and its overwrite reviews
         shell: bash
         run: |

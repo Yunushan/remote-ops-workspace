@@ -63,6 +63,8 @@ X11_WORKFLOW = ".github/workflows/x11-forwarding-evidence.yml"
 X11_JOB = "Qualify packaged X11 forwarding"
 EDITOR_WORKFLOW = ".github/workflows/connected-editor-evidence.yml"
 EDITOR_JOB = "Qualify the published wheel's connected editor"
+MACRO_WORKFLOW = ".github/workflows/macro-replay-evidence.yml"
+MACRO_JOB = "Qualify the published wheel's timed macro replay"
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ EVIDENCE_WORKFLOWS = {
     "moba-text-editor-diff": EvidenceWorkflow(
         "Connected editor", EDITOR_WORKFLOW, EDITOR_JOB, "connected-editor-evidence",
     ),
+    "macro-recorder": EvidenceWorkflow("Macro replay", MACRO_WORKFLOW, MACRO_JOB, "macro-replay-evidence"),
 }
 
 
@@ -437,7 +440,7 @@ def audit_release(
         if record["release_tag"] != tag or source["repository"] != repository or source["head_sha"] != release_sha:
             errors.append(f"{article} accepted record must bind the exact release repository, tag, and source SHA")
             continue
-        if article == "moba-text-editor-diff":
+        if article in {"moba-text-editor-diff", "macro-recorder"}:
             tested = record["validation_summary"]["summary"]["tested_release_asset"]
             wheel = f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl"
             if tested["name"] != wheel or record["release_target"] != "linux-x86_64":

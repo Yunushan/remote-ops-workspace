@@ -377,7 +377,7 @@ directory as `--assets-dir`. The strict gate checks the directory's exact file
 inventory and hashes, runs the article validator again, and compares its
 results with the reviewed summary.
 
-For MobApt, X11 forwarding and the connected editor, the audit also verifies
+For MobApt, X11 forwarding, the connected editor and macro replay, the audit verifies
 the original GitHub Actions ZIP from the successful qualification job. It
 checks the archive's size and SHA-256 against GitHub and compares its
 candidate record and every evidence file with the reviewed record. While the

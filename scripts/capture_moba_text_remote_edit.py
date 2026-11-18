@@ -2,77 +2,32 @@
 
 from __future__ import annotations
 
-import argparse
-import hashlib
-import ipaddress
 import json
-import os
-import re
-import socket
 import subprocess
 import sys
 import time
-from importlib.metadata import distribution
 from pathlib import Path
-from tempfile import TemporaryDirectory
-from zipfile import ZipFile
 
-FIXTURE = Path("/fixture")
-HOST = "row-editor-server"
-PORT = 2222
-USER = "rowedit"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.qt_release_capture import (  # noqa: E402
+    EDITOR_ORIGINAL,
+    EDITOR_USER,
+    FIXTURE,
+    HOST,
+    PORT,
+    TARGET,
+    run_capture,
+    sha256,
+    write_json,
+)
+
+USER = EDITOR_USER
 FILENAME = "document.txt"
 REMOTE = f"/home/{USER}/{FILENAME}"
-TARGET = "linux-x86_64"
-ORIGINAL = "opening fixture: café\n".encode()
 FIRST = b"first concurrent revision\n"
 SECOND = b"newer concurrent revision\n"
 EDITED = "operator editor bytes: résumé\n".encode()
-
-
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def write_json(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def require_fixture() -> None:
-    if (sys.platform != "linux" or os.uname().machine != "x86_64"
-            or not Path("/.dockerenv").is_file()):
-        raise ValueError("editor capture requires the Linux x86_64 fixture container")
-    routes = Path("/proc/net/route").read_text(encoding="ascii").splitlines()[1:]
-    if any(row.split()[1] == "00000000" for row in routes):
-        raise ValueError("editor capture requires a network without an internet route")
-    server = ipaddress.IPv4Address(socket.gethostbyname(HOST))
-    if not server.is_private or server.is_loopback:
-        raise ValueError("editor capture requires the private SSH fixture peer")
-
-
-def verify_wheel(wheel: Path) -> tuple[str, dict[str, str]]:
-    match = re.fullmatch(r"remote_ops_workspace-(\d+\.\d+\.\d+)-py3-none-any\.whl", wheel.name)
-    installed = distribution("remote-ops-workspace")
-    if match is None or installed.version != match[1] or wheel.is_symlink():
-        raise ValueError("installed distribution must match the exact release wheel")
-    package = Path(installed.locate_file("remote_ops_workspace")).resolve(strict=True)
-    content = wheel.read_bytes()
-    digest = sha256(content)
-    with ZipFile(wheel) as archive:
-        entries = [item for item in archive.infolist()
-                   if item.filename.startswith("remote_ops_workspace/") and not item.is_dir()]
-        if not entries or len({item.filename for item in entries}) != len(entries):
-            raise ValueError("release wheel package files are missing or duplicated")
-        for item in entries:
-            _, relative = item.filename.split("/", 1)
-            path = (package / relative).resolve(strict=True)
-            if not path.is_relative_to(package) or path.read_bytes() != archive.read(item):
-                raise ValueError(f"installed package bytes differ from the release wheel: {relative}")
-    import remote_ops_workspace
-
-    if Path(remote_ops_workspace.__file__).resolve().parent != package or sha256(wheel.read_bytes()) != digest:
-        raise ValueError("capture must import the verified installed package")
-    return f"v{installed.version}", {"name": wheel.name, "sha256": digest}
 
 
 def server_file(content: bytes | None = None) -> bytes:
@@ -166,14 +121,14 @@ def capture_editor(root: Path, raw: Path):
     timer.timeout.connect(answer_dialog)
     timer.start(20)
     try:
-        if server_file() != ORIGINAL:
+        if server_file() != EDITOR_ORIGINAL:
             raise ValueError("the SSH fixture does not contain the expected initial UTF-8 bytes")
         dock.request_sftp_refresh(reason="proof")
         wait_for(lambda: dock.file_table.isVisible() and find_document())
         dock.file_table.itemDoubleClicked.emit(find_document(), 0)
         wait_for(lambda: editor.isVisible() and editor.property("mobaTextEditorContentLoaded"))
         opened = editor.toPlainText().encode()
-        if opened != ORIGINAL or editor.property("mobaTextEditorRemoteSha256") != sha256(opened):
+        if opened != EDITOR_ORIGINAL or editor.property("mobaTextEditorRemoteSha256") != sha256(opened):
             raise ValueError("the connected editor did not open the fixture through SFTP")
         editor.setPlainText(EDITED.decode())
         pending.append(("Remote text diff", QMessageBox.StandardButton.Ok, None))
@@ -265,35 +220,13 @@ def assemble(root: Path, raw: Path, profile, opened_digest: str, identity: dict)
         write_json(root / "local-qualification.json", {**result, **identity, "production_acceptance": False})
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--wheel", type=Path, required=True)
-    parser.add_argument("--out", type=Path, required=True)
-    args = parser.parse_args()
-    require_fixture()
-    if args.out.exists() or args.out.is_symlink():
-        raise ValueError("editor capture output must be a new directory")
-    tag, asset = verify_wheel(args.wheel)
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from scripts.debian_release_fixture import actions_source
+def capture(root: Path, raw: Path, identity: dict) -> None:
+    profile, opened = capture_editor(root, raw)
+    assemble(root, raw, profile, opened, identity)
 
-    identity = {"release_target": TARGET, "release_asset": asset}
-    if source := actions_source(tag):
-        identity["source"] = source
-    with TemporaryDirectory(prefix=".editor-capture-", dir=args.out.parent) as work:
-        raw, root = Path(work) / "raw", Path(work) / "review"
-        raw.mkdir()
-        root.mkdir()
-        with TemporaryDirectory(prefix="row-editor-state-") as home:
-            os.environ.update(ROW_HOME=home, QT_QPA_PLATFORM="offscreen")
-            profile, opened = capture_editor(root, raw)
-            assemble(root, raw, profile, opened, identity)
-        # The fixture runs as root, but the hosted artifact uploader does not.
-        # Only the reviewed capture is made readable outside the private work tree.
-        for path in root.rglob("*"):
-            path.chmod(0o755 if path.is_dir() else 0o644)
-        root.chmod(0o755)
-        root.rename(args.out)
+
+def main() -> int:
+    run_capture(capture, __doc__ or "")
     print("Connected editor verified the installed wheel, live SFTP diff and both overwrite refusals")
     return 0
 

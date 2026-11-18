@@ -546,6 +546,11 @@ def reviewed_release(tmp_path, monkeypatch):
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1236"
             record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"]
             record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {wheel.name: wheel_digest}
+        if article == "macro-recorder":
+            record["release_target"] = "linux-x86_64"
+            record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1237"
+            record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"]
+            record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {wheel.name: wheel_digest}
         if article in SOURCE_BOUND_ARTICLES:
             record["validation_summary"]["summary"] = {
                 "repository": repository,
@@ -571,7 +576,7 @@ def reviewed_release(tmp_path, monkeypatch):
             )
         if article == "macro-recorder":
             record["validation_summary"]["summary"].update(
-                verified_macro_replays=1, replay_sessions=1, tested_release_asset={"name": name, "sha256": digest},
+                verified_macro_replays=1, replay_sessions=1, tested_release_asset={"name": wheel.name, "sha256": wheel_digest},
             )
         if article == "moba-text-editor-diff":
             record["validation_summary"]["summary"].update(
@@ -605,6 +610,8 @@ def reviewed_release(tmp_path, monkeypatch):
     x11_jobs = f"{x11_run}/jobs?per_page=20&page=1"
     editor_run = "actions/runs/1236/attempts/2"
     editor_jobs = f"{editor_run}/jobs?per_page=20&page=1"
+    macro_run = "actions/runs/1237/attempts/2"
+    macro_jobs = f"{macro_run}/jobs?per_page=20&page=1"
     review = "pulls/42/reviews/99"
     responses = {
         "branches/main": {"name": "main", "protected": True, "commit": {"sha": main_tip}},
@@ -646,6 +653,10 @@ def reviewed_release(tmp_path, monkeypatch):
     responses[editor_run] = {**responses[run], "id": 1236, "path": release_parity.EDITOR_WORKFLOW}
     responses[editor_jobs] = {
         "total_count": 1, "jobs": [{**responses[jobs]["jobs"][0], "name": release_parity.EDITOR_JOB, "run_id": 1236}],
+    }
+    responses[macro_run] = {**responses[run], "id": 1237, "path": release_parity.MACRO_WORKFLOW}
+    responses[macro_jobs] = {
+        "total_count": 1, "jobs": [{**responses[jobs]["jobs"][0], "name": release_parity.MACRO_JOB, "run_id": 1237}],
     }
     hosted_archives = {}
     for record in records:
@@ -728,6 +739,7 @@ def reviewed_release(tmp_path, monkeypatch):
         args=args, asset=asset, records=records, responses=responses,
         on_main=on_main, run=run, jobs=jobs, x11_run=x11_run, x11_jobs=x11_jobs,
         editor_run=editor_run, editor_jobs=editor_jobs,
+        macro_run=macro_run, macro_jobs=macro_jobs,
         hosted_archives=hosted_archives,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
@@ -813,6 +825,13 @@ def test_editor_certification_requires_the_published_wheel(reviewed_release) -> 
     )
     assert release_parity.audit_release(**reviewed_release.args) == [
         "moba-text-editor-diff must verify the published wheel on Linux x86_64"
+    ]
+
+
+def test_macro_certification_requires_its_dedicated_workflow(reviewed_release) -> None:
+    reviewed_release.responses[reviewed_release.macro_run]["path"] = release_parity.EDITOR_WORKFLOW
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        "macro-recorder Macro replay evidence must come from its dedicated workflow dispatched at the release tag"
     ]
 
 
@@ -953,7 +972,7 @@ def test_certification_checks_live_attempt_and_review(
 def test_certification_binds_review_time_to_completed_attempt_jobs(
     reviewed_release, field, value, expected,
 ) -> None:
-    for jobs in (reviewed_release.jobs, reviewed_release.x11_jobs, reviewed_release.editor_jobs):
+    for jobs in (reviewed_release.jobs, reviewed_release.x11_jobs, reviewed_release.editor_jobs, reviewed_release.macro_jobs):
         reviewed_release.responses[jobs]["jobs"][0][field] = value
 
     errors = release_parity.audit_release(**reviewed_release.args)

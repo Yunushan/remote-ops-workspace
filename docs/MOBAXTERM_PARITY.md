@@ -514,6 +514,10 @@ captures of at most 1 MiB per file.
 
 ### Macro replay release evidence
 
+Dispatch `macro-replay-evidence.yml` at the published release tag. It runs the
+installed wheel's terminal against a disposable SSH peer and submits the recording,
+timing and reconnect evidence for independent review.
+
 Use the `row.moba-macro.live-replay-evidence.v1` envelope with the same `source`
 and `release_asset` fields as the embedded-server contract. The capture
 attachment is the JSON recording from a PyQt terminal pane. Record multiple

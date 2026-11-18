@@ -1,5 +1,11 @@
 import importlib.util
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 
 def test_native_release_hardening_checker_passes_current_tree() -> None:
@@ -277,6 +283,70 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert "row-gui.exe" in smoke
     assert "timeout-minutes: 20" in workflow
     assert "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru" in smoke
+
+
+def test_windows_pyinstaller_uses_a_private_build_path_and_restores_it(tmp_path) -> None:
+    if os.name != "nt":
+        pytest.skip("requires Windows DLL search paths")
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    assert shell is not None
+    probe = tmp_path / "probe.ps1"
+    probe.write_text(
+        '''
+$ErrorActionPreference = "Stop"
+$Builder = $env:ROW_BUILD_TEST_SCRIPT
+$Ast = [System.Management.Automation.Language.Parser]::ParseFile($Builder, [ref]$null, [ref]$null)
+$Function = $Ast.Find({
+  param($Node)
+  $Node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+  $Node.Name -eq "Invoke-WindowsPyInstaller"
+}, $true)
+. ([scriptblock]::Create($Function.Extent.Text))
+$OriginalPath = $env:PATH
+$Python = $env:ROW_BUILD_TEST_PYTHON
+$ExpectedPath = @(
+  [Environment]::SystemDirectory
+  $env:SystemRoot
+  (Split-Path -Parent $Python)
+) -join [IO.Path]::PathSeparator
+
+Invoke-WindowsPyInstaller -Python $Python -Build {
+  param([string]$Executable)
+  if ($Executable -ne $Python -or $env:PATH -ne $ExpectedPath) {
+    throw "PyInstaller received an unexpected executable or PATH"
+  }
+  & $Executable -c 'raise SystemExit(0)'
+}
+if ($env:PATH -ne $OriginalPath) { throw "PATH was changed after successful packaging" }
+
+$Failed = $false
+try {
+  Invoke-WindowsPyInstaller -Python $Python -Build {
+    param([string]$Executable)
+    & $Executable -c 'raise SystemExit(17)'
+  }
+} catch {
+  if ($_.Exception.Message -ne "PyInstaller failed with exit code 17") { throw }
+  $Failed = $true
+}
+if (!$Failed -or $env:PATH -ne $OriginalPath) {
+  throw "Packaging failure was not reported or PATH was not restored"
+}
+exit 0
+''',
+        encoding="ascii",
+    )
+    env = {
+        **os.environ,
+        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+        "ROW_BUILD_TEST_PYTHON": sys.executable,
+        "ROW_BUILD_TEST_SCRIPT": str(Path("scripts/make_windows_native.ps1").resolve()),
+    }
+    result = subprocess.run(
+        [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(probe)],
+        env=env, capture_output=True, text=True, check=False, timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_windows_native_package_embeds_product_icon_everywhere() -> None:

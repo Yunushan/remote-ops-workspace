@@ -46,6 +46,24 @@ function Write-NativeChecksums([string]$Version, [string]$OutDir, [string]$Arch,
   return $ChecksumPath
 }
 
+function Invoke-WindowsPyInstaller([string]$Python, [scriptblock]$Build) {
+  $Executable = (Get-Command -Name $Python -CommandType Application -ErrorAction Stop).Path
+  $OriginalPath = $env:PATH
+  try {
+    # PyInstaller uses PATH to resolve DLLs during analysis. Keep unrelated
+    # host applications from supplying binaries such as the system ICU DLL.
+    $env:PATH = @(
+      [Environment]::SystemDirectory
+      $env:SystemRoot
+      (Split-Path -Parent $Executable)
+    ) -join [IO.Path]::PathSeparator
+    & $Build $Executable
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
+  } finally {
+    $env:PATH = $OriginalPath
+  }
+}
+
 function Sign-NativeArtifact([string]$ArtifactPath) {
   if ($env:ROW_REQUIRE_RELEASE_SIGNING -eq "1") {
     & $ArtifactSigner -ArtifactPath $ArtifactPath | Out-Host
@@ -445,38 +463,15 @@ $ServerImports = if ($Arch -ne "x86") {
   @("--collect-submodules", "pyftpdlib", "--collect-submodules", "OpenSSL", "--hidden-import", "asyncore", "--hidden-import", "asynchat")
 } else { @() }
 
-& $Python -m PyInstaller `
-  --clean `
-  --noconfirm `
-  --onefile `
-  --name row `
-  --console `
-  --icon $IconIco `
-  --distpath $PyDist `
-  --workpath $PyWork `
-  --specpath $BuildDir `
-  --collect-submodules remote_ops_workspace `
-  --collect-data remote_ops_workspace `
-  --add-data "$Root\configs;remote_ops_workspace/configs" `
-  --add-data "$Root\apps\web;remote_ops_workspace/web" `
-  --copy-metadata remote-ops-workspace `
-  @ServerImports `
-  --exclude-module PyQt6 `
-  --exclude-module remote_ops_workspace.gui `
-  --exclude-module remote_ops_workspace.gui_designs `
-  --exclude-module remote_ops_workspace.gui_editors `
-  $Launcher
-
-if ($BuildGuiLauncher) {
-  & $Python -m PyInstaller `
+Invoke-WindowsPyInstaller -Python $Python -Build {
+  param([string]$Executable)
+  & $Executable -m PyInstaller `
     --clean `
     --noconfirm `
     --onefile `
-    --name row-gui `
-    --windowed `
+    --name row `
+    --console `
     --icon $IconIco `
-    --manifest $GuiManifest `
-    --add-data "$IconSvg;remote_ops_workspace/assets" `
     --distpath $PyDist `
     --workpath $PyWork `
     --specpath $BuildDir `
@@ -486,10 +481,39 @@ if ($BuildGuiLauncher) {
     --add-data "$Root\apps\web;remote_ops_workspace/web" `
     --copy-metadata remote-ops-workspace `
     @ServerImports `
-    --hidden-import PyQt6.QtCore `
-    --hidden-import PyQt6.QtGui `
-    --hidden-import PyQt6.QtWidgets `
-    $GuiLauncher
+    --exclude-module PyQt6 `
+    --exclude-module remote_ops_workspace.gui `
+    --exclude-module remote_ops_workspace.gui_designs `
+    --exclude-module remote_ops_workspace.gui_editors `
+    $Launcher
+}
+
+if ($BuildGuiLauncher) {
+  Invoke-WindowsPyInstaller -Python $Python -Build {
+    param([string]$Executable)
+    & $Executable -m PyInstaller `
+      --clean `
+      --noconfirm `
+      --onefile `
+      --name row-gui `
+      --windowed `
+      --icon $IconIco `
+      --manifest $GuiManifest `
+      --add-data "$IconSvg;remote_ops_workspace/assets" `
+      --distpath $PyDist `
+      --workpath $PyWork `
+      --specpath $BuildDir `
+      --collect-submodules remote_ops_workspace `
+      --collect-data remote_ops_workspace `
+      --add-data "$Root\configs;remote_ops_workspace/configs" `
+      --add-data "$Root\apps\web;remote_ops_workspace/web" `
+      --copy-metadata remote-ops-workspace `
+      @ServerImports `
+      --hidden-import PyQt6.QtCore `
+      --hidden-import PyQt6.QtGui `
+      --hidden-import PyQt6.QtWidgets `
+      $GuiLauncher
+  }
 }
 
 $RowExe = Join-Path $PyDist "row.exe"

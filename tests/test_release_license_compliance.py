@@ -92,6 +92,57 @@ def _component(root: Path, name: str, version: str, origin: str) -> dict:
     }
 
 
+def test_debian_server_notice_scope_comes_from_exact_package_evidence(tmp_path: Path) -> None:
+    checker = _load_checker()
+    debian = "row-amd64.deb"
+    rpm = "row-x86_64.rpm"
+    source_lock = "locks/linux.txt"
+    lock = _write_record(
+        tmp_path, source_lock, f"pyinstaller==6.22.2 --hash=sha256:{'a' * 64}\n".encode(),
+        format="pip-requirements", fully_hashed=True, source_file=source_lock,
+    )
+    realized = _write_record(
+        tmp_path, "pip-inspect.json",
+        b'{"version":"1","installed":[{"metadata":{"name":"PyInstaller","version":"6.22.2"}}]}',
+        format="pip-inspect-v1", reference="exact pip inspect fixture",
+    )
+    component = _component(tmp_path, "PyInstaller", "6.22.2", "python-distribution")
+    native = _component(tmp_path, "openssh-server", "1:10.0p1-7+deb13u4", "native-component")
+    notice = _write_record(
+        tmp_path, "licenses/openssh-server.copyright", b"Debian OpenSSH copyright fixture\n",
+        path=checker.notice_path("openssh-server").as_posix(),
+    )
+    native["license_files"] = [notice]
+    common = component["license_files"]
+    inventory = {
+        "schema_version": 1, "profile": "secure-cli", "closed_world_complete": True,
+        "artifact_contents_scanned": True, "all_installed_distributions_recorded": True,
+        "classification_complete": True, "resolver_lock": lock, "realized_environment": realized,
+        "components": [component, native],
+        "artifact_license_files": {debian: [*common, notice], rpm: common},
+    }
+    verified = {debian: {"openssh-server": {
+        "version": native["version"], "services": ["ssh", "sftp"],
+        "sha256": notice["sha256"], "size_bytes": notice["size_bytes"],
+    }}}
+
+    def verify():
+        return checker.check_inventory(
+            inventory, manifest_name="linux-manifest.json", profile="secure-cli",
+            required_names=["PyInstaller"], versions={"pyinstaller": "6.22.2"},
+            artifact_names={debian, rpm}, evidence_root=tmp_path,
+            expected_lock_file=source_lock, expected_lock_sha256=lock["sha256"],
+            debian_notices=verified,
+        )
+
+    assert verify() == []
+    inventory["artifact_license_files"][debian] = common
+    assert any(f"{debian} scan is missing bundled component license files" in error for error in verify())
+    inventory["artifact_license_files"][debian] = [*common, notice]
+    native["version"] = "1:10.0p1-7+deb13u5"
+    assert any("requires the exact bundled Debian component and notice for openssh-server" in error for error in verify())
+
+
 def _positive_fixture(tmp_path: Path, checker, *, different_runtime_report: bool = False) -> list[str]:
     assets = tmp_path / "assets"
     evidence_root = tmp_path / "evidence"

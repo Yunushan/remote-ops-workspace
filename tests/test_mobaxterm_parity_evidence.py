@@ -279,6 +279,26 @@ def test_server_review_binds_declared_openssh_helper_attachments(embedded_server
     assert not result.passed and any("OpenSSH helper failed its integrity check" in error for error in result.errors)
 
 
+def test_server_review_rejects_missing_debian_notice_attachment(embedded_server_bundle):
+    root, _, evidence, attachment = embedded_server_bundle
+    manifest_file = evidence["runtime_manifest"]["file"]
+    manifest = json.loads((root / manifest_file).read_bytes())
+    raw = b"Debian archive copyright fixture\n"
+    notice = attachment("runtimes/notices/server-suite.copyright", raw)
+    manifest["debian_notices"] = {"server-suite": {
+        "version": "1:2.3-1", "services": ["tftp", "ssh", "sftp", "telnet", "vnc", "nfs"],
+        "sha256": notice["sha256"], "size_bytes": len(raw),
+    }}
+    evidence["runtime_manifest"] = attachment(manifest_file, manifest)
+    evidence_file = root / "evidence.json"
+    attachment("evidence.json", evidence)
+    assert server_evidence.validate_live_server_release_evidence(evidence_file).passed
+
+    (root / notice["file"]).unlink()
+    result = server_evidence.validate_live_server_release_evidence(evidence_file)
+    assert not result.passed and any("Debian server notice" in error for error in result.errors)
+
+
 def test_mobaxterm_parity_evidence_accepts_complete_article_record() -> None:
     checker = _load_checker()
     spec = checker.ARTICLE_SPECS["professional-deployment"]

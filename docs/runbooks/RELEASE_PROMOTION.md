@@ -87,6 +87,13 @@ payload size and payload SHA-256. Use those exact report bytes in the review
 bundle. See the [protected source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites)
 for the registry's original Actions archives.
 
+For a Debian asset with the embedded server bundle, include its distro
+components with their exact Debian versions in the signed native inventory.
+Record each packaged notice by its installed path, size, and SHA-256 in that
+asset's license extraction scan. The compliance check reads the notice records
+and files from the Debian archive itself and applies those notice requirements
+to that asset. The other packaged license records retain their normal coverage.
+
 ## Prepare the policy before tagging
 
 Enroll the independent redistribution reviewer's public key

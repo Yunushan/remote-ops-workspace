@@ -26,15 +26,21 @@ from scripts.check_linux_native_elf import validate_elf  # noqa: E402
 from scripts.check_release_license_compliance import secure_regular_file, sha256_file  # noqa: E402
 from scripts.debian_native_dependencies import debian_dependencies, dependency_field  # noqa: E402
 from scripts.debian_release_fixture import release_deb_version  # noqa: E402
+from scripts.debian_server_notices import (  # noqa: E402
+    EXTERNAL_SERVICES,
+    MANIFEST,
+    NOTICE_MAX_BYTES,
+    PAYLOAD,
+    SCHEMA,
+    notice_path,
+    notice_records,
+    verify_notice_members,
+)
 
-PAYLOAD = PurePosixPath("usr/lib/remote-ops-workspace/servers")
 LAUNCHER = PurePosixPath("usr/bin/row")
-MANIFEST = "servers-runtime.json"
-SCHEMA = "row.moba-servers.runtime-bundle.v1"
 ELF_TARGETS = {"linux-x86_64": "x86_64", "linux-arm64": "aarch64", "linux-i386": "i686", "linux-armhf": "armhf"}
 SERVICES = frozenset({"http", "ftp", "tftp", "ssh", "sftp", "telnet", "vnc", "nfs"})
 BUILTINS = {"http": ("python-http", "python"), "ftp": ("pyftpdlib", "pyftpdlib")}
-EXTERNAL_SERVICES = SERVICES - BUILTINS.keys()
 OPENSSH_DAEMON_KEYS = {"ssh": "sshd", "sftp": "sshd-sftp"}
 
 
@@ -113,8 +119,24 @@ def server_payload(
     return document, digests
 
 
+def verify_debian_notice_inputs(root: Path, value: object) -> dict[str, bytes]:
+    notices = {}
+    for name, row in notice_records(value).items():
+        relative = f"notices/{name}.copyright"
+        path, error = secure_regular_file(root, relative, "Debian server notice")
+        if path is None:
+            raise ValueError(error)
+        with path.open("rb") as stream:
+            data = stream.read(NOTICE_MAX_BYTES + 1)
+        if len(data) != row["size_bytes"] or hashlib.sha256(data).hexdigest() != row["sha256"]:
+            raise ValueError(f"Debian server notice attachment differs from reviewed evidence: {relative}")
+        notices[name] = data
+    return notices
+
+
 def stage_payload(source: Path, package_root: Path, target: str) -> str:
     document, expected = server_payload(source, target, EXTERNAL_SERVICES)
+    notices = verify_debian_notice_inputs(source, document.get("debian_notices"))
     destination = package_root / PAYLOAD
     launcher = package_root / LAUNCHER
     validate_elf(launcher, ELF_TARGETS[target])
@@ -143,6 +165,11 @@ def stage_payload(source: Path, package_root: Path, target: str) -> str:
         })
     document["debian_depends"] = debian_dependencies(launcher, (destination / name for name in expected))
     depends = dependency_field(document["debian_depends"])
+    for name, data in notices.items():
+        path = package_root / notice_path(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        path.chmod(0o644)
     (destination / MANIFEST).write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return depends
 
@@ -214,6 +241,8 @@ def verify_debian_payload(package: Path, manifest: Path, target: str) -> None:
             payload.seek(0)
             with tarfile.open(fileobj=payload, mode="r:") as archive:
                 compare_payload_tar(archive, expected)
+                if "debian_notices" in document:
+                    verify_notice_members(archive, notice_records(document["debian_notices"]))
         if "debian_depends" in document:
             depends = subprocess.check_output(
                 ["dpkg-deb", "--field", str(package.resolve()), "Depends"], text=True, timeout=30,

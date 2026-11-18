@@ -33,6 +33,8 @@ if str(SCRIPTS) not in sys.path:
 import check_platform_release_evidence_remote as platform_evidence  # noqa: E402
 from check_platform_verified_evidence import LINUX_TARGETS  # noqa: E402
 from check_release_publish_assets import normalize_version  # noqa: E402
+from debian_server_notices import VERSION_RE as DEBIAN_VERSION_RE  # noqa: E402
+from debian_server_notices import notice_path, read_verified_debian_notices  # noqa: E402
 from release_candidate_inventory import (  # noqa: E402
     MAX_JSON_BYTES,
     RUNTIME_REPORT_ARTIFACT_NAMES,
@@ -856,6 +858,16 @@ def check_evidence(
         if not isinstance(required, list):
             errors.append(f"no approved compliance profile for {name}")
             continue
+        debian_notices = {}
+        if target.startswith("linux-"):
+            for artifact in entries:
+                if not artifact.endswith(".deb"):
+                    continue
+                try:
+                    if notices := read_verified_debian_notices(assets_dir / artifact, target=target):
+                        debian_notices[artifact] = notices
+                except ValueError as exc:
+                    errors.append(f"{artifact}: {exc}")
         errors.extend(
             check_inventory(
                 inventory,
@@ -867,6 +879,7 @@ def check_evidence(
                 evidence_root=evidence_root,
                 expected_lock_file=expected_lock,
                 expected_lock_sha256=expected_lock_sha256,
+                debian_notices=debian_notices,
             )
         )
     return errors
@@ -1402,6 +1415,7 @@ def check_inventory(
     evidence_root: Path,
     expected_lock_file: str,
     expected_lock_sha256: str,
+    debian_notices: dict[str, dict[str, dict[str, Any]]] | None = None,
 ) -> list[str]:
     prefix = f"{manifest_name} signed inventory"
     errors: list[str] = []
@@ -1444,6 +1458,9 @@ def check_inventory(
     if not isinstance(components, list):
         return [*errors, f"{prefix} components must be a list"]
     indexed: dict[str, dict[str, Any]] = {}
+    debian_components = {
+        normalize_component_name(name) for rows in (debian_notices or {}).values() for name in rows
+    }
     for index, item in enumerate(components):
         label = f"{prefix} component {index}"
         if not isinstance(item, dict):
@@ -1456,7 +1473,8 @@ def check_inventory(
             errors.append(f"{label} name must be non-empty and unique")
             continue
         indexed[normalized_name] = item
-        if not isinstance(version, str) or VERSION_RE.fullmatch(version) is None:
+        version_pattern = DEBIAN_VERSION_RE if normalized_name in debian_components else VERSION_RE
+        if not isinstance(version, str) or version_pattern.fullmatch(version) is None:
             errors.append(f"{label} version must be exact")
         if item.get("scope") not in {"bundled", "build-only"}:
             errors.append(f"{label} scope must be bundled or build-only")
@@ -1532,6 +1550,7 @@ def check_inventory(
                 f"{prefix} component {name} version must be {expected_version!r}"
             )
 
+    scoped_notices = check_debian_notice_inventory(debian_notices or {}, indexed, prefix, errors)
     scans = inventory.get("artifact_license_files")
     if not isinstance(scans, dict) or set(scans) != artifact_names:
         errors.append(f"{prefix} must contain a license-file extraction scan for every artifact")
@@ -1559,7 +1578,10 @@ def check_inventory(
                 for item in license_files
                 if isinstance(item, dict)
             }
-            missing = bundled_license_records - scanned
+            missing = {
+                key for key in bundled_license_records - scanned
+                if key not in scoped_notices or artifact_name in scoped_notices[key]
+            }
             if missing:
                 errors.append(
                     f"{prefix} {artifact_name} scan is missing bundled component license files"
@@ -1576,6 +1598,29 @@ def check_inventory(
     elif inventory.get("pyqt_qt_channel") not in (None, {}):
         errors.append(f"{prefix} non-GUI profile must not claim a PyQt/Qt channel")
     return errors
+
+
+def check_debian_notice_inventory(
+    notices: dict[str, dict[str, dict[str, Any]]],
+    components: dict[str, dict[str, Any]],
+    prefix: str,
+    errors: list[str],
+) -> dict[tuple[str, str, int], set[str]]:
+    scoped: dict[tuple[str, str, int], set[str]] = {}
+    for artifact, records in notices.items():
+        for name, row in records.items():
+            component = components.get(normalize_component_name(name))
+            key = (notice_path(name).as_posix(), row["sha256"], row["size_bytes"])
+            if (
+                component is None or component.get("scope") != "bundled"
+                or component.get("origin") != "native-component" or component.get("version") != row["version"]
+                or not valid_license_files(license_files := component.get("license_files"))
+                or not any(license_record_key(record) == key for record in license_files)
+            ):
+                errors.append(f"{prefix} {artifact} requires the exact bundled Debian component and notice for {name}")
+                continue
+            scoped.setdefault(key, set()).add(artifact)
+    return scoped
 
 
 def check_qt_channel(value: Any, *, prefix: str, evidence_root: Path) -> list[str]:

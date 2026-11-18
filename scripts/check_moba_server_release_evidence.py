@@ -30,7 +30,10 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     secure_regular_file,
 )
 from scripts.debian_release_fixture import release_deb_version  # noqa: E402
-from scripts.moba_debian_server_payload import verify_debian_payload  # noqa: E402
+from scripts.moba_debian_server_payload import (  # noqa: E402
+    verify_debian_notice_inputs,
+    verify_debian_payload,
+)
 
 CLIENT_CAPTURE_SCHEMA = "row.moba-servers.live-client.v1"
 CLIENTS = {
@@ -245,6 +248,10 @@ def validate_live_server_release_evidence(
             raise ValueError("runtime manifest must match the release target and native platform")
         entries = service_inventory(evidence.get("services"), "release evidence")
         runtimes = service_inventory(manifest.get("services"), "runtime manifest")
+        if "debian_notices" in manifest:
+            if system != "linux":
+                raise ValueError("Debian server notice evidence requires a Linux target")
+            verify_debian_notice_inputs(manifest_path.parent, manifest["debian_notices"])
         if "openssh_helpers" in manifest:
             if system != "linux":
                 raise ValueError("package-owned OpenSSH helper evidence requires a Linux target")

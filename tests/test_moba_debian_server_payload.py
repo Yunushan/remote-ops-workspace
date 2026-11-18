@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from scripts import moba_debian_server_payload as payload
+from scripts.debian_server_notices import NOTICE_DIR, notice_path, read_verified_debian_notices
 
 TARGET = "linux-x86_64"
 
@@ -24,7 +25,10 @@ def make_elf(contents: bytes) -> bytes:
 @pytest.fixture
 def approved_bundle(tmp_path: Path) -> Path:
     root = tmp_path / "runtime"
-    document = {"schema": payload.SCHEMA, "release_target": TARGET, "system": "linux", "services": []}
+    document = {
+        "schema": payload.SCHEMA, "release_target": TARGET, "system": "linux",
+        "services": [], "debian_notices": {},
+    }
     for service in sorted(payload.EXTERNAL_SERVICES):
         relative = f"linux/{service}/bin/{service}d"
         executable = root / relative
@@ -37,6 +41,13 @@ def approved_bundle(tmp_path: Path) -> Path:
                 "executable": relative, "sha256": payload.sha256_file(executable),
             },
         })
+        notice = root / "notices" / f"{service}-daemon.copyright"
+        notice.parent.mkdir(exist_ok=True)
+        notice.write_bytes(f"distro notice for {service}\n".encode())
+        document["debian_notices"][f"{service}-daemon"] = {
+            "version": "1:2.4.0-1~deb13u1", "services": [service],
+            "sha256": payload.sha256_file(notice), "size_bytes": notice.stat().st_size,
+        }
     (root / payload.MANIFEST).write_text(json.dumps(document), encoding="utf-8")
     return root
 
@@ -66,7 +77,8 @@ def make_tar(root: Path, *, substitute: str | None = None, link: Path | None = N
                 archive.addfile(info)
             else:
                 content = path.read_bytes() + (b"changed" if relative.as_posix() == substitute else b"")
-                info.mode, info.size = 0o755, len(content)
+                info.mode = 0o644 if relative.is_relative_to(NOTICE_DIR) else 0o755
+                info.size = len(content)
                 archive.addfile(info, io.BytesIO(content))
     return data.getvalue()
 
@@ -208,3 +220,67 @@ def test_debian_archive_audit_checks_the_control_dependency_field(
     monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: "libc6 (>= 2.38)\n")
     with pytest.raises(ValueError, match="Depends differs from the reviewed server runtime dependencies"):
         payload.verify_debian_payload(package, manifest, TARGET)
+
+
+def test_staging_refuses_changed_notice_attachments(approved_bundle: Path, tmp_path: Path) -> None:
+    target = tmp_path / "unstaged"
+    (approved_bundle / "notices/nfs-daemon.copyright").write_bytes(b"changed")
+    with pytest.raises(ValueError, match="notice attachment differs from reviewed evidence"):
+        payload.stage_payload(approved_bundle, target, TARGET)
+    assert not target.exists()
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    ("omitted", "missing services"),
+    ("extra-service", "unique and external"),
+    ("bad-name", "invalid Debian server notice record"),
+])
+def test_staging_requires_a_notice_for_each_external_service(
+    approved_bundle: Path, tmp_path: Path, change: str, error: str,
+) -> None:
+    manifest = approved_bundle / payload.MANIFEST
+    document = json.loads(manifest.read_bytes())
+    records = document["debian_notices"]
+    if change == "omitted":
+        del records["nfs-daemon"]
+    elif change == "extra-service":
+        records["nfs-daemon"]["services"].append("http")
+    else:
+        records["../nfs-daemon"] = records.pop("nfs-daemon")
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(ValueError, match=error):
+        payload.stage_payload(approved_bundle, tmp_path / "unstaged", TARGET)
+
+
+def test_redistribution_reads_exact_installed_notice_bytes(
+    staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    archive = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    manifest = staged_debian / payload.PAYLOAD / payload.MANIFEST
+    contents = make_tar(staged_debian)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    assert read_verified_debian_notices(archive, target=TARGET) == json.loads(manifest.read_bytes())["debian_notices"]
+
+    path = staged_debian / notice_path("nfs-daemon")
+    old = path.read_bytes()
+    path.write_bytes(b"B" + old[1:])
+    contents = make_tar(staged_debian)
+    with pytest.raises(ValueError, match="notice differs from reviewed evidence"):
+        read_verified_debian_notices(archive, target=TARGET)
+
+    path.unlink()
+    contents = make_tar(staged_debian)
+    with pytest.raises(ValueError, match="missing reviewed server notices"):
+        read_verified_debian_notices(archive, target=TARGET)
+
+
+def test_legacy_archive_without_an_embedded_server_bundle_requires_no_daemon_notices(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stage = tmp_path / "plain"
+    launcher = stage / payload.LAUNCHER
+    launcher.parent.mkdir(parents=True)
+    launcher.write_bytes(b"fixture")
+    contents = make_tar(stage)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    assert read_verified_debian_notices(tmp_path / "plain.deb", target=TARGET) == {}

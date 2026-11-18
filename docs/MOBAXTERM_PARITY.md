@@ -539,6 +539,15 @@ field. Use apt to install the Debian package so it can resolve those
 libraries from the distro repositories. Configure the host-managed server
 policies and accounts before running the client captures.
 
+Add a `debian_notices` object to the input manifest, keyed by distro package
+name. Record the exact `version`, the covered `services`, and the notice's
+`sha256` and `size_bytes`. Cover each external service once. A single OpenSSH
+record can cover SSH and SFTP. Supply the unmodified notice as
+`notices/<package>.copyright` beside the manifest. Keep the same relative
+paths in the review attachments. The installer places these notices beneath
+`/usr/share/doc/remote-ops-workspace/server-notices`; the archive audit
+checks their bytes against the manifest.
+
 For OpenSSH built with the package-owned libexec path, use the same daemon
 bytes for the SSH and SFTP roles. Put `sshd-session` and `sshd-auth` under
 `linux/openssh/libexec` in the bundle and add their SHA-256 digests to the

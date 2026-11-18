@@ -313,3 +313,35 @@ identity.
 The active parity target is not complete until every article above has a real
 implementation, tests, accepted release evidence in
 `configs/mobaxterm_parity_evidence.json` and user-facing documentation.
+### Embedded server release evidence
+
+Place `evidence.json` and the attachments in the same article evidence directory. Use the
+`row.moba-servers.release-evidence.v1` envelope with the exact release target, all eight
+service policies and client tests, and these release bindings.
+
+- `source` contains `repository`, `release_tag`, `head_sha`, `workflow_run_url`, and
+  integer `run_attempt` from the workflow that captured the sessions.
+- `release_asset` contains the published package `name` and tested `sha256`.
+- `runtime_manifest` contains `file` and `sha256` for the `servers-runtime.json` from
+  `row servers bundle-runtime`. Include the native executable bytes for all eight
+  manifest entries and record their relative paths and hashes in the service records.
+
+Point each `client_test.evidence_file` and `evidence_sha256` at a
+`row.moba-servers.live-client.v1` receipt. Include `service`, `runtime_sha256`,
+`release_asset_sha256`, `source_head_sha`, `workflow_run_url`, `run_attempt`, the
+`endpoint` with `host` and integer `port`, the executed `argv`, and the integer
+`exit_code`. Render the command with `shlex.join(argv)` for `client_test.command`.
+Keep credential values out of the recorded arguments and captures.
+
+- Bind each `capture` with `file` and `sha256`. File transfers and SSH command
+  output should reproduce the exact bytes from a separately attached `challenge`.
+- For Telnet, attach the client transcript with the login prompts and the
+  challenge output on a line of its own. Remove credential values.
+- For VNC, attach an RGB or RGBA PNG of the observed framebuffer with visible
+  content. A server challenge file is optional for this receipt.
+- For NFS, attach the bytes read from the export, the `mount_options` output
+  showing TCP NFSv4 with `sec=krb5p`, and the `rejected_sys_mount` output.
+
+Use the same release asset with `--artifact` when generating the candidate. The
+published-release audit re-runs the capture checks on the reviewed attachments
+and checks the release bytes and GitHub workflow and reviewer provenance.

@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
     REGISTRY_PATH,
+    SOURCE_BOUND_ARTICLES,
     check_candidate_record,
     check_mobaxterm_parity_evidence,
     check_record,
@@ -155,16 +156,17 @@ def finalize_candidate(
     published_assets: dict[str, Path],
 ) -> tuple[list[str], dict[str, Any]]:
     errors = check_candidate_record(candidate)
-    if candidate.get("article_id") == "shared-authenticated-transport-terminal-grid":
+    article_id = candidate.get("article_id")
+    if isinstance(article_id, str) and article_id in SOURCE_BOUND_ARTICLES:
         validation = candidate.get("validation_summary")
         summary = validation.get("summary") if isinstance(validation, dict) else None
         if not isinstance(summary, dict):
             errors.append(
-                "shared-authenticated-transport-terminal-grid validation_summary.summary "
+                f"{article_id} validation_summary.summary "
                 "must contain source provenance"
             )
         else:
-            expected = {
+            expected_source = {
                 "repository": repository,
                 "release_tag": candidate.get("release_tag"),
                 "release_target": candidate.get("release_target"),
@@ -172,10 +174,10 @@ def finalize_candidate(
                 "workflow_run_url": workflow_run_url,
                 "run_attempt": run_attempt,
             }
-            for key, value in expected.items():
+            for key, value in expected_source.items():
                 if summary.get(key) != value:
                     errors.append(
-                        "shared-authenticated-transport-terminal-grid validation_summary.summary."
+                        f"{article_id} validation_summary.summary."
                         f"{key} must match accepted release provenance {value!r}"
                     )
     expected_hashes = candidate.get("artifact_sha256")

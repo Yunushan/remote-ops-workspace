@@ -12,6 +12,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
+SOURCE_BOUND_ARTICLES = frozenset({"embedded-server-suite", "shared-authenticated-transport-terminal-grid"})
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -322,13 +323,15 @@ def check_article_record(
             article_id, row.get("validation_summary"), release_target=row.get("release_target"),
         )
     )
-    if article_id == "shared-authenticated-transport-terminal-grid":
+    if article_id in SOURCE_BOUND_ARTICLES:
         errors.extend(
-            check_transport_terminal_validation_identity(
+            check_validation_source_identity(
                 row,
                 require_acceptance_provenance=require_acceptance_provenance,
             )
         )
+    if article_id == "embedded-server-suite":
+        errors.extend(check_tested_server_asset(row))
     errors.extend(check_release_assets(article_id, release_tag, row.get("release_asset_urls"), row.get("artifact_sha256")))
     if require_acceptance_provenance:
         errors.extend(check_acceptance_provenance(article_id, release_tag, row))
@@ -455,15 +458,33 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
         errors.append("mobapt-unix-runtime validation summary must record verified offline execution receipts")
     if article_id == "embedded-x-server" and details.get("live_forwarding_receipt_verified") is not True:
         errors.append("embedded-x-server validation summary must record a verified live forwarding receipt")
+    if article_id == "embedded-server-suite":
+        proof_count = details.get("live_client_proof_count")
+        if type(proof_count) is not int or proof_count != 8:
+            errors.append("embedded-server-suite validation summary must record eight verified live client captures")
     return errors
 
 
-def check_transport_terminal_validation_identity(
+def check_tested_server_asset(row: dict[str, Any]) -> list[str]:
+    validation = row.get("validation_summary")
+    summary = validation.get("summary") if isinstance(validation, dict) else None
+    tested = summary.get("tested_release_asset") if isinstance(summary, dict) else None
+    artifacts = row.get("artifact_sha256")
+    if (
+        not isinstance(tested, dict) or not isinstance(tested.get("name"), str)
+        or not isinstance(tested.get("sha256"), str) or not SHA256_RE.fullmatch(tested["sha256"])
+        or not isinstance(artifacts, dict) or artifacts.get(tested["name"]) != tested["sha256"]
+    ):
+        return ["embedded-server-suite tested release asset must match the record artifact name and SHA-256"]
+    return []
+
+
+def check_validation_source_identity(
     row: dict[str, Any],
     *,
     require_acceptance_provenance: bool,
 ) -> list[str]:
-    article_id = "shared-authenticated-transport-terminal-grid"
+    article_id = row["article_id"]
     validation = row.get("validation_summary")
     summary = validation.get("summary") if isinstance(validation, dict) else None
     if not isinstance(summary, dict):

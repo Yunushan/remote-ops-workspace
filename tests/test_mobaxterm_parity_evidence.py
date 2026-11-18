@@ -4,12 +4,17 @@ import base64
 import hashlib
 import importlib.util
 import json
+import shlex
+import struct
 import sys
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from remote_ops_workspace.moba_servers import build_moba_server_config_plan
+from scripts import check_moba_server_release_evidence as server_evidence
 from scripts import check_release_mobaxterm_parity as release_parity
 from scripts.write_release_notes import moba_counts
 
@@ -84,6 +89,161 @@ def test_xserver_registry_requires_the_live_forwarding_validator() -> None:
     ]
     record["validation_summary"]["summary"]["live_forwarding_receipt_verified"] = True
     assert checker.check_record(record) == []
+
+
+@pytest.fixture
+def embedded_server_bundle(tmp_path):
+    root = tmp_path / "reviewed" / "embedded-server-suite"
+    root.mkdir(parents=True)
+    repository = "example/remote-ops-workspace"
+    tag = "v1.0.2"
+    package = tmp_path / "candidate.deb"
+    package.write_bytes(b"fixture release package")
+    source = {
+        "repository": repository, "release_tag": tag, "head_sha": "d" * 40,
+        "workflow_run_url": f"https://github.com/{repository}/actions/runs/1234", "run_attempt": 2,
+    }
+
+    def attachment(name, data):
+        if isinstance(data, dict):
+            data = json.dumps(data).encode()
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return {"file": name, "sha256": hashlib.sha256(data).hexdigest()}
+
+    marker = b"row-live-fixture-abc123\n"
+    challenge = attachment("fixture.txt", marker)
+    package_hash = hashlib.sha256(package.read_bytes()).hexdigest()
+    manifest = {"schema": "row.moba-servers.runtime-bundle.v1", "release_target": "linux-x86_64", "system": "linux", "services": []}
+    evidence = {
+        "schema": "row.moba-servers.release-evidence.v1", "release_target": "linux-x86_64", "source": source,
+        "release_asset": {"name": package.name, "sha256": package_hash}, "services": [],
+    }
+    clients = {"http": "curl", "ftp": "lftp", "tftp": "tftp", "ssh": "ssh", "sftp": "sftp", "telnet": "telnet", "vnc": "vncsnapshot", "nfs": "mount.nfs4"}
+    keys = {"http": "python-http", "ftp": "pyftpdlib", "tftp": "tftpd", "ssh": "sshd", "sftp": "sshd-sftp", "telnet": "telnetd", "vnc": "x11vnc", "nfs": "nfsd"}
+    for service, client in clients.items():
+        runtime_file = attachment(f"runtimes/{service}/{keys[service]}", b"\x7fELF" + service.encode())
+        relative = runtime_file["file"].removeprefix("runtimes/")
+        runtime = {"key": keys[service], "bundled": True, "executable": relative, "sha256": runtime_file["sha256"]}
+        manifest["services"].append({"service": service, "runtime": {**runtime, "source": "packaged", "placeholder": False}})
+        policy = build_moba_server_config_plan(service, root=tmp_path).to_dict()
+        argv = [client, "127.0.0.1", str(policy["port"])]
+        data = b"fixture login: proof\r\nPassword: \r\n" + marker if service == "telnet" else marker
+        if service == "vnc":
+            data = _server_screenshot()
+        capture = attachment(f"captures/{service}.data", data)
+        receipt = {
+            "schema": server_evidence.CLIENT_CAPTURE_SCHEMA, "service": service,
+            "runtime_sha256": runtime_file["sha256"], "release_asset_sha256": package_hash,
+            "source_head_sha": source["head_sha"], "workflow_run_url": source["workflow_run_url"],
+            "run_attempt": source["run_attempt"], "endpoint": {"host": policy["host"], "port": policy["port"]},
+            "argv": argv, "exit_code": 0, "capture": capture, "challenge": challenge,
+        }
+        if service == "nfs":
+            receipt["mount_options"] = attachment("captures/nfs.options", b"server:/ nfs4 vers=4.2,proto=tcp,sec=krb5p\n")
+            receipt["rejected_sys_mount"] = attachment("captures/nfs.denial", b"mount.nfs4: Operation not permitted\n")
+        proof = attachment(f"receipts/{service}.json", receipt)
+        evidence["services"].append({
+            "service": service, "runtime": {**runtime, "executable": runtime_file["file"]}, "policy": policy,
+            "client_test": {"status": "passed", "command": shlex.join(argv), "evidence_file": proof["file"], "evidence_sha256": proof["sha256"]},
+        })
+    evidence["runtime_manifest"] = attachment("runtimes/servers-runtime.json", manifest)
+    attachment("evidence.json", evidence)
+    return root, package, evidence, attachment
+
+
+def _server_screenshot(*, solid=False):
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    left = bytes([10, 20, 30])
+    right = left if solid else bytes([40, 50, 60])
+    row = b"\0" + left * 32 + right * 32
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(row * 64))
+        + chunk(b"IEND", b"")
+    )
+
+
+def test_server_candidate_and_release_audit_validate_the_same_client_evidence(embedded_server_bundle):
+    root, package, evidence, _ = embedded_server_bundle
+    source = evidence["source"]
+    arguments = SimpleNamespace(
+        article_id="embedded-server-suite", release_tag=source["release_tag"], release_target="linux-x86_64",
+        evidence=root / "evidence.json", assets_dir=root,
+        release_asset_url=[f"https://github.com/{source['repository']}/releases/download/{source['release_tag']}/{package.name}"],
+        artifact=[f"{package.name}={package}"],
+    )
+    generator = _load_generator()
+    errors, candidate = generator.build_evidence_record(arguments)
+    assert errors == []
+    assert candidate["validation_summary"]["summary"]["live_client_proof_count"] == 8
+    release_parity.verify_article_evidence(candidate, root.parent)
+
+    finalizer = _load_finalizer()
+    errors, accepted = finalizer.finalize_candidate(
+        candidate, repository=source["repository"], source_head_sha=source["head_sha"],
+        tag_source_head_sha=source["head_sha"], workflow_run_url=source["workflow_run_url"],
+        run_attempt=source["run_attempt"], reviewer="reviewer",
+        review_url=f"https://github.com/{source['repository']}/pull/1#pullrequestreview-2",
+        reviewed_at="2026-08-23T12:34:56Z", published_assets={package.name: package},
+    )
+    assert errors == [] and accepted["status"] == "accepted"
+
+    arguments.release_tag = "v1.0.3"
+    errors, _ = generator.build_evidence_record(arguments)
+    assert any("--release-tag" in error for error in errors)
+    arguments.release_tag = source["release_tag"]
+    package.write_bytes(b"different release package")
+    errors, _ = generator.build_evidence_record(arguments)
+    assert any("tested release asset must match" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("service", "change", "expected_error"),
+    [
+        ("http", "plain", "client receipt"),
+        ("http", "tampered-data", "differs from the server challenge"),
+        ("ftp", "workflow-attempt", "must bind a successful protocol client"),
+        ("ssh", "daemon", "native executable header"),
+        ("telnet", "no-auth", "show the login prompts"),
+        ("vnc", "bad-image", "VNC client screenshot must be a valid PNG"),
+        ("vnc", "blank-image", "must show a visible framebuffer"),
+        ("nfs", "weak-mount", "Kerberos-privacy mount"),
+    ],
+)
+def test_server_release_validator_rejects_incomplete_client_evidence(embedded_server_bundle, service, change, expected_error):
+    root, _, evidence, attachment = embedded_server_bundle
+    entry = next(row for row in evidence["services"] if row["service"] == service)
+    client = entry["client_test"]
+    receipt = json.loads((root / client["evidence_file"]).read_bytes())
+    if change == "plain":
+        receipt = b"client passed"
+    elif change == "tampered-data":
+        receipt["capture"] = attachment("captures/altered.data", b"different result")
+    elif change == "workflow-attempt":
+        receipt["run_attempt"] += 1
+    elif change == "daemon":
+        manifest = json.loads((root / evidence["runtime_manifest"]["file"]).read_bytes())
+        runtime = next(row["runtime"] for row in manifest["services"] if row["service"] == service)
+        altered = attachment(entry["runtime"]["executable"], b"text placeholder")
+        runtime["sha256"] = entry["runtime"]["sha256"] = receipt["runtime_sha256"] = altered["sha256"]
+        evidence["runtime_manifest"] = attachment(evidence["runtime_manifest"]["file"], manifest)
+    elif change == "no-auth":
+        receipt["capture"] = attachment("captures/unauthenticated.data", b"row-live-fixture-abc123\n")
+    elif change == "bad-image":
+        receipt["capture"] = attachment("captures/bad.png", b"\x89PNG\r\n\x1a\n\0\0\0\0IHDR")
+    elif change == "blank-image":
+        receipt["capture"] = attachment("captures/blank.png", _server_screenshot(solid=True))
+    elif change == "weak-mount":
+        receipt["mount_options"] = attachment("captures/nfs.options", b"server:/ nfs4 vers=4.2,proto=tcp,sec=sys\n")
+    client["evidence_sha256"] = attachment(client["evidence_file"], receipt)["sha256"]
+    attachment("evidence.json", evidence)
+    result = server_evidence.validate_live_server_release_evidence(root / "evidence.json", assets_dir=root)
+    assert not result.passed and any(expected_error in error for error in result.errors)
 
 
 def test_mobaxterm_parity_evidence_accepts_complete_article_record() -> None:
@@ -346,7 +506,7 @@ def reviewed_release(tmp_path, monkeypatch):
         ]
         record["artifact_sha256"] = {name: digest}
         record["release_asset_bytes"]["sha256"] = {name: digest}
-        if article == "shared-authenticated-transport-terminal-grid":
+        if article in {"embedded-server-suite", "shared-authenticated-transport-terminal-grid"}:
             record["validation_summary"]["summary"] = {
                 "repository": repository,
                 "release_tag": tag,
@@ -359,6 +519,10 @@ def reviewed_release(tmp_path, monkeypatch):
             record["validation_summary"]["summary"]["offline_execution_receipts_verified"] = True
         if article == "embedded-x-server":
             record["validation_summary"]["summary"]["live_forwarding_receipt_verified"] = True
+        if article == "embedded-server-suite":
+            record["validation_summary"]["summary"].update(
+                live_client_proof_count=8, tested_release_asset={"name": name, "sha256": digest},
+            )
         article_root = evidence_root / article
         article_root.mkdir()
         evidence = article_root / "evidence.json"

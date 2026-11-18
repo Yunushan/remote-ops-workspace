@@ -420,7 +420,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "mobaEmbeddedServerGuiConfigControls",
             ],
             "scripts/check_moba_server_release_evidence.py": [
-                "validate_moba_server_release_evidence",
+                "validate_live_server_release_evidence",
                 "--assets-dir",
             ],
         },

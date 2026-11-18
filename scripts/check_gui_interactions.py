@@ -2164,10 +2164,10 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
     window.set_design_preset("native")
     app.processEvents()
 
-    from remote_ops_workspace import gui_terminal
+    from remote_ops_workspace import gui_layouts, gui_terminal
 
     policy_calls: list[dict[str, str]] = []
-    original_policy_check = gui_module.assert_profile_launch_allowed
+    original_layout_policy_check = gui_layouts.assert_profile_launch_allowed
     original_terminal_policy_check = gui_terminal.assert_profile_launch_allowed
 
     def block_profile_launch(profile, *, surface: str = "launcher", **_kwargs) -> None:
@@ -2180,7 +2180,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         )
         raise ValueError("interaction policy proof")
 
-    gui_module.assert_profile_launch_allowed = block_profile_launch
+    gui_layouts.assert_profile_launch_allowed = block_profile_launch
     gui_terminal.assert_profile_launch_allowed = block_profile_launch
     try:
         guarded_pane = window.new_terminal_pane(
@@ -2223,7 +2223,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         guarded_pane.deleteLater()
         app.processEvents()
     finally:
-        gui_module.assert_profile_launch_allowed = original_policy_check
+        gui_layouts.assert_profile_launch_allowed = original_layout_policy_check
         gui_terminal.assert_profile_launch_allowed = original_terminal_policy_check
 
     literal_plan = TerminalPanePlan(

@@ -62,6 +62,8 @@ def server_command(capture: str, user: str) -> str:
         prepare = f"install -m 600 -o {user} -g {user} /input/document.txt /home/{user}/document.txt"
     else:
         prepare = "install -m 755 /input/receiver.py /usr/local/lib/row-macro-receiver.py"
+    if capture == "transport":
+        prepare += "\ninstall -m 644 /input/transport-peer.py /usr/local/lib/row-transport-peer.py"
     return f"""
 useradd --create-home --shell /bin/sh {user}
 install -m 600 /input/host_key /tmp/host_key
@@ -87,13 +89,16 @@ exec /usr/sbin/sshd -D -E /log/sshd.log -f /tmp/sshd_config
 """
 
 
-def run_fixture(image: str, wheel: Path, output: Path, *, capture: str = "editor") -> None:
+def run_fixture(
+    image: str, wheel: Path, output: Path, *, capture: str = "editor", server_image: str | None = None,
+) -> None:
     user, client_script = CAPTURES[capture]
     wheel = wheel.resolve(strict=True)
     output = output.absolute()
     if not wheel.is_file() or output.exists() or output.is_symlink():
         raise ValueError("the fixture requires a release wheel and a new evidence directory")
     image = docker("image", "inspect", "--format", "{{.Id}}", image)
+    peer_image = docker("image", "inspect", "--format", "{{.Id}}", server_image) if server_image else image
     output.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix=".qt-fixture-", dir=output.parent) as scratch:
         root = Path(scratch)
@@ -109,6 +114,8 @@ def run_fixture(image: str, wheel: Path, output: Path, *, capture: str = "editor
             (server / "document.txt").write_bytes(EDITOR_ORIGINAL)
         else:
             (server / "receiver.py").write_bytes((ROOT / "scripts/macro_ssh_receiver.py").read_bytes())
+        if capture == "transport":
+            (server / "transport-peer.py").write_bytes((ROOT / "scripts/transport_terminal_peer.py").read_bytes())
         name = f"row-qt-{uuid4().hex}"
         network = docker("network", "create", "--internal", name)
         daemon = ""
@@ -116,7 +123,7 @@ def run_fixture(image: str, wheel: Path, output: Path, *, capture: str = "editor
             daemon = docker(
                 *RUN, "--detach", "--rm", "--network", network, "--network-alias", HOST,
                 *mount(server, "/input"), *mount(logs, "/log", writable=True),
-                image, "sh", "-ec", server_command(capture, user),
+                peer_image, "sh", "-ec", server_command(capture, user),
             )
             wait_for_server(logs / "sshd.log")
             forwarded = ("GITHUB_ACTIONS", "GITHUB_REF", "GITHUB_SHA", "GITHUB_REPOSITORY",
@@ -145,12 +152,13 @@ def run_fixture(image: str, wheel: Path, output: Path, *, capture: str = "editor
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
+    parser.add_argument("--server-image", help="local peer image, with full Vim for the transport capture")
     parser.add_argument("--wheel", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--capture", choices=sorted(CAPTURES), default="editor")
     args = parser.parse_args()
     try:
-        run_fixture(args.image, args.wheel, args.out, capture=args.capture)
+        run_fixture(args.image, args.wheel, args.out, capture=args.capture, server_image=args.server_image)
     except subprocess.CalledProcessError as exc:
         print(f"Qt fixture command failed ({exc.returncode}): {exc.stderr}", file=sys.stderr)
         return 1

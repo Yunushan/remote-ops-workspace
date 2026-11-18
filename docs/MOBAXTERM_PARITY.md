@@ -455,14 +455,27 @@ socket and bytes read over SFTP. It also checks the monitoring process and
 CPU sample, re-hashes all twelve captures, and compares the primary and
 alternate screen snapshots.
 
+The screen captures are JSON. The grid captures retain the primary line
+before and after reflow, both viewport sizes, the remote PTY resize and
+cursor reply, the scroll-region rows, and the one-row Qt document change.
+The alternate-screen captures retain the original and restored primary
+screens, the full-screen application at both sizes, its cursor transitions,
+and the peer's observation of input after exit. The modes capture retains
+the peer's cursor, key, paste, and mouse bytes alongside the three rendered
+color styles and cursor visibility. The grid, alternate-screen, and modes
+receipts each repeat the SSH socket observed by their remote challenge.
+
 Generate the candidate with the tested package as `--artifact`. The candidate
 and published-release audit check that the exact package bytes match the
 capture. Independent review still requires the retained capture files.
 
 For a local Linux smoke test, use `scripts/run_qt_release_fixture.py --capture
-transport --image <fixture-image> --wheel <package.whl> --out <new-dir>`.
-It opens the packaged desktop against a private SSH peer and verifies the
-terminal round trip, SFTP file read, monitoring sample, and reconnect.
+transport --image <fixture-image> --server-image <vim-peer-image> --wheel
+<package.whl> --out <new-dir>`. The peer image must have OpenSSH, Python,
+and a full Vim build. The smoke test retains all twelve captures from the
+installed wheel and checks the remote observations against the same
+authenticated socket before the reconnect. Its qualification record marks
+the run as local.
 
 The active parity target is not complete until every article above has a real
 implementation, tests, accepted release evidence in

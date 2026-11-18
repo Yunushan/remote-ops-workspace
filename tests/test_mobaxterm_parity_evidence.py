@@ -580,7 +580,7 @@ def reviewed_release(tmp_path, monkeypatch):
             )
         if article == "shared-authenticated-transport-terminal-grid":
             record["validation_summary"]["summary"].update(
-                verified_capture_count=12, verified_ssh_channel_count=3,
+                verified_capture_count=12, verified_ssh_channel_count=3, verified_screen_proof_count=3,
                 tested_release_asset={"name": wheel.name, "sha256": wheel_digest},
             )
         if article == "macro-recorder":

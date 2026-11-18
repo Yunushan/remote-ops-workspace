@@ -480,8 +480,9 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
         if (
             type(details.get("verified_capture_count")) is not int or details["verified_capture_count"] != 12
             or type(details.get("verified_ssh_channel_count")) is not int or details["verified_ssh_channel_count"] != 3
+            or type(details.get("verified_screen_proof_count")) is not int or details["verified_screen_proof_count"] != 3
         ):
-            errors.append(f"{article_id} validation summary must bind twelve captures and three verified SSH channels")
+            errors.append(f"{article_id} validation summary must bind twelve captures, three SSH channels and three screen proofs")
     if article_id == "ssh-browser-26-4-smartcard":
         fingerprint = details.get("openssh_key_fingerprint")
         if (

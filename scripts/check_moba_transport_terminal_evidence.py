@@ -124,6 +124,7 @@ def validate_moba_transport_terminal_evidence(
         "proof_count": 0,
         "verified_capture_count": 0,
         "verified_ssh_channel_count": 0,
+        "verified_screen_proof_count": 0,
     }
     if not isinstance(data, dict):
         data = {}
@@ -230,6 +231,11 @@ def validate_moba_transport_terminal_evidence(
                 verify_connection_states(captures["state_log"], proof.get("terminal_exit_status"), errors)
             if proof_name == "connected_session" and len(captures) == len(CAPTURE_ROLES[proof_name]):
                 verify_connected_captures(captures, loaded.get("shared_transport", {}), errors)
+            if proof_name in SCREEN_VALIDATORS and len(captures) == len(CAPTURE_ROLES[proof_name]):
+                previous_errors = len(errors)
+                verify_screen_captures(proof_name, captures, proof, loaded.get("shared_transport", {}), errors)
+                if len(errors) == previous_errors:
+                    summary["verified_screen_proof_count"] += 1
     summary["proof_count"] = len(loaded)
     summary["verified_capture_count"] = len(capture_paths)
     if "shared_transport" in loaded:
@@ -453,6 +459,109 @@ def verify_connected_captures(
         errors.append(f"{label} SFTP bytes differ from the independent digest observed in the terminal")
     if monitoring is None or monitoring.cpu_percent is None or monitoring.process_count is None:
         errors.append(f"{label} monitoring capture does not contain an observed CPU and process sample")
+
+
+def verify_screen_captures(
+    name: str, raw: dict[str, bytes], proof: dict[str, Any], transport: dict[str, Any], errors: list[str],
+) -> None:
+    label = f"proofs.{name}.captures"
+    try:
+        socket = " ".join((*_endpoint(transport.get("client_endpoint")), *_endpoint(transport.get("server_endpoint"))))
+    except ValueError as exc:
+        errors.append(f"{label} cannot identify the observed SSH connection: {exc}")
+        return
+    captures = {key: _decode_object(value, f"{label}.{key}", errors) for key, value in raw.items()}
+    main_capture, validator = SCREEN_VALIDATORS[name]
+    if captures[main_capture].get("ssh_connection") != socket:
+        errors.append(f"{label} screen observations must come from the verified SSH socket")
+    validator(captures, proof, label, errors)
+
+
+def _geometry(value: Any) -> bool:
+    return (
+        isinstance(value, list) and len(value) == 2
+        and all(type(dimension) is int and dimension > 0 for dimension in value)
+    )
+
+
+def _verify_grid_captures(captures: dict, proof: dict, label: str, errors: list[str]) -> None:
+    before, after = captures["initial_screen"], captures["updated_screen"]
+    initial, resized = before.get("geometry"), after.get("geometry")
+    if (
+        not _geometry(initial) or not _geometry(resized)
+        or initial != [proof.get("columns"), proof.get("rows")]
+        or not 80 <= initial[0] <= 4096 or initial[1] < 24
+        or resized[0] <= initial[0] or resized[1] != initial[1]
+        or after.get("remote") != {"initial": initial, "resized": resized, "cursor_reply": "1b5b323b3452"}
+    ):
+        errors.append(f"{label} must record the desktop and remote PTY resize and cursor reply")
+        return
+    prefix = "a" * (initial[0] - 1 - len("ROW_GRID_"))
+    if before.get("line") != prefix + "\u2028界\u0301z" or after.get("line") != prefix + "界\u0301z":
+        errors.append(f"{label} must show the same wide and combining cells across reflow")
+    if before.get("cell_cursor") != [1, 3]:
+        errors.append(f"{label} must show the cursor at the expected cell after wrapping")
+    if after.get("scroll_region") != ["outside-top", "three", "four", "", "outside-bottom"]:
+        errors.append(f"{label} must show both boundaries of the scrolled region")
+    if after.get("dirty_update") != [18, 4, 4]:
+        errors.append(f"{label} must show one style-only Qt row update")
+
+
+def _verify_alternate_captures(captures: dict, proof: dict, label: str, errors: list[str]) -> None:
+    before, after = captures["primary_before"], captures["primary_restored"]
+    alternate = captures["alternate_screen"]
+    geometry, resized = before.get("geometry"), alternate.get("resized")
+    primary, displayed, resized_text = before.get("text"), alternate.get("text"), alternate.get("resized_text")
+    if (
+        not _geometry(geometry) or not _geometry(resized) or resized == geometry
+        or alternate.get("geometry") != geometry
+        or before != after or not isinstance(primary, str) or "ROW_PRIMARY_界_e\u0301" not in primary
+        or not isinstance(displayed, str) or not displayed.strip() or displayed == primary
+        or not isinstance(resized_text, str) or not resized_text.strip()
+        or displayed.splitlines()[0] != resized_text.splitlines()[0]
+    ):
+        errors.append(f"{label} must show the resized alternate screen and exact primary restoration")
+    if (
+        alternate.get("application") != proof.get("application")
+        or alternate.get("cursor_modes") != ["bar", "block"]
+        or alternate.get("remote") != {"shell_input": "62"}
+    ):
+        errors.append(f"{label} must record the full-screen application's cursor transitions and resumed shell input")
+    if proof.get("application") == "vim":
+        insert = alternate.get("insert_text")
+        if not isinstance(insert, str) or "-- INSERT --" not in insert:
+            errors.append(f"{label} must retain Vim's insert-mode screen")
+
+
+def _verify_mode_capture(captures: dict, _proof: dict, label: str, errors: list[str]) -> None:
+    mode = captures["mode_capture"]
+    expected = {
+        "cursor_position": b"\x1b[7;4R",
+        "cursor_shape_report": b"\x1bP1$r6 q\x1b\\",
+        "application_up": b"\x1bOA",
+        "bracketed_paste": b"\x1b[200~paste-from-desktop\x1b[201~",
+        "mouse_press_release_wheel": b"\x1b[<0;1;1M\x1b[<0;1;1m\x1b[<64;1;1M",
+        "unwrapped_input_after_mouse_off": b"x",
+    }
+    if mode.get("remote") != {key: value.hex() for key, value in expected.items()}:
+        errors.append(f"{label} must contain the observed cursor, key, paste and mouse bytes")
+    visibility = mode.get("cursor_visibility")
+    if not isinstance(visibility, list) or len(visibility) != 2 or visibility[0] is not False or visibility[1] is not True:
+        errors.append(f"{label} must show the cursor becoming visible again")
+    styles = mode.get("styles")
+    if (
+        not isinstance(styles, list) or len(styles) != 3 or not all(isinstance(style, dict) for style in styles)
+        or [style.get("foreground") for style in styles] != ["#cd3131", "#ff0000", "#0c2238"]
+        or styles[0].get("bold") is not True or styles[0].get("underline") is not True
+    ):
+        errors.append(f"{label} must show ANSI, indexed and truecolor styles and SGR attributes")
+
+
+SCREEN_VALIDATORS = {
+    "terminal_grid": ("updated_screen", _verify_grid_captures),
+    "alternate_screen": ("alternate_screen", _verify_alternate_captures),
+    "terminal_modes": ("mode_capture", _verify_mode_capture),
+}
 
 
 def _check_shared_transport(proof: dict[str, Any], transport_id: str, errors: list[str]) -> None:

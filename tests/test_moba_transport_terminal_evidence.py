@@ -63,6 +63,7 @@ def test_complete_transport_terminal_evidence_passes(tmp_path: Path) -> None:
         "tested_release_asset": ASSET,
         "verified_capture_count": 12,
         "verified_ssh_channel_count": 3,
+        "verified_screen_proof_count": 3,
     }
 
 
@@ -222,6 +223,39 @@ def test_transport_terminal_cross_checks_connected_observations(
 
     assert not result.passed
     assert any(error in detail for detail in result.errors)
+
+
+@pytest.mark.parametrize(
+    ("section", "role", "field", "value", "error"),
+    [
+        ("terminal_grid", "updated_screen", "geometry", [125, 18], "remote PTY resize"),
+        ("terminal_grid", "updated_screen", "line", "unrelated", "combining cells across reflow"),
+        ("terminal_grid", "updated_screen", "dirty_update", [0, 19, 19], "style-only Qt row update"),
+        ("alternate_screen", "alternate_screen", "resized_text", "", "resized alternate screen"),
+        ("alternate_screen", "alternate_screen", "insert_text", "", "Vim's insert-mode screen"),
+        ("terminal_modes", "mode_capture", "remote", {}, "observed cursor, key, paste and mouse bytes"),
+        ("terminal_modes", "mode_capture", "ssh_connection", "192.168.40.2 54601 192.168.40.3 22", "verified SSH socket"),
+    ],
+)
+def test_transport_terminal_rejects_inconsistent_screen_observations(
+    tmp_path: Path, section: str, role: str, field: str, value: Any, error: str,
+) -> None:
+    evidence = _write_complete_evidence(tmp_path)
+    data = _read_json(evidence)
+    proof = _read_json(tmp_path / data["proofs"][section]["file"])
+    capture = proof["captures"][role]
+    file = tmp_path / capture["file"]
+    contents = _read_json(file)
+    contents[field] = value
+    _write_json(file, contents)
+    capture["sha256"] = _sha256(file)
+    _mutate_proof_and_rebind(evidence, tmp_path, section, {"captures": proof["captures"]})
+
+    result = validate_moba_transport_terminal_evidence(evidence, assets_dir=tmp_path)
+
+    assert not result.passed
+    assert any(error in detail for detail in result.errors)
+    assert result.summary["verified_screen_proof_count"] == 2
 
 
 def test_transport_terminal_evidence_fails_closed_on_transcript_grid(tmp_path: Path) -> None:
@@ -572,6 +606,9 @@ def _write_complete_evidence(root: Path) -> Path:
     states.extend({"attempt": 2, "phase": phase} for phase in SSH_PHASES[:3])
     sftp_payload = "remote bytes\n"
     sftp_digest = hashlib.sha256(sftp_payload.encode()).hexdigest()
+    socket = "192.168.40.2 54600 192.168.40.3 22"
+    grid_line = "a" * 110
+    primary = json.dumps({"geometry": [145, 40], "text": "ROW_PRIMARY_界_e\u0301"})
     raw_captures = {
         "sshd_log": SERVER_LOG,
         "ssh_client_log": (
@@ -579,11 +616,39 @@ def _write_complete_evidence(root: Path) -> Path:
             'Authenticated to peer ([192.168.40.3]:22) using "publickey".\n'
         ),
         "state_log": json.dumps({"events": states, "connected_views": dict.fromkeys(SSH_VIEWS, states[2])}),
-        "transcript": f"ROW_SHARED_192.168.40.2 54600 192.168.40.3 22\nROW_SFTP_SHA256_{sftp_digest}\n",
+        "transcript": f"ROW_SHARED_{socket}\nROW_SFTP_SHA256_{sftp_digest}\n",
         "sftp_capture": sftp_payload,
         "monitoring_capture": "cpu=8 processes=19\n",
-        "primary_before": "same primary screen\n",
-        "primary_restored": "same primary screen\n",
+        "initial_screen": json.dumps({
+            "geometry": [120, 40], "line": grid_line + "\u2028界\u0301z", "cell_cursor": [1, 3],
+        }),
+        "updated_screen": json.dumps({
+            "geometry": [145, 40], "line": grid_line + "界\u0301z", "ssh_connection": socket,
+            "remote": {"initial": [120, 40], "resized": [145, 40], "cursor_reply": "1b5b323b3452"},
+            "dirty_update": [18, 4, 4], "scroll_region": ["outside-top", "three", "four", "", "outside-bottom"],
+        }),
+        "primary_before": primary,
+        "primary_restored": primary,
+        "alternate_screen": json.dumps({
+            "geometry": [145, 40], "resized": [125, 34], "ssh_connection": socket, "application": "vim",
+            "text": "screen content\n~", "resized_text": "screen content\n~\n~", "insert_text": "-- INSERT --",
+            "cursor_modes": ["bar", "block"], "remote": {"shell_input": "62"},
+        }),
+        "mode_capture": json.dumps({
+            "ssh_connection": socket, "cursor_visibility": [False, True],
+            "styles": [
+                {"foreground": "#cd3131", "bold": True, "underline": True},
+                {"foreground": "#ff0000"}, {"foreground": "#0c2238"},
+            ],
+            "remote": {
+                "cursor_position": "1b5b373b3452",
+                "cursor_shape_report": "1b503124723620711b5c",
+                "application_up": "1b4f41",
+                "bracketed_paste": "1b5b3230307e70617374652d66726f6d2d6465736b746f701b5b3230317e",
+                "mouse_press_release_wheel": "1b5b3c303b313b314d1b5b3c303b313b316d1b5b3c36343b313b314d",
+                "unwrapped_input_after_mouse_off": "78",
+            },
+        }),
     }
     for name, proof in proofs.items():
         proof["captures"] = {}

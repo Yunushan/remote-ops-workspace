@@ -236,9 +236,10 @@ reviews, and the downloaded release assets. See the
    dialog identifies the destination and defaults to Cancel. Replay sends the
    events in order with their recorded delays and stops if the session changes
    or the terminal requests a password. Recording skips masked password input.
-   The release-evidence checker validates
-   the bundle attachments and recorded assertions. Full parity still requires
-   accepted live replay evidence from supported release targets.
+   The release-evidence checker compares recorded events and review decisions
+   with the bytes, timestamps, and session identity observed over SSH. Full
+   parity still requires accepted live replay evidence from supported release
+   targets.
 6. Exact 26.4 SSH-browser behavior: smart-card auth, smart-card management
    contracts, SSH expert certificate selection, MobAgent handoff,
    same-parameter SFTP, smart-card SSH-browser multiplex plans, side-by-side
@@ -345,3 +346,33 @@ Keep credential values out of the recorded arguments and captures.
 Use the same release asset with `--artifact` when generating the candidate. The
 published-release audit re-runs the capture checks on the reviewed attachments
 and checks the release bytes and GitHub workflow and reviewer provenance.
+
+### Macro replay release evidence
+
+Use the `row.moba-macro.live-replay-evidence.v1` envelope with the same `source`
+and `release_asset` fields as the embedded-server contract. The capture
+attachment is the JSON recording from a PyQt terminal pane. Record multiple
+printable keystrokes with a deliberate pause of at least 240 ms between two
+events so the observer can distinguish timed replay from a burst of input.
+
+The review attachment uses `row.moba-macro.live-review.v1` and includes
+`input_sha256` and `profiles`. Under each profile, record the `decline`,
+`complete`, `cancel`, and `reconnect` attempts. Each entry contains the dialog
+`text`, `default_is_cancel`, `decision`, and `before` and `after` byte counts.
+For decline, cancel, and reconnect, include the measured `quiet_ms` after the
+action. Observe for at least the full recorded delay. End the original session
+after the cancellation check, then observe the replacement session without
+sending any input.
+
+Each `row.moba-macro.ssh-replay.v1` attachment identifies its `profile`,
+`destination`, `ssh_user`, `input_sha256`, `source`, `release_asset`,
+`receiver_pid`, `replacement_receiver_pid`, and `enter_byte` (`0a` or `0d`).
+Bind `terminal_transcript`, `replacement_transcript`, `server_bytes`, and
+`ssh_log` with relative `file` paths and `sha256` values. Record one JSONL row
+for each byte observed by the remote receiver with `pid`, one-based `index`,
+two-digit `hex`, and `monotonic_ns`. The receiver prints the same observations
+as `ROW_INPUT_<index>_<hex>_<monotonic_ns>` lines. Each terminal transcript
+starts the session with `ROW_MACRO_READY_<pid>` followed on the same line by
+the client IP and port and the server IP and port from `SSH_CONNECTION`.
+Capture the SSH server log for those two public-key-authenticated remote PTYs.
+Use disposable accounts and test input to keep credentials out of the capture.

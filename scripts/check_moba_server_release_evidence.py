@@ -22,17 +22,11 @@ from remote_ops_workspace.moba_servers import (  # noqa: E402
     validate_moba_server_release_evidence,
 )
 from scripts.check_gui_visual_metrics import read_png_rgb  # noqa: E402
-from scripts.check_mobaxterm_parity_evidence import (  # noqa: E402
-    GIT_SHA_RE,
-    GITHUB_REPOSITORY_RE,
-    GITHUB_WORKFLOW_RUN_RE,
-    RELEASE_TAG_RE,
-)
+from scripts.check_mobaxterm_parity_evidence import capture_release_identity  # noqa: E402
 from scripts.check_release_license_compliance import (  # noqa: E402
     bound_evidence_file,
     read_json_object,
     secure_regular_file,
-    valid_sha256,
 )
 
 CLIENT_CAPTURE_SCHEMA = "row.moba-servers.live-client.v1"
@@ -73,50 +67,6 @@ def read_client_data(path: Path) -> bytes:
     if path.stat().st_size > 1024 * 1024:
         raise ValueError("client text or transfer evidence exceeds 1 MiB")
     return path.read_bytes()
-
-
-def release_identity(evidence: dict[str, Any]) -> dict[str, Any]:
-    source, package = evidence.get("source"), evidence.get("release_asset")
-    if not isinstance(source, dict) or not isinstance(package, dict):
-        raise ValueError("embedded server evidence requires source and release_asset objects")
-    repository, tag, head = (source.get(key) for key in ("repository", "release_tag", "head_sha"))
-    run, attempt = source.get("workflow_run_url"), source.get("run_attempt")
-    match = GITHUB_WORKFLOW_RUN_RE.fullmatch(run) if isinstance(run, str) else None
-    if (
-        not isinstance(repository, str)
-        or not GITHUB_REPOSITORY_RE.fullmatch(repository)
-        or not isinstance(tag, str)
-        or not RELEASE_TAG_RE.fullmatch(tag)
-        or not isinstance(head, str)
-        or not GIT_SHA_RE.fullmatch(head)
-        or match is None
-        or match.group(1) != repository
-        or type(attempt) is not int
-        or attempt < 1
-    ):
-        raise ValueError(
-            "embedded server evidence requires exact repository, tag, source SHA and workflow attempt"
-        )
-    name, digest = package.get("name"), package.get("sha256")
-    if (
-        not isinstance(name, str)
-        or not name
-        or name in {".", ".."}
-        or "/" in name
-        or "\\" in name
-        or not valid_sha256(digest)
-    ):
-        raise ValueError(
-            "embedded server evidence requires the tested release asset filename and SHA-256"
-        )
-    return {
-        "repository": repository,
-        "release_tag": tag,
-        "source_head_sha": head,
-        "workflow_run_url": run,
-        "run_attempt": attempt,
-        "tested_release_asset": {"name": name, "sha256": digest},
-    }
 
 
 def service_inventory(data: Any, label: str) -> dict[str, Any]:
@@ -277,7 +227,7 @@ def validate_live_server_release_evidence(
         if path is None:
             raise ValueError(error)
         evidence = read_capture_json(path, "server release evidence")
-        summary.update(release_identity(evidence))
+        summary.update(capture_release_identity(evidence, "embedded server evidence"))
         manifest_path = asset(root, evidence.get("runtime_manifest"), "runtime manifest")
         manifest = read_capture_json(manifest_path, "runtime manifest")
         target, system = evidence.get("release_target"), manifest.get("system")

@@ -506,7 +506,7 @@ def reviewed_release(tmp_path, monkeypatch):
         ]
         record["artifact_sha256"] = {name: digest}
         record["release_asset_bytes"]["sha256"] = {name: digest}
-        if article in {"embedded-server-suite", "shared-authenticated-transport-terminal-grid"}:
+        if article in {"embedded-server-suite", "macro-recorder", "shared-authenticated-transport-terminal-grid"}:
             record["validation_summary"]["summary"] = {
                 "repository": repository,
                 "release_tag": tag,
@@ -522,6 +522,10 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "embedded-server-suite":
             record["validation_summary"]["summary"].update(
                 live_client_proof_count=8, tested_release_asset={"name": name, "sha256": digest},
+            )
+        if article == "macro-recorder":
+            record["validation_summary"]["summary"].update(
+                verified_macro_replays=1, replay_sessions=1, tested_release_asset={"name": name, "sha256": digest},
             )
         article_root = evidence_root / article
         article_root.mkdir()

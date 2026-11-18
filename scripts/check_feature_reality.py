@@ -582,7 +582,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "mobaMacroReplayInjectedPayload",
             ],
             "scripts/check_moba_macro_live_evidence.py": [
-                "validate_macro_live_replay_evidence",
+                "validate_macro_release_replay_evidence",
                 "--assets-dir",
             ],
         },

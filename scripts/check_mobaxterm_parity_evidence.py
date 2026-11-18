@@ -12,7 +12,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "configs" / "mobaxterm_parity_evidence.json"
-SOURCE_BOUND_ARTICLES = frozenset({"embedded-server-suite", "shared-authenticated-transport-terminal-grid"})
+TESTED_ASSET_ARTICLES = frozenset({"embedded-server-suite", "macro-recorder"})
+SOURCE_BOUND_ARTICLES = TESTED_ASSET_ARTICLES | {"shared-authenticated-transport-terminal-grid"}
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 GIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -330,8 +331,8 @@ def check_article_record(
                 require_acceptance_provenance=require_acceptance_provenance,
             )
         )
-    if article_id == "embedded-server-suite":
-        errors.extend(check_tested_server_asset(row))
+    if article_id in TESTED_ASSET_ARTICLES:
+        errors.extend(check_tested_release_asset(row))
     errors.extend(check_release_assets(article_id, release_tag, row.get("release_asset_urls"), row.get("artifact_sha256")))
     if require_acceptance_provenance:
         errors.extend(check_acceptance_provenance(article_id, release_tag, row))
@@ -462,10 +463,42 @@ def check_validation_summary(article_id: str, summary: Any, *, release_target: A
         proof_count = details.get("live_client_proof_count")
         if type(proof_count) is not int or proof_count != 8:
             errors.append("embedded-server-suite validation summary must record eight verified live client captures")
+    if article_id == "macro-recorder":
+        count = details.get("verified_macro_replays")
+        sessions = details.get("replay_sessions")
+        if type(count) is not int or type(sessions) is not int or count < 1 or count != sessions:
+            errors.append("macro-recorder validation summary must record verified SSH timing and review for every replay")
     return errors
 
 
-def check_tested_server_asset(row: dict[str, Any]) -> list[str]:
+def capture_release_identity(evidence: dict[str, Any], label: str) -> dict[str, Any]:
+    source, package = evidence.get("source"), evidence.get("release_asset")
+    if not isinstance(source, dict) or not isinstance(package, dict):
+        raise ValueError(f"{label} requires source and release_asset objects")
+    repository, tag, head = (source.get(key) for key in ("repository", "release_tag", "head_sha"))
+    run, attempt = source.get("workflow_run_url"), source.get("run_attempt")
+    match = GITHUB_WORKFLOW_RUN_RE.fullmatch(run) if isinstance(run, str) else None
+    if (
+        not isinstance(repository, str) or not GITHUB_REPOSITORY_RE.fullmatch(repository)
+        or not isinstance(tag, str) or not RELEASE_TAG_RE.fullmatch(tag)
+        or not isinstance(head, str) or not GIT_SHA_RE.fullmatch(head)
+        or match is None or match.group(1) != repository
+        or type(attempt) is not int or attempt < 1
+    ):
+        raise ValueError(f"{label} requires exact repository, tag, source SHA and workflow attempt")
+    name, digest = package.get("name"), package.get("sha256")
+    if (
+        not isinstance(name, str) or not name or name in {".", ".."} or "/" in name or "\\" in name
+        or not isinstance(digest, str) or not SHA256_RE.fullmatch(digest)
+    ):
+        raise ValueError(f"{label} requires the tested release asset filename and SHA-256")
+    return {
+        "repository": repository, "release_tag": tag, "source_head_sha": head,
+        "workflow_run_url": run, "run_attempt": attempt, "tested_release_asset": {"name": name, "sha256": digest},
+    }
+
+
+def check_tested_release_asset(row: dict[str, Any]) -> list[str]:
     validation = row.get("validation_summary")
     summary = validation.get("summary") if isinstance(validation, dict) else None
     tested = summary.get("tested_release_asset") if isinstance(summary, dict) else None
@@ -475,7 +508,7 @@ def check_tested_server_asset(row: dict[str, Any]) -> list[str]:
         or not isinstance(tested.get("sha256"), str) or not SHA256_RE.fullmatch(tested["sha256"])
         or not isinstance(artifacts, dict) or artifacts.get(tested["name"]) != tested["sha256"]
     ):
-        return ["embedded-server-suite tested release asset must match the record artifact name and SHA-256"]
+        return [f"{row['article_id']} tested release asset must match the record artifact name and SHA-256"]
     return []
 
 

@@ -70,6 +70,8 @@ EDITOR_WORKFLOW = ".github/workflows/connected-editor-evidence.yml"
 EDITOR_JOB = "Qualify the published wheel's connected editor"
 MACRO_WORKFLOW = ".github/workflows/macro-replay-evidence.yml"
 MACRO_JOB = "Qualify the published wheel's timed macro replay"
+SMARTCARD_WORKFLOW = ".github/workflows/smartcard-browser-evidence.yml"
+SMARTCARD_JOB = "Qualify physical smart-card SSH and SFTP"
 TRANSPORT_WORKFLOW = ".github/workflows/transport-terminal-evidence.yml"
 TRANSPORT_JOB = "Qualify native terminal-grid and shared SSH"
 PROFESSIONAL_WORKFLOW = ".github/workflows/professional-deployment-evidence.yml"
@@ -99,6 +101,10 @@ EVIDENCE_WORKFLOWS = {
         "Connected editor", EDITOR_WORKFLOW, EDITOR_JOB, "connected-editor-evidence",
     ),
     "macro-recorder": EvidenceWorkflow("Macro replay", MACRO_WORKFLOW, MACRO_JOB, "macro-replay-evidence"),
+    "ssh-browser-26-4-smartcard": EvidenceWorkflow(
+        "Smart card", SMARTCARD_WORKFLOW, SMARTCARD_JOB, "smartcard-browser-evidence",
+        frozenset({"self-hosted", "linux", "x64", "smartcard-evidence"}),
+    ),
     "professional-deployment": EvidenceWorkflow(
         "Professional deployment", PROFESSIONAL_WORKFLOW, PROFESSIONAL_JOB, "professional-deployment-evidence",
         frozenset({"windows-latest"}), (
@@ -484,7 +490,8 @@ def audit_release(
         if record["release_tag"] != tag or source["repository"] != repository or source["head_sha"] != release_sha:
             errors.append(f"{article} accepted record must bind the exact release repository, tag, and source SHA")
             continue
-        if article in {"moba-text-editor-diff", "macro-recorder", "shared-authenticated-transport-terminal-grid"}:
+        if article in {"moba-text-editor-diff", "macro-recorder", "ssh-browser-26-4-smartcard",
+                       "shared-authenticated-transport-terminal-grid"}:
             tested = record["validation_summary"]["summary"]["tested_release_asset"]
             wheel = f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl"
             if tested["name"] != wheel or record["release_target"] != "linux-x86_64":

@@ -818,14 +818,32 @@ Use disposable accounts and test input to keep credentials out of the capture.
 
 ### Smart-card release capture
 
-Use the installed release package on a desktop that supports OpenSSH Unix
-control sockets. Connect to a separate OpenSSH server with a disposable login
-and a test hardware card. Use the server's IP address and explicit port in the
-SSH profile. Authorize the card's key for that login and capture the server log
-at `LogLevel VERBOSE` with `sshd -E <file>`. The log must show the card key
-authenticating the interactive terminal and the SFTP subsystem starting on that
-same connection. Create a fresh remote file named `row-smartcard-<32 lowercase
-hex digits>.txt` and refresh the desktop file browser to show it.
+Dispatch `smartcard-browser-evidence.yml` at the exact promoted release tag.
+Use a dedicated, unprivileged Linux x86_64 desktop runner labeled
+`smartcard-evidence` with access to the physical test reader and a local desktop
+session. Restrict the runner to this workflow and protect the
+`smartcard-evidence` environment with release-tag deployment rules and a required
+reviewer. The desktop needs the vendor PKCS#11 library, `p11tool`, OpenSSH with
+Unix control sockets, and a private OpenSSH test peer. Run the manual capture
+locally as the runner's test account.
+
+Read `capture-request.json` under the private runner work directory reported by
+the workflow. It supplies the exact source, wheel digest and remote filename
+for this attempt. Set `work` to that directory and launch the installed desktop.
+Use the dedicated test agent's `SSH_AUTH_SOCK` in that shell.
+
+```bash
+export ROW_HOME="$work/workspace"
+"$work/venv/bin/python" -I -m remote_ops_workspace gui
+```
+
+Connect to the test peer with the disposable login and physical test card.
+Use the server's IP address and explicit port in the SSH profile. Authorize
+the card's key for that login and capture the server log at `LogLevel VERBOSE`
+with `sshd -E <file>`. The log must show the card key authenticating the
+interactive terminal and the SFTP subsystem starting on that same connection.
+Create the remote file named by `fixture_name` in the request and refresh the
+desktop file browser to show it.
 
 Capture the outputs below during the session. Use a dedicated agent and a test
 card whose public certificate and token metadata can be shared with the reviewer.
@@ -853,13 +871,17 @@ authenticated terminal connection.
 
 Use `row smartcard evidence-bundle` to assemble the four action attachments.
 Keep the nested captures inside the same evidence root and reference them by
-relative `evidence_file` and `evidence_sha256`. Add `source` and `release_asset`
-to the bundle's `evidence.json`. The `source` object contains `repository`,
-`release_tag`, `head_sha`, `workflow_run_url` and `run_attempt`. The
-`release_asset` object contains the tested package `name` and `sha256`.
+relative `evidence_file` and `evidence_sha256`. Use the request's `source` and
+`release_asset` values in both the browser JSON and the bundle's
+`evidence.json`. Store only reviewable test data in the referenced files.
+Prepare the bundle in `$work/inbox/capture` and rename that directory to
+`$work/inbox/ready` after closing the session and writing all attachments.
+The workflow waits up to 40 minutes, then validates the completed capture and
+archives the referenced files with `candidate.json` for independent review.
 
 Run `python scripts/check_moba_smartcard_evidence.py --evidence <evidence.json>
 --assets-dir <artifact-dir>` with the project's `security` extra installed.
 The parity record generator and certification audit use the same validator.
-An independent reviewer checks the physical-card run and the published package
-before accepting the resulting record.
+The audit also verifies the original `smartcard-browser-evidence-<run>-<attempt>`
+Actions ZIP. An independent reviewer checks the physical-card run and the
+published wheel before accepting the resulting record.

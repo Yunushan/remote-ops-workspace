@@ -737,6 +737,11 @@ def reviewed_release(tmp_path, monkeypatch):
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1237"
             record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"]
             record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {wheel.name: wheel_digest}
+        if article == "ssh-browser-26-4-smartcard":
+            record["release_target"] = "linux-x86_64"
+            record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1241"
+            record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"]
+            record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {wheel.name: wheel_digest}
         if article == "shared-authenticated-transport-terminal-grid":
             record["release_target"] = "linux-x86_64"
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1238"
@@ -781,7 +786,8 @@ def reviewed_release(tmp_path, monkeypatch):
         if article == "ssh-browser-26-4-smartcard":
             record["validation_summary"]["summary"].update(
                 verified_hardware_smartcard=True, verified_multiplexed_sftp=True,
-                openssh_key_fingerprint="SHA256:" + "a" * 43, tested_release_asset={"name": name, "sha256": digest},
+                openssh_key_fingerprint="SHA256:" + "a" * 43,
+                tested_release_asset={"name": wheel.name, "sha256": wheel_digest},
             )
         if article == "professional-deployment":
             record["validation_summary"]["summary"].update(
@@ -814,6 +820,8 @@ def reviewed_release(tmp_path, monkeypatch):
     server_jobs = f"{server_run}/jobs?per_page=20&page=1"
     professional_run = "actions/runs/1240/attempts/2"
     professional_jobs = f"{professional_run}/jobs?per_page=20&page=1"
+    smartcard_run = "actions/runs/1241/attempts/2"
+    smartcard_jobs = f"{smartcard_run}/jobs?per_page=20&page=1"
     review = "pulls/42/reviews/99"
     responses = {
         "branches/main": {"name": "main", "protected": True, "commit": {"sha": main_tip}},
@@ -884,6 +892,14 @@ def reviewed_release(tmp_path, monkeypatch):
                 (release_parity.PROFESSIONAL_JOB, "windows-latest"),
             ], 1)
         ],
+    }
+    responses[smartcard_run] = {**responses[run], "id": 1241, "path": release_parity.SMARTCARD_WORKFLOW}
+    responses[smartcard_jobs] = {
+        "total_count": 1,
+        "jobs": [{
+            **responses[jobs]["jobs"][0], "name": release_parity.SMARTCARD_JOB, "run_id": 1241,
+            "labels": ["self-hosted", "Linux", "X64", "smartcard-evidence"],
+        }],
     }
     hosted_archives = {}
     for record in records:
@@ -968,13 +984,14 @@ def reviewed_release(tmp_path, monkeypatch):
         "professional_update_origins": ["https://updates.example.com"],
     }
     return SimpleNamespace(
-        args=args, asset=asset, records=records, responses=responses,
+        args=args, wheel=wheel, records=records, responses=responses,
         on_main=on_main, run=run, jobs=jobs, x11_run=x11_run, x11_jobs=x11_jobs,
         editor_run=editor_run, editor_jobs=editor_jobs,
         macro_run=macro_run, macro_jobs=macro_jobs,
         transport_run=transport_run, transport_jobs=transport_jobs,
         server_run=server_run, server_jobs=server_jobs,
         professional_run=professional_run, professional_jobs=professional_jobs,
+        smartcard_run=smartcard_run, smartcard_jobs=smartcard_jobs,
         hosted_archives=hosted_archives,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
@@ -1060,6 +1077,23 @@ def test_mobapt_certification_requires_the_successful_qualification_job(reviewed
     assert release_parity.audit_release(**reviewed_release.args) == [
         "mobapt-unix-runtime MobApt evidence attempt must contain one successful qualification job"
     ]
+
+
+@pytest.mark.parametrize(("failure", "message"), [
+    ("generic-workflow", "its dedicated workflow dispatched at the release tag"),
+    ("wrong-runner", "did not report the approved native runner labels"),
+    ("changed-archive", "ZIP digest differs from GitHub"),
+])
+def test_smartcard_certification_binds_the_hardware_lab_and_archive(reviewed_release, failure, message):
+    article = "ssh-browser-26-4-smartcard"
+    if failure == "generic-workflow":
+        reviewed_release.responses[reviewed_release.smartcard_run]["path"] = ".github/workflows/ci.yml"
+    elif failure == "wrong-runner":
+        reviewed_release.responses[reviewed_release.smartcard_jobs]["jobs"][0]["labels"].remove("smartcard-evidence")
+    else:
+        reviewed_release.hosted_archives[article].metadata["digest"] = "sha256:" + "9" * 64
+    errors = release_parity.audit_release(**reviewed_release.args)
+    assert len(errors) == 1 and errors[0].startswith(f"{article} ") and message in errors[0]
 
 
 def test_x11_certification_refuses_the_wrong_workflow_or_job(reviewed_release) -> None:
@@ -1251,7 +1285,7 @@ def test_certification_rejects_other_release_and_changed_download(reviewed_relea
     stale["validation_summary"]["summary"]["release_tag"] = "v1.0.1"
     stale["release_asset_urls"][0] = stale["release_asset_urls"][0].replace("/download/v1.0.2/", "/download/v1.0.1/")
     assert _load_checker().check_record(stale) == []
-    reviewed_release.asset.write_bytes(b"changed download")
+    reviewed_release.wheel.write_bytes(b"changed download")
 
     errors = release_parity.audit_release(**reviewed_release.args)
 
@@ -1287,7 +1321,7 @@ def test_certification_binds_review_time_to_completed_attempt_jobs(
 ) -> None:
     for jobs in (reviewed_release.jobs, reviewed_release.x11_jobs, reviewed_release.editor_jobs,
                  reviewed_release.macro_jobs, reviewed_release.transport_jobs, reviewed_release.server_jobs,
-                 reviewed_release.professional_jobs):
+                 reviewed_release.professional_jobs, reviewed_release.smartcard_jobs):
         reviewed_release.responses[jobs]["jobs"][0][field] = value
 
     errors = release_parity.audit_release(**reviewed_release.args)

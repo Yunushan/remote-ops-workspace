@@ -2,6 +2,7 @@ import base64
 import datetime as dt
 import hashlib
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from scripts import check_moba_smartcard_evidence as smartcard
 from scripts import check_release_mobaxterm_parity as audit
 from scripts import make_mobaxterm_parity_evidence_record as generator
+from scripts import stage_smartcard_release_evidence as staging
 
 ARTICLE = "ssh-browser-26-4-smartcard"
 
@@ -110,6 +112,64 @@ def test_smartcard_capture_is_replayed_by_candidate_and_release_audit(capture):
     capture.package.write_bytes(b"changed package bytes")
     errors, _ = generator.build_evidence_record(arguments)
     assert any("tested release asset must match" in error for error in errors)
+
+
+def test_workflow_seals_only_the_run_bound_physical_capture(capture, tmp_path, monkeypatch, capsys):
+    work = tmp_path / "runner"
+    work.mkdir()
+    (work / "review").mkdir()
+    source = capture.identity["source"]
+    monkeypatch.setattr(staging, "require_native_runner", lambda: None)
+    monkeypatch.setattr(staging, "verify_wheel", lambda path: (source["release_tag"], capture.identity["release_asset"]))
+    monkeypatch.setattr(staging, "actions_source", lambda tag: source)
+    monkeypatch.setattr(staging.secrets, "token_hex", lambda length: "b" * (2 * length))
+    argv = ["stage", "--wheel", str(capture.package), "--work", str(work)]
+    monkeypatch.setattr(sys, "argv", [*argv, "prepare"])
+    assert staging.main() == 0
+    fixture = capsys.readouterr().out.strip()
+    assert json.loads((work / "capture-request.json").read_bytes()) == {**capture.identity, "fixture_name": fixture}
+
+    inventory = generator.evidence_assets_sha256(capture.root)
+    capture.save("private-extra.txt", b"deliberately excluded lab file")
+    capture.root.rename(work / "inbox" / "ready")
+    monkeypatch.setattr(sys, "argv", [*argv, "collect", "--fixture", fixture])
+    assert staging.main() == 0
+    assert generator.evidence_assets_sha256(work / "review" / ARTICLE) == inventory
+
+
+@pytest.mark.parametrize(("failure", "message"), [
+    ("attempt", "current workflow attempt"),
+    ("asset", "exact release wheel"),
+    ("challenge", "challenge issued for this workflow attempt"),
+    ("tampered-file", "SHA-256 differs"),
+    ("outside-path", "file path is invalid"),
+    ("duplicate-path", "unique visible capture path"),
+    ("semantic-proof", "SFTP listing must contain"),
+])
+def test_workflow_refuses_unbound_or_invalid_captures(capture, tmp_path, failure, message):
+    identity, fixture = capture.identity, capture.browser["fixture_name"]
+    if failure == "attempt":
+        identity = {**identity, "source": {**identity["source"], "run_attempt": 3}}
+    elif failure == "asset":
+        identity = {**identity, "release_asset": {**identity["release_asset"], "sha256": "e" * 64}}
+    elif failure == "challenge":
+        fixture = "row-smartcard-" + "c" * 32 + ".txt"
+    elif failure == "tampered-file":
+        capture.save("openssh.log", b"changed while preparing capture")
+    else:
+        if failure == "outside-path":
+            capture.browser["sftp_listing"]["evidence_file"] = "../not-a-capture.txt"
+        elif failure == "duplicate-path":
+            capture.browser["sftp_listing"] = capture.browser["sshd_log"]
+        else:
+            capture.browser["sftp_listing"] = capture.save("listing.txt", b"unrelated files\n")
+        capture.bundle["ssh_browser"].update(capture.save("ssh_browser.json", capture.browser))
+        capture.save("evidence.json", capture.bundle)
+
+    staged = tmp_path / "staged"
+    with pytest.raises(ValueError, match=message):
+        staging.stage_capture(capture.root, staged, identity, fixture)
+    assert not staged.exists()
 
 
 @pytest.mark.parametrize("agent", ["none", "/tmp/agent.sock"])

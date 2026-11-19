@@ -219,9 +219,21 @@ binds these observations to the MSI's SHA-256 and the built executable bytes.
 See the [Windows Installer product query](https://learn.microsoft.com/en-us/windows/win32/api/msi/nf-msi-msigetproductinfoexw)
 and [component query](https://learn.microsoft.com/en-us/windows/win32/api/msi/nf-msi-msigetcomponentpathexw).
 
-The smoke reinstalls the same version. Cross-version upgrade and rollback
-qualification requires two approved, signed stock MSIs of the same
-architecture. The currently pinned Windows predecessor uses the EXE installer.
+The native candidate smoke reinstalls the same version. To exercise x64
+cross-version rollback, dispatch **Signed Windows MSI upgrade qualification**
+on `main` with the two certified release tags and their full commit SHAs. Both
+stock MSIs must pass immutable release, provenance, Authenticode, and timestamp
+checks. The currently pinned Windows recovery predecessor uses the EXE
+installer and cannot serve as the MSI baseline.
+
+The workflow installs the predecessor, cancels the upgrade through Windows
+Installer after the predecessor's launcher disappears, and compares the
+restored product registration, launcher SHA-256, and CLI version with the
+baseline. It then retries with the same signed MSI bytes and checks that the
+candidate replaces the prior product and uninstalls cleanly. Keep the
+`signed-windows-msi-upgrade-<run>-<attempt>` receipt with the qualification
+evidence. This exercise covers the stock x64 install transaction. The managed
+updater's policy, staging, and recovery paths require their own qualification.
 
 ## Notes
 

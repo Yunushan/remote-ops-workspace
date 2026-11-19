@@ -172,6 +172,36 @@ candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in
 the [release promotion runbook](RELEASE_PROMOTION.md).
 
+## RPM rollback qualification
+
+Use a disposable x86-64 Fedora Docker container with Python 3.11 or later,
+`rpm`, and `rpm2archive`. Start with a fresh RPM database for ROW and no
+`/usr/bin/row`. Mount the checkout and both inputs read-only. Use the expected
+SHA-256 from each package's verified release evidence. For a local candidate,
+record its checkout SHA and the digest of the RPM built from that checkout.
+
+```bash
+docker run --rm --platform linux/amd64 --network none \
+  --security-opt no-new-privileges \
+  --mount "type=bind,source=$PWD,target=/source,readonly" \
+  --mount "type=bind,source=$RPM_INPUTS,target=/packages,readonly" \
+  "$FEDORA_DRILL_IMAGE" python3 -I /source/scripts/qualify_rpm_recovery.py \
+  --previous-rpm "/packages/$PREVIOUS_RPM" --previous-sha256 "$PREVIOUS_SHA256" \
+  --candidate-rpm "/packages/$CANDIDATE_RPM" --candidate-sha256 "$CANDIDATE_SHA256" \
+  > rpm-recovery.json
+```
+
+The drill seeds an SSH profile and vault entry through the installed
+predecessor. A digest-verified launcher from the candidate RPM takes an
+encrypted backup before the package changes. This supports predecessors that
+predate `row workspace backup`. The drill upgrades with normal RPM dependency
+checks, adds candidate-only data, and checks RPM's default downgrade refusal.
+It restores the backup into a separate workspace, performs the explicit
+`rpm --upgrade --oldpackage` downgrade, and checks that the predecessor can
+read the restored profile and decrypt the vault entry. The receipt records
+both package and launcher digests. Keep it with the source and container
+identities. [RPM installation options](https://rpm.org/docs/latest/man/rpm.8)
+
 ## Rollback
 
 1. Close the upgraded application, terminals, and managed helpers. Preserve
@@ -193,8 +223,10 @@ the [release promotion runbook](RELEASE_PROMOTION.md).
 3. For a native rollback, recheck the previous installer's published provenance
    using its own release coordinates. Include `--verify-platform-signature`
    for Windows and macOS. Reinstall using the same platform and package format.
-   If the package manager refuses a downgrade, follow its supported removal and
-   reinstall sequence while retaining both workspace directories. Finish
+   For an RPM downgrade, use `rpm --upgrade --oldpackage` with the verified
+   predecessor RPM. If another package manager refuses a downgrade, follow
+   its supported removal and reinstall sequence while retaining both
+   workspace directories. Finish
    installation before starting the previous application. For a source
    rollback, select the retained environment for the previous tag or recreate
    it with that tag's locks.

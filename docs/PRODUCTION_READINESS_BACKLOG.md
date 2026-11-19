@@ -162,6 +162,8 @@ Rules:
   and registration of the preset keyboard shortcuts.
   `gui_toolbars.py` builds the action and layout toolbars, connects their
   buttons, and applies preset geometry and responsive sizing.
+  `gui_home.py` owns welcome-page construction, home actions, search routing,
+  and responsive sizing for the supported desktop presets.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
 

@@ -52,6 +52,15 @@ from .process_status import ProcessStatusError
 from .profile_importers import ProfileImportResult
 from .terminal import openssh_command_without_windows_connection_sharing
 
+
+def _literal_label(text: object = "", parent: QWidget | None = None) -> QLabel:
+    """Create a QLabel that never interprets profile or route text as rich text."""
+
+    label = QLabel(str(text), parent)
+    label.setTextFormat(Qt.TextFormat.PlainText)
+    return label
+
+
 T = TypeVar("T")
 
 

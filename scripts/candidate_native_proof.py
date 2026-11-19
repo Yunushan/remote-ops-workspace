@@ -204,6 +204,7 @@ GUI_PYZ_REQUIRED_MODULES = (
     "remote_ops_workspace.gui_processes",
     "remote_ops_workspace.gui_smartcards",
     "remote_ops_workspace.gui_layouts",
+    "remote_ops_workspace.gui_home",
     "remote_ops_workspace.gui_values",
     "remote_ops_workspace.terminal_output",
     "remote_ops_workspace.gui_workspace",

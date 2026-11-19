@@ -981,7 +981,7 @@ def test_mobaxterm_connected_quick_connect_idle_is_tracked() -> None:
 
 
 def test_mobaxterm_home_welcome_uses_shared_metadata() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    gui_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     preview_checker_source = Path("scripts/check_gui_design_previews.py").read_text(encoding="utf-8")
@@ -1752,6 +1752,7 @@ def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
 def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    home_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
     session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
     tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -1765,7 +1766,7 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     assert "draw_moba_bottom_edge_icon" in renderer_source
     assert "mobaBottomEdgeControls" in gui_source
     assert "mobaBottomEdgeControl" in gui_source
-    assert 'box.setProperty("designPreset", self.current_design_id())' in gui_source
+    assert 'box.setProperty("designPreset", self.current_design_id())' in home_source
     assert 'home_widget_preset != self.current_design_id()' in tabs_source
     main_window_source = gui_source.split("class MainWindow", 1)[1]
     assert "def moba_utility_icon" in main_window_source
@@ -2016,13 +2017,13 @@ def test_gui_parity_tracks_product_specific_tab_models() -> None:
 
 
 def test_live_and_static_renderers_share_tab_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    home_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_TAB_COPY" in design_source
     assert "GUI_DESIGN_HOME_TAB_COPY" in design_source
-    assert "gui_design_home_tab_label" in gui_source
+    assert "gui_design_home_tab_label" in home_source
     assert "gui_design_tab_items" in renderer_source
 
 
@@ -2043,11 +2044,12 @@ def test_gui_parity_tracks_product_specific_workspace_surfaces() -> None:
 
 def test_live_and_static_renderers_share_workspace_surface_copy() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    home_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_WORKSPACE_SURFACES" in design_source
-    assert "gui_design_workspace_surface" in gui_source
+    assert "gui_design_workspace_surface" in home_source
     assert "productWorkspaceSurface" in gui_source
     assert "build_product_workspace_surface_evidence" in gui_source
     assert "draw_securecrt_workspace" in renderer_source

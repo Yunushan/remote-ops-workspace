@@ -2739,7 +2739,7 @@
               "GUI_DESIGN_MOBA_HOME_WELCOME_CHROME",
               "gui_design_moba_home_welcome_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "build_moba_home_welcome",
               "mobaHomeWelcomeSurface",
               "mobaRecentSession"
@@ -2789,7 +2789,7 @@
               "geometry.button_y_offset",
               "geometry.recent_item_step"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "mobaHomeActionStaticWidth",
               "mobaHomeSearchHeight",
               "mobaHomeFooterYOffset"
@@ -3035,7 +3035,7 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "apply_home_search_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -3892,11 +3892,13 @@
               "Start Page"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "gui_design_home_tab_label",
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_tab_items"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_home_tab_label"
             ]
           }
         },
@@ -4253,10 +4255,6 @@
               "SFTP tab - files-prod",
               "gui_design_workspace_surface"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_workspace_surface",
-              "workspaceSurfaceSubtitle"
-            ],
             "scripts/render_gui_design_previews.py": [
               "draw_securecrt_workspace",
               "Session / SFTP",
@@ -4264,6 +4262,10 @@
             ],
             "src/remote_ops_workspace/gui_workspace_tabs.py": [
               "rebuild_welcome_tab"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_workspace_surface",
+              "workspaceSurfaceSubtitle"
             ]
           }
         },
@@ -5024,7 +5026,7 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "apply_home_search_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -5871,12 +5873,14 @@
               "\"New\""
             ],
             "src/remote_ops_workspace/gui.py": [
-              "gui_design_home_tab_label",
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_vertical_tabs",
               "gui_design_tab_items"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_home_tab_label"
             ]
           }
         },
@@ -6037,15 +6041,15 @@
               "SFTP",
               "Port fwd : 8080"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_workspace_surface",
-              "home_search_placeholder",
-              "recent_columns"
-            ],
             "scripts/render_gui_design_previews.py": [
               "draw_termius_workspace",
               "SFTP",
               "gui_design_termius_header_chips"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_workspace_surface",
+              "home_search_placeholder",
+              "recent_columns"
             ]
           }
         },
@@ -6921,7 +6925,7 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "apply_home_search_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -7877,12 +7881,14 @@
               "Quick Connect"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "gui_design_home_tab_label",
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_tabs",
               "gui_design_tab_items"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_home_tab_label"
             ]
           }
         },
@@ -7895,15 +7901,15 @@
               "Scale    : 100%",
               "Shared   : file workflow ready"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_workspace_surface",
-              "home_search_placeholder",
-              "recent_columns"
-            ],
             "scripts/render_gui_design_previews.py": [
               "draw_remmina_workspace",
               "draw_remote_viewer",
               "gui_design_remmina_viewer_controls"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_workspace_surface",
+              "home_search_placeholder",
+              "recent_columns"
             ]
           }
         },
@@ -8782,7 +8788,7 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "apply_home_search_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -9751,12 +9757,14 @@
               "Start Page"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "gui_design_home_tab_label",
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_tabs",
               "gui_design_tab_items"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_home_tab_label"
             ]
           }
         },
@@ -9769,10 +9777,6 @@
               "Config and inheritance",
               "Inheritance: credentials on"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "gui_design_workspace_surface",
-              "workspaceSurfaceSubtitle"
-            ],
             "scripts/render_gui_design_previews.py": [
               "draw_mremoteng_workspace",
               "draw_mremoteng_rdp_panel",
@@ -9780,6 +9784,10 @@
             ],
             "src/remote_ops_workspace/gui_workspace_tabs.py": [
               "rebuild_welcome_tab"
+            ],
+            "src/remote_ops_workspace/gui_home.py": [
+              "gui_design_workspace_surface",
+              "workspaceSurfaceSubtitle"
             ]
           }
         },
@@ -10578,7 +10586,7 @@
               "gui_design_preset_home_search_route",
               "product-preset-home-search-entry-route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_home.py": [
               "apply_home_search_route_for_design"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [

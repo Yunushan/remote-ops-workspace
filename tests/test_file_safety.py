@@ -213,6 +213,53 @@ def test_private_rollback_rechecks_identity_after_windows_permission_error(tmp_p
             assert len(attempts) == len(delays) + 1 == 6
 
 
+@pytest.mark.parametrize("outcome", ["installed", "persistent-denial", "changed-destination", "claimed-destination", "changed-staged"])
+def test_private_installation_rechecks_files_after_windows_permission_error(tmp_path, monkeypatch, outcome):
+    path = tmp_path / "profiles.json"
+    if outcome != "claimed-destination":
+        write_bytes_atomic(path, b"old-private-state", private=True)
+    original_replace = file_safety.os.replace
+    attempts = []
+
+    def delayed_install(source, destination):
+        attempts.append(Path(source))
+        if len(attempts) == 1 or outcome == "persistent-denial":
+            error = PermissionError("rename denied")
+            error.winerror = 5
+            raise error
+        original_replace(source, destination)
+
+    def wait_for_retry(_delay):
+        if outcome in {"changed-destination", "claimed-destination", "changed-staged"}:
+            replacement = tmp_path / "independent"
+            replacement.write_bytes(b"independent-state")
+            original_replace(replacement, attempts[0] if outcome == "changed-staged" else path)
+
+    monkeypatch.setattr(file_safety.os, "replace", delayed_install)
+    monkeypatch.setattr(file_safety, "sleep", wait_for_retry)
+    errors = {
+        "persistent-denial": "rename denied",
+        "changed-destination": "private destination changed",
+        "claimed-destination": "private destination changed",
+        "changed-staged": "staged private file changed",
+    }
+    if outcome == "installed":
+        write_bytes_atomic(path, b"new-private-state", private=True)
+        assert path.read_bytes() == b"new-private-state"
+        assert len(attempts) == 2
+    else:
+        with pytest.raises(OSError, match=errors[outcome]):
+            write_bytes_atomic(path, b"new-private-state", private=True)
+        expected = b"independent-state" if outcome in {"changed-destination", "claimed-destination"} else b"old-private-state"
+        assert path.read_bytes() == expected
+        assert len(attempts) == (6 if outcome == "persistent-denial" else 1)
+    assert list(tmp_path.glob(".*.rollback.*.tmp")) == []
+    if outcome == "changed-staged":
+        assert attempts[0].read_bytes() == b"independent-state"
+    else:
+        assert not list(tmp_path.glob(".*.tmp"))
+
+
 def test_private_write_rejects_recovery_after_destination_identity_changes(tmp_path, monkeypatch) -> None:
     path = tmp_path / "profiles.json"
     replacement = tmp_path / "other.json"

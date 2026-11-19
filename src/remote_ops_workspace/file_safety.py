@@ -5,6 +5,7 @@ import os
 import shutil
 import stat
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from time import sleep
 from typing import Any
@@ -164,6 +165,7 @@ def _write_bytes_atomic(path: Path, payload: bytes, *, private: bool) -> None:
         ensure_private_dir(path.parent)
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     temp_path = Path(temp_name)
+    installed_status = os.fstat(fd)
     replaced = False
     predecessor: tuple[Path, os.stat_result] | None = None
     keep_predecessor = False
@@ -177,11 +179,14 @@ def _write_bytes_atomic(path: Path, payload: bytes, *, private: bool) -> None:
             _require_no_linked_path_components(path.parent)
             if _path_is_link_or_reparse(path):
                 raise OSError(f"refusing to replace symlinked private artifact: {path}")
+            original_status = _stat_if_present(path)
             predecessor = _backup_private_predecessor(path)
         else:
             chmod_best_effort(temp_path, mode)
-        installed_status = temp_path.lstat()
-        os.replace(temp_path, path)
+        if private:
+            _install_private_write(temp_path, path, installed_status, original_status)
+        else:
+            os.replace(temp_path, path)
         replaced = True
         if private:
             _chmod_required(path, mode)
@@ -196,7 +201,8 @@ def _write_bytes_atomic(path: Path, payload: bytes, *, private: bool) -> None:
                 rollback_error = restore_exc
                 keep_predecessor = predecessor is not None
         try:
-            temp_path.unlink()
+            if not private or _private_file_matches(temp_path, installed_status):
+                temp_path.unlink()
         except OSError:
             pass
         if rollback_error is not None and predecessor is not None:
@@ -251,24 +257,57 @@ def _rollback_private_write(
     installed_status: os.stat_result,
     predecessor: tuple[Path, os.stat_result] | None,
 ) -> None:
+    def restore() -> None:
+        _require_no_linked_path_components(path.parent)
+        if not _private_file_matches(path, installed_status):
+            raise OSError(f"private artifact changed before rollback: {path}")
+        if predecessor is None:
+            path.unlink()
+        else:
+            _require_private_recovery_identity(predecessor)
+            os.replace(predecessor[0], path)
+
+    _retry_private_file_operation(restore)
+
+
+def _install_private_write(
+    staged: Path, path: Path, staged_status: os.stat_result, original_status: os.stat_result | None,
+) -> None:
+    def install() -> None:
+        _require_no_linked_path_components(path.parent)
+        if not _private_file_matches(staged, staged_status):
+            raise OSError(f"staged private file changed before replacement: {staged}")
+        if not _private_file_matches(path, original_status):
+            raise OSError(f"private destination changed before replacement: {path}")
+        os.replace(staged, path)
+
+    _retry_private_file_operation(install)
+
+
+def _stat_if_present(path: Path) -> os.stat_result | None:
+    try:
+        return path.lstat()
+    except FileNotFoundError:
+        return None
+
+
+def _private_file_matches(path: Path, expected: os.stat_result | None) -> bool:
+    current = _stat_if_present(path)
+    if current is None:
+        return expected is None
+    return (
+        expected is not None
+        and stat.S_ISREG(current.st_mode)
+        and not _is_reparse_point(current)
+        and (current.st_dev, current.st_ino) == (expected.st_dev, expected.st_ino)
+    )
+
+
+def _retry_private_file_operation(operation: Callable[[], None]) -> None:
     retry_delays = iter((0.01, 0.02, 0.04, 0.08, 0.16))
     while True:
-        _require_no_linked_path_components(path.parent)
-        named = path.lstat()
-        if (
-            stat.S_ISLNK(named.st_mode)
-            or _is_reparse_point(named)
-            or not stat.S_ISREG(named.st_mode)
-            or (named.st_dev, named.st_ino) != (installed_status.st_dev, installed_status.st_ino)
-        ):
-            raise OSError(f"private artifact changed before rollback: {path}")
-        if predecessor is not None:
-            _require_private_recovery_identity(predecessor)
         try:
-            if predecessor is None:
-                path.unlink()
-            else:
-                os.replace(predecessor[0], path)
+            operation()
         except PermissionError as error:
             # Windows may briefly deny a rename or deletion while another process holds a file handle.
             delay = next(retry_delays, None)

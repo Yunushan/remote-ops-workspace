@@ -231,9 +231,28 @@ python scripts/check_release_remote_preconditions.py environments \
   --repository "$release_repository" --tag "$release_tag"
 ```
 
+On an operator-controlled Linux machine with OpenSSL 3, load the candidate
+signing values into the environment using the secret names from the
+[production readiness guide](../PRODUCTION_READINESS.md). Before enrolling
+the values, run both offline checks from the selected release checkout.
+
+```bash
+python -I scripts/check_release_signing_inputs.py windows
+python -I scripts/check_release_signing_inputs.py macos
+```
+
+The checks open the password-protected certificate bundles and validate the
+Windows timestamp URL and macOS notarization key format. The verifier reads
+credentials from the process environment and checks them offline with the
+system OpenSSL. The protected preflight runs the same checks before starting
+native builds. The native jobs verify the signing and notarization on the
+actual packages.
+[OpenSSL PKCS#12](https://docs.openssl.org/3.0/man1/openssl-pkcs12/) ·
+[App Store Connect team API keys](https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests)
+
 You can check the protected `release` environment while other approvals are
 pending. This command verifies the presence of the Windows and macOS signing
-secret names. The native builds validate and use the credential values.
+secret names.
 
 ```bash
 python scripts/check_release_remote_preconditions.py signing \

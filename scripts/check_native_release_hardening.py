@@ -368,6 +368,15 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
         if snippet not in preflight:
             errors.append(f"release-preflight missing {label}: {snippet}")
     signing = workflow_step_block(preflight, "name: Detect release signing readiness")
+    for target in ("windows", "macos"):
+        expected = (
+            f"          {target}_ready=false\n"
+            f"          if python -I scripts/check_release_signing_inputs.py {target}; then\n"
+            f"            {target}_ready=true\n"
+            "          fi"
+        )
+        if expected not in signing:
+            errors.append(f"release-preflight must validate {target} signing inputs before marking them ready")
     if (
         'if [[ "$signed_native_ready" != true ]]; then' not in signing
         or 'if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then' not in signing

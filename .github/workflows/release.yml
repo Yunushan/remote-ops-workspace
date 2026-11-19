@@ -108,20 +108,14 @@ jobs:
           ROW_MACOS_NOTARY_KEY_ID: ${{ secrets.ROW_MACOS_NOTARY_KEY_ID }}
           ROW_MACOS_NOTARY_ISSUER: ${{ secrets.ROW_MACOS_NOTARY_ISSUER }}
         run: |
-          windows_ready=true
-          for name in ROW_WINDOWS_CERTIFICATE_BASE64 ROW_WINDOWS_CERTIFICATE_PASSWORD ROW_WINDOWS_TIMESTAMP_URL; do
-            if [[ -z "${!name}" ]]; then
-              echo "::notice::Missing release signing input: $name"
-              windows_ready=false
-            fi
-          done
-          macos_ready=true
-          for name in ROW_MACOS_CERTIFICATE_BASE64 ROW_MACOS_CERTIFICATE_PASSWORD ROW_MACOS_SIGN_IDENTITY ROW_MACOS_INSTALLER_SIGN_IDENTITY ROW_MACOS_NOTARY_KEY_BASE64 ROW_MACOS_NOTARY_KEY_ID ROW_MACOS_NOTARY_ISSUER; do
-            if [[ -z "${!name}" ]]; then
-              echo "::notice::Missing release signing input: $name"
-              macos_ready=false
-            fi
-          done
+          windows_ready=false
+          if python -I scripts/check_release_signing_inputs.py windows; then
+            windows_ready=true
+          fi
+          macos_ready=false
+          if python -I scripts/check_release_signing_inputs.py macos; then
+            macos_ready=true
+          fi
           signed_native_ready=false
           if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" && "$windows_ready" == true && "$macos_ready" == true ]]; then
             signed_native_ready=true
@@ -138,7 +132,7 @@ jobs:
               echo "::error::Production tag push requires Windows signing and macOS signing and notarization credentials."
               exit 1
             fi
-            echo "::notice::Exact-tag candidate staging is withheld because protected Windows/macOS release signing is incomplete."
+            echo "::notice::Exact-tag candidate staging is withheld because protected Windows/macOS release signing inputs failed validation."
             echo "::notice::Use unsigned-preview.yml for a uniquely tagged non-v* prerelease; release.yml never creates or mutates a GitHub Release."
           fi
       - name: Require independently approved production release policy
@@ -560,8 +554,8 @@ jobs:
           trap cleanup_signing_material EXIT
           (
             umask 077
-            printf '%s' "$ROW_MACOS_CERTIFICATE_BASE64" | base64 --decode > "$certificate"
-            printf '%s' "$ROW_MACOS_NOTARY_KEY_BASE64" | base64 --decode > "$notary_key"
+            printf '%s' "$ROW_MACOS_CERTIFICATE_BASE64" | LC_ALL=C tr -d '[:space:]' | base64 --decode > "$certificate"
+            printf '%s' "$ROW_MACOS_NOTARY_KEY_BASE64" | LC_ALL=C tr -d '[:space:]' | base64 --decode > "$notary_key"
           )
           security create-keychain -p "$ROW_MACOS_CERTIFICATE_PASSWORD" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"

@@ -113,6 +113,15 @@ def test_production_tag_push_must_fail_when_signing_is_incomplete() -> None:
     assert message in checker.check_signing_readiness_gate(workflow.replace(refusal, "              :\n            fi", 1))
 
 
+@pytest.mark.parametrize("target", ["windows", "macos"])
+def test_production_preflight_requires_offline_signing_input_validation(target) -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    bypassed = workflow.replace(f"python -I scripts/check_release_signing_inputs.py {target}", "true", 1)
+    assert (f"release-preflight must validate {target} signing inputs before marking them ready"
+            in checker.check_signing_readiness_gate(bypassed))
+
+
 def test_windows_production_smoke_requires_signed_installers() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")

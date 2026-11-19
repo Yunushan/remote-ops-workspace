@@ -6,6 +6,7 @@ from subprocess import CompletedProcess
 import pytest
 
 from scripts import check_release_remote_preconditions as preconditions
+from scripts import check_release_signing_inputs as signing
 
 API_ROOT = "https://api.github.com"
 REPOSITORY = "owner/repo"
@@ -23,7 +24,7 @@ def test_signing_inventory_matches_the_production_workflow() -> None:
     assert "    environment: release\n" in preflight[0]
     step = preflight[1].split("      - name:", 1)[0]
     configured = set(re.findall(r"\$\{\{ secrets\.(ROW_[A-Z0-9_]+) \}\}", step))
-    checked = {name for line in re.findall(r"(?m)^ +for name in ([^;]+); do$", step) for name in line.split()}
+    checked = {name for names in signing.SIGNING_INPUTS.values() for name in names}
     assert configured == checked == preconditions.RELEASE_SIGNING_SECRETS
 
 

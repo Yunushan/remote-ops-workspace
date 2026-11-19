@@ -4607,8 +4607,10 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_tab_chrome_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabChromeTooltip"
@@ -4637,8 +4639,10 @@
               "active-reference-status-bar-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_status_bar_route_to_terminal_tab",
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_status_bar_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceStatusSegments"
@@ -4666,7 +4670,7 @@
               "gui_design_preset_reference_session_action_route",
               "active-reference-session-actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_session_action_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4698,7 +4702,7 @@
               "gui_design_preset_reference_surface_route",
               "active-reference-tab-surface-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_surface_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4731,7 +4735,7 @@
             "src/remote_ops_workspace/gui_terminal.py": [
               "terminalActionKey"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_control_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4760,7 +4764,7 @@
               "gui_design_preset_reference_input_route",
               "active-reference-tab-terminal-input"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_input_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_terminal.py": [
@@ -4792,7 +4796,7 @@
               "gui_design_preset_reference_transcript_route",
               "active-reference-tab-terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_transcript_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_terminal.py": [
@@ -6520,8 +6524,10 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_tab_chrome_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabChromeTooltip"
@@ -6550,8 +6556,10 @@
               "active-reference-status-bar-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_status_bar_route_to_terminal_tab",
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_status_bar_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceStatusSegments"
@@ -6579,7 +6587,7 @@
               "gui_design_preset_reference_session_action_route",
               "active-reference-session-actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_session_action_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6611,7 +6619,7 @@
               "gui_design_preset_reference_surface_route",
               "active-reference-tab-surface-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_surface_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6644,7 +6652,7 @@
             "src/remote_ops_workspace/gui_terminal.py": [
               "terminalActionKey"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_control_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6673,7 +6681,7 @@
               "gui_design_preset_reference_input_route",
               "active-reference-tab-terminal-input"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_input_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_terminal.py": [
@@ -6705,7 +6713,7 @@
               "gui_design_preset_reference_transcript_route",
               "active-reference-tab-terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_transcript_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_terminal.py": [
@@ -8399,8 +8407,10 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_tab_chrome_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabChromeTooltip"
@@ -8429,8 +8439,10 @@
               "active-reference-status-bar-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_status_bar_route_to_terminal_tab",
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_status_bar_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceStatusSegments"
@@ -8458,7 +8470,7 @@
               "gui_design_preset_reference_session_action_route",
               "active-reference-session-actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_session_action_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8490,7 +8502,7 @@
               "gui_design_preset_reference_surface_route",
               "active-reference-tab-surface-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_surface_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8523,7 +8535,7 @@
             "src/remote_ops_workspace/gui_terminal.py": [
               "terminalActionKey"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_control_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8552,7 +8564,7 @@
               "gui_design_preset_reference_input_route",
               "active-reference-tab-terminal-input"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_input_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_terminal.py": [
@@ -8584,7 +8596,7 @@
               "gui_design_preset_reference_transcript_route",
               "active-reference-tab-terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_transcript_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_terminal.py": [
@@ -10217,8 +10229,10 @@
               "active-reference-tab-chrome-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_tab_chrome_route_to_terminal_tab",
               "sessionTabBar"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_tab_chrome_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceTabChromeTooltip"
@@ -10247,8 +10261,10 @@
               "active-reference-status-bar-evidence"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_status_bar_route_to_terminal_tab",
               "productStatusSegment"
+            ],
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
+              "apply_reference_status_bar_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
               "presetReferenceStatusSegments"
@@ -10276,7 +10292,7 @@
               "gui_design_preset_reference_session_action_route",
               "active-reference-session-actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_session_action_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10308,7 +10324,7 @@
               "gui_design_preset_reference_surface_route",
               "active-reference-tab-surface-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_surface_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10341,7 +10357,7 @@
             "src/remote_ops_workspace/gui_terminal.py": [
               "terminalActionKey"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_control_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10370,7 +10386,7 @@
               "gui_design_preset_reference_input_route",
               "active-reference-tab-terminal-input"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_input_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_terminal.py": [
@@ -10402,7 +10418,7 @@
               "gui_design_preset_reference_transcript_route",
               "active-reference-tab-terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_reference_tabs.py": [
               "apply_reference_transcript_route_to_terminal_tab"
             ],
             "src/remote_ops_workspace/gui_terminal.py": [

@@ -88,8 +88,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "25fb3772d5a529c2fcb917234f3a2569be4125fee3dbc73e4651e7c9f7028be1",
-      "size": 152763
+      "sha256": "91f75827ae28abe1833f5b7befe6fc5100bb5496313373944b666956f3811db1",
+      "size": 137676
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
@@ -200,6 +200,11 @@
       "path": "src/remote_ops_workspace/gui_profile_tree.py",
       "sha256": "e0b8cf47fc4f6e28d10877e31cd068a50bc3f7d663dda9d3f05d5b0fd115efb2",
       "size": 51143
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_reference_tabs.py",
+      "sha256": "5392bd794478f10331d3e10d223c80c635831a24e29893edbafefb5e6be2cbe0",
+      "size": 16033
     },
     {
       "path": "src/remote_ops_workspace/gui_remmina.py",

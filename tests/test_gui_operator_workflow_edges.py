@@ -1509,7 +1509,7 @@ def test_toolbar_shortcut_profile_and_context_contract_edges(
 def test_menu_bar_rejects_unregistered_product_items(gui_window, monkeypatch) -> None:
     from dataclasses import replace
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_menus
     from remote_ops_workspace.gui_designs import (
         gui_design_moba_top_menu_geometry_for,
         gui_design_moba_top_menu_items,
@@ -1526,23 +1526,23 @@ def test_menu_bar_rejects_unregistered_product_items(gui_window, monkeypatch) ->
     moba_item = original_moba_items()[0]
     moba_geometry = original_moba_geometry(moba_item.key)
     monkeypatch.setattr(
-        gui,
+        gui_menus,
         "gui_design_moba_top_menu_items",
         lambda: (replace(moba_item, key="unregistered-moba"),),
     )
     monkeypatch.setattr(
-        gui,
+        gui_menus,
         "gui_design_moba_top_menu_geometry_for",
         lambda _key: moba_geometry,
     )
     with pytest.raises(RuntimeError, match="missing Moba top-menu handler"):
         window.build_menu_bar()
 
-    monkeypatch.setattr(gui, "gui_design_moba_top_menu_items", original_moba_items)
-    monkeypatch.setattr(gui, "gui_design_moba_top_menu_geometry_for", original_moba_geometry)
+    monkeypatch.setattr(gui_menus, "gui_design_moba_top_menu_items", original_moba_items)
+    monkeypatch.setattr(gui_menus, "gui_design_moba_top_menu_geometry_for", original_moba_geometry)
     securecrt = original_securecrt()
     monkeypatch.setattr(
-        gui,
+        gui_menus,
         "gui_design_securecrt_top_chrome",
         lambda: replace(
             securecrt,
@@ -1552,10 +1552,10 @@ def test_menu_bar_rejects_unregistered_product_items(gui_window, monkeypatch) ->
     with pytest.raises(RuntimeError, match="missing SecureCRT top-menu handler"):
         window.build_menu_bar()
 
-    monkeypatch.setattr(gui, "gui_design_securecrt_top_chrome", original_securecrt)
+    monkeypatch.setattr(gui_menus, "gui_design_securecrt_top_chrome", original_securecrt)
     mremoteng = original_mremoteng()
     monkeypatch.setattr(
-        gui,
+        gui_menus,
         "gui_design_mremoteng_top_chrome",
         lambda: replace(
             mremoteng,

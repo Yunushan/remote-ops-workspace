@@ -158,6 +158,8 @@ Rules:
   tab shutdown, and process status updates.
   `gui_operator_workflows.py` owns the status and action wiring for the
   operator workflow dialogs.
+  `gui_menus.py` owns top-menu actions, menu visibility across presets,
+  and registration of the preset keyboard shortcuts.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
 

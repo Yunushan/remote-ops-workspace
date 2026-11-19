@@ -1035,7 +1035,7 @@ def test_mobaxterm_live_gui_uses_generated_ribbon_icons() -> None:
     assert "def moba_ribbon_icon" in gui_source
     assert "def draw_moba_ribbon_icon" in icon_source
     assert "gui_design_moba_ribbon_actions" in gui_source
-    assert "gui_design_moba_top_menu_items" in gui_source
+    assert "gui_design_moba_top_menu_items" in menu_source
     assert "mobaTopMenuKey" in menu_source
     assert "EXPECTED_MOBA_TOP_MENU_KEYS" in live_checker_source
     assert "mobaIconKey" in gui_source
@@ -2620,7 +2620,9 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "securecrt_session_manager_action_icon" in gui_source
     assert "secureCrtSessionStatusStaticCellStartX" in gui_source
     assert "secureCrtSessionStatusLiveCellHeight" in gui_source
-    assert "configure_menu_bar_for_design" in gui_source
+    menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
+    assert "def configure_menu_bar_for_design" in menu_source
+    assert "self.configure_menu_bar_for_design(preset)" in gui_source
     assert "secureCrtTopToolbarIconKey" in gui_source
     assert "build_termius_hosts_chrome" in gui_source
     assert "termiusHostSearch" in gui_source

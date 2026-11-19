@@ -924,10 +924,11 @@
               "item.label"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "add_moba_top_menu",
-              "gui_design_moba_top_menu_items"
+              "self.build_menu_bar()"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
+              "menu, menu_action = add_moba_top_menu(",
+              "for moba_item in gui_design_moba_top_menu_items()",
               "mobaTopMenuKey",
               "mobaTopMenuLabel"
             ],
@@ -2939,7 +2940,10 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4212,11 +4216,11 @@
               "gui_design_securecrt_top_chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_menu_bar_for_design",
-              "add_reference_top_menu",
+              "self.configure_menu_bar_for_design(preset)",
               "secureCrtTopToolbarIconKey"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
+              "menu, menu_action = add_reference_top_menu(",
               "secureCrtTopMenuKey"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4921,7 +4925,10 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6813,7 +6820,10 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8669,7 +8679,10 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -9659,11 +9672,11 @@
               "gui_design_mremoteng_top_chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_menu_bar_for_design",
-              "add_reference_top_menu",
+              "self.configure_menu_bar_for_design(preset)",
               "mRemoteNgTopToolbarIconKey"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
+              "menu, menu_action = add_reference_top_menu(",
               "mRemoteNgTopMenuKey"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10458,7 +10471,10 @@
               "product-preset-keyboard-shortcuts"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "create_keyboard_shortcuts",
+              "self.create_keyboard_shortcuts()"
+            ],
+            "src/remote_ops_workspace/gui_menus.py": [
+              "def create_keyboard_shortcuts",
               "presetKeyboardShortcutActionLabel"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [

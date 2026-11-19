@@ -493,6 +493,11 @@ Invoke-WindowsPyInstaller -Python $Python -Build {
     --exclude-module PyQt6 `
     --exclude-module remote_ops_workspace.gui `
     --exclude-module remote_ops_workspace.gui_designs `
+    --exclude-module remote_ops_workspace.gui_preset_mobaxterm `
+    --exclude-module remote_ops_workspace.gui_preset_mremoteng `
+    --exclude-module remote_ops_workspace.gui_preset_remmina `
+    --exclude-module remote_ops_workspace.gui_preset_securecrt `
+    --exclude-module remote_ops_workspace.gui_preset_termius `
     --exclude-module remote_ops_workspace.gui_editors `
     $Launcher
 }

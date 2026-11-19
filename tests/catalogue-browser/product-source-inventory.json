@@ -108,8 +108,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_designs.py",
-      "sha256": "b9a5cd5eb6473c0e8d3f615fe55872362ffcc1975d2dd6b1276ddf2fb75ea23f",
-      "size": 276114
+      "sha256": "b0863c41f0973c74239acb747a0baab3d5cc4a5e3ee37582e118c88f35ac44f2",
+      "size": 126441
     },
     {
       "path": "src/remote_ops_workspace/gui_dialogs.py",
@@ -157,9 +157,34 @@
       "size": 28161
     },
     {
+      "path": "src/remote_ops_workspace/gui_preset_mobaxterm.py",
+      "sha256": "3024f90bc2a581fc5544487f4d71ca8de4ca673bef8b611e901842442a5c5566",
+      "size": 72600
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_preset_mremoteng.py",
+      "sha256": "e7a9b7f9b1d8aa9f9ec791b2ac8180d3dfc4ff358943b8f86565dd20bd2e65c4",
+      "size": 19605
+    },
+    {
       "path": "src/remote_ops_workspace/gui_preset_properties.py",
       "sha256": "849458ef0fc7897eb5f3b9e4d477a35fa0271ee950d6b3c65811f30b81347de7",
       "size": 50921
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_preset_remmina.py",
+      "sha256": "b03bd89b480b58ff1cce8b37e72638d96c08964eb8f283598c91b8705c59b7fd",
+      "size": 23405
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_preset_securecrt.py",
+      "sha256": "087531710cb8921942fabbe14d19f86e6dceca43cb599335b6e9270554a36288",
+      "size": 30541
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_preset_termius.py",
+      "sha256": "ad754910ca35cf9023d76e2cad52bb9c683edabad27d2486641b533c6942f7ff",
+      "size": 23331
     },
     {
       "path": "src/remote_ops_workspace/gui_processes.py",

@@ -169,7 +169,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
         ],
         "source_tokens": {
             "src/remote_ops_workspace/gui_operator_workflows.py": ["show_moba_multiexec_status", "build_moba_multiexec_plan"],
-            "src/remote_ops_workspace/gui_designs.py": ["multiexec", "Preview broadcast command plans"],
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": ["multiexec", "Preview broadcast command plans"],
         },
     },
     "moba.professional-customizer": {

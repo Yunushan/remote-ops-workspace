@@ -846,7 +846,7 @@
           "id": "moba.titlebar-chrome",
           "description": "MobaXterm-style top titlebar uses shared static/live metadata for connected-session title text, generated app mark, compact window controls and titlebar geometry without copying proprietary assets.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTitlebarChrome",
               "GUI_DESIGN_MOBA_TITLEBAR_CHROME",
               "gui_design_moba_titlebar_chrome"
@@ -879,7 +879,7 @@
           "id": "moba.top-stack-geometry",
           "description": "MobaXterm-style top chrome stack pins the titlebar, menu row, ribbon, Quick Connect strip, connected tab strip, terminal content start and left-dock offsets to one shared static/live geometry contract.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTopStackGeometry",
               "GUI_DESIGN_MOBA_TOP_STACK_GEOMETRY",
               "gui_design_moba_top_stack_geometry"
@@ -914,7 +914,7 @@
           "id": "moba.top-menu-chrome",
           "description": "MobaXterm-style top menu row uses shared static/live metadata for Terminal, Sessions, View, X server, Tools, Games, Settings, Macros and Help, with stable keys and primary actions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTopMenuItem",
               "GUI_DESIGN_MOBA_TOP_MENU_ITEMS",
               "gui_design_moba_top_menu_items"
@@ -946,7 +946,7 @@
           "id": "moba.top-menu-geometry",
           "description": "MobaXterm-style top menu row pins each menu label x offset, width, y offset, font size and gap through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTopMenuGeometry",
               "GUI_DESIGN_MOBA_TOP_MENU_GEOMETRY",
               "gui_design_moba_top_menu_geometry_for"
@@ -999,7 +999,7 @@
           "id": "moba.ribbon-edge-action-route",
           "description": "MobaXterm-style far-right ribbon edge actions tie the X server and Exit buttons to stable route metadata, generated icons, toolbar placement and live workflow handlers.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRibbonEdgeActionRoute",
               "GUI_DESIGN_MOBA_RIBBON_EDGE_ACTION_ROUTE",
               "gui_design_moba_ribbon_edge_action_route"
@@ -1028,7 +1028,7 @@
           "id": "moba.ribbon-pictograms",
           "description": "Static and live MobaXterm-style ribbons use independent drawn pictograms for session, servers, tools, games, sessions, split, multiexec, tunneling, packages, settings, help, X server and exit instead of letter placeholders or copied product assets.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GUI_DESIGN_MOBA_RIBBON_ACTIONS",
               "GuiMobaRibbonAction",
               "gui_design_moba_ribbon_actions"
@@ -1064,7 +1064,7 @@
           "id": "moba.ribbon-geometry",
           "description": "MobaXterm-style top ribbon pins each main and right-edge action width, icon offset, label offset, separator span and active-outline bounds through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRibbonActionGeometry",
               "GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY",
               "gui_design_moba_ribbon_action_geometry_for"
@@ -1098,7 +1098,7 @@
           "id": "moba.quick-connect-rail",
           "description": "Left chrome includes quick connect plus a role-based vertical icon rail for collapse, sessions, favorites, tools, macros and SFTP.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "rail_icon_key",
               "GUI_DESIGN_MOBA_RAIL_ITEMS"
             ],
@@ -1126,7 +1126,7 @@
           "id": "moba.quick-connect-chrome",
           "description": "MobaXterm-style Quick Connect top strip uses shared metadata for placeholder text, dropdown marker, fixed height and focused state across static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaQuickConnectChrome",
               "GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME",
               "gui_design_moba_quick_connect_chrome"
@@ -1158,7 +1158,7 @@
           "id": "moba.quick-connect-suggestions",
           "description": "MobaXterm-style Quick Connect suggestion dropdown uses shared metadata for typed query, saved-profile match, direct SSH fallback, row density and stable live item data.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaQuickConnectSuggestionChrome",
               "GUI_DESIGN_MOBA_QUICK_CONNECT_SUGGESTION_CHROME",
               "gui_design_moba_quick_connect_suggestion_chrome"
@@ -1192,7 +1192,7 @@
           "id": "moba.connected-quick-connect-idle",
           "description": "Connected MobaXterm-style reference keeps Quick Connect idle by default with placeholder text and hidden suggestions so the SFTP/monitoring dock is immediately visible; typed query suggestion evidence remains separate.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "connected_idle_query",
               "connected_suggestions_visible",
               "GUI_DESIGN_MOBA_QUICK_CONNECT_CHROME"
@@ -1221,7 +1221,7 @@
           "id": "moba.rail-section-labels",
           "description": "Connected MobaXterm-style vertical rail includes rotated section labels for Sessions, Tools, Macros and SFTP from shared metadata, matching the reference rail structure without copied assets.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GUI_DESIGN_MOBA_RAIL_ITEMS",
               "GuiMobaRailItem",
               "gui_design_moba_rail_items",
@@ -1250,7 +1250,7 @@
           "id": "moba.rail-geometry",
           "description": "MobaXterm-style left rail geometry pins rail width, icon x/y, static and live icon sizes, button bounds, active highlight bounds, rotated label height and generated-icon source through shared metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRailChrome",
               "GUI_DESIGN_MOBA_RAIL_CHROME",
               "GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY",
@@ -1305,10 +1305,12 @@
           "id": "moba.session-tree-geometry",
           "description": "MobaXterm-style saved-session tree geometry pins the user-session header, indentation, row heights, generated icon source, group/profile icon offsets, text offsets and selected-row bounds through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSessionTreeChrome",
               "GUI_DESIGN_MOBA_SESSION_TREE_CHROME",
-              "gui_design_moba_session_tree_chrome",
+              "gui_design_moba_session_tree_chrome"
+            ],
+            "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_TREE_ROW_ICONS"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -1412,7 +1414,7 @@
           "id": "moba.connected-dock-frame",
           "description": "Connected MobaXterm-style left dock frame uses shared side width, rail width, dock origin, dock size, workspace boundary, Quick Connect y/height and status y metadata across static preview, live PyQt widgets and real-render checks.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaConnectedDockFrame",
               "GUI_DESIGN_MOBA_CONNECTED_DOCK_FRAME",
               "gui_design_moba_connected_dock_frame"
@@ -1547,7 +1549,7 @@
           "id": "moba.sftp-browser-chrome",
           "description": "MobaXterm-style SFTP browser path strip and file-table headers use shared static/live metadata for the remote path placeholder, dropdown marker, selected parent-folder row and keyed Name, Size and Last modified columns.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpBrowserChrome",
               "parent_row_label",
               "selected_row_kind",
@@ -1592,7 +1594,7 @@
           "id": "moba.sftp-browser-geometry",
           "description": "MobaXterm-style SFTP path strip, dropdown marker, table header labels and file-row text/icon offsets are pinned through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "path_text_x",
               "dropdown_right_offset",
               "row_modified_x",
@@ -1630,7 +1632,7 @@
           "id": "moba.sftp-follow-folder-route",
           "description": "Moba-style SFTP folder-follow workflow ties the checked control, operator-selected remote path, SFTP list plan and file table state through shared static/live route metadata; it does not claim automatic shell-CWD observation.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpFollowFolderRoute",
               "GUI_DESIGN_MOBA_SFTP_FOLLOW_FOLDER_ROUTE",
               "gui_design_moba_sftp_follow_folder_route"
@@ -1690,7 +1692,7 @@
           "id": "moba.sftp-routed-file-rows",
           "description": "MobaXterm-style SFTP file rows carry row-level follow-folder route evidence, active remote path metadata, selected parent-row state and stable row indexes instead of being generic file-list rows.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpRoutedFileRows",
               "GUI_DESIGN_MOBA_SFTP_ROUTED_FILE_ROWS",
               "gui_design_moba_sftp_routed_file_rows"
@@ -1720,7 +1722,7 @@
           "id": "moba.sftp-glyphs",
           "description": "MobaXterm-style connected SFTP dock uses independent drawn toolbar, generated file/folder/parent-row and monitoring glyphs instead of bracketed text placeholders in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpFileRowIcon",
               "GUI_DESIGN_MOBA_SFTP_FILE_ROW_ICONS",
               "gui_design_moba_sftp_file_row_icon"
@@ -1751,7 +1753,7 @@
           "id": "moba.sftp-dock-chrome",
           "description": "MobaXterm-style connected SFTP dock uses shared toolbar action metadata, remote path strip, file-table columns, monitoring metric keys and follow-terminal-folder state across static and live render evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpDockAction",
               "GUI_DESIGN_MOBA_SFTP_DOCK_ACTIONS",
               "gui_design_moba_monitoring_metrics"
@@ -1783,7 +1785,7 @@
           "id": "moba.sftp-dock-density",
           "description": "MobaXterm-style connected SFTP dock uses shared density metadata for the toolbar, path row, table header, file rows, monitoring panel and divider so static and live evidence keep the reference-like compact left-dock spacing.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpDockLayout",
               "GUI_DESIGN_MOBA_SFTP_DOCK_LAYOUT",
               "gui_design_moba_sftp_dock_layout"
@@ -1817,7 +1819,7 @@
           "id": "moba.sftp-toolbar-groups",
           "description": "MobaXterm-style SFTP toolbar actions are grouped into navigation, transfer, manage, mode and terminal clusters with reference-like separator boundaries across static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "group_key",
               "separator_after",
               "navigation",
@@ -1852,7 +1854,7 @@
           "id": "moba.sftp-toolbar-geometry",
           "description": "MobaXterm-style SFTP toolbar pins each connected-dock action button, icon and separator offset through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpToolbarActionGeometry",
               "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_GEOMETRY",
               "gui_design_moba_sftp_toolbar_action_geometry"
@@ -1888,7 +1890,7 @@
           "id": "moba.sftp-toolbar-action-route",
           "description": "MobaXterm-style SFTP toolbar action route proves each connected-dock icon maps to file-transfer workflow metadata, generated icon identity, action grouping, target SFTP path/table objects and a live handler.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSftpToolbarActionRoute",
               "GUI_DESIGN_MOBA_SFTP_TOOLBAR_ACTION_ROUTE",
               "gui_design_moba_sftp_toolbar_action_route"
@@ -1944,7 +1946,7 @@
           "id": "moba.remote-monitoring-compact-dock",
           "description": "MobaXterm-style connected left dock keeps the visible remote-monitoring area compact like the reference while retaining telemetry metric keys, refresh cadence, SSH command evidence, follow-folder SFTP plan metadata and shared control geometry for the bottom telemetry/status surface.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRemoteMonitoringDockChrome",
               "GUI_DESIGN_MOBA_REMOTE_MONITORING_DOCK_CHROME",
               "GuiMobaMonitoringControlGeometry",
@@ -1981,7 +1983,7 @@
           "id": "moba.monitoring-telemetry-route",
           "description": "MobaXterm-style remote monitoring keeps the dock compact while explicitly routing CPU, memory, disk, network, connection and process evidence into the bottom telemetry bar through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaMonitoringTelemetryRoute",
               "GUI_DESIGN_MOBA_MONITORING_TELEMETRY_ROUTE",
               "gui_design_moba_monitoring_telemetry_route"
@@ -2012,7 +2014,7 @@
           "id": "moba.remote-monitoring-control-route",
           "description": "MobaXterm-style Remote monitoring control route proves the live toggle exposes checked state, SSH telemetry command, refresh cadence and bottom telemetry route evidence instead of only passive panel chrome.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaRemoteMonitoringControlRoute",
               "GUI_DESIGN_MOBA_REMOTE_MONITORING_CONTROL_ROUTE",
               "gui_design_moba_remote_monitoring_control_route"
@@ -2041,7 +2043,7 @@
           "id": "moba.follow-terminal-folder-control-route",
           "description": "MobaXterm-style Follow terminal folder control route proves the visible checkbox exposes checked state, active remote path, SFTP list plan and target SFTP browser/table linkage as first-class static/live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaFollowTerminalFolderControlRoute",
               "GUI_DESIGN_MOBA_FOLLOW_TERMINAL_FOLDER_CONTROL_ROUTE",
               "gui_design_moba_follow_terminal_folder_control_route"
@@ -2070,7 +2072,7 @@
           "id": "moba.monitoring-control-live-toggle-route",
           "description": "MobaXterm-style monitoring footer controls prove Remote monitoring and Follow terminal folder are live toggles wired through stable signals, handlers and runtime checked/path/plan properties.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "handle_moba_remote_monitoring_toggled",
               "handle_moba_follow_terminal_folder_toggled",
               "mobaRemoteMonitoringControlLiveChecked",
@@ -2103,7 +2105,7 @@
           "id": "moba.remote-monitoring-footer-geometry",
           "description": "MobaXterm-style remote-monitoring footer pins the divider span, footer height, content-left offset, metric gap and live controls frame width so the lower-left monitoring/follow-folder band stays reference-like in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "static_height",
               "divider_left_inset",
               "live_controls_width"
@@ -2132,7 +2134,7 @@
           "id": "moba.monitoring-controls",
           "description": "MobaXterm-style connected SFTP dock exposes shared keyed controls for Remote monitoring and Follow terminal folder, with checked state, icon keys and tooltips validated in both static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaMonitoringControl",
               "GUI_DESIGN_MOBA_MONITORING_CONTROLS",
               "gui_design_moba_monitoring_controls"
@@ -2165,7 +2167,7 @@
           "id": "moba.monitoring-control-geometry",
           "description": "MobaXterm-style monitoring footer pins the Remote monitoring and Follow terminal folder control baselines, font sizes, checkbox offset, checkmark stroke points and live widget widths through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "label_y_offset",
               "label_font_size",
               "check_y_offset",
@@ -2243,7 +2245,7 @@
           "id": "moba.ssh-banner-chrome",
           "description": "MobaXterm-style SSH banner chrome uses shared centered title/subtitle and static/live geometry metadata so the generated preview and live PyQt banner keep the same compact terminal placement.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSshBannerChrome",
               "GUI_DESIGN_MOBA_SSH_BANNER_CHROME",
               "gui_design_moba_ssh_banner_chrome"
@@ -2276,7 +2278,7 @@
               "capability_rows",
               "footer_links"
             ],
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "target_intro",
               "capability_label_width",
               "help_link_label",
@@ -2305,7 +2307,7 @@
           "id": "moba.ssh-banner-row-geometry",
           "description": "MobaXterm-style SSH banner pins title, subtitle, target, capability and footer row positions plus the live banner slot top/left/gap through shared static/live row geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaSshBannerRowGeometry",
               "GUI_DESIGN_MOBA_SSH_BANNER_ROW_GEOMETRY",
               "gui_design_moba_ssh_banner_row_geometry"
@@ -2365,7 +2367,7 @@
           "id": "moba.terminal-transcript-geometry",
           "description": "MobaXterm-style connected terminal hides generic terminal controls and pins transcript row x/y, cadence and font-size metadata across static preview and live PyQt evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaTerminalTranscriptRowGeometry",
               "GUI_DESIGN_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY",
               "gui_design_moba_terminal_transcript_row_geometry"
@@ -2623,7 +2625,7 @@
           "id": "moba.status-segments",
           "description": "MobaXterm-style window status bar exposes SFTP, CPU monitoring and SSH-browser workflow state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "SFTP ready",
               "CPU monitor",
               "SSH browser"
@@ -2642,7 +2644,7 @@
           "id": "moba.bottom-status-chrome",
           "description": "MobaXterm-style bottom status bar uses shared project-owned notice text, product note, keyed workflow segments and a compact right marker across static and live evidence without copying proprietary wording.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaStatusBarChrome",
               "GUI_DESIGN_MOBA_STATUS_SEGMENTS",
               "gui_design_moba_status_bar_chrome"
@@ -2671,7 +2673,7 @@
           "id": "moba.bottom-status-geometry",
           "description": "MobaXterm-style bottom edition/status footer pins notice, product-note, segment-start and right-marker coordinates through shared static/live geometry metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "static_height",
               "notice_x",
               "segment_start_right_offset",
@@ -2704,7 +2706,7 @@
           "id": "moba.bottom-edge-controls",
           "description": "MobaXterm-style bottom status edge includes compact previous-tab, next-tab and close-active controls from shared metadata, with generated arrows and close glyphs in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaBottomEdgeControl",
               "GUI_DESIGN_MOBA_BOTTOM_EDGE_CONTROLS",
               "gui_design_moba_bottom_edge_controls"
@@ -2740,7 +2742,7 @@
           "id": "moba.home-welcome-surface",
           "description": "MobaXterm-style home tab exposes a centered welcome surface with generated logo, primary/recover actions, session search, recent sessions and footer from shared metadata in both live GUI evidence and a dedicated static state preview rather than generic workflow cards.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaHomeWelcomeChrome",
               "GUI_DESIGN_MOBA_HOME_WELCOME_CHROME",
               "gui_design_moba_home_welcome_chrome"
@@ -2785,7 +2787,7 @@
           "id": "moba.home-welcome-geometry",
           "description": "MobaXterm-style home welcome geometry pins centered surface margins, hero spacing, logo/title/action/search/recent/footer offsets and live widget sizes through shared metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mobaxterm.py": [
               "GuiMobaHomeWelcomeGeometry",
               "GUI_DESIGN_MOBA_HOME_WELCOME_GEOMETRY",
               "gui_design_moba_home_welcome_geometry"
@@ -3894,8 +3896,10 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "PowerShell",
-              "SSH2",
               "Start Page"
+            ],
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
+              "SSH2"
             ],
             "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
@@ -3929,7 +3933,7 @@
           "id": "securecrt.session-manager-chrome",
           "description": "SecureCRT-style Session Manager includes shared filter and action-strip chrome for Connect, New Folder and Properties workflows in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSessionManagerChrome",
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME",
               "gui_design_securecrt_session_manager_chrome"
@@ -3965,7 +3969,7 @@
           "id": "securecrt.session-manager-geometry",
           "description": "SecureCRT-style Session Manager geometry pins measured filter, title, action-button and generated-icon dimensions across static preview, live Qt metadata and CI render checks.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "static_button_size",
               "live_button_size",
               "render_source"
@@ -3994,7 +3998,7 @@
           "id": "securecrt.session-manager-route",
           "description": "SecureCRT-style selected Session Manager row routes to the active SSH2 tab, Connect action and target status-strip cell through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSessionManagerRoute",
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE",
               "gui_design_securecrt_session_manager_route"
@@ -4023,7 +4027,7 @@
           "id": "securecrt.session-manager-filter-route",
           "description": "SecureCRT-style Session Manager filter field routes a sample query to the matched selected SSH2 row through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSessionManagerFilterRoute",
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_FILTER_ROUTE",
               "gui_design_securecrt_session_manager_filter_route"
@@ -4054,7 +4058,7 @@
           "id": "securecrt.sftp-tab-route",
           "description": "SecureCRT-style SFTP tab route ties the SFTP workflow card, files-prod SFTP tree row, SFTP tab label and SFTP status-strip cell through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSftpTabRoute",
               "GUI_DESIGN_SECURECRT_SFTP_TAB_ROUTE",
               "gui_design_securecrt_sftp_tab_route"
@@ -4085,7 +4089,7 @@
           "id": "securecrt.sftp-browser-route",
           "description": "SecureCRT-style SFTP browser route ties the files-prod SFTP tab to a remote path, toolbar actions, transfer queue and selected file row through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSftpBrowserRoute",
               "GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE",
               "gui_design_securecrt_sftp_browser_route"
@@ -4114,7 +4118,7 @@
           "id": "securecrt.sftp-browser-live-action-route",
           "description": "SecureCRT-style SFTP browser Refresh toolbar action exposes a real clicked route that updates captured action and refreshed queue status metadata on the browser, toolbar, queue and selected row.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "handler=\"handle_securecrt_sftp_browser_action\"",
               "action_key=\"refresh\"",
               "live_triggered_property=\"secureCrtSftpBrowserRouteLiveTriggered\""
@@ -4144,7 +4148,9 @@
           "description": "SecureCRT-style tree uses a Session Database root, foldered sessions and SSH2/SFTP terminal entries.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
-              "Session Database",
+              "Session Database"
+            ],
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "edge-prod (SSH2)",
               "files-prod (SFTP)"
             ],
@@ -4201,7 +4207,7 @@
           "id": "securecrt.session-toolbar",
           "description": "SecureCRT-style toolbar uses session-oriented actions such as New Session, Properties, SFTP, Transfer and terminal tiling.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "New Session",
               "Properties",
               "Tile H"
@@ -4222,7 +4228,7 @@
           "id": "securecrt.top-chrome",
           "description": "SecureCRT-style top menu and toolbar chrome uses shared metadata for File/Edit/View/Options/Transfer/Script/Tools/Window/Help menus plus icon-keyed session toolbar actions in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtTopChrome",
               "GUI_DESIGN_SECURECRT_TOP_CHROME",
               "gui_design_securecrt_top_chrome"
@@ -4284,7 +4290,7 @@
               "gui_design_securecrt_command_window_chrome",
               "chrome.command"
             ],
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "Command Window",
               "All Sessions",
               "row doctor --json"
@@ -4299,7 +4305,7 @@
           "id": "securecrt.command-window-chrome",
           "description": "SecureCRT-style Command Window chrome is shared metadata and live PyQt evidence with stable keys for target scope, command input, send action and status.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtCommandWindowChrome",
               "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_CHROME",
               "gui_design_securecrt_command_window_chrome"
@@ -4331,7 +4337,7 @@
           "id": "securecrt.command-window-geometry",
           "description": "SecureCRT-style Command Window uses shared static/live geometry for header height, target selector width, command input origin, send button width and live target/send minimum widths.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "static_control_y",
               "static_target_width",
               "static_input_x",
@@ -4361,7 +4367,7 @@
           "id": "securecrt.command-window-send-route",
           "description": "SecureCRT-style Command Window send route ties the target scope, command input, Send control and ready status to one shared live/static workflow contract.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtCommandWindowSendRoute",
               "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE",
               "gui_design_securecrt_command_window_send_route"
@@ -4390,7 +4396,7 @@
           "id": "securecrt.command-window-live-send-route",
           "description": "SecureCRT-style Command Window send route is backed by a real line edit, Send button, Enter shortcut and handler that capture submitted command, target scope and status in live PyQt evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "signal=\"clicked\"",
               "secondary_signal=\"returnPressed\"",
               "live_submitted_property=\"secureCrtCommandRouteLiveSubmitted\""
@@ -4419,7 +4425,7 @@
           "id": "securecrt.session-status-strip",
           "description": "SecureCRT-style session status strip uses shared static/live metadata for session, target, protocol, cipher, SFTP tab, log file and connected state so the terminal workspace carries reference-like connected-session context.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "GuiSecureCrtSessionStatusStrip",
               "GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP",
               "gui_design_securecrt_session_status_strip"
@@ -4453,7 +4459,7 @@
           "id": "securecrt.session-status-geometry",
           "description": "SecureCRT-style session status strip uses shared static/live geometry for title width, cell start, cell gap, label/value offsets, connected-state role and live cell dimensions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "static_cell_start_x",
               "static_cell_gap",
               "static_value_x",
@@ -4485,7 +4491,9 @@
           "description": "Live SecureCRT-style home tab exposes workflow evidence cards for Command Window, Session Manager and SFTP tab behavior.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
-              "GUI_DESIGN_WORKFLOW_CARDS",
+              "GUI_DESIGN_WORKFLOW_CARDS"
+            ],
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "Command Window",
               "Session Manager",
               "SFTP tab"
@@ -4507,7 +4515,9 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_REFERENCE_STATES",
-              "GuiProductReferenceState",
+              "GuiProductReferenceState"
+            ],
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "SSH2 + SFTP",
               "edge-prod (SSH2)"
             ],
@@ -5127,9 +5137,11 @@
           "id": "securecrt.status-bar",
           "description": "SecureCRT-style status bar exposes SSH2, Session Manager and active-tab state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_securecrt.py": [
               "SSH2",
-              "Session Manager",
+              "Session Manager"
+            ],
+            "src/remote_ops_workspace/gui_designs.py": [
               "2 active tabs"
             ],
             "src/remote_ops_workspace/gui.py": [
@@ -5990,7 +6002,7 @@
           "id": "termius.hosts-sidebar-chrome",
           "description": "Termius-style Hosts sidebar exposes a dedicated search field and Add Host, Keychain and Sync actions, with host-search focus measured against that sidebar field.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusHostsChrome",
               "GUI_DESIGN_TERMIUS_HOSTS_CHROME",
               "gui_design_termius_hosts_chrome"
@@ -6027,7 +6039,9 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "New Host",
-              "Port Fwd",
+              "Port Fwd"
+            ],
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "Snippet",
               "Vault"
             ],
@@ -6048,8 +6062,10 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "Host terminal workspace",
-              "SFTP",
               "Port fwd : 8080"
+            ],
+            "src/remote_ops_workspace/gui_preset_termius.py": [
+              "SFTP"
             ],
             "scripts/render_gui_design_previews.py": [
               "draw_termius_workspace",
@@ -6085,7 +6101,7 @@
           "id": "termius.header-chip-chrome",
           "description": "Termius-style host header chips are shared static/live metadata with stable keys for vault, sync and port-forward state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusHeaderChip",
               "GUI_DESIGN_TERMIUS_HEADER_CHIPS",
               "gui_design_termius_header_chips"
@@ -6116,7 +6132,7 @@
           "id": "termius.host-identity-strip",
           "description": "Termius-style workspace exposes host, vault identity, jump chain, SFTP, port-forward, snippet and sync state as a shared static/live identity strip.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusHostIdentityStrip",
               "GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP",
               "gui_design_termius_host_identity_strip"
@@ -6151,7 +6167,7 @@
           "id": "termius.host-identity-geometry",
           "description": "Termius-style host identity strip uses shared static/live geometry for title width, cell start, cell gap, label/value offsets, status role and live cell dimensions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "static_cell_start_x",
               "static_cell_gap",
               "static_value_x",
@@ -6182,7 +6198,7 @@
           "id": "termius.sync-route",
           "description": "Termius-style sync route ties the Hosts sidebar Sync action, Sync current header chip and Host identity Sync status to one shared live/static workflow contract.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusSyncRoute",
               "GUI_DESIGN_TERMIUS_SYNC_ROUTE",
               "gui_design_termius_sync_route"
@@ -6211,7 +6227,7 @@
           "id": "termius.port-forward-route",
           "description": "Termius-style port-forward route ties the Port fwd ready header chip, active host tab and Forward identity cell through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusPortForwardRoute",
               "GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE",
               "gui_design_termius_port_forward_route"
@@ -6240,7 +6256,7 @@
           "id": "termius.snippet-route",
           "description": "Termius-style snippet route ties the Snippet workflow card, active host tab and Host identity Snippet cell through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusSnippetRoute",
               "GUI_DESIGN_TERMIUS_SNIPPET_ROUTE",
               "gui_design_termius_snippet_route"
@@ -6269,7 +6285,7 @@
           "id": "termius.snippet-live-run-route",
           "description": "Termius-style snippet route exposes a real Run action and Return shortcut that update captured command, target profile and run status across the workflow card and Host identity strip.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "action_object=\"termiusSnippetRunAction\"",
               "shortcut_object=\"termiusSnippetRunShortcut\"",
               "handler=\"handle_termius_snippet_run\""
@@ -6298,7 +6314,7 @@
           "id": "termius.files-browser-route",
           "description": "Termius-style files browser route ties the active host files identity state to a remote path, toolbar actions, sync queue and selected file row through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusFilesBrowserRoute",
               "GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE",
               "gui_design_termius_files_browser_route"
@@ -6327,7 +6343,7 @@
           "id": "termius.files-browser-live-sync-route",
           "description": "Termius-style files browser Sync toolbar action exposes a real clicked route that updates captured action and synced queue status metadata across the files panel, Host identity strip and selected file row.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "handler=\"handle_termius_files_sync\"",
               "action_key=\"sync\"",
               "live_triggered_property=\"termiusFilesRouteLiveTriggered\""
@@ -6356,7 +6372,7 @@
           "id": "termius.host-selection-route",
           "description": "Termius-style selected host route ties the selected host tree row, active host tab, Hosts panel and Host identity cell through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "GuiTermiusHostSelectionRoute",
               "GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE",
               "gui_design_termius_host_selection_route"
@@ -6388,7 +6404,9 @@
           "description": "Live Termius-style home tab exposes workflow evidence cards for vault identity, port forwarding and snippets.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
-              "GUI_DESIGN_WORKFLOW_CARDS",
+              "GUI_DESIGN_WORKFLOW_CARDS"
+            ],
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "Vault identity",
               "Port forward",
               "Snippet"
@@ -6411,8 +6429,10 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_REFERENCE_STATES",
               "GuiProductReferenceState",
-              "SSH + Vault",
               "sidebar_label=\"Hosts\""
+            ],
+            "src/remote_ops_workspace/gui_preset_termius.py": [
+              "SSH + Vault"
             ],
             "src/remote_ops_workspace/gui.py": [
               "build_product_reference_state_evidence",
@@ -7029,7 +7049,7 @@
           "id": "termius.status-bar",
           "description": "Termius-style status bar exposes vault, port-forwarding and sync state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_termius.py": [
               "Vault unlocked",
               "Port fwd ready",
               "Sync current"
@@ -7771,7 +7791,7 @@
           "id": "remmina.protocol-profiles",
           "description": "Profile tree and renderer include RDP/VNC/SFTP-style protocol targets.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "win-admin",
               "linux-console"
             ],
@@ -7804,7 +7824,9 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "Profile Groups",
-              "lab-desktop",
+              "lab-desktop"
+            ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "linux-console"
             ],
             "src/remote_ops_workspace/gui_profile_tree.py": [
@@ -7824,7 +7846,9 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_TREE_ROW_ICONS",
               "Profile Groups",
-              "lab-desktop",
+              "lab-desktop"
+            ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "linux-console"
             ],
             "src/remote_ops_workspace/gui_profile_tree.py": [
@@ -7852,9 +7876,11 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "New Profile",
-              "Shared",
               "Prefs",
               "Tile V"
+            ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
+              "Shared"
             ],
             "src/remote_ops_workspace/gui.py": [
               "product_toolbar_buttons"
@@ -7871,7 +7897,7 @@
           "id": "remmina.status-bar",
           "description": "Remmina-style status bar exposes remote desktop protocol readiness, scaling and clipboard state.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "RDP/VNC ready",
               "Scale 100%",
               "Clipboard on"
@@ -7889,9 +7915,11 @@
           "id": "remmina.viewer-tabs",
           "description": "Remmina-style tab strip distinguishes RDP, VNC, SFTP and Quick Connect viewer tabs.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "win-admin",
-              "linux-console",
+              "linux-console"
+            ],
+            "src/remote_ops_workspace/gui_designs.py": [
               "Quick Connect"
             ],
             "src/remote_ops_workspace/gui_design_activation.py": [
@@ -7912,7 +7940,9 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "Remote desktop viewer",
-              "Scale    : 100%",
+              "Scale    : 100%"
+            ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "Shared   : file workflow ready"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -7949,7 +7979,7 @@
           "id": "remmina.viewer-control-chrome",
           "description": "Remmina-style viewer controls are shared static/live metadata with stable keys, generated icon keys, strip geometry and button sizing for Fit, Scale 100%, Clipboard, Fullscreen and Screenshot actions.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaViewerControl",
               "GUI_DESIGN_REMMINA_VIEWER_CONTROLS",
               "gui_design_remmina_viewer_controls",
@@ -7985,7 +8015,7 @@
           "id": "remmina.profile-list-chrome",
           "description": "Remmina-style profile manager exposes a filterable connection list with stable Name, Protocol and Server columns plus selected RDP/VNC/SFTP rows.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaProfileListChrome",
               "GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME",
               "gui_design_remmina_profile_list_chrome"
@@ -8021,7 +8051,7 @@
           "id": "remmina.profile-list-geometry",
           "description": "Remmina-style profile list uses shared static/live geometry for filter position, header offset, row start, row height, row step, cell offsets, live filter width and live row height.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "static_row_start_y",
               "static_row_step",
               "live_filter_width",
@@ -8051,7 +8081,7 @@
           "id": "remmina.profile-viewer-route",
           "description": "Remmina-style selected profile route ties the selected RDP profile row, active RDP viewer tab, scale status and Scale 100% viewer control through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaProfileViewerRoute",
               "GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE",
               "gui_design_remmina_profile_viewer_route"
@@ -8080,7 +8110,7 @@
           "id": "remmina.profile-filter-route",
           "description": "Remmina-style profile filter routes an editable protocol query to the matched selected profile row and viewer tab through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaProfileFilterRoute",
               "GUI_DESIGN_REMMINA_PROFILE_FILTER_ROUTE",
               "gui_design_remmina_profile_filter_route"
@@ -8109,7 +8139,7 @@
           "id": "remmina.clipboard-route",
           "description": "Remmina-style Clipboard viewer control route ties the Clipboard control, active RDP tab, Clipboard on status segment and clipboard-enabled workspace detail through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaClipboardRoute",
               "GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE",
               "gui_design_remmina_clipboard_route"
@@ -8138,7 +8168,7 @@
           "id": "remmina.screenshot-route",
           "description": "Remmina-style Screenshot viewer control route ties the Screenshot control, active RDP tab, generic capture artifact and screenshot workspace detail through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaScreenshotRoute",
               "GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE",
               "gui_design_remmina_screenshot_route"
@@ -8167,7 +8197,7 @@
           "id": "remmina.screenshot-live-capture-route",
           "description": "Remmina-style Screenshot viewer control exposes a real clicked capture route that updates captured state and artifact metadata without embedding a user desktop capture.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "handler=\"handle_remmina_screenshot_capture\"",
               "live_triggered_property=\"remminaScreenshotRouteLiveTriggered\"",
               "signal=\"clicked\""
@@ -8196,7 +8226,7 @@
           "id": "remmina.sftp-transfer-route",
           "description": "Remmina-style SFTP transfer route ties the Transfer toolbar action, SFTP profile row, SFTP tab, remote path, transfer queue and selected remote file row through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "GuiRemminaSftpTransferRoute",
               "GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE",
               "gui_design_remmina_sftp_transfer_route"
@@ -8225,7 +8255,7 @@
           "id": "remmina.sftp-transfer-live-queue-route",
           "description": "Remmina-style SFTP transfer route exposes a real clicked Queue action that updates captured action/status metadata across the selected SFTP profile, transfer panel, queue, selected file row and routed action.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "handler=\"handle_remmina_sftp_transfer_action\"",
               "action_key=\"queue\"",
               "live_triggered_property=\"remminaSftpTransferRouteLiveTriggered\""
@@ -8278,7 +8308,9 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_REFERENCE_STATES",
               "GuiProductReferenceState",
-              "RDP viewer",
+              "RDP viewer"
+            ],
+            "src/remote_ops_workspace/gui_preset_remmina.py": [
               "RDP - win-admin"
             ],
             "src/remote_ops_workspace/gui.py": [
@@ -9618,9 +9650,11 @@
           "id": "mremoteng.nested-connection-tree",
           "description": "mRemoteNG-style tree uses a Connections root, nested containers and bracketed protocol connection nodes.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Connections.xml",
-              "edge-prod [SSH]",
+              "edge-prod [SSH]"
+            ],
+            "src/remote_ops_workspace/gui_designs.py": [
               "nested group item"
             ],
             "src/remote_ops_workspace/gui.py": [
@@ -9640,7 +9674,9 @@
           "description": "mRemoteNG-style tree distinguishes Connections.xml, containers and protocol nodes with shared static/live glyph metadata.",
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
-              "GUI_DESIGN_TREE_ROW_ICONS",
+              "GUI_DESIGN_TREE_ROW_ICONS"
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Connections.xml",
               "edge-prod [SSH]"
             ],
@@ -9683,7 +9719,7 @@
           "id": "mremoteng.connection-toolbar",
           "description": "mRemoteNG-style toolbar uses connection-manager actions such as New Conn, Config, Open, External, Script and pane tiling.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "New Conn",
               "Config",
               "External",
@@ -9704,7 +9740,7 @@
           "id": "mremoteng.top-chrome",
           "description": "mRemoteNG-style top menu and toolbar chrome uses shared metadata for File/View/Connections/Tools/Window/Help menus plus icon-keyed connection-manager toolbar actions in static and live evidence.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgTopChrome",
               "GUI_DESIGN_MREMOTENG_TOP_CHROME",
               "gui_design_mremoteng_top_chrome"
@@ -9738,8 +9774,10 @@
           "id": "mremoteng.status-bar",
           "description": "mRemoteNG-style status bar exposes connection file, inheritance and open-pane state.",
           "source_tokens": {
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
+              "Connections.xml"
+            ],
             "src/remote_ops_workspace/gui_designs.py": [
-              "Connections.xml",
               "Inheritance on",
               "2 open panes"
             ],
@@ -9758,7 +9796,9 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "document_mode=True",
-              "tab_position=\"north\"",
+              "tab_position=\"north\""
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "edge-prod [SSH]"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -9773,8 +9813,10 @@
           "source_tokens": {
             "src/remote_ops_workspace/gui_designs.py": [
               "win-admin [RDP]",
-              "external",
               "Start Page"
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
+              "external"
             ],
             "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
@@ -9821,7 +9863,7 @@
               "gui_design_mremoteng_document_controls",
               "embedded document surface"
             ],
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Connections.xml",
               "Filter connection tree"
             ],
@@ -9838,7 +9880,7 @@
           "id": "mremoteng.document-control-chrome",
           "description": "mRemoteNG-style document toolbar chrome is shared static/live metadata with stable keys for Connections.xml, Save, Reconnect, External tool, Dock view and the connection-tree filter.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgDocumentControl",
               "GUI_DESIGN_MREMOTENG_DOCUMENT_CONTROLS",
               "gui_design_mremoteng_document_toolbar_chrome"
@@ -9873,7 +9915,7 @@
           "id": "mremoteng.document-control-geometry",
           "description": "mRemoteNG-style document controls use project-owned generated icons and shared static/live geometry for button width, icon offsets, filter width and toolbar spacing.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "static_icon_x",
               "static_icon_y",
               "live_icon_size",
@@ -9906,7 +9948,7 @@
           "id": "mremoteng.property-grid-chrome",
           "description": "mRemoteNG-style property and inheritance grid is shared static/live metadata with stable columns, inherited row state, effective values and source paths.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgPropertyGridChrome",
               "GUI_DESIGN_MREMOTENG_PROPERTY_GRID_CHROME",
               "gui_design_mremoteng_property_grid_chrome"
@@ -9940,7 +9982,7 @@
           "id": "mremoteng.connection-document-route",
           "description": "mRemoteNG-style selected connection route ties the selected Connections tree item, active SSH document tab, Reconnect document control and Protocol property-grid row through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgConnectionDocumentRoute",
               "GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE",
               "gui_design_mremoteng_connection_document_route"
@@ -9969,7 +10011,7 @@
           "id": "mremoteng.connection-reconnect-live-route",
           "description": "mRemoteNG-style Reconnect document control exposes a real clicked route that updates captured reconnect state on the tree, controls strip, routed button and property grid.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "handler=\"handle_mremoteng_document_reconnect\"",
               "reconnect_state=\"reconnected\"",
               "live_triggered_property=\"mRemoteNgConnectionRouteLiveTriggered\""
@@ -9998,7 +10040,7 @@
           "id": "mremoteng.document-filter-route",
           "description": "mRemoteNG-style document filter routes an editable connection-tree query to the selected SSH document row through shared static and live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgDocumentFilterRoute",
               "GUI_DESIGN_MREMOTENG_DOCUMENT_FILTER_ROUTE",
               "gui_design_mremoteng_document_filter_route"
@@ -10029,7 +10071,7 @@
           "id": "mremoteng.inheritance-route",
           "description": "mRemoteNG-style inheritance route ties the Config inheritance workflow card, active document tab and inherited Credential property-grid row through shared static/live metadata.",
           "source_tokens": {
-            "src/remote_ops_workspace/gui_designs.py": [
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "GuiMRemoteNgInheritanceRoute",
               "GUI_DESIGN_MREMOTENG_INHERITANCE_ROUTE",
               "gui_design_mremoteng_inheritance_route"
@@ -10061,7 +10103,9 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_WORKFLOW_CARDS",
               "Document toolbar",
-              "RDP document",
+              "RDP document"
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "Config inheritance"
             ],
             "src/remote_ops_workspace/gui.py": [
@@ -10082,7 +10126,9 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "GUI_DESIGN_REFERENCE_STATES",
               "GuiProductReferenceState",
-              "SSH document",
+              "SSH document"
+            ],
+            "src/remote_ops_workspace/gui_preset_mremoteng.py": [
               "edge-prod [SSH]"
             ],
             "src/remote_ops_workspace/gui.py": [

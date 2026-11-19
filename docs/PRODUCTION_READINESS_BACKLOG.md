@@ -174,6 +174,9 @@ Rules:
   its SFTP transfers. The connected dock supplies the shared SSH state.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
+  The five product presets each have a `gui_preset_*.py` module for
+  layout geometry, control definitions, and workflow routes.
+  `gui_designs.py` assembles the presets and renders the shared stylesheet.
   `cli_transfers.py` owns file transfer and SSH-browser command registration
   and output. `cli_reports.py` formats diagnostic and readiness reports.
 

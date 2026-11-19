@@ -126,10 +126,11 @@ main window stays a composition layer rather than a monolith:
 - `gui_layouts.py` owns saved layout actions, launch planning, splitter
   restoration and resize persistence. It uses the main window to open tabs
   and start terminal panes.
-- `gui_designs.py` defines the six view presets and their geometry. It renders
-  the packaged `assets/workspace.qss` template with colors, corner radii and
-  control padding from `assets/workspace-styles.json`. The live window and
-  static preview renderer use the same preset data.
+- `gui_designs.py` assembles the six view presets and defines the rules they
+  share. Each product preset has a `gui_preset_*.py` module for its geometry,
+  controls, labels, and workflow routes. The live window and static preview
+  renderer use the same definitions through `gui_designs.py`, which renders
+  `assets/workspace.qss` with values from `assets/workspace-styles.json`.
 - `gui_workspace.py` and `gui_connected.py` assemble the connected SSH
   workspace, SFTP browser, and monitoring controls. The dock coordinates
   background SSH authentication and owns the active SFTP path.

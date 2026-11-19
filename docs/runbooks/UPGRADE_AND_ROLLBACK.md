@@ -248,8 +248,10 @@ The drill uses the installer log to identify the refusal and leaves machine
 policy unchanged. It then cancels an upgrade through Windows Installer after the
 predecessor's launcher disappears, and compares the
 restored product registration, launcher SHA-256, and CLI version with the
-baseline. It then retries with the same signed MSI bytes and checks that the
-candidate replaces the prior product and uninstalls cleanly. The workflow
+baseline. It then retries with the same signed MSI bytes through the managed
+apply path, verifies the exact candidate, and repeats the apply to check
+that the installed candidate is recognized. It also checks that the
+candidate uninstalls cleanly. The workflow
 checkout takes the encrypted pre-upgrade backup, which also covers older
 predecessors that can read and write the fixture but lack the backup command.
 The drill verifies that cancellation preserves the original workspace and
@@ -288,9 +290,35 @@ Installer's related-products query must return exactly the predecessor.
 Preflight reads the launcher payload directly from each MSI's embedded
 cabinet. It requires the installed predecessor's launcher
 to match its MSI byte for byte and returns `install_permitted: false`. Windows
-certificate checks may contact configured trust services. Use the existing
-endpoint-management installation procedure after completing workspace recovery
-preparation.
+certificate checks may contact configured trust services.
+
+#### Apply the verified update
+
+Close the application and complete the encrypted workspace backup before
+starting the upgrade. Use an elevated Windows x64 Python environment and
+the same workspace selection, policies, versions, and stages as preflight.
+
+```powershell
+python -I scripts/managed_windows_msi.py apply --policy $candidatePolicy --stage $candidateStage --version $candidateVersion --previous-policy $previousPolicy --previous-stage $previousStage --previous-version $previousVersion
+```
+
+The command reauthenticates both stages and retains their read-only handles
+until Windows Installer returns and the installed state is checked. The
+candidate's launch condition requires Windows Installer to detect the exact
+expected predecessor before removal. The command suppresses installer UI and
+automatic reboot. Windows Installer owns rollback of a failed transaction.
+The staging deadline covers authentication and verification. The command waits
+for Windows Installer while the verified files remain held.
+
+`msi-applied` means the exact candidate registration and launcher were verified.
+Reissuing the same command reports `msi-already-applied` if that state is
+already present. `msi-previous-preserved` reports a failed install with the
+exact predecessor verified. An installer-busy or reboot-required result calls
+for waiting or restarting Windows before retrying. `msi-state-unverified`
+requires inspecting the machine before another operation. Keep both stages
+and the encrypted workspace backup until the release is accepted. For an
+operator-requested downgrade after a successful install, use the restore and
+reinstall procedure above.
 
 ## Notes
 

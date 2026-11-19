@@ -26,6 +26,8 @@ DETECT_UPGRADE = "WIX_UPGRADE_DETECTED"
 DETECT_DOWNGRADE = "WIX_DOWNGRADE_DETECTED"
 ROLLBACK_REQUIRED_CONDITION = f"NOT {DETECT_UPGRADE} OR (NOT RollbackDisabled AND NOT DISABLEROLLBACK)"
 ROLLBACK_REQUIRED_MESSAGE = "Enable Windows Installer rollback before upgrading this product."
+EXPECTED_PREDECESSOR = "ROW_EXPECTED_PREDECESSOR"
+EXPECTED_PREDECESSOR_CONDITION = f"NOT {EXPECTED_PREDECESSOR} OR {DETECT_UPGRADE} ~= {EXPECTED_PREDECESSOR}"
 UPGRADE_ACTIONS = ("FindRelatedProducts", "LaunchConditions", *ROLLBACK_ACTIONS)
 READONLY = None
 MACHINE = 4
@@ -33,6 +35,8 @@ LOCAL = 3
 NO_MORE_ITEMS = 259
 UNKNOWN_PRODUCT = 1605
 SYSTEM32_ONLY = 0x800
+UILEVEL_NONE = 2
+INSTALL_PROPERTIES = "REBOOT=ReallySuppress"
 LIMIT = 1024
 MAX_PATH = 260
 MAX_LAUNCHER_BYTES = 150 * 1024 * 1024
@@ -59,6 +63,10 @@ def guid(value: str) -> str:
     return "{" + str(identifier).upper() + "}"
 
 
+def upgrade_properties(expected_predecessor: str) -> str:
+    return f"{INSTALL_PROPERTIES} {EXPECTED_PREDECESSOR}={guid(expected_predecessor)}"
+
+
 def confirm(result: int, operation: str) -> None:
     if result != 0:
         raise ValueError(f"{operation} returned Windows Installer error {result}")
@@ -71,6 +79,8 @@ class Installer:
         pdword, phandle = c.POINTER(dword), c.POINTER(HANDLE)
         signatures = {
             "MsiOpenDatabaseW": (uint, string, string, phandle),
+            "MsiSetInternalUI": (uint, uint, c.c_void_p),
+            "MsiInstallProductW": (uint, string, string),
             "MsiDatabaseOpenViewW": (uint, HANDLE, string, phandle),
             "MsiViewExecute": (uint, HANDLE, HANDLE),
             "MsiViewFetch": (uint, HANDLE, phandle),
@@ -149,6 +159,7 @@ class Installer:
             "execute_conditions": conditions,
             "launch_conditions": [condition for condition, _ in launch_conditions],
             "rollback_required_message": dict(launch_conditions).get(ROLLBACK_REQUIRED_CONDITION),
+            "authored_expected_predecessor": EXPECTED_PREDECESSOR in properties,
             "secure_properties": properties.get("SecureCustomProperties", "").split(";"),
             "authored_detection_properties": sorted({DETECT_UPGRADE, DETECT_DOWNGRADE}.intersection(properties)),
             "product_language": properties.get("ProductLanguage"),
@@ -244,6 +255,14 @@ class Installer:
                     require(written > 0, "MSI cabinet stream is empty")
             finally:
                 confirm(dll.MsiCloseHandle(parameter), "close cabinet query parameter")
+
+    def install_upgrade(self, path: Path, expected_predecessor: str) -> int:
+        properties = upgrade_properties(expected_predecessor)
+        previous_ui = self.dll.MsiSetInternalUI(UILEVEL_NONE, None)
+        try:
+            return self.dll.MsiInstallProductW(str(path), properties)
+        finally:
+            self.dll.MsiSetInternalUI(previous_ui, None)
 
     def related_products(self, upgrade_code: str) -> tuple[str, ...]:
         products = []
@@ -404,6 +423,17 @@ def validate_major_upgrade(proof, upgrade_code: str, version: str, sequence: dic
     validate_language(proof.get("product_language"), proof.get("template_languages"))
 
 
+def validate_managed_upgrade(proof) -> None:
+    require(
+        isinstance(proof, dict)
+        and isinstance(proof.get("launch_conditions"), list)
+        and EXPECTED_PREDECESSOR_CONDITION in proof["launch_conditions"]
+        and isinstance(proof.get("secure_properties"), list) and EXPECTED_PREDECESSOR in proof["secure_properties"]
+        and proof.get("authored_expected_predecessor") is False,
+        "MSI must bind a managed upgrade to its exact detected predecessor",
+    )
+
+
 def inspect_registration(native, package: dict, state: str) -> dict:
     product_code = package["product_code"]
     registered = native.product(product_code, "State")
@@ -491,6 +521,7 @@ def main() -> int:
                     template = native.summary(summary, 7)
                 validate_upgrade_rollback(sequence, properties.get("DISABLEROLLBACK", ""))
                 major_upgrade = native.major_upgrade(database, properties, sequence, template)
+                validate_managed_upgrade(major_upgrade)
             result = {"upgrade_sequence": sequence, "major_upgrade": major_upgrade, "sha256": original}
         else:
             package = native.inspect(args.package.absolute(), require_transactional_upgrade=args.require_transactional_upgrade)

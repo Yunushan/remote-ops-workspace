@@ -937,9 +937,9 @@ def test_stage_io_failure_is_fixed_refusal_and_retains_all_existing_evidence(tmp
     assert list(operation.root.iterdir()) == []
 
 
-@pytest.mark.parametrize("consumer_refusal", [False, True])
+@pytest.mark.parametrize("consumer", ["recovery", "refusal", "external-installation"])
 def test_recovery_never_follows_asset_urls_and_keeps_outer_lease(
-    tmp_path, monkeypatch, accepted_signature, private_boundary, consumer_refusal,
+    tmp_path, monkeypatch, accepted_signature, private_boundary, consumer,
 ):
     raw, held = manifest_bytes(), [0]
     manifest = channel.authenticate_manifest(raw, policy(), now=NOW)
@@ -972,12 +972,19 @@ def test_recovery_never_follows_asset_urls_and_keeps_outer_lease(
     monkeypatch.setattr(channel, "exclusive_file_lock", lease)
     monkeypatch.setattr(channel, "_chunks", no_download)
     monkeypatch.setattr(channel, "validate_professional_update_manifest", validate)
-    if consumer_refusal:
+    if consumer == "refusal":
         with pytest.raises(channel.UpdateError, match="^synthetic-consumer-refused$"):
             with channel.verified_recovered_stage(policy(), root, current_home=tmp_path / "home") as observed:
                 assert observed[0] == root and observed[2]["authenticity_checked"] is True
                 assert held == [1] and set(guard.named) == {staging.JOURNAL, staging.MANIFEST, *ASSETS}
                 raise channel.UpdateError("synthetic-consumer-refused")
+    elif consumer == "external-installation":
+        with channel.verified_recovered_stage(
+            policy(), root, current_home=tmp_path / "home", check_consumer_deadline=False,
+        ) as (_, _, result):
+            assert result["authenticity_checked"] is True and held == [1]
+            assert set(guard.named) == {staging.JOURNAL, staging.MANIFEST, *ASSETS}
+            monkeypatch.setattr(channel, "_deadline", lambda _deadline: pytest.fail("stage deadline reapplied to installer"))
     else:
         result = channel.recover_update(policy(), root, current_home=tmp_path / "home")
         assert result["artifact_count"] == 2 and not result["install_permitted"]

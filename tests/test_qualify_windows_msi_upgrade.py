@@ -10,7 +10,11 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import qualify_windows_msi_upgrade as upgrade
-from scripts.inspect_windows_msi import ROLLBACK_ACTIONS
+from scripts.inspect_windows_msi import (
+    EXPECTED_PREDECESSOR,
+    EXPECTED_PREDECESSOR_CONDITION,
+    ROLLBACK_ACTIONS,
+)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="requires native MSI records")
@@ -43,8 +47,10 @@ def test_install_decodes_native_action_records_and_clears_callback(tmp_path, pre
         finally:
             assert records.MsiCloseHandle(record) == 0
 
+    predecessor = "{90F5B145-7705-4EE2-93D8-B69BFB6851AD}"
+
     def install(_path, properties):
-        assert properties == "REBOOT=ReallySuppress"
+        assert properties == f"REBOOT=ReallySuppress {EXPECTED_PREDECESSOR}={predecessor}"
         assert message("RemoveExistingProducts") == 0
         assert message("InstallFiles") == 0
         launcher.unlink()
@@ -58,7 +64,9 @@ def test_install_decodes_native_action_records_and_clears_callback(tmp_path, pre
     native.dll = SimpleNamespace(MsiInstallProductW=install, MsiSetExternalUIRecord=set_handler,
                                  MsiRecordGetStringW=records.MsiRecordGetStringW)
     cancellation = upgrade.Cancellation(launcher)
-    assert native.install(tmp_path / "fixture.msi", cancellation) == upgrade.INSTALL_USER_EXIT
+    assert native.install(
+        tmp_path / "fixture.msi", cancellation, expected_predecessor=predecessor,
+    ) == upgrade.INSTALL_USER_EXIT
     assert cancellation.requested == (not preexisting_error)
     assert cancellation.error_before_cancel == preexisting_error and handler is None
 
@@ -240,7 +248,11 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
             "row_component_code": "row-exe", "sha256": upgrade.fingerprint(path),
             "launcher_payload_sha256": hashlib.sha256(role.encode()).hexdigest(),
             "upgrade_sequence": dict(zip(ROLLBACK_ACTIONS, (1400, 1500, 1501, 1600, 4000, 6600), strict=True)),
-            "disable_rollback": "",
+            "disable_rollback": "", "upgrade_code": upgrade.STOCK_UPGRADE,
+            "major_upgrade": {
+                "launch_conditions": [EXPECTED_PREDECESSOR_CONDITION],
+                "secure_properties": [EXPECTED_PREDECESSOR], "authored_expected_predecessor": False,
+            },
         }
 
     previous = make_package("previous", "1.0.28")
@@ -258,9 +270,10 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         return {"state": "installed", "package_code": package["package_code"], "version": package["version"],
                 "row_path": str(launcher)}
 
-    def install(path, cancellation=None):
+    def install(path, cancellation=None, *, expected_predecessor=None):
         operations.append(path.stem if cancellation is None else "cancel")
         if cancellation is not None:
+            assert expected_predecessor == "previous"
             assert cancellation.observe("InstallFiles") == 0
             assert cancellation.observe("RemoveExistingProducts") == 0
             if scenario != "too-early":
@@ -277,6 +290,14 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         if scenario == "modified-candidate" and path.stem == "previous":
             candidate[0].write_bytes(b"changed before execution")
         return 0
+
+    def guarded_install(path, expected_predecessor):
+        assert path == candidate[0] and expected_predecessor == "previous" and registered == {"previous"}
+        return install(path)
+
+    def related(upgrade_code):
+        assert upgrade_code == upgrade.STOCK_UPGRADE
+        return tuple(sorted(registered))
 
     def refuse_upgrade(path, log):
         assert path == candidate[0] and log.parent.is_dir()
@@ -313,8 +334,10 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
 
     monkeypatch.setattr(upgrade.subprocess, "check_output", cli)
     monkeypatch.setattr(upgrade, "inspect_registration", registration)
+    monkeypatch.setattr(upgrade.managed_windows_msi, "inspect_registration", registration)
     native = SimpleNamespace(require_no_related_products=no_products, install=install, uninstall=uninstall,
-                             install_without_rollback=refuse_upgrade)
+                             install_without_rollback=refuse_upgrade, install_upgrade=guarded_install,
+                             related_products=related)
     workspace_operations = []
 
     def workspace_action(phase):
@@ -351,6 +374,8 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         assert report["status"] == "passed" and report["phase"] == "complete"
         assert report["previous_restored"] == report["previous_installed"]
         assert report["previous_reinstalled"] == report["previous_installed"]
+        assert report["managed_apply"]["phase"] == "msi-applied"
+        assert report["managed_retry"]["phase"] == "msi-already-applied"
         assert report["workspace_recovery"] == {"restored_matches_pre_upgrade": True}
         assert report["rollback_disabled_upgrade"] == {
             "exit_code": upgrade.INSTALL_FAILURE, "launch_condition_refused_upgrade": True,

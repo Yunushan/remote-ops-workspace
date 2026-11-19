@@ -18,6 +18,7 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "src")]
 
+import managed_windows_msi  # noqa: E402
 from check_release_provenance import (  # noqa: E402
     native_installer_signature_commands,
     normalize_sha,
@@ -26,14 +27,18 @@ from check_release_provenance import (  # noqa: E402
 )
 from inspect_windows_msi import (  # noqa: E402
     HANDLE,
+    INSTALL_PROPERTIES,
     LIMIT,
     ROLLBACK_REQUIRED_MESSAGE,
     STOCK_UPGRADE,
+    UILEVEL_NONE,
     Installer,
     confirm,
     fingerprint,
     inspect_registration,
     require,
+    upgrade_properties,
+    validate_managed_upgrade,
     validate_package,
     validate_upgrade_rollback,
 )
@@ -52,8 +57,6 @@ INSTALL_USER_EXIT = 1602
 INSTALL_FAILURE = 1603
 LOG_ERRORS = 1 << (INSTALL_ERROR >> 24)
 MAX_REFUSAL_LOG = 256 * 1024
-INSTALL_PROPERTIES = "REBOOT=ReallySuppress"
-UILEVEL_NONE = 2
 IDCANCEL = 2
 INSTALLSTATE_ABSENT = 2
 
@@ -82,9 +85,7 @@ class UpgradeInstaller(Installer):
         super().__init__()
         self.callback_type = c.WINFUNCTYPE(c.c_int, c.c_void_p, c.c_uint, HANDLE)
         signatures = {
-            "MsiSetInternalUI": (c.c_uint, c.c_uint, c.c_void_p),
             "MsiSetExternalUIRecord": (c.c_uint, self.callback_type, win.DWORD, c.c_void_p, c.c_void_p),
-            "MsiInstallProductW": (c.c_uint, win.LPCWSTR, win.LPCWSTR),
             "MsiEnableLogW": (c.c_uint, win.DWORD, win.LPCWSTR, win.DWORD),
             "MsiConfigureProductExW": (c.c_uint, win.LPCWSTR, c.c_int, c.c_int, win.LPCWSTR),
         }
@@ -94,9 +95,10 @@ class UpgradeInstaller(Installer):
             call.restype = result
         self.dll.MsiSetInternalUI(UILEVEL_NONE, None)
 
-    def install(self, path: Path, cancellation: Cancellation | None = None) -> int:
+    def install(self, path: Path, cancellation: Cancellation | None = None, *, expected_predecessor=None) -> int:
+        properties = INSTALL_PROPERTIES if expected_predecessor is None else upgrade_properties(expected_predecessor)
         if cancellation is None:
-            return self.dll.MsiInstallProductW(str(path), INSTALL_PROPERTIES)
+            return self.dll.MsiInstallProductW(str(path), properties)
         callback_error = None
 
         @self.callback_type
@@ -120,7 +122,7 @@ class UpgradeInstaller(Installer):
         messages = sum(1 << (message >> 24) for message in (FATAL_EXIT, INSTALL_ERROR, ACTION_START))
         confirm(self.dll.MsiSetExternalUIRecord(on_action, messages, None, None), "MsiSetExternalUIRecord")
         try:
-            result = self.dll.MsiInstallProductW(str(path), INSTALL_PROPERTIES)
+            result = self.dll.MsiInstallProductW(str(path), properties)
         finally:
             confirm(self.dll.MsiSetExternalUIRecord(self.callback_type(), 0, None, None),
                     "clear MsiSetExternalUIRecord")
@@ -232,6 +234,7 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     require(old["product_code"] != new["product_code"] and old["package_code"] != new["package_code"],
             "major upgrade requires distinct ProductCode and PackageCode values")
     validate_upgrade_rollback(new["upgrade_sequence"], new["disable_rollback"])
+    validate_managed_upgrade(new.get("major_upgrade"))
     native.require_no_related_products()
     for directory in (launcher.parents[1], Path(os.environ["LOCALAPPDATA"]) / "Remote Ops Workspace"):
         require(not os.path.lexists(directory), "Windows MSI drill refuses a preexisting stock install directory")
@@ -267,7 +270,9 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     save()
 
     cancellation = Cancellation(launcher)
-    result = run_checked(new_path, new, lambda path: native.install(path, cancellation))
+    result = run_checked(
+        new_path, new, lambda path: native.install(path, cancellation, expected_predecessor=old["product_code"]),
+    )
     report["cancellation"] = {"exit_code": result, "removal_started": cancellation.removal_started,
                               "installer_error_before_cancel": cancellation.error_before_cancel,
                               "previous_launcher_absent_at_cancel": cancellation.requested}
@@ -282,7 +287,14 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
                   original_workspace_preserved_after_cancel=True)
     save()
 
-    confirm(run_checked(new_path, new, native.install), "retry signed MSI upgrade")
+    applied = managed_windows_msi.apply_verified_pair(native, old, new, new_path, launcher)
+    report["managed_apply"] = applied
+    save()
+    require(applied["phase"] == "msi-applied", "managed apply did not verify the installed candidate")
+    repeated = managed_windows_msi.apply_verified_pair(native, old, new, new_path, launcher)
+    report["managed_retry"] = repeated
+    save()
+    require(repeated["phase"] == "msi-already-applied", "managed apply retry did not recognize the exact installed candidate")
     upgraded = launcher_snapshot(native, storage, new, launcher, home)
     inspect_registration(native, old, "absent")
     require(upgraded["launcher_sha256"] != before["launcher_sha256"], "successful upgrade retained the previous launcher bytes")

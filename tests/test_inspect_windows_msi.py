@@ -257,3 +257,42 @@ def test_candidate_lifecycle_binds_the_exact_asset_and_all_registration_states(p
             msi.validate_lifecycle(probes, "windows-x64", assets)
     else:
         msi.validate_lifecycle(probes, "windows-x64", assets)
+
+
+@pytest.mark.parametrize("broken", ["", "condition", "insecure", "authored"])
+def test_compiled_managed_upgrade_binds_the_exact_predecessor(broken):
+    proof = {
+        "launch_conditions": [] if broken == "condition" else [msi.EXPECTED_PREDECESSOR_CONDITION],
+        "secure_properties": [] if broken == "insecure" else [msi.EXPECTED_PREDECESSOR],
+        "authored_expected_predecessor": broken == "authored",
+    }
+    if broken:
+        with pytest.raises(ValueError, match="bind a managed upgrade to its exact detected predecessor"):
+            msi.validate_managed_upgrade(proof)
+    else:
+        msi.validate_managed_upgrade(proof)
+
+
+def test_native_install_uses_only_the_normalized_predecessor_and_restores_ui(tmp_path):
+    path = tmp_path / "candidate.msi"
+    predecessor = "{AAB33CFE-8A80-4F08-8B6E-E5C41C41DA43}"
+    native = object.__new__(msi.Installer)
+    calls = []
+
+    def set_ui(level, window):
+        assert window is None
+        calls.append(level)
+        return 5
+
+    def install(filename, properties):
+        assert filename == str(path)
+        assert properties == f"REBOOT=ReallySuppress {msi.EXPECTED_PREDECESSOR}={predecessor}"
+        calls.append("install")
+        return 1603
+
+    native.dll = SimpleNamespace(MsiSetInternalUI=set_ui, MsiInstallProductW=install)
+    with pytest.raises(ValueError):
+        native.install_upgrade(path, predecessor + " extra")
+    assert not calls
+    assert native.install_upgrade(path, predecessor.lower()) == 1603
+    assert calls == [msi.UILEVEL_NONE, "install", 5]

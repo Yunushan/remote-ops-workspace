@@ -543,7 +543,9 @@ def stage_update(policy, stage_root, *, current_home, expected_version=None):
 
 
 @contextmanager
-def verified_recovered_stage(policy, stage_root, *, current_home, expected_version=None):
+def verified_recovered_stage(
+    policy, stage_root, *, current_home, expected_version=None, check_consumer_deadline=True,
+):
     """Yield the authenticated stage while its lease and verified files are held."""
     _need(type(policy) is UpdatePolicy, "invalid-trust-policy")
     settings = policy.settings
@@ -564,7 +566,8 @@ def verified_recovered_stage(policy, stage_root, *, current_home, expected_versi
                 verified_files.enter_context(transaction._verified_files())
                 result = _verify_complete_held(transaction, manifest, policy, deadline, authenticate=authenticate)
                 yield root, manifest, result
-                _deadline(deadline)
+                if check_consumer_deadline:
+                    _deadline(deadline)
     except StagingError as exc:
         raise UpdateError("update-stage-refused") from exc
     except OSError as exc:

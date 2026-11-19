@@ -323,8 +323,9 @@ Linux administrators can authenticate both DEBs, install the candidate, and
 roll back on failure in one invocation with the
 [managed Debian update controller](runbooks/UPGRADE_AND_ROLLBACK.md#managed-debian-package-updates).
 Windows administrators can reauthenticate both staged stock x64 MSIs and
-verify their signatures, rollback sequence, and installed predecessor with
-the [managed Windows MSI preflight](runbooks/UPGRADE_AND_ROLLBACK.md#managed-windows-msi-preflight).
+verify the installed predecessor with the [managed Windows MSI preflight](runbooks/UPGRADE_AND_ROLLBACK.md#managed-windows-msi-preflight).
+The explicit apply command binds the install to that predecessor and checks
+the installed result after Windows Installer completes its transaction.
 
 On POSIX, use an existing empty private staging directory outside `ROW_HOME`,
 with current owner and mode 0700. The policy file must be regular, unlinked and

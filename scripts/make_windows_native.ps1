@@ -270,6 +270,8 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   <Package Name="$ProductName" Manufacturer="$Publisher" Version="$Version" UpgradeCode="$($Branding.msi_id)" Scope="perMachine">
     <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version of $ProductName is already installed." />
     <Launch Condition="NOT WIX_UPGRADE_DETECTED OR (NOT RollbackDisabled AND NOT DISABLEROLLBACK)" Message="Enable Windows Installer rollback before upgrading this product." />
+    <Property Id="ROW_EXPECTED_PREDECESSOR" Secure="yes" />
+    <Launch Condition="NOT ROW_EXPECTED_PREDECESSOR OR WIX_UPGRADE_DETECTED ~= ROW_EXPECTED_PREDECESSOR" Message="The installed product differs from the managed upgrade predecessor." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="RemoteOpsWorkspaceIcon" SourceFile="$IconSource" />
     <Property Id="ARPPRODUCTICON" Value="RemoteOpsWorkspaceIcon" />

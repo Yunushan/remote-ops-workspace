@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -9,6 +10,7 @@ import pytest
 
 from remote_ops_workspace.windows_private_storage import PrivateStorageError, _Native
 from scripts import managed_windows_msi as msi
+from scripts.inspect_windows_msi import EXPECTED_PREDECESSOR, EXPECTED_PREDECESSOR_CONDITION
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="requires native Windows file sharing")
@@ -111,7 +113,8 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
     checks = []
 
     @contextmanager
-    def verified(policy, stage, *, current_home, expected_version):
+    def verified(policy, stage, *, current_home, expected_version, check_consumer_deadline):
+        assert check_consumer_deadline is True
         expected = {args.previous_stage: (old_policy, args.previous_version), args.stage: (new_policy, args.version)}
         assert expected[stage] == (policy, expected_version) and current_home == tmp_path
         held.append(stage)
@@ -126,7 +129,7 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
         code = args.previous_version if scenario == "same-package" else version
         payload = b"different" if scenario == "changed-launcher" else b"installed"
         return {"product_code": code, "package_code": code, "version": version, "upgrade_code": "stock-family",
-                "launcher_payload_sha256": hashlib.sha256(payload).hexdigest()}
+                "launcher_payload_sha256": hashlib.sha256(payload).hexdigest(), "asset": "candidate.msi"}
 
     def related(upgrade_code):
         assert len(held) == 2 and upgrade_code == "stock-family"
@@ -156,3 +159,127 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
         assert result["previous_launcher_sha256"] == hashlib.sha256(b"installed").hexdigest()
         assert checks == [(args.previous_version, "installed"), (args.version, "absent")]
     assert held == []
+
+
+@pytest.mark.parametrize(("scenario", "phase", "refusal"), [
+    ("normal", "msi-applied", None),
+    ("retry", "msi-already-applied", None),
+    ("rollback", "msi-previous-preserved", None),
+    ("busy", "msi-installer-busy", None),
+    ("reboot", "msi-reboot-required", None),
+    ("mixed-state", "msi-state-unverified", "msi-related-products-refused"),
+    ("bad-launcher", "msi-state-unverified", "msi-launcher-bytes-refused"),
+    ("api-failure", "msi-state-unverified", "msi-installer-call-failed"),
+    ("unrelated-product", None, "msi-related-products-refused"),
+    ("changed-stage", None, "msi-candidate-bytes-refused"),
+    ("missing-predecessor-guard", None, "msi-managed-predecessor-guard-refused"),
+])
+def test_apply_keeps_both_stages_locked_and_rechecks_native_state(tmp_path, monkeypatch, scenario, phase, refusal):
+    launcher = tmp_path / "Remote Ops Workspace" / "bin" / "row.exe"
+    launcher.parent.mkdir(parents=True)
+    previous_stage, candidate_stage = tmp_path / "old", tmp_path / "new"
+    candidate_stage.mkdir()
+    installer = candidate_stage / "update.msi"
+    installer.write_bytes(b"MSI input" if scenario != "changed-stage" else b"changed")
+    args = SimpleNamespace(previous_stage=previous_stage, stage=candidate_stage, previous_version="1.0.28",
+                           version="1.0.29", previous_policy=tmp_path / "previous-policy.json")
+    policy = SimpleNamespace(settings={"organization": "org", "channel": "stable", "public_key": "key",
+                                       "selected_target": "windows-x64", "minimum_version": "1.0.28"})
+    old = {"product_code": "previous-product", "package_code": "previous-package", "upgrade_code": "stock-family",
+           "launcher_payload_sha256": hashlib.sha256(b"previous").hexdigest()}
+    new = {"product_code": "new-product", "package_code": "new-package", "upgrade_code": "stock-family",
+           "asset": installer.name, "sha256": hashlib.sha256(b"MSI input").hexdigest(),
+           "launcher_payload_sha256": hashlib.sha256(b"new").hexdigest(),
+           "major_upgrade": {
+               "launch_conditions": [] if scenario == "missing-predecessor-guard" else [EXPECTED_PREDECESSOR_CONDITION],
+               "secure_properties": [EXPECTED_PREDECESSOR], "authored_expected_predecessor": False,
+           }}
+    products = [new["product_code"]] if scenario == "retry" else [old["product_code"]]
+    if scenario == "unrelated-product":
+        products.append("unrelated")
+    launcher.write_bytes(b"new" if scenario == "retry" else b"previous")
+    held, installs = [], []
+    related_calls = 0
+
+    @contextmanager
+    def verified(config, root, *, current_home, expected_version, check_consumer_deadline):
+        assert config == policy and current_home == tmp_path and check_consumer_deadline is False
+        held.append(root)
+        try:
+            yield root, expected_version, {"phase": "authenticated-staged"}
+        finally:
+            assert held.pop() == root
+
+    def package(_native, root, version, *, candidate):
+        assert held == [previous_stage, candidate_stage] and version == (args.version if candidate else args.previous_version)
+        assert root == (candidate_stage if candidate else previous_stage)
+        return new if candidate else old
+
+    def related(upgrade_code):
+        nonlocal related_calls
+        assert held == [previous_stage, candidate_stage] and upgrade_code == "stock-family"
+        related_calls += 1
+        return tuple(products)
+
+    def register(_native, selected, state):
+        assert held == [previous_stage, candidate_stage]
+        assert (selected["product_code"] in products) == (state == "installed")
+        return {"row_path": str(launcher)} if state == "installed" else {"state": "absent"}
+
+    def install(path, expected_predecessor):
+        assert held == [previous_stage, candidate_stage] and path == installer
+        assert products == [expected_predecessor] == [old["product_code"]]
+        installs.append(path)
+        if scenario == "api-failure":
+            raise OSError("native call failed")
+        if scenario in {"busy", "reboot", "rollback"}:
+            return {"busy": 1618, "reboot": 3010, "rollback": 1603}[scenario]
+        products[:] = [new["product_code"]]
+        if scenario == "mixed-state":
+            products.append(old["product_code"])
+        launcher.write_bytes(b"wrong" if scenario == "bad-launcher" else b"new")
+        return 0
+
+    native = SimpleNamespace(related_products=related, install_upgrade=install)
+    monkeypatch.setattr(msi, "Installer", lambda: native)
+    monkeypatch.setattr(msi, "load_policy", lambda _: policy)
+    monkeypatch.setattr(msi, "verified_recovered_stage", verified)
+    monkeypatch.setattr(msi, "package_identity", package)
+    monkeypatch.setattr(msi, "inspect_registration", register)
+    monkeypatch.setattr(msi, "program_files", lambda: tmp_path)
+    if phase is None:
+        with pytest.raises(msi.UpdateError, match=refusal):
+            msi.apply(args, policy, tmp_path)
+        assert not installs
+    else:
+        result = msi.apply(args, policy, tmp_path)
+        assert result["phase"] == phase and result.get("refusal") == refusal
+        assert result["previous_msi"] is old and result["candidate_msi"] is new
+        assert installs == ([] if scenario == "retry" else [installer])
+        if scenario in {"busy", "reboot", "api-failure"}:
+            assert related_calls == 2 and "installed_launcher_sha256" not in result
+        if scenario in {"normal", "retry", "rollback"}:
+            assert result["installed_launcher_sha256"] == (old if scenario == "rollback" else new)["launcher_payload_sha256"]
+    assert not held
+
+
+@pytest.mark.parametrize(("administrator", "phase", "exit_code"), [
+    (False, "refused", 1), (True, "msi-applied", 0), (True, "msi-previous-preserved", 1),
+])
+def test_apply_cli_requires_elevation_and_reports_the_verified_outcome(
+    monkeypatch, tmp_path, capsys, administrator, phase, exit_code,
+):
+    monkeypatch.setattr(msi, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(msi, "get_platform", lambda: "win-amd64")
+    monkeypatch.setattr(msi, "is_elevated_administrator", lambda: administrator)
+    calls = []
+    monkeypatch.setattr(msi, "data_dir", lambda: calls.append("lookup") or tmp_path)
+    monkeypatch.setattr(msi, "load_policy", lambda _: calls.append("policy") or object())
+    monkeypatch.setattr(msi, "apply", lambda *_: calls.append("apply") or {"phase": phase})
+    result = msi.main([
+        "apply", "--policy", "policy.json", "--stage", "new", "--version", "1.0.29",
+        "--previous-policy", "old-policy.json", "--previous-stage", "old", "--previous-version", "1.0.28",
+    ])
+    assert result == exit_code
+    assert json.loads(capsys.readouterr().out)["phase"] == phase
+    assert calls == (["lookup", "policy", "apply"] if administrator else [])

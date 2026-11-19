@@ -411,6 +411,33 @@ The `policy_locks` attachment uses schema
 and exercise distinct `allowed_protocol` and `denied_protocol` values under
 `attempts`.
 
+Use `scripts/capture_moba_professional_policy.py` to record live enforcement in
+an isolated Linux lab. Build the dependency-locked Qt fixture image with
+`scripts/build_qt_release_fixture.sh`. Start the container with `--network none`,
+drop `NET_ADMIN`, `NET_RAW`, and `SYS_ADMIN`, and mount the repository, original
+customizer bundle, and release wheel read-only. Install the wheel in the
+image's `/opt/editor` environment using `pip install --no-index --no-deps`.
+Mount a writable output directory and run the following command in the
+container with the bundle and wheel mounted at the paths shown.
+
+```bash
+version=1.0.28
+/opt/editor/bin/python -I /src/scripts/capture_moba_professional_policy.py \
+  --wheel "/input/remote_ops_workspace-${version}-py3-none-any.whl" \
+  --bundle /bundle --out /output/policy-review --local
+```
+
+Use the release's version in the wheel filename. The recorder requires a
+customizer bundle with a single `protocol=ssh` lock. It tests Telnet refusal
+and SSH allowance using loopback targets. It writes `policy-review.json`,
+`policy-capture.json`, and the original policy and bundle manifest. For a
+tagged release capture, omit `--local` and pass the GitHub Actions `GITHUB_*`
+identity into the container. Use the same release wheel and workflow attempt
+identity for the Windows installer capture. A local rehearsal still requires
+a tagged capture for acceptance. The Linux fixture tests application policy
+enforcement and Linux file permissions. Windows installer qualification
+remains a separate step.
+
 Start the GUI and authenticated Web API before installing the machine policy.
 Record the stable process IDs in `gui_process` and `web_process`, with
 `before` and `after` values. Capture the policy endpoint's HTTP status and

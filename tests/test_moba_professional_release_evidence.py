@@ -14,9 +14,34 @@ from remote_ops_workspace.moba_customizer import (
     validate_professional_deployment_evidence,
 )
 from scripts import capture_moba_professional_installers as native_capture
+from scripts import capture_moba_professional_policy as policy_capture
 from scripts import check_moba_professional_deployment_evidence as gate
 from scripts import check_release_mobaxterm_parity as published
+from scripts import isolated_linux_fixture, qt_release_capture
 from scripts import make_mobaxterm_parity_evidence_record as generator
+
+
+def test_policy_capture_rejects_modified_bundle_before_machine_installation(tmp_path, monkeypatch):
+    bundle = tmp_path / "bundle"
+    (bundle / "config").mkdir(parents=True)
+    trusted = b'{"locked_settings":[{"key":"protocol","value":"ssh"}]}'
+    (bundle / "config" / "policy.json").write_bytes(trusted.replace(b"ssh", b"rdp"))
+    (bundle / "manifest.json").write_text(json.dumps({
+        "project_version": "1.0.28",
+        "files": [{"path": "config/policy.json", "size_bytes": len(trusted),
+                   "sha256": hashlib.sha256(trusted).hexdigest()}],
+    }), encoding="utf-8")
+    monkeypatch.setattr(isolated_linux_fixture, "require_offline_container", lambda: None)
+    monkeypatch.setattr(qt_release_capture, "verify_wheel", lambda wheel: ("v1.0.28", {"name": wheel.name}))
+
+    def unexpected_provision(_policy):
+        pytest.fail("a modified bundle reached machine policy installation")
+
+    monkeypatch.setattr(policy_capture, "observe_policy", unexpected_provision)
+    output = tmp_path / "review"
+    with pytest.raises(ValueError, match="must match config/policy.json in the customizer manifest"):
+        policy_capture.capture(tmp_path / "release.whl", bundle, output, local=True)
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("damage", [None, "unreferenced", "outside-section"])

@@ -257,21 +257,26 @@ def require_policy_denial(
         raise ValueError(f"{surface} denial must show the observed protocol lock")
 
 
-def verify_policy_surfaces(root: Path, bundle: dict[str, Any], capture: dict[str, Any]) -> dict[str, Any]:
-    if capture.get("schema") != POLICY_CAPTURE_SCHEMA:
-        raise ValueError(f"machine policy capture schema must be {POLICY_CAPTURE_SCHEMA}")
-    document = attachment(root, capture.get("policy_document"), "deployed policy document")
-    policy = read_object(document, "deployed policy document")
-    deployed = hashlib.sha256(read_small(document, "deployed policy document")).hexdigest()
-    manifest = read_object(attachment(root, bundle.get("bundle_manifest"), "customizer manifest"), "customizer manifest")
+def verify_policy_document(manifest: dict[str, Any], policy_bytes: bytes) -> str:
+    deployed = hashlib.sha256(policy_bytes).hexdigest()
     files = manifest.get("files")
     rows = [
         row for row in files if isinstance(row, dict) and row.get("path") == "config/policy.json"
     ] if isinstance(files, list) else []
-    if (
-        len(rows) != 1 or rows[0].get("sha256") != deployed or rows[0].get("size_bytes") != document.stat().st_size
-        or capture.get("installed_policy_sha256") != deployed or capture.get("machine_policy_sha256") != deployed
-    ):
+    if len(rows) != 1 or rows[0].get("sha256") != deployed or rows[0].get("size_bytes") != len(policy_bytes):
+        raise ValueError("installed machine policy must match config/policy.json in the customizer manifest")
+    return deployed
+
+
+def verify_policy_surfaces(root: Path, bundle: dict[str, Any], capture: dict[str, Any]) -> dict[str, Any]:
+    if capture.get("schema") != POLICY_CAPTURE_SCHEMA:
+        raise ValueError(f"machine policy capture schema must be {POLICY_CAPTURE_SCHEMA}")
+    document = attachment(root, capture.get("policy_document"), "deployed policy document")
+    policy_bytes = read_small(document, "deployed policy document")
+    policy = decode_object(policy_bytes, "deployed policy document")
+    manifest = read_object(attachment(root, bundle.get("bundle_manifest"), "customizer manifest"), "customizer manifest")
+    deployed = verify_policy_document(manifest, policy_bytes)
+    if capture.get("installed_policy_sha256") != deployed or capture.get("machine_policy_sha256") != deployed:
         raise ValueError("installed machine policy must match config/policy.json in the customizer manifest")
     if any(capture.get(key) is not True for key in (
         "machine_policy_write_refused", "machine_policy_unchanged", "portable_policy_writable",

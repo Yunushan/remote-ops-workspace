@@ -18,6 +18,7 @@ import pytest
 from remote_ops_workspace.moba_servers import build_moba_server_config_plan
 from scripts import assemble_debian_server_evidence as assembly
 from scripts import capture_debian_server_clients as client_capture
+from scripts import check_candidate_mobaxterm_parity as candidate_parity
 from scripts import check_moba_server_release_evidence as server_evidence
 from scripts import check_release_mobaxterm_parity as release_parity
 from scripts.check_mobaxterm_parity_evidence import (
@@ -1009,6 +1010,87 @@ def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_r
         "evidence_sha256": article["evidence_file_sha256"],
         "verified_installers": article["validation_summary"]["summary"]["verified_windows_installers"],
     })]
+
+
+@pytest.mark.parametrize(("fault", "detail"), [
+    ("none", ""),
+    ("missing-review", "must index all eight"),
+    ("foreign-review", "review_url repository must match"),
+    ("wrong-source", "candidate must match the exact release repository, tag, and source SHA"),
+    ("already-accepted", "preflight requires the original workflow candidate"),
+    ("different-sealed-inventory", "reviewed SHA-256 differs from the sealed inventory"),
+    ("changed-staged-download", "SHA-256 differs from the staged candidate asset"),
+    ("different-workflow", "its dedicated workflow dispatched at the release tag"),
+    ("wrong-review-body", "does not explicitly accept this exact article evidence"),
+    ("modified-capture", "reviewed article evidence SHA-256 differs"),
+    ("colliding-inventory-filenames", "duplicate or case-colliding asset"),
+])
+def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
+    reviewed_release, monkeypatch, capsys, fault, detail,
+):
+    args = reviewed_release.args
+    root = args["evidence_root"]
+    (root / "candidates").mkdir()
+    article = "ssh-browser-26-4-smartcard"
+    index = {row["article_id"]: row["acceptance_review"].copy() for row in reviewed_release.records}
+    if fault == "missing-review":
+        index.pop(article)
+    if fault == "foreign-review":
+        index[article]["review_url"] = index[article]["review_url"].replace("example/", "foreign/")
+    (root / "candidate-reviews.json").write_text(json.dumps(index), encoding="utf-8")
+    for name, archive in reviewed_release.hosted_archives.items():
+        candidate = json.loads(json.dumps(archive.candidate))
+        if name == article and fault == "wrong-source":
+            candidate["validation_summary"]["summary"]["source_head_sha"] = "a" * 40
+        if name == article and fault == "already-accepted":
+            candidate["release_asset_bytes"] = {"verified": True}
+        (root / "candidates" / f"{name}.json").write_text(json.dumps(candidate), encoding="utf-8")
+    files = [
+        {"path": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        for path in args["assets_dir"].iterdir()
+    ]
+    if fault == "different-sealed-inventory":
+        next(row for row in files if row["path"] == reviewed_release.wheel.name)["sha256"] = "e" * 64
+    if fault == "colliding-inventory-filenames":
+        files.append({"path": files[0]["path"].upper(), "sha256": files[0]["sha256"]})
+    if fault == "changed-staged-download":
+        reviewed_release.wheel.write_bytes(b"changed staged wheel bytes")
+    if fault == "different-workflow":
+        reviewed_release.responses[reviewed_release.smartcard_run]["path"] = ".github/workflows/ci.yml"
+    if fault == "wrong-review-body":
+        reviewed_release.responses[reviewed_release.review]["body"] = "Reviewed another candidate."
+    if fault == "modified-capture":
+        (root / article / "evidence.json").write_bytes(b"modified capture")
+
+    seen = []
+    monkeypatch.setenv("GH_TOKEN", "fixture-token")
+    monkeypatch.setattr(candidate_parity, "GitHubClient", lambda *_args, **_kwargs: "fixture-client")
+    monkeypatch.setattr(release_parity, "load_registry", lambda *_args: pytest.fail("preflight used an accepted registry"))
+
+    def read_attested(client, repository, directory, tag, sha, pointer):
+        assert (client, repository, tag, sha) == ("fixture-client", args["repository"], args["tag"], args["release_sha"])
+        assert directory.is_dir() and pointer.run_id == 31 and pointer.artifact_id == 32
+        assert pointer.archive_digest == "sha256:" + "7" * 64
+        seen.append(pointer)
+        return [{"files": files}], {}
+
+    monkeypatch.setattr(candidate_parity, "read_attested_inventory", read_attested)
+    before = {path: path.read_bytes() for path in root.rglob("*.json")}
+    status = candidate_parity.main([
+        "--repository", args["repository"], "--tag", args["tag"], "--sha", args["release_sha"],
+        "--candidate-inventory", "31 32 sha256:" + "7" * 64,
+        "--assets-dir", str(args["assets_dir"]), "--evidence-root", str(root),
+        "--professional-update-origin", args["professional_update_origins"][0],
+    ])
+    output = capsys.readouterr()
+    assert {path: path.read_bytes() for path in root.rglob("*.json")} == before
+    if detail:
+        assert status == 1 and detail in output.err and not output.out
+        assert not reviewed_release.delivery_calls
+    else:
+        assert status == 0 and "8/8 reviewed candidates verified" in output.out and not output.err
+        assert len(seen) == 1 and set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
+        assert len(reviewed_release.delivery_calls) == 1 and reviewed_release.delivery_calls[0][1]["published"] is True
 
 
 @pytest.mark.parametrize(("failure", "expected"), [

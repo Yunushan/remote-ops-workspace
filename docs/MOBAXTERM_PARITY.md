@@ -60,6 +60,32 @@ compares the review's live URL, author, timestamp and acceptance line with the
 record and checks that the review follows completion of the evidence attempt's
 jobs. A pull-request review must have GitHub's `APPROVED` state.
 
+### Preflight reviewed evidence against the sealed inventory
+
+Keep the original workflow `candidate.json` for each article as
+`candidates/<article-id>.json` under the evidence root. Put a
+`candidate-reviews.json` object in the same root, keyed by all eight article
+IDs. Each value contains the GitHub `reviewer` login, the exact
+`review_url`, and the UTC `reviewed_at` timestamp.
+
+Run the preflight from the tagged checkout after
+[staging the sealed assets](runbooks/RELEASE_PROMOTION.md#stage-the-candidate-for-review).
+Use the hash-locked release verifier environment and the same GitHub
+credentials as for staging. Supply the independently approved Professional
+update origins through `RELEASE_PROFESSIONAL_UPDATE_ORIGINS`.
+
+```bash
+python scripts/check_candidate_mobaxterm_parity.py \
+  --repository "$release_repository" --tag "$release_tag" --sha "$release_sha" \
+  --candidate-inventory "$build_run_id $candidate_inventory_artifact_id $candidate_inventory_archive_digest" \
+  --assets-dir "$release_assets_dir" --evidence-root "$parity_evidence_root"
+```
+
+The preflight verifies the inventory attestation, staged asset bytes, original
+Actions archives, captured evidence, GitHub reviews, and hosted Professional
+update bytes. It reports whether the eight candidate reviews match the staged
+release. The accepted registry is written during finalization after publication.
+
 After review and immutable release publication, download the referenced
 release assets and rerun the finalizer with the same inputs, the review URL,
 login and UTC timestamp, and one `--published-release-asset name=path` for each

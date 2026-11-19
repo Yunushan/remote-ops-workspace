@@ -474,6 +474,23 @@ def audit_release(
     errors = check_mobaxterm_parity_evidence(registry=registry, require_complete=True)
     if errors:
         return errors
+    return audit_reviewed_records(
+        registry["accepted_evidence"], repository=repository, tag=tag, release_sha=release_sha,
+        assets_dir=assets_dir, evidence_root=evidence_root, professional_update_origins=professional_update_origins,
+    )
+
+
+def audit_reviewed_records(
+    records: list[dict[str, Any]],
+    *,
+    repository: str,
+    tag: str,
+    release_sha: str,
+    assets_dir: Path,
+    evidence_root: Path,
+    professional_update_origins: list[str],
+    sealed_assets: dict[str, str] | None = None,
+) -> list[str]:
     evidence_root = evidence_root.absolute()
     if not evidence_root.is_dir() or any(path_is_reparse(path) for path in (*evidence_root.parents, evidence_root)):
         return ["reviewed parity evidence root must be a real directory without linked parents"]
@@ -484,7 +501,9 @@ def audit_release(
     digests: dict[str, str] = {}
     checked_runs: dict[tuple[str, int, EvidenceWorkflow | None], tuple[str, tuple[str, str] | None]] = {}
     checked_reviews: dict[tuple[str, str, str], set[str]] = {}
-    for record in registry["accepted_evidence"]:
+    asset_kind = "published wheel" if sealed_assets is None else "sealed candidate wheel"
+    asset_scope = "downloaded release asset" if sealed_assets is None else "staged candidate asset"
+    for record in records:
         article = record["article_id"]
         source = record["release_source"]
         if record["release_tag"] != tag or source["repository"] != repository or source["head_sha"] != release_sha:
@@ -495,15 +514,19 @@ def audit_release(
             tested = record["validation_summary"]["summary"]["tested_release_asset"]
             wheel = f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl"
             if tested["name"] != wheel or record["release_target"] != "linux-x86_64":
-                errors.append(f"{article} must verify the published wheel on Linux x86_64")
+                errors.append(f"{article} must verify the {asset_kind} on Linux x86_64")
                 continue
         if article == "professional-deployment":
             asset = record["validation_summary"]["summary"]["tested_release_asset"]
             if asset["name"] != f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl" or record["release_target"] != "windows-x64":
-                errors.append(f"{article} must bind the published wheel and the branded Windows x64 deployment")
+                errors.append(f"{article} must bind the {asset_kind} and the branded Windows x64 deployment")
                 continue
 
+        before_assets = len(errors)
         for name, expected in record["artifact_sha256"].items():
+            if sealed_assets is not None and sealed_assets.get(name) != expected:
+                errors.append(f"{article} reviewed SHA-256 differs from the sealed inventory: {name}")
+                continue
             path = assets.get(name)
             if path is None:
                 errors.append(f"{article} references a missing release asset: {name}")
@@ -511,7 +534,9 @@ def audit_release(
             if name not in digests:
                 digests[name] = sha256_file(path)
             if digests[name] != expected:
-                errors.append(f"{article} SHA-256 differs from the downloaded release asset: {name}")
+                errors.append(f"{article} SHA-256 differs from the {asset_scope}: {name}")
+        if sealed_assets is not None and len(errors) != before_assets:
+            continue
 
         evidence_workflow = EVIDENCE_WORKFLOWS.get(article)
         if article == "embedded-server-suite" and record["release_target"] != "linux-x86_64":
@@ -541,7 +566,7 @@ def audit_release(
         except (OSError, RuntimeError, ValueError) as exc:
             errors.append(f"{article} {exc}")
     if not errors:
-        professional = next(row for row in registry["accepted_evidence"] if row["article_id"] == "professional-deployment")
+        professional = next(row for row in records if row["article_id"] == "professional-deployment")
         root = evidence_root / "professional-deployment"
         try:
             verify_hosted_professional_update(

@@ -99,8 +99,10 @@ or another sealed candidate. See the
 The eight parity qualification workflows accept the sealed candidate
 coordinates on the exact release tag. They verify either the standard Python
 wheel or the Debian amd64 installer from that inventory. Retain the original
-Actions ZIPs for independent review and use the immutable release downloads
-when finalizing the accepted records. Follow the
+Actions ZIPs for independent review. Once all reviews are available, run the
+[parity preflight](../MOBAXTERM_PARITY.md#preflight-reviewed-evidence-against-the-sealed-inventory)
+on the exact staging directory. Use immutable release downloads when finalizing
+the accepted records. Follow the
 [parity qualification procedure](../MOBAXTERM_PARITY.md#qualify-sealed-candidates-before-publication).
 
 ### Review the Debian amd64 upgrade and rollback result

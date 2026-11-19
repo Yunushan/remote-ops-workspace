@@ -50,13 +50,10 @@ def asset_filename(kind: str, tag: str) -> str:
     return ASSETS[kind][1].format(tag=tag, version=tag[1:])
 
 
-def materialize_asset(
+def read_attested_inventory(
     client: GitHubClient, repository: str, directory: Path, tag: str, sha: str, pointer: InventoryPointer,
-    *, kind: str,
-) -> tuple[Path, dict, dict]:
-    """Download the inventory and just the build archive owning the requested asset."""
-    artifact_name = ASSETS[kind][0]
-    filename = asset_filename(kind, tag)
+) -> tuple[list[dict], dict]:
+    """Read the exact first-attempt candidate inventory without fetching package archives."""
     observed, errors = resolve_tag_commit(client.json, tag)
     if errors or observed != sha:
         raise ValueError("live release tag does not resolve to the selected candidate SHA")
@@ -74,16 +71,26 @@ def materialize_asset(
     raw, inventory = sealed_json_artifact(
         client, metadata, CANDIDATE_INVENTORY_ARTIFACT, pointer.run_id, sha, INVENTORY_FILE,
     )
-    root = directory / tag
-    root.mkdir()
-    inventory_path = root / INVENTORY_FILE
+    inventory_path = directory / INVENTORY_FILE
     with inventory_path.open("xb") as stream:
         stream.write(raw)
     verify_candidate_attestation(
         inventory_path, repository=repository, **coordinates,
         inventory_sha256=inventory["sha256"], build_event=run["event"],
     )
-    records = validate_inventory(json.loads(raw), repository=repository, **coordinates)
+    return validate_inventory(json.loads(raw), repository=repository, **coordinates), inventory
+
+
+def materialize_asset(
+    client: GitHubClient, repository: str, directory: Path, tag: str, sha: str, pointer: InventoryPointer,
+    *, kind: str,
+) -> tuple[Path, dict, dict]:
+    """Download the inventory and just the build archive owning the requested asset."""
+    artifact_name = ASSETS[kind][0]
+    filename = asset_filename(kind, tag)
+    root = directory / tag
+    root.mkdir()
+    records, inventory = read_attested_inventory(client, repository, root, tag, sha, pointer)
     artifact = next(record for record in records if record["name"] == artifact_name)
     files = [entry for entry in artifact["files"] if isinstance(entry, dict) and entry.get("path") == filename]
     if len(files) != 1:

@@ -390,7 +390,30 @@ def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str
             f"release_source.repository {repository}, got {sorted(asset_repositories)}"
         )
 
-    review = row.get("acceptance_review")
+    review_errors, reviewer, reviewed_at = check_review_provenance(article_id, repository, row.get("acceptance_review"))
+    errors.extend(review_errors)
+    byte_proof = row.get("release_asset_bytes")
+    if not isinstance(byte_proof, dict):
+        errors.append(f"{article_id} release_asset_bytes must be an object")
+    else:
+        if byte_proof.get("verified") is not True:
+            errors.append(f"{article_id} release_asset_bytes.verified must be true")
+        if reviewer and byte_proof.get("verified_by") != reviewer:
+            errors.append(f"{article_id} release_asset_bytes.verified_by must match acceptance reviewer")
+        if reviewed_at and byte_proof.get("verified_at") != reviewed_at:
+            errors.append(f"{article_id} release_asset_bytes.verified_at must match acceptance review time")
+        byte_hashes = byte_proof.get("sha256")
+        errors.extend(check_sha_map(byte_hashes, f"{article_id} release_asset_bytes.sha256"))
+        artifact_hashes = row.get("artifact_sha256")
+        if isinstance(byte_hashes, dict) and isinstance(artifact_hashes, dict) and byte_hashes != artifact_hashes:
+            errors.append(
+                f"{article_id} release_asset_bytes.sha256 must exactly match artifact_sha256"
+            )
+    return errors
+
+
+def check_review_provenance(article_id: str, repository: str, review: Any) -> tuple[list[str], str, str]:
+    errors: list[str] = []
     reviewer = ""
     reviewed_at = ""
     if not isinstance(review, dict):
@@ -416,24 +439,7 @@ def check_acceptance_provenance(article_id: str, release_tag: str, row: dict[str
         else:
             reviewed_at = str(raw_reviewed_at)
 
-    byte_proof = row.get("release_asset_bytes")
-    if not isinstance(byte_proof, dict):
-        errors.append(f"{article_id} release_asset_bytes must be an object")
-    else:
-        if byte_proof.get("verified") is not True:
-            errors.append(f"{article_id} release_asset_bytes.verified must be true")
-        if reviewer and byte_proof.get("verified_by") != reviewer:
-            errors.append(f"{article_id} release_asset_bytes.verified_by must match acceptance reviewer")
-        if reviewed_at and byte_proof.get("verified_at") != reviewed_at:
-            errors.append(f"{article_id} release_asset_bytes.verified_at must match acceptance review time")
-        byte_hashes = byte_proof.get("sha256")
-        errors.extend(check_sha_map(byte_hashes, f"{article_id} release_asset_bytes.sha256"))
-        artifact_hashes = row.get("artifact_sha256")
-        if isinstance(byte_hashes, dict) and isinstance(artifact_hashes, dict) and byte_hashes != artifact_hashes:
-            errors.append(
-                f"{article_id} release_asset_bytes.sha256 must exactly match artifact_sha256"
-            )
-    return errors
+    return errors, reviewer, reviewed_at
 
 
 def check_required_checks(row: dict[str, Any], spec: ArticleSpec) -> list[str]:

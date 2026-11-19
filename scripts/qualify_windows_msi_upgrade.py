@@ -312,12 +312,12 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
             and applied["previous_launcher_sha256"] == before["launcher_sha256"]
             and applied["installed_launcher_sha256"] == new["launcher_payload_sha256"],
             "managed apply did not verify the installed candidate")
-    repeated = update("apply")
+    repeated = update("update")
     report["managed_retry"] = repeated
     save()
     require(repeated["phase"] == "msi-already-applied"
             and repeated["installed_launcher_sha256"] == new["launcher_payload_sha256"],
-            "managed apply retry did not recognize the exact installed candidate")
+            "managed update retry did not recognize the exact installed candidate")
     upgraded = launcher_snapshot(native, filesystem, new, launcher, home)
     inspect_registration(native, old, "absent")
     require(upgraded["launcher_sha256"] != before["launcher_sha256"], "successful upgrade retained the previous launcher bytes")

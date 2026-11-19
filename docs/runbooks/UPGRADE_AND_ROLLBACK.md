@@ -310,8 +310,8 @@ restored product registration, launcher SHA-256, and CLI version with the
 baseline. The workflow stages both provenance-verified MSI files on private
 NTFS using the managed CLI and a disposable signed loopback HTTPS feed. After
 cancellation it runs managed preflight against the restored predecessor and
-applies the staged candidate with the feed offline. It verifies that a second
-apply recognizes the exact installed candidate and that the candidate
+applies the staged candidate with the feed offline. It verifies that an
+offline `update` retry recognizes the exact installed candidate and that the candidate
 uninstalls cleanly. The workflow
 checkout takes the encrypted pre-upgrade backup, which also covers older
 predecessors that can read and write the fixture but lack the backup command.
@@ -375,7 +375,24 @@ cabinet. It requires the installed predecessor's launcher
 to match its MSI byte for byte and returns `install_permitted: false`. Windows
 certificate checks may contact configured trust services.
 
-#### Apply the verified update
+#### Stage and apply in one command
+
+Close the application and complete the encrypted workspace backup first. Use
+elevated Windows x64 Python and the same trust policies, versions, and workspace
+selection as preflight. Choose distinct private NTFS stage leaves under qualified
+parent directories. The command downloads an authenticated asset set for each
+missing stage leaf. It revalidates existing stages from disk and refuses a stage
+that cannot be recovered under the selected trust policy.
+
+```powershell
+python -I scripts/managed_windows_msi.py update --policy $candidatePolicy --stage $candidateStage --version $candidateVersion --previous-policy $previousPolicy --previous-stage $previousStage --previous-version $previousVersion
+```
+
+The command applies the same signature, installer, and installed-predecessor
+checks as `apply`. It can retry with both stages retained and the update feed
+offline. Windows certificate checks still use the configured trust services.
+
+#### Apply from the retained stages
 
 Close the application and complete the encrypted workspace backup before
 starting the upgrade. Use an elevated Windows x64 Python environment and
@@ -394,7 +411,7 @@ The staging deadline covers authentication and verification. The command waits
 for Windows Installer while the verified files remain held.
 
 `msi-applied` means the exact candidate registration and launcher were verified.
-Reissuing the same command reports `msi-already-applied` if that state is
+Reissuing either command reports `msi-already-applied` if that state is
 already present. `msi-previous-preserved` reports a failed install with the
 exact predecessor verified. An installer-busy or reboot-required result calls
 for waiting or restarting Windows before retrying. `msi-state-unverified`

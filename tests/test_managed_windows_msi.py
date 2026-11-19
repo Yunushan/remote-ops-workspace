@@ -263,11 +263,88 @@ def test_apply_keeps_both_stages_locked_and_rechecks_native_state(tmp_path, monk
     assert not held
 
 
+@pytest.mark.parametrize(("previous_state", "candidate_state", "downloads", "refusal"), [
+    ("missing", "missing", ("previous", "candidate"), None),
+    ("verified", "missing", ("candidate",), None),
+    ("missing", "verified", ("previous",), None),
+    ("verified", "verified", (), None),
+    ("incomplete", "missing", (), "update-stage-refused"),
+    ("verified", "incomplete", (), "update-stage-refused"),
+])
+def test_update_fetches_only_missing_stages_and_holds_the_verified_pair(
+    tmp_path, monkeypatch, previous_state, candidate_state, downloads, refusal,
+):
+    workspace = tmp_path / "home"
+    args = SimpleNamespace(previous_stage=tmp_path / "previous", stage=tmp_path / "candidate",
+                           previous_version="1.0.28", version="1.0.29", previous_policy=tmp_path / "previous.json")
+    settings = {"organization": "org", "channel": "stable", "public_key": "key",
+                "selected_target": msi.TARGET, "minimum_version": args.previous_version}
+    previous_policy, candidate_policy = SimpleNamespace(settings=settings), SimpleNamespace(settings=settings.copy())
+    stages = {
+        args.previous_stage: (previous_state, args.previous_version, previous_policy),
+        args.stage: (candidate_state, args.version, candidate_policy),
+    }
+    for root, (state, _, _) in stages.items():
+        if state != "missing":
+            root.mkdir()
+    held, fetched, installed = [], [], []
+    native = object()
+
+    def stage(policy, path, *, current_home, expected_version):
+        state, version, expected_policy = stages[path]
+        assert state == "missing" and policy is expected_policy and current_home == workspace and version == expected_version
+        assert held == ([args.previous_stage] if path == args.stage else [])
+        path.mkdir()
+        fetched.append(path.name)
+
+    @contextmanager
+    def recover(policy, path, *, current_home, expected_version, check_consumer_deadline):
+        state, version, expected_policy = stages[path]
+        assert path.is_dir() and policy is expected_policy and current_home == workspace and version == expected_version
+        assert check_consumer_deadline is False
+        if state == "incomplete":
+            raise msi.UpdateError("update-stage-refused")
+        held.append(path)
+        try:
+            yield path, version, {"phase": "authenticated-staged"}
+        finally:
+            assert held.pop() == path
+
+    def package(installer, path, version, *, candidate):
+        assert installer is native and held == list(stages)
+        assert (candidate, version) == (path == args.stage, stages[path][1])
+        return {"asset": f"{path.name}.msi", "product_code": version, "package_code": version}
+
+    def install(installer, previous, candidate, path, launcher):
+        assert installer is native and held == list(stages)
+        assert previous["asset"] == "previous.msi" and candidate["asset"] == "candidate.msi"
+        assert path == args.stage / "candidate.msi" and launcher == tmp_path / "row.exe"
+        installed.append(path)
+        return {"phase": "msi-applied"}
+
+    monkeypatch.setattr(msi, "Installer", lambda: native)
+    monkeypatch.setattr(msi, "load_policy", lambda _: previous_policy)
+    monkeypatch.setattr(msi, "stage_update", stage)
+    monkeypatch.setattr(msi, "verified_recovered_stage", recover)
+    monkeypatch.setattr(msi, "package_identity", package)
+    monkeypatch.setattr(msi, "apply_verified_pair", install)
+    monkeypatch.setattr(msi, "stock_launcher", lambda: tmp_path / "row.exe")
+    if refusal:
+        with pytest.raises(msi.UpdateError, match=refusal):
+            msi.apply(args, candidate_policy, workspace, stage_missing=True)
+        assert not installed
+    else:
+        result = msi.apply(args, candidate_policy, workspace, stage_missing=True)
+        assert result["phase"] == "msi-applied" and installed == [args.stage / "candidate.msi"]
+    assert fetched == list(downloads) and not held
+
+
+@pytest.mark.parametrize("action", ["apply", "update"])
 @pytest.mark.parametrize(("administrator", "phase", "exit_code"), [
     (False, "refused", 1), (True, "msi-applied", 0), (True, "msi-previous-preserved", 1),
 ])
 def test_apply_cli_requires_elevation_and_reports_the_verified_outcome(
-    monkeypatch, tmp_path, capsys, administrator, phase, exit_code,
+    monkeypatch, tmp_path, capsys, action, administrator, phase, exit_code,
 ):
     monkeypatch.setattr(msi, "sys", SimpleNamespace(platform="win32"))
     monkeypatch.setattr(msi, "get_platform", lambda: "win-amd64")
@@ -275,9 +352,13 @@ def test_apply_cli_requires_elevation_and_reports_the_verified_outcome(
     calls = []
     monkeypatch.setattr(msi, "data_dir", lambda: calls.append("lookup") or tmp_path)
     monkeypatch.setattr(msi, "load_policy", lambda _: calls.append("policy") or object())
-    monkeypatch.setattr(msi, "apply", lambda *_: calls.append("apply") or {"phase": phase})
+    def apply(*_, stage_missing=False):
+        assert stage_missing == (action == "update")
+        calls.append("apply")
+        return {"phase": phase}
+    monkeypatch.setattr(msi, "apply", apply)
     result = msi.main([
-        "apply", "--policy", "policy.json", "--stage", "new", "--version", "1.0.29",
+        action, "--policy", "policy.json", "--stage", "new", "--version", "1.0.29",
         "--previous-policy", "old-policy.json", "--previous-stage", "old", "--previous-version", "1.0.28",
     ])
     assert result == exit_code

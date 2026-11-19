@@ -1,4 +1,4 @@
-"""Stage, preflight, and apply an authenticated stock Windows x64 MSI upgrade."""
+"""Stage, preflight, and install an authenticated stock Windows x64 MSI upgrade."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import os
 import sys
 from contextlib import contextmanager
 from ctypes import wintypes as win
+from functools import partial
 from pathlib import Path
 from sysconfig import get_platform
 
@@ -89,7 +90,21 @@ def program_files() -> Path:
 
 
 @contextmanager
-def verified_pair(args, policy, workspace: Path, native: Installer, *, applying: bool = False):
+def managed_stage(policy, stage: Path, workspace: Path, version: str, *, stage_missing: bool, applying: bool):
+    if stage_missing:
+        try:
+            stage.lstat()
+        except FileNotFoundError:
+            stage_update(policy, stage, current_home=workspace, expected_version=version)
+    with verified_recovered_stage(policy, stage, current_home=workspace, expected_version=version,
+                                 check_consumer_deadline=not applying) as verified:
+        yield verified
+
+
+@contextmanager
+def verified_pair(
+    args, policy, workspace: Path, native: Installer, *, applying: bool = False, stage_missing: bool = False,
+):
     previous_version = _release_version(args.previous_version)
     require(previous_version < _release_version(args.version), "update-version-not-newer")
     previous_policy = load_policy(args.previous_policy)
@@ -101,12 +116,10 @@ def verified_pair(args, policy, workspace: Path, native: Installer, *, applying:
             "managed-update-directories-overlap")
 
     with (
-        verified_recovered_stage(previous_policy, previous_stage, current_home=workspace,
-                                 expected_version=args.previous_version,
-                                 check_consumer_deadline=not applying) as (old_root, old_manifest, old_result),
-        verified_recovered_stage(policy, stage, current_home=workspace,
-                                 expected_version=args.version,
-                                 check_consumer_deadline=not applying) as (new_root, new_manifest, new_result),
+        managed_stage(previous_policy, previous_stage, workspace, args.previous_version,
+                      stage_missing=stage_missing, applying=applying) as (old_root, old_manifest, old_result),
+        managed_stage(policy, stage, workspace, args.version,
+                      stage_missing=stage_missing, applying=applying) as (new_root, new_manifest, new_result),
     ):
         previous = package_identity(native, old_root, old_manifest, candidate=False)
         candidate = package_identity(native, new_root, new_manifest, candidate=True)
@@ -191,9 +204,10 @@ def is_elevated_administrator() -> bool:
     return bool(check())
 
 
-def apply(args, policy, workspace: Path) -> dict:
+def apply(args, policy, workspace: Path, *, stage_missing: bool = False) -> dict:
     native = Installer()
-    with verified_pair(args, policy, workspace, native, applying=True) as (previous, candidate, path, details):
+    with verified_pair(args, policy, workspace, native, applying=True,
+                       stage_missing=stage_missing) as (previous, candidate, path, details):
         outcome = apply_verified_pair(native, previous, candidate, path, stock_launcher())
         return {**details, **outcome}
 
@@ -204,19 +218,21 @@ def main(argv=None) -> int:
     stage = actions.add_parser("stage", help="stage a signed asset set for an exact version")
     check = actions.add_parser("preflight", help="verify the staged candidate and rollback MSIs")
     install = actions.add_parser("apply", help="apply the staged MSI with native rollback on failure")
-    operations = {"preflight": preflight, "apply": apply}
-    for command in (stage, check, install):
+    update = actions.add_parser("update", help="stage missing signed MSIs and apply with native rollback")
+    operations = {"preflight": preflight, "apply": apply, "update": partial(apply, stage_missing=True)}
+    for command in (stage, check, install, update):
         command.add_argument("--policy", type=Path, required=True)
         command.add_argument("--stage", type=Path, required=True)
         command.add_argument("--version", required=True)
-    for command in (check, install):
+    for command in (check, install, update):
         command.add_argument("--previous-policy", type=Path, required=True)
         command.add_argument("--previous-stage", type=Path, required=True)
         command.add_argument("--previous-version", required=True)
     args = parser.parse_args(argv)
+    applying = args.action in {"apply", "update"}
     try:
         require(sys.platform == "win32" and get_platform() == "win-amd64", "windows-x64-required")
-        if args.action == "apply":
+        if applying:
             require(is_elevated_administrator(), "elevated-windows-administrator-required")
         workspace = data_dir()
         policy = load_policy(args.policy)
@@ -227,11 +243,11 @@ def main(argv=None) -> int:
         print(json.dumps({"phase": "refused", "refusal": str(exc), "install_permitted": False}))
         return 1
     except (OSError, ValueError):
-        refusal = "windows-msi-input-refused" if args.action == "apply" else "windows-msi-preflight-input-refused"
+        refusal = "windows-msi-input-refused" if applying else "windows-msi-preflight-input-refused"
         print(json.dumps({"phase": "refused", "refusal": refusal, "install_permitted": False}))
         return 1
     print(json.dumps(result, indent=2))
-    return int(args.action == "apply" and result["phase"] not in APPLIED_PHASES)
+    return int(applying and result["phase"] not in APPLIED_PHASES)
 
 
 if __name__ == "__main__":

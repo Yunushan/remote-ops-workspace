@@ -348,7 +348,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
             assert registered == {"previous"}
             digest = "a" * 64 if scenario == "wrong-preflight-launcher" else upgrade.fingerprint(launcher)
             return {"phase": "msi-preflight-passed", "previous_launcher_sha256": digest}
-        assert action == "apply"
+        assert action in ("apply", "update")
         return managed.apply_verified_pair(native, previous[1], candidate[1], candidate[0], launcher)
 
     workspace_operations = []
@@ -390,7 +390,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         assert report["previous_restored"] == report["previous_installed"]
         assert report["previous_reinstalled"] == report["previous_installed"]
         assert report["managed_preflight"]["phase"] == "msi-preflight-passed"
-        assert update_actions == ["preflight", "apply", "apply"]
+        assert update_actions == ["preflight", "apply", "update"]
         assert report["managed_apply"]["phase"] == "msi-applied"
         assert report["managed_retry"]["phase"] == "msi-already-applied"
         assert report["workspace_recovery"] == {"restored_matches_pre_upgrade": True}

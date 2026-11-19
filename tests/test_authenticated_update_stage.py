@@ -660,6 +660,8 @@ def test_stage_closes_all_owned_generators_after_atomic_refusal(monkeypatch, tmp
 
 def cli_functions():
     """Execute only actual parser/three new CLI functions under explicit mocks."""
+    from remote_ops_workspace.cli_transfers import add_transfer_commands
+
     source = (Path(channel.__file__).parent / "cli.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     wanted = {"build_parser", "_customizer_authenticated_stage", "cmd_customizer_update_stage",
@@ -670,6 +672,7 @@ def cli_functions():
              if isinstance(node, ast.Name) and node.id.startswith("cmd_")}
     namespace = {name: lambda _args: 0 for name in names}
     namespace.update(__package__="remote_ops_workspace", argparse=argparse, json=json,
+                     add_transfer_commands=add_transfer_commands,
                      Path=Path, __version__=channel.__version__,
                      DEFAULT_PLUGIN_CHECK_HOST="unrelated-parser-mock.invalid",
                      DEFAULT_PLUGIN_CHECK_USERNAME="unrelated-parser-mock",

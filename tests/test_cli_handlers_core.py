@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli
+from remote_ops_workspace import cli, cli_reports, cli_transfers
 from remote_ops_workspace.models import Profile
 
 
@@ -182,40 +182,40 @@ def test_setup_profile_connect_and_doctor_handlers(monkeypatch, capsys, tmp_path
         executables={"ssh": {"ssh": True}, "rdp": {"mstsc": False}},
         protocol_status={"ssh": {"summary": "ready"}},
     )
-    monkeypatch.setattr(cli, "run_doctor", lambda: doctor)
+    monkeypatch.setattr(cli_reports, "run_doctor", lambda: doctor)
     assert cli.cmd_doctor(_ns(json=True)) == 0
     assert cli.cmd_doctor(_ns(json=False)) == 0
-    assert cli._doctor_executable_summary({"ssh": True, "plink": False}) == "ssh"
-    assert cli._doctor_executable_summary({"ssh": False}) == "missing"
+    assert cli_reports._doctor_executable_summary({"ssh": True, "plink": False}) == "ssh"
+    assert cli_reports._doctor_executable_summary({"ssh": False}) == "missing"
     assert "no profiles" in capsys.readouterr().out
 
 
 def test_feature_and_plugin_handler_output_branches(monkeypatch, capsys) -> None:
     manifest = {"features": ["ssh"]}
-    monkeypatch.setattr(cli, "load_feature_manifest", lambda: manifest)
+    monkeypatch.setattr(cli_reports, "load_feature_manifest", lambda: manifest)
     monkeypatch.setattr(
-        cli,
+        cli_reports,
         "feature_summary",
         lambda: [{"id": "ssh", "status": "ready", "coverage": "complete"}],
     )
     assert cli.cmd_features(_ns(json=True, coverage=False)) == 0
     assert cli.cmd_features(_ns(json=False, coverage=False)) == 0
 
-    assert cli._protected_platform_row_provenance_note({}) == ""
+    assert cli_reports._protected_platform_row_provenance_note({}) == ""
     assert (
-        cli._protected_platform_row_provenance_note(
+        cli_reports._protected_platform_row_provenance_note(
             {"accepted_evidence_required_targets": ["linux"], "release_backed_readiness_complete": True}
         )
         == "; release-backed proof complete"
     )
     assert (
-        cli._protected_platform_row_provenance_note(
+        cli_reports._protected_platform_row_provenance_note(
             {"accepted_evidence_required_targets": ["linux"], "accepted_evidence_record_complete": True}
         )
         == "; accepted records complete, release assets pending"
     )
     assert (
-        cli._protected_platform_row_provenance_note({"accepted_evidence_required_targets": ["linux"]})
+        cli_reports._protected_platform_row_provenance_note({"accepted_evidence_required_targets": ["linux"]})
         == "; accepted records/release assets pending"
     )
 
@@ -356,8 +356,8 @@ def test_platform_and_coverage_reports_cover_optional_sections(monkeypatch) -> N
         "evidence_summary": {"features_with_evidence": 1, "total_features": 1},
         "workflow_parity_contract": {"label": "strict"},
     }
-    monkeypatch.setattr(cli, "load_platform_targets", lambda: targets)
-    monkeypatch.setattr(cli, "coverage_report", lambda: report)
+    monkeypatch.setattr(cli_reports, "load_platform_targets", lambda: targets)
+    monkeypatch.setattr(cli_reports, "coverage_report", lambda: report)
 
     assert cli.cmd_platforms(_ns(json=True)) == 0
     assert cli.cmd_platforms(_ns(json=False)) == 0
@@ -808,8 +808,8 @@ def test_cli_helpers_cover_validation_and_formatting(monkeypatch, capsys) -> Non
     monkeypatch.setattr(cli, "getpass", lambda _prompt: "typed-secret")
     assert cli._vault_secret_value(_ns(secret_env=None, stdin=False)) == "typed-secret"
 
-    cli._print_local_preview({"path": "missing", "kind": "missing", "exists": False})
-    cli._print_local_preview(
+    cli_transfers._print_local_preview({"path": "missing", "kind": "missing", "exists": False})
+    cli_transfers._print_local_preview(
         {
             "path": "file.txt",
             "kind": "file",
@@ -822,7 +822,7 @@ def test_cli_helpers_cover_validation_and_formatting(monkeypatch, capsys) -> Non
             "error": "preview error",
         }
     )
-    cli._print_local_preview(
+    cli_transfers._print_local_preview(
         {
             "path": "empty",
             "kind": "directory",
@@ -856,20 +856,20 @@ def test_cli_helpers_cover_validation_and_formatting(monkeypatch, capsys) -> Non
         stdout="stdout\n",
         stderr="stderr\n",
     )
-    cli._print_sftp_queue_result(queue_plan, queue_result)
+    cli_transfers._print_sftp_queue_result(queue_plan, queue_result)
     queue_result.dry_run = False
     queue_result.ok = False
     queue_result.returncode = 3
     queue_result.progress = []
     queue_result.stdout = ""
     queue_result.stderr = ""
-    cli._print_sftp_queue_result(queue_plan, queue_result)
+    cli_transfers._print_sftp_queue_result(queue_plan, queue_result)
     queue_result.ok = True
-    cli._print_sftp_queue_result(queue_plan, queue_result)
+    cli_transfers._print_sftp_queue_result(queue_plan, queue_result)
 
     plan = _Record(batch_commands=["ls"], notes=["note"])
-    cli._print_sftp_plan(plan, show_batch=True)
-    cli._print_sftp_plan(plan, show_batch=False)
+    cli_transfers._print_sftp_plan(plan, show_batch=True)
+    cli_transfers._print_sftp_plan(plan, show_batch=False)
 
     broadcast = _Record(
         profile_name="edge",

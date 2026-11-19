@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli
+from remote_ops_workspace import cli, cli_transfers
 from remote_ops_workspace.models import Profile
 
 
@@ -78,7 +78,7 @@ class _ProfileStore:
 
 def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
     profile = Profile(name="edge", protocol="ssh", host="192.0.2.10")
-    monkeypatch.setattr(cli, "ProfileStore", lambda: _ProfileStore(profile))
+    monkeypatch.setattr(cli_transfers, "ProfileStore", lambda: _ProfileStore(profile))
     plan = _sftp_plan()
     builders = [
         "build_sftp_interactive_plan",
@@ -92,9 +92,9 @@ def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
         "build_sftp_remote_preview_plan",
     ]
     for name in builders:
-        monkeypatch.setattr(cli, name, lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "run_sftp_interactive", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(cli, "run_sftp_batch", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(cli_transfers, name, lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_transfers, "run_sftp_interactive", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli_transfers, "run_sftp_batch", lambda *_args, **_kwargs: None)
 
     assert cli.cmd_files_open(_ns(profile="edge", dry_run=True)) == 0
     assert cli.cmd_files_ls(_ns(profile="edge", remote="/tmp", dry_run=True)) == 0
@@ -143,9 +143,9 @@ def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
         stdout="",
         stderr="",
     )
-    monkeypatch.setattr(cli, "parse_transfer_item_spec", lambda _spec: item)
-    monkeypatch.setattr(cli, "build_sftp_queue_plan", lambda *_args, **_kwargs: plan)
-    monkeypatch.setattr(cli, "run_sftp_queue", lambda *_args, **_kwargs: queue_result)
+    monkeypatch.setattr(cli_transfers, "parse_transfer_item_spec", lambda _spec: item)
+    monkeypatch.setattr(cli_transfers, "build_sftp_queue_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(cli_transfers, "run_sftp_queue", lambda *_args, **_kwargs: queue_result)
     queue_args = _ns(profile="edge", op=["get /a ./a"], force=False, dry_run=True, json=True)
     assert cli.cmd_files_queue(queue_args) == 0
     queue_args.json = False
@@ -164,7 +164,7 @@ def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
         text="hello",
         error="",
     )
-    monkeypatch.setattr(cli, "preview_local_path", lambda *_args, **_kwargs: preview)
+    monkeypatch.setattr(cli_transfers, "preview_local_path", lambda *_args, **_kwargs: preview)
     preview_args = _ns(path=Path("note.txt"), bytes=100, entries=10, json=True)
     assert cli.cmd_files_preview_local(preview_args) == 0
     preview_args.json = False
@@ -180,16 +180,16 @@ def test_file_transfer_handlers_cover_all_command_shapes(monkeypatch) -> None:
 
 def test_ssh_browser_handlers_cover_preferences_and_reviews(monkeypatch) -> None:
     profile = Profile(name="edge", protocol="ssh", host="192.0.2.10")
-    monkeypatch.setattr(cli, "ProfileStore", lambda: _ProfileStore(profile))
+    monkeypatch.setattr(cli_transfers, "ProfileStore", lambda: _ProfileStore(profile))
     preferences = _Record(
         location="side-by-side",
         overwrite_confirmation=True,
         column_widths={"name": 220, "size": 100},
         updated_at="now",
     )
-    monkeypatch.setattr(cli, "load_moba_ssh_browser_preferences", lambda: preferences)
-    monkeypatch.setattr(cli, "update_moba_ssh_browser_location", lambda _location: preferences)
-    monkeypatch.setattr(cli, "update_moba_ssh_browser_columns", lambda _widths: preferences)
+    monkeypatch.setattr(cli_transfers, "load_moba_ssh_browser_preferences", lambda: preferences)
+    monkeypatch.setattr(cli_transfers, "update_moba_ssh_browser_location", lambda _location: preferences)
+    monkeypatch.setattr(cli_transfers, "update_moba_ssh_browser_columns", lambda _widths: preferences)
     assert cli.cmd_ssh_browser_status(_ns(json=True)) == 0
     assert cli.cmd_ssh_browser_status(_ns(json=False)) == 0
     preferences.overwrite_confirmation = False
@@ -210,7 +210,7 @@ def test_ssh_browser_handlers_cover_preferences_and_reviews(monkeypatch) -> None
         browser_visible=True,
         notes=["open note"],
     )
-    monkeypatch.setattr(cli, "build_moba_ssh_browser_open_plan", lambda _profile: plan)
+    monkeypatch.setattr(cli_transfers, "build_moba_ssh_browser_open_plan", lambda _profile: plan)
     assert cli.cmd_ssh_browser_open_plan(_ns(profile="edge", json=True)) == 0
     assert cli.cmd_ssh_browser_open_plan(_ns(profile="edge", json=False)) == 0
     plan.terminal_visible = False
@@ -223,7 +223,7 @@ def test_ssh_browser_handlers_cover_preferences_and_reviews(monkeypatch) -> None
         prompt="Overwrite?",
         notes=["review note"],
     )
-    monkeypatch.setattr(cli, "review_moba_ssh_browser_overwrite", lambda *_args, **_kwargs: review)
+    monkeypatch.setattr(cli_transfers, "review_moba_ssh_browser_overwrite", lambda *_args, **_kwargs: review)
     overwrite_args = _ns(
         action="upload",
         source="a",

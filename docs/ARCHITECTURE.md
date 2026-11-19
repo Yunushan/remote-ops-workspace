@@ -87,6 +87,14 @@ Sync backends, terminal widgets, vault backends and network-tool plugins remain
 future extension points. They should not be represented as active integrations
 until they have a caller path equivalent to the protocol-launch path above.
 
+## Command-line interface
+
+`cli.py` registers the root commands and handles argument parsing and error
+reporting. `cli_reports.py` formats diagnostic, platform, and feature reports.
+`cli_transfers.py` registers the `files` and `ssh-browser` commands and renders
+their results. The underlying transfer plans and browser preferences live in
+`file_transfer.py` and `moba_ssh_browser.py`.
+
 ## Desktop GUI subsystem
 
 The PyQt6 desktop shell is split across a family of `gui_*` modules so that the

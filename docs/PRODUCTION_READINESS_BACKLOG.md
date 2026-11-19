@@ -168,6 +168,8 @@ Rules:
   geometry updates, and terminal input policy during switches.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
+  `cli_transfers.py` owns file transfer and SSH-browser command registration
+  and output. `cli_reports.py` formats diagnostic and readiness reports.
 
 ## Phase 6 - Internal certification gates (about +3)
 

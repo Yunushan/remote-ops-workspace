@@ -496,7 +496,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_ssh_browser:review_moba_ssh_browser_overwrite",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli_transfers.py": [
                 "cmd_ssh_browser_status",
                 "cmd_ssh_browser_open_plan",
                 "cmd_ssh_browser_overwrite",

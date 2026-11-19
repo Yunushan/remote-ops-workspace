@@ -15,6 +15,8 @@ from tempfile import TemporaryDirectory
 from scripts.qualify_rpm_recovery import ARCH, PACKAGE, SHA256, VERSION, sha256
 
 TARGET = "linux-x86_64"
+SCHEMA = "row.rpm-candidate-qualification.v1"
+REPORT_NAME = "rpm-recovery.json"
 PROOF = Path("build/candidate-proof") / TARGET / "finish.json"
 DRILL = Path("scripts/qualify_rpm_recovery.py")
 IMAGE = "quay.io/fedora/fedora-toolbox@sha256:0612cc841f649cda34bafbc3138a9a8eec2bc06fad6f6ad576d1a900f0b3c7da"
@@ -22,6 +24,10 @@ PREVIOUS_VERSION = "1.0.27"
 PREVIOUS_SIZE = 32_092_015
 PREVIOUS_SHA256 = "928e93ed2679fe01ce127e1393cf245df854bb6579c1356ed97cd9a5a3a1daf6"
 PREVIOUS_ASSET = 597789828
+PREVIOUS_URL = (
+    f"https://github.com/Yunushan/remote-ops-workspace/releases/download/v{PREVIOUS_VERSION}/"
+    f"{PACKAGE}-v{PREVIOUS_VERSION}-linux-{ARCH}.rpm"
+)
 CHECKS = (
     "upgrade_preserved_profiles_and_vault",
     "downgrade_refused_without_oldpackage",
@@ -119,7 +125,6 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str) -> dic
     proof = json.loads(proof_bytes)
     candidate, digest = candidate_input(root, proof, version, commit, run_id, attempt)
     filename = rpm_name(PREVIOUS_VERSION)
-    url = f"https://github.com/Yunushan/remote-ops-workspace/releases/download/v{PREVIOUS_VERSION}/{filename}"
     with TemporaryDirectory(prefix="row-rpm-candidate-") as temporary:
         previous = Path(temporary) / filename
         subprocess.run(
@@ -140,7 +145,7 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str) -> dic
                 str(PREVIOUS_SIZE),
                 "--output",
                 str(previous),
-                url,
+                PREVIOUS_URL,
             ],
             check=True,
             timeout=135,
@@ -186,7 +191,7 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str) -> dic
     if (root / PROOF).read_bytes() != proof_bytes or sha256(candidate) != digest:
         raise QualificationError("Native proof or candidate RPM changed during qualification")
     return {
-        "schema": "row.rpm-candidate-qualification.v1",
+        "schema": SCHEMA,
         "target": TARGET,
         "source_commit": commit,
         "run_id": int(run_id),
@@ -194,7 +199,7 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str) -> dic
         "workflow_ref": proof.get("workflow_ref"),
         "candidate_native_proof_sha256": hashlib.sha256(proof_bytes).hexdigest(),
         "previous_release_asset_id": PREVIOUS_ASSET,
-        "previous_release_url": url,
+        "previous_release_url": PREVIOUS_URL,
         "container_image": IMAGE,
         "receipt": receipt,
     }

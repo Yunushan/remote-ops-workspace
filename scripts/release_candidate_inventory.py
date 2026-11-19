@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts import qualify_rpm_candidate as rpm_qualification  # noqa: E402
 from scripts.managed_debian_qualification import (  # noqa: E402
     HASH,
     MANAGED_IMAGE,
@@ -39,11 +40,14 @@ from scripts.managed_debian_qualification import (  # noqa: E402
     validate_receipt,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
+MANAGED_SCHEMA_VERSION = 3
 LEGACY_SCHEMA_VERSION = 2
 BUILD_WORKFLOW = ".github/workflows/release.yml"
 CANDIDATE_INVENTORY_ARTIFACT = "release-candidate-inventory"
 MANAGED_DEBIAN_ARTIFACT = "release-managed-debian-update"
+RPM_ARTIFACT = "release-linux-rpm-recovery"
+RPM_REPORT_NAME = rpm_qualification.REPORT_NAME
 EXPECTED_ARTIFACT_NAMES = (
     "release-source-python",
     "release-windows-native-x64",
@@ -296,7 +300,7 @@ def stage(
     actual_names = set(by_name)
     expected_names = (
         set(EXPECTED_ARTIFACT_NAMES) | set(GUI_SMOKE_ARTIFACT_NAMES)
-        | set(RUNTIME_REPORT_ARTIFACT_NAMES.values()) | {MANAGED_DEBIAN_ARTIFACT}
+        | set(RUNTIME_REPORT_ARTIFACT_NAMES.values()) | {MANAGED_DEBIAN_ARTIFACT, RPM_ARTIFACT}
     )
     if actual_names != expected_names:
         raise ValueError(
@@ -331,15 +335,24 @@ def stage(
     )
     managed["receipt"] = json.loads(report)
     validate_managed_report(managed, release_tag, release_sha, run_id, run_attempt)
-    if managed_receipt_bytes(managed["receipt"]) != report:
+    if qualification_receipt_bytes(managed["receipt"]) != report:
         raise ValueError("managed Debian receipt must use the canonical JSON format")
+    repository = normalize_repository_from_api(run)
+    report, rpm = sealed_json_artifact(
+        client, by_name[RPM_ARTIFACT], RPM_ARTIFACT, run_id, release_sha, RPM_REPORT_NAME,
+    )
+    rpm["receipt"] = json.loads(report)
+    _, rpm_sha = validate_rpm_report(rpm, repository, release_tag, release_sha, run_id, run_attempt)
+    if qualification_receipt_bytes(rpm["receipt"]) != report:
+        raise ValueError("RPM recovery receipt must use the canonical JSON format")
     records = materialize_records(
         client, build_artifacts, assets_root,
         managed_deb=(release_tag, managed["receipt"]["candidate_sha256"]),
+        release_rpm=(release_tag, rpm_sha),
     )
     inventory = {
         "schema_version": SCHEMA_VERSION,
-        "repository": normalize_repository_from_api(run),
+        "repository": repository,
         "release_tag": release_tag,
         "release_sha": release_sha,
         "source_ref": f"refs/tags/{release_tag}",
@@ -349,6 +362,7 @@ def stage(
         "artifacts": records,
         "runtime_reports": runtime_reports,
         "managed_debian_update": managed,
+        "rpm_recovery": rpm,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
@@ -398,21 +412,26 @@ def sealed_json_artifact(
     }
 
 
-def managed_receipt_bytes(receipt: Any) -> bytes:
+def qualification_receipt_bytes(receipt: Any) -> bytes:
     return (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
-def validate_managed_report(record: Any, release_tag: str, release_sha: str, run_id: int, run_attempt: int) -> int:
+def validate_qualification_archive(record: Any, label: str) -> int:
     if not isinstance(record, dict) or record.keys() != {"artifact_id", "archive_digest", "sha256", "size_bytes", "receipt"}:
-        raise ValueError("managed Debian receipt is missing or invalid")
-    artifact_id = positive_int(record["artifact_id"], "managed Debian artifact id")
-    normalize_digest(record["archive_digest"], "managed Debian archive digest")
-    raw = managed_receipt_bytes(record["receipt"])
+        raise ValueError(f"{label} receipt is missing or invalid")
+    artifact_id = positive_int(record["artifact_id"], f"{label} artifact id")
+    normalize_digest(record["archive_digest"], f"{label} archive digest")
+    raw = qualification_receipt_bytes(record["receipt"])
     if (
-        positive_int(record["size_bytes"], "managed Debian report size") != len(raw)
+        positive_int(record["size_bytes"], f"{label} report size") != len(raw)
         or len(raw) > MAX_JSON_BYTES or record["sha256"] != hashlib.sha256(raw).hexdigest()
     ):
-        raise ValueError("managed Debian receipt bytes do not match the recorded digest and size")
+        raise ValueError(f"{label} receipt bytes do not match the recorded digest and size")
+    return artifact_id
+
+
+def validate_managed_report(record: Any, release_tag: str, release_sha: str, run_id: int, run_attempt: int) -> int:
+    artifact_id = validate_qualification_archive(record, "managed Debian")
     receipt = record["receipt"]
     if (
         not isinstance(receipt, dict)
@@ -444,21 +463,63 @@ def validate_managed_report(record: Any, release_tag: str, release_sha: str, run
     return artifact_id
 
 
-def require_managed_deb(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
-    name = f"remote-ops-workspace-{release_tag}-linux-amd64.deb"
+def validate_rpm_report(
+    record: Any, repository: str, release_tag: str, release_sha: str, run_id: int, run_attempt: int,
+) -> tuple[int, str]:
+    artifact_id = validate_qualification_archive(record, "RPM recovery")
+    receipt = record["receipt"]
+    expected = {
+        "schema": rpm_qualification.SCHEMA,
+        "target": rpm_qualification.TARGET,
+        "source_commit": release_sha,
+        "workflow_ref": f"{repository}/{BUILD_WORKFLOW}@refs/tags/{release_tag}",
+        "container_image": rpm_qualification.IMAGE,
+        "previous_release_asset_id": rpm_qualification.PREVIOUS_ASSET,
+        "previous_release_url": rpm_qualification.PREVIOUS_URL,
+    }
+    if (
+        not isinstance(receipt, dict)
+        or any(receipt.get(key) != value for key, value in expected.items())
+        or type(receipt.get("run_id")) is not int or receipt["run_id"] != run_id
+        or type(receipt.get("run_attempt")) is not int or receipt["run_attempt"] != run_attempt
+        or not isinstance(receipt.get("candidate_native_proof_sha256"), str)
+        or HASH.fullmatch(receipt["candidate_native_proof_sha256"]) is None
+    ):
+        raise ValueError("RPM recovery receipt does not match the release source and Actions attempt")
+    try:
+        native = receipt["receipt"]
+        candidate_sha = native["candidate"]["package_sha256"]
+        if not HASH.fullmatch(candidate_sha):
+            raise ValueError("invalid candidate RPM digest")
+        rpm_qualification.verify_receipt(native, release_tag.removeprefix("v"), candidate_sha)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise ValueError("RPM recovery receipt has invalid package identities or rollback results") from None
+    return artifact_id, candidate_sha
+
+
+def require_linux_installer(records: list[dict[str, Any]], name: str, sha256: str, label: str) -> None:
     matches = [
         file.get("sha256")
         for record in records if record["name"] == "release-linux-native-x86_64"
         for file in record["files"] if isinstance(file, dict) and file.get("path") == name
     ]
     if matches != [sha256]:
-        raise ValueError("managed Debian receipt must bind the exact candidate DEB")
+        raise ValueError(f"{label} receipt must bind the exact candidate {name.rsplit('.', 1)[1].upper()}")
+
+
+def require_managed_deb(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
+    require_linux_installer(records, f"remote-ops-workspace-{release_tag}-linux-amd64.deb", sha256, "managed Debian")
+
+
+def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
+    name = rpm_qualification.rpm_name(release_tag.removeprefix("v"))
+    require_linux_installer(records, name, sha256, "RPM recovery")
 
 
 def validate_managed_release_qualification(
     inventory: dict[str, Any], *, repository: str, release_tag: str, release_sha: str, deb_sha256: str,
 ) -> None:
-    if inventory.get("schema_version") != SCHEMA_VERSION:
+    if inventory.get("schema_version") not in (MANAGED_SCHEMA_VERSION, SCHEMA_VERSION):
         raise ValueError("production Debian qualification requires the current sealed candidate inventory")
     run_id = inventory.get("build_run_id")
     if type(run_id) is not int or run_id < 1:
@@ -641,6 +702,7 @@ def materialize_records(
     *,
     expected_records: list[dict[str, Any]] | None = None,
     managed_deb: tuple[str, str] | None = None,
+    release_rpm: tuple[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     if assets_root.is_symlink() or (
         assets_root.exists() and (not assets_root.is_dir() or any(assets_root.iterdir()))
@@ -661,6 +723,8 @@ def materialize_records(
         records = materialize_candidate_files(client, artifacts, staged_root, expected_by_name)
         if managed_deb is not None:
             require_managed_deb(records, *managed_deb)
+        if release_rpm is not None:
+            require_release_rpm(records, *release_rpm)
         if assets_root.is_symlink():
             raise ValueError("assets root became a symlink during staging")
         if assets_root.exists():
@@ -731,7 +795,7 @@ def validate_inventory(
     if not isinstance(value, dict):
         raise ValueError("approved candidate inventory must be an object")
     schema = value.get("schema_version")
-    if schema not in (LEGACY_SCHEMA_VERSION, SCHEMA_VERSION) or type(schema) is not int:
+    if schema not in (LEGACY_SCHEMA_VERSION, MANAGED_SCHEMA_VERSION, SCHEMA_VERSION) or type(schema) is not int:
         raise ValueError("approved candidate inventory schema version is unsupported")
     expected = {
         "repository": repository,
@@ -787,12 +851,20 @@ def validate_inventory(
         normalize_digest(report["archive_digest"], f"runtime report {target} archive digest")
         if positive_int(report["size_bytes"], f"runtime report {target} size") > MAX_JSON_BYTES:
             raise ValueError(f"runtime report {target} exceeds the size limit")
-    if schema == SCHEMA_VERSION or "managed_debian_update" in value:
+    if schema in (MANAGED_SCHEMA_VERSION, SCHEMA_VERSION) or "managed_debian_update" in value:
         managed = value.get("managed_debian_update")
         artifact_id = validate_managed_report(managed, release_tag, release_sha, run_id, run_attempt)
         if artifact_id in ids:
             raise ValueError(f"managed Debian report artifact id is duplicated: {artifact_id}")
+        ids.add(artifact_id)
         require_managed_deb(records, release_tag, managed["receipt"]["candidate_sha256"])
+    if schema == SCHEMA_VERSION or "rpm_recovery" in value:
+        artifact_id, rpm_sha = validate_rpm_report(
+            value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,
+        )
+        if artifact_id in ids:
+            raise ValueError(f"RPM recovery report artifact id is duplicated: {artifact_id}")
+        require_release_rpm(records, release_tag, rpm_sha)
     return sorted(records, key=lambda item: item["name"])
 
 

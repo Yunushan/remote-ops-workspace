@@ -659,6 +659,13 @@ jobs:
           python scripts/stage_debian_server_bundle.py --artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" \
             --sha256 "$SERVER_BUNDLE_SHA256" --target linux-x86_64 --out "$bundle"
           printf 'path=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
+      - name: Bind the Linux x86-64 release checkout before packaging
+        if: ${{ matrix.arch == 'x86_64' }}
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+        run: >-
+          python scripts/candidate_native_proof.py bind --target linux-x86_64
+          --expected-sha "$EXPECTED_RELEASE_SHA" --asset-dir native-dist/linux
       - name: Build Linux DEB, RPM and AppImage packages
         env:
           ROW_RELEASE_SERVER_BUNDLE: ${{ steps.debian-amd64-bundle.outputs.path }}
@@ -669,6 +676,28 @@ jobs:
         run: TARGET_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/make_linux_native.sh
       - name: Run Linux native installer smoke tests
         run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
+      - name: Qualify the exact release RPM upgrade and rollback
+        if: ${{ matrix.arch == 'x86_64' }}
+        timeout-minutes: 12
+        env:
+          EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
+        run: |
+          python scripts/candidate_native_proof.py finish --target linux-x86_64 \
+            --expected-sha "$EXPECTED_RELEASE_SHA" --asset-dir native-dist/linux \
+            --native-build-outcome success --native-smoke-outcome success
+          receipt="$(mktemp build/candidate-proof/linux-x86_64/.rpm-recovery.XXXXXXXX)"
+          trap 'rm -f -- "$receipt"' EXIT
+          python -m scripts.qualify_rpm_candidate --candidate-tag "$RELEASE_TAG" \
+            --candidate-source-sha "$EXPECTED_RELEASE_SHA" > "$receipt"
+          mv -- "$receipt" build/candidate-proof/linux-x86_64/rpm-recovery.json
+      - name: Retain release RPM upgrade and rollback results
+        if: ${{ matrix.arch == 'x86_64' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-linux-rpm-recovery
+          path: build/candidate-proof/linux-x86_64/rpm-recovery.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Qualify managed Debian upgrade and rollback
         if: ${{ matrix.arch == 'x86_64' }}
         timeout-minutes: 25

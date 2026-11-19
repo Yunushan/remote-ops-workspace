@@ -138,9 +138,9 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
         "source_sha": SHA, "run_id": str(RUN_ID), "run_attempt": "1",
         "container_image": candidate.MANAGED_IMAGE, "drill_image": candidate.MANAGED_IMAGE, "debian_depends": "",
     }
-    receipt_bytes = candidate.managed_receipt_bytes(receipt)
+    receipt_bytes = candidate.qualification_receipt_bytes(receipt)
     inventory = {
-        "schema_version": candidate.SCHEMA_VERSION, "repository": REPO,
+        "schema_version": candidate.MANAGED_SCHEMA_VERSION, "repository": REPO,
         "release_tag": tag, "release_sha": SHA, "source_ref": f"refs/tags/{tag}",
         "workflow": candidate.BUILD_WORKFLOW, "build_run_id": RUN_ID, "build_run_attempt": 1,
         "artifacts": package_artifacts, "runtime_reports": reports,

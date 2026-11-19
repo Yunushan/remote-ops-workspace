@@ -145,6 +145,20 @@ Actions attempt, and the candidate DEB. Review the offline upgrade and
 rollback outcomes there, including the manifest-change refusal when the
 optional server bundle is present. The drill uses a test signer.
 
+### Review the Linux x86-64 RPM recovery result
+
+The tagged Linux job runs the offline Fedora drill on the same RPM it
+smoke-tested. The drill upgrades from the pinned v1.0.27 RPM, checks the
+explicit downgrade, and verifies the restored profile and encrypted vault
+with the predecessor launcher.
+
+The release job retains `rpm-recovery.json` in `release-linux-rpm-recovery`.
+The sealed candidate inventory binds the receipt and its archive digest to
+the release commit, workflow attempt, and exact RPM bytes. Review the
+embedded `rpm_recovery` receipt in the inventory before signing approval.
+Inventory schema 4 carries this receipt. The reader also accepts historical
+schema 2 and 3 inventories.
+
 ### Select an optional Debian amd64 server bundle
 
 Prepare and review a gzip-compressed tar archive containing

@@ -609,6 +609,44 @@ and `gh` available. It verifies the published DEB and prints its digest and
 the exact run URL, attempt, tag and source SHA. Exercise that package in the
 lab and use those identities in the index and receipts.
 
+Use `scripts/capture_debian_server_clients.py` to generate these receipts in
+the lab. Save the printed identity as `source.json` with the five `source`
+fields listed above. Both recorder invocations use that identity and the same
+verified DEB.
+
+Prepare NFS in an offline Debian guest with only a loopback interface. Install
+the tested DEB, configure its TCP-only NFSv4 and Kerberos-privacy export, and
+obtain a ticket in the unprivileged client account's default Kerberos cache.
+Prepare a challenge file at the root of the export and leave the kernel NFS
+threads stopped. The recorder starts the packaged daemon, mounts the export
+with `sec=krb5p`, reads the challenge over NFS, and checks rejection of
+`sec=sys` before stopping the daemon.
+
+```bash
+python3 scripts/capture_debian_server_clients.py \
+  --deb "$tested_deb" --source source.json --out "$nfs_capture" \
+  nfs --hostname nfs.row.test --port 12049 --account rownfs \
+  --challenge /export/row-proof/marker.txt
+```
+
+Run the other clients as root in a fresh disposable Debian amd64 container
+with the DEB's runtime dependencies and the lab tools `curl`, `tftp-hpa`,
+OpenSSL, OpenSSH, `Xvfb`, `xsetroot`, `vncsnapshot`, ImageMagick,
+`xinetd` and an interactive Telnet client. Use an isolated Docker internal
+network without published ports, and drop `NET_ADMIN`, `NET_RAW` and
+`SYS_ADMIN`. Copy the completed NFS capture onto the container's capture
+volume. The recorder installs the DEB and runs the other seven clients
+against loopback listeners, then checks and adds the NFS receipt.
+
+```bash
+python3 scripts/capture_debian_server_clients.py \
+  --deb "$tested_deb" --source source.json --out "$captures" \
+  managed --nfs-capture "$nfs_capture"
+```
+
+Use `--local` in place of `--source` for a lab rehearsal. Those receipts
+carry local provenance and cannot be submitted to the release workflow.
+
 Complete the capture directory under a temporary sibling of the printed
 `incoming` path. Rename the directory to `incoming` on the same filesystem
 after all files are in place. Stage it within 40 minutes of the handoff step.

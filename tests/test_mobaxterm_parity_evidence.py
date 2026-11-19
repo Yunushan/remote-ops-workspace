@@ -6,6 +6,7 @@ import importlib.util
 import json
 import shlex
 import struct
+import subprocess
 import sys
 import zipfile
 import zlib
@@ -16,6 +17,7 @@ import pytest
 
 from remote_ops_workspace.moba_servers import build_moba_server_config_plan
 from scripts import assemble_debian_server_evidence as assembly
+from scripts import capture_debian_server_clients as client_capture
 from scripts import check_moba_server_release_evidence as server_evidence
 from scripts import check_release_mobaxterm_parity as release_parity
 from scripts.check_mobaxterm_parity_evidence import (
@@ -292,6 +294,49 @@ def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, 
     assert result.passed and result.summary["live_client_proof_count"] == 8
     assert audited == [evidence["release_target"]]
     assert not (output / assembly.CAPTURES_INDEX).exists()
+
+
+@pytest.mark.parametrize("change", [None, "attempt", "package", "client-failed"])
+def test_server_recorder_binds_nfs_fragment_to_the_receipts_attempt(embedded_server_bundle, tmp_path, change):
+    fixture, package, evidence, _ = embedded_server_bundle
+    nfs = next(row for row in evidence["services"] if row["service"] == "nfs")
+    source = tmp_path / "source.json"
+    source.write_text(json.dumps(evidence["source"]), encoding="utf-8")
+    fragment = tmp_path / "fragment"
+    fragment.mkdir()
+    recorder = client_capture.Recorder(fragment, tmp_path, package, source)
+    recorder.runtime = {"nfs": nfs["runtime"]}
+    receipt = json.loads((fixture / nfs["client_test"]["evidence_file"]).read_bytes())
+    files = {key: (fixture / receipt[key]["file"]).read_bytes()
+             for key in ("capture", "challenge", "mount_options", "rejected_sys_mount")}
+    actual = subprocess.CompletedProcess(receipt["argv"], int(change == "client-failed"))
+    if change == "client-failed":
+        with pytest.raises(ValueError, match="must bind a successful protocol client"):
+            recorder.record("nfs", nfs["policy"], actual, **files)
+        assert not recorder.observations
+        return
+    recorder.record("nfs", nfs["policy"], actual, **files)
+    recorder.finish()
+
+    combined = tmp_path / "combined"
+    combined.mkdir()
+    if change == "attempt":
+        source.write_text(json.dumps({**evidence["source"], "run_attempt": 3}), encoding="utf-8")
+    if change == "package":
+        package.write_bytes(b"different package")
+    receiver = client_capture.Recorder(combined, tmp_path, package, source)
+    receiver.runtime = recorder.runtime
+    if change:
+        with pytest.raises(ValueError, match="must bind this release asset and source attempt"):
+            receiver.include_nfs(fragment)
+        assert not list(combined.iterdir())
+    else:
+        receiver.include_nfs(fragment)
+        receiver.finish()
+        assert receiver.observations == recorder.observations
+        assert {entry.name: entry.read_bytes() for entry in combined.iterdir()} == {
+            entry.name: entry.read_bytes() for entry in fragment.iterdir()
+        }
 
 
 @pytest.mark.parametrize(

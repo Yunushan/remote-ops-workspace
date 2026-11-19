@@ -123,6 +123,13 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
         "automatic-explicit-rollback": {"phase": "rolled-back", "exit_code": 0, "action": "rollback",
                                         "previous_sha256": previous, "candidate_sha256": deb_digest},
     })
+    rollback = {"action": "rollback", "phase": "rolled-back", "exit_code": 0,
+                "previous_sha256": previous, "candidate_sha256": deb_digest,
+                "previous_launcher_sha256": "e" * 64}
+    receipts["candidate-apply"]["previous_launcher_sha256"] = "e" * 64
+    receipts["explicit-rollback"] = rollback
+    receipts["repeated-rollback"] = dict(rollback)
+    receipts["rollback-interruption"] = {**rollback, "phase": "rolling-back", "exit_code": -15}
     receipt = {
         "schema": DEBIAN_RECEIPT_SCHEMA, "status": "passed", "target": "linux-x86_64", "production_acceptance": False,
         "previous_sha256": previous, "candidate_sha256": deb_digest, "candidate_has_server_bundle": False,

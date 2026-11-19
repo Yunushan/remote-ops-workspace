@@ -163,6 +163,10 @@ version prevents explicit rollback. For candidates with an embedded server
 bundle, it also checks changes to the installed manifest. It interrupts
 the controller during package configuration and checks that retrying with
 `update` restores the previous launcher while the HTTPS feed is offline.
+The drill also stops the controller after `dpkg` reinstalls the exact
+predecessor and before the controller records rollback completion. It checks
+that the journal retains `rolling-back`, retrying `rollback` completes
+offline, and repeating the completed rollback leaves the journal unchanged.
 The retained `managed-debian-update.json` records the package digests,
 candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in

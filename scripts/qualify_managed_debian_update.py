@@ -27,12 +27,14 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.x509.oid import NameOID
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from remote_ops_workspace.moba_customizer import canonical_update_manifest_payload  # noqa: E402
 from remote_ops_workspace.update_channel import (  # noqa: E402
     MOBA_PROFESSIONAL_UPDATE_MANIFEST_SCHEMA,
 )
+from scripts.managed_debian_qualification import SCHEMA  # noqa: E402
 
 PACKAGE = "remote-ops-workspace"
 TARGET = "linux-x86_64"
@@ -189,28 +191,59 @@ def configured_and_unlocked(version: str) -> bool:
                        ) == f"installed {version}"
 
 
-def interrupt_controller(command_line, env, entered: Path, resume: Path, transaction: Path, version: str) -> None:
+def interrupt_controller(
+    command_line, env, entered: Path, resume: Path, transaction: Path, version: str, *, phase: str = "applying",
+) -> int:
     journal = transaction / "managed-update.json"
     with subprocess.Popen(command_line, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as process:
         try:
             await_condition(lambda: entered.is_file() or process.poll() is not None,
-                            "The candidate maintainer script did not reach its pause")
+                            f"The {phase} dpkg command did not reach its pause")
             if not entered.is_file() or process.poll() is not None:
                 raise RuntimeError("The controller exited before the interruption point")
-            if json.loads(journal.read_bytes())["phase"] != "applying":
-                raise RuntimeError("The interrupted install did not have a persisted applying journal")
+            if json.loads(journal.read_bytes())["phase"] != phase:
+                raise RuntimeError(f"The interrupted command did not persist phase {phase}")
             process.terminate()
-            if process.wait(timeout=10) != -signal.SIGTERM:
+            exit_code = process.wait(timeout=10)
+            if exit_code != -signal.SIGTERM:
                 raise RuntimeError("The controller did not exit from the controlled interruption")
         finally:
             resume.touch()
             if process.poll() is None:
                 process.kill()
-    # The owned controller has exited. Its dpkg child finishes configuring
-    # the package after the pause; wait for the database to be quiescent.
-    await_condition(lambda: configured_and_unlocked(version), "dpkg did not finish the interrupted installation")
-    if json.loads(journal.read_bytes())["phase"] != "applying":
+    # The owned controller has exited. Allow its native child to finish
+    # and confirm the package database is available before retrying.
+    await_condition(lambda: configured_and_unlocked(version), "dpkg did not finish the interrupted command")
+    if json.loads(journal.read_bytes())["phase"] != phase:
         raise RuntimeError("The interrupted transaction journal advanced unexpectedly")
+    return exit_code
+
+
+def pause_script(entered: Path, resume: Path) -> str:
+    return (
+        f"touch {shlex.quote(str(entered))}\n"
+        "for attempt in $(seq 1 300); do\n"
+        f"  if [ -f {shlex.quote(str(resume))} ]; then exit 0; fi\n"
+        "  sleep 0.1\ndone\nexit 43\n"
+    )
+
+
+@contextmanager
+def pause_dpkg_rollback(root: Path):
+    """Hold the real dpkg after reinstalling the byte-pinned predecessor."""
+    config = Path("/etc/dpkg/dpkg.cfg.d/row-managed-rollback-qualification")
+    entered = root / "rollback-entered"
+    resume = root / "rollback-resume"
+    hook = root / "pause-rollback"
+    hook.write_text("#!/bin/sh\nset -eu\n" + pause_script(entered, resume), encoding="ascii")
+    hook.chmod(0o700)
+    stream = config.open("x", encoding="ascii")
+    try:
+        with stream:
+            stream.write(f"post-invoke={shlex.quote(str(hook))}\n")
+        yield entered, resume
+    finally:
+        config.unlink()
 
 
 def qualify(args, root: Path) -> dict:
@@ -223,10 +256,7 @@ def qualify(args, root: Path) -> dict:
     resume = root / "postinst-resume"
     suspended = package_with_postinst(
         args.candidate_deb, root / "interruption",
-        f"touch {shlex.quote(str(entered))}\n"
-        "for attempt in $(seq 1 300); do\n"
-        f"  if [ -f {shlex.quote(str(resume))} ]; then exit 0; fi\n"
-        "  sleep 0.1\ndone\nexit 43\n",
+        pause_script(entered, resume),
     )
     checked("/usr/bin/dpkg", "--install", args.previous_deb)
     launcher = Path("/usr/bin/row")
@@ -344,13 +374,29 @@ def qualify(args, root: Path) -> dict:
                     if path.is_file() and sha256(path) == changed:
                         with path.open("r+b") as output:
                             output.truncate(size)
-            update("explicit-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
+            with pause_dpkg_rollback(root) as (rollback_entered, rollback_resume):
+                rollback_code = interrupt_controller(
+                    argv("rollback", "--transaction", transaction), env, rollback_entered, rollback_resume,
+                    transaction, previous, phase="rolling-back",
+                )
+            if sha256(launcher) != previous_launcher or sha256(sentinel) != original:
+                raise RuntimeError("Interrupted rollback did not restore the exact launcher and preserve workspace data")
+            receipts["rollback-interruption"] = {
+                "action": "rollback", "phase": "rolling-back", "exit_code": rollback_code,
+                "previous_sha256": args.previous_sha256, "candidate_sha256": args.candidate_sha256,
+                "previous_launcher_sha256": sha256(launcher),
+            }
+            recovered = update("explicit-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
+            completed_journal = journal.read_bytes()
+            repeated = update("repeated-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
+            if repeated != recovered or journal.read_bytes() != completed_journal:
+                raise RuntimeError("Repeating the completed rollback changed its transaction")
         if checked(launcher, "--version") != f"{PACKAGE} {previous}" or sha256(launcher) != previous_launcher:
             raise RuntimeError("Rollback did not restore the original launcher")
         if sha256(sentinel) != original:
             raise RuntimeError("The package transition changed the retained workspace data")
 
-    return {"schema": "row.managed-debian-qualification.v2", "status": "passed", "target": TARGET,
+    return {"schema": SCHEMA, "status": "passed", "target": TARGET,
             "controller_sha256": sha256(MANAGER), "previous_sha256": args.previous_sha256,
             "candidate_sha256": args.candidate_sha256, "download_server_closed_before_apply": True,
             "workspace_unchanged": True, "candidate_has_server_bundle": bundled_servers,

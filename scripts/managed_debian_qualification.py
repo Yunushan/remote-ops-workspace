@@ -3,20 +3,26 @@
 from __future__ import annotations
 
 import re
+from signal import SIGTERM
 
 REPORT_NAME = "managed-debian-update.json"
 MANAGED_IMAGE = "python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d"
 HASH = re.compile(r"[0-9a-f]{64}")
-SCHEMA = "row.managed-debian-qualification.v2"
+SCHEMA = "row.managed-debian-qualification.v3"
+AUTOMATIC_SCHEMA = "row.managed-debian-qualification.v2"
 PREVIOUS_SCHEMA = "row.managed-debian-qualification.v1"
 
 
-def validate_receipt(receipt: object, *, previous_sha: str, candidate_sha: str, require_automatic: bool = False) -> None:
+def validate_receipt(
+    receipt: object, *, previous_sha: str, candidate_sha: str,
+    require_automatic: bool = False, require_current: bool = False,
+) -> None:
     error = "managed-debian-receipt-binding-mismatch"
     if (
         not isinstance(receipt, dict)
-        or receipt.get("schema") not in (SCHEMA, PREVIOUS_SCHEMA)
-        or require_automatic and receipt.get("schema") != SCHEMA
+        or receipt.get("schema") not in (SCHEMA, AUTOMATIC_SCHEMA, PREVIOUS_SCHEMA)
+        or require_automatic and receipt.get("schema") not in (AUTOMATIC_SCHEMA, SCHEMA)
+        or require_current and receipt.get("schema") != SCHEMA
         or receipt.get("status") != "passed"
         or receipt.get("target") != "linux-x86_64"
         or receipt.get("production_acceptance") is not False
@@ -38,7 +44,7 @@ def validate_receipt(receipt: object, *, previous_sha: str, candidate_sha: str, 
         expected_steps["changed-server-manifest-rollback"] = ("refused", 1)
         refusals["changed-server-manifest-rollback"] = "installed-runtime-payload-refused"
     automatic_actions = {}
-    if receipt["schema"] == SCHEMA:
+    if receipt["schema"] in (SCHEMA, AUTOMATIC_SCHEMA):
         expected_steps.update({
             "automatic-candidate": ("applied", 0), "automatic-failing": ("rolled-back", 1),
             "automatic-explicit-rollback": ("rolled-back", 0),
@@ -47,6 +53,11 @@ def validate_receipt(receipt: object, *, previous_sha: str, candidate_sha: str, 
             "candidate-apply": "update", "interrupted-apply": "update", "automatic-candidate": "update",
             "automatic-failing": "update", "automatic-explicit-rollback": "rollback",
         }
+    if receipt["schema"] == SCHEMA:
+        expected_steps.update({"rollback-interruption": ("rolling-back", -SIGTERM), "repeated-rollback": ("rolled-back", 0)})
+        automatic_actions.update({
+            "rollback-interruption": "rollback", "explicit-rollback": "rollback", "repeated-rollback": "rollback",
+        })
     steps = receipt.get("receipts")
     if not isinstance(steps, dict) or steps.keys() != expected_steps.keys() or any(
         not isinstance(steps[name], dict)
@@ -66,4 +77,13 @@ def validate_receipt(receipt: object, *, previous_sha: str, candidate_sha: str, 
         if not isinstance(fault_sha, str) or HASH.fullmatch(fault_sha) is None or fault_sha == candidate_sha or (
             fault_sha != steps["failing-apply"].get("candidate_sha256")
         ):
+            raise ValueError(error)
+    if receipt["schema"] == SCHEMA:
+        applied = steps["candidate-apply"]
+        launcher_sha = applied.get("previous_launcher_sha256")
+        if not isinstance(launcher_sha, str) or HASH.fullmatch(launcher_sha) is None or any(
+            steps[name].get("candidate_sha256") != candidate_sha
+            or steps[name].get("previous_launcher_sha256") != launcher_sha
+            for name in ("rollback-interruption", "explicit-rollback", "repeated-rollback")
+        ) or steps["explicit-rollback"] != steps["repeated-rollback"]:
             raise ValueError(error)

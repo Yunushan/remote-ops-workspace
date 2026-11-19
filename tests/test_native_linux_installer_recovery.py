@@ -1099,7 +1099,9 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     (False, None), (True, None), (False, "digest"), (False, "interruption"),
     (False, "changed-launcher-reason"), (True, "changed-server-manifest-reason"),
     (True, "changed-server-manifest-missing"),
-    (False, "automatic-missing"), (False, "automatic-manual-action"), (False, "automatic-digest"), (False, "old-schema"),
+    (False, "automatic-missing"), (False, "automatic-manual-action"), (False, "automatic-digest"),
+    (False, "missing-rollback-interruption"), (False, "rollback-exit-code"), (False, "rollback-launcher"),
+    (False, "rollback-repeat"), (False, "old-schema"), (False, "automatic-schema"),
 ])
 def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, bundled, mismatch):
     previous = tmp_path / "previous.deb"
@@ -1154,14 +1156,33 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
         steps["candidate-apply"].update(action="update", previous_sha256="a" * 64, candidate_sha256="b" * 64)
         steps["interrupted-apply"].update(action="update", previous_sha256="a" * 64)
         steps["failing-apply"]["candidate_sha256"] = "f" * 64
+        steps["candidate-apply"]["previous_launcher_sha256"] = "e" * 64
+        rollback = {"action": "rollback", "phase": "rolled-back", "exit_code": 0,
+                    "previous_sha256": "a" * 64, "candidate_sha256": "b" * 64,
+                    "previous_launcher_sha256": "e" * 64}
+        steps["explicit-rollback"] = rollback
+        steps["repeated-rollback"] = dict(rollback)
+        steps["rollback-interruption"] = {**rollback, "phase": "rolling-back", "exit_code": -15}
+        if mismatch == "missing-rollback-interruption":
+            del steps["rollback-interruption"]
+        if mismatch == "rollback-exit-code":
+            steps["rollback-interruption"]["exit_code"] = 0
+        if mismatch == "rollback-launcher":
+            steps["rollback-interruption"]["previous_launcher_sha256"] = "f" * 64
+        if mismatch == "rollback-repeat":
+            steps["repeated-rollback"]["architecture"] = "arm64"
         if mismatch == "automatic-missing":
             del steps["automatic-failing"]
         if mismatch == "automatic-manual-action":
             steps["interrupted-apply"]["action"] = "apply"
         if mismatch == "automatic-digest":
             steps["automatic-candidate"]["candidate_sha256"] = "f" * 64
+        schemas = {"old-schema": "row.managed-debian-qualification.v1",
+                   "automatic-schema": "row.managed-debian-qualification.v2"}
+        if mismatch in schemas:
+            del steps["rollback-interruption"], steps["repeated-rollback"]
         return json.dumps({
-            "schema": "row.managed-debian-qualification.v1" if mismatch == "old-schema" else "row.managed-debian-qualification.v2",
+            "schema": schemas.get(mismatch, "row.managed-debian-qualification.v3"),
             "status": "passed", "target": module.TARGET,
             "production_acceptance": False, "previous_sha256": "a" * 64,
             "candidate_sha256": "c" * 64 if mismatch == "digest" else "b" * 64,

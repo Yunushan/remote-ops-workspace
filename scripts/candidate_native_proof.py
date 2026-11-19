@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path.cwd().resolve()
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 SCOPE = "unreleased PR candidate runtime evidence; no release, signing trust, notarization, or compliance approval"
 
 
@@ -69,7 +72,7 @@ def archive_inventory(path):
     return result
 
 
-def validate_windows_byte_binding(report, archives, target):
+def validate_windows_byte_binding(report, archives, target, assets=None):
     """Bind the smoke's observed executable bytes to the inspected CArchives.
 
     This validates candidate-produced records, not independent approval or an
@@ -111,6 +114,11 @@ def validate_windows_byte_binding(report, archives, target):
             or item.get("observed_sha256") != hashes.get(role)
         ):
             raise ValueError("candidate observed executable bytes do not match inspected PyInstaller archive")
+    probes = report.get("msi_lifecycle")
+    if assets is not None or probes:
+        from scripts.inspect_windows_msi import validate_lifecycle
+
+        validate_lifecycle(probes, target, assets)
 
 
 def validate_posix_byte_binding(report, archives, target, assets, launchers=()):
@@ -465,7 +473,7 @@ def main():
             try:
                 binding_report = json.loads(binding_path.read_text(encoding="utf-8"))
                 if args.target.startswith("windows-"):
-                    validate_windows_byte_binding(binding_report, archives, args.target)
+                    validate_windows_byte_binding(binding_report, archives, args.target, record["assets"])
                 else:
                     validate_posix_byte_binding(binding_report, archives, args.target, record["assets"], record["native_packaged_launchers"])
                 if args.native_smoke_outcome != "success":

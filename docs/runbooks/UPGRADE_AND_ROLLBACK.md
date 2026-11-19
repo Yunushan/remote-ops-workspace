@@ -202,6 +202,21 @@ the [release promotion runbook](RELEASE_PROMOTION.md).
    and both workspace directories and follow the
    [incident runbook](SECRET_ROTATION_AND_INCIDENT.md).
 
+## Windows MSI release evidence
+
+The native Windows smoke reads the stock MSI's package identity, architecture,
+and launcher component before installation. During installation and reinstall
+it checks that Windows Installer registered the exact ProductCode, PackageCode,
+version, and Program Files launcher. After uninstall it checks that the
+per-machine product registration and launcher are gone. The candidate proof
+binds these observations to the MSI's SHA-256 and the built executable bytes.
+See the [Windows Installer product query](https://learn.microsoft.com/en-us/windows/win32/api/msi/nf-msi-msigetproductinfoexw)
+and [component query](https://learn.microsoft.com/en-us/windows/win32/api/msi/nf-msi-msigetcomponentpathexw).
+
+The smoke reinstalls the same version. Cross-version upgrade and rollback
+qualification requires two approved, signed stock MSIs of the same
+architecture. The currently pinned Windows predecessor uses the EXE installer.
+
 ## Notes
 
 - Never edit `ROW_HOME` by hand during an upgrade; restore from a snapshot

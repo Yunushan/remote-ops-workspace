@@ -150,6 +150,7 @@ function Initialize-CandidateByteBinding {
     expected_executables = @()
     required_paths = $script:CandidateRequiredPaths
     observations = @()
+    msi_lifecycle = @()
   }
   Save-CandidateByteBinding
   $Cleanup = [ordered]@{
@@ -458,21 +459,26 @@ function Test-RowVault([string]$Path, [string]$Label, [bool]$ExpectedBackend) {
   }
 }
 
-function Find-MsiRowExe {
-  $Candidates = @()
-  if ($env:ProgramFiles) {
-    $Candidates += (Join-Path $env:ProgramFiles "Remote Ops Workspace\bin\row.exe")
+function Add-MsiLifecycleProbe([string]$Probe, [string]$State) {
+  $Inspector = Join-Path $PSScriptRoot "inspect_windows_msi.py"
+  $Output = & python -I $Inspector --package $Msi --architecture $Arch --version $Version --state $State
+  if ($LASTEXITCODE -ne 0) { throw "Windows Installer registration check failed at $Probe" }
+  $Snapshot = $Output | ConvertFrom-Json
+  $Registration = $Snapshot.registration
+  if ($Registration.state -cne $State) { throw "Windows Installer registration state differs at $Probe" }
+  if ($script:CandidateByteBinding.msi_lifecycle.Count -and
+      $Snapshot.package.sha256 -cne $script:CandidateByteBinding.msi_lifecycle[0].package.sha256) {
+    throw "MSI bytes changed during installer smoke"
   }
-  $ProgramFilesX86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
-  if ($ProgramFilesX86) {
-    $Candidates += (Join-Path $ProgramFilesX86 "Remote Ops Workspace\bin\row.exe")
+  $RowPath = $null
+  if ($State -eq "installed") {
+    $RowPath = $Registration.row_path
+    $Registration.row_path = Get-CandidateNormalizedPath $RowPath
+    if ($Registration.row_path -cne "msi-install/bin/row.exe") { throw "MSI did not register the stock Program Files launcher" }
   }
-  foreach ($Candidate in $Candidates) {
-    if ($Candidate -and (Test-Path $Candidate)) {
-      return $Candidate
-    }
-  }
-  throw "MSI install did not create row.exe in Program Files"
+  $script:CandidateByteBinding.msi_lifecycle += [ordered]@{ probe = $Probe; package = $Snapshot.package; registration = $Registration }
+  Save-CandidateByteBinding
+  if ($RowPath) { return $RowPath }
 }
 
 Assert-DisposableCandidateHost
@@ -553,20 +559,22 @@ if (Test-Path $ExeGui) {
   throw "EXE uninstall left row-gui.exe behind"
 }
 
-# install / verify / upgrade / uninstall smoke for the WiX .msi installer.
+# Install, reinstall and uninstall the same WiX MSI.
 $MsiLog = Join-Path $SmokeRoot "msi-smoke.log"
+$null = Add-MsiLifecycleProbe "before-install" "absent"
 Invoke-SmokeCommand "MSI install" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
-$MsiRow = Find-MsiRowExe
+$MsiRow = Add-MsiLifecycleProbe "after-install" "installed"
 Test-RowVersion $MsiRow $Version
 Test-RowRuntimeResources $MsiRow "MSI verify"
 Test-RowGuiLauncher $MsiRow $Arch
 Test-RowVault $MsiRow "MSI install" $ExpectedVaultBackend
-Invoke-SmokeCommand "MSI upgrade" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
-$MsiRow = Find-MsiRowExe
+Invoke-SmokeCommand "MSI reinstall" "msiexec.exe" @("/i", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
+$MsiRow = Add-MsiLifecycleProbe "after-reinstall" "installed"
 Test-RowVersion $MsiRow $Version
-Test-RowRuntimeResources $MsiRow "MSI upgrade"
+Test-RowRuntimeResources $MsiRow "MSI reinstall"
 Test-RowGuiLauncher $MsiRow $Arch
 Invoke-SmokeCommand "MSI uninstall" "msiexec.exe" @("/x", $Msi, "/qn", "/norestart", "/l*v", $MsiLog)
+$null = Add-MsiLifecycleProbe "after-uninstall" "absent"
 if (Test-Path $MsiRow) {
   throw "MSI uninstall left row.exe behind"
 }

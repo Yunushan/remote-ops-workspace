@@ -69,6 +69,8 @@ def test_actual_wrong_bytes_are_refused_before_execution_with_public_path_receip
         archives = [{"path": item["path"], "artifact_sha256": hashlib.sha256((tmp_path / item["path"]).read_bytes()).hexdigest(), "toc": ["fixture"]}
                     for item in receipt["expected_executables"]]
         VALIDATOR.validate_windows_byte_binding(receipt, archives, "windows-x64")
+        with pytest.raises(ValueError, match="MSI lifecycle observations are incomplete"):
+            VALIDATOR.validate_windows_byte_binding(receipt, archives, "windows-x64", [])
         # A valid smoke receipt cannot borrow completeness from different
         # inspected executable bytes, target or claimed observation digests.
         for mutation in ("archive-bytes", "observed-bytes", "missing-path", "target", "incomplete", "boolean-schema"):

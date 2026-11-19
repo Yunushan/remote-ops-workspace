@@ -21,7 +21,8 @@ def major_upgrade():
             [msi.STOCK_UPGRADE, "1.0.28", None, None, "2", None, msi.DETECT_DOWNGRADE],
         ],
         "execute_conditions": dict.fromkeys(msi.UPGRADE_ACTIONS, ""),
-        "launch_conditions": [f"NOT {msi.DETECT_DOWNGRADE}"],
+        "launch_conditions": [f"NOT {msi.DETECT_DOWNGRADE}", msi.ROLLBACK_REQUIRED_CONDITION],
+        "rollback_required_message": msi.ROLLBACK_REQUIRED_MESSAGE,
         "secure_properties": [msi.DETECT_UPGRADE, msi.DETECT_DOWNGRADE],
         "authored_detection_properties": [],
         "product_language": "0", "template_languages": ["0"],
@@ -145,6 +146,8 @@ def test_upgrade_schedule_keeps_old_product_removal_in_the_rollback_transaction(
     ("conditional-removal", "must run unconditionally"),
     ("find-after-validation", "must run unconditionally"),
     ("no-downgrade-block", "refuse installation over a newer product"),
+    ("no-rollback-guard", "require Windows Installer rollback"),
+    ("wrong-rollback-message", "require Windows Installer rollback"),
     ("missing-secure-property", "must reach the elevated installer"),
     ("preset-detection", "must reach the elevated installer"),
     ("unsupported-language", "must appear in its template summary"),
@@ -169,7 +172,11 @@ def test_compiled_upgrade_rule_must_actually_remove_the_predecessor(major_upgrad
     if defect == "find-after-validation":
         sequence["FindRelatedProducts"] = 1401
     if defect == "no-downgrade-block":
-        major_upgrade["launch_conditions"].clear()
+        major_upgrade["launch_conditions"].remove(f"NOT {msi.DETECT_DOWNGRADE}")
+    if defect == "no-rollback-guard":
+        major_upgrade["launch_conditions"].remove(msi.ROLLBACK_REQUIRED_CONDITION)
+    if defect == "wrong-rollback-message":
+        major_upgrade["rollback_required_message"] = None
     if defect == "missing-secure-property":
         major_upgrade["secure_properties"].remove(msi.DETECT_UPGRADE)
     if defect == "preset-detection":

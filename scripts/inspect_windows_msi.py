@@ -23,6 +23,8 @@ ROLLBACK_ACTIONS = ("InstallValidate", "InstallInitialize", "RemoveExistingProdu
 ROLLBACK_BREAKERS = {"DisableRollback", "ForceReboot", "ScheduleReboot"}
 DETECT_UPGRADE = "WIX_UPGRADE_DETECTED"
 DETECT_DOWNGRADE = "WIX_DOWNGRADE_DETECTED"
+ROLLBACK_REQUIRED_CONDITION = f"NOT {DETECT_UPGRADE} OR (NOT RollbackDisabled AND NOT DISABLEROLLBACK)"
+ROLLBACK_REQUIRED_MESSAGE = "Enable Windows Installer rollback before upgrading this product."
 UPGRADE_ACTIONS = ("FindRelatedProducts", "LaunchConditions", *ROLLBACK_ACTIONS)
 READONLY = None
 MACHINE = 4
@@ -126,10 +128,12 @@ class Installer:
             for action, condition in self.rows(database, "SELECT `Action`, `Condition` FROM `InstallExecuteSequence`", 2)
             if action in UPGRADE_ACTIONS
         }
+        launch_conditions = self.rows(database, "SELECT `Condition`, `Description` FROM `LaunchCondition`", 2)
         proof = {
             "rules": [list(row) for row in rows],
             "execute_conditions": conditions,
-            "launch_conditions": [row[0] for row in self.rows(database, "SELECT `Condition` FROM `LaunchCondition`", 1)],
+            "launch_conditions": [condition for condition, _ in launch_conditions],
+            "rollback_required_message": dict(launch_conditions).get(ROLLBACK_REQUIRED_CONDITION),
             "secure_properties": properties.get("SecureCustomProperties", "").split(";"),
             "authored_detection_properties": sorted({DETECT_UPGRADE, DETECT_DOWNGRADE}.intersection(properties)),
             "product_language": properties.get("ProductLanguage"),
@@ -260,6 +264,9 @@ def validate_major_upgrade(proof, upgrade_code: str, version: str, sequence: dic
     launch_conditions = proof.get("launch_conditions")
     require(isinstance(launch_conditions, list) and f"NOT {DETECT_DOWNGRADE}" in launch_conditions,
             "MSI must refuse installation over a newer product in its family")
+    require(ROLLBACK_REQUIRED_CONDITION in launch_conditions
+            and proof.get("rollback_required_message") == ROLLBACK_REQUIRED_MESSAGE,
+            "MSI must require Windows Installer rollback for major upgrades")
     secure = proof.get("secure_properties")
     require(isinstance(secure, list) and DETECT_UPGRADE in secure and DETECT_DOWNGRADE in secure
             and proof.get("authored_detection_properties") == [],

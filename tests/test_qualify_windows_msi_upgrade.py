@@ -62,6 +62,30 @@ def test_install_decodes_native_action_records_and_clears_callback(tmp_path, pre
     assert cancellation.error_before_cancel == preexisting_error and handler is None
 
 
+@pytest.mark.parametrize("encoding", ["ascii", "utf-16-le", None])
+def test_rollback_disabled_probe_checks_native_installer_error_and_clears_log(tmp_path, encoding):
+    native = object.__new__(upgrade.UpgradeInstaller)
+    package = tmp_path / "candidate.msi"
+    log = tmp_path / "installer.log"
+    events = []
+
+    def enable_logging(mode, destination, attributes):
+        events.append((mode, destination, attributes))
+        return 0
+
+    def install(path, properties):
+        assert path == str(package)
+        assert properties == "REBOOT=ReallySuppress DISABLEROLLBACK=1"
+        assert events == [(upgrade.LOG_ERRORS, str(log), 0)]
+        message = upgrade.ROLLBACK_REQUIRED_MESSAGE if encoding else "Another launch condition failed."
+        log.write_bytes(message.encode(encoding or "ascii"))
+        return upgrade.INSTALL_FAILURE
+
+    native.dll = SimpleNamespace(MsiEnableLogW=enable_logging, MsiInstallProductW=install)
+    assert native.install_without_rollback(package, log) == (upgrade.INSTALL_FAILURE, encoding is not None)
+    assert events[-1] == (0, None, 0)
+
+
 @pytest.mark.parametrize("modified", [False, True])
 def test_release_msi_must_pass_provenance_and_keep_verified_bytes(tmp_path, monkeypatch, modified):
     tag, sha = "v1.0.29", "a" * 40
@@ -183,6 +207,8 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
 
 @pytest.mark.parametrize(("scenario", "error"), [
     ("success", None),
+    ("unexpected-rollback-refusal", "must fail its rollback launch condition"),
+    ("predecessor-changed-on-refusal", "upgrade changed the exact previous launcher"),
     ("too-early", "must return user exit after removal"),
     ("wrong-result", "must return user exit after removal"),
     ("wrong-rollback-bytes", "did not restore the exact previous launcher"),
@@ -242,6 +268,14 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
             candidate[0].write_bytes(b"changed before execution")
         return 0
 
+    def refuse_upgrade(path, log):
+        assert path == candidate[0] and log.parent.is_dir()
+        assert registered == {"previous"}
+        operations.append("refuse")
+        if scenario == "predecessor-changed-on-refusal":
+            launcher.write_bytes(b"changed")
+        return upgrade.INSTALL_FAILURE, scenario != "unexpected-rollback-refusal"
+
     def uninstall(product_code):
         assert registered == {product_code}
         operations.append(f"uninstall-{product_code}")
@@ -258,7 +292,8 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
 
     monkeypatch.setattr(upgrade.subprocess, "check_output", cli)
     monkeypatch.setattr(upgrade, "inspect_registration", registration)
-    native = SimpleNamespace(require_no_related_products=no_products, install=install, uninstall=uninstall)
+    native = SimpleNamespace(require_no_related_products=no_products, install=install, uninstall=uninstall,
+                             install_without_rollback=refuse_upgrade)
     workspace_operations = []
 
     def workspace_action(phase):
@@ -285,7 +320,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         with pytest.raises(ValueError, match=error):
             upgrade.exercise(native, previous, candidate, launcher, recovery, report, save)
         if scenario == "wrong-restored-workspace":
-            assert operations == ["previous", "cancel", "candidate", "uninstall-candidate", "previous"]
+            assert operations == ["previous", "refuse", "cancel", "candidate", "uninstall-candidate", "previous"]
             assert report["phase"] == "verify-restored-workspace"
         else:
             assert "candidate" not in operations
@@ -296,6 +331,14 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         assert report["previous_restored"] == report["previous_installed"]
         assert report["previous_reinstalled"] == report["previous_installed"]
         assert report["workspace_recovery"] == {"restored_matches_pre_upgrade": True}
-        assert workspace_operations == ["backup", "verify-original", "restore-with-candidate", "verify-restored"]
-        assert operations == ["previous", "cancel", "candidate", "uninstall-candidate", "previous", "uninstall-previous"]
+        assert report["rollback_disabled_upgrade"] == {
+            "exit_code": upgrade.INSTALL_FAILURE, "launch_condition_refused_upgrade": True,
+            "previous_preserved": True, "candidate_absent": True, "workspace_preserved": True,
+        }
+        assert workspace_operations == [
+            "backup", "verify-original", "verify-original", "restore-with-candidate", "verify-restored",
+        ]
+        assert operations == [
+            "previous", "refuse", "cancel", "candidate", "uninstall-candidate", "previous", "uninstall-previous",
+        ]
         assert phases[-1] == "complete"

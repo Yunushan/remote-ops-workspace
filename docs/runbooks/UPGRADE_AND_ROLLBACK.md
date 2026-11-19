@@ -238,7 +238,11 @@ uses the EXE installer and cannot serve as the MSI baseline.
 
 The workflow holds both MSIs against write and delete access throughout
 verification, installation, cancellation, and retry. It installs the
-predecessor, cancels the upgrade through Windows Installer after the
+predecessor and first requests an upgrade with rollback disabled for that
+invocation. The compiled launch condition must refuse the upgrade before
+predecessor removal and preserve the registration, launcher, and workspace.
+The drill uses the installer log to identify the refusal and leaves machine
+policy unchanged. It then cancels an upgrade through Windows Installer after the
 predecessor's launcher disappears, and compares the
 restored product registration, launcher SHA-256, and CLI version with the
 baseline. It then retries with the same signed MSI bytes and checks that the

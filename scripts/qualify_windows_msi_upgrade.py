@@ -54,6 +54,9 @@ from remote_ops_workspace import windows_private_storage as storage  # noqa: E40
 from scripts.release_candidate_source import InventoryPointer, materialize_asset  # noqa: E402
 
 REPOSITORY = "Yunushan/remote-ops-workspace"
+WORKFLOW = ".github/workflows/windows-msi-upgrade-qualification.yml"
+SOURCE_REF = "refs/heads/main"
+SCHEMA = "row.signed-windows-msi-upgrade.v4"
 RECEIPT = Path("build/native-smoke/windows-x64/signed-msi-upgrade.json")
 ACTION_START = 0x08000000
 FATAL_EXIT = 0x00000000
@@ -162,8 +165,8 @@ def hosted_source() -> str:
         "RUNNER_ENVIRONMENT": "github-hosted",
         "GITHUB_REPOSITORY": REPOSITORY,
         "GITHUB_EVENT_NAME": "workflow_dispatch",
-        "GITHUB_REF": "refs/heads/main",
-        "GITHUB_WORKFLOW_REF": f"{REPOSITORY}/.github/workflows/windows-msi-upgrade-qualification.yml@refs/heads/main",
+        "GITHUB_REF": SOURCE_REF,
+        "GITHUB_WORKFLOW_REF": f"{REPOSITORY}/{WORKFLOW}@{SOURCE_REF}",
     }
     require(all(os.environ.get(key) == value for key, value in required_env.items()),
             "requires the canonical main-branch workflow on a disposable GitHub-hosted runner")
@@ -358,7 +361,7 @@ def main() -> int:
         output = ROOT / RECEIPT
         output.parent.mkdir(parents=True, exist_ok=True)
         require(not os.path.lexists(output), "Windows MSI drill refuses to overwrite an existing receipt")
-        report = {"schema": "row.signed-windows-msi-upgrade.v4", "status": "failed", "phase": "verify-release-assets",
+        report = {"schema": SCHEMA, "status": "failed", "phase": "verify-release-assets",
                   "source_commit": source, "run_id": os.environ["GITHUB_RUN_ID"],
                   "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"], "target": "windows-x64"}
 

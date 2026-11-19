@@ -995,6 +995,13 @@ def safe_asset_name(value: Any) -> bool:
 
 
 def verify_attestation(path: Path, *, repository: str, sha: str, tag: str) -> Any:
+    return verify_workflow_attestation(path, repository=repository, sha=sha, workflow=RELEASE_WORKFLOW,
+                                       source_ref=f"refs/tags/{tag}")
+
+
+def verify_workflow_attestation(
+    path: Path, *, repository: str, sha: str, workflow: str, source_ref: str,
+) -> Any:
     return run_gh_json(
         [
             "attestation",
@@ -1003,11 +1010,11 @@ def verify_attestation(path: Path, *, repository: str, sha: str, tag: str) -> An
             "--repo",
             repository,
             "--signer-workflow",
-            f"{repository}/{RELEASE_WORKFLOW}",
+            f"{repository}/{workflow}",
             "--source-digest",
             sha,
             "--source-ref",
-            f"refs/tags/{tag}",
+            source_ref,
             "--predicate-type",
             PREDICATE_TYPE,
             "--deny-self-hosted-runners",
@@ -1028,11 +1035,14 @@ def verified_run_invocations(
     asset_sha256: str,
     repository: str,
     sha: str,
-    tag: str,
+    tag: str | None = None,
+    source_ref: str | None = None,
 ) -> tuple[set[RunInvocation], list[str]]:
+    if (tag is None) == (source_ref is None):
+        raise ValueError("supply exactly one tag or source ref for attestation verification")
     if not isinstance(payload, list) or not payload:
         return set(), [f"{asset_name} attestation verification returned no results"]
-    required_ref = f"refs/tags/{tag}"
+    required_ref = f"refs/tags/{tag}" if tag is not None else source_ref
     accepted: set[RunInvocation] = set()
     rejected: list[str] = []
     for index, item in enumerate(payload):
@@ -1071,9 +1081,8 @@ def verified_run_invocations(
             continue
         trigger = certificate_value(certificate, "buildTrigger", "githubWorkflowTrigger")
         if trigger != "workflow_dispatch":
-            rejected.append(
-                f"{prefix} build trigger must be an exact-tag release promotion dispatch"
-            )
+            expected_trigger = "an exact-tag release promotion dispatch" if tag is not None else "workflow_dispatch"
+            rejected.append(f"{prefix} build trigger must be {expected_trigger}")
             continue
         if not statement_has_digest(verification.get("statement"), asset_sha256):
             rejected.append(f"{prefix} statement does not contain the downloaded asset digest")

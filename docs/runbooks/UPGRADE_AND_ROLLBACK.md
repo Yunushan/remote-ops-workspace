@@ -270,6 +270,28 @@ feed uses ephemeral HTTPS and Ed25519 credentials for the qualification.
 Sealed-candidate results can inform promotion review. Independent approval
 and final published artifact verification still apply.
 
+For operability review, download the receipt from the exact successful run
+attempt. The workflow attests the completed receipt in a separate hosted job
+after checking its SHA-256 against the Windows job's output. For a rerun,
+rerun all jobs so the Windows program and attestation use the same attempt.
+Use an authenticated GitHub CLI with read access to Actions and attestations.
+Get the workflow's reviewed `main` commit and the expected MSI digests from
+the independently verified immutable releases or sealed candidate inventories.
+
+```bash
+python -I scripts/check_signed_windows_msi_upgrade.py \
+  --receipt "$receipt_path" --workflow-sha "$workflow_sha" \
+  --previous "$previous_tag" "$previous_sha" "$previous_msi_sha256" \
+  --candidate "$candidate_tag" "$candidate_sha" "$candidate_msi_sha256"
+```
+
+The verifier checks the package and launcher identities, NTFS stage receipts,
+rollback and retry results, and the encrypted-workspace recovery record. It
+binds the receipt bytes to the GitHub-hosted attestation and checks the outcome
+of the specific workflow attempt.
+[GitHub CLI attestation verification](https://cli.github.com/manual/gh_attestation_verify) ·
+[Workflow attempt API](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run-attempt)
+
 ### Managed Windows MSI preflight
 
 Use native Windows x64 Python with the security extra and SignTool from a

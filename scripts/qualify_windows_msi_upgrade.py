@@ -18,13 +18,13 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "src")]
 
-import managed_windows_msi  # noqa: E402
 from check_release_provenance import (  # noqa: E402
     native_installer_signature_commands,
     normalize_sha,
     normalize_tag,
     verify_platform_signature,
 )
+from check_windows_private_ntfs import private_fixture  # noqa: E402
 from inspect_windows_msi import (  # noqa: E402
     HANDLE,
     INSTALL_PROPERTIES,
@@ -43,9 +43,14 @@ from inspect_windows_msi import (  # noqa: E402
     validate_upgrade_rollback,
 )
 from release_candidate_inventory import GitHubClient  # noqa: E402
+from windows_msi_stage_fixture import (  # noqa: E402
+    require_same_inputs,
+    run_managed_msi,
+    stage_signed_pair,
+)
 from windows_msi_workspace_recovery import WorkspaceRecovery, locked_launcher  # noqa: E402
 
-from remote_ops_workspace.windows_private_storage import _Native  # noqa: E402
+from remote_ops_workspace import windows_private_storage as storage  # noqa: E402
 from scripts.release_candidate_source import InventoryPointer, materialize_asset  # noqa: E402
 
 REPOSITORY = "Yunushan/remote-ops-workspace"
@@ -179,7 +184,7 @@ def release_pair(args: argparse.Namespace) -> tuple[tuple[str, str], tuple[str, 
 
 
 @contextmanager
-def verified_msi(native: Installer, storage, directory: Path, tag: str, sha: str, *,
+def verified_msi(native: Installer, filesystem, directory: Path, tag: str, sha: str, *,
                  candidate=False, inventory: InventoryPointer | None = None):
     if inventory is None:
         path = directory / f"remote-ops-workspace-{tag}-windows-x64.msi"
@@ -192,33 +197,34 @@ def verified_msi(native: Installer, storage, directory: Path, tag: str, sha: str
         require(bool(token), "sealed candidate verification requires a GitHub token")
         client = GitHubClient(REPOSITORY, token, api_url="https://api.github.com")
         path, expected, source = materialize_asset(client, REPOSITORY, directory, tag, sha, inventory, kind="windows-msi")
-    held = storage.open_file(str(path), read_only=True)
+    held = filesystem.open_file(str(path), read_only=True)
     try:
         digest = fingerprint(path)
+        size = path.stat().st_size
         if expected is None:
             subprocess.run([sys.executable, "-I", str(ROOT / "scripts/check_release_provenance.py"),
                             "--asset", str(path), "--repository", REPOSITORY, "--tag", tag,
                             "--sha", sha, "--verify-platform-signature"], check=True, timeout=300)
         else:
-            require(digest == expected["sha256"] and path.stat().st_size == expected["size"],
+            require(digest == expected["sha256"] and size == expected["size"],
                     "locked MSI does not match the sealed candidate inventory")
             verify_platform_signature(native_installer_signature_commands(path, registered_sdk=True))
         package = native.inspect(path, require_transactional_upgrade=candidate)
         validate_package(package, "x64", tag[1:])
         package["launcher_payload_sha256"] = native.launcher_payload_sha256(path)
         require(fingerprint(path) == digest, "Windows MSI changed during provenance and identity verification")
-        yield path, {**package, "sha256": digest, "release_tag": tag, "release_sha": sha,
+        yield path, {**package, "sha256": digest, "size_bytes": size, "release_tag": tag, "release_sha": sha,
                      "name_on_release": path.name, "source": source}
     finally:
-        storage.close(held)
+        filesystem.close(held)
 
 
-def launcher_snapshot(native: Installer, storage: _Native, package: dict, expected: Path, home: Path) -> dict:
+def launcher_snapshot(native: Installer, filesystem: storage._Native, package: dict, expected: Path, home: Path) -> dict:
     registration = inspect_registration(native, package, "installed")
     path = Path(registration["row_path"])
     require(path == expected and path.resolve(strict=True) == expected, "MSI launcher is outside stock Program Files")
     digest = package["launcher_payload_sha256"]
-    with locked_launcher(storage, path, digest):
+    with locked_launcher(filesystem, path, digest):
         env = os.environ.copy()
         env["ROW_HOME"] = str(home)
         output = subprocess.check_output([str(path), "--version"], cwd=home, env=env, text=True, timeout=60).strip()
@@ -227,7 +233,8 @@ def launcher_snapshot(native: Installer, storage: _Native, package: dict, expect
 
 
 def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: tuple[Path, dict],
-             launcher: Path, recovery: WorkspaceRecovery, report: dict, save, *, storage: _Native) -> None:
+             launcher: Path, recovery: WorkspaceRecovery, report: dict, save, *, filesystem: storage._Native,
+             update) -> None:
     old_path, old = previous
     new_path, new = candidate
     home = recovery.home
@@ -248,7 +255,7 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     report["phase"] = "install-previous"
     save()
     confirm(run_checked(old_path, old, native.install), "install previous signed MSI")
-    before = launcher_snapshot(native, storage, old, launcher, home)
+    before = launcher_snapshot(native, filesystem, old, launcher, home)
     inspect_registration(native, new, "absent")
     report.update(phase="backup-previous-workspace", previous_installed=before)
     save()
@@ -261,7 +268,7 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     report["rollback_disabled_upgrade"] = {"exit_code": result, "launch_condition_refused_upgrade": refused}
     save()
     require(result == INSTALL_FAILURE and refused, "rollback-disabled upgrade must fail its rollback launch condition")
-    after_refusal = launcher_snapshot(native, storage, old, launcher, home)
+    after_refusal = launcher_snapshot(native, filesystem, old, launcher, home)
     inspect_registration(native, new, "absent")
     require(after_refusal == before, "rollback-disabled upgrade changed the exact previous launcher or registration")
     recovery.verify_original(launcher, before["launcher_sha256"])
@@ -279,23 +286,36 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     save()
     require(result == INSTALL_USER_EXIT and cancellation.requested,
             "interrupted upgrade must return user exit after removal of the previous launcher")
-    restored = launcher_snapshot(native, storage, old, launcher, home)
+    restored = launcher_snapshot(native, filesystem, old, launcher, home)
     inspect_registration(native, new, "absent")
     require(restored == before, "cancelled upgrade did not restore the exact previous launcher and registration")
     recovery.verify_original(launcher, before["launcher_sha256"])
-    report.update(phase="retry-upgrade", previous_restored=restored, candidate_absent_after_cancel=True,
+    report.update(phase="preflight-upgrade", previous_restored=restored, candidate_absent_after_cancel=True,
                   original_workspace_preserved_after_cancel=True)
     save()
 
-    applied = managed_windows_msi.apply_verified_pair(native, old, new, new_path, launcher)
+    preflight = update("preflight")
+    report["managed_preflight"] = preflight
+    save()
+    require(preflight["phase"] == "msi-preflight-passed"
+            and preflight["previous_launcher_sha256"] == before["launcher_sha256"],
+            "managed preflight did not verify the restored predecessor")
+    report["phase"] = "retry-upgrade"
+    save()
+    applied = update("apply")
     report["managed_apply"] = applied
     save()
-    require(applied["phase"] == "msi-applied", "managed apply did not verify the installed candidate")
-    repeated = managed_windows_msi.apply_verified_pair(native, old, new, new_path, launcher)
+    require(applied["phase"] == "msi-applied"
+            and applied["previous_launcher_sha256"] == before["launcher_sha256"]
+            and applied["installed_launcher_sha256"] == new["launcher_payload_sha256"],
+            "managed apply did not verify the installed candidate")
+    repeated = update("apply")
     report["managed_retry"] = repeated
     save()
-    require(repeated["phase"] == "msi-already-applied", "managed apply retry did not recognize the exact installed candidate")
-    upgraded = launcher_snapshot(native, storage, new, launcher, home)
+    require(repeated["phase"] == "msi-already-applied"
+            and repeated["installed_launcher_sha256"] == new["launcher_payload_sha256"],
+            "managed apply retry did not recognize the exact installed candidate")
+    upgraded = launcher_snapshot(native, filesystem, new, launcher, home)
     inspect_registration(native, old, "absent")
     require(upgraded["launcher_sha256"] != before["launcher_sha256"], "successful upgrade retained the previous launcher bytes")
     report.update(phase="restore-pre-upgrade-workspace", candidate_installed=upgraded, previous_absent_after_retry=True)
@@ -309,7 +329,7 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     report["phase"] = "reinstall-predecessor"
     save()
     confirm(run_checked(old_path, old, native.install), "reinstall exact previous signed MSI")
-    rolled_back = launcher_snapshot(native, storage, old, launcher, recovery.restored)
+    rolled_back = launcher_snapshot(native, filesystem, old, launcher, recovery.restored)
     inspect_registration(native, new, "absent")
     require(rolled_back == before, "reinstalled predecessor differs from the original signed launcher and registration")
     report.update(phase="verify-restored-workspace", previous_reinstalled=rolled_back)
@@ -338,7 +358,7 @@ def main() -> int:
         output = ROOT / RECEIPT
         output.parent.mkdir(parents=True, exist_ok=True)
         require(not os.path.lexists(output), "Windows MSI drill refuses to overwrite an existing receipt")
-        report = {"schema": "row.signed-windows-msi-upgrade.v3", "status": "failed", "phase": "verify-release-assets",
+        report = {"schema": "row.signed-windows-msi-upgrade.v4", "status": "failed", "phase": "verify-release-assets",
                   "source_commit": source, "run_id": os.environ["GITHUB_RUN_ID"],
                   "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"], "target": "windows-x64"}
 
@@ -349,20 +369,34 @@ def main() -> int:
 
         save()
         native = UpgradeInstaller()
-        storage = _Native()
+        filesystem = storage._Native()
         launcher = Path(os.environ["ProgramFiles"]) / "Remote Ops Workspace/bin/row.exe"
         with TemporaryDirectory(prefix="row-signed-msi-", dir=os.environ["RUNNER_TEMP"]) as directory:
             staging = Path(directory)
             with (
-                verified_msi(native, storage, staging, *previous_ref, inventory=args.previous_inventory) as previous,
-                verified_msi(native, storage, staging, *candidate_ref, candidate=True,
+                verified_msi(native, filesystem, staging, *previous_ref, inventory=args.previous_inventory) as previous,
+                verified_msi(native, filesystem, staging, *candidate_ref, candidate=True,
                              inventory=args.candidate_inventory) as candidate,
             ):
                 for name in ("GH_TOKEN", "GITHUB_TOKEN"):
                     os.environ.pop(name, None)
                 report.update(previous=previous[1], candidate=candidate[1], input_read_only_sharing_held=True)
-                recovery = WorkspaceRecovery(staging / "workspace-recovery", storage=storage)
-                exercise(native, previous, candidate, launcher, recovery, report, save, storage=storage)
+                report["phase"] = "stage-managed-update"
+                save()
+                parent = Path(filesystem.known_folder("local"))
+                with private_fixture(storage, filesystem, parent, "row-msi-stage-") as root:
+                    recovery = WorkspaceRecovery(root / "workspace-recovery", storage=filesystem)
+                    arguments, staged = stage_signed_pair(root, recovery.home, previous, candidate)
+                    report["managed_staging"] = {"feed": "disposable-loopback-https", **staged}
+                    save()
+
+                    def update(action: str) -> dict:
+                        result = run_managed_msi(recovery.home, action, arguments)
+                        require_same_inputs(result, staged, previous[1], candidate[1])
+                        return result
+
+                    exercise(native, previous, candidate, launcher, recovery, report, save,
+                             filesystem=filesystem, update=update)
     except (KeyError, OSError, RuntimeError, subprocess.SubprocessError, ValueError, zipfile.BadZipFile) as exc:
         print(f"Windows MSI upgrade qualification: {exc}", file=sys.stderr)
         return 1

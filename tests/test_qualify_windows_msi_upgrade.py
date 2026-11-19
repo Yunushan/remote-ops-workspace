@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts import managed_windows_msi as managed
 from scripts import qualify_windows_msi_upgrade as upgrade
 from scripts.inspect_windows_msi import (
     EXPECTED_PREDECESSOR,
@@ -231,6 +232,7 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
     ("wrong-rollback-bytes", "registered launcher bytes differ from the exact MSI payload"),
     ("candidate-still-registered", "candidate still registered"),
     ("modified-candidate", "MSI bytes changed"),
+    ("wrong-preflight-launcher", "managed preflight did not verify the restored predecessor"),
     ("wrong-restored-workspace", "workspace restore verification failed"),
 ])
 def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, monkeypatch, scenario, error):
@@ -334,10 +336,21 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
 
     monkeypatch.setattr(upgrade.subprocess, "check_output", cli)
     monkeypatch.setattr(upgrade, "inspect_registration", registration)
-    monkeypatch.setattr(upgrade.managed_windows_msi, "inspect_registration", registration)
+    monkeypatch.setattr(managed, "inspect_registration", registration)
     native = SimpleNamespace(require_no_related_products=no_products, install=install, uninstall=uninstall,
                              install_without_rollback=refuse_upgrade, install_upgrade=guarded_install,
                              related_products=related)
+    update_actions = []
+
+    def update(action):
+        update_actions.append(action)
+        if action == "preflight":
+            assert registered == {"previous"}
+            digest = "a" * 64 if scenario == "wrong-preflight-launcher" else upgrade.fingerprint(launcher)
+            return {"phase": "msi-preflight-passed", "previous_launcher_sha256": digest}
+        assert action == "apply"
+        return managed.apply_verified_pair(native, previous[1], candidate[1], candidate[0], launcher)
+
     workspace_operations = []
 
     def workspace_action(phase):
@@ -362,7 +375,8 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         phases.append(report["phase"])
     if error:
         with pytest.raises(ValueError, match=error):
-            upgrade.exercise(native, previous, candidate, launcher, recovery, report, save, storage=storage)
+            upgrade.exercise(native, previous, candidate, launcher, recovery, report, save,
+                             filesystem=storage, update=update)
         if scenario == "wrong-restored-workspace":
             assert operations == ["previous", "refuse", "cancel", "candidate", "uninstall-candidate", "previous"]
             assert report["phase"] == "verify-restored-workspace"
@@ -370,10 +384,13 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
             assert "candidate" not in operations
         assert "status" not in report
     else:
-        upgrade.exercise(native, previous, candidate, launcher, recovery, report, save, storage=storage)
+        upgrade.exercise(native, previous, candidate, launcher, recovery, report, save,
+                             filesystem=storage, update=update)
         assert report["status"] == "passed" and report["phase"] == "complete"
         assert report["previous_restored"] == report["previous_installed"]
         assert report["previous_reinstalled"] == report["previous_installed"]
+        assert report["managed_preflight"]["phase"] == "msi-preflight-passed"
+        assert update_actions == ["preflight", "apply", "apply"]
         assert report["managed_apply"]["phase"] == "msi-applied"
         assert report["managed_retry"]["phase"] == "msi-already-applied"
         assert report["workspace_recovery"] == {"restored_matches_pre_upgrade": True}
@@ -389,3 +406,32 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         ]
         assert phases[-1] == "complete"
     assert not held_files
+
+
+@pytest.mark.parametrize(("role", "field"), [
+    ("previous", "trust_policy_sha256"),
+    ("candidate", "transaction_id"),
+    ("candidate", "sha256"),
+    ("previous", "product_code"),
+])
+def test_managed_receipt_binds_each_command_to_the_verified_stages(role, field):
+    staged = {
+        "previous": {"trust_policy_sha256": "c" * 64, "transaction_id": "a" * 64},
+        "candidate": {"trust_policy_sha256": "d" * 64, "transaction_id": "b" * 64},
+    }
+    sources = {
+        name: {"name_on_release": f"{name}.msi", "product_code": f"{name}-product",
+               "package_code": f"{name}-package", "version": version, "size_bytes": 64,
+               "sha256": sha * 64, "launcher_payload_sha256": sha.upper() * 64}
+        for name, version, sha in (("previous", "1.0.27", "a"), ("candidate", "1.0.28", "b"))
+    }
+    receipt = {"target": "windows-x64", "authenticode_and_timestamp_checked": True}
+    for name, source in sources.items():
+        receipt[f"{name}_stage"] = dict(staged[name])
+        receipt[f"{name}_msi"] = {**source, "asset": source["name_on_release"]}
+
+    upgrade.require_same_inputs(receipt, staged, **sources)
+    section = "stage" if field in staged[role] else "msi"
+    receipt[f"{role}_{section}"][field] = "changed"
+    with pytest.raises(ValueError, match=f"used different {role} inputs"):
+        upgrade.require_same_inputs(receipt, staged, **sources)

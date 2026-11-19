@@ -13,7 +13,7 @@ from inspect_windows_msi import fingerprint, require
 from native_installer_recovery import clean_environment, private_parent
 from smoke_workspace_recovery import _tree_summary
 
-from remote_ops_workspace.windows_private_storage import _Native
+from remote_ops_workspace.windows_private_storage import _Native, private_stage_guard
 from remote_ops_workspace.workspace_backup import create_workspace_backup
 
 PROFILE = "rollback-profile"
@@ -39,7 +39,8 @@ class WorkspaceRecovery:
         self.root = root
         self.storage = storage
         self.home = root / "workspace"
-        self.home.mkdir()
+        with private_stage_guard(self.home, create=True, _native=storage):
+            pass
         self.restored = root / "restored"
         self.archive = root / "previous.rowbackup"
         self.password = secrets.token_urlsafe(32)

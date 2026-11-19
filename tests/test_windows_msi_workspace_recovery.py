@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,6 +15,14 @@ from scripts import windows_msi_workspace_recovery as recovery_source
 
 def test_signed_workflow_recovery_uses_real_encrypted_cli_and_preserves_both_trees(monkeypatch, tmp_path):
     monkeypatch.setattr(recovery_source, "private_parent", lambda path: path.mkdir())
+
+    @contextmanager
+    def private_home(path, *, create, _native):
+        assert create
+        path.mkdir()
+        yield
+
+    monkeypatch.setattr(recovery_source, "private_stage_guard", private_home)
     # Run the real CLI and encryption backend in isolated subprocesses. The
     # separate launcher marker makes the fixture independent of native builds.
     row = tmp_path / "row.exe"

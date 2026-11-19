@@ -248,10 +248,12 @@ The drill uses the installer log to identify the refusal and leaves machine
 policy unchanged. It then cancels an upgrade through Windows Installer after the
 predecessor's launcher disappears, and compares the
 restored product registration, launcher SHA-256, and CLI version with the
-baseline. It then retries with the same signed MSI bytes through the managed
-apply path, verifies the exact candidate, and repeats the apply to check
-that the installed candidate is recognized. It also checks that the
-candidate uninstalls cleanly. The workflow
+baseline. The workflow stages both provenance-verified MSI files on private
+NTFS using the managed CLI and a disposable signed loopback HTTPS feed. After
+cancellation it runs managed preflight against the restored predecessor and
+applies the staged candidate with the feed offline. It verifies that a second
+apply recognizes the exact installed candidate and that the candidate
+uninstalls cleanly. The workflow
 checkout takes the encrypted pre-upgrade backup, which also covers older
 predecessors that can read and write the fixture but lack the backup command.
 The drill verifies that cancellation preserves the original workspace and
@@ -262,9 +264,9 @@ and decrypt the restored vault. It compares the full restored file inventory
 with the baseline and checks that the upgraded workspace and encrypted archive
 survive the restore. Keep the
 `signed-windows-msi-upgrade-<run>-<attempt>` receipt with the qualification
-evidence. This exercise covers the stock x64 installer and encrypted workspace
-recovery. The managed updater's automated policy and installation paths
-require their own qualification.
+evidence. The receipt binds all managed CLI results to the exact x64 MSI
+inputs and records how the encrypted workspace was recovered. The loopback
+feed uses ephemeral HTTPS and Ed25519 credentials for the qualification.
 Sealed-candidate results can inform promotion review. Independent approval
 and final published artifact verification still apply.
 

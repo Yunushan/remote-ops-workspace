@@ -62,7 +62,7 @@ jobs:
           $blocks.Value | Set-Content -LiteralPath $requirements -Encoding ascii
           python -I -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple --requirement $requirements
           exit $LASTEXITCODE
-      - name: Verify rollback-required refusal, then cancel and retry the signed MSI upgrade
+      - name: Stage the signed pair, exercise rollback, and apply through the managed CLI
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

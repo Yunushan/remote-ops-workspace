@@ -575,9 +575,31 @@ Keep credential values out of the recorded arguments and captures.
   Remove inherited RDMA settings and startup flags when applying the
   TCP-only configuration, then verify the effective kernel listeners.
 
-Use the same release asset with `--artifact` when generating the candidate. The
-published-release audit re-runs the capture checks on the reviewed attachments
-and checks the release bytes and GitHub workflow and reviewer provenance.
+On Debian, assemble the review directory with
+`scripts/assemble_debian_server_evidence.py`. Use the exact Debian release asset
+exercised by the clients. The installed root may be the filesystem of the
+qualification host or a clean extraction of the same asset with `dpkg-deb -x`.
+In the capture directory, place a `captures.json` index with the exact `source`
+and `release_asset` objects observed during collection. Its `services` array
+contains one entry per service with `service`, the observed `policy` object in
+the server config-plan schema, and a `receipt` reference containing `file` and
+`sha256`. Place the receipts and their referenced data files relative to this
+directory. The assembler checks the embedded daemon bytes and notices against
+the supplied package and validates all eight client receipts before writing
+the review directory.
+
+```bash
+mkdir -p "$review_dir"
+python scripts/assemble_debian_server_evidence.py \
+  --deb "$tested_deb" --target linux-x86_64 \
+  --installed-root "$installed_root" --captures "$capture_dir" \
+  --out "$review_dir/embedded-server-suite"
+```
+
+Use the generated `evidence.json` and the same release asset with `--artifact`
+when generating the candidate. The published-release audit re-runs the capture
+checks on the reviewed attachments and checks the release bytes and GitHub
+workflow and reviewer provenance.
 
 ### Connected editor release evidence
 

@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 
 from remote_ops_workspace.moba_servers import build_moba_server_config_plan
+from scripts import assemble_debian_server_evidence as assembly
 from scripts import check_moba_server_release_evidence as server_evidence
 from scripts import check_release_mobaxterm_parity as release_parity
 from scripts.check_mobaxterm_parity_evidence import (
@@ -111,7 +112,7 @@ def embedded_server_bundle(tmp_path):
     root.mkdir(parents=True)
     repository = "example/remote-ops-workspace"
     tag = "v1.0.2"
-    package = tmp_path / "candidate.deb"
+    package = tmp_path / "remote-ops-workspace-v1.0.2-linux-amd64.deb"
     package.write_bytes(b"fixture release package")
     source = {
         "repository": repository, "release_tag": tag, "head_sha": "d" * 40,
@@ -137,7 +138,12 @@ def embedded_server_bundle(tmp_path):
     clients = {"http": "curl", "ftp": "lftp", "tftp": "tftp", "ssh": "ssh", "sftp": "sftp", "telnet": "telnet", "vnc": "vncsnapshot", "nfs": "mount.nfs4"}
     keys = {"http": "python-http", "ftp": "pyftpdlib", "tftp": "tftpd", "ssh": "sshd", "sftp": "sshd-sftp", "telnet": "telnetd", "vnc": "x11vnc", "nfs": "nfsd"}
     for service, client in clients.items():
-        runtime_file = attachment(f"runtimes/{service}/{keys[service]}", b"\x7fELF" + service.encode())
+        header = bytearray(64)
+        header[:7] = b"\x7fELF\x02\x01\x01"
+        struct.pack_into("<HHI", header, 16, 3, 62, 1)
+        struct.pack_into("<H", header, 52, len(header))
+        name = {"http": "python", "sftp": "sshd"}.get(service, keys[service])
+        runtime_file = attachment(f"runtimes/linux/{service}/bin/{name}", bytes(header) + service.encode())
         relative = runtime_file["file"].removeprefix("runtimes/")
         runtime = {"key": keys[service], "bundled": True, "executable": relative, "sha256": runtime_file["sha256"]}
         manifest["services"].append({"service": service, "runtime": {**runtime, "source": "packaged", "placeholder": False}})
@@ -214,6 +220,63 @@ def test_server_candidate_and_release_audit_validate_the_same_client_evidence(em
     package.write_bytes(b"different release package")
     errors, _ = generator.build_evidence_record(arguments)
     assert any("tested release asset must match" in error for error in errors)
+
+
+@pytest.mark.parametrize(("change", "reason"), [
+    (None, None),
+    ("package", "capture index must bind the supplied Debian asset"),
+    ("receipt", "must bind a successful protocol client"),
+    ("missing", "requires each of the eight services"),
+    ("package-contents", "Debian package differs from the deployed runtime"),
+])
+def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, monkeypatch, change, reason):
+    captures, package, evidence, attachment = embedded_server_bundle
+    installed = tmp_path / "installed"
+    runtime_root = installed / assembly.PAYLOAD
+    runtime_root.parent.mkdir(parents=True)
+    (captures / "runtimes").rename(runtime_root)
+    authoring_index = {key: evidence[key] for key in ("source", "release_asset")}
+    authoring_index["services"] = [
+        {
+            "service": row["service"], "policy": row["policy"],
+            "receipt": {"file": row["client_test"]["evidence_file"], "sha256": row["client_test"]["evidence_sha256"]},
+        }
+        for row in evidence["services"]
+    ]
+    if change == "package":
+        package.write_bytes(b"wrong package")
+    elif change == "missing":
+        authoring_index["services"].pop()
+    elif change == "receipt":
+        row = authoring_index["services"][0]
+        name = row["receipt"]["file"]
+        receipt = json.loads((captures / name).read_bytes())
+        receipt["run_attempt"] += 1
+        row["receipt"] = attachment(name, receipt)
+    attachment(assembly.CAPTURES_INDEX, authoring_index)
+    audited = []
+
+    def verify_debian_file(actual_package, candidate, target):
+        assert actual_package == package and target == evidence["release_target"]
+        assert (candidate / evidence["runtime_manifest"]["file"]).read_bytes() == (runtime_root / assembly.MANIFEST).read_bytes()
+        audited.append(target)
+        if change == "package-contents":
+            raise ValueError(reason)
+
+    monkeypatch.setattr(assembly, "verify_packaged_debian_server_evidence", verify_debian_file)
+    output = tmp_path / "review-output"
+    if reason:
+        with pytest.raises(ValueError, match=reason):
+            assembly.assemble(package, evidence["release_target"], installed, captures, output)
+        assert not output.exists()
+        assert bool(audited) == (change == "package-contents")
+        return
+
+    evidence_path = assembly.assemble(package, evidence["release_target"], installed, captures, output)
+    result = server_evidence.validate_live_server_release_evidence(evidence_path)
+    assert result.passed and result.summary["live_client_proof_count"] == 8
+    assert audited == [evidence["release_target"]]
+    assert not (output / assembly.CAPTURES_INDEX).exists()
 
 
 @pytest.mark.parametrize(

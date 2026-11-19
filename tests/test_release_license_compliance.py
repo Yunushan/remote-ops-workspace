@@ -139,6 +139,28 @@ def test_debian_server_notice_scope_comes_from_exact_package_evidence(tmp_path: 
     inventory["artifact_license_files"][debian] = common
     assert any(f"{debian} scan is missing bundled component license files" in error for error in verify())
     inventory["artifact_license_files"][debian] = [*common, notice]
+
+    rpm_path = "usr/share/licenses/remote-ops-workspace/pyinstaller.txt"
+    common[0]["artifact_paths"] = {rpm: rpm_path}
+    assert any(f"{rpm} scan is missing bundled component license files" in error for error in verify())
+    inventory["artifact_license_files"][rpm] = [{**common[0], "path": rpm_path}]
+    assert verify() == []
+    inventory["artifact_license_files"][rpm][0]["sha256"] = "0" * 64
+    assert any(f"{rpm} scan is missing bundled component license files" in error for error in verify())
+    inventory["artifact_license_files"][rpm][0]["sha256"] = common[0]["sha256"]
+
+    for malformed in ({rpm: "../outside.txt"}, {rpm: "."}, {"unknown.zip": rpm_path}, []):
+        common[0]["artifact_paths"] = malformed
+        assert any("license artifact_paths must map known package names to relative paths" in error for error in verify())
+    common[0]["artifact_paths"] = {rpm: rpm_path}
+
+    notice["artifact_paths"] = {debian: "another/location"}
+    assert any("artifact_paths must preserve the verified Debian notice path" in error for error in verify())
+    notice["artifact_paths"] = {rpm: notice["path"]}
+    assert any("license artifact_paths must map known package names to relative paths" in error for error in verify())
+    notice["artifact_paths"] = {debian: notice["path"]}
+    assert verify() == []
+
     native["version"] = "1:10.0p1-7+deb13u5"
     assert any("requires the exact bundled Debian component and notice for openssh-server" in error for error in verify())
 

@@ -92,6 +92,26 @@ python scripts/import_platform_evidence_artifacts.py \
   --verify-source-run --repository "$release_repository"
 ```
 
+On a Linux review host with the same archive readers as the promotion job,
+capture the required notices after importing the protected Linux packages.
+
+```bash
+python scripts/check_packaged_release_notices.py \
+  --assets-dir "$release_assets_dir" --tag "$release_tag" \
+  --evidence-root "$approval_dir/bundle"
+```
+
+The command adds `packaged-notices/` to the evidence bundle after the full
+package matrix passes. Its `notice-extraction.json` records each package's
+digest and the extracted notice paths, sizes, and digests. The corresponding
+`notice_files` entries identify the original bytes under
+`packaged-notices/files/` relative to `bundle/`. Include these observations
+in the artifact extraction scans. If a component's license appears at a
+different path in a package, add that package name and its extracted path to
+`artifact_paths` on the component's license record. Each package scan must
+match the required path, size, and digest. Complete the remaining component
+license review before signing.
+
 ### Qualify the Windows x64 MSI before publication
 
 The signed MSI rollback drill can use attested inventories from completed

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import importlib.util
 import io
 import json
@@ -53,16 +54,80 @@ def test_production_notices_cover_protected_linux_and_require_exact_bytes(
     assert len(names) == 29
     assert f"remote-ops-workspace-{tag}-linux-i386.deb" in names
     assert f"remote-ops-workspace-{tag}-linux-armv7hl.rpm" in names
-    package = tmp_path / f"remote-ops-workspace-{tag}-windows-x86-native.zip"
-    material = ROOT / "redistribution-evidence" / "THIRD_PARTY_NOTICES.md"
-    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    package = assets / f"remote-ops-workspace-{tag}-windows-x86-native.zip"
+    gui_package = assets / f"remote-ops-workspace-{tag}-windows-x64-native.zip"
+    material_dir = ROOT / "redistribution-evidence"
+    material = material_dir / "THIRD_PARTY_NOTICES.md"
+    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name, gui_package.name})
     with zipfile.ZipFile(package, "w") as archive:
         archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
-    assert notices.verify_notices(tmp_path, tag) == 1
+    with zipfile.ZipFile(gui_package, "w") as archive:
+        archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+        for name in ("PyQt6-GPL-3.0.txt", "Qt-LGPL-3.0.txt", "Qt-Relinking.md"):
+            archive.write(material_dir / name, f"docs/licenses/{name}")
+
+    assert notices.verify_notices(assets, tag) == 2
+    assert not list(bundle.iterdir())
+    assert notices.verify_notices(assets, tag, evidence_root=bundle) == 2
+    output = bundle / "packaged-notices"
+    capture = json.loads((output / "notice-extraction.json").read_bytes())
+    assert capture["release_tag"] == tag
+    assert set(capture["packages"]) == {package.name, gui_package.name}
+    assert len(list((output / "files").iterdir())) == 4
+    for artifact in (package, gui_package):
+        found = capture["packages"][artifact.name]
+        assert found["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
+        assert found["size_bytes"] == artifact.stat().st_size
+        assert len(found["notice_files"]) == (1 if artifact == package else 4)
+        with zipfile.ZipFile(artifact) as archive:
+            for record in found["notice_files"]:
+                packaged = archive.read(record["path"])
+                assert packaged == (bundle / record["file"]).read_bytes()
+                assert record["sha256"] == hashlib.sha256(packaged).hexdigest()
+                assert record["size_bytes"] == len(packaged)
+    with pytest.raises(ValueError, match="no packaged-notices output"):
+        notices.verify_notices(assets, tag, evidence_root=bundle)
+    assert json.loads((output / "notice-extraction.json").read_bytes()) == capture
+
+    failed = tmp_path / "failed"
+    failed.mkdir()
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr("docs/THIRD_PARTY_NOTICES.md", b"Different bytes")
     with pytest.raises(ValueError, match="contains different bytes"):
-        notices.verify_notices(tmp_path, tag)
+        notices.verify_notices(assets, tag, evidence_root=failed)
+    assert not list(failed.iterdir())
+
+
+def test_notice_capture_refuses_package_changed_after_extraction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    import check_packaged_release_notices as notices
+
+    tag = "v2.3.4"
+    assets, bundle = tmp_path / "assets", tmp_path / "bundle"
+    assets.mkdir()
+    bundle.mkdir()
+    package = assets / f"remote-ops-workspace-{tag}-windows-x86-native.zip"
+    material = ROOT / "redistribution-evidence" / "THIRD_PARTY_NOTICES.md"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.write(material, "docs/THIRD_PARTY_NOTICES.md")
+    monkeypatch.setattr(notices, "expected_production_packages", lambda _tag: {package.name})
+    inspect = notices.check_packaged_legal_material
+
+    def replace_after_inspection(artifact, expected):
+        verified = inspect(artifact, expected)
+        artifact.write_bytes(b"replacement bytes")
+        return verified
+
+    monkeypatch.setattr(notices, "check_packaged_legal_material", replace_after_inspection)
+    with pytest.raises(ValueError, match="changed during notice extraction"):
+        notices.verify_notices(assets, tag, evidence_root=bundle)
+    assert not list(bundle.iterdir())
 
 
 def test_missing_evidence_fails_before_native_publication(tmp_path: Path) -> None:
@@ -251,7 +316,9 @@ def test_deb_license_bytes_are_read_from_filesystem_tar_without_extraction(tmp_p
         "run",
         return_value=SimpleNamespace(returncode=0, stdout=filesystem_tar.getvalue(), stderr=b""),
     ) as run:
-        assert module.embedded_file_bytes(deb_path, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(deb_path, "THIRD_PARTY_NOTICES.md") == (
+            "usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md", notices,
+        )
 
     run.assert_called_once_with(
         ["dpkg-deb", "--fsys-tarfile", str(deb_path)],
@@ -287,7 +354,9 @@ def test_appimage_license_bytes_come_from_the_runtime_squashfs_offset(tmp_path: 
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     with patch.object(module.subprocess, "run", side_effect=inspect) as run:
-        assert module.embedded_file_bytes(appimage, "THIRD_PARTY_NOTICES.md") == payload
+        assert module.embedded_file(appimage, "THIRD_PARTY_NOTICES.md") == (
+            "usr/share/doc/THIRD_PARTY_NOTICES.md", payload,
+        )
 
     assert run.call_count == 1
     assert run.call_args.args[0][0:2] == ["unsquashfs", "-d"]
@@ -323,7 +392,9 @@ def test_rpm_license_bytes_are_read_from_cpio_without_extracting_paths(tmp_path:
         return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
 
     with patch.object(module.subprocess, "run", side_effect=inspect) as run:
-        assert module.embedded_file_bytes(rpm_path, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(rpm_path, "THIRD_PARTY_NOTICES.md") == (
+            "usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md", notices,
+        )
 
     assert [call.args[0][0] for call in run.call_args_list] == ["rpm2cpio", "cpio", "cpio"]
 
@@ -354,7 +425,7 @@ def test_pkg_license_bytes_are_read_from_gzip_cpio_payload(
         return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
 
     with patch.object(module.subprocess, "run", side_effect=inspect):
-        assert module.embedded_file_bytes(pkg_path, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(pkg_path, "THIRD_PARTY_NOTICES.md") == (member.removeprefix("./"), notices)
 
 
 def test_pkg_rejects_invalid_compressed_payload(tmp_path: Path) -> None:
@@ -411,7 +482,7 @@ def test_dmg_reads_only_the_regular_license_member_to_stdout(tmp_path: Path) -> 
         return SimpleNamespace(returncode=0, stdout=notices, stderr=b"")
 
     with patch.object(module.subprocess, "run", side_effect=inspect):
-        assert module.embedded_file_bytes(dmg_path, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(dmg_path, "THIRD_PARTY_NOTICES.md") == (member, notices)
 
 
 @pytest.mark.parametrize("prefix,mode", [("../docs/", "-rw-r--r--"), ("/docs/", "-rw-r--r--")])
@@ -463,7 +534,9 @@ def test_windows_installer_reads_restored_installed_filenames(
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     with patch.object(module.subprocess, "run", side_effect=inspect):
-        assert module.embedded_file_bytes(archive, "THIRD_PARTY_NOTICES.md") == notices
+        assert module.embedded_file(archive, "THIRD_PARTY_NOTICES.md") == (
+            "Remote Ops Workspace/docs/THIRD_PARTY_NOTICES.md", notices,
+        )
 
 
 @pytest.mark.parametrize("suffix", [".exe", ".msi"])

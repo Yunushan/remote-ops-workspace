@@ -1582,24 +1582,10 @@ def check_inventory(
                     f"{prefix} {artifact_name} extracted license file",
                 )
             )
-        bundled_license_records = {
-            license_record_key(item)
-            for component in indexed.values()
-            if component.get("scope") == "bundled"
-            for item in component.get("license_files", [])
-            if isinstance(item, dict)
-        }
+        required_scans = required_artifact_license_records(indexed, artifact_names, scoped_notices, prefix, errors)
         for artifact_name, license_files in scans.items():
-            scanned = {
-                license_record_key(item)
-                for item in license_files
-                if isinstance(item, dict)
-            }
-            missing = {
-                key for key in bundled_license_records - scanned
-                if key not in scoped_notices or artifact_name in scoped_notices[key]
-            }
-            if missing:
+            scanned = {license_record_key(item) for item in license_files}
+            if required_scans[artifact_name] - scanned:
                 errors.append(
                     f"{prefix} {artifact_name} scan is missing bundled component license files"
                 )
@@ -1615,6 +1601,41 @@ def check_inventory(
     elif inventory.get("pyqt_qt_channel") not in (None, {}):
         errors.append(f"{prefix} non-GUI profile must not claim a PyQt/Qt channel")
     return errors
+
+
+def required_artifact_license_records(
+    components: dict[str, dict[str, Any]],
+    artifact_names: set[str],
+    scoped_notices: dict[tuple[str, str, int], set[str]],
+    prefix: str,
+    errors: list[str],
+) -> dict[str, set[tuple[str, str, int]]]:
+    required: dict[str, set[tuple[str, str, int]]] = {name: set() for name in artifact_names}
+    for name, component in components.items():
+        license_files = component.get("license_files")
+        if component.get("scope") != "bundled" or not valid_license_files(license_files):
+            continue
+        for record in license_files:
+            key = license_record_key(record)
+            path, digest, size = key
+            scoped_assets = scoped_notices.get(key)
+            assets = artifact_names if scoped_assets is None else scoped_assets
+            paths = record.get("artifact_paths", {})
+            if (
+                not isinstance(paths, dict) or not paths.keys() <= assets
+                or not all(
+                    safe_relative_path(value) and value != "." and PurePosixPath(value).as_posix() == value
+                    for value in paths.values()
+                )
+            ):
+                errors.append(f"{prefix} {name} license artifact_paths must map known package names to relative paths")
+                continue
+            if scoped_assets is not None and any(value != path for value in paths.values()):
+                errors.append(f"{prefix} {name} license artifact_paths must preserve the verified Debian notice path")
+                continue
+            for artifact in assets:
+                required[artifact].add((paths.get(artifact, path), digest, size))
+    return required
 
 
 def check_debian_notice_inventory(

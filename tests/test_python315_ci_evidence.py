@@ -36,23 +36,20 @@ def _runs(
 def _jobs(*, conclusion: str = "success") -> dict:
     jobs = [
         {
-            "id": 456,
+            "id": job_id,
             "run_id": 123,
             "run_attempt": 1,
             "head_sha": SHA,
-            "name": "Python 3.15 readiness",
+            "name": name,
             "status": "completed",
             "conclusion": conclusion,
-        },
-        {
-            "id": 457,
-            "run_id": 123,
-            "run_attempt": 1,
-            "head_sha": SHA,
-            "name": "Native Windows readiness",
-            "status": "completed",
-            "conclusion": conclusion,
-        },
+            "labels": [runner] if runner else [],
+            "steps": [
+                {"name": step, "status": "completed", "conclusion": "success"}
+                for step in steps
+            ],
+        }
+        for job_id, (name, (runner, steps)) in enumerate(evidence.REQUIRED_CI_JOBS.items(), 456)
     ]
     return {"total_count": len(jobs), "jobs": jobs}
 
@@ -186,6 +183,64 @@ def test_successful_readiness_jobs_must_bind_the_selected_run(field, value) -> N
     ]
 
 
+
+def test_successful_aggregates_do_not_cover_a_missing_runtime_host() -> None:
+    jobs = _jobs()
+    name = "Python 3.15 optional dependencies, GUI, and build on ubuntu-24.04-arm"
+    jobs["jobs"] = [job for job in jobs["jobs"] if job["name"] != name]
+    jobs["total_count"] = len(jobs["jobs"])
+
+    assert evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0]) == [
+        f"expected exactly one {name!r} job in the accepted run, found 0",
+    ]
+
+
+def test_runtime_job_must_report_the_expected_host_and_attempt() -> None:
+    jobs = _jobs()
+    name = "Python 3.15 optional dependencies, GUI, and build on windows-11-arm"
+    job = next(job for job in jobs["jobs"] if job["name"] == name)
+    job.update(labels=["windows-2025-vs2026"], run_attempt=2)
+
+    assert evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0]) == [
+        f"{name} run_attempt must match the selected CI run",
+        f"{name} must report runner label 'windows-11-arm'",
+    ]
+
+
+@pytest.mark.parametrize(("step_count", "expected"), [
+    (0, "must report exactly one"),
+    (1, "must complete successfully"),
+    (2, "must report exactly one"),
+])
+def test_readiness_requires_one_successful_frozen_cli_step(step_count, expected) -> None:
+    jobs = _jobs()
+    name = "Python 3.15 optional dependencies, GUI, and build on macos-15-intel"
+    step = "Build and launch a real Python 3.15 frozen CLI executable"
+    job = next(job for job in jobs["jobs"] if job["name"] == name)
+    job["steps"] = [entry for entry in job["steps"] if entry["name"] != step] + [
+        {"name": step, "status": "completed", "conclusion": "skipped"}
+        for _ in range(step_count)
+    ]
+
+    errors = evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0])
+    assert len(errors) == 1 and name in errors[0] and step in errors[0] and expected in errors[0]
+
+
+def test_native_windows_job_requires_conpty_and_paint_steps() -> None:
+    jobs = _jobs()
+    name = "Native Windows PyQt6 render and interactions"
+    job = next(job for job in jobs["jobs"] if job["name"] == name)
+    missing = {
+        "Verify real Windows ConPTY terminal transport",
+        "Capture native Windows terminal tab-switch paint turns",
+    }
+    job["steps"] = [step for step in job["steps"] if step["name"] not in missing]
+
+    assert set(evidence.validate_readiness_job(jobs, run=_runs()["workflow_runs"][0])) == {
+        f"{name} must report exactly one {step!r} step" for step in missing
+    }
+
+
 def test_urls_bind_workflow_sha_branch_run_and_attempt() -> None:
     runs_url = evidence.workflow_runs_url(
         "https://api.github.test",
@@ -309,34 +364,10 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
         }
         for index in range(1, 29)
     ]
-    python_readiness = {
-        "id": 29,
-        "run_id": 123,
-        "run_attempt": 1,
-        "head_sha": SHA,
-        "name": "Python 3.15 readiness",
-        "status": "completed",
-        "conclusion": "success",
-    }
-    native_windows_readiness = {
-        "id": 30,
-        "run_id": 123,
-        "run_attempt": 1,
-        "head_sha": SHA,
-        "name": "Native Windows readiness",
-        "status": "completed",
-        "conclusion": "success",
-    }
+    all_jobs = ordinary_jobs + _jobs()["jobs"]
     pages = {
-        1: {"total_count": 30, "jobs": ordinary_jobs[:20]},
-        2: {
-            "total_count": 30,
-            "jobs": [
-                *ordinary_jobs[20:],
-                python_readiness,
-                native_windows_readiness,
-            ],
-        },
+        1: {"total_count": len(all_jobs), "jobs": all_jobs[:20]},
+        2: {"total_count": len(all_jobs), "jobs": all_jobs[20:]},
     }
     requested_pages: list[int] = []
 
@@ -347,8 +378,8 @@ def test_collects_all_attempt_job_pages_before_validating_readiness() -> None:
     payload = evidence.collect_paginated_attempt_jobs(fetch_page)
 
     assert requested_pages == [1, 2]
-    assert payload["total_count"] == 30
-    assert len(payload["jobs"]) == 30
+    assert payload["total_count"] == len(all_jobs)
+    assert payload["jobs"] == all_jobs
     assert evidence.validate_readiness_job(payload, run=_runs()["workflow_runs"][0]) == []
 
 

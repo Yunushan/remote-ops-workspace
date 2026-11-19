@@ -14,8 +14,50 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 EXPECTED_WORKFLOW_PATH = ".github/workflows/ci.yml"
-EXPECTED_JOB_NAME = "Python 3.15 readiness"
-EXPECTED_JOB_NAMES = (EXPECTED_JOB_NAME, "Native Windows readiness")
+PYTHON315_RUNNERS = (
+    "ubuntu-latest",
+    "ubuntu-24.04-arm",
+    "windows-2025-vs2026",
+    "windows-11-arm",
+    "macos-15-intel",
+    "macos-15",
+)
+PYTHON315_JOB_PREFIX = "Python 3.15 optional dependencies, GUI, and build on "
+PYTHON315_STEPS = (
+    "Verify complete Python 3.15 dependency environment",
+    "Verify PyQt6 6.12 forward-compatibility contract",
+    "Build and launch a real Python 3.15 frozen CLI executable",
+    "Record exact Python 3.15 runtime evidence",
+    "Verify Python 3.15 offscreen QtWidgets application startup",
+    "Run the complete test suite with Python 3.15 optional dependencies",
+    "Render every real GUI preset on Python 3.15",
+    "Exercise every GUI preset interaction on Python 3.15",
+    "Build Python 3.15 source and wheel distributions",
+    "Install and smoke Python 3.15 wheel and source distributions",
+)
+PYTHON315_WINDOWS_STEPS = ("Run Python 3.15 native Windows SSH and ConPTY evidence",)
+REQUIRED_CI_JOBS: dict[str, tuple[str | None, tuple[str, ...]]] = {
+    "Python 3.15 readiness": (None, ("Require Python 3.15 matrices to succeed",)),
+    "Native Windows readiness": (None, ("Require native Windows verification to succeed",)),
+    "Native Windows PyQt6 render and interactions": (
+        "windows-2025-vs2026",
+        (
+            "Verify real Windows ConPTY terminal transport",
+            "Verify native Windows OpenSSH authentication through Qt ConPTY",
+            "Render full GUI on native Windows",
+            "Validate native Windows GUI render artifact",
+            "Exercise native Windows controls and responsive layouts",
+            "Capture native Windows terminal tab-switch paint turns",
+        ),
+    ),
+    **{
+        f"{PYTHON315_JOB_PREFIX}{runner}": (
+            runner,
+            PYTHON315_STEPS + (PYTHON315_WINDOWS_STEPS if runner.startswith("windows-") else ()),
+        )
+        for runner in PYTHON315_RUNNERS
+    },
+}
 # Attempt responses include every job step. Smaller pages avoid server errors
 # observed when GitHub assembles the full matrix into one response.
 JOBS_PAGE_SIZE = 20
@@ -209,7 +251,7 @@ def validate_readiness_job(payload: dict[str, Any], *, run: dict[str, Any]) -> l
     if len(set(job_ids)) != len(job_ids):
         return ["workflow-jobs response contains duplicate job ids"]
     errors: list[str] = []
-    for expected_name in EXPECTED_JOB_NAMES:
+    for expected_name, (runner, required_steps) in REQUIRED_CI_JOBS.items():
         matches = [
             job
             for job in raw_jobs
@@ -239,6 +281,25 @@ def validate_readiness_job(payload: dict[str, Any], *, run: dict[str, Any]) -> l
                 f"{expected_name} conclusion must be success, "
                 f"got {job.get('conclusion')!r}"
             )
+        labels = job.get("labels")
+        if runner is not None and (not isinstance(labels, list) or runner not in labels):
+            errors.append(f"{expected_name} must report runner label {runner!r}")
+        errors.extend(validate_job_steps(expected_name, job.get("steps"), required_steps))
+    return errors
+
+
+def validate_job_steps(
+    job_name: str, steps: Any, required_steps: tuple[str, ...],
+) -> list[str]:
+    if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
+        return [f"{job_name} must report a list of step objects"]
+    errors: list[str] = []
+    for step_name in required_steps:
+        matches = [step for step in steps if step.get("name") == step_name]
+        if len(matches) != 1:
+            errors.append(f"{job_name} must report exactly one {step_name!r} step")
+        elif matches[0].get("status") != "completed" or matches[0].get("conclusion") != "success":
+            errors.append(f"{job_name} step {step_name!r} must complete successfully")
     return errors
 
 

@@ -354,9 +354,12 @@ matrices. The stable `Native Windows readiness` job aggregates the native
 Windows ConPTY/OpenSSH and GUI evidence job. Live branch protection must require
 both exact contexts. Release preflight separately runs
 `python scripts/check_python315_ci_evidence.py --repository <owner/repo> --branch main --sha <release-source-sha>`
-with read-only GitHub Actions access and rejects any non-push, wrong-SHA,
-incomplete, skipped or unsuccessful evidence for either aggregate in that same
-run attempt. The aggregate production gate additionally runs
+with read-only GitHub Actions access. The exact push attempt must contain both
+successful aggregate jobs, all six Python 3.15 runtime jobs, and the native
+Windows render and interaction job. The gate checks the runner labels and
+recorded step results for the frozen CLI, runtime evidence, tests, GUI,
+distribution installs, and Windows SSH, ConPTY and tab-switch paint checks.
+The aggregate production gate additionally runs
 `python scripts/check_repository_governance.py --repository <owner/repo> --branch main --sha <release-source-sha>`;
 that command verifies both the configured branch-protection contexts and the
 latest exact-SHA check run for every required context, rejecting missing,

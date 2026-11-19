@@ -1995,13 +1995,13 @@ def test_securecrt_empty_metadata_without_command_input_is_safe(
 ) -> None:
     from dataclasses import replace
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_securecrt
     from remote_ops_workspace.gui_designs import gui_design_securecrt_command_window_chrome
 
     _app, window = gui_window
     chrome = gui_design_securecrt_command_window_chrome()
     monkeypatch.setattr(
-        gui,
+        gui_securecrt,
         "gui_design_securecrt_command_window_chrome",
         lambda: replace(chrome, command=""),
     )

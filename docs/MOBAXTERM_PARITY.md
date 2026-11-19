@@ -820,12 +820,14 @@ Use disposable accounts and test input to keep credentials out of the capture.
 
 Dispatch `smartcard-browser-evidence.yml` at the exact promoted release tag.
 Use a dedicated, unprivileged Linux x86_64 desktop runner labeled
-`smartcard-evidence` with access to the physical test reader and a local desktop
-session. Restrict the runner to this workflow and protect the
-`smartcard-evidence` environment with release-tag deployment rules and a required
-reviewer. The desktop needs the vendor PKCS#11 library, `p11tool`, OpenSSH with
-Unix control sockets, and a private OpenSSH test peer. Run the manual capture
-locally as the runner's test account.
+`smartcard-evidence` with access to a physical test reader and a local desktop
+session. Protect the `smartcard-evidence` environment with release-tag
+deployment rules and a required reviewer. For the public repository, check the
+queue and bring an isolated [one-job runner](https://docs.github.com/en/actions/reference/runners/self-hosted-runners#ephemeral-runners-for-autoscaling)
+online for the approved release job. Use a disposable test account, test card,
+and private OpenSSH test peer. The desktop needs the vendor PKCS#11 library,
+`p11tool` and OpenSSH with Unix control sockets. Run the manual capture locally
+as the runner's test account.
 
 Read `capture-request.json` under the private runner work directory reported by
 the workflow. It supplies the exact source, wheel digest and remote filename

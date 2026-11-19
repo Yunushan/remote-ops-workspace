@@ -38,7 +38,8 @@ CHECKS = (
     "restored_profiles_and_vault_read_by_previous_launcher",
     "upgraded_workspace_preserved",
 )
-MANAGED_ENTRYPOINT = """+mkdir /tmp/source
+MANAGED_ENTRYPOINT = """
+mkdir /tmp/source
 tar -xf /input/source.tar -C /tmp/source
 python3 -I -m venv /tmp/managed-rpm
 /tmp/managed-rpm/bin/python -I -m pip --isolated install --no-index --find-links=/wheels \

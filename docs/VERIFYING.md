@@ -269,6 +269,22 @@ CLI smoke, and real PyQt6 rendering. It rejects `--quick` and
 `--no-cli-smoke`; the internal step builder also overrides those skip switches
 so another caller cannot accidentally weaken the production profile.
 
+When the application uses a newer PyQt6 runtime, use the same minimum
+PyQt6 typing dependencies that CI uses. Create a separate virtual environment
+with the project's security dependencies and install the hash-pinned minimum
+Qt wheels into it. Point `ROW_MYPY_PYTHON` at that environment's interpreter.
+Mypy searches its installed packages for type information while pytest and
+the render checks use the application interpreter.
+
+```bash
+python -m venv .tmp/row-typing
+.tmp/row-typing/bin/python -m pip install '.[security]'
+.tmp/row-typing/bin/python -m pip install --require-hashes --only-binary=:all: -r tests/fixtures/pyqt6-minimum-requirements.txt
+ROW_MYPY_PYTHON=.tmp/row-typing/bin/python python scripts/verify.py --production-quality
+```
+
+Use `.tmp\row-typing\Scripts\python.exe` for `ROW_MYPY_PYTHON` on Windows.
+
 The aggregate `make production-readiness` target additionally requires an exact
 tag/SHA checkout and a clean working tree both before and after the audit. After
 validating the downloaded asset set locally, it runs

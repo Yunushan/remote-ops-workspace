@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 def test_non_gui_type_gate_rejects_any_gui_error() -> None:
@@ -67,6 +70,37 @@ def test_non_gui_type_gate_accepts_fully_clean_source() -> None:
     checker = _load_checker()
 
     assert checker.check_mypy_output("Success: no issues found", 0) == ([], 0)
+
+
+@pytest.mark.parametrize("separate_packages", [False, True])
+def test_type_gate_uses_configured_dependency_interpreter_for_every_target(
+    monkeypatch, tmp_path, capsys, separate_packages,
+) -> None:
+    checker = _load_checker()
+    package_python = tmp_path / "type environment" / "python"
+    if separate_packages:
+        monkeypatch.setenv("ROW_MYPY_PYTHON", str(package_python))
+    else:
+        monkeypatch.delenv("ROW_MYPY_PYTHON", raising=False)
+    monkeypatch.setattr(checker.importlib.util, "find_spec", lambda _name: object())
+    commands = []
+
+    def run(argv, **kwargs):
+        assert kwargs["cwd"] == checker.ROOT
+        commands.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="Success: no issues found", stderr="")
+
+    monkeypatch.setattr(checker.subprocess, "run", run)
+
+    assert checker.main() == 0
+    assert [cmd[cmd.index("--platform") + 1] for cmd in commands] == ["linux", "win32", "darwin"]
+    for cmd in commands:
+        assert cmd[:4] == [sys.executable, "-m", "mypy", "src"]
+        if separate_packages:
+            assert cmd[-2:] == ["--python-executable", str(package_python.resolve())]
+        else:
+            assert "--python-executable" not in cmd
+    assert "non-GUI production type gate passed" in capsys.readouterr().out
 
 
 def _load_checker():

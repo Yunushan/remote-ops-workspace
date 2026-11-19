@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import secrets
 import shutil
@@ -228,6 +229,10 @@ def verify_downgrade_refusal(
 
 def drill(args: argparse.Namespace, root: Path) -> dict:
     validate_container()
+    runtime = {
+        "rpm_version": checked("RPM version query", RPM, "--version"),
+        "distribution": platform.freedesktop_os_release()["PRETTY_NAME"],
+    }
     old = read_package(args.previous_rpm, args.previous_sha256)
     new = read_package(args.candidate_rpm, args.candidate_sha256)
     if tuple(map(int, old.version.split("."))) >= tuple(map(int, new.version.split("."))):
@@ -312,8 +317,7 @@ def drill(args: argparse.Namespace, root: Path) -> dict:
         )
     return {
         "schema": "remote-ops-workspace/rpm-recovery/v1",
-        "rpm_version": checked("RPM version query", RPM, "--version"),
-        "distribution": os.freedesktop_os_release()["PRETTY_NAME"],
+        **runtime,
         "previous": asdict(old),
         "candidate": asdict(new),
         "backup_sha256": backup_hash,

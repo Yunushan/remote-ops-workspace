@@ -214,6 +214,18 @@ def state_digests(home: Path) -> dict[str, str]:
     return {name: sha256(home / name) for name in ("profiles.json", "vault.json")}
 
 
+def verify_downgrade_refusal(
+    result: subprocess.CompletedProcess[str], current: RPMIdentity, previous: RPMIdentity
+) -> None:
+    current_label = f"{PACKAGE}-{current.version}-{current.release}.{current.architecture}"
+    previous_label = f"{PACKAGE}-{previous.version}-{previous.release}.{previous.architecture}"
+    diagnostic = (
+        f"package {current_label} (which is newer than {previous_label}) is already installed"
+    )
+    if result.returncode not in {1, 2} or diagnostic not in result.stderr:
+        raise RuntimeError("RPM did not refuse the downgrade for the expected reason")
+
+
 def drill(args: argparse.Namespace, root: Path) -> dict:
     validate_container()
     old = read_package(args.previous_rpm, args.previous_sha256)
@@ -263,9 +275,7 @@ def drill(args: argparse.Namespace, root: Path) -> dict:
     verify_workspace(root, environment, upgraded)
     after = state_digests(home)
 
-    refusal = run(RPM, "--upgrade", args.previous_rpm)
-    if refusal.returncode != 1 or "which is newer than" not in refusal.stderr:
-        raise RuntimeError("RPM did not refuse the downgrade for the expected reason")
+    verify_downgrade_refusal(run(RPM, "--upgrade", args.previous_rpm), new, old)
     verify_installed(new)
     checked(
         "Restore backup into a private sibling",

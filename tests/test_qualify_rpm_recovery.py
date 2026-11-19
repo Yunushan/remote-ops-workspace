@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -48,3 +49,24 @@ def test_package_digest_mismatch_is_rejected_before_rpm(tmp_path: Path, monkeypa
     monkeypatch.setattr(qualification, "checked", unexpected_query)
     with pytest.raises(ValueError, match="expected SHA-256"):
         qualification.read_package(path, PACKAGE_SHA)
+
+
+@pytest.mark.parametrize(
+    ("code", "current", "refused"),
+    [(1, "1.0.28", True), (2, "1.0.28", True), (0, "1.0.28", False), (2, "1.0.29", False)],
+)
+def test_downgrade_refusal_identifies_both_versions(code, current, refused):
+    old = qualification.RPMIdentity("1.0.27", "1", "x86_64", PACKAGE_SHA, LAUNCHER_SHA)
+    new = qualification.RPMIdentity("1.0.28", "1", "x86_64", PACKAGE_SHA, LAUNCHER_SHA)
+    result = subprocess.CompletedProcess(
+        ["rpm", "--upgrade"],
+        code,
+        "",
+        f"\tpackage remote-ops-workspace-{current}-1.x86_64 (which is newer than "
+        "remote-ops-workspace-1.0.27-1.x86_64) is already installed\n",
+    )
+    if refused:
+        qualification.verify_downgrade_refusal(result, new, old)
+    else:
+        with pytest.raises(RuntimeError, match="expected reason"):
+            qualification.verify_downgrade_refusal(result, new, old)

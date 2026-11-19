@@ -190,6 +190,25 @@ def test_compiled_upgrade_rule_must_actually_remove_the_predecessor(major_upgrad
         msi.validate_major_upgrade(major_upgrade, msi.STOCK_UPGRADE, "1.0.28", sequence)
 
 
+@pytest.mark.parametrize(("sequence", "media", "expected"), [
+    (4, [("3", "#first.cab"), ("10", "#second.cab")], "second.cab"),
+    (1, [("0", None), ("4", "#cabinet with spaces")], "cabinet with spaces"),
+])
+def test_launcher_sequence_selects_its_embedded_cabinet(sequence, media, expected):
+    assert msi.embedded_cabinet_name(sequence, media) == expected
+
+
+@pytest.mark.parametrize(("sequence", "media", "error"), [
+    (0, [("10", "#cab1.cab")], "no valid media sequence"),
+    (10, [("5", "#cab1.cab"), ("4", "#cab2.cab")], "out of order"),
+    (2, [("10", "external.cab")], "must use an embedded cabinet"),
+    (11, [("10", "#cab1.cab")], "has no matching cabinet"),
+])
+def test_launcher_sequence_refuses_unbound_cabinets(sequence, media, error):
+    with pytest.raises(ValueError, match=error):
+        msi.embedded_cabinet_name(sequence, media)
+
+
 @pytest.mark.parametrize(("change", "message"), [
     ("", ""), ("missing", "observations are incomplete"),
     ("asset", "built MSI asset"), ("architecture", "architecture differs"),
@@ -198,10 +217,16 @@ def test_compiled_upgrade_rule_must_actually_remove_the_predecessor(major_upgrad
     ("different-build", "registration differs at after-reinstall"),
     ("old-schedule", "inside the installation transaction"),
     ("missing-upgrade-proof", "related-product rules are missing"),
+    ("wrong-launcher", "registration differs at after-reinstall"),
+    ("invalid-payload-digest", "MSI launcher payload digest is invalid"),
+    ("legacy-payload-proof", ""),
 ])
 def test_candidate_lifecycle_binds_the_exact_asset_and_all_registration_states(package, change, message):
     installed = {"state": "installed", "package_code": package["package_code"], "version": package["version"],
                  "row_path": "msi-install/bin/row.exe"}
+    if change != "legacy-payload-proof":
+        package["launcher_payload_sha256"] = "d" * 64
+        installed["launcher_sha256"] = package["launcher_payload_sha256"]
     probes = [
         {"probe": probe, "package": dict(package), "registration": dict(installed if 0 < index < 3 else {"state": "absent"})}
         for index, probe in enumerate(msi.PROBES)
@@ -223,7 +248,11 @@ def test_candidate_lifecycle_binds_the_exact_asset_and_all_registration_states(p
         probes[0]["package"]["upgrade_sequence"] = {**UPGRADE_SEQUENCE, "RemoveExistingProducts": 1401}
     if change == "missing-upgrade-proof":
         probes[0]["package"].pop("major_upgrade")
-    if change:
+    if change == "wrong-launcher":
+        probes[2]["registration"]["launcher_sha256"] = "e" * 64
+    if change == "invalid-payload-digest":
+        probes[0]["package"]["launcher_payload_sha256"] = "invalid"
+    if message:
         with pytest.raises(ValueError, match=message):
             msi.validate_lifecycle(probes, "windows-x64", assets)
     else:

@@ -12,6 +12,7 @@ import sys
 from contextlib import contextmanager
 from ctypes import wintypes as win
 from pathlib import Path, PureWindowsPath
+from tempfile import TemporaryDirectory
 from uuid import UUID
 
 STOCK_UPGRADE = "{8F8A21B4-6E48-4B1A-9F5D-B9373E1807D0}"
@@ -33,6 +34,17 @@ NO_MORE_ITEMS = 259
 UNKNOWN_PRODUCT = 1605
 SYSTEM32_ONLY = 0x800
 LIMIT = 1024
+MAX_PATH = 260
+MAX_LAUNCHER_BYTES = 150 * 1024 * 1024
+ROW_FILE_KEY = "RowExe"
+FILE_NOT_COMPRESSED = 0x2000
+FILE_IN_CABINET = 0x11
+NEED_NEW_CABINET = 0x12
+FILE_EXTRACTED = 0x13
+FILEOP_ABORT = 0
+FILEOP_DOIT = 1
+FILEOP_SKIP = 2
+ERROR_INVALID_DATA = 13
 HANDLE = c.c_uint
 
 
@@ -65,6 +77,9 @@ class Installer:
             "MsiGetSummaryInformationW": (uint, HANDLE, string, uint, phandle),
             "MsiSummaryInfoGetPropertyW": (uint, HANDLE, uint, c.POINTER(uint), c.c_void_p, c.c_void_p, win.LPWSTR, pdword),
             "MsiRecordGetStringW": (uint, HANDLE, uint, win.LPWSTR, pdword),
+            "MsiCreateRecord": (HANDLE, uint),
+            "MsiRecordSetStringW": (uint, HANDLE, uint, string),
+            "MsiRecordReadStream": (uint, HANDLE, uint, c.c_void_p, pdword),
             "MsiRecordIsNull": (win.BOOL, HANDLE, uint),
             "MsiCloseHandle": (uint, HANDLE),
             "MsiEnumRelatedProductsW": (uint, string, dword, dword, win.LPWSTR),
@@ -183,6 +198,53 @@ class Installer:
             **major_upgrade,
         }
 
+    def launcher_payload_sha256(self, path: Path) -> str:
+        """Hash the stock launcher in its embedded cabinet without installing the MSI."""
+        with TemporaryDirectory(prefix="row-msi-payload-") as temporary:
+            work = Path(temporary)
+            cabinet = work / "payload.cab"
+            with self.handle(self.dll.MsiOpenDatabaseW, str(path.absolute()), READONLY) as database:
+                rows = self.rows(
+                    database, "SELECT `FileSize`, `Sequence`, `Attributes` FROM `File` WHERE `File` = 'RowExe'", 3,
+                )
+                require(len(rows) == 1, "MSI must identify exactly one RowExe payload")
+                raw_size, sequence, attributes = rows[0]
+                size = int(raw_size)
+                require(0 < size <= MAX_LAUNCHER_BYTES and not (int(attributes or "0") & FILE_NOT_COMPRESSED),
+                        "MSI launcher must be a bounded, compressed file")
+                media = self.rows(
+                    database, "SELECT `LastSequence`, `Cabinet` FROM `Media` ORDER BY `DiskId`", 2,
+                )
+                cabinet_name = embedded_cabinet_name(int(sequence), media)
+                self.copy_cabinet_stream(database, cabinet_name, cabinet, path.stat().st_size)
+            launcher = work / "launcher.bin"
+            extract_cabinet_launcher(cabinet, launcher, size)
+            return fingerprint(launcher)
+
+    def copy_cabinet_stream(self, database, name: str, output: Path, limit: int) -> None:
+        dll = self.dll
+        query = "SELECT `Data` FROM `_Streams` WHERE `Name` = ?"
+        with self.handle(dll.MsiDatabaseOpenViewW, database, query) as view:
+            parameter = dll.MsiCreateRecord(1)
+            require(bool(parameter), "could not allocate the MSI cabinet query parameter")
+            try:
+                confirm(dll.MsiRecordSetStringW(parameter, 1, name), "set cabinet stream name")
+                confirm(dll.MsiViewExecute(view, parameter), "find cabinet stream")
+                with self.handle(dll.MsiViewFetch, view) as record, output.open("xb") as stream:
+                    buffer = c.create_string_buffer(1024 * 1024)
+                    written = 0
+                    while True:
+                        count = win.DWORD(len(buffer))
+                        confirm(dll.MsiRecordReadStream(record, 1, buffer, c.byref(count)), "read cabinet stream")
+                        written += count.value
+                        require(written <= limit and count.value <= len(buffer), "MSI cabinet stream exceeds its size bound")
+                        stream.write(buffer[:count.value])
+                        if count.value < len(buffer):
+                            break
+                    require(written > 0, "MSI cabinet stream is empty")
+            finally:
+                confirm(dll.MsiCloseHandle(parameter), "close cabinet query parameter")
+
     def related_products(self, upgrade_code: str) -> tuple[str, ...]:
         products = []
         buffer = c.create_unicode_buffer(39)
@@ -210,6 +272,70 @@ class Installer:
         return buffer.value
 
 
+class CabinetMember(c.Structure):
+    _fields_ = [
+        ("name", win.LPCWSTR), ("size", win.DWORD), ("error", win.DWORD),
+        ("date", win.WORD), ("time", win.WORD), ("attributes", win.WORD),
+        ("destination", c.c_wchar * MAX_PATH),
+    ]
+
+
+class CabinetExtraction(c.Structure):
+    _fields_ = [("target", win.LPCWSTR), ("source", win.LPCWSTR),
+                ("error", win.UINT), ("flags", win.DWORD)]
+
+
+def embedded_cabinet_name(sequence: int, media: list[tuple[str | None, ...]]) -> str:
+    require(sequence > 0, "MSI launcher has no valid media sequence")
+    last_sequence = 0
+    for raw_end, cabinet in media:
+        end = int(raw_end)
+        require(end >= last_sequence, "MSI media sequences are out of order")
+        if last_sequence < sequence <= end:
+            require(bool(cabinet and cabinet.startswith("#") and len(cabinet) > 1),
+                    "MSI launcher must use an embedded cabinet")
+            return cabinet[1:]
+        last_sequence = end
+    raise ValueError("MSI launcher sequence has no matching cabinet")
+
+
+def extract_cabinet_launcher(cabinet: Path, output: Path, size: int) -> None:
+    destination = str(output.absolute())
+    require(len(destination.encode("utf-16-le")) // 2 < MAX_PATH, "MSI payload temporary path is too long")
+    iterate = c.WinDLL("setupapi.dll", winmode=SYSTEM32_ONLY, use_last_error=True).SetupIterateCabinetW
+    callback_type = c.WINFUNCTYPE(win.UINT, c.c_void_p, win.UINT, c.c_size_t, c.c_size_t)
+    iterate.argtypes = (win.LPCWSTR, win.DWORD, callback_type, c.c_void_p)
+    iterate.restype = win.BOOL
+    found = False
+    extracted = False
+
+    @callback_type
+    def notification(_context, event, param, _unused):
+        nonlocal found, extracted
+        if event == FILE_IN_CABINET:
+            member = CabinetMember.from_address(param)
+            if member.name != ROW_FILE_KEY:
+                return FILEOP_SKIP
+            if found or member.error or member.size != size:
+                return FILEOP_ABORT
+            found = True
+            # Select a fixed scratch path. Cabinet member names never determine the output path.
+            member.destination = destination
+            return FILEOP_DOIT
+        if event == NEED_NEW_CABINET:
+            return ERROR_INVALID_DATA
+        if event == FILE_EXTRACTED:
+            result = CabinetExtraction.from_address(param)
+            if result.error or result.target != destination:
+                return ERROR_INVALID_DATA
+            extracted = True
+        return 0
+
+    if not iterate(str(cabinet.absolute()), 0, notification, None):
+        raise OSError(c.get_last_error(), "MSI launcher cabinet extraction failed")
+    require(found and extracted and output.stat().st_size == size, "MSI cabinet did not yield the exact RowExe size")
+
+
 def validate_package(package: dict, architecture: str, version: str | None = None) -> None:
     require(package.get("name") == "Remote Ops Workspace"
             and package.get("manufacturer") == "Remote Ops Workspace Contributors"
@@ -220,6 +346,10 @@ def validate_package(package: dict, architecture: str, version: str | None = Non
     require(isinstance(package.get("version"), str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", package["version"]) is not None
             and (version is None or package["version"] == version), "MSI ProductVersion differs from the release version")
     require(package.get("all_users") == "1" and package.get("per_user") == "", "stock MSI must have per-machine scope")
+    if "launcher_payload_sha256" in package:
+        payload = package["launcher_payload_sha256"]
+        require(isinstance(payload, str) and re.fullmatch(r"[0-9a-f]{64}", payload) is not None,
+                "MSI launcher payload digest is invalid")
     if "product_language" in package:
         validate_language(package.get("product_language"), package.get("template_languages"))
     for field in ("package_code", "product_code"):
@@ -316,6 +446,8 @@ def validate_lifecycle(probes, target: str, assets: list[dict] | None = None) ->
     absent = {"state": "absent"}
     installed = {"state": "installed", "package_code": package["package_code"], "version": package["version"],
                  "row_path": "msi-install/bin/row.exe"}
+    if "launcher_payload_sha256" in package:
+        installed["launcher_sha256"] = package["launcher_payload_sha256"]
     for observation, expected in zip(probes, (absent, installed, installed, absent), strict=True):
         require(observation.get("package") == package and observation.get("registration") == expected,
                 f"candidate MSI lifecycle registration differs at {observation['probe']}")
@@ -362,6 +494,8 @@ def main() -> int:
             result = {"upgrade_sequence": sequence, "major_upgrade": major_upgrade, "sha256": original}
         else:
             package = native.inspect(args.package.absolute(), require_transactional_upgrade=args.require_transactional_upgrade)
+            if args.require_transactional_upgrade:
+                package["launcher_payload_sha256"] = native.launcher_payload_sha256(args.package)
             validate_package(package, args.architecture, args.version)
             registration = inspect_registration(native, package, args.state) if args.state else None
             result = {"package": {**package, "sha256": original}, "registration": registration}

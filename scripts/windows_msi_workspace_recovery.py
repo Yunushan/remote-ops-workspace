@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -12,6 +13,7 @@ from inspect_windows_msi import fingerprint, require
 from native_installer_recovery import clean_environment, private_parent
 from smoke_workspace_recovery import _tree_summary
 
+from remote_ops_workspace.windows_private_storage import _Native
 from remote_ops_workspace.workspace_backup import create_workspace_backup
 
 PROFILE = "rollback-profile"
@@ -20,10 +22,22 @@ UPGRADE_PROFILE = "upgrade-only-profile"
 UPGRADE_SECRET = "upgrade-only-vault-entry"
 
 
+@contextmanager
+def locked_launcher(storage: _Native, row: Path, sha256: str):
+    held = storage.open_file(str(row), read_only=True)
+    try:
+        require(fingerprint(row) == sha256, "registered launcher bytes differ from the exact MSI payload")
+        yield
+        require(fingerprint(row) == sha256, "registered launcher changed during execution")
+    finally:
+        storage.close(held)
+
+
 class WorkspaceRecovery:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, storage: _Native) -> None:
         private_parent(root)
         self.root = root
+        self.storage = storage
         self.home = root / "workspace"
         self.home.mkdir()
         self.restored = root / "restored"
@@ -34,14 +48,13 @@ class WorkspaceRecovery:
         self.upgraded_secret = secrets.token_urlsafe(48)
 
     def command(self, row: Path, sha256: str, home: Path, *args: str, value: str | None = None) -> str:
-        require(fingerprint(row) == sha256, "workspace recovery launcher bytes changed")
-        result = subprocess.run(
-            [str(row), *args], cwd=self.root,
-            env=clean_environment(home, self.password, self.backup_password),
-            input=value or "", capture_output=True, text=True, encoding="utf-8", timeout=180, check=False,
-        )
-        require(result.returncode == 0 and fingerprint(row) == sha256,
-                "signed launcher failed a workspace recovery command")
+        with locked_launcher(self.storage, row, sha256):
+            result = subprocess.run(
+                [str(row), *args], cwd=self.root,
+                env=clean_environment(home, self.password, self.backup_password),
+                input=value or "", capture_output=True, text=True, encoding="utf-8", timeout=180, check=False,
+            )
+            require(result.returncode == 0, "signed launcher failed a workspace recovery command")
         return result.stdout
 
     def verify_state(self, row: Path, sha256: str, home: Path, *, upgraded=False) -> None:

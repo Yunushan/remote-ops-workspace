@@ -62,6 +62,7 @@ def package_identity(native: Installer, root: Path, manifest, *, candidate: bool
     try:
         package = native.inspect(path, require_transactional_upgrade=candidate)
         validate_package(package, "x64", manifest.version)
+        package["launcher_payload_sha256"] = native.launcher_payload_sha256(path)
     except (KeyError, OSError, ValueError) as exc:
         raise UpdateError("msi-package-identity-refused") from exc
     return {**package, "sha256": asset.sha256, "size_bytes": asset.size, "asset": name}
@@ -110,6 +111,7 @@ def preflight(args, policy, workspace: Path) -> dict:
             expected = program_files() / "Remote Ops Workspace" / "bin" / "row.exe"
             require(launcher == expected and launcher.resolve(strict=True) == expected, "msi-launcher-path-refused")
             launcher_digest = fingerprint(launcher)
+            require(launcher_digest == previous["launcher_payload_sha256"], "msi-launcher-bytes-refused")
         except UpdateError:
             raise
         except (OSError, ValueError) as exc:

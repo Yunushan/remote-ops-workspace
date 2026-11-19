@@ -216,8 +216,9 @@ and [Windows Installer Upgrade table](https://learn.microsoft.com/en-us/windows/
 The native Windows smoke reads the stock MSI's package identity, architecture,
 and launcher component before installation. During installation and reinstall
 it checks that Windows Installer registered the exact ProductCode, PackageCode,
-version, and Program Files launcher. After uninstall it checks that the
-per-machine product registration and launcher are gone. The candidate proof
+version, and Program Files launcher. It compares the installed launcher with
+the payload read from the MSI's embedded cabinet after install and reinstall.
+After uninstall it checks that the per-machine registration and launcher are gone. The candidate proof
 binds these observations to the MSI's SHA-256 and the built executable bytes.
 See the [Windows Installer product query](https://learn.microsoft.com/en-us/windows/win32/api/msi/nf-msi-msigetproductinfoexw)
 and [component query](https://learn.microsoft.com/en-us/windows/win32/api/msi/nf-msi-msigetcomponentpathexw).
@@ -233,8 +234,10 @@ the successful release build's summary. Both versions can use sealed
 candidates. The workflow resolves each live tag, verifies the inventory
 attestation for its exact build attempt, and compares the Windows x64 MSI
 with that inventory under the retained file handle. All packages must pass
-Authenticode and timestamp checks. The pinned Windows recovery predecessor
-uses the EXE installer and cannot serve as the MSI baseline.
+Authenticode and timestamp checks. At each installed checkpoint, the drill
+holds the launcher against write and delete access and matches it to the
+corresponding MSI's cabinet before running the CLI. Use an MSI predecessor
+for this drill.
 
 The workflow holds both MSIs against write and delete access throughout
 verification, installation, cancellation, and retry. It installs the
@@ -282,8 +285,9 @@ deny write and delete access. It checks both stock MSI signatures and
 timestamps, the candidate's rollback sequence, the exact installed predecessor
 registration, and the absence of the candidate registration. Windows
 Installer's related-products query must return exactly the predecessor.
-Preflight records the
-current launcher digest and returns `install_permitted: false`. Windows
+Preflight reads the launcher payload directly from each MSI's embedded
+cabinet. It requires the installed predecessor's launcher
+to match its MSI byte for byte and returns `install_permitted: false`. Windows
 certificate checks may contact configured trust services. Use the existing
 endpoint-management installation procedure after completing workspace recovery
 preparation.

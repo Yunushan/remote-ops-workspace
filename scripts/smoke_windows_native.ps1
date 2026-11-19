@@ -475,6 +475,11 @@ function Add-MsiLifecycleProbe([string]$Probe, [string]$State) {
     $RowPath = $Registration.row_path
     $Registration.row_path = Get-CandidateNormalizedPath $RowPath
     if ($Registration.row_path -cne "msi-install/bin/row.exe") { throw "MSI did not register the stock Program Files launcher" }
+    $LauncherDigest = (Get-FileHash -LiteralPath $RowPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($LauncherDigest -cne $Snapshot.package.launcher_payload_sha256) {
+      throw "Registered launcher bytes differ from the exact MSI payload at $Probe"
+    }
+    $Registration | Add-Member -NotePropertyName "launcher_sha256" -NotePropertyValue $LauncherDigest
   }
   $script:CandidateByteBinding.msi_lifecycle += [ordered]@{ probe = $Probe; package = $Snapshot.package; registration = $Registration }
   Save-CandidateByteBinding

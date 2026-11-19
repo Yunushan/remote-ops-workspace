@@ -33,7 +33,7 @@ def test_read_only_handle_refuses_writers_but_allows_verification(tmp_path):
         assert writer.read() == b"candidate"
 
 
-@pytest.mark.parametrize("scenario", ["accepted", "wrong-target", "unsigned", "invalid-msi"])
+@pytest.mark.parametrize("scenario", ["accepted", "wrong-target", "unsigned", "invalid-msi", "bad-cabinet"])
 def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch, scenario):
     name = "remote-ops-workspace-v1.0.29-windows-x64.msi"
     artifact = SimpleNamespace(name=name, target="linux-x86_64" if scenario == "wrong-target" else "windows-x64",
@@ -64,17 +64,26 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
     monkeypatch.setattr(msi, "native_installer_signature_commands", signature_commands)
     monkeypatch.setattr(msi, "verify_platform_signature", verify)
     monkeypatch.setattr(msi, "validate_package", validate)
-    native = SimpleNamespace(inspect=inspect)
+    def payload(path):
+        assert path == tmp_path / name and trace == ["signature", "identity"]
+        trace.append("launcher")
+        if scenario == "bad-cabinet":
+            raise ValueError("no launcher in cabinet")
+        return "b" * 64
+
+    native = SimpleNamespace(inspect=inspect, launcher_payload_sha256=payload)
     refusal = {"wrong-target": "selected-msi-absent", "unsigned": "msi-authenticode-refused",
-               "invalid-msi": "msi-package-identity-refused"}.get(scenario)
+               "invalid-msi": "msi-package-identity-refused", "bad-cabinet": "msi-package-identity-refused"}.get(scenario)
     if refusal:
         with pytest.raises(msi.UpdateError, match=refusal):
             msi.package_identity(native, tmp_path, manifest, candidate=True)
     else:
         result = msi.package_identity(native, tmp_path, manifest, candidate=True)
         assert (result["asset"], result["sha256"], result["size_bytes"]) == (name, artifact.sha256, artifact.size)
+        assert result["launcher_payload_sha256"] == "b" * 64
     assert trace == {"wrong-target": [], "unsigned": ["signature"], "invalid-msi": ["signature", "identity"],
-                     "accepted": ["signature", "identity"]}[scenario]
+                     "bad-cabinet": ["signature", "identity", "launcher"],
+                     "accepted": ["signature", "identity", "launcher"]}[scenario]
 
 
 @pytest.mark.parametrize(("scenario", "refusal"), [
@@ -84,6 +93,7 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
     ("same-package", "major-upgrade-identity-refused"),
     ("extra-related-product", "msi-related-products-refused"),
     ("wrong-registration", "msi-registration-refused"),
+    ("changed-launcher", "msi-launcher-bytes-refused"),
 ])
 def test_preflight_holds_both_verified_stages_through_installed_registration(
     tmp_path, monkeypatch, scenario, refusal,
@@ -114,7 +124,9 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
         assert held == [args.previous_stage, args.stage]
         assert candidate == (stage == args.stage)
         code = args.previous_version if scenario == "same-package" else version
-        return {"product_code": code, "package_code": code, "version": version, "upgrade_code": "stock-family"}
+        payload = b"different" if scenario == "changed-launcher" else b"installed"
+        return {"product_code": code, "package_code": code, "version": version, "upgrade_code": "stock-family",
+                "launcher_payload_sha256": hashlib.sha256(payload).hexdigest()}
 
     def related(upgrade_code):
         assert len(held) == 2 and upgrade_code == "stock-family"

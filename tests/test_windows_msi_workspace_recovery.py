@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,14 +24,22 @@ def test_signed_workflow_recovery_uses_real_encrypted_cli_and_preserves_both_tre
                 "from remote_ops_workspace.cli import main; raise SystemExit(main())")
     original = subprocess.run
 
+    held = set()
+
+    def hold(path, *, read_only):
+        assert path == str(row) and read_only and not held
+        held.add(path)
+        return path
+
     def run(command, **options):
-        assert command[0] == str(row)
+        assert command[0] == str(row) and held == {str(row)}
         assert options["env"].get("GITHUB_TOKEN") is None
         return original([sys.executable, "-I", "-c", launcher, *command[1:]], **options)
 
     monkeypatch.setenv("GITHUB_TOKEN", "synthetic-token")
     monkeypatch.setattr(recovery_source.subprocess, "run", run)
-    recovery = recovery_source.WorkspaceRecovery(tmp_path / "recovery")
+    storage = SimpleNamespace(open_file=hold, close=held.remove)
+    recovery = recovery_source.WorkspaceRecovery(tmp_path / "recovery", storage=storage)
     recovery.seed_and_backup(row, sha256)
     recovery.verify_original(row, sha256)
     archived = json.loads(recovery.archive.read_bytes())
@@ -44,7 +53,11 @@ def test_signed_workflow_recovery_uses_real_encrypted_cli_and_preserves_both_tre
     assert recovery_source._tree_summary(recovery.restored) == report["pre_upgrade_inventory"]
     assert recovery_source._tree_summary(recovery.home) == report["upgraded_inventory"]
     assert recovery_source.UPGRADE_SECRET.encode() not in (recovery.restored / "profiles.json").read_bytes()
-    assert not list(recovery.root.glob("vault-probe-*"))
+    assert not list(recovery.root.glob("vault-probe-*")) and not held
+
+    with pytest.raises(ValueError, match="registered launcher bytes differ"):
+        recovery.command(row, "0" * 64, recovery.home, "profile", "list")
+    assert not held
 
     (recovery.home / "unexpected-write").write_bytes(b"unexpected")
     with pytest.raises(ValueError, match="changed the upgraded workspace"):

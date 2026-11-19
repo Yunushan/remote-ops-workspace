@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes as c
+import hashlib
 import subprocess
 import sys
 from ctypes import wintypes as win
@@ -127,7 +128,8 @@ def test_release_msi_must_pass_provenance_and_keep_verified_bytes(tmp_path, monk
     monkeypatch.setattr(upgrade, "validate_package", lambda *_: None)
     storage = SimpleNamespace(open_file=open_file, close=close)
     with pytest.raises(ValueError if modified else subprocess.CalledProcessError), upgrade.verified_msi(
-        SimpleNamespace(inspect=inspect), storage, tmp_path, tag, sha, candidate=True,
+        SimpleNamespace(inspect=inspect, launcher_payload_sha256=lambda _: "a" * 64),
+        storage, tmp_path, tag, sha, candidate=True,
     ):
         pytest.fail("refused package reached the installer")
     assert trace == ["download", "hold", "provenance", *(["inspect"] if modified else []), "close"]
@@ -193,25 +195,32 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
     monkeypatch.setattr(upgrade, "verify_platform_signature", verify)
     monkeypatch.setattr(upgrade, "validate_package", lambda *_: None)
     monkeypatch.setattr(upgrade.subprocess, "run", lambda *_a, **_k: pytest.fail("fell back to a release download"))
+    def payload(requested):
+        assert requested == path and trace[-1] == "inspect"
+        trace.append("launcher")
+        return "d" * 64
+
     storage = SimpleNamespace(open_file=hold, close=close)
-    scope = upgrade.verified_msi(SimpleNamespace(inspect=inspect), storage, tmp_path, tag, sha, candidate=True, inventory=pointer)
+    native = SimpleNamespace(inspect=inspect, launcher_payload_sha256=payload)
+    scope = upgrade.verified_msi(native, storage, tmp_path, tag, sha, candidate=True, inventory=pointer)
     if message:
         with pytest.raises((ValueError, RuntimeError), match=message), scope:
             pytest.fail("refused package reached the installer")
     else:
         with scope as (locked, package):
             assert locked == path and package["sha256"] == fingerprint and package["source"]["kind"] == "sealed-candidate"
-            assert trace == ["materialize", "hold", "signature", "inspect"]
+            assert package["launcher_payload_sha256"] == "d" * 64
+            assert trace == ["materialize", "hold", "signature", "inspect", "launcher"]
     assert trace[-1] == "close"
 
 
 @pytest.mark.parametrize(("scenario", "error"), [
     ("success", None),
     ("unexpected-rollback-refusal", "must fail its rollback launch condition"),
-    ("predecessor-changed-on-refusal", "upgrade changed the exact previous launcher"),
+    ("predecessor-changed-on-refusal", "registered launcher bytes differ from the exact MSI payload"),
     ("too-early", "must return user exit after removal"),
     ("wrong-result", "must return user exit after removal"),
-    ("wrong-rollback-bytes", "did not restore the exact previous launcher"),
+    ("wrong-rollback-bytes", "registered launcher bytes differ from the exact MSI payload"),
     ("candidate-still-registered", "candidate still registered"),
     ("modified-candidate", "MSI bytes changed"),
     ("wrong-restored-workspace", "workspace restore verification failed"),
@@ -229,6 +238,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         return path, {
             "product_code": role, "package_code": f"{role}-package", "version": version,
             "row_component_code": "row-exe", "sha256": upgrade.fingerprint(path),
+            "launcher_payload_sha256": hashlib.sha256(role.encode()).hexdigest(),
             "upgrade_sequence": dict(zip(ROLLBACK_ACTIONS, (1400, 1500, 1501, 1600, 4000, 6600), strict=True)),
             "disable_rollback": "",
         }
@@ -285,9 +295,20 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
     def no_products():
         assert not registered
 
+    held_files = set()
+
+    def hold_launcher(path, *, read_only):
+        assert not held_files and path == str(launcher) and read_only
+        held_files.add(path)
+        return path
+
+    storage = SimpleNamespace(open_file=hold_launcher, close=held_files.remove)
+
     def cli(command, *, cwd, env, text, timeout):
         assert command == [str(launcher), "--version"] and cwd in (home, restored) and env["ROW_HOME"] == str(cwd)
         role = "previous" if "previous" in registered else "candidate"
+        assert held_files == {str(launcher)}
+        assert upgrade.fingerprint(launcher) == packages[role]["launcher_payload_sha256"]
         return f"remote-ops-workspace {packages[role]['version']}\n"
 
     monkeypatch.setattr(upgrade.subprocess, "check_output", cli)
@@ -318,7 +339,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         phases.append(report["phase"])
     if error:
         with pytest.raises(ValueError, match=error):
-            upgrade.exercise(native, previous, candidate, launcher, recovery, report, save)
+            upgrade.exercise(native, previous, candidate, launcher, recovery, report, save, storage=storage)
         if scenario == "wrong-restored-workspace":
             assert operations == ["previous", "refuse", "cancel", "candidate", "uninstall-candidate", "previous"]
             assert report["phase"] == "verify-restored-workspace"
@@ -326,7 +347,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
             assert "candidate" not in operations
         assert "status" not in report
     else:
-        upgrade.exercise(native, previous, candidate, launcher, recovery, report, save)
+        upgrade.exercise(native, previous, candidate, launcher, recovery, report, save, storage=storage)
         assert report["status"] == "passed" and report["phase"] == "complete"
         assert report["previous_restored"] == report["previous_installed"]
         assert report["previous_reinstalled"] == report["previous_installed"]
@@ -342,3 +363,4 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
             "previous", "refuse", "cancel", "candidate", "uninstall-candidate", "previous", "uninstall-previous",
         ]
         assert phases[-1] == "complete"
+    assert not held_files

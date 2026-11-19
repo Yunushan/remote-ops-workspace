@@ -388,13 +388,13 @@
     },
     {
       "path": "src/remote_ops_workspace/update_channel.py",
-      "sha256": "e1e3d057b1521db40f49c2f8a012c41f579f4627ec7c3d5506c956a3a81c7cc2",
-      "size": 26819
+      "sha256": "a109cc3ee48119c38b9bdf51ffa30c11a81bc9a9fcf9ed5a553b08d9da2653d1",
+      "size": 27355
     },
     {
       "path": "src/remote_ops_workspace/update_staging.py",
-      "sha256": "145962d5b706941ceb1d7c2eaa05fcb3be516e3392cc084d3d23d25ee2949b0a",
-      "size": 15968
+      "sha256": "81e8892bdcec6e9817dccde21b5753ca1449fcc6cae47084e3742d498c4c3c9f",
+      "size": 16022
     },
     {
       "path": "src/remote_ops_workspace/vault.py",
@@ -413,8 +413,8 @@
     },
     {
       "path": "src/remote_ops_workspace/windows_private_storage.py",
-      "sha256": "f40db6b6bf51bf56b3f7c70682a06dd417fd0e8a357d0080a4652816c5927869",
-      "size": 37719
+      "sha256": "af43b284fbc530ba356b918e84b58e7796cbb3b366200f7ece5a15f409031c56",
+      "size": 37903
     },
     {
       "path": "src/remote_ops_workspace/workspace_backup.py",

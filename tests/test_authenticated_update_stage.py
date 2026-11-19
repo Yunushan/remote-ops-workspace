@@ -324,7 +324,7 @@ class SyntheticPrivateGuard:
             self.events.append(("descriptor-exit", path.name))
 
     @contextmanager
-    def named_file(self, path, *, expected_identity=None):
+    def named_file(self, path, *, expected_identity=None, read_only=False):
         path, identity = self.checked_file(path)
         assert expected_identity is None or expected_identity == identity
         self.named[path.name] = self.named.get(path.name, 0) + 1

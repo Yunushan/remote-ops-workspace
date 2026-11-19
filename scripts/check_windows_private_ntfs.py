@@ -40,6 +40,35 @@ def require_delete_sharing(native, path: Path, *, blocked: bool, directory: bool
     require(not blocked, "delete-access-granted-with-held-handle")
 
 
+def require_read_only_sharing(native, guard, path: Path) -> None:
+    def open_writer():
+        return native.kernel.CreateFileW(str(path), 0x0002, 0x07, None, 3, 0, None)
+
+    invalid = native.c.c_void_p(-1).value
+    writer = open_writer()
+    require(writer != invalid, "read-only-control-write-open-refused")
+    try:
+        try:
+            with guard.named_file(path, read_only=True):
+                raise ValueError("read-only-lease-accepted-existing-writer")
+        except ValueError as exc:
+            require(exc.args == ("native-file-open-refused",) and native.c.get_last_error() == 32,
+                    "unexpected-existing-writer-refusal")
+    finally:
+        native.close(writer)
+    with guard.named_file(path, read_only=True):
+        require(path.read_bytes() == CANARY, "read-only-canary-differs")
+        writer = open_writer()
+        if writer != invalid:
+            native.close(writer)
+            raise ValueError("write-access-granted-with-read-only-lease")
+        require(native.c.get_last_error() == 32, "unexpected-read-only-write-open-error")
+        require_delete_sharing(native, path, blocked=True)
+    writer = open_writer()
+    require(writer != invalid, "write-access-not-restored-after-read-only-lease")
+    native.close(writer)
+
+
 def open_for_access(native, path: Path, access: int, *, denied: bool) -> None:
     handle = native.kernel.CreateFileW(str(path), access, 0x07, None, 3, 0, None)
     if handle == native.c.c_void_p(-1).value:
@@ -223,6 +252,8 @@ def qualify(parent: Path, observed: list[str], account: str, password: str, cont
             partial.rename(final)
             with guard.named_file(final, expected_identity=written.identity):
                 require(final.read_bytes() == CANARY, "staged-canary-differs")
+            require_read_only_sharing(native, guard, final)
+            observed.append("read-only-handle-denies-existing-and-new-writers")
             require(guard.verify_entries(maximum=2) == 1, "unexpected-stage-entry-count")
             observed.append("published-file-identity-and-bytes")
             check_other_identity(native, final, control, account, password)

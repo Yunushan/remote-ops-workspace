@@ -322,6 +322,9 @@ rehashes every file. Journal flags and payload checksums never authorize recover
 Linux administrators can authenticate both DEBs, install the candidate, and
 roll back on failure in one invocation with the
 [managed Debian update controller](runbooks/UPGRADE_AND_ROLLBACK.md#managed-debian-package-updates).
+Windows administrators can reauthenticate both staged stock x64 MSIs and
+verify their signatures, rollback sequence, and installed predecessor with
+the [managed Windows MSI preflight](runbooks/UPGRADE_AND_ROLLBACK.md#managed-windows-msi-preflight).
 
 On POSIX, use an existing empty private staging directory outside `ROW_HOME`,
 with current owner and mode 0700. The policy file must be regular, unlinked and
@@ -339,7 +342,8 @@ example still needs operator-configured trust settings.
 The Windows source requires the current process token and refuses an impersonated
 thread. It retains local NTFS ancestor and named-file handles without delete
 sharing, with exact owner-only private DACLs, descriptor-to-name identity checks
-and validation through lock, writer, recovery and full-manifest scopes. The policy
+and validation through lock, writer, recovery and full-manifest scopes. The final
+verification handles also deny write sharing. The policy
 file and its parent require the private boundary too; a public key in a permissive
 policy file does not waive that requirement. Existing direct stage entries are
 qualified before a receiving journal or lock byte. Only a missing explicit stage

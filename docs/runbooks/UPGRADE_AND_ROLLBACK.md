@@ -235,6 +235,29 @@ candidate replaces the prior product and uninstalls cleanly. Keep the
 evidence. This exercise covers the stock x64 install transaction. The managed
 updater's policy, staging, and recovery paths require their own qualification.
 
+### Managed Windows MSI preflight
+
+Use native Windows x64 Python with the security extra and SignTool from a
+machine-registered Windows SDK. Use private NTFS stages and separate v2
+trust policies for the installed version and the candidate. Each policy
+must select `windows-x64` and match the same publisher key, organization,
+and channel. The configured minimum version must allow the predecessor.
+
+```powershell
+python -I scripts/managed_windows_msi.py stage --policy $previousPolicy --stage $previousStage --version $previousVersion
+python -I scripts/managed_windows_msi.py stage --policy $candidatePolicy --stage $candidateStage --version $candidateVersion
+python -I scripts/managed_windows_msi.py preflight --policy $candidatePolicy --stage $candidateStage --version $candidateVersion --previous-policy $previousPolicy --previous-stage $previousStage --previous-version $previousVersion
+```
+
+Preflight reauthenticates both complete staged sets under retained handles that
+deny write and delete access. It checks both stock MSI signatures and
+timestamps, the candidate's rollback sequence, the exact installed predecessor
+registration, and the absence of the candidate registration. It records the
+current launcher digest and returns `install_permitted: false`. Windows
+certificate checks may contact configured trust services. Use the existing
+endpoint-management installation procedure after completing workspace recovery
+preparation.
+
 ## Notes
 
 - Never edit `ROW_HOME` by hand during an upgrade; restore from a snapshot

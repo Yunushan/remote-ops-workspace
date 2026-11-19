@@ -895,18 +895,20 @@ def test_sdk_directory_entry_enumerator_closes_without_reading_file_payload(sdk,
     assert events == ["scandir", "enter", "exit"] and sdk.calls == []
 
 
-@pytest.mark.parametrize("directory,flags", [(True, 0x02200000), (False, 0x00200000)])
-def test_sdk_opens_data_and_metadata_without_delete_sharing(sdk, directory, flags):
+@pytest.mark.parametrize("directory,flags,share", [(True, 0x02200000, 3), (False, 0x00200000, 3), (False, 0x00200000, 1)])
+def test_sdk_opens_data_and_metadata_without_delete_sharing(sdk, directory, flags, share):
     sdk.allow("GetDriveTypeW", lambda root: 3 if root == "C:\\" else pytest.fail("wrong drive root"))
 
     def open_file(*arguments):
-        assert arguments == (DIRECTORY_PATH if directory else FILE_PATH, 0x20081, 3, None, 3, flags, None)
+        assert arguments == (DIRECTORY_PATH if directory else FILE_PATH, 0x20081, share, None, 3, flags, None)
         assert not arguments[2] & 4 and not arguments[1] & 0x40000000
         return 77
 
     sdk.allow("CreateFileW", open_file)
     sdk.close_api()
-    assert (sdk.native.open_directory(DIRECTORY_PATH) if directory else sdk.native.open_file(FILE_PATH)) == 77
+    opened = (sdk.native.open_directory(DIRECTORY_PATH) if directory
+              else sdk.native.open_file(FILE_PATH, read_only=share == 1))
+    assert opened == 77
     assert sdk.closed == []
     sdk.native.close(77)
     assert sdk.closed == [77] and sdk.names[-1] == "CloseHandle"

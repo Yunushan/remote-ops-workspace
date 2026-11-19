@@ -487,13 +487,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def native_installer_signature_commands(path: Path) -> list[list[str]]:
+def native_installer_signature_commands(path: Path, *, registered_sdk=False) -> list[list[str]]:
     artifact = str(path)
     suffix = path.suffix.casefold()
     if suffix in {".exe", ".msi"}:
         if sys.platform != "win32":
             raise ValueError("verify Windows installer signatures on Windows")
-        return [[str(find_windows_signtool()), "verify", "/pa", "/all", "/tw", artifact]]
+        tool = find_windows_signtool(registered_only=True) if registered_sdk else find_windows_signtool()
+        return [[str(tool), "verify", "/pa", "/all", "/tw", artifact]]
     if suffix not in {".dmg", ".pkg"}:
         raise ValueError("platform signature verification supports Windows EXE/MSI and macOS PKG/DMG")
     if sys.platform != "darwin":
@@ -509,7 +510,7 @@ def native_installer_signature_commands(path: Path) -> list[list[str]]:
     return [signature, ["/usr/bin/xcrun", "stapler", "validate", artifact], assessment]
 
 
-def find_windows_signtool() -> Path:
+def find_windows_signtool(*, registered_only=False) -> Path:
     import winreg
 
     sdk_root = None
@@ -525,7 +526,7 @@ def find_windows_signtool() -> Path:
         if isinstance(root, str) and Path(root).is_absolute():
             sdk_root = Path(root)
             break
-    if sdk_root is None:
+    if sdk_root is None and not registered_only:
         program_files = os.environ.get("ProgramFiles(x86)") or os.environ.get("ProgramFiles", "")
         if Path(program_files).is_absolute():
             sdk_root = Path(program_files) / "Windows Kits" / "10"

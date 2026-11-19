@@ -542,7 +542,9 @@ def stage_update(policy, stage_root, *, current_home, expected_version=None):
         raise UpdateError("update-stage-io-refused") from exc
 
 
-def recover_update(policy, stage_root, *, current_home, expected_version=None):
+@contextmanager
+def verified_recovered_stage(policy, stage_root, *, current_home, expected_version=None):
+    """Yield the authenticated stage while its lease and verified files are held."""
     _need(type(policy) is UpdatePolicy, "invalid-trust-policy")
     settings = policy.settings
     authenticate = (authenticate_manifest if expected_version is None
@@ -558,8 +560,17 @@ def recover_update(policy, stage_root, *, current_home, expected_version=None):
                 transaction = (_transaction(root, manifest, deadline) if guard is None
                                    else _transaction(root, manifest, deadline, private_guard=guard))
                 transaction.recover()
-                return _verify_complete(transaction, manifest, policy, deadline, authenticate=authenticate)
+                with transaction._verified_files():
+                    result = _verify_complete_held(transaction, manifest, policy, deadline, authenticate=authenticate)
+                    yield root, manifest, result
+                    _deadline(deadline)
     except StagingError as exc:
         raise UpdateError("update-stage-refused") from exc
     except OSError as exc:
         raise UpdateError("update-stage-io-refused") from exc
+
+
+def recover_update(policy, stage_root, *, current_home, expected_version=None):
+    with verified_recovered_stage(policy, stage_root, current_home=current_home,
+                                  expected_version=expected_version) as (_, _, result):
+        return result

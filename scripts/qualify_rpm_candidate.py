@@ -18,6 +18,7 @@ TARGET = "linux-x86_64"
 SCHEMA = "row.rpm-candidate-qualification.v1"
 REPORT_NAME = "rpm-recovery.json"
 PROOF = Path("build/candidate-proof") / TARGET / "finish.json"
+SMOKE_BINDING = Path("build/native-smoke") / TARGET / "candidate-runtime-byte-binding.json"
 DRILL = Path("scripts/qualify_rpm_recovery.py")
 IMAGE = "quay.io/fedora/fedora-toolbox@sha256:0612cc841f649cda34bafbc3138a9a8eec2bc06fad6f6ad576d1a900f0b3c7da"
 PREVIOUS_VERSION = "1.0.27"
@@ -45,9 +46,7 @@ def rpm_name(version: str) -> str:
     return f"{PACKAGE}-v{version}-linux-{ARCH}.rpm"
 
 
-def candidate_input(
-    root: Path, proof: dict, version: str, commit: str, run_id: str, attempt: str
-) -> tuple[Path, str]:
+def rpm_proof_asset(proof: dict, version: str, commit: str, run_id: str, attempt: str) -> dict:
     if (
         proof.get("target") != TARGET
         or proof["source"].get("head") != commit
@@ -65,14 +64,27 @@ def candidate_input(
     matches = [item for item in proof["assets"] if item.get("path") == relative]
     if len(matches) != 1:
         raise QualificationError("Native proof must list one x86-64 candidate RPM")
-    path = root / relative
-    digest = matches[0]["sha256"]
+    asset = matches[0]
+    if (
+        type(asset.get("size")) is not int
+        or asset["size"] <= 0
+        or not isinstance(asset.get("sha256"), str)
+        or not SHA256.fullmatch(asset["sha256"])
+    ):
+        raise QualificationError("Native proof has an invalid RPM digest or size")
+    return asset
+
+
+def candidate_input(
+    root: Path, proof: dict, version: str, commit: str, run_id: str, attempt: str
+) -> tuple[Path, str]:
+    asset = rpm_proof_asset(proof, version, commit, run_id, attempt)
+    path = root / asset["path"]
+    digest = asset["sha256"]
     if (
         not path.is_file()
         or path.is_symlink()
-        or type(matches[0]["size"]) is not int
-        or not SHA256.fullmatch(digest)
-        or path.stat().st_size != matches[0]["size"]
+        or path.stat().st_size != asset["size"]
         or sha256(path) != digest
     ):
         raise QualificationError("Candidate RPM bytes differ from the native proof")

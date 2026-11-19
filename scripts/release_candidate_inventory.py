@@ -33,6 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import qualify_rpm_candidate as rpm_qualification  # noqa: E402
+from scripts.candidate_posix_byte_binding import binding_schema, target_contract  # noqa: E402
 from scripts.managed_debian_qualification import (  # noqa: E402
     HASH,
     MANAGED_IMAGE,
@@ -40,7 +41,8 @@ from scripts.managed_debian_qualification import (  # noqa: E402
     validate_receipt,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
+RPM_SCHEMA_VERSION = 4
 MANAGED_SCHEMA_VERSION = 3
 LEGACY_SCHEMA_VERSION = 2
 BUILD_WORKFLOW = ".github/workflows/release.yml"
@@ -48,6 +50,7 @@ CANDIDATE_INVENTORY_ARTIFACT = "release-candidate-inventory"
 MANAGED_DEBIAN_ARTIFACT = "release-managed-debian-update"
 RPM_ARTIFACT = "release-linux-rpm-recovery"
 RPM_REPORT_NAME = rpm_qualification.REPORT_NAME
+RPM_SMOKE_FILES = (rpm_qualification.PROOF.name, rpm_qualification.SMOKE_BINDING.name)
 EXPECTED_ARTIFACT_NAMES = (
     "release-source-python",
     "release-windows-native-x64",
@@ -338,13 +341,13 @@ def stage(
     if qualification_receipt_bytes(managed["receipt"]) != report:
         raise ValueError("managed Debian receipt must use the canonical JSON format")
     repository = normalize_repository_from_api(run)
-    report, rpm = sealed_json_artifact(
-        client, by_name[RPM_ARTIFACT], RPM_ARTIFACT, run_id, release_sha, RPM_REPORT_NAME,
+    rpm_files, rpm_archive, rpm_records = sealed_json_members(
+        client, by_name[RPM_ARTIFACT], RPM_ARTIFACT, run_id, release_sha, (RPM_REPORT_NAME, *RPM_SMOKE_FILES),
     )
-    rpm["receipt"] = json.loads(report)
+    rpm = {**rpm_archive, **rpm_records[RPM_REPORT_NAME], "receipt": json.loads(rpm_files[RPM_REPORT_NAME])}
     _, rpm_sha = validate_rpm_report(rpm, repository, release_tag, release_sha, run_id, run_attempt)
-    if qualification_receipt_bytes(rpm["receipt"]) != report:
-        raise ValueError("RPM recovery receipt must use the canonical JSON format")
+    rpm_smoke = {name: rpm_records[name] for name in RPM_SMOKE_FILES}
+    validate_rpm_smoke_files(rpm_files, rpm["receipt"], rpm_smoke)
     records = materialize_records(
         client, build_artifacts, assets_root,
         managed_deb=(release_tag, managed["receipt"]["candidate_sha256"]),
@@ -363,6 +366,7 @@ def stage(
         "runtime_reports": runtime_reports,
         "managed_debian_update": managed,
         "rpm_recovery": rpm,
+        "rpm_smoke": rpm_smoke,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
@@ -380,6 +384,16 @@ def sealed_json_artifact(
     client: GitHubClient, artifact: dict[str, Any], name: str, run_id: int, release_sha: str, filename: str,
     *, archive_output: Path | None = None,
 ) -> tuple[bytes, dict[str, Any]]:
+    files, archive, records = sealed_json_members(
+        client, artifact, name, run_id, release_sha, (filename,), archive_output=archive_output,
+    )
+    return files[filename], {**archive, **records[filename]}
+
+
+def sealed_json_members(
+    client: GitHubClient, artifact: dict[str, Any], name: str, run_id: int, release_sha: str,
+    filenames: tuple[str, ...], *, archive_output: Path | None = None,
+) -> tuple[dict[str, bytes], dict[str, Any], dict[str, dict[str, Any]]]:
     artifact_id = positive_int(artifact.get("id"), f"artifact {name} id")
     digest = normalize_digest(artifact.get("digest"), f"artifact {name} archive digest")
     size = positive_int(artifact.get("size_in_bytes"), f"artifact {name} size")
@@ -397,18 +411,18 @@ def sealed_json_artifact(
         if downloaded_digest != digest or archive.stat().st_size != size:
             raise ValueError(f"{name} archive does not match GitHub")
         unpacked = Path(temporary) / "unpacked"
-        extract_archive(
-            archive, unpacked, max_expanded_bytes=MAX_JSON_BYTES, only_name=filename,
+        rows = extract_archive(
+            archive, unpacked, max_expanded_bytes=MAX_JSON_BYTES,
+            only_name=filenames[0] if len(filenames) == 1 else None,
         )
-        report = (unpacked / filename).read_bytes()
+        if {row["path"] for row in rows} != set(filenames):
+            raise ValueError(f"{name} archive must contain the exact evidence files")
+        files = {filename: (unpacked / filename).read_bytes() for filename in filenames}
         if archive_output is not None:
             with archive.open("rb") as source, archive_output.open("xb") as output:
                 shutil.copyfileobj(source, output)
-    return report, {
-        "artifact_id": artifact_id,
-        "archive_digest": digest,
-        "sha256": hashlib.sha256(report).hexdigest(),
-        "size_bytes": len(report),
+    return files, {"artifact_id": artifact_id, "archive_digest": digest}, {
+        row["path"]: {"sha256": row["sha256"], "size_bytes": row["size"]} for row in rows
     }
 
 
@@ -497,6 +511,83 @@ def validate_rpm_report(
     return artifact_id, candidate_sha
 
 
+def validate_rpm_smoke_metadata(records: Any, receipt: dict[str, Any]) -> None:
+    if not isinstance(records, dict) or records.keys() != set(RPM_SMOKE_FILES):
+        raise ValueError("RPM native smoke evidence is missing or invalid")
+    for record in records.values():
+        if (
+            not isinstance(record, dict) or record.keys() != {"sha256", "size_bytes"}
+            or not isinstance(record["sha256"], str) or HASH.fullmatch(record["sha256"]) is None
+            or type(record["size_bytes"]) is not int or not 0 < record["size_bytes"] <= MAX_JSON_BYTES
+        ):
+            raise ValueError("RPM native smoke evidence metadata is invalid")
+    if records[RPM_SMOKE_FILES[0]]["sha256"] != receipt["candidate_native_proof_sha256"]:
+        raise ValueError("RPM native proof digest differs from the recovery receipt")
+
+
+def validate_rpm_smoke_files(
+    files: dict[str, bytes], receipt: dict[str, Any], records: dict[str, Any],
+) -> None:
+    validate_rpm_smoke_metadata(records, receipt)
+    if files[RPM_REPORT_NAME] != qualification_receipt_bytes(receipt):
+        raise ValueError("RPM recovery receipt differs from the sealed evidence")
+    for name, record in records.items():
+        if len(files[name]) != record["size_bytes"] or hashlib.sha256(files[name]).hexdigest() != record["sha256"]:
+            raise ValueError(f"RPM native smoke file differs from the sealed evidence: {name}")
+
+    try:
+        proof, binding = (json.loads(files[name]) for name in RPM_SMOKE_FILES)
+        candidate = receipt["receipt"]["candidate"]
+        asset = rpm_qualification.rpm_proof_asset(
+            proof, candidate["version"], receipt["source_commit"], str(receipt["run_id"]), str(receipt["run_attempt"]),
+        )
+        link = proof["native_executable_byte_binding"]
+        if (
+            proof.get("workflow_ref") != receipt["workflow_ref"]
+            or asset["sha256"] != candidate["package_sha256"]
+            or link.get("report_path") != rpm_qualification.SMOKE_BINDING.as_posix()
+            or link.get("report_sha256") != records[RPM_SMOKE_FILES[1]]["sha256"]
+        ):
+            raise ValueError("RPM native proof refers to different workflow, package or smoke bytes")
+
+        target = rpm_qualification.TARGET
+        outputs, _, probes = target_contract(target)
+        launcher = candidate["launcher_sha256"]
+        required = {(phase, probe) for path, phase, probe in probes if path == "rpm/usr/bin/row"}
+        rows = [row for row in binding["observations"] if row.get("path") == "rpm/usr/bin/row"]
+        if (
+            binding.get("target") != target
+            or type(binding.get("schema_version")) is not int or binding["schema_version"] != binding_schema(target)
+            or binding.get("status") != "bound" or binding.get("smoke_complete") is not True
+            or binding.get("expected_executables") != [{"path": outputs["cli"], "role": "cli", "sha256": launcher}]
+            or len(rows) != len(required)
+            or {(row.get("phase"), row.get("probe")) for row in rows} != required
+            or any(
+                row.get("role") != "cli" or row.get("matched") is not True
+                or row.get("expected_sha256") != launcher or row.get("observed_sha256") != launcher
+                for row in rows
+            )
+        ):
+            raise ValueError("RPM smoke did not observe the recovered candidate launcher before every probe")
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("RPM native smoke evidence has an invalid shape") from exc
+
+
+def verify_sealed_rpm_smoke(
+    client: GitHubClient, inventory: dict[str, Any], run_id: int, release_sha: str,
+) -> None:
+    rpm = inventory["rpm_recovery"]
+    metadata = client.json(f'actions/artifacts/{rpm["artifact_id"]}')
+    check_artifact_metadata(
+        metadata, artifact_id=rpm["artifact_id"], name=RPM_ARTIFACT, digest=rpm["archive_digest"],
+        run_id=run_id, release_sha=release_sha,
+    )
+    files, _, _ = sealed_json_members(
+        client, metadata, RPM_ARTIFACT, run_id, release_sha, (RPM_REPORT_NAME, *RPM_SMOKE_FILES),
+    )
+    validate_rpm_smoke_files(files, rpm["receipt"], inventory["rpm_smoke"])
+
+
 def require_linux_installer(records: list[dict[str, Any]], name: str, sha256: str, label: str) -> None:
     matches = [
         file.get("sha256")
@@ -519,7 +610,7 @@ def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256:
 def validate_managed_release_qualification(
     inventory: dict[str, Any], *, repository: str, release_tag: str, release_sha: str, deb_sha256: str,
 ) -> None:
-    if inventory.get("schema_version") not in (MANAGED_SCHEMA_VERSION, SCHEMA_VERSION):
+    if inventory.get("schema_version") not in (MANAGED_SCHEMA_VERSION, RPM_SCHEMA_VERSION, SCHEMA_VERSION):
         raise ValueError("production Debian qualification requires the current sealed candidate inventory")
     run_id = inventory.get("build_run_id")
     if type(run_id) is not int or run_id < 1:
@@ -615,6 +706,8 @@ def promote(
         run_id=run_id,
         run_attempt=run_attempt,
     )
+    if "rpm_smoke" in inventory:
+        verify_sealed_rpm_smoke(client, inventory, run_id, release_sha)
     materialize_sealed_records(client, records, assets_root, run_id=run_id, release_sha=release_sha)
 
 
@@ -795,7 +888,7 @@ def validate_inventory(
     if not isinstance(value, dict):
         raise ValueError("approved candidate inventory must be an object")
     schema = value.get("schema_version")
-    if schema not in (LEGACY_SCHEMA_VERSION, MANAGED_SCHEMA_VERSION, SCHEMA_VERSION) or type(schema) is not int:
+    if type(schema) is not int or schema not in (LEGACY_SCHEMA_VERSION, MANAGED_SCHEMA_VERSION, RPM_SCHEMA_VERSION, SCHEMA_VERSION):
         raise ValueError("approved candidate inventory schema version is unsupported")
     expected = {
         "repository": repository,
@@ -851,20 +944,22 @@ def validate_inventory(
         normalize_digest(report["archive_digest"], f"runtime report {target} archive digest")
         if positive_int(report["size_bytes"], f"runtime report {target} size") > MAX_JSON_BYTES:
             raise ValueError(f"runtime report {target} exceeds the size limit")
-    if schema in (MANAGED_SCHEMA_VERSION, SCHEMA_VERSION) or "managed_debian_update" in value:
+    if schema in (MANAGED_SCHEMA_VERSION, RPM_SCHEMA_VERSION, SCHEMA_VERSION) or "managed_debian_update" in value:
         managed = value.get("managed_debian_update")
         artifact_id = validate_managed_report(managed, release_tag, release_sha, run_id, run_attempt)
         if artifact_id in ids:
             raise ValueError(f"managed Debian report artifact id is duplicated: {artifact_id}")
         ids.add(artifact_id)
         require_managed_deb(records, release_tag, managed["receipt"]["candidate_sha256"])
-    if schema == SCHEMA_VERSION or "rpm_recovery" in value:
+    if schema in (RPM_SCHEMA_VERSION, SCHEMA_VERSION) or "rpm_recovery" in value or "rpm_smoke" in value:
         artifact_id, rpm_sha = validate_rpm_report(
             value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,
         )
         if artifact_id in ids:
             raise ValueError(f"RPM recovery report artifact id is duplicated: {artifact_id}")
         require_release_rpm(records, release_tag, rpm_sha)
+        if schema == SCHEMA_VERSION or "rpm_smoke" in value:
+            validate_rpm_smoke_metadata(value.get("rpm_smoke"), value["rpm_recovery"]["receipt"])
     return sorted(records, key=lambda item: item["name"])
 
 

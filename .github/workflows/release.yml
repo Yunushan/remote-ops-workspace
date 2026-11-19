@@ -685,17 +685,21 @@ jobs:
           python scripts/candidate_native_proof.py finish --target linux-x86_64 \
             --expected-sha "$EXPECTED_RELEASE_SHA" --asset-dir native-dist/linux \
             --native-build-outcome success --native-smoke-outcome success
-          receipt="$(mktemp build/candidate-proof/linux-x86_64/.rpm-recovery.XXXXXXXX)"
+          output=build/release-rpm-evidence
+          mkdir "$output"
+          cp -- build/candidate-proof/linux-x86_64/finish.json \
+            build/native-smoke/linux-x86_64/candidate-runtime-byte-binding.json "$output"
+          receipt="$(mktemp "$output/.rpm-recovery.XXXXXXXX")"
           trap 'rm -f -- "$receipt"' EXIT
           python -m scripts.qualify_rpm_candidate --candidate-tag "$RELEASE_TAG" \
             --candidate-source-sha "$EXPECTED_RELEASE_SHA" > "$receipt"
-          mv -- "$receipt" build/candidate-proof/linux-x86_64/rpm-recovery.json
+          mv -- "$receipt" "$output/rpm-recovery.json"
       - name: Retain release RPM upgrade and rollback results
         if: ${{ matrix.arch == 'x86_64' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-linux-rpm-recovery
-          path: build/candidate-proof/linux-x86_64/rpm-recovery.json
+          path: build/release-rpm-evidence/
           if-no-files-found: error
           retention-days: 90
       - name: Qualify managed Debian upgrade and rollback

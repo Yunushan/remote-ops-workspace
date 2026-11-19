@@ -179,7 +179,8 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
     assert "matrix.arch == 'x86_64'" in step
     assert "scripts/candidate_native_proof.py finish" in step
     assert "python -m scripts.qualify_rpm_candidate" in step
-    assert f"path: build/candidate-proof/linux-x86_64/{candidate.RPM_REPORT_NAME}" in job
+    assert "path: build/release-rpm-evidence/" in job
+    assert all(name in step for name in (*candidate.RPM_SMOKE_FILES, candidate.RPM_REPORT_NAME))
 
 
 @pytest.mark.parametrize(
@@ -191,12 +192,15 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("missing-runtime", "missing=.*release-runtime-windows-x86"),
         ("missing-managed", "missing=.*release-managed-debian-update"),
         ("missing-rpm", "missing=.*release-linux-rpm-recovery"),
+        ("missing-rpm-smoke", "archive must contain the exact evidence files"),
         ("wrong-managed-run", "managed Debian receipt does not match the release source and Actions attempt"),
         ("wrong-managed-deb", "managed Debian receipt must bind the exact candidate DEB"),
         ("missing-rollback", "managed-debian-receipt-binding-mismatch"),
         ("wrong-rpm-ref", "RPM recovery receipt does not match the release source and Actions attempt"),
         ("wrong-rpm-attempt", "RPM recovery receipt does not match the release source and Actions attempt"),
         ("wrong-rpm-digest", "RPM recovery receipt must bind the exact candidate RPM"),
+        ("wrong-rpm-smoke-sha", "RPM native proof refers to different workflow, package or smoke bytes"),
+        ("changed-rpm-launcher", "RPM smoke did not observe the recovered candidate launcher"),
         ("rpm-failed", "RPM recovery receipt has invalid package identities or rollback results"),
         ("complete-bundled", ""),
         ("wrong-runtime-run", "is not bound to the approved build run and SHA"),
@@ -286,20 +290,45 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     rpm_name = rpm_qualification.rpm_name(tag[1:])
     rpm_bytes = b"exact release RPM installer"
     rpm_sha = hashlib.sha256(rpm_bytes).hexdigest()
+    claimed_rpm_sha = "3" * 64 if condition == "wrong-rpm-digest" else rpm_sha
+    launcher = "9" * 64
+    workflow_ref = f"example/project/{candidate.BUILD_WORKFLOW}@refs/tags/{tag}"
+    binding = candidate.qualification_receipt_bytes({
+        "target": "linux-x86_64", "schema_version": 1, "status": "bound", "smoke_complete": True,
+        "expected_executables": [{"path": "build/native/linux/pyinstaller-dist/row", "role": "cli", "sha256": launcher}],
+        "observations": [
+            {"path": "rpm/usr/bin/row", "role": "cli", "matched": True, "phase": phase, "probe": probe,
+             "expected_sha256": launcher,
+             "observed_sha256": "a" * 64 if condition == "changed-rpm-launcher" else launcher}
+            for phase in ("install", "reinstall")
+            for probe in ("version", "platforms")
+        ],
+    })
+    proof = candidate.qualification_receipt_bytes({
+        "target": "linux-x86_64", "source": {"head": sha}, "run_id": "123", "run_attempt": "1",
+        "workflow_ref": workflow_ref, "source_unchanged": True,
+        "native_build_outcome": "success", "native_smoke_outcome": "success",
+        "assets": [{"path": f"native-dist/linux/{rpm_name}", "sha256": claimed_rpm_sha, "size": len(rpm_bytes)}],
+        "native_executable_byte_binding": {
+            "status": "bound", "report_path": rpm_qualification.SMOKE_BINDING.as_posix(),
+            "report_sha256": "4" * 64 if condition == "wrong-rpm-smoke-sha" else hashlib.sha256(binding).hexdigest(),
+        },
+    })
     rpm_report = candidate.qualification_receipt_bytes({
         "schema": rpm_qualification.SCHEMA, "target": "linux-x86_64",
         "source_commit": sha, "run_id": 123, "run_attempt": 2 if condition == "wrong-rpm-attempt" else 1,
         "workflow_ref": f"example/project/{candidate.BUILD_WORKFLOW}@refs/tags/"
                         + ("v1.2.2" if condition == "wrong-rpm-ref" else tag),
         "container_image": rpm_qualification.IMAGE, "previous_release_asset_id": rpm_qualification.PREVIOUS_ASSET,
-        "previous_release_url": rpm_qualification.PREVIOUS_URL, "candidate_native_proof_sha256": "2" * 64,
+        "previous_release_url": rpm_qualification.PREVIOUS_URL,
+        "candidate_native_proof_sha256": hashlib.sha256(proof).hexdigest(),
         "receipt": {
             "schema": "remote-ops-workspace/rpm-recovery/v1",
             "backup_created_with": "verified-candidate-launcher-before-upgrade", "backup_sha256": "7" * 64,
             "previous": {"version": rpm_qualification.PREVIOUS_VERSION, "architecture": "x86_64",
                          "package_sha256": rpm_qualification.PREVIOUS_SHA256, "launcher_sha256": "8" * 64},
-            "candidate": {"version": tag[1:], "architecture": "x86_64", "launcher_sha256": "9" * 64,
-                          "package_sha256": "3" * 64 if condition == "wrong-rpm-digest" else rpm_sha},
+            "candidate": {"version": tag[1:], "architecture": "x86_64", "launcher_sha256": launcher,
+                          "package_sha256": claimed_rpm_sha},
             **{key: condition != "rpm-failed" for key in rpm_qualification.CHECKS},
         },
     })
@@ -317,6 +346,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                 archive.writestr(candidate.REPORT_NAME, managed_report)
             elif name == candidate.RPM_ARTIFACT:
                 archive.writestr(candidate.RPM_REPORT_NAME, rpm_report)
+                archive.writestr(candidate.RPM_SMOKE_FILES[0], proof)
+                if condition != "missing-rpm-smoke":
+                    archive.writestr(candidate.RPM_SMOKE_FILES[1], binding)
             else:
                 archive.writestr(f"{name}.txt", f"bytes from {name}")
                 if name == "release-linux-native-x86_64":
@@ -355,6 +387,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                     "path": ".github/workflows/release.yml",
                     "repository": {"full_name": "example/project"},
                 }
+            if endpoint.startswith("actions/artifacts/"):
+                artifact_id = int(endpoint.rsplit("/", 1)[1])
+                return next(item for item in artifacts if item["id"] == artifact_id)
             assert endpoint == "actions/runs/123/artifacts?per_page=100"
             total_count = len(artifacts) + (1 if condition == "incomplete-listing" else 0)
             return {"total_count": total_count, "artifacts": artifacts}
@@ -389,7 +424,10 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             assert len(downloads) == len(archives)
         elif condition in {"wrong-managed-run", "missing-rollback"}:
             assert len(downloads) == len(runtime) + 1
-        elif condition in {"wrong-rpm-ref", "wrong-rpm-attempt", "rpm-failed"}:
+        elif condition in {
+            "wrong-rpm-ref", "wrong-rpm-attempt", "rpm-failed",
+            "missing-rpm-smoke", "wrong-rpm-smoke-sha", "changed-rpm-launcher",
+        }:
             assert len(downloads) == len(runtime) + 2
         else:
             assert len(downloads) == (1 if condition in {"bad-runtime-report", "nonregular-runtime-report"} else 0)
@@ -417,6 +455,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     rpm = inventory["rpm_recovery"]
     assert rpm["sha256"] == hashlib.sha256(rpm_report).hexdigest()
     assert rpm["receipt"]["receipt"]["candidate"]["package_sha256"] == rpm_sha
+    smoke_records = inventory["rpm_smoke"]
+    assert smoke_records[candidate.RPM_SMOKE_FILES[0]]["sha256"] == hashlib.sha256(proof).hexdigest()
+    assert smoke_records[candidate.RPM_SMOKE_FILES[1]]["sha256"] == hashlib.sha256(binding).hexdigest()
     coordinates = dict(repository="example/project", release_tag=tag, release_sha=sha, run_id=123, run_attempt=1)
     public_coordinates = {key: coordinates[key] for key in ("repository", "release_tag", "release_sha")}
     with pytest.raises(ValueError, match="managed Debian receipt is missing"):
@@ -424,6 +465,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     # Historical inventory bytes remain readable when their tag's workflow
     # predated the managed Debian qualification.
     inventory.pop("rpm_recovery")
+    inventory.pop("rpm_smoke")
     inventory["schema_version"] = candidate.LEGACY_SCHEMA_VERSION
     candidate.validate_inventory(inventory, **coordinates)
     with pytest.raises(ValueError, match="requires the current sealed candidate inventory"):
@@ -437,6 +479,19 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     with pytest.raises(ValueError, match="RPM recovery receipt is missing"):
         candidate.validate_inventory(inventory, **coordinates)
     inventory["rpm_recovery"] = rpm
+    inventory["schema_version"] = candidate.RPM_SCHEMA_VERSION
+    candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.SCHEMA_VERSION
+    with pytest.raises(ValueError, match="RPM native smoke evidence is missing"):
+        candidate.validate_inventory(inventory, **coordinates)
+    inventory["rpm_smoke"] = smoke_records
+    inventory["managed_debian_update"] = managed
+    candidate.verify_sealed_rpm_smoke(BuildRun(), inventory, 123, sha)
+    assert downloads[-1] == rpm["artifact_id"]
+    smoke_records[candidate.RPM_SMOKE_FILES[1]]["sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="RPM native smoke file differs"):
+        candidate.verify_sealed_rpm_smoke(BuildRun(), inventory, 123, sha)
+    smoke_records[candidate.RPM_SMOKE_FILES[1]]["sha256"] = hashlib.sha256(binding).hexdigest()
     rpm_id = rpm["artifact_id"]
     rpm["artifact_id"] = managed["artifact_id"]
     with pytest.raises(ValueError, match="RPM recovery report artifact id is duplicated"):

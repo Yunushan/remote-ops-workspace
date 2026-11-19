@@ -152,12 +152,14 @@ smoke-tested. The drill upgrades from the pinned v1.0.27 RPM, checks the
 explicit downgrade, and verifies the restored profile and encrypted vault
 with the predecessor launcher.
 
-The release job retains `rpm-recovery.json` in `release-linux-rpm-recovery`.
-The sealed candidate inventory binds the receipt and its archive digest to
-the release commit, workflow attempt, and exact RPM bytes. Review the
-embedded `rpm_recovery` receipt in the inventory before signing approval.
-Inventory schema 4 carries this receipt. The reader also accepts historical
-schema 2 and 3 inventories.
+The `release-linux-rpm-recovery` Actions artifact contains
+`rpm-recovery.json`, `finish.json`, and `candidate-runtime-byte-binding.json`.
+The sealer checks their digests, the tagged workflow attempt, the RPM bytes,
+and the launcher observations from installation and reinstallation. Promotion
+downloads the same archive by its sealed artifact ID and rechecks the evidence.
+Before signing approval, review the embedded `rpm_recovery` receipt alongside
+the original smoke reports listed in `rpm_smoke`. Inventory schema 5 carries
+both records. The reader also accepts historical schema 2 through 4 inventories.
 
 ### Select an optional Debian amd64 server bundle
 

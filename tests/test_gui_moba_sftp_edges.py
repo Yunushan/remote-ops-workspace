@@ -477,37 +477,46 @@ def test_background_authentication_and_prompt_submission_edges(
     dock._clear_background_password()
     monitoring = _FakeProcess(running=True, write_result=0)
     sftp = _FakeProcess(running=True)
+    sftp.is_pty = True
     dock.monitoring_process = monitoring
     dock.sftp_refresh_process = sftp
     dock._submit_background_password_if_prompt("monitoring", b"password: ")
     dock._background_password = bytearray(b"pw")
     dock._submit_background_password_if_prompt("unknown", b"password: ")
-    dock._background_auth_password_sent["monitoring"] = True
+    dock._background_auth_prompt_complete["monitoring"] = True
     dock._submit_background_password_if_prompt("monitoring", b"password: ")
-    dock._background_auth_password_sent["monitoring"] = False
+    dock._background_auth_prompt_complete["monitoring"] = False
     dock._submit_background_password_if_prompt("monitoring", b"ordinary output")
     dock._submit_background_password_if_prompt("monitoring", b"password: ")
-    assert dock._background_auth_password_sent["monitoring"] is False
+    assert dock._background_auth_prompt_complete["monitoring"] is False
     monitoring.write_result = None
     dock._submit_background_password_if_prompt(
         "monitoring",
         b"operator@dock-edge.example.invalid's password: ",
     )
-    assert dock._background_auth_password_sent["monitoring"] is True
+    assert dock._background_auth_prompt_complete["monitoring"] is True
 
     forced_batches: list[bool] = []
     dock.write_sftp_refresh_batch = lambda *, force=False: forced_batches.append(force)
-    dock._background_auth_password_sent["sftp"] = False
+    dock._background_auth_prompt_complete["sftp"] = False
     dock._submit_background_password_if_prompt("sftp", b"Passphrase for key: ")
     app.processEvents()
-    assert dock._background_auth_password_sent["sftp"] is False
+    assert dock._background_auth_prompt_complete["sftp"] is False
     assert forced_batches == []
     dock._submit_background_password_if_prompt(
         "sftp",
-        b"operator@dock-edge.example.invalid's password: ",
+        b"\x1b[?25loperator@different.example.invalid's password:\x1b[1C\x1b[?25h",
     )
+    assert sftp.written == b""
+    dock._submit_background_password_if_prompt(
+        "sftp",
+        b"\x1b[?25loperator@dock-edge.example.invalid's password:\x1b[1C\x1b]0;OpenSSH",
+    )
+    assert sftp.written == b""
+    dock._submit_background_password_if_prompt("sftp", b"\x07\x1b[?25h")
     app.processEvents()
-    assert dock._background_auth_password_sent["sftp"] is True
+    assert sftp.written == b"pw\n"
+    assert dock._background_auth_prompt_complete["sftp"] is True
     assert forced_batches == [True]
 
     dock.profile_for_sftp_action = lambda: replace(vault_profile, host="a")
@@ -538,12 +547,12 @@ def test_background_authentication_and_prompt_submission_edges(
         vault_profile,
         options={"proxy_jump": "bastion.example.invalid"},
     )
-    dock._background_auth_password_sent["sftp"] = False
+    dock._background_auth_prompt_complete["sftp"] = False
     dock._submit_background_password_if_prompt(
         "sftp",
         b"operator@dock-edge.example.invalid's password: ",
     )
-    assert dock._background_auth_password_sent["sftp"] is False
+    assert dock._background_auth_prompt_complete["sftp"] is False
     assert monitoring.state() == QProcess.ProcessState.Running
 
 
@@ -561,7 +570,7 @@ def test_background_password_submission_handles_rejected_write_and_missing_profi
 
     dock.profile_for_sftp_action = lambda: profile
     dock._background_password = bytearray(b"pw")
-    dock._background_auth_password_sent["monitoring"] = False
+    dock._background_auth_prompt_complete["monitoring"] = False
     process = _FakeProcess(running=True, write_result=0)
     dock.monitoring_process = process
     dock._submit_background_password_if_prompt(
@@ -569,7 +578,7 @@ def test_background_password_submission_handles_rejected_write_and_missing_profi
         b"operator@dock-edge.example.invalid's password: ",
     )
     assert process.written == b"pw\r"
-    assert dock._background_auth_password_sent["monitoring"] is False
+    assert dock._background_auth_prompt_complete["monitoring"] is False
 
 
 def test_saved_smartcard_waits_for_shared_socket_before_background_sftp(connected_workspace, monkeypatch):
@@ -1373,6 +1382,20 @@ def test_sftp_refresh_and_transfer_workflow_edges(
     dock.write_sftp_refresh_batch(force=True)
     assert process.close_write_calls >= 2
 
+    process.is_pty = True
+    process.written = b""
+    previous_closes = process.close_write_calls
+    dock.write_sftp_refresh_batch(force=True)
+    assert process.written == saved_plan.batch_input().replace("\n", "\r").encode("utf-8") + b"quit\r"
+    assert process.close_write_calls == previous_closes
+    dock._clear_background_password()
+    dock._background_password = bytearray(b"pw")
+    dock._submit_background_password_if_prompt(
+        "sftp", b"operator@dock-edge.example.invalid's password: ",
+    )
+    assert process.written.endswith(b"quit\r")
+    dock._clear_background_password()
+
     pending_calls: list[str] = []
     dock.schedule_pending_sftp_refresh = lambda: pending_calls.append("pending")
     dock.sftp_refresh_request_is_current = lambda: False
@@ -1776,10 +1799,12 @@ def test_connected_text_editor_refuses_binary_content_and_cleans_probe(
     assert not Path(probe_path).exists()
 
 
+@pytest.mark.parametrize("is_pty", [False, True])
 def test_connected_text_editor_transfer_uses_async_sftp_batch(
     connected_workspace,
     monkeypatch,
     tmp_path,
+    is_pty,
 ) -> None:
     from PyQt6.QtCore import QProcess
 
@@ -1793,6 +1818,7 @@ def test_connected_text_editor_transfer_uses_async_sftp_batch(
         allow_overwrite=True,
     )
     process = _FakeProcess()
+    process.is_pty = is_pty
     dock.text_editor_process = process
     dock.text_editor_remote_path = "/etc/service.conf"
     dock.text_editor_local_path = str(tmp_path / "service.conf.edit")
@@ -1805,8 +1831,12 @@ def test_connected_text_editor_transfer_uses_async_sftp_batch(
     assert dock.text_editor_active_generation != 0
 
     dock.write_text_editor_sftp_batch()
-    assert process.written == plan.batch_input().encode("utf-8")
-    assert process.close_write_calls == 1
+    if is_pty:
+        assert process.written == plan.batch_input().replace("\n", "\r").encode("utf-8") + b"quit\r"
+        assert process.close_write_calls == 0
+    else:
+        assert process.written == plan.batch_input().encode("utf-8")
+        assert process.close_write_calls == 1
 
     dock.cancel_text_editor_sftp_operation()
     assert dock.text_editor_active_generation == 0
@@ -2672,7 +2702,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     dock.text_editor_process = auth_process
     monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: profile)
     dock._background_password = bytearray(b"session-password")
-    dock._background_auth_password_sent["text-editor"] = False
+    dock._background_auth_prompt_complete["text-editor"] = False
     forced_batches: list[bool] = []
     monkeypatch.setattr(
         dock,
@@ -2686,7 +2716,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     app.processEvents()
     assert forced_batches == [True]
     dock.text_editor_process = None
-    dock._background_auth_password_sent["text-editor"] = False
+    dock._background_auth_prompt_complete["text-editor"] = False
     dock._submit_background_password_if_prompt(
         "text-editor",
         b"operator@dock-edge.example.invalid's password: ",

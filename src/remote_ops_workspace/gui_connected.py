@@ -573,7 +573,7 @@ def create_moba_connected_classes(
                 "sftp": bytearray(),
                 "text-editor": bytearray(),
             }
-            self._background_auth_password_sent = {
+            self._background_auth_prompt_complete = {
                 "monitoring": False,
                 "sftp": False,
                 "text-editor": False,
@@ -1083,8 +1083,6 @@ def create_moba_connected_classes(
                 password.clear()
             for buffer in self._background_auth_prompt_buffers.values():
                 buffer.clear()
-            for process_kind in self._background_auth_password_sent:
-                self._background_auth_password_sent[process_kind] = False
             self.setProperty("mobaBackgroundSshCredentialLoaded", False)
             self.setProperty("mobaBackgroundSshCredentialSource", "")
 
@@ -1123,12 +1121,18 @@ def create_moba_connected_classes(
             password = self._background_password
             if not password or process_kind not in self._background_auth_prompt_buffers:
                 return
-            if self._background_auth_password_sent[process_kind]:
+            if self._background_auth_prompt_complete[process_kind]:
                 return
             prompt_buffer = self._background_auth_prompt_buffers[process_kind]
             prompt_buffer.extend(payload)
             del prompt_buffer[:-1024]
             prompt = prompt_buffer.decode(errors="replace")[-768:]
+            # ConPTY can surround the OpenSSH prompt with cursor and title updates.
+            prompt = re.sub(
+                r"\x1b(?:\[(?:\?[0-9;]+[hl]|[0-9;]*[mHJC])|\]0;[^\x07\x1b]*(?:\x07|\x1b\\))",
+                "",
+                prompt,
+            )
             if not self.background_password_prompt_matches_target(prompt):
                 if re.search(
                     r"(?i)(?:password|passphrase)[^:\r\n]{0,240}:\s*$",
@@ -1143,10 +1147,13 @@ def create_moba_connected_classes(
             }.get(process_kind)
             if process is None:
                 return
-            accepted = process.write(bytes(password) + b"\r")
+            # Win32 OpenSSH can consume the next console character after CR.
+            # LF ends the password without reading into the SFTP batch.
+            ending = b"\n" if getattr(process, "is_pty", False) else b"\r"
+            accepted = process.write(bytes(password) + ending)
             if accepted <= 0:
                 return
-            self._background_auth_password_sent[process_kind] = True
+            self._background_auth_prompt_complete[process_kind] = True
             prompt_buffer.clear()
             if process_kind == "sftp":
                 self.sftp_auth_probe_timer.stop()
@@ -1908,7 +1915,7 @@ def create_moba_connected_classes(
             self.text_editor_sftp_plan = plan
             self.text_editor_output_buffer.clear()
             self._background_auth_prompt_buffers["text-editor"].clear()
-            self._background_auth_password_sent["text-editor"] = False
+            self._background_auth_prompt_complete["text-editor"] = False
             runtime_command = openssh_command_with_overrides(
                 list(plan.command),
                 self.background_ssh_overrides(),
@@ -1980,10 +1987,7 @@ def create_moba_connected_classes(
             plan = self.text_editor_sftp_plan
             if plan is None:
                 return
-            accepted = self.text_editor_process.write(
-                plan.batch_input().encode("utf-8")
-            )
-            self.text_editor_process.closeWriteChannel()
+            accepted = self._write_connected_sftp_batch(self.text_editor_process, plan, "text-editor")
             if accepted < 0:
                 self.show_sftp_status(
                     "Text editor transfer failed: batch input was not accepted"
@@ -2924,7 +2928,7 @@ def create_moba_connected_classes(
             self.monitoring_generation += 1
             self.monitoring_active_generation = self.monitoring_generation
             self._background_auth_prompt_buffers["monitoring"].clear()
-            self._background_auth_password_sent["monitoring"] = False
+            self._background_auth_prompt_complete["monitoring"] = False
             self.set_remote_monitoring_status(
                 "Refreshing live telemetry…",
                 state="refreshing",
@@ -3340,7 +3344,7 @@ def create_moba_connected_classes(
             self.sftp_refresh_process.setProgram(runtime_command[0])
             self.sftp_refresh_process.setArguments(runtime_command[1:])
             self._background_auth_prompt_buffers["sftp"].clear()
-            self._background_auth_password_sent["sftp"] = False
+            self._background_auth_prompt_complete["sftp"] = False
             self.sftp_refresh_process.start()
             self.sftp_refresh_timeout.start(10_000)
 
@@ -3358,14 +3362,25 @@ def create_moba_connected_classes(
             plan = self.sftp_refresh_plan
             if plan is None:
                 return
-            accepted = self.sftp_refresh_process.write(
-                plan.batch_input().encode("utf-8")
-            )
-            self.sftp_refresh_process.closeWriteChannel()
+            accepted = self._write_connected_sftp_batch(self.sftp_refresh_process, plan, "sftp")
             if accepted < 0:
                 self.show_sftp_status(
                     "SFTP refresh failed: batch input was not accepted"
                 )
+
+        def _write_connected_sftp_batch(
+            self, process: QProcess, plan: SftpBatchPlan, process_kind: str,
+        ) -> int:
+            # The credential may be submitted only before the first batch command.
+            self._background_auth_prompt_complete[process_kind] = True
+            payload = plan.batch_input()
+            if getattr(process, "is_pty", False):
+                # Closing the ConPTY input pipe can end the process before SFTP
+                # consumes its console input. Exit through the batch instead.
+                return process.write((payload + "quit\n").replace("\n", "\r").encode("utf-8"))
+            accepted = process.write(payload.encode("utf-8"))
+            process.closeWriteChannel()
+            return accepted
 
         def read_sftp_refresh_output(self) -> None:
             payload = bytes(self.sftp_refresh_process.readAllStandardOutput())

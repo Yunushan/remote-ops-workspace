@@ -83,8 +83,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
-      "sha256": "907435940d91ca0e40ecef472e215e6d6979e002fbd4ba664891df87a8b664dd",
-      "size": 266424
+      "sha256": "ecc8d609f025848f4efce0296e1c8080b955333fcbdc7103c9b1d1db3998000e",
+      "size": 267392
     },
     {
       "path": "src/remote_ops_workspace/gui_designs.py",

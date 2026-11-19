@@ -130,10 +130,11 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
         assert (repository, token, api_url) == (upgrade.REPOSITORY, "fixture", "https://api.github.com")
         return "github-client"
 
-    def materialize(client, repository, directory, selected_tag, selected_sha, coordinates):
+    def materialize(client, repository, directory, selected_tag, selected_sha, coordinates, *, kind):
         assert (client, repository, directory, selected_tag, selected_sha, coordinates) == (
             "github-client", upgrade.REPOSITORY, tmp_path, tag, sha, pointer,
         )
+        assert kind == "windows-msi"
         trace.append("materialize")
         return path, {"sha256": "c" * 64 if defect == "wrong-digest" else fingerprint,
                       "size": path.stat().st_size + (defect == "wrong-size")}, {"kind": "sealed-candidate"}
@@ -163,7 +164,7 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
         trace.append("close")
 
     monkeypatch.setattr(upgrade, "GitHubClient", client)
-    monkeypatch.setattr(upgrade, "materialize_msi", materialize)
+    monkeypatch.setattr(upgrade, "materialize_asset", materialize)
     monkeypatch.setattr(upgrade, "native_installer_signature_commands", commands)
     monkeypatch.setattr(upgrade, "verify_platform_signature", verify)
     monkeypatch.setattr(upgrade, "validate_package", lambda *_: None)

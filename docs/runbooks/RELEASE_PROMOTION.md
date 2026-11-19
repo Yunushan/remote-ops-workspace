@@ -94,6 +94,15 @@ candidate builds. The signed predecessor can come from an immutable release
 or another sealed candidate. See the
 [Windows MSI release evidence runbook](UPGRADE_AND_ROLLBACK.md#windows-msi-release-evidence).
 
+### Collect MobaXterm parity evidence before publication
+
+The eight parity qualification workflows accept the sealed candidate
+coordinates on the exact release tag. They verify either the standard Python
+wheel or the Debian amd64 installer from that inventory. Retain the original
+Actions ZIPs for independent review and use the immutable release downloads
+when finalizing the accepted records. Follow the
+[parity qualification procedure](../MOBAXTERM_PARITY.md#qualify-sealed-candidates-before-publication).
+
 ### Review the Debian amd64 upgrade and rollback result
 
 The Linux x86_64 release job runs the managed update drill against the

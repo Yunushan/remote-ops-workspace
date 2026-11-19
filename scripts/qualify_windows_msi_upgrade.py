@@ -37,10 +37,10 @@ from inspect_windows_msi import (  # noqa: E402
     validate_upgrade_rollback,
 )
 from release_candidate_inventory import GitHubClient  # noqa: E402
-from windows_msi_candidate_source import InventoryPointer, materialize_msi  # noqa: E402
 from windows_msi_workspace_recovery import WorkspaceRecovery  # noqa: E402
 
 from remote_ops_workspace.windows_private_storage import _Native  # noqa: E402
+from scripts.release_candidate_source import InventoryPointer, materialize_asset  # noqa: E402
 
 REPOSITORY = "Yunushan/remote-ops-workspace"
 RECEIPT = Path("build/native-smoke/windows-x64/signed-msi-upgrade.json")
@@ -171,7 +171,7 @@ def verified_msi(native: Installer, storage, directory: Path, tag: str, sha: str
         token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
         require(bool(token), "sealed candidate verification requires a GitHub token")
         client = GitHubClient(REPOSITORY, token, api_url="https://api.github.com")
-        path, expected, source = materialize_msi(client, REPOSITORY, directory, tag, sha, inventory)
+        path, expected, source = materialize_asset(client, REPOSITORY, directory, tag, sha, inventory, kind="windows-msi")
     held = storage.open_file(str(path), read_only=True)
     try:
         digest = fingerprint(path)

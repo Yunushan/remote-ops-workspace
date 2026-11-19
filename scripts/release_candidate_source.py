@@ -1,4 +1,4 @@
-"""Resolve a stock Windows MSI from an attested, unpublished release candidate."""
+"""Resolve a release asset from an attested, unpublished build inventory."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from check_platform_evidence_source_ref import resolve_tag_commit
-from release_candidate_inventory import (
+from scripts.check_platform_evidence_source_ref import resolve_tag_commit
+from scripts.release_candidate_inventory import (
     CANDIDATE_INVENTORY_ARTIFACT,
     GitHubClient,
     check_artifact_metadata,
@@ -22,8 +22,12 @@ from release_candidate_inventory import (
     verify_candidate_attestation,
 )
 
-WINDOWS_ARTIFACT = "release-windows-native-x64"
 INVENTORY_FILE = "release-candidate-inventory.json"
+ASSETS = {
+    "windows-msi": ("release-windows-native-x64", "remote-ops-workspace-{tag}-windows-x64.msi"),
+    "wheel": ("release-source-python", "remote_ops_workspace-{version}-py3-none-any.whl"),
+    "debian-amd64": ("release-linux-native-x86_64", "remote-ops-workspace-{tag}-linux-amd64.deb"),
+}
 
 
 @dataclass(frozen=True)
@@ -42,10 +46,17 @@ class InventoryPointer:
         return cls(int(match[1]), int(match[2]), match[3])
 
 
-def materialize_msi(
+def asset_filename(kind: str, tag: str) -> str:
+    return ASSETS[kind][1].format(tag=tag, version=tag[1:])
+
+
+def materialize_asset(
     client: GitHubClient, repository: str, directory: Path, tag: str, sha: str, pointer: InventoryPointer,
+    *, kind: str,
 ) -> tuple[Path, dict, dict]:
-    """Materialize only the attested Windows x64 artifact for a disposable drill."""
+    """Download the inventory and just the build archive owning the requested asset."""
+    artifact_name = ASSETS[kind][0]
+    filename = asset_filename(kind, tag)
     observed, errors = resolve_tag_commit(client.json, tag)
     if errors or observed != sha:
         raise ValueError("live release tag does not resolve to the selected candidate SHA")
@@ -73,22 +84,21 @@ def materialize_msi(
         inventory_sha256=inventory["sha256"], build_event=run["event"],
     )
     records = validate_inventory(json.loads(raw), repository=repository, **coordinates)
-    windows = next(record for record in records if record["name"] == WINDOWS_ARTIFACT)
-    filename = f"remote-ops-workspace-{tag}-windows-x64.msi"
-    files = [entry for entry in windows["files"] if isinstance(entry, dict) and entry.get("path") == filename]
+    artifact = next(record for record in records if record["name"] == artifact_name)
+    files = [entry for entry in artifact["files"] if isinstance(entry, dict) and entry.get("path") == filename]
     if len(files) != 1:
-        raise ValueError("sealed Windows artifact must contain one stock Windows x64 MSI")
+        raise ValueError(f"sealed {artifact_name} artifact must contain exactly one {filename}")
     file = files[0]
-    normalize_digest(f"sha256:{file.get('sha256')}", "sealed Windows MSI digest")
-    positive_int(file.get("size"), "sealed Windows MSI size")
+    normalize_digest(f"sha256:{file.get('sha256')}", f"sealed {filename} digest")
+    positive_int(file.get("size"), f"sealed {filename} size")
 
-    payload = client.json(f"actions/artifacts/{windows['id']}")
+    payload = client.json(f"actions/artifacts/{artifact['id']}")
     check_artifact_metadata(
-        payload, artifact_id=windows["id"], name=WINDOWS_ARTIFACT,
-        digest=windows["archive_digest"], run_id=pointer.run_id, release_sha=sha,
+        payload, artifact_id=artifact["id"], name=artifact_name,
+        digest=artifact["archive_digest"], run_id=pointer.run_id, release_sha=sha,
     )
     assets = root / "assets"
-    materialize_records(client, {WINDOWS_ARTIFACT: payload}, assets, expected_records=[windows])
+    materialize_records(client, {artifact_name: payload}, assets, expected_records=[artifact])
     return assets / filename, file, {
         "kind": "sealed-candidate",
         "build_run_id": pointer.run_id,
@@ -96,6 +106,6 @@ def materialize_msi(
         "inventory_artifact_id": pointer.artifact_id,
         "inventory_archive_digest": pointer.archive_digest,
         "inventory_sha256": inventory["sha256"],
-        "native_artifact_id": windows["id"],
-        "native_archive_digest": windows["archive_digest"],
+        "native_artifact_id": artifact["id"],
+        "native_archive_digest": artifact["archive_digest"],
     }

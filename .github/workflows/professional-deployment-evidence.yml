@@ -2,6 +2,11 @@ name: Professional deployment release evidence
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate_inventory:
+        description: Optional sealed candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -35,19 +40,17 @@ jobs:
         with:
           python-version: "3.14.7"
           architecture: x64
-      - name: Download and verify the promoted release wheel
+      - name: Verify the exact wheel from the release or sealed inventory
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          ROW_QUALIFICATION_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
         run: |
           if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Checkout differs from the frozen release source' }
           $InputRoot = Join-Path $env:RUNNER_TEMP 'professional-input'
           $Release = New-Item -ItemType Directory -Path (Join-Path $InputRoot 'release')
-          $Wheel = "remote_ops_workspace-$($env:GITHUB_REF_NAME.Substring(1))-py3-none-any.whl"
-          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern $Wheel --dir $Release.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'Release wheel download failed' }
-          python scripts/check_release_provenance.py --asset (Join-Path $Release.FullName $Wheel) --repository $env:GITHUB_REPOSITORY --tag $env:GITHUB_REF_NAME --sha $env:GITHUB_SHA
-          if ($LASTEXITCODE -ne 0) { throw 'Release wheel provenance failed' }
+          python -I scripts/fetch_qualification_release_asset.py --kind wheel --directory $Release.FullName --repository $env:GITHUB_REPOSITORY --tag $env:GITHUB_REF_NAME --sha $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Release wheel verification failed' }
           @{
             repository = $env:GITHUB_REPOSITORY
             release_tag = $env:GITHUB_REF_NAME

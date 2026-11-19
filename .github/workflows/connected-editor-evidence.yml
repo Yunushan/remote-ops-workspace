@@ -2,6 +2,11 @@ name: Connected editor release evidence
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate_inventory:
+        description: Optional sealed candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -33,17 +38,15 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
-      - name: Verify the immutable wheel and its promotion provenance
+      - name: Verify the exact wheel from the release or sealed inventory
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          ROW_QUALIFICATION_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
           mkdir -p "$EDITOR_WORK/release" "$EDITOR_WORK/review"
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --pattern "$wheel" --dir "$EDITOR_WORK/release"
-          python scripts/check_release_provenance.py --asset "$EDITOR_WORK/release/$wheel" \
+          python -I scripts/fetch_qualification_release_asset.py --kind wheel --directory "$EDITOR_WORK/release" \
             --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
       - name: Prepare a hash-locked Qt and OpenSSH fixture
         shell: bash

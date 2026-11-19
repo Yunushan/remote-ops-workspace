@@ -2,6 +2,11 @@ name: Debian embedded-server release evidence
 
 on:
   workflow_dispatch:
+    inputs:
+      candidate_inventory:
+        description: Optional sealed candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -37,17 +42,16 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"
-      - name: Verify the immutable Debian asset and its promotion provenance
+      - name: Verify the exact Debian package from the release or sealed inventory
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          ROW_QUALIFICATION_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
         run: |
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
           package="$SERVER_EVIDENCE_WORK/release/$asset"
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            --pattern "$asset" --dir "$SERVER_EVIDENCE_WORK/release"
-          python scripts/check_release_provenance.py --asset "$package" \
+          python -I scripts/fetch_qualification_release_asset.py --kind debian-amd64 --directory "$SERVER_EVIDENCE_WORK/release" \
             --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
           digest="$(sha256sum -- "$package")"
           printf 'SERVER_EVIDENCE_DEB_SHA256=%s\n' "${digest%% *}" >> "$GITHUB_ENV"

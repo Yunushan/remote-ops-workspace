@@ -33,9 +33,20 @@ the registry schema and any accepted records honest while leaving missing
 articles visible; `--require-complete` is the hard gate for claiming every
 article has accepted product-depth evidence.
 
+### Qualify sealed candidates before publication
+
+Dispatch the article's evidence workflow at the exact release tag. Each of
+the eight workflows accepts the optional `candidate_inventory` input as
+`RUN_ID ARTIFACT_ID sha256:DIGEST`. Use the run ID, numeric inventory artifact
+ID and original ZIP digest from the successful build's **Report promotion
+coordinates** summary. The workflow verifies the inventory's GitHub
+attestation and the exact wheel or Debian package it names. Leave the input
+empty to verify and use bytes from the immutable published release.
+See the [candidate staging procedure](runbooks/RELEASE_PROMOTION.md#stage-the-candidate-for-review).
+
 Put each article's reviewed files in its own `<article-id>/` directory, with
-the article document named `evidence.json`. Download the referenced assets
-from the published GitHub release. Run
+the article document named `evidence.json`. Use the verified asset from the
+qualification when running
 `python scripts/make_mobaxterm_parity_evidence_record.py` with that article
 directory as `--assets-dir`. Save the candidate JSON outside the article
 directory so the reviewed file set stays intact.
@@ -49,8 +60,9 @@ compares the review's live URL, author, timestamp and acceptance line with the
 record and checks that the review follows completion of the evidence attempt's
 jobs. A pull-request review must have GitHub's `APPROVED` state.
 
-After review, rerun the finalizer with the same inputs, the review URL, login
-and UTC timestamp, and one `--published-release-asset name=path` for each
+After review and immutable release publication, download the referenced
+release assets and rerun the finalizer with the same inputs, the review URL,
+login and UTC timestamp, and one `--published-release-asset name=path` for each
 download. Save the accepted JSON outside the article directory. Finalization
 re-hashes the published assets and binds the matching bytes to the accepted
 schema-v2 record. Use `--append-registry` together with `--out` when adding a
@@ -346,8 +358,8 @@ reviews, and the downloaded release assets. See the
 
 ### Professional Windows installer release evidence
 
-Run **Professional deployment release evidence** at the exact promoted release
-tag. The Windows build job verifies the published wheel before creating the
+Run **Professional deployment release evidence** at the exact release tag.
+The Windows build job verifies the wheel before creating the
 customizer bundle, then signs the branded EXE and MSI using the existing
 protected `release` signing environment. Configure `ROW_PROFESSIONAL_BRAND`,
 `ROW_PROFESSIONAL_ORGANIZATION`, `ROW_PROFESSIONAL_LOGO_BASE64` (the organization's
@@ -573,8 +585,8 @@ Generate the candidate with the tested package as `--artifact`. The candidate
 and published-release audit check that the exact package bytes match the
 capture. Independent review still requires the retained capture files.
 
-Dispatch `transport-terminal-evidence.yml` at the immutable published release
-tag. The workflow verifies the wheel's promotion provenance, installs its
+Dispatch `transport-terminal-evidence.yml` at the exact release tag.
+The workflow verifies the wheel, installs its
 locked dependencies, and captures all six proofs through that installed
 wheel. It retains `transport-terminal-evidence-<run-id>-<attempt>` for
 review. The release audit requires the successful qualification job, its
@@ -706,9 +718,9 @@ when generating the candidate. The published-release audit re-runs the capture
 checks on the reviewed attachments and checks the release bytes and GitHub
 workflow and reviewer provenance.
 
-For Debian amd64, dispatch `embedded-server-evidence.yml` at the published
-release tag. The Ubuntu runner verifies the published DEB and its promotion
-provenance, then builds the lab from a digest-pinned Debian image and signed
+For Debian amd64, dispatch `embedded-server-evidence.yml` at the exact
+release tag. The Ubuntu runner verifies the DEB, then builds the lab from a
+digest-pinned Debian image and signed
 Debian package metadata. It installs the tested DEB inside disposable
 containers. It starts a Debian guest with no network adapter for NFSv4.2
 over loopback, verifies a Kerberos-privacy read and rejection of `sec=sys`,
@@ -739,7 +751,7 @@ the release workflow.
 
 ### Connected editor release evidence
 
-Dispatch `connected-editor-evidence.yml` at the published release tag. The
+Dispatch `connected-editor-evidence.yml` at the exact release tag. The
 workflow verifies the wheel's release provenance, installs those exact bytes
 and opens the editor against a disposable SSH peer on a private Docker
 network. It publishes a candidate and the bound captures for independent
@@ -784,7 +796,7 @@ captures of at most 1 MiB per file.
 
 ### Macro replay release evidence
 
-Dispatch `macro-replay-evidence.yml` at the published release tag. It runs the
+Dispatch `macro-replay-evidence.yml` at the exact release tag. It runs the
 installed wheel's terminal against a disposable SSH peer and submits the recording,
 timing and reconnect evidence for independent review.
 
@@ -818,7 +830,7 @@ Use disposable accounts and test input to keep credentials out of the capture.
 
 ### Smart-card release capture
 
-Dispatch `smartcard-browser-evidence.yml` at the exact promoted release tag.
+Dispatch `smartcard-browser-evidence.yml` at the exact release tag.
 Use a dedicated, unprivileged Linux x86_64 desktop runner labeled
 `smartcard-evidence` with access to a physical test reader and a local desktop
 session. Protect the `smartcard-evidence` environment with release-tag

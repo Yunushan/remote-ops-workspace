@@ -224,10 +224,17 @@ and [component query](https://learn.microsoft.com/en-us/windows/win32/api/msi/nf
 
 The native candidate smoke reinstalls the same version. To exercise x64
 cross-version rollback, dispatch **Signed Windows MSI upgrade qualification**
-on `main` with the two certified release tags and their full commit SHAs. Both
-stock MSIs must pass immutable release, provenance, Authenticode, and timestamp
-checks. The currently pinned Windows recovery predecessor uses the EXE
-installer and cannot serve as the MSI baseline.
+on `main` with two ordered release tags and their full commit SHAs. Leave an
+inventory input empty to use a certified immutable publish for that version.
+To qualify a sealed candidate before publication, supply the corresponding
+`previous_inventory` or `candidate_inventory` input as
+`RUN_ID INVENTORY_ARTIFACT_ID sha256:ZIP_DIGEST`. Copy the coordinates from
+the successful release build's summary. Both versions can use sealed
+candidates. The workflow resolves each live tag, verifies the inventory
+attestation for its exact build attempt, and compares the Windows x64 MSI
+with that inventory under the retained file handle. All packages must pass
+Authenticode and timestamp checks. The pinned Windows recovery predecessor
+uses the EXE installer and cannot serve as the MSI baseline.
 
 The workflow holds both MSIs against write and delete access throughout
 verification, installation, cancellation, and retry. It installs the
@@ -239,6 +246,8 @@ candidate replaces the prior product and uninstalls cleanly. Keep the
 `signed-windows-msi-upgrade-<run>-<attempt>` receipt with the qualification
 evidence. This exercise covers the stock x64 install transaction. The managed
 updater's policy, staging, and recovery paths require their own qualification.
+Sealed-candidate results can inform promotion review. Independent approval
+and final published artifact verification still apply.
 
 ### Managed Windows MSI preflight
 

@@ -87,6 +87,13 @@ payload size and payload SHA-256. Use those exact report bytes in the review
 bundle. See the [protected source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites)
 for the registry's original Actions archives.
 
+### Qualify the Windows x64 MSI before publication
+
+The signed MSI rollback drill can use attested inventories from completed
+candidate builds. The signed predecessor can come from an immutable release
+or another sealed candidate. See the
+[Windows MSI release evidence runbook](UPGRADE_AND_ROLLBACK.md#windows-msi-release-evidence).
+
 ### Review the Debian amd64 upgrade and rollback result
 
 The Linux x86_64 release job runs the managed update drill against the

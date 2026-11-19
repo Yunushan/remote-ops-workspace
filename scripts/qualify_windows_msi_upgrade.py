@@ -1,4 +1,4 @@
-"""Qualify rollback and retry between two published, signed stock Windows MSIs."""
+"""Qualify rollback and retry between signed stock Windows releases or sealed candidates."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import os
 import platform
 import subprocess
 import sys
+import zipfile
 from contextlib import contextmanager
 from ctypes import wintypes as win
 from pathlib import Path
@@ -17,7 +18,12 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "src")]
 
-from check_release_provenance import normalize_sha, normalize_tag  # noqa: E402
+from check_release_provenance import (  # noqa: E402
+    native_installer_signature_commands,
+    normalize_sha,
+    normalize_tag,
+    verify_platform_signature,
+)
 from inspect_windows_msi import (  # noqa: E402
     HANDLE,
     LIMIT,
@@ -30,6 +36,8 @@ from inspect_windows_msi import (  # noqa: E402
     validate_package,
     validate_upgrade_rollback,
 )
+from release_candidate_inventory import GitHubClient  # noqa: E402
+from windows_msi_candidate_source import InventoryPointer, materialize_msi  # noqa: E402
 
 from remote_ops_workspace.windows_private_storage import _Native  # noqa: E402
 
@@ -150,20 +158,35 @@ def release_pair(args: argparse.Namespace) -> tuple[tuple[str, str], tuple[str, 
 
 
 @contextmanager
-def verified_msi(native: Installer, storage, directory: Path, tag: str, sha: str, *, candidate=False):
-    path = directory / f"remote-ops-workspace-{tag}-windows-x64.msi"
-    subprocess.run(["gh", "release", "download", tag, "--repo", REPOSITORY, "--pattern", path.name,
-                    "--dir", str(directory)], check=True, timeout=240)
+def verified_msi(native: Installer, storage, directory: Path, tag: str, sha: str, *,
+                 candidate=False, inventory: InventoryPointer | None = None):
+    if inventory is None:
+        path = directory / f"remote-ops-workspace-{tag}-windows-x64.msi"
+        subprocess.run(["gh", "release", "download", tag, "--repo", REPOSITORY, "--pattern", path.name,
+                        "--dir", str(directory)], check=True, timeout=240)
+        source = {"kind": "immutable-release"}
+        expected = None
+    else:
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        require(bool(token), "sealed candidate verification requires a GitHub token")
+        client = GitHubClient(REPOSITORY, token, api_url="https://api.github.com")
+        path, expected, source = materialize_msi(client, REPOSITORY, directory, tag, sha, inventory)
     held = storage.open_file(str(path), read_only=True)
     try:
         digest = fingerprint(path)
-        subprocess.run([sys.executable, "-I", str(ROOT / "scripts/check_release_provenance.py"),
-                        "--asset", str(path), "--repository", REPOSITORY, "--tag", tag,
-                        "--sha", sha, "--verify-platform-signature"], check=True, timeout=300)
+        if expected is None:
+            subprocess.run([sys.executable, "-I", str(ROOT / "scripts/check_release_provenance.py"),
+                            "--asset", str(path), "--repository", REPOSITORY, "--tag", tag,
+                            "--sha", sha, "--verify-platform-signature"], check=True, timeout=300)
+        else:
+            require(digest == expected["sha256"] and path.stat().st_size == expected["size"],
+                    "locked MSI does not match the sealed candidate inventory")
+            verify_platform_signature(native_installer_signature_commands(path, registered_sdk=True))
         package = native.inspect(path, require_transactional_upgrade=candidate)
         validate_package(package, "x64", tag[1:])
         require(fingerprint(path) == digest, "Windows MSI changed during provenance and identity verification")
-        yield path, {**package, "sha256": digest, "release_tag": tag, "release_sha": sha, "name_on_release": path.name}
+        yield path, {**package, "sha256": digest, "release_tag": tag, "release_sha": sha,
+                     "name_on_release": path.name, "source": source}
     finally:
         storage.close(held)
 
@@ -237,6 +260,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("previous-tag", "previous-sha", "candidate-tag", "candidate-sha"):
         parser.add_argument("--" + name, required=True)
+    for name in ("previous-inventory", "candidate-inventory"):
+        parser.add_argument("--" + name, type=InventoryPointer.parse, metavar="COORDINATES",
+                            help="use an attested candidate with RUN_ID ARTIFACT_ID sha256:DIGEST")
     args = parser.parse_args()
     try:
         source = hosted_source()
@@ -260,8 +286,9 @@ def main() -> int:
         with TemporaryDirectory(prefix="row-signed-msi-", dir=os.environ["RUNNER_TEMP"]) as directory:
             staging = Path(directory)
             with (
-                verified_msi(native, storage, staging, *previous_ref) as previous,
-                verified_msi(native, storage, staging, *candidate_ref, candidate=True) as candidate,
+                verified_msi(native, storage, staging, *previous_ref, inventory=args.previous_inventory) as previous,
+                verified_msi(native, storage, staging, *candidate_ref, candidate=True,
+                             inventory=args.candidate_inventory) as candidate,
             ):
                 for name in ("GH_TOKEN", "GITHUB_TOKEN"):
                     os.environ.pop(name, None)
@@ -269,7 +296,7 @@ def main() -> int:
                 home = staging / "workspace"
                 home.mkdir()
                 exercise(native, previous, candidate, launcher, home, report, save)
-    except (KeyError, OSError, subprocess.SubprocessError, ValueError) as exc:
+    except (KeyError, OSError, RuntimeError, subprocess.SubprocessError, ValueError, zipfile.BadZipFile) as exc:
         print(f"Windows MSI upgrade qualification: {exc}", file=sys.stderr)
         return 1
     return 0

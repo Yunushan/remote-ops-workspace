@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       previous_tag:
-        description: Previous certified release tag
+        description: Previous certified release or sealed candidate tag
         required: true
         type: string
       previous_sha:
@@ -12,15 +12,24 @@ on:
         required: true
         type: string
       candidate_tag:
-        description: Newer certified release tag
+        description: Newer certified release or sealed candidate tag
         required: true
         type: string
       candidate_sha:
         description: Full commit SHA for the newer release
         required: true
         type: string
+      previous_inventory:
+        description: Optional previous candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
+      candidate_inventory:
+        description: Optional newer candidate coordinates as RUN_ID ARTIFACT_ID sha256:DIGEST
+        required: false
+        type: string
 
 permissions:
+  actions: read
   contents: read
   attestations: read
 
@@ -50,10 +59,15 @@ jobs:
           ROW_PREVIOUS_SHA: ${{ inputs.previous_sha }}
           ROW_CANDIDATE_TAG: ${{ inputs.candidate_tag }}
           ROW_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          ROW_PREVIOUS_INVENTORY: ${{ inputs.previous_inventory }}
+          ROW_CANDIDATE_INVENTORY: ${{ inputs.candidate_inventory }}
         run: |
+          $inventoryOptions = @()
+          if ($env:ROW_PREVIOUS_INVENTORY) { $inventoryOptions += @("--previous-inventory", $env:ROW_PREVIOUS_INVENTORY) }
+          if ($env:ROW_CANDIDATE_INVENTORY) { $inventoryOptions += @("--candidate-inventory", $env:ROW_CANDIDATE_INVENTORY) }
           python -I scripts/qualify_windows_msi_upgrade.py `
             --previous-tag "$env:ROW_PREVIOUS_TAG" --previous-sha "$env:ROW_PREVIOUS_SHA" `
-            --candidate-tag "$env:ROW_CANDIDATE_TAG" --candidate-sha "$env:ROW_CANDIDATE_SHA"
+            --candidate-tag "$env:ROW_CANDIDATE_TAG" --candidate-sha "$env:ROW_CANDIDATE_SHA" @inventoryOptions
           exit $LASTEXITCODE
       - name: Retain bounded Windows install and rollback observations
         if: ${{ always() }}

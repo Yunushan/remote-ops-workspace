@@ -109,6 +109,77 @@ def test_release_msi_must_pass_provenance_and_keep_verified_bytes(tmp_path, monk
     assert trace == ["download", "hold", "provenance", *(["inspect"] if modified else []), "close"]
 
 
+@pytest.mark.parametrize(("defect", "message"), [
+    ("valid", ""),
+    ("wrong-digest", "locked MSI does not match"),
+    ("wrong-size", "locked MSI does not match"),
+    ("untrusted-signer", "signature failed"),
+])
+def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
+    tmp_path, monkeypatch, defect, message,
+):
+    tag, sha = "v1.0.29", "b" * 40
+    path = tmp_path / f"remote-ops-workspace-{tag}-windows-x64.msi"
+    path.write_bytes(b"candidate")
+    fingerprint = upgrade.fingerprint(path)
+    pointer = upgrade.InventoryPointer(42, 43, "sha256:" + "a" * 64)
+    trace = []
+    monkeypatch.setenv("GH_TOKEN", "fixture")
+
+    def client(repository, token, *, api_url):
+        assert (repository, token, api_url) == (upgrade.REPOSITORY, "fixture", "https://api.github.com")
+        return "github-client"
+
+    def materialize(client, repository, directory, selected_tag, selected_sha, coordinates):
+        assert (client, repository, directory, selected_tag, selected_sha, coordinates) == (
+            "github-client", upgrade.REPOSITORY, tmp_path, tag, sha, pointer,
+        )
+        trace.append("materialize")
+        return path, {"sha256": "c" * 64 if defect == "wrong-digest" else fingerprint,
+                      "size": path.stat().st_size + (defect == "wrong-size")}, {"kind": "sealed-candidate"}
+
+    def hold(requested, *, read_only):
+        assert requested == str(path) and read_only is True and trace == ["materialize"]
+        trace.append("hold")
+        return "lease"
+
+    def commands(requested, *, registered_sdk):
+        assert requested == path and registered_sdk is True and trace == ["materialize", "hold"]
+        return ["signature-command"]
+
+    def verify(command):
+        assert command == ["signature-command"]
+        trace.append("signature")
+        if defect == "untrusted-signer":
+            raise RuntimeError("signature failed")
+
+    def inspect(requested, *, require_transactional_upgrade):
+        assert requested == path and require_transactional_upgrade is True and trace[-1] == "signature"
+        trace.append("inspect")
+        return {"version": "1.0.29"}
+
+    def close(lease):
+        assert lease == "lease"
+        trace.append("close")
+
+    monkeypatch.setattr(upgrade, "GitHubClient", client)
+    monkeypatch.setattr(upgrade, "materialize_msi", materialize)
+    monkeypatch.setattr(upgrade, "native_installer_signature_commands", commands)
+    monkeypatch.setattr(upgrade, "verify_platform_signature", verify)
+    monkeypatch.setattr(upgrade, "validate_package", lambda *_: None)
+    monkeypatch.setattr(upgrade.subprocess, "run", lambda *_a, **_k: pytest.fail("fell back to a release download"))
+    storage = SimpleNamespace(open_file=hold, close=close)
+    scope = upgrade.verified_msi(SimpleNamespace(inspect=inspect), storage, tmp_path, tag, sha, candidate=True, inventory=pointer)
+    if message:
+        with pytest.raises((ValueError, RuntimeError), match=message), scope:
+            pytest.fail("refused package reached the installer")
+    else:
+        with scope as (locked, package):
+            assert locked == path and package["sha256"] == fingerprint and package["source"]["kind"] == "sealed-candidate"
+            assert trace == ["materialize", "hold", "signature", "inspect"]
+    assert trace[-1] == "close"
+
+
 @pytest.mark.parametrize(("scenario", "error"), [
     ("success", None),
     ("too-early", "must return user exit after removal"),

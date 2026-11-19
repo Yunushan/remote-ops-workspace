@@ -808,7 +808,7 @@ def test_mobaxterm_static_renderer_uses_drawn_ribbon_pictograms() -> None:
     moba = criteria["presets"]["mobaxterm"]
     requirement_ids = {item["id"] for item in moba["requirements"]}
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -838,9 +838,9 @@ def test_mobaxterm_static_renderer_uses_drawn_ribbon_pictograms() -> None:
     assert "gui_design_moba_ribbon_edge_action_route" in design_source
     assert "GuiMobaRibbonActionGeometry" in design_source
     assert "GUI_DESIGN_MOBA_RIBBON_ACTION_GEOMETRY" in design_source
-    assert "apply_moba_ribbon_edge_action_route" in gui_source
-    assert "mobaRibbonEdgeRouteKey" in gui_source
-    assert "mobaRibbonEdgeRouteHandler" in gui_source
+    assert "apply_moba_ribbon_edge_action_route" in toolbar_source
+    assert "mobaRibbonEdgeRouteKey" in toolbar_source
+    assert "mobaRibbonEdgeRouteHandler" in toolbar_source
     assert "EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE" in checker_source
     assert "ribbon-edge-action-route" in checker_source
     assert "expected_moba_ribbon_edge_action_route" in checker_source
@@ -1028,20 +1028,21 @@ def test_mobaxterm_home_welcome_uses_shared_metadata() -> None:
 
 def test_mobaxterm_live_gui_uses_generated_ribbon_icons() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     icon_source = Path("src/remote_ops_workspace/gui_icons.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
 
     assert "def moba_ribbon_icon" in gui_source
     assert "def draw_moba_ribbon_icon" in icon_source
-    assert "gui_design_moba_ribbon_actions" in gui_source
+    assert "gui_design_moba_ribbon_actions" in toolbar_source
     assert "gui_design_moba_top_menu_items" in menu_source
     assert "mobaTopMenuKey" in menu_source
     assert "EXPECTED_MOBA_TOP_MENU_KEYS" in live_checker_source
     assert "mobaIconKey" in gui_source
-    assert "mobaRibbonStaticX" in gui_source
-    assert "mobaRibbonIconX" in gui_source
-    assert "mobaRibbonActiveOutlineWidth" in gui_source
+    assert "mobaRibbonStaticX" in toolbar_source
+    assert "mobaRibbonIconX" in toolbar_source
+    assert "mobaRibbonActiveOutlineWidth" in toolbar_source
     assert "mobaRibbonSeparatorBottom" in live_checker_source
     assert "must use a generated ribbon icon" in live_checker_source
 
@@ -1889,12 +1890,12 @@ def test_gui_parity_tracks_product_specific_toolbar_identity() -> None:
 
 
 def test_live_and_static_renderers_share_toolbar_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_TOOLBAR_COPY" in design_source
-    assert "configure_toolbar_copy_for_design" in gui_source
+    assert "configure_toolbar_copy_for_design" in toolbar_source
     assert "gui_design_toolbar_actions" in renderer_source
 
 
@@ -2060,6 +2061,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2209,7 +2211,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "gui_design_mremoteng_connection_document_route" in design_source
     assert "gui_design_mremoteng_document_filter_route" in design_source
     assert "gui_design_mremoteng_inheritance_route" in design_source
-    assert "mRemoteNgTopToolbarIconKey" in gui_source
+    assert "mRemoteNgTopToolbarIconKey" in toolbar_source
     assert "build_mremoteng_document_controls_evidence" in gui_source
     assert "mRemoteNgDocumentControlKey" in gui_source
     assert "mRemoteNgDocumentRenderSource" in gui_source
@@ -2392,6 +2394,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
@@ -2623,7 +2626,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
     assert "def configure_menu_bar_for_design" in menu_source
     assert "self.configure_menu_bar_for_design(preset)" in gui_source
-    assert "secureCrtTopToolbarIconKey" in gui_source
+    assert "secureCrtTopToolbarIconKey" in toolbar_source
     assert "build_termius_hosts_chrome" in gui_source
     assert "termiusHostSearch" in gui_source
     assert "build_termius_header_chips_evidence" in gui_source

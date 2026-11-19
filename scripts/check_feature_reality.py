@@ -740,7 +740,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
         "cli": ["layout save", "layout run"],
         "module_attrs": ["remote_ops_workspace.layouts:build_layout_terminal_plans"],
         "source_tokens": {
-            "src/remote_ops_workspace/gui.py": ["self.open_selected_layout"],
+            "src/remote_ops_workspace/gui_toolbars.py": ["self.open_selected_layout"],
             "src/remote_ops_workspace/gui_layouts.py": ["def open_selected_layout"],
         },
     },

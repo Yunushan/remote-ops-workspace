@@ -982,16 +982,16 @@
               "gui_design_moba_ribbon_actions",
               "gui_design_moba_ribbon_edge_actions"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "build_moba_ribbon_buttons",
-              "gui_design_moba_ribbon_edge_actions",
-              "mobaXServerAction",
-              "mobaExitAction"
-            ],
             "configs/gui_visual_metrics.json": [
               "ribbon-right-actions",
               "ribbon-xserver-action",
               "ribbon-exit-action"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "build_moba_ribbon_buttons",
+              "gui_design_moba_ribbon_edge_actions",
+              "mobaXServerAction",
+              "mobaExitAction"
             ]
           }
         },
@@ -1009,11 +1009,6 @@
               "moba_ribbon_edge_action_route",
               "xserver_dialog_detail"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "apply_moba_ribbon_edge_action_route",
-              "mobaRibbonEdgeRouteKey",
-              "mobaRibbonEdgeRouteHandler"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_RIBBON_EDGE_ACTION_ROUTE",
               "ribbon-edge-action-route",
@@ -1021,6 +1016,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style ribbon edge action route"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "apply_moba_ribbon_edge_action_route",
+              "mobaRibbonEdgeRouteKey",
+              "mobaRibbonEdgeRouteHandler"
             ]
           }
         },
@@ -1041,8 +1041,7 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "moba_ribbon_icon",
-              "mobaIconKey",
-              "gui_design_moba_ribbon_actions"
+              "mobaIconKey"
             ],
             "src/remote_ops_workspace/gui_icons.py": [
               "def draw_moba_ribbon_icon(",
@@ -1055,6 +1054,9 @@
             ],
             "configs/gui_visual_metrics.json": [
               "ribbon-right-actions-inside-ribbon"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "gui_design_moba_ribbon_actions"
             ]
           }
         },
@@ -1072,11 +1074,6 @@
               "geometry.separator_x",
               "geometry.active_outline_x"
             ],
-            "src/remote_ops_workspace/gui.py": [
-              "mobaRibbonStaticX",
-              "mobaRibbonIconX",
-              "mobaRibbonActiveOutlineWidth"
-            ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_RIBBON_ACTION_GEOMETRY",
               "ribbon-geometry",
@@ -1089,6 +1086,11 @@
             ],
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style ribbon geometry"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "mobaRibbonStaticX",
+              "mobaRibbonIconX",
+              "mobaRibbonActiveOutlineWidth"
             ]
           }
         },
@@ -4197,12 +4199,14 @@
               "Tile H"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_toolbar_copy_for_design",
               "gui_design_toolbar_actions"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_toolbar_actions",
               "toolbar_action_icon"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "configure_toolbar_copy_for_design"
             ]
           }
         },
@@ -4216,8 +4220,7 @@
               "gui_design_securecrt_top_chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "self.configure_menu_bar_for_design(preset)",
-              "secureCrtTopToolbarIconKey"
+              "self.configure_menu_bar_for_design(preset)"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
               "menu, menu_action = add_reference_top_menu(",
@@ -4235,6 +4238,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "SecureCRT-style top menu and toolbar chrome"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "secureCrtTopToolbarIconKey"
             ]
           }
         },
@@ -6012,11 +6018,13 @@
               "Vault"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_toolbar_copy_for_design",
               "product_toolbar_buttons"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_toolbar_actions"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "configure_toolbar_copy_for_design"
             ]
           }
         },
@@ -7831,11 +7839,13 @@
               "Tile V"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_toolbar_copy_for_design",
               "product_toolbar_buttons"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_toolbar_actions"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "configure_toolbar_copy_for_design"
             ]
           }
         },
@@ -9654,11 +9664,13 @@
               "Script"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "configure_toolbar_copy_for_design",
               "product_toolbar_buttons"
             ],
             "scripts/render_gui_design_previews.py": [
               "gui_design_toolbar_actions"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "configure_toolbar_copy_for_design"
             ]
           }
         },
@@ -9672,8 +9684,7 @@
               "gui_design_mremoteng_top_chrome"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "self.configure_menu_bar_for_design(preset)",
-              "mRemoteNgTopToolbarIconKey"
+              "self.configure_menu_bar_for_design(preset)"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
               "menu, menu_action = add_reference_top_menu(",
@@ -9691,6 +9702,9 @@
             ],
             "docs/GUI_DESIGN.md": [
               "mRemoteNG-style top menu and toolbar chrome"
+            ],
+            "src/remote_ops_workspace/gui_toolbars.py": [
+              "mRemoteNgTopToolbarIconKey"
             ]
           }
         },

@@ -160,6 +160,8 @@ Rules:
   operator workflow dialogs.
   `gui_menus.py` owns top-menu actions, menu visibility across presets,
   and registration of the preset keyboard shortcuts.
+  `gui_toolbars.py` builds the action and layout toolbars, connects their
+  buttons, and applies preset geometry and responsive sizing.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
 

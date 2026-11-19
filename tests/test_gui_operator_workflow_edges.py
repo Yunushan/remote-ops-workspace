@@ -425,6 +425,32 @@ def test_style_selector_stays_in_shared_toolbar_for_every_preset(gui_window) -> 
     assert window.view_label.isVisibleTo(window) is True
 
 
+def test_toolbar_actions_stay_connected_once_across_presets_and_sizes(gui_window, monkeypatch) -> None:
+    app, window = gui_window
+    refresh = window.refresh_button
+    new_layout = window.new_layout_button
+    refresh_action = window.toolbar_widget_action(refresh)
+    layout_action = window.toolbar_widget_action(new_layout)
+    calls: list[str] = []
+    monkeypatch.setitem(window.product_toolbar_callbacks, "refresh", lambda: calls.append("refresh"))
+    monkeypatch.setitem(window.layout_toolbar_callbacks, "new-layout", lambda: calls.append("layout"))
+
+    for width, intermediate in ((1024, "mobaxterm"), (1440, "mremoteng")):
+        window.set_design_preset(intermediate)
+        window.resize(width, 760)
+        app.processEvents()
+        window.set_design_preset("native")
+        app.processEvents()
+
+        assert window.toolbar_widget_action(refresh) is refresh_action
+        assert window.toolbar_widget_action(new_layout) is layout_action
+        assert refresh.isVisibleTo(window) and new_layout.isVisibleTo(window)
+        refresh.click()
+        new_layout.click()
+
+    assert calls == ["refresh", "layout", "refresh", "layout"]
+
+
 def test_design_transition_depth_and_empty_workspace_are_safe(gui_window) -> None:
     _app, window = gui_window
 
@@ -736,7 +762,7 @@ def test_welcome_resize_guards_and_toolbar_action_contracts(
     gui_window,
     monkeypatch,
 ) -> None:
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_toolbars
     from remote_ops_workspace.gui_designs import get_gui_design_preset
 
     _app, window = gui_window
@@ -763,7 +789,7 @@ def test_welcome_resize_guards_and_toolbar_action_contracts(
 
     preset = get_gui_design_preset("mobaxterm")
     monkeypatch.setattr(
-        gui,
+        gui_toolbars,
         "gui_design_toolbar_actions",
         lambda _preset_id: [
             ("refresh", "Refresh", "Refresh"),
@@ -774,7 +800,7 @@ def test_welcome_resize_guards_and_toolbar_action_contracts(
         window.configure_toolbar_copy_for_design(preset)
 
     monkeypatch.setattr(
-        gui,
+        gui_toolbars,
         "gui_design_toolbar_actions",
         lambda _preset_id: [("unexpected", "Unexpected", "Unexpected")],
     )

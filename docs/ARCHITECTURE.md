@@ -93,6 +93,8 @@ The PyQt6 desktop shell is split across a family of `gui_*` modules so that the
 main window stays a composition layer rather than a monolith:
 
 - `gui.py` composes the `MainWindow` shell, workspace, and activity log.
+- `gui_design_activation.py` applies desktop presets and coordinates paint,
+  geometry, and terminal input policy during preset switches.
 - `gui_home.py` builds the welcome page, routes home actions and search,
   and keeps the page within the scroll area during window resizing.
 - `gui_toolbars.py` builds the action and layout toolbars, connects their

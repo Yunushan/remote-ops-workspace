@@ -2627,7 +2627,8 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "secureCrtSessionStatusLiveCellHeight" in gui_source
     menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
     assert "def configure_menu_bar_for_design" in menu_source
-    assert "self.configure_menu_bar_for_design(preset)" in gui_source
+    activation_source = Path("src/remote_ops_workspace/gui_design_activation.py").read_text(encoding="utf-8")
+    assert "self.configure_menu_bar_for_design(preset)" in activation_source
     assert "secureCrtTopToolbarIconKey" in toolbar_source
     assert "build_termius_hosts_chrome" in gui_source
     assert "termiusHostSearch" in gui_source
@@ -3209,7 +3210,7 @@ def test_gui_parity_tracks_product_home_search_routes() -> None:
     checker = _load_checker()
     criteria = checker.load_json(checker.CRITERIA_PATH)
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    design_activation_source = Path("src/remote_ops_workspace/gui_design_activation.py").read_text(encoding="utf-8")
     preset_properties_source = Path("src/remote_ops_workspace/gui_preset_properties.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -3234,7 +3235,7 @@ def test_gui_parity_tracks_product_home_search_routes() -> None:
     assert "gui_design_preset_home_search_route" in design_source
     assert "product-preset-home-search-entry-route" in design_source
     assert "presetHomeSearchCapturedPlaceholder" in preset_properties_source
-    assert "apply_home_search_route_for_design" in gui_source
+    assert "apply_home_search_route_for_design" in design_activation_source
     assert "preset_home_search_route" in renderer_source
     assert "home_search_route.placeholder_text" in renderer_source
     assert "EXPECTED_PRESET_HOME_SEARCH_ROUTES" in live_checker_source

@@ -164,6 +164,8 @@ Rules:
   buttons, and applies preset geometry and responsive sizing.
   `gui_home.py` owns welcome-page construction, home actions, search routing,
   and responsive sizing for the supported desktop presets.
+  `gui_design_activation.py` applies presets and coordinates the paint guard,
+  geometry updates, and terminal input policy during switches.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
 

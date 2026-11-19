@@ -2845,7 +2845,7 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_visual_signature_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -2877,7 +2877,7 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_isolation_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -2909,7 +2909,7 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_transition_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -3065,7 +3065,7 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_catalog_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -3891,7 +3891,7 @@
               "SSH2",
               "Start Page"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -4221,7 +4221,7 @@
               "GUI_DESIGN_SECURECRT_TOP_CHROME",
               "gui_design_securecrt_top_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "self.configure_menu_bar_for_design(preset)"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
@@ -4836,7 +4836,7 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_visual_signature_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4868,7 +4868,7 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_isolation_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4900,7 +4900,7 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_transition_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -5056,7 +5056,7 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_catalog_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -5872,7 +5872,7 @@
               "\"Keys\"",
               "\"New\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -6735,7 +6735,7 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_visual_signature_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6767,7 +6767,7 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_isolation_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6799,7 +6799,7 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_transition_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6955,7 +6955,7 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_catalog_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -7880,7 +7880,7 @@
               "linux-console",
               "Quick Connect"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -8598,7 +8598,7 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_visual_signature_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8630,7 +8630,7 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_isolation_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8662,7 +8662,7 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_transition_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8818,7 +8818,7 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_catalog_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -9689,7 +9689,7 @@
               "GUI_DESIGN_MREMOTENG_TOP_CHROME",
               "gui_design_mremoteng_top_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "self.configure_menu_bar_for_design(preset)"
             ],
             "src/remote_ops_workspace/gui_menus.py": [
@@ -9756,7 +9756,7 @@
               "external",
               "Start Page"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "configure_workspace_tabs_for_design"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -10396,7 +10396,7 @@
               "gui_design_preset_visual_signature",
               "preset-palette-density-to-live-static-style"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_visual_signature_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10428,7 +10428,7 @@
               "gui_design_preset_isolation_route",
               "active-preset-visible-hidden-widget-isolation"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_isolation_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10460,7 +10460,7 @@
               "gui_design_preset_transition_route",
               "selector-style-switch-resets-inactive-product-chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_transition_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10616,7 +10616,7 @@
               "gui_design_preset_catalog_route",
               "preset-catalog-to-design-selector-options"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_design_activation.py": [
               "gui_preset_properties.apply_preset_catalog_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [

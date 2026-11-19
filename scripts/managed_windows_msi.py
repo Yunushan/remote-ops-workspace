@@ -21,7 +21,6 @@ from inspect_windows_msi import (  # noqa: E402
     fingerprint,
     inspect_registration,
     validate_package,
-    validate_upgrade_rollback,
 )
 
 from remote_ops_workspace.paths import data_dir  # noqa: E402
@@ -61,10 +60,8 @@ def package_identity(native: Installer, root: Path, manifest, *, candidate: bool
     except (OSError, RuntimeError, ValueError) as exc:
         raise UpdateError("msi-authenticode-refused") from exc
     try:
-        package = native.inspect(path)
+        package = native.inspect(path, require_transactional_upgrade=candidate)
         validate_package(package, "x64", manifest.version)
-        if candidate:
-            validate_upgrade_rollback(package["upgrade_sequence"], package["disable_rollback"])
     except (KeyError, OSError, ValueError) as exc:
         raise UpdateError("msi-package-identity-refused") from exc
     return {**package, "sha256": asset.sha256, "size_bytes": asset.size, "asset": name}
@@ -105,6 +102,8 @@ def preflight(args, policy, workspace: Path) -> dict:
         require(previous["product_code"] != candidate["product_code"]
                 and previous["package_code"] != candidate["package_code"], "major-upgrade-identity-refused")
         try:
+            require(native.related_products(previous["upgrade_code"]) == (previous["product_code"],),
+                    "msi-related-products-refused")
             registration = inspect_registration(native, previous, "installed")
             inspect_registration(native, candidate, "absent")
             launcher = Path(registration["row_path"])

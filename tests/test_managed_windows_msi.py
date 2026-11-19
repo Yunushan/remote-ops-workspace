@@ -51,8 +51,8 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
         if scenario == "unsigned":
             raise RuntimeError("invalid signature")
 
-    def inspect(path):
-        assert path == tmp_path / name
+    def inspect(path, *, require_transactional_upgrade):
+        assert path == tmp_path / name and require_transactional_upgrade is True
         trace.append("identity")
         return {"upgrade_sequence": {}, "disable_rollback": ""}
 
@@ -61,14 +61,9 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
         if scenario == "invalid-msi":
             raise ValueError("invalid identity")
 
-    def validate_sequence(sequence, policy):
-        assert sequence == {} and policy == ""
-        trace.append("rollback")
-
     monkeypatch.setattr(msi, "native_installer_signature_commands", signature_commands)
     monkeypatch.setattr(msi, "verify_platform_signature", verify)
     monkeypatch.setattr(msi, "validate_package", validate)
-    monkeypatch.setattr(msi, "validate_upgrade_rollback", validate_sequence)
     native = SimpleNamespace(inspect=inspect)
     refusal = {"wrong-target": "selected-msi-absent", "unsigned": "msi-authenticode-refused",
                "invalid-msi": "msi-package-identity-refused"}.get(scenario)
@@ -79,7 +74,7 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
         result = msi.package_identity(native, tmp_path, manifest, candidate=True)
         assert (result["asset"], result["sha256"], result["size_bytes"]) == (name, artifact.sha256, artifact.size)
     assert trace == {"wrong-target": [], "unsigned": ["signature"], "invalid-msi": ["signature", "identity"],
-                     "accepted": ["signature", "identity", "rollback"]}[scenario]
+                     "accepted": ["signature", "identity"]}[scenario]
 
 
 @pytest.mark.parametrize(("scenario", "refusal"), [
@@ -87,6 +82,7 @@ def test_package_identity_checks_the_exact_selected_asset(tmp_path, monkeypatch,
     ("publisher-mismatch", "rollback-trust-identity-refused"),
     ("floor", "rollback-version-below-policy-minimum"),
     ("same-package", "major-upgrade-identity-refused"),
+    ("extra-related-product", "msi-related-products-refused"),
     ("wrong-registration", "msi-registration-refused"),
 ])
 def test_preflight_holds_both_verified_stages_through_installed_registration(
@@ -118,7 +114,11 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
         assert held == [args.previous_stage, args.stage]
         assert candidate == (stage == args.stage)
         code = args.previous_version if scenario == "same-package" else version
-        return {"product_code": code, "package_code": code, "version": version}
+        return {"product_code": code, "package_code": code, "version": version, "upgrade_code": "stock-family"}
+
+    def related(upgrade_code):
+        assert len(held) == 2 and upgrade_code == "stock-family"
+        return (args.previous_version, "another-product") if scenario == "extra-related-product" else (args.previous_version,)
 
     def registration(_native, package, state):
         assert len(held) == 2
@@ -130,7 +130,7 @@ def test_preflight_holds_both_verified_stages_through_installed_registration(
         return {"state": "absent"}
 
     monkeypatch.setattr(msi, "load_policy", lambda path: old_policy)
-    monkeypatch.setattr(msi, "Installer", object)
+    monkeypatch.setattr(msi, "Installer", lambda: SimpleNamespace(related_products=related))
     monkeypatch.setattr(msi, "verified_recovered_stage", verified)
     monkeypatch.setattr(msi, "package_identity", package)
     monkeypatch.setattr(msi, "inspect_registration", registration)

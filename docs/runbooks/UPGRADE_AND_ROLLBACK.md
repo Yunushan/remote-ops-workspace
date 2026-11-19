@@ -207,8 +207,11 @@ the [release promotion runbook](RELEASE_PROMOTION.md).
 The stock and branded MSIs remove the previous product after Windows Installer
 initializes the installation transaction. With rollback enabled, Windows
 Installer can restore the removed product if an upgrade fails. The build reads
-the compiled MSI and rejects a removal scheduled outside the transaction. See
-the [WiX upgrade schedule](https://docs.firegiant.com/wix3/xsd/wix/majorupgrade/).
+the compiled MSI and checks that removal runs inside the transaction. It also
+checks that the upgrade rules remove all features of older products in the
+same package family and refuse a downgrade. See the
+[WiX upgrade schedule](https://docs.firegiant.com/wix3/xsd/wix/majorupgrade/)
+and [Windows Installer Upgrade table](https://learn.microsoft.com/en-us/windows/win32/msi/upgrade-table).
 
 The native Windows smoke reads the stock MSI's package identity, architecture,
 and launcher component before installation. During installation and reinstall
@@ -226,8 +229,10 @@ stock MSIs must pass immutable release, provenance, Authenticode, and timestamp
 checks. The currently pinned Windows recovery predecessor uses the EXE
 installer and cannot serve as the MSI baseline.
 
-The workflow installs the predecessor, cancels the upgrade through Windows
-Installer after the predecessor's launcher disappears, and compares the
+The workflow holds both MSIs against write and delete access throughout
+verification, installation, cancellation, and retry. It installs the
+predecessor, cancels the upgrade through Windows Installer after the
+predecessor's launcher disappears, and compares the
 restored product registration, launcher SHA-256, and CLI version with the
 baseline. It then retries with the same signed MSI bytes and checks that the
 candidate replaces the prior product and uninstalls cleanly. Keep the
@@ -252,7 +257,9 @@ python -I scripts/managed_windows_msi.py preflight --policy $candidatePolicy --s
 Preflight reauthenticates both complete staged sets under retained handles that
 deny write and delete access. It checks both stock MSI signatures and
 timestamps, the candidate's rollback sequence, the exact installed predecessor
-registration, and the absence of the candidate registration. It records the
+registration, and the absence of the candidate registration. Windows
+Installer's related-products query must return exactly the predecessor.
+Preflight records the
 current launcher digest and returns `install_permitted: false`. Windows
 certificate checks may contact configured trust services. Use the existing
 endpoint-management installation procedure after completing workspace recovery

@@ -84,16 +84,29 @@ def test_release_msi_must_pass_provenance_and_keep_verified_bytes(tmp_path, monk
         else:
             raise subprocess.CalledProcessError(1, command)
 
-    def inspect(package):
+    def inspect(package, *, require_transactional_upgrade):
         assert package == path
+        assert require_transactional_upgrade
         trace.append("inspect")
         return {}
 
+    def open_file(requested, *, read_only):
+        assert requested == str(path) and read_only is True and trace == ["download"]
+        trace.append("hold")
+        return "native-read-only-file"
+
+    def close(handle):
+        assert handle == "native-read-only-file"
+        trace.append("close")
+
     monkeypatch.setattr(upgrade.subprocess, "run", run)
     monkeypatch.setattr(upgrade, "validate_package", lambda *_: None)
-    with pytest.raises(ValueError if modified else subprocess.CalledProcessError):
-        upgrade.verified_msi(SimpleNamespace(inspect=inspect), tmp_path, tag, sha)
-    assert trace == (["download", "provenance", "inspect"] if modified else ["download", "provenance"])
+    storage = SimpleNamespace(open_file=open_file, close=close)
+    with pytest.raises(ValueError if modified else subprocess.CalledProcessError), upgrade.verified_msi(
+        SimpleNamespace(inspect=inspect), storage, tmp_path, tag, sha, candidate=True,
+    ):
+        pytest.fail("refused package reached the installer")
+    assert trace == ["download", "hold", "provenance", *(["inspect"] if modified else []), "close"]
 
 
 @pytest.mark.parametrize(("scenario", "error"), [

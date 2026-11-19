@@ -9,18 +9,18 @@ import os
 import platform
 import subprocess
 import sys
+from contextlib import contextmanager
 from ctypes import wintypes as win
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "src")]
 
 from check_release_provenance import normalize_sha, normalize_tag  # noqa: E402
 from inspect_windows_msi import (  # noqa: E402
     HANDLE,
     LIMIT,
-    NO_MORE_ITEMS,
     STOCK_UPGRADE,
     Installer,
     confirm,
@@ -30,6 +30,8 @@ from inspect_windows_msi import (  # noqa: E402
     validate_package,
     validate_upgrade_rollback,
 )
+
+from remote_ops_workspace.windows_private_storage import _Native  # noqa: E402
 
 REPOSITORY = "Yunushan/remote-ops-workspace"
 RECEIPT = Path("build/native-smoke/windows-x64/signed-msi-upgrade.json")
@@ -70,7 +72,6 @@ class UpgradeInstaller(Installer):
             "MsiSetExternalUIRecord": (c.c_uint, self.callback_type, win.DWORD, c.c_void_p, c.c_void_p),
             "MsiInstallProductW": (c.c_uint, win.LPCWSTR, win.LPCWSTR),
             "MsiConfigureProductExW": (c.c_uint, win.LPCWSTR, c.c_int, c.c_int, win.LPCWSTR),
-            "MsiEnumRelatedProductsW": (c.c_uint, win.LPCWSTR, win.DWORD, win.DWORD, win.LPWSTR),
         }
         for name, (result, *arguments) in signatures.items():
             call = getattr(self.dll, name)
@@ -113,9 +114,7 @@ class UpgradeInstaller(Installer):
         return result
 
     def require_no_related_products(self) -> None:
-        product = c.create_unicode_buffer(39)
-        status = self.dll.MsiEnumRelatedProductsW(STOCK_UPGRADE, 0, 0, product)
-        require(status == NO_MORE_ITEMS, f"expected no installed stock MSI products, enumeration returned {status}")
+        require(not self.related_products(STOCK_UPGRADE), "expected no installed or advertised stock MSI products")
 
     def uninstall(self, product_code: str) -> None:
         confirm(self.dll.MsiConfigureProductExW(product_code, 0, INSTALLSTATE_ABSENT, "REBOOT=ReallySuppress"),
@@ -150,18 +149,23 @@ def release_pair(args: argparse.Namespace) -> tuple[tuple[str, str], tuple[str, 
     return (previous, old_sha), (candidate, new_sha)
 
 
-def verified_msi(native: Installer, directory: Path, tag: str, sha: str) -> tuple[Path, dict]:
+@contextmanager
+def verified_msi(native: Installer, storage, directory: Path, tag: str, sha: str, *, candidate=False):
     path = directory / f"remote-ops-workspace-{tag}-windows-x64.msi"
     subprocess.run(["gh", "release", "download", tag, "--repo", REPOSITORY, "--pattern", path.name,
                     "--dir", str(directory)], check=True, timeout=240)
-    digest = fingerprint(path)
-    subprocess.run([sys.executable, "-I", str(ROOT / "scripts/check_release_provenance.py"),
-                    "--asset", str(path), "--repository", REPOSITORY, "--tag", tag,
-                    "--sha", sha, "--verify-platform-signature"], check=True, timeout=300)
-    package = native.inspect(path)
-    validate_package(package, "x64", tag[1:])
-    require(fingerprint(path) == digest, "Windows MSI changed during provenance and identity verification")
-    return path, {**package, "sha256": digest, "release_tag": tag, "release_sha": sha, "name_on_release": path.name}
+    held = storage.open_file(str(path), read_only=True)
+    try:
+        digest = fingerprint(path)
+        subprocess.run([sys.executable, "-I", str(ROOT / "scripts/check_release_provenance.py"),
+                        "--asset", str(path), "--repository", REPOSITORY, "--tag", tag,
+                        "--sha", sha, "--verify-platform-signature"], check=True, timeout=300)
+        package = native.inspect(path, require_transactional_upgrade=candidate)
+        validate_package(package, "x64", tag[1:])
+        require(fingerprint(path) == digest, "Windows MSI changed during provenance and identity verification")
+        yield path, {**package, "sha256": digest, "release_tag": tag, "release_sha": sha, "name_on_release": path.name}
+    finally:
+        storage.close(held)
 
 
 def launcher_snapshot(native: Installer, package: dict, expected: Path, home: Path) -> dict:
@@ -251,17 +255,20 @@ def main() -> int:
 
         save()
         native = UpgradeInstaller()
+        storage = _Native()
         launcher = Path(os.environ["ProgramFiles"]) / "Remote Ops Workspace/bin/row.exe"
         with TemporaryDirectory(prefix="row-signed-msi-", dir=os.environ["RUNNER_TEMP"]) as directory:
             staging = Path(directory)
-            previous = verified_msi(native, staging, *previous_ref)
-            candidate = verified_msi(native, staging, *candidate_ref)
-            for name in ("GH_TOKEN", "GITHUB_TOKEN"):
-                os.environ.pop(name, None)
-            report.update(previous=previous[1], candidate=candidate[1])
-            home = staging / "workspace"
-            home.mkdir()
-            exercise(native, previous, candidate, launcher, home, report, save)
+            with (
+                verified_msi(native, storage, staging, *previous_ref) as previous,
+                verified_msi(native, storage, staging, *candidate_ref, candidate=True) as candidate,
+            ):
+                for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+                    os.environ.pop(name, None)
+                report.update(previous=previous[1], candidate=candidate[1], input_read_only_sharing_held=True)
+                home = staging / "workspace"
+                home.mkdir()
+                exercise(native, previous, candidate, launcher, home, report, save)
     except (KeyError, OSError, subprocess.SubprocessError, ValueError) as exc:
         print(f"Windows MSI upgrade qualification: {exc}", file=sys.stderr)
         return 1

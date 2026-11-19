@@ -341,11 +341,11 @@ $WelcomeReference
   if (!(Test-Path $Msi)) {
     throw "WiX did not create $Msi"
   }
-  # Inspect the compiled execute sequence before signing or publishing either
-  # the stock or branded package.
+  # Inspect the compiled upgrade rules and execute sequence before signing
+  # or publishing either the stock or branded package.
   & $Python -I (Join-Path $PSScriptRoot "inspect_windows_msi.py") --package $Msi --sequence-only | Out-Host
   if ($LASTEXITCODE -ne 0) {
-    throw "MSI build does not preserve the previous product on upgrade failure"
+    throw "MSI build does not enforce the expected transactional major upgrade"
   }
   $WixPdb = [System.IO.Path]::ChangeExtension($Msi, ".wixpdb")
   if (Test-Path $WixPdb) {

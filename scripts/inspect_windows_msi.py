@@ -21,6 +21,9 @@ PROBES = ("before-install", "after-install", "after-reinstall", "after-uninstall
 ROLLBACK_ACTIONS = ("InstallValidate", "InstallInitialize", "RemoveExistingProducts", "ProcessComponents",
                     "InstallFiles", "InstallFinalize")
 ROLLBACK_BREAKERS = {"DisableRollback", "ForceReboot", "ScheduleReboot"}
+DETECT_UPGRADE = "WIX_UPGRADE_DETECTED"
+DETECT_DOWNGRADE = "WIX_DOWNGRADE_DETECTED"
+UPGRADE_ACTIONS = ("FindRelatedProducts", "LaunchConditions", *ROLLBACK_ACTIONS)
 READONLY = None
 MACHINE = 4
 LOCAL = 3
@@ -60,7 +63,9 @@ class Installer:
             "MsiGetSummaryInformationW": (uint, HANDLE, string, uint, phandle),
             "MsiSummaryInfoGetPropertyW": (uint, HANDLE, uint, c.POINTER(uint), c.c_void_p, c.c_void_p, win.LPWSTR, pdword),
             "MsiRecordGetStringW": (uint, HANDLE, uint, win.LPWSTR, pdword),
+            "MsiRecordIsNull": (win.BOOL, HANDLE, uint),
             "MsiCloseHandle": (uint, HANDLE),
+            "MsiEnumRelatedProductsW": (uint, string, dword, dword, win.LPWSTR),
             "MsiGetProductInfoExW": (uint, string, string, dword, string, win.LPWSTR, pdword),
             "MsiGetComponentPathExW": (c.c_int, string, string, string, dword, win.LPWSTR, pdword),
         }
@@ -79,7 +84,7 @@ class Installer:
         finally:
             confirm(self.dll.MsiCloseHandle(handle), "MsiCloseHandle")
 
-    def rows(self, database, query: str, columns: int) -> list[tuple[str, ...]]:
+    def rows(self, database, query: str, columns: int, *, preserve_null=False) -> list[tuple[str | None, ...]]:
         with self.handle(self.dll.MsiDatabaseOpenViewW, database, query) as view:
             confirm(self.dll.MsiViewExecute(view, 0), "MsiViewExecute")
             rows = []
@@ -92,6 +97,9 @@ class Installer:
                 try:
                     fields = []
                     for column in range(1, columns + 1):
+                        if preserve_null and self.dll.MsiRecordIsNull(record, column):
+                            fields.append(None)
+                            continue
                         buffer, size = c.create_unicode_buffer(LIMIT), win.DWORD(LIMIT)
                         confirm(self.dll.MsiRecordGetStringW(record, column, buffer, c.byref(size)), "MsiRecordGetString")
                         fields.append(buffer.value)
@@ -110,7 +118,27 @@ class Installer:
         rows = self.rows(database, "SELECT `Action`, `Sequence` FROM `InstallExecuteSequence`", 2)
         return {action: int(sequence) for action, sequence in rows}
 
-    def inspect(self, path: Path) -> dict:
+    def major_upgrade(self, database, properties: dict, sequence: dict, template: str) -> dict:
+        rows = self.rows(database, "SELECT `UpgradeCode`, `VersionMin`, `VersionMax`, `Language`, "
+                         "`Attributes`, `Remove`, `ActionProperty` FROM `Upgrade`", 7, preserve_null=True)
+        conditions = {
+            action: condition
+            for action, condition in self.rows(database, "SELECT `Action`, `Condition` FROM `InstallExecuteSequence`", 2)
+            if action in UPGRADE_ACTIONS
+        }
+        proof = {
+            "rules": [list(row) for row in rows],
+            "execute_conditions": conditions,
+            "launch_conditions": [row[0] for row in self.rows(database, "SELECT `Condition` FROM `LaunchCondition`", 1)],
+            "secure_properties": properties.get("SecureCustomProperties", "").split(";"),
+            "authored_detection_properties": sorted({DETECT_UPGRADE, DETECT_DOWNGRADE}.intersection(properties)),
+            "product_language": properties.get("ProductLanguage"),
+            "template_languages": template.partition(";")[2].split(","),
+        }
+        validate_major_upgrade(proof, guid(properties["UpgradeCode"]), properties["ProductVersion"], sequence)
+        return proof
+
+    def inspect(self, path: Path, *, require_transactional_upgrade=False) -> dict:
         with self.handle(self.dll.MsiOpenDatabaseW, str(path), READONLY) as database:
             properties = dict(self.rows(database, "SELECT `Property`, `Value` FROM `Property`", 2))
             upgrade_sequence = self.upgrade_sequence(database)
@@ -122,6 +150,10 @@ class Installer:
             with self.handle(self.dll.MsiGetSummaryInformationW, database, None, 0) as summary:
                 template = self.summary(summary, 7)
                 package_code = guid(self.summary(summary, 9))
+            major_upgrade = {}
+            if require_transactional_upgrade:
+                validate_upgrade_rollback(upgrade_sequence, properties.get("DISABLEROLLBACK", ""))
+                major_upgrade["major_upgrade"] = self.major_upgrade(database, properties, upgrade_sequence, template)
         require(bool(media) and all(cabinet.startswith("#") and len(cabinet) > 1 for cabinet, in media),
                 "stock MSI must use embedded cabinets")
         require(len(files) == len(components) == 1 and files[0][0] == "RowExeComponent"
@@ -140,9 +172,23 @@ class Installer:
             "manufacturer": properties["Manufacturer"],
             "all_users": properties.get("ALLUSERS"),
             "per_user": properties.get("MSIINSTALLPERUSER", ""),
+            "product_language": properties.get("ProductLanguage"),
+            "template_languages": template.partition(";")[2].split(","),
             "upgrade_sequence": upgrade_sequence,
             "disable_rollback": properties.get("DISABLEROLLBACK", ""),
+            **major_upgrade,
         }
+
+    def related_products(self, upgrade_code: str) -> tuple[str, ...]:
+        products = []
+        buffer = c.create_unicode_buffer(39)
+        for index in range(64):
+            result = self.dll.MsiEnumRelatedProductsW(upgrade_code, 0, index, buffer)
+            if result == NO_MORE_ITEMS:
+                return tuple(products)
+            confirm(result, "MsiEnumRelatedProducts")
+            products.append(guid(buffer.value))
+        raise ValueError("related Windows Installer product list exceeds the inspection bound")
 
     def product(self, product_code: str, field: str) -> str | None:
         buffer, size = c.create_unicode_buffer(LIMIT), win.DWORD(LIMIT)
@@ -170,6 +216,8 @@ def validate_package(package: dict, architecture: str, version: str | None = Non
     require(isinstance(package.get("version"), str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", package["version"]) is not None
             and (version is None or package["version"] == version), "MSI ProductVersion differs from the release version")
     require(package.get("all_users") == "1" and package.get("per_user") == "", "stock MSI must have per-machine scope")
+    if "product_language" in package:
+        validate_language(package.get("product_language"), package.get("template_languages"))
     for field in ("package_code", "product_code"):
         require(isinstance(package.get(field), str) and guid(package[field]) == package[field],
                 f"MSI {field} must be a canonical GUID")
@@ -190,6 +238,35 @@ def validate_upgrade_rollback(sequence, disable_rollback: str) -> None:
             "MSI upgrade must preserve rollback and suppress in-package reboot actions")
 
 
+def validate_language(language, templates) -> None:
+    require(isinstance(language, str) and re.fullmatch(r"[0-9]{1,5}", language) is not None
+            and isinstance(templates, list) and language in templates,
+            "MSI ProductLanguage must appear in its template summary")
+
+
+def validate_major_upgrade(proof, upgrade_code: str, version: str, sequence: dict) -> None:
+    require(isinstance(proof, dict), "compiled MSI related-product rules are missing")
+    upgrade = [upgrade_code, None, version, None, "1", None, DETECT_UPGRADE]
+    downgrade = [upgrade_code, version, None, None, "2", None, DETECT_DOWNGRADE]
+    # A NULL Remove field lets Windows Installer uninstall all features.
+    # An empty formatted expression or a feature list can leave parts behind.
+    require(proof.get("rules") in ([upgrade, downgrade], [downgrade, upgrade]),
+            "MSI must remove all older products in its family and detect newer versions without removing them")
+    detection = sequence.get("FindRelatedProducts", 0)
+    launch = sequence.get("LaunchConditions", 0)
+    require(0 < detection < launch < sequence.get("InstallValidate", 0)
+            and proof.get("execute_conditions") == dict.fromkeys(UPGRADE_ACTIONS, ""),
+            "MSI related-product detection and transactional upgrade actions must run unconditionally in order")
+    launch_conditions = proof.get("launch_conditions")
+    require(isinstance(launch_conditions, list) and f"NOT {DETECT_DOWNGRADE}" in launch_conditions,
+            "MSI must refuse installation over a newer product in its family")
+    secure = proof.get("secure_properties")
+    require(isinstance(secure, list) and DETECT_UPGRADE in secure and DETECT_DOWNGRADE in secure
+            and proof.get("authored_detection_properties") == [],
+            "MSI related-product detection properties must reach the elevated installer and start unset")
+    validate_language(proof.get("product_language"), proof.get("template_languages"))
+
+
 def inspect_registration(native, package: dict, state: str) -> dict:
     product_code = package["product_code"]
     registered = native.product(product_code, "State")
@@ -202,6 +279,9 @@ def inspect_registration(native, package: dict, state: str) -> dict:
             "registered PackageCode differs from the exact MSI")
     version = native.product(product_code, "VersionString")
     require(version == package["version"], "registered ProductVersion differs from the exact MSI")
+    if "product_language" in package:
+        require(native.product(product_code, "Language") == package["product_language"],
+                "registered ProductLanguage differs from the exact MSI")
     row = native.component_path(product_code, package["row_component_code"])
     path = PureWindowsPath(row)
     require(path.is_absolute() and path.name.casefold() == "row.exe", "registered component path is not a row.exe file")
@@ -216,6 +296,9 @@ def validate_lifecycle(probes, target: str, assets: list[dict] | None = None) ->
     validate_package(package, target.removeprefix("windows-"))
     if assets is not None or "upgrade_sequence" in package:
         validate_upgrade_rollback(package.get("upgrade_sequence"), package.get("disable_rollback"))
+    if assets is not None or "major_upgrade" in package:
+        validate_major_upgrade(package.get("major_upgrade"), package["upgrade_code"], package["version"],
+                               package.get("upgrade_sequence", {}))
     digest = package.get("sha256")
     require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
             "candidate MSI package digest is invalid")
@@ -250,7 +333,7 @@ def main() -> int:
     parser.add_argument("--package", type=Path, required=True)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--architecture", choices=tuple(TEMPLATES.values()))
-    mode.add_argument("--sequence-only", action="store_true", help="verify rollback scheduling for a stock or branded package")
+    mode.add_argument("--sequence-only", action="store_true", help="verify major-upgrade metadata for a stock or branded package")
     parser.add_argument("--version")
     parser.add_argument("--state", choices=("absent", "installed"))
     parser.add_argument("--require-transactional-upgrade", action="store_true")
@@ -265,13 +348,14 @@ def main() -> int:
             with native.handle(native.dll.MsiOpenDatabaseW, str(args.package.absolute()), READONLY) as database:
                 sequence = native.upgrade_sequence(database)
                 properties = dict(native.rows(database, "SELECT `Property`, `Value` FROM `Property`", 2))
-            validate_upgrade_rollback(sequence, properties.get("DISABLEROLLBACK", ""))
-            result = {"upgrade_sequence": sequence, "sha256": original}
+                with native.handle(native.dll.MsiGetSummaryInformationW, database, None, 0) as summary:
+                    template = native.summary(summary, 7)
+                validate_upgrade_rollback(sequence, properties.get("DISABLEROLLBACK", ""))
+                major_upgrade = native.major_upgrade(database, properties, sequence, template)
+            result = {"upgrade_sequence": sequence, "major_upgrade": major_upgrade, "sha256": original}
         else:
-            package = native.inspect(args.package.absolute())
+            package = native.inspect(args.package.absolute(), require_transactional_upgrade=args.require_transactional_upgrade)
             validate_package(package, args.architecture, args.version)
-            if args.require_transactional_upgrade:
-                validate_upgrade_rollback(package["upgrade_sequence"], package["disable_rollback"])
             registration = inspect_registration(native, package, args.state) if args.state else None
             result = {"package": {**package, "sha256": original}, "registration": registration}
         require(fingerprint(args.package) == original, "MSI bytes changed during native inspection")

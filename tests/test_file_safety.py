@@ -260,6 +260,32 @@ def test_private_installation_rechecks_files_after_windows_permission_error(tmp_
         assert not list(tmp_path.glob(".*.tmp"))
 
 
+def test_private_installation_preserves_primary_error_when_own_staging_cleanup_fails(tmp_path, monkeypatch):
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_unlink = file_safety.Path.unlink
+    refused = []
+
+    def reject_install(source, destination):
+        assert destination == path
+        refused.append(Path(source))
+        raise PermissionError("replace denied")
+
+    def reject_staging_cleanup(target, *args, **kwargs):
+        if refused and target == refused[0]:
+            raise OSError("staging cleanup denied")
+        return original_unlink(target, *args, **kwargs)
+
+    monkeypatch.setattr(file_safety.os, "replace", reject_install)
+    monkeypatch.setattr(file_safety.Path, "unlink", reject_staging_cleanup)
+    with pytest.raises(PermissionError, match="replace denied"):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+    assert path.read_bytes() == b"old-private-state"
+    assert len(refused) == 1
+    assert refused[0].read_bytes() == b"new-private-state"
+    assert not list(tmp_path.glob(".*.rollback.*.tmp"))
+
+
 def test_private_write_rejects_recovery_after_destination_identity_changes(tmp_path, monkeypatch) -> None:
     path = tmp_path / "profiles.json"
     replacement = tmp_path / "other.json"

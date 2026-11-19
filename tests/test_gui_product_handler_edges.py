@@ -7,13 +7,6 @@ import pytest
 from remote_ops_workspace.models import Profile
 
 
-def _set_closure_value(monkeypatch, function, name: str, value) -> None:
-    index = function.__code__.co_freevars.index(name)
-    closure = function.__closure__
-    assert closure is not None
-    monkeypatch.setattr(closure[index], "cell_contents", value)
-
-
 @pytest.fixture
 def gui_window(monkeypatch, tmp_path):
     if "QT_QPA_PLATFORM" not in os.environ:
@@ -332,12 +325,7 @@ def test_product_document_and_screenshot_missing_widget_edges(
         def open(_mode) -> bool:
             return False
 
-    _set_closure_value(
-        monkeypatch,
-        type(window).handle_remmina_screenshot_capture,
-        "QBuffer",
-        _ClosedBuffer,
-    )
+    monkeypatch.setattr(gui_remmina, "QBuffer", _ClosedBuffer)
     window.handle_remmina_screenshot_capture()
     assert window.statusBar().currentMessage() == "Remmina screenshot capture failed"
 

@@ -366,6 +366,27 @@ The check uses certificate-verified HTTPS and compares the bytes served for
 the manifest and each reviewed installer. The published release audit
 repeats the downloads with the release operator's approved origin list.
 
+On Windows, capture the native branding with
+`scripts/capture_moba_professional_installers.py`. Supply the original
+customizer directory, the native build output with
+`enterprise-installers.json`, the signed organization manifest and its
+trusted public key. The command reads the EXE version information and icon
+resource and decompiles the MSI with WiX. It checks both installer hashes
+against the signed manifest before writing the review directory.
+
+```powershell
+python scripts/capture_moba_professional_installers.py `
+  --bundle $CustomizerDirectory --installers $NativeBuildDirectory `
+  --update-manifest $SignedManifest --update-key $OrganizationPublicKey `
+  --source $SourceIdentityJson --release-asset $PublishedSourceAsset `
+  --out $ReviewDirectory
+```
+
+Use `--wix` if the WiX CLI is outside PATH. Use `--local` in place of
+`--source` and omit `--release-asset` for a local inspection. Keep the
+generated files together with `installer-capture.json` for the later
+deployment audit and policy capture.
+
 The `installer_branding` attachment uses schema
 `row.moba-professional.windows-installers.v1`. Its `installer_sha256` map
 records both installer filenames and digests computed before native

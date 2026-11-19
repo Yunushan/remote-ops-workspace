@@ -13,9 +13,47 @@ from remote_ops_workspace.moba_customizer import (
     canonical_update_manifest_payload,
     validate_professional_deployment_evidence,
 )
+from scripts import capture_moba_professional_installers as native_capture
 from scripts import check_moba_professional_deployment_evidence as gate
 from scripts import check_release_mobaxterm_parity as published
 from scripts import make_mobaxterm_parity_evidence_record as generator
+
+
+@pytest.mark.parametrize("damage", [None, "unreferenced", "outside-section"])
+def test_native_capture_reads_only_linked_icon_resources(tmp_path, damage):
+    image = b"qualification icon image"
+    logo = struct.pack("<HHHBBBBHHII", 0, 1, 1, 16, 16, 0, 0, 1, 32, len(image), 22) + image
+    pe, section, virtual = 64, 512, 0x1000
+    optional = pe + 24
+    section_header = optional + 224
+    native = bytearray(1024)
+    native[:2] = b"MZ"
+    struct.pack_into("<I", native, 60, pe)
+    struct.pack_into("<4sHHIIIHH", native, pe, b"PE\0\0", 0x14C, 1, 0, 0, 0, 224, 0)
+    struct.pack_into("<H", native, optional, 0x10B)
+    struct.pack_into("<I", native, optional + 92, 16)
+    struct.pack_into("<II", native, optional + 96 + 16, virtual, 512)
+    struct.pack_into("<8sIIII", native, section_header, b".rsrc\0\0\0", 512, virtual, 512, section)
+
+    for relative, key, link in ((0, 3, 0x80000018), (24, 1, 0x80000030), (48, 1033, 72)):
+        struct.pack_into("<HII", native, section + relative + 14, 1, key, link)
+    payload = 256
+    rva = virtual + (1024 if damage == "outside-section" else payload)
+    struct.pack_into("<IIII", native, section + 72, rva, len(image), 0, 0)
+    native[section + 128:section + 128 + len(image)] = image
+    if damage != "unreferenced":
+        native[section + payload:section + payload + len(image)] = image
+    installer = tmp_path / "installer.exe"
+    installer.write_bytes(native)
+
+    if damage == "unreferenced":
+        with pytest.raises(ValueError, match="no icon resource matching"):
+            native_capture.find_icon(installer, logo)
+    elif damage == "outside-section":
+        with pytest.raises(ValueError, match="escape the supported resource range"):
+            native_capture.find_icon(installer, logo)
+    else:
+        assert native_capture.find_icon(installer, logo) == (section + payload, image)
 
 
 @pytest.fixture

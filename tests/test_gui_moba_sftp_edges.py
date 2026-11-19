@@ -1577,7 +1577,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
     from PyQt6.QtCore import Qt
     from PyQt6.QtWidgets import QMessageBox, QTreeWidgetItem
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_sftp_editor
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
     _app, _window, _panel, dock, profile = connected_workspace
@@ -1588,7 +1588,7 @@ def test_connected_text_editor_open_dirty_save_diff_and_path_edges(
         local_path=cache_path,
     )
     monkeypatch.setattr(
-        gui_connected,
+        gui_sftp_editor,
         "build_moba_text_editor_tab_plan",
         lambda *_args, **_kwargs: plan,
     )
@@ -2469,7 +2469,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     from PyQt6.QtGui import QKeyEvent
     from PyQt6.QtWidgets import QApplication, QMessageBox, QTreeWidgetItem
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_sftp_editor
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
     app, window, panel, dock, profile = connected_workspace
@@ -2552,11 +2552,11 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     def reject_plan(*_args, **_kwargs):
         raise ValueError("invalid editor plan")
 
-    monkeypatch.setattr(gui_connected, "build_moba_text_editor_tab_plan", reject_plan)
+    monkeypatch.setattr(gui_sftp_editor, "build_moba_text_editor_tab_plan", reject_plan)
     dock.handle_moba_text_editor_open_from_item(item, 0)
     assert "invalid editor plan" in window.statusBar().currentMessage()
 
-    monkeypatch.setattr(gui_connected, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: plan)
+    monkeypatch.setattr(gui_sftp_editor, "build_moba_text_editor_tab_plan", lambda *_args, **_kwargs: plan)
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
     started: list[str] = []
     monkeypatch.setattr(
@@ -2597,7 +2597,7 @@ def test_connected_terminal_traversal_and_text_editor_guard_edges(
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: False)
     dock.handle_moba_text_editor_save()
     monkeypatch.setattr(dock, "ensure_background_authentication_for_request", lambda: True)
-    monkeypatch.setattr(gui_connected, "build_sftp_get_plan", reject_plan)
+    monkeypatch.setattr(gui_sftp_editor, "build_sftp_get_plan", reject_plan)
     dock.handle_moba_text_editor_save()
     editor.setProperty("mobaTextEditorContentLoaded", False)
     dock.handle_moba_text_editor_diff()
@@ -2615,7 +2615,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     from PyQt6.QtCore import QProcess
     from PyQt6.QtWidgets import QMessageBox
 
-    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace import gui_sftp_editor
     from remote_ops_workspace.file_transfer import build_sftp_get_plan
     from remote_ops_workspace.moba_text import build_moba_text_editor_tab_plan
 
@@ -2847,7 +2847,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
         lambda _self: QMessageBox.StandardButton.Yes,
     )
     monkeypatch.setattr(
-        gui_connected,
+        gui_sftp_editor,
         "write_text_document",
         lambda *_args, **_kwargs: SimpleNamespace(new_sha256="new-cache-digest"),
     )
@@ -2893,7 +2893,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     def reject_cache(*_args, **_kwargs):
         raise OSError("cache unavailable")
 
-    monkeypatch.setattr(gui_connected, "write_text_document", reject_cache)
+    monkeypatch.setattr(gui_sftp_editor, "write_text_document", reject_cache)
     real_finish_text_editor_save_check(dock)
     assert dock.text_editor.property("mobaTextEditorStatus") == "error"
 
@@ -2902,7 +2902,7 @@ def test_connected_text_editor_transfer_failure_and_dispatch_edges(
     dock.text_editor_probe_path = str(no_plan_probe)
     dock.text_editor_original_remote_sha256 = digest
     monkeypatch.setattr(
-        gui_connected,
+        gui_sftp_editor,
         "write_text_document",
         lambda *_args, **_kwargs: SimpleNamespace(new_sha256="updated-cache-digest"),
     )

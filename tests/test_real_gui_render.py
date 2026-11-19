@@ -4211,7 +4211,7 @@ def test_real_gui_render_prepares_mobaxterm_connected_reference() -> None:
 
 def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
     lifecycle_source = Path("src/remote_ops_workspace/gui_terminal_lifecycle.py").read_text(encoding="utf-8")
     workspace_tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
@@ -4222,15 +4222,15 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     assert 'return f"{profile.name} [{protocol}]"' in source
     assert "moba_connected_tab_chrome_items" in source
     assert "mobaTabChromeKey" in workspace_tabs_source
-    assert "mobaRightUtilityKey" in connected_source
-    assert "mobaSessionEdgeKey" in connected_source
+    assert "mobaRightUtilityKey" in terminal_panel_source
+    assert "mobaSessionEdgeKey" in terminal_panel_source
     assert "mobaBottomEdgeKey" in source
     assert "def activate_adjacent_tab" in session_tabs_source
-    assert "mobaSshBannerTitle" in connected_source
-    assert "mobaSshBannerTargetLine" in connected_source
-    assert "mobaSshBannerCapabilityKey" in connected_source
-    assert "mobaSshBannerFooter" in connected_source
-    assert "mobaBannerWidth" in connected_source
+    assert "mobaSshBannerTitle" in terminal_panel_source
+    assert "mobaSshBannerTargetLine" in terminal_panel_source
+    assert "mobaSshBannerCapabilityKey" in terminal_panel_source
+    assert "mobaSshBannerFooter" in terminal_panel_source
+    assert "mobaBannerWidth" in terminal_panel_source
     assert "def profile_tab_status" in lifecycle_source
     assert "build_product_workspace_surface_evidence" in source
     assert "mobaRailRole" in source

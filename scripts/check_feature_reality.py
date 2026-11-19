@@ -49,11 +49,11 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
     },
     "moba.telemetry-status-bar": {
         "module_attrs": ["remote_ops_workspace.moba_connected:RemoteMonitoringSnapshot"],
-        "source_tokens": {"src/remote_ops_workspace/gui_connected.py": ["mobaTelemetryBar", "mobaTelemetryItem"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_connected_terminal.py": ["mobaTelemetryBar", "mobaTelemetryItem"]},
     },
     "moba.ssh-connection-banner": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_ssh_connection_banner"],
-        "source_tokens": {"src/remote_ops_workspace/gui_connected.py": ["mobaSshBanner", "mobaSshBannerCapability"]},
+        "source_tokens": {"src/remote_ops_workspace/gui_connected_terminal.py": ["mobaSshBanner", "mobaSshBannerCapability"]},
     },
     "moba.open-sftp-same-parameters": {
         "module_attrs": ["remote_ops_workspace.moba_connected:build_same_parameters_sftp_plan"],
@@ -470,7 +470,7 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_connected:moba_connected_text_editor_route",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_sftp_editor.py": [
                 "QPlainTextEdit", "MobaTextEditorHighlighter", "mobaTextEditor",
                 "handle_moba_text_editor_open_from_item", "mobaTextEditorSaveAction",
             ],

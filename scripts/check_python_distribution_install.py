@@ -121,6 +121,8 @@ GUI_SOURCE_MODULES = (
     "terminal_output",
     "gui_workspace",
     "gui_connected",
+    "gui_connected_terminal",
+    "gui_sftp_editor",
     "quick_connect",
 )
 GUI_ARCHIVE_LIMIT = 64 * 1024 * 1024

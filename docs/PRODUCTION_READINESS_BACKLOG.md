@@ -169,6 +169,9 @@ Rules:
   The mRemoteNG, Remmina, SecureCRT, and Termius workspace surfaces and
   control handlers live in dedicated GUI modules. The main window still
   routes each preset to its implementation.
+  `gui_connected_terminal.py` builds the connected SSH terminal panel,
+  banner, and telemetry. `gui_sftp_editor.py` manages the remote editor and
+  its SFTP transfers. The connected dock supplies the shared SSH state.
   `assets/workspace-styles.json` supplies the colors, corner radii and
   padding for all six presets in the shared `workspace.qss` template.
   `cli_transfers.py` owns file transfer and SSH-browser command registration

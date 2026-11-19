@@ -25,6 +25,8 @@ TEST_NODE = "tests/test_gui_terminal_io_edges.py::test_shared_terminal_component
 SOURCE_FILES = (
     "src/remote_ops_workspace/gui.py",
     "src/remote_ops_workspace/gui_connected.py",
+    "src/remote_ops_workspace/gui_connected_terminal.py",
+    "src/remote_ops_workspace/gui_sftp_editor.py",
     "src/remote_ops_workspace/gui_workspace.py",
     "src/remote_ops_workspace/gui_terminal.py",
     "src/remote_ops_workspace/gui_processes.py",

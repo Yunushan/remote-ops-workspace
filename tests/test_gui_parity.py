@@ -1392,6 +1392,7 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     ]
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1448,7 +1449,7 @@ def test_mobaxterm_compact_monitoring_dock_uses_shared_metadata() -> None:
     assert "control_route.live_plan_property" in connected_source
     assert "mobaMonitoringTelemetryRouteKey" in connected_source
     assert "mobaMonitoringTelemetryMetricCellKeys" in connected_source
-    assert "mobaMonitoringTelemetryRouted" in connected_source
+    assert "mobaMonitoringTelemetryRouted" in terminal_panel_source
     assert "mobaMonitoringControlLabelFontSize" in connected_source
     assert "mobaMonitoringControlCheckYOffset" in connected_source
     assert "EXPECTED_MOBA_REMOTE_MONITORING_DOCK_CHROME" in checker_source
@@ -1646,7 +1647,7 @@ def test_mobaxterm_static_contract_excludes_obsolete_permanent_edge_surfaces() -
 
 def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
 
@@ -1655,10 +1656,10 @@ def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
     assert "gui_design_moba_ssh_banner_chrome" in renderer_source
     assert "gui_design_moba_ssh_banner_row_geometry_for" in renderer_source
     assert "draw_centered_text" in renderer_source
-    assert "mobaSshBannerTitle" in connected_source
-    assert "mobaSshBannerSubtitle" in connected_source
-    assert "mobaSshBannerSlot" in connected_source
-    assert "mobaSshBannerRowY" in connected_source
+    assert "mobaSshBannerTitle" in terminal_panel_source
+    assert "mobaSshBannerSubtitle" in terminal_panel_source
+    assert "mobaSshBannerSlot" in terminal_panel_source
+    assert "mobaSshBannerRowY" in terminal_panel_source
     assert "EXPECTED_MOBA_SSH_BANNER_CHROME" in checker_source
     assert "EXPECTED_MOBA_SSH_BANNER_ROW_GEOMETRY" in checker_source
     assert "expected_moba_ssh_banner_row_geometry" in checker_source
@@ -1667,7 +1668,7 @@ def test_mobaxterm_ssh_banner_uses_shared_chrome_metadata() -> None:
 def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
     criteria = json.loads(Path("configs/gui_parity_criteria.json").read_text(encoding="utf-8"))
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -1684,9 +1685,9 @@ def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
     assert "draw_moba_ssh_banner_card" in renderer_source
     assert "state.banner.capability_rows()" in renderer_source
     assert "state.banner.footer_links()" in renderer_source
-    assert "mobaSshBannerTargetLine" in connected_source
-    assert "mobaSshBannerCapabilityKey" in connected_source
-    assert "mobaSshBannerFooter" in connected_source
+    assert "mobaSshBannerTargetLine" in terminal_panel_source
+    assert "mobaSshBannerCapabilityKey" in terminal_panel_source
+    assert "mobaSshBannerFooter" in terminal_panel_source
     assert "EXPECTED_MOBA_SSH_BANNER_CAPABILITY_KEYS" in checker_source
     assert "expected_moba_ssh_banner_capability_card" in checker_source
     assert "MobaXterm-style SSH banner capability card" in docs_source
@@ -1695,7 +1696,7 @@ def test_mobaxterm_ssh_banner_capability_card_is_tracked() -> None:
 
 def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -1709,11 +1710,11 @@ def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
     assert "line.tone" in renderer_source
     assert "gui_design_moba_terminal_transcript_row_geometry_for" in renderer_source
     assert "geometry.font_size" in renderer_source
-    assert "apply_terminal_transcript_evidence" in connected_source
-    assert "mobaTerminalTranscriptKeys" in connected_source
-    assert "mobaTerminalTranscriptTones" in connected_source
-    assert "mobaPlainTerminalMode" in connected_source
-    assert "mobaTerminalTranscriptGeometryKeys" in connected_source
+    assert "apply_terminal_transcript_evidence" in terminal_panel_source
+    assert "mobaTerminalTranscriptKeys" in terminal_panel_source
+    assert "mobaTerminalTranscriptTones" in terminal_panel_source
+    assert "mobaPlainTerminalMode" in terminal_panel_source
+    assert "mobaTerminalTranscriptGeometryKeys" in terminal_panel_source
     assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_KEYS" in checker_source
     assert "expected_moba_terminal_transcript" in checker_source
     assert "EXPECTED_MOBA_TERMINAL_TRANSCRIPT_ROW_GEOMETRY" in checker_source
@@ -1789,6 +1790,7 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
     state_source = Path("src/remote_ops_workspace/moba_connected.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1820,11 +1822,11 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
     assert "mobaConnectedIdentityWindowTitle" in gui_source
     assert "mobaConnectedIdentityTelemetryTarget" in gui_source
     assert "moba_telemetry_cells" in connected_source
-    assert "mobaTelemetryGeometryKeys" in connected_source
-    assert "mobaTelemetryCellStaticX" in connected_source
-    assert "mobaTelemetryLabelX" in connected_source
-    assert "telemetry_icon_pixmap" in connected_source
-    assert "mobaTelemetryIconRender" in connected_source
+    assert "mobaTelemetryGeometryKeys" in terminal_panel_source
+    assert "mobaTelemetryCellStaticX" in terminal_panel_source
+    assert "mobaTelemetryLabelX" in terminal_panel_source
+    assert "telemetry_icon_pixmap" in terminal_panel_source
+    assert "mobaTelemetryIconRender" in terminal_panel_source
     assert "mobaTelemetryCellWidth" in connected_source
     assert "mobaTelemetryKey" in connected_source
     assert "EXPECTED_MOBA_TELEMETRY_CELL_KEYS" in live_checker_source
@@ -1847,8 +1849,8 @@ def test_mobaxterm_connected_chrome_uses_shared_target_and_telemetry_state() -> 
 
 def test_mobaxterm_live_connected_session_uses_left_dock_switch() -> None:
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
-    connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
-    connected_panel_init = connected_source.split("class MobaConnectedSessionPanel", 1)[1].split(
+    terminal_panel_source = Path("src/remote_ops_workspace/gui_connected_terminal.py").read_text(encoding="utf-8")
+    connected_panel_init = terminal_panel_source.split("class MobaConnectedSessionPanel", 1)[1].split(
         "def build_terminal_area", 1
     )[0]
 

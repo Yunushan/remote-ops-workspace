@@ -2001,7 +2001,9 @@
             ],
             "src/remote_ops_workspace/gui_connected.py": [
               "mobaMonitoringTelemetryRouteKey",
-              "mobaMonitoringTelemetryMetricCellKeys",
+              "mobaMonitoringTelemetryMetricCellKeys"
+            ],
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaMonitoringTelemetryRouted"
             ]
           }
@@ -2231,7 +2233,7 @@
               "SSH-browser",
               "X11-forwarding"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaSshBanner",
               "mobaSshBannerCapability"
             ]
@@ -2258,7 +2260,7 @@
             "configs/gui_visual_metrics.json": [
               "ssh-banner-panel"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaSshBannerTitle",
               "mobaSshBannerSubtitle",
               "mobaBannerWidth"
@@ -2292,7 +2294,7 @@
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SSH banner capability card"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaSshBannerTargetLine",
               "mobaSshBannerCapabilityKey",
               "mobaSshBannerFooter"
@@ -2324,7 +2326,7 @@
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style SSH banner row geometry"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaSshBannerSlot",
               "mobaSshBannerRowY",
               "mobaSshBannerRowGeometryKeys"
@@ -2352,7 +2354,7 @@
             "configs/gui_visual_metrics.json": [
               "terminal-transcript"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "apply_terminal_transcript_evidence",
               "mobaTerminalTranscriptKeys",
               "mobaTerminalTranscriptTones"
@@ -2384,7 +2386,7 @@
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style terminal transcript geometry"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaPlainTerminalMode",
               "mobaTerminalTranscriptGeometryKeys",
               "mobaTerminalHeaderVisible"
@@ -2423,7 +2425,9 @@
             "src/remote_ops_workspace/gui_connected.py": [
               "mobaTelemetryCell",
               "mobaTelemetryCellWidth",
-              "mobaTelemetryDisplayText",
+              "mobaTelemetryDisplayText"
+            ],
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "telemetry_icon_pixmap",
               "mobaTelemetryIconRender"
             ]
@@ -2456,7 +2460,7 @@
             "docs/GUI_DESIGN.md": [
               "MobaXterm-style bottom telemetry geometry"
             ],
-            "src/remote_ops_workspace/gui_connected.py": [
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
               "mobaTelemetryGeometryKeys",
               "mobaTelemetryCellStaticX",
               "mobaTelemetryLabelX"
@@ -2490,8 +2494,10 @@
             ],
             "src/remote_ops_workspace/gui_connected.py": [
               "mobaTelemetryKey",
-              "mobaTelemetryIcon",
               "mobaTelemetryCell"
+            ],
+            "src/remote_ops_workspace/gui_connected_terminal.py": [
+              "mobaTelemetryIcon"
             ]
           }
         },

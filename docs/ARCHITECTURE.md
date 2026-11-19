@@ -130,8 +130,12 @@ main window stays a composition layer rather than a monolith:
   the packaged `assets/workspace.qss` template with colors, corner radii and
   control padding from `assets/workspace-styles.json`. The live window and
   static preview renderer use the same preset data.
-- `gui_workspace.py` and `gui_connected.py` build the connected-session
-  workspace and its monitoring panels.
+- `gui_workspace.py` and `gui_connected.py` assemble the connected SSH
+  workspace, SFTP browser, and monitoring controls. The dock coordinates
+  background SSH authentication and owns the active SFTP path.
+- `gui_connected_terminal.py` builds the terminal panel, SSH banner, and
+  telemetry bar with window-local services. `gui_sftp_editor.py` owns the
+  remote editor and its open, diff, and save operations.
 - `gui_icons.py` paints the generated toolbar, profile tree, and control icons.
   The window selects icons and sets their device pixel ratio.
 - `gui_terminal.py` and `qt_terminal_process.py` render terminal panes and bind

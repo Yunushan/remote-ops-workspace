@@ -354,6 +354,7 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         return [{"name": "pyqt6-available", "passed": False, "detail": detail}], [detail]
 
     import remote_ops_workspace.gui as gui_module
+    from remote_ops_workspace import gui_mremoteng, gui_remmina
     from remote_ops_workspace.gui import create_main_window
     from remote_ops_workspace.gui_designs import (
         GUI_DESIGN_PRESETS,
@@ -1881,14 +1882,16 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
         },
     )
 
-    original_ensure_data_dir = gui_module.ensure_data_dir
+    mremoteng_ensure_data_dir = gui_mremoteng.ensure_data_dir
+    remmina_ensure_data_dir = gui_remmina.ensure_data_dir
     denied_data_dir_calls: list[str] = []
 
     def deny_data_dir_directly() -> Path:
         denied_data_dir_calls.append("called")
         raise OSError("direct ROW_HOME denial proof")
 
-    gui_module.ensure_data_dir = deny_data_dir_directly
+    gui_mremoteng.ensure_data_dir = deny_data_dir_directly
+    gui_remmina.ensure_data_dir = deny_data_dir_directly
     try:
         window.set_design_preset("mremoteng")
         app.processEvents()
@@ -1921,7 +1924,8 @@ def run(out_dir: Path, *, require_pyqt6: bool) -> tuple[list[dict[str, object]],
             and "capture failed" in window.statusBar().currentMessage()
         )
     finally:
-        gui_module.ensure_data_dir = original_ensure_data_dir
+        gui_mremoteng.ensure_data_dir = mremoteng_ensure_data_dir
+        gui_remmina.ensure_data_dir = remmina_ensure_data_dir
     record(
         "gui-artifact-write-errors-fail-closed-without-slot-exception",
         save_failed_closed

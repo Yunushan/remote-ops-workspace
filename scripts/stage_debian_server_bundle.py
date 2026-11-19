@@ -122,7 +122,7 @@ def stage_bundle(archive_path: Path, expected_sha256: str, target: str, output: 
             if actual != expected_sha256:
                 raise ValueError("server bundle SHA-256 does not match the approved archive")
             compressed.seek(0)
-            with gzip.GzipFile(fileobj=compressed) as source:
+            with gzip.GzipFile(mode="rb", fileobj=compressed) as source:
                 # Count tar headers and extended metadata against the same bound as file data.
                 copy_bounded(source, expanded, MAX_TAR_BYTES)
             expanded.seek(0)

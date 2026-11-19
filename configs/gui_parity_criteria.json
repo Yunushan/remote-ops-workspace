@@ -3928,7 +3928,7 @@
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_CHROME",
               "gui_design_securecrt_session_manager_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionManagerChrome",
               "secureCrtSessionFilter",
               "filter_profile_tree"
@@ -3964,7 +3964,7 @@
               "live_button_size",
               "render_source"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionManagerLiveButtonSize",
               "secureCrtSessionManagerRenderSource",
               "securecrt_session_manager_action_icon"
@@ -3993,7 +3993,7 @@
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_ROUTE",
               "gui_design_securecrt_session_manager_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionRouteKey",
               "secureCrtSessionRouteActive",
               "secureCrtSessionRouteActiveTab"
@@ -4022,7 +4022,7 @@
               "GUI_DESIGN_SECURECRT_SESSION_MANAGER_FILTER_ROUTE",
               "gui_design_securecrt_session_manager_filter_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionFilterRouteKey",
               "filter_profile_tree"
             ],
@@ -4084,7 +4084,7 @@
               "GUI_DESIGN_SECURECRT_SFTP_BROWSER_ROUTE",
               "gui_design_securecrt_sftp_browser_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSftpBrowserRouteKey",
               "secureCrtSftpBrowserPath",
               "secureCrtSftpBrowserQueueState"
@@ -4113,7 +4113,7 @@
               "action_key=\"refresh\"",
               "live_triggered_property=\"secureCrtSftpBrowserRouteLiveTriggered\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "handle_securecrt_sftp_browser_action",
               "apply_securecrt_sftp_browser_action_route_properties",
               "route.live_triggered_property"
@@ -4298,7 +4298,7 @@
               "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_CHROME",
               "gui_design_securecrt_command_window_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "build_securecrt_command_window_evidence",
               "secureCrtCommandWindow",
               "secureCrtCommandWindowKey"
@@ -4331,7 +4331,7 @@
               "static_input_x",
               "live_send_min_width"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtCommandStaticControlY",
               "secureCrtCommandStaticInputX",
               "secureCrtCommandLiveSendMinWidth"
@@ -4360,7 +4360,7 @@
               "GUI_DESIGN_SECURECRT_COMMAND_WINDOW_SEND_ROUTE",
               "gui_design_securecrt_command_window_send_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtCommandRouteKey",
               "secureCrtCommandRouteCommand",
               "secureCrtCommandRouteSendLabel"
@@ -4389,7 +4389,7 @@
               "secondary_signal=\"returnPressed\"",
               "live_submitted_property=\"secureCrtCommandRouteLiveSubmitted\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "QLineEdit(chrome.command)",
               "QPushButton(chrome.send_label)",
               "handle_securecrt_command_window_send"
@@ -4418,7 +4418,7 @@
               "GUI_DESIGN_SECURECRT_SESSION_STATUS_STRIP",
               "gui_design_securecrt_session_status_strip"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "build_securecrt_session_status_strip_evidence",
               "secureCrtSessionStatusStrip",
               "secureCrtSessionStatusKey"
@@ -4453,7 +4453,7 @@
               "static_value_x",
               "live_cell_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_securecrt.py": [
               "secureCrtSessionStatusStaticCellStartX",
               "secureCrtSessionStatusStaticValueX",
               "secureCrtSessionStatusLiveCellHeight"
@@ -4745,7 +4745,9 @@
               "active-reference-tab-terminal-input"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_input_route_to_terminal_tab",
+              "apply_reference_input_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalInput"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4775,7 +4777,9 @@
               "active-reference-tab-terminal-transcript"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_transcript_route_to_terminal_tab",
+              "apply_reference_transcript_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalOutput"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -5985,7 +5989,7 @@
               "GUI_DESIGN_TERMIUS_HOSTS_CHROME",
               "gui_design_termius_hosts_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "build_termius_hosts_chrome",
               "termiusHostsChrome",
               "termiusHostSearch"
@@ -6080,7 +6084,7 @@
               "GUI_DESIGN_TERMIUS_HEADER_CHIPS",
               "gui_design_termius_header_chips"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "build_termius_header_chips_evidence",
               "termiusHeaderChip",
               "termiusHeaderChipKey"
@@ -6111,7 +6115,7 @@
               "GUI_DESIGN_TERMIUS_HOST_IDENTITY_STRIP",
               "gui_design_termius_host_identity_strip"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "build_termius_host_identity_strip_evidence",
               "termiusHostIdentityStrip",
               "termiusHostIdentityKey"
@@ -6147,7 +6151,7 @@
               "static_value_x",
               "live_cell_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusHostIdentityStaticCellStartX",
               "termiusHostIdentityStaticValueX",
               "termiusHostIdentityLiveCellHeight"
@@ -6177,7 +6181,7 @@
               "GUI_DESIGN_TERMIUS_SYNC_ROUTE",
               "gui_design_termius_sync_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusSyncRouteKey",
               "termiusSyncRouteState",
               "termiusSyncRouteHeaderChipKey"
@@ -6206,7 +6210,7 @@
               "GUI_DESIGN_TERMIUS_PORT_FORWARD_ROUTE",
               "gui_design_termius_port_forward_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusPortForwardRouteKey",
               "termiusPortForwardRouteIdentityValue",
               "termiusPortForwardRouteState"
@@ -6235,7 +6239,7 @@
               "GUI_DESIGN_TERMIUS_SNIPPET_ROUTE",
               "gui_design_termius_snippet_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusSnippetRouteKey",
               "termiusSnippetRouteCommand",
               "termiusSnippetRouteIdentityValue"
@@ -6264,7 +6268,7 @@
               "shortcut_object=\"termiusSnippetRunShortcut\"",
               "handler=\"handle_termius_snippet_run\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "handle_termius_snippet_run",
               "route.live_triggered_property",
               "route.action_object"
@@ -6293,7 +6297,7 @@
               "GUI_DESIGN_TERMIUS_FILES_BROWSER_ROUTE",
               "gui_design_termius_files_browser_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusFilesRouteKey",
               "termiusFilesRoutePath",
               "termiusFilesRouteQueueState"
@@ -6322,7 +6326,7 @@
               "action_key=\"sync\"",
               "live_triggered_property=\"termiusFilesRouteLiveTriggered\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "handle_termius_files_sync",
               "apply_termius_files_sync_route_properties",
               "route.live_triggered_property"
@@ -6351,7 +6355,7 @@
               "GUI_DESIGN_TERMIUS_HOST_SELECTION_ROUTE",
               "gui_design_termius_host_selection_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_termius.py": [
               "termiusHostRouteKey",
               "termiusHostRouteActiveTab"
             ],
@@ -6644,7 +6648,9 @@
               "active-reference-tab-terminal-input"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_input_route_to_terminal_tab",
+              "apply_reference_input_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalInput"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -6674,7 +6680,9 @@
               "active-reference-tab-terminal-transcript"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_transcript_route_to_terminal_tab",
+              "apply_reference_transcript_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalOutput"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -7942,7 +7950,7 @@
               "static_width",
               "live_button_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "build_remmina_viewer_controls_evidence",
               "remminaViewerControl",
               "remminaViewerControlKey",
@@ -7976,7 +7984,7 @@
               "GUI_DESIGN_REMMINA_PROFILE_LIST_CHROME",
               "gui_design_remmina_profile_list_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "build_remmina_profile_list_chrome",
               "remminaProfileListChrome",
               "remminaProfileFilter",
@@ -8013,7 +8021,7 @@
               "live_filter_width",
               "live_row_min_height"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaProfileStaticRowStartY",
               "remminaProfileStaticRowStep",
               "remminaProfileLiveRowMinHeight"
@@ -8042,7 +8050,7 @@
               "GUI_DESIGN_REMMINA_PROFILE_VIEWER_ROUTE",
               "gui_design_remmina_profile_viewer_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaProfileViewerRouteKey",
               "remminaProfileViewerRouteActive",
               "remminaProfileViewerRouteActiveTab"
@@ -8071,7 +8079,7 @@
               "GUI_DESIGN_REMMINA_PROFILE_FILTER_ROUTE",
               "gui_design_remmina_profile_filter_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaProfileFilterRouteKey",
               "filter_remmina_profile_rows",
               "filter_input.textChanged.connect"
@@ -8100,7 +8108,7 @@
               "GUI_DESIGN_REMMINA_CLIPBOARD_ROUTE",
               "gui_design_remmina_clipboard_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaClipboardRouteKey",
               "remminaClipboardRouteActive",
               "remminaClipboardRouteState"
@@ -8129,7 +8137,7 @@
               "GUI_DESIGN_REMMINA_SCREENSHOT_ROUTE",
               "gui_design_remmina_screenshot_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaScreenshotRouteKey",
               "remminaScreenshotRouteActive",
               "remminaScreenshotRouteArtifact"
@@ -8158,7 +8166,7 @@
               "live_triggered_property=\"remminaScreenshotRouteLiveTriggered\"",
               "signal=\"clicked\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "handle_remmina_screenshot_capture",
               "apply_remmina_screenshot_capture_route_properties",
               "route.live_triggered_property"
@@ -8187,7 +8195,7 @@
               "GUI_DESIGN_REMMINA_SFTP_TRANSFER_ROUTE",
               "gui_design_remmina_sftp_transfer_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remminaSftpTransferRouteKey",
               "remminaSftpTransferRoutePath",
               "remminaSftpTransferRouteQueueState"
@@ -8216,7 +8224,7 @@
               "action_key=\"queue\"",
               "live_triggered_property=\"remminaSftpTransferRouteLiveTriggered\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_remmina.py": [
               "handle_remmina_sftp_transfer_action",
               "apply_remmina_sftp_transfer_action_route_properties",
               "route.live_triggered_property"
@@ -8507,7 +8515,9 @@
               "active-reference-tab-terminal-input"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_input_route_to_terminal_tab",
+              "apply_reference_input_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalInput"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8537,7 +8547,9 @@
               "active-reference-tab-terminal-transcript"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_transcript_route_to_terminal_tab",
+              "apply_reference_transcript_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalOutput"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -8852,7 +8864,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_interaction_states_for_design",
-              "interactionState",
+              "interactionState"
+            ],
+            "src/remote_ops_workspace/gui_remmina.py": [
               "remmina_profile_filter"
             ],
             "scripts/render_gui_design_previews.py": [
@@ -9823,7 +9837,7 @@
               "GUI_DESIGN_MREMOTENG_DOCUMENT_CONTROLS",
               "gui_design_mremoteng_document_toolbar_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "build_mremoteng_document_controls_evidence",
               "mRemoteNgDocumentControl",
               "mRemoteNgDocumentControlKey",
@@ -9859,7 +9873,7 @@
               "live_icon_size",
               "render_source"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "mremoteng_document_control_icon",
               "mRemoteNgDocumentRenderSource",
               "mRemoteNgDocumentStaticFilterWidth",
@@ -9891,7 +9905,7 @@
               "GUI_DESIGN_MREMOTENG_PROPERTY_GRID_CHROME",
               "gui_design_mremoteng_property_grid_chrome"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "build_mremoteng_property_grid_evidence",
               "mRemoteNgPropertyGrid",
               "mRemoteNgPropertyRowKey"
@@ -9925,7 +9939,7 @@
               "GUI_DESIGN_MREMOTENG_CONNECTION_DOCUMENT_ROUTE",
               "gui_design_mremoteng_connection_document_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "mRemoteNgConnectionRouteKey",
               "mRemoteNgConnectionRouteActive",
               "mRemoteNgConnectionRouteActiveTab"
@@ -9954,7 +9968,7 @@
               "reconnect_state=\"reconnected\"",
               "live_triggered_property=\"mRemoteNgConnectionRouteLiveTriggered\""
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "handle_mremoteng_document_reconnect",
               "apply_mremoteng_reconnect_route_properties",
               "route.live_triggered_property"
@@ -9983,7 +9997,7 @@
               "GUI_DESIGN_MREMOTENG_DOCUMENT_FILTER_ROUTE",
               "gui_design_mremoteng_document_filter_route"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "mRemoteNgDocumentFilterRouteKey",
               "filter_input.textChanged.connect"
             ],
@@ -10305,7 +10319,9 @@
               "active-reference-tab-terminal-input"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_input_route_to_terminal_tab",
+              "apply_reference_input_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalInput"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10335,7 +10351,9 @@
               "active-reference-tab-terminal-transcript"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "apply_reference_transcript_route_to_terminal_tab",
+              "apply_reference_transcript_route_to_terminal_tab"
+            ],
+            "src/remote_ops_workspace/gui_terminal.py": [
               "terminalOutput"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -10650,7 +10668,9 @@
             ],
             "src/remote_ops_workspace/gui.py": [
               "configure_interaction_states_for_design",
-              "toolbar_interaction_state",
+              "toolbar_interaction_state"
+            ],
+            "src/remote_ops_workspace/gui_mremoteng.py": [
               "focused_control",
               "mremoteng_document_filter"
             ],

@@ -105,6 +105,10 @@ main window stays a composition layer rather than a monolith:
   geometry, and terminal input policy during preset switches.
 - `gui_home.py` builds the welcome page, routes home actions and search,
   and keeps the page within the scroll area during window resizing.
+- `gui_mremoteng.py`, `gui_remmina.py`, `gui_securecrt.py`, and
+  `gui_termius.py` build their presets' workspace surfaces and handle their
+  document, viewer, session, and file controls. The main window selects and
+  mounts those surfaces.
 - `gui_toolbars.py` builds the action and layout toolbars, connects their
   buttons to window workflows, and keeps the controls reachable on resize.
 - `gui_profile_tree.py` renders saved profiles and groups, applies preset

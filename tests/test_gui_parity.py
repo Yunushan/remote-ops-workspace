@@ -2063,6 +2063,8 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    mremoteng_source = Path("src/remote_ops_workspace/gui_mremoteng.py").read_text(encoding="utf-8")
+    remmina_source = Path("src/remote_ops_workspace/gui_remmina.py").read_text(encoding="utf-8")
     toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -2215,20 +2217,20 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "gui_design_mremoteng_inheritance_route" in design_source
     assert "mRemoteNgTopToolbarIconKey" in toolbar_source
     assert "build_mremoteng_document_controls_evidence" in gui_source
-    assert "mRemoteNgDocumentControlKey" in gui_source
-    assert "mRemoteNgDocumentRenderSource" in gui_source
-    assert "mRemoteNgConnectionRouteKey" in gui_source
-    assert "mRemoteNgConnectionRouteActive" in gui_source
-    assert "apply_mremoteng_reconnect_route_properties" in gui_source
-    assert "handle_mremoteng_document_reconnect" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "mRemoteNgDocumentFilterRouteKey" in gui_source
+    assert "mRemoteNgDocumentControlKey" in mremoteng_source
+    assert "mRemoteNgDocumentRenderSource" in mremoteng_source
+    assert "mRemoteNgConnectionRouteKey" in mremoteng_source
+    assert "mRemoteNgConnectionRouteActive" in mremoteng_source
+    assert "apply_mremoteng_reconnect_route_properties" in mremoteng_source
+    assert "handle_mremoteng_document_reconnect" in mremoteng_source
+    assert "route.live_triggered_property" in mremoteng_source
+    assert "mRemoteNgDocumentFilterRouteKey" in mremoteng_source
     assert "mRemoteNgInheritanceRouteKey" in gui_source
     assert "mRemoteNgInheritanceRouteInheritedValue" in gui_source
     assert "MREMOTENG_FILTER_ROUTE_KEY_ROLE" in tree_source
-    assert "mremoteng_document_control_icon" in gui_source
+    assert "mremoteng_document_control_icon" in mremoteng_source
     assert "build_mremoteng_property_grid_evidence" in gui_source
-    assert "mRemoteNgPropertyRowKey" in gui_source
+    assert "mRemoteNgPropertyRowKey" in mremoteng_source
     assert "GuiRemminaViewerControl" in design_source
     assert "GuiRemminaProfileListChrome" in design_source
     assert "GuiRemminaProfileViewerRoute" in design_source
@@ -2252,32 +2254,32 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "static_row_start_y" in design_source
     assert "gui_design_remmina_viewer_controls" in design_source
     assert "build_remmina_viewer_controls_evidence" in gui_source
-    assert "remmina_profile_filter" in gui_source
-    assert "remminaViewerControlKey" in gui_source
-    assert "remminaViewerControlStaticWidth" in gui_source
-    assert "remminaViewerControlRenderSource" in gui_source
-    assert "remminaProfileViewerRouteKey" in gui_source
-    assert "remminaProfileViewerRouteActive" in gui_source
-    assert "remminaProfileFilterRouteKey" in gui_source
-    assert "filter_remmina_profile_rows" in gui_source
-    assert "filter_input.textChanged.connect" in gui_source
-    assert "remminaClipboardRouteKey" in gui_source
-    assert "remminaClipboardRouteActive" in gui_source
-    assert "remminaClipboardRouteState" in gui_source
-    assert "remminaScreenshotRouteKey" in gui_source
-    assert "remminaScreenshotRouteActive" in gui_source
-    assert "remminaScreenshotRouteArtifact" in gui_source
-    assert "apply_remmina_screenshot_capture_route_properties" in gui_source
-    assert "handle_remmina_screenshot_capture" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "remminaSftpTransferRouteKey" in gui_source
-    assert "remminaSftpTransferRoutePath" in gui_source
-    assert "remminaSftpTransferRouteQueueState" in gui_source
-    assert "apply_remmina_sftp_transfer_action_route_properties" in gui_source
-    assert "handle_remmina_sftp_transfer_action" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "remminaProfileStaticRowStartY" in gui_source
-    assert "remminaProfileLiveRowMinHeight" in gui_source
+    assert "remmina_profile_filter" in remmina_source
+    assert "remminaViewerControlKey" in remmina_source
+    assert "remminaViewerControlStaticWidth" in remmina_source
+    assert "remminaViewerControlRenderSource" in remmina_source
+    assert "remminaProfileViewerRouteKey" in remmina_source
+    assert "remminaProfileViewerRouteActive" in remmina_source
+    assert "remminaProfileFilterRouteKey" in remmina_source
+    assert "filter_remmina_profile_rows" in remmina_source
+    assert "filter_input.textChanged.connect" in remmina_source
+    assert "remminaClipboardRouteKey" in remmina_source
+    assert "remminaClipboardRouteActive" in remmina_source
+    assert "remminaClipboardRouteState" in remmina_source
+    assert "remminaScreenshotRouteKey" in remmina_source
+    assert "remminaScreenshotRouteActive" in remmina_source
+    assert "remminaScreenshotRouteArtifact" in remmina_source
+    assert "apply_remmina_screenshot_capture_route_properties" in remmina_source
+    assert "handle_remmina_screenshot_capture" in remmina_source
+    assert "route.live_triggered_property" in remmina_source
+    assert "remminaSftpTransferRouteKey" in remmina_source
+    assert "remminaSftpTransferRoutePath" in remmina_source
+    assert "remminaSftpTransferRouteQueueState" in remmina_source
+    assert "apply_remmina_sftp_transfer_action_route_properties" in remmina_source
+    assert "handle_remmina_sftp_transfer_action" in remmina_source
+    assert "route.live_triggered_property" in remmina_source
+    assert "remminaProfileStaticRowStartY" in remmina_source
+    assert "remminaProfileLiveRowMinHeight" in remmina_source
     assert "remminaProfileFilter" in live_checker_source
     assert "draw_remmina_viewer_control_icon" in renderer_source
     assert "gui_design_remmina_viewer_controls" in renderer_source
@@ -2396,6 +2398,8 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    securecrt_source = Path("src/remote_ops_workspace/gui_securecrt.py").read_text(encoding="utf-8")
+    termius_source = Path("src/remote_ops_workspace/gui_termius.py").read_text(encoding="utf-8")
     toolbar_source = Path("src/remote_ops_workspace/gui_toolbars.py").read_text(encoding="utf-8")
     tree_source = Path("src/remote_ops_workspace/gui_profile_tree.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -2600,31 +2604,31 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "gui_design_termius_snippet_route" in design_source
     assert "gui_design_termius_files_browser_route" in design_source
     assert "build_securecrt_command_window_evidence" in gui_source
-    assert "secureCrtCommandStaticControlY" in gui_source
-    assert "secureCrtCommandLiveSendMinWidth" in gui_source
-    assert "secureCrtCommandRouteKey" in gui_source
-    assert "secureCrtCommandRouteCommand" in gui_source
-    assert "secureCrtCommandRouteSendLabel" in gui_source
+    assert "secureCrtCommandStaticControlY" in securecrt_source
+    assert "secureCrtCommandLiveSendMinWidth" in securecrt_source
+    assert "secureCrtCommandRouteKey" in securecrt_source
+    assert "secureCrtCommandRouteCommand" in securecrt_source
+    assert "secureCrtCommandRouteSendLabel" in securecrt_source
     assert "build_securecrt_session_manager_chrome" in gui_source
-    assert "secureCrtSessionManagerLiveButtonSize" in gui_source
-    assert "secureCrtSessionManagerRenderSource" in gui_source
-    assert "secureCrtSessionRouteKey" in gui_source
-    assert "secureCrtSessionRouteActive" in gui_source
-    assert "secureCrtSessionRouteActiveTab" in gui_source
-    assert "secureCrtSessionFilterRouteKey" in gui_source
+    assert "secureCrtSessionManagerLiveButtonSize" in securecrt_source
+    assert "secureCrtSessionManagerRenderSource" in securecrt_source
+    assert "secureCrtSessionRouteKey" in securecrt_source
+    assert "secureCrtSessionRouteActive" in securecrt_source
+    assert "secureCrtSessionRouteActiveTab" in securecrt_source
+    assert "secureCrtSessionFilterRouteKey" in securecrt_source
     assert "SECURECRT_FILTER_ROUTE_MATCHED_ROLE" in tree_source
     assert "secureCrtSftpTabRouteKey" in gui_source
     assert "SECURECRT_SFTP_ROUTE_TAB_ROLE" in tree_source
     assert "secureCrtSftpTabRouteTransferState" in gui_source
-    assert "secureCrtSftpBrowserRouteKey" in gui_source
-    assert "secureCrtSftpBrowserPath" in gui_source
-    assert "secureCrtSftpBrowserQueueState" in gui_source
-    assert "apply_securecrt_sftp_browser_action_route_properties" in gui_source
-    assert "handle_securecrt_sftp_browser_action" in gui_source
-    assert "route.live_triggered_property" in gui_source
-    assert "securecrt_session_manager_action_icon" in gui_source
-    assert "secureCrtSessionStatusStaticCellStartX" in gui_source
-    assert "secureCrtSessionStatusLiveCellHeight" in gui_source
+    assert "secureCrtSftpBrowserRouteKey" in securecrt_source
+    assert "secureCrtSftpBrowserPath" in securecrt_source
+    assert "secureCrtSftpBrowserQueueState" in securecrt_source
+    assert "apply_securecrt_sftp_browser_action_route_properties" in securecrt_source
+    assert "handle_securecrt_sftp_browser_action" in securecrt_source
+    assert "route.live_triggered_property" in securecrt_source
+    assert "securecrt_session_manager_action_icon" in securecrt_source
+    assert "secureCrtSessionStatusStaticCellStartX" in securecrt_source
+    assert "secureCrtSessionStatusLiveCellHeight" in securecrt_source
     menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
     assert "def configure_menu_bar_for_design" in menu_source
     activation_source = Path("src/remote_ops_workspace/gui_design_activation.py").read_text(encoding="utf-8")
@@ -2633,32 +2637,32 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "build_termius_hosts_chrome" in gui_source
     assert "termiusHostSearch" in gui_source
     assert "build_termius_header_chips_evidence" in gui_source
-    assert "termiusHeaderChipKey" in gui_source
-    assert "termiusHostIdentityStaticCellStartX" in gui_source
-    assert "termiusHostIdentityLiveCellHeight" in gui_source
-    assert "termiusSyncRouteKey" in gui_source
-    assert "termiusSyncRouteState" in gui_source
-    assert "termiusSyncRouteHeaderChipKey" in gui_source
-    assert "termiusHostRouteKey" in gui_source
-    assert "termiusHostRouteActiveTab" in gui_source
-    assert "termiusPortForwardRouteKey" in gui_source
-    assert "termiusPortForwardRouteIdentityValue" in gui_source
-    assert "termiusPortForwardRouteState" in gui_source
+    assert "termiusHeaderChipKey" in termius_source
+    assert "termiusHostIdentityStaticCellStartX" in termius_source
+    assert "termiusHostIdentityLiveCellHeight" in termius_source
+    assert "termiusSyncRouteKey" in termius_source
+    assert "termiusSyncRouteState" in termius_source
+    assert "termiusSyncRouteHeaderChipKey" in termius_source
+    assert "termiusHostRouteKey" in termius_source
+    assert "termiusHostRouteActiveTab" in termius_source
+    assert "termiusPortForwardRouteKey" in termius_source
+    assert "termiusPortForwardRouteIdentityValue" in termius_source
+    assert "termiusPortForwardRouteState" in termius_source
     assert "termiusSnippetRouteKey" in gui_source
     assert "termiusSnippetRouteCommand" in gui_source
-    assert "termiusSnippetRouteIdentityValue" in gui_source
+    assert "termiusSnippetRouteIdentityValue" in termius_source
     assert "handle_termius_snippet_run" in gui_source
-    assert "route.live_triggered_property" in gui_source
+    assert "route.live_triggered_property" in termius_source
     assert "route.action_object" in gui_source
-    assert "termiusFilesRouteKey" in gui_source
-    assert "termiusFilesRoutePath" in gui_source
-    assert "termiusFilesRouteQueueState" in gui_source
-    assert "apply_termius_files_sync_route_properties" in gui_source
-    assert "handle_termius_files_sync" in gui_source
-    assert "route.live_triggered_property" in gui_source
+    assert "termiusFilesRouteKey" in termius_source
+    assert "termiusFilesRoutePath" in termius_source
+    assert "termiusFilesRouteQueueState" in termius_source
+    assert "apply_termius_files_sync_route_properties" in termius_source
+    assert "handle_termius_files_sync" in termius_source
+    assert "route.live_triggered_property" in termius_source
     assert "TERMIUS_HOST_ROUTE_SELECTED_ROLE" in tree_source
-    assert "secureCrtCommandWindowKey" in gui_source
-    assert "secureCrtSessionManagerActionKey" in gui_source
+    assert "secureCrtCommandWindowKey" in securecrt_source
+    assert "secureCrtSessionManagerActionKey" in securecrt_source
     assert "draw_securecrt_command_window" in renderer_source
     assert "chrome.static_send_width" in renderer_source
     assert "draw_securecrt_session_manager_chrome" in renderer_source
@@ -2754,8 +2758,8 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "securecrt-command-window-live-send-route" in live_checker_source
     assert "EXPECTED_SECURECRT_COMMAND_WINDOW_SEND_ROUTE" in live_checker_source
     assert "check_securecrt_command_window_live_submission" in live_checker_source
-    assert "handle_securecrt_command_window_send" in gui_source
-    assert "secureCrtCommandRouteLiveSubmitted" in gui_source
+    assert "handle_securecrt_command_window_send" in securecrt_source
+    assert "secureCrtCommandRouteLiveSubmitted" in securecrt_source
     assert "secondary_signal" in renderer_source
     assert "secureCrtCommandRouteSecondarySignal" in design_source
     assert "EXPECTED_SECURECRT_SESSION_MANAGER_ROUTE" in live_checker_source

@@ -42,7 +42,7 @@ def test_mremoteng_document_controls_save_reconnect_tool_and_dock_edges(
 ) -> None:
     from PyQt6.QtWidgets import QFrame, QToolButton
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_mremoteng
     from remote_ops_workspace.gui_designs import (
         gui_design_mremoteng_connection_document_route,
     )
@@ -80,7 +80,7 @@ def test_mremoteng_document_controls_save_reconnect_tool_and_dock_edges(
         username="operator",
     )
     monkeypatch.setattr(window, "selected_profile_for_workflow", lambda: profile)
-    monkeypatch.setattr(gui, "ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(gui_mremoteng, "ensure_data_dir", lambda: tmp_path)
     artifact = window.save_mremoteng_document_artifact()
     assert artifact.is_file()
     assert "mRemote-edge-profile" in artifact.name
@@ -146,7 +146,7 @@ def test_remmina_viewer_controls_terminal_drawer_and_screenshot_edges(
 ) -> None:
     from PyQt6.QtWidgets import QFrame, QToolButton, QWidget
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_remmina
     from remote_ops_workspace.gui_designs import (
         gui_design_remmina_clipboard_route,
         gui_design_remmina_screenshot_route,
@@ -221,23 +221,23 @@ def test_remmina_viewer_controls_terminal_drawer_and_screenshot_edges(
     route = gui_design_remmina_screenshot_route()
     window.apply_remmina_screenshot_capture_route_properties(panel, route)
     assert panel.property(route.captured_property) is False
-    monkeypatch.setattr(gui, "ensure_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(gui_remmina, "ensure_data_dir", lambda: tmp_path)
     window.handle_remmina_screenshot_capture()
     screenshot_path = window.remmina_last_screenshot_path
     assert screenshot_path is not None and screenshot_path.is_file()
     assert screenshot_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert panel.property("remminaScreenshotCaptureBytes") > 0
 
-    real_write = gui.write_bytes_atomic
+    real_write = gui_remmina.write_bytes_atomic
     monkeypatch.setattr(
-        gui,
+        gui_remmina,
         "write_bytes_atomic",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
     )
     window.handle_remmina_screenshot_capture()
     assert window.remmina_last_screenshot_path is None
     assert panel.property("remminaScreenshotCaptureError") == "disk full"
-    monkeypatch.setattr(gui, "write_bytes_atomic", real_write)
+    monkeypatch.setattr(gui_remmina, "write_bytes_atomic", real_write)
 
     class _BadPixmap:
         @staticmethod
@@ -283,7 +283,7 @@ def test_product_document_and_screenshot_missing_widget_edges(
 ) -> None:
     from PyQt6.QtWidgets import QFrame, QToolButton, QTreeWidgetItem
 
-    from remote_ops_workspace import gui
+    from remote_ops_workspace import gui_remmina
 
     _app, window = gui_window
     panel = QFrame(window)
@@ -317,8 +317,8 @@ def test_product_document_and_screenshot_missing_widget_edges(
     window.open_sftp_context_item(QTreeWidgetItem(["  "]))
 
     screenshot_root = tmp_path / "missing-screenshot-root"
-    monkeypatch.setattr(gui, "ensure_data_dir", lambda: screenshot_root)
-    monkeypatch.setattr(gui, "write_bytes_atomic", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(gui_remmina, "ensure_data_dir", lambda: screenshot_root)
+    monkeypatch.setattr(gui_remmina, "write_bytes_atomic", lambda *_args, **_kwargs: None)
     window.remmina_viewer_controls_panel = None
     window.remmina_screenshot_button = None
     window.handle_remmina_screenshot_capture()

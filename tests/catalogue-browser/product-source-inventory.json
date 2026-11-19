@@ -88,8 +88,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "26de76e63afb7911315106ed45cbea67a0e706092b53a1f7116985a0ca0b9d7e",
-      "size": 347569
+      "sha256": "25fb3772d5a529c2fcb917234f3a2569be4125fee3dbc73e4651e7c9f7028be1",
+      "size": 152763
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
@@ -142,6 +142,11 @@
       "size": 17935
     },
     {
+      "path": "src/remote_ops_workspace/gui_mremoteng.py",
+      "sha256": "11ec50aee1cc19c9d647b1d2f8c3115672a1b9bf69dfc633432df9e0ca9fb48c",
+      "size": 36450
+    },
+    {
       "path": "src/remote_ops_workspace/gui_operator_workflows.py",
       "sha256": "7c058e67d719a8f9a78f08cc990a08ea75e4536496abdfff0ffba707bb6e0e93",
       "size": 28161
@@ -165,6 +170,16 @@
       "path": "src/remote_ops_workspace/gui_profile_tree.py",
       "sha256": "e0b8cf47fc4f6e28d10877e31cd068a50bc3f7d663dda9d3f05d5b0fd115efb2",
       "size": 51143
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_remmina.py",
+      "sha256": "e1a36eec15550ffef5b198d90f5c914a30317e072e801d40ca5df529342d06fd",
+      "size": 55391
+    },
+    {
+      "path": "src/remote_ops_workspace/gui_securecrt.py",
+      "sha256": "8e8ebe1b5ae2000558916bb8d3ac63a3c7cc6f303c82fe8103060843f3f472ea",
+      "size": 44433
     },
     {
       "path": "src/remote_ops_workspace/gui_session_tabs.py",
@@ -197,9 +212,14 @@
       "size": 17891
     },
     {
+      "path": "src/remote_ops_workspace/gui_termius.py",
+      "sha256": "94b43b6d605ddd2e1c8b4a380e76172e27dd9e0e3992fa131bd146bc702ea2ff",
+      "size": 52051
+    },
+    {
       "path": "src/remote_ops_workspace/gui_toolbars.py",
-      "sha256": "22ad79e7a819acfd82024d2b96a0497e014f0d8b38d8d8f9b08cb1796c84abd1",
-      "size": 55507
+      "sha256": "20dbf690dd8c62fd9b7a58637dfb4738353ee270a3cf8c28347df3dffb383e62",
+      "size": 55587
     },
     {
       "path": "src/remote_ops_workspace/gui_values.py",

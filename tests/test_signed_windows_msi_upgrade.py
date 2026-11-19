@@ -46,7 +46,10 @@ def completed_receipt() -> dict:
         "major_upgrade": {"launch_conditions": [EXPECTED_PREDECESSOR_CONDITION],
                           "secure_properties": [EXPECTED_PREDECESSOR], "authored_expected_predecessor": False},
     })
-    staging = {"feed": "disposable-loopback-https"}
+    staging = {"feed": "disposable-loopback-https", "initial_command": "update", "initial_stages_absent": True,
+               "https_requests": ["/previous/manifest.json", f"/previous/{old['name_on_release']}",
+                                  "/candidate/manifest.json", f"/candidate/{new['name_on_release']}"],
+               "feed_closed_before_retry": True}
     observations = {"target": "windows-x64", "authenticode_and_timestamp_checked": True}
     for role, item, token in (("previous", old, "a"), ("candidate", new, "b")):
         staging[role] = {"phase": "authenticated-staged", "version": item["version"],
@@ -91,6 +94,10 @@ def coordinates(path: Path) -> list[str]:
     (("source_commit",), "9" * 40, "expected a completed"),
     (("candidate", "sha256"), "0" * 64, "candidate MSI does not match"),
     (("previous", "release_sha"), "0" * 40, "previous MSI does not match"),
+    (("managed_staging", "initial_command"), "apply", "one-command download"),
+    (("managed_staging", "initial_stages_absent"), False, "one-command download"),
+    (("managed_staging", "https_requests"), ["/previous/manifest.json"], "one-command download"),
+    (("managed_staging", "feed_closed_before_retry"), False, "one-command download"),
     (("managed_staging", "candidate", "windows_dacl_metadata_verified"), False, "authenticated private staging"),
     (("managed_preflight", "candidate_msi", "sha256"), "0" * 64, "used different candidate inputs"),
     (("rollback_disabled_upgrade", "workspace_preserved"), False, "rollback-disabled refusal"),
@@ -111,6 +118,18 @@ def test_refuses_incomplete_or_mismatched_claims_before_network(
     monkeypatch.setattr(PROVENANCE, "run_gh_json", lambda *a, **k: pytest.fail("invalid receipt reached GitHub"))
     assert review.main(coordinates(path)) == 1
     assert refusal in capsys.readouterr().err
+
+
+def test_old_receipt_cannot_claim_automatic_download(completed_receipt, tmp_path, monkeypatch, capsys):
+    completed_receipt["schema"] = review.MANUALLY_STAGED_SCHEMA
+    for key in ("initial_command", "initial_stages_absent", "https_requests", "feed_closed_before_retry"):
+        del completed_receipt["managed_staging"][key]
+    assert review.check_receipt(completed_receipt, WORKFLOW_COMMIT, PREVIOUS, CANDIDATE) == RUN
+    path = tmp_path / "legacy-receipt.json"
+    path.write_text(json.dumps(completed_receipt), encoding="utf-8")
+    monkeypatch.setattr(PROVENANCE, "run_gh_json", lambda *a, **k: pytest.fail("legacy receipt reached GitHub"))
+    assert review.main([*coordinates(path), "--require-automatic-update"]) == 1
+    assert "requires an automatic update receipt" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("defect", [

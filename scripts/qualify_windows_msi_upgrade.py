@@ -46,7 +46,7 @@ from release_candidate_inventory import GitHubClient  # noqa: E402
 from windows_msi_stage_fixture import (  # noqa: E402
     require_same_inputs,
     run_managed_msi,
-    stage_signed_pair,
+    update_unstaged_pair,
 )
 from windows_msi_workspace_recovery import WorkspaceRecovery, locked_launcher  # noqa: E402
 
@@ -56,7 +56,7 @@ from scripts.release_candidate_source import InventoryPointer, materialize_asset
 REPOSITORY = "Yunushan/remote-ops-workspace"
 WORKFLOW = ".github/workflows/windows-msi-upgrade-qualification.yml"
 SOURCE_REF = "refs/heads/main"
-SCHEMA = "row.signed-windows-msi-upgrade.v4"
+SCHEMA = "row.signed-windows-msi-upgrade.v5"
 RECEIPT = Path("build/native-smoke/windows-x64/signed-msi-upgrade.json")
 ACTION_START = 0x08000000
 FATAL_EXIT = 0x00000000
@@ -293,25 +293,19 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     inspect_registration(native, new, "absent")
     require(restored == before, "cancelled upgrade did not restore the exact previous launcher and registration")
     recovery.verify_original(launcher, before["launcher_sha256"])
-    report.update(phase="preflight-upgrade", previous_restored=restored, candidate_absent_after_cancel=True,
+    report.update(phase="update-from-empty-stages", previous_restored=restored, candidate_absent_after_cancel=True,
                   original_workspace_preserved_after_cancel=True)
     save()
 
-    preflight = update("preflight")
-    report["managed_preflight"] = preflight
-    save()
-    require(preflight["phase"] == "msi-preflight-passed"
-            and preflight["previous_launcher_sha256"] == before["launcher_sha256"],
-            "managed preflight did not verify the restored predecessor")
-    report["phase"] = "retry-upgrade"
-    save()
-    applied = update("apply")
+    applied = update("update")
     report["managed_apply"] = applied
     save()
     require(applied["phase"] == "msi-applied"
             and applied["previous_launcher_sha256"] == before["launcher_sha256"]
             and applied["installed_launcher_sha256"] == new["launcher_payload_sha256"],
-            "managed apply did not verify the installed candidate")
+            "managed update did not verify the installed candidate")
+    report["phase"] = "retry-update-offline"
+    save()
     repeated = update("update")
     report["managed_retry"] = repeated
     save()
@@ -335,7 +329,15 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     rolled_back = launcher_snapshot(native, filesystem, old, launcher, recovery.restored)
     inspect_registration(native, new, "absent")
     require(rolled_back == before, "reinstalled predecessor differs from the original signed launcher and registration")
-    report.update(phase="verify-restored-workspace", previous_reinstalled=rolled_back)
+    report.update(phase="preflight-retained-stages", previous_reinstalled=rolled_back)
+    save()
+    preflight = update("preflight")
+    report["managed_preflight"] = preflight
+    save()
+    require(preflight["phase"] == "msi-preflight-passed"
+            and preflight["previous_launcher_sha256"] == before["launcher_sha256"],
+            "managed preflight did not verify the reinstalled predecessor")
+    report["phase"] = "verify-restored-workspace"
     save()
     report.update(phase="uninstall-predecessor",
                   workspace_recovery=recovery.verify_restored(launcher, before["launcher_sha256"]))
@@ -384,18 +386,24 @@ def main() -> int:
                 for name in ("GH_TOKEN", "GITHUB_TOKEN"):
                     os.environ.pop(name, None)
                 report.update(previous=previous[1], candidate=candidate[1], input_read_only_sharing_held=True)
-                report["phase"] = "stage-managed-update"
+                report["phase"] = "prepare-managed-update"
                 save()
                 parent = Path(filesystem.known_folder("local"))
                 with private_fixture(storage, filesystem, parent, "row-msi-stage-") as root:
                     recovery = WorkspaceRecovery(root / "workspace-recovery", storage=filesystem)
-                    arguments, staged = stage_signed_pair(root, recovery.home, previous, candidate)
-                    report["managed_staging"] = {"feed": "disposable-loopback-https", **staged}
-                    save()
+                    arguments = None
 
                     def update(action: str) -> dict:
-                        result = run_managed_msi(recovery.home, action, arguments)
-                        require_same_inputs(result, staged, previous[1], candidate[1])
+                        nonlocal arguments
+                        if arguments is None:
+                            require(action == "update", "first managed operation must stage and apply the update")
+                            arguments, staging_report, result = update_unstaged_pair(
+                                root, recovery.home, previous, candidate,
+                            )
+                            report["managed_staging"] = staging_report
+                        else:
+                            result = run_managed_msi(recovery.home, action, arguments)
+                        require_same_inputs(result, report["managed_staging"], previous[1], candidate[1])
                         return result
 
                     exercise(native, previous, candidate, launcher, recovery, report, save,

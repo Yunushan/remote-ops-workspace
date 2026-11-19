@@ -307,18 +307,19 @@ The drill uses the installer log to identify the refusal and leaves machine
 policy unchanged. It then cancels an upgrade through Windows Installer after the
 predecessor's launcher disappears, and compares the
 restored product registration, launcher SHA-256, and CLI version with the
-baseline. The workflow stages both provenance-verified MSI files on private
-NTFS using the managed CLI and a disposable signed loopback HTTPS feed. After
-cancellation it runs managed preflight against the restored predecessor and
-applies the staged candidate with the feed offline. It verifies that an
-offline `update` retry recognizes the exact installed candidate and that the candidate
-uninstalls cleanly. The workflow
+baseline. After cancellation the workflow confirms both private NTFS stage
+leaves are absent. One `update` command downloads both provenance-verified
+MSIs from a disposable signed loopback HTTPS feed and installs the candidate.
+The workflow checks the order and completeness of the HTTPS requests, closes
+the feed, and verifies that an offline `update` retry recognizes the exact
+installed candidate. The workflow
 checkout takes the encrypted pre-upgrade backup, which also covers older
 predecessors that can read and write the fixture but lack the backup command.
 The drill verifies that cancellation preserves the original workspace and
 adds a candidate-only profile and vault entry after a successful retry. The
-candidate CLI restores the backup into a fresh sibling. The drill reinstalls the
-same predecessor, and checks that the predecessor can read the old profile
+candidate CLI restores the backup into a fresh sibling. The drill uninstalls
+the candidate, reinstalls the same predecessor, and runs offline preflight
+on the retained stages. It checks that the predecessor can read the old profile
 and decrypt the restored vault. It compares the full restored file inventory
 with the baseline and checks that the upgraded workspace and encrypted archive
 survive the restore. Keep the
@@ -339,13 +340,13 @@ the independently verified immutable releases or sealed candidate inventories.
 
 ```bash
 python -I scripts/check_signed_windows_msi_upgrade.py \
-  --receipt "$receipt_path" --workflow-sha "$workflow_sha" \
+  --receipt "$receipt_path" --workflow-sha "$workflow_sha" --require-automatic-update \
   --previous "$previous_tag" "$previous_sha" "$previous_msi_sha256" \
   --candidate "$candidate_tag" "$candidate_sha" "$candidate_msi_sha256"
 ```
 
 The verifier checks the package and launcher identities, NTFS stage receipts,
-rollback and retry results, and the encrypted-workspace recovery record. It
+the initial download and offline retry, rollback, and encrypted-workspace recovery. It
 binds the receipt bytes to the GitHub-hosted attestation and checks the outcome
 of the specific workflow attempt.
 [GitHub CLI attestation verification](https://cli.github.com/manual/gh_attestation_verify) ·

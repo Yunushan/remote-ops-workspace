@@ -44,6 +44,7 @@ RUN_NUMBER = re.compile(r"[1-9][0-9]{0,18}")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 LAUNCHER = "Program Files/Remote Ops Workspace/bin/row.exe"
 TARGET = "windows-x64"
+MANUALLY_STAGED_SCHEMA = "row.signed-windows-msi-upgrade.v4"
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,17 @@ def package(parent: dict, role: str, ref: PackageReference) -> dict:
 def check_staging(report: dict, previous: dict, candidate: dict) -> dict:
     stage = object_field(report, "managed_staging")
     require(stage.get("feed") == "disposable-loopback-https", "receipt is missing managed HTTPS staging")
+    if report["schema"] == SCHEMA:
+        requests = [
+            f"/{role}/{name}"
+            for role, msi in (("previous", previous), ("candidate", candidate))
+            for name in ("manifest.json", msi["name_on_release"])
+        ]
+        require(stage.get("initial_command") == "update"
+                and stage.get("initial_stages_absent") is True
+                and stage.get("https_requests") == requests
+                and stage.get("feed_closed_before_retry") is True,
+                "receipt is missing the one-command download and offline retry observations")
     for role, msi in (("previous", previous), ("candidate", candidate)):
         result = object_field(stage, role)
         require((result.get("phase"), result.get("version"), result.get("selected_target"),
@@ -143,15 +155,18 @@ def check_recovery(report: dict, previous: dict, candidate: dict) -> None:
 
 
 def check_receipt(report: dict, workflow_sha: str, previous_ref: PackageReference,
-                  candidate_ref: PackageReference) -> RunInvocation:
+                  candidate_ref: PackageReference, *, require_automatic_update: bool = False) -> RunInvocation:
     versions = [tuple(map(int, ref.tag[1:].split("."))) for ref in (previous_ref, candidate_ref)]
     require(versions[0] < versions[1] and previous_ref.source_commit != candidate_ref.source_commit
             and previous_ref.msi_sha256 != candidate_ref.msi_sha256,
             "select two ordered versions from distinct commits with distinct MSI digests")
-    require((report.get("schema"), report.get("status"), report.get("phase"), report.get("target"),
-             report.get("source_commit")) == (SCHEMA, "passed", "complete", TARGET, workflow_sha)
+    require(report.get("schema") in (SCHEMA, MANUALLY_STAGED_SCHEMA)
+            and (report.get("status"), report.get("phase"), report.get("target"), report.get("source_commit"))
+            == ("passed", "complete", TARGET, workflow_sha)
             and report.get("input_read_only_sharing_held") is True,
             "expected a completed signed Windows x64 receipt from the selected workflow commit")
+    require(not require_automatic_update or report["schema"] == SCHEMA,
+            "one-command update verification requires an automatic update receipt")
     previous = package(report, "previous", previous_ref)
     candidate = package(report, "candidate", candidate_ref)
     require(all(previous[key] != candidate[key] for key in ("product_code", "package_code", "launcher_payload_sha256")),
@@ -191,13 +206,15 @@ def require_successful_attempt(invocation: RunInvocation, workflow_sha: str) -> 
 
 
 def verify_receipt(path: Path, workflow_sha: str, previous: PackageReference,
-                   candidate: PackageReference) -> tuple[RunInvocation, str]:
+                   candidate: PackageReference, *, require_automatic_update: bool = False) -> tuple[RunInvocation, str]:
     with path.open("rb") as stream:
         raw = stream.read(MAX_RECEIPT_BYTES + 1)
     require(0 < len(raw) <= MAX_RECEIPT_BYTES, "receipt exceeds the JSON byte limit or is empty")
     report = json.loads(raw)
     require(isinstance(report, dict), "receipt must be a JSON object")
-    invocation = check_receipt(report, workflow_sha, previous, candidate)
+    invocation = check_receipt(
+        report, workflow_sha, previous, candidate, require_automatic_update=require_automatic_update,
+    )
     digest = hashlib.sha256(raw).hexdigest()
     # Give the verifier exactly the bytes parsed above, even if the input file
     # is subsequently replaced. The attestation is looked up by this digest.
@@ -220,6 +237,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--workflow-sha", required=True, help="reviewed main-branch commit of the workflow")
+    parser.add_argument("--require-automatic-update", action="store_true",
+                        help="require the one-command download from empty stages and the offline retry")
     for name in ("previous", "candidate"):
         parser.add_argument(f"--{name}", nargs=3, required=True, metavar=("TAG", "COMMIT", "MSI_SHA256"))
     args = parser.parse_args(argv)
@@ -227,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
         invocation, digest = verify_receipt(
             args.receipt, normalize_sha(args.workflow_sha),
             PackageReference.parse(args.previous), PackageReference.parse(args.candidate),
+            require_automatic_update=args.require_automatic_update,
         )
     except (KeyError, OSError, RuntimeError, ValueError) as exc:
         print(f"Windows MSI upgrade receipt: {exc}", file=sys.stderr)

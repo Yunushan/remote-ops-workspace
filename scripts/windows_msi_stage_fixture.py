@@ -1,4 +1,4 @@
-"""Stage provenance-verified MSI inputs on a disposable Windows runner."""
+"""Serve provenance-verified MSI inputs on a disposable Windows runner."""
 
 from __future__ import annotations
 
@@ -78,18 +78,18 @@ def run_managed_msi(home: Path, action: str, arguments: list[str], *, ca: Path |
     return result
 
 
-def stage_signed_pair(root: Path, home: Path, previous, candidate) -> tuple[list[str], dict]:
-    """Use fixture-only feed credentials with the real CLI and verified MSI bytes."""
+def update_unstaged_pair(root: Path, home: Path, previous, candidate) -> tuple[list[str], dict, dict]:
+    """Download and install through the managed CLI using fixture-only feed credentials."""
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     settings = json.loads((ROOT / "configs/update-trust-policy.example.json").read_bytes())
     signer = Ed25519PrivateKey.generate()
     bodies: dict[str, bytes] = {}
     requested: list[str] = []
-    staged = {}
-    pair = []
+    pair: list[str] = []
+    expected: dict[str, tuple[dict, str, str]] = {}
     with serve_https_fixture(root, bodies, requested) as (origin, cert_path):
-        for role, (path, package) in (("candidate", candidate), ("previous", previous)):
+        for role, (path, package) in (("previous", previous), ("candidate", candidate)):
             manifest_sha256, policy = signed_input(origin, role, path, package, signer=signer,
                                                    minimum=previous[1]["version"], settings=settings, bodies=bodies)
             policy_path = root / f"{role}-policy.json"
@@ -97,27 +97,33 @@ def stage_signed_pair(root: Path, home: Path, previous, candidate) -> tuple[list
             with private_stage_guard(root) as guard:
                 with os.fdopen(guard.create_private_file(policy_path), "wb") as stream:
                     stream.write(policy)
-            selection = (("policy", str(policy_path)), ("stage", str(stage)), ("version", package["version"]))
-            inputs = [part for key, value in selection for part in (f"--{key}", value)]
-            result = run_managed_msi(home, "stage", inputs, ca=cert_path)
-            require(result["phase"] == "authenticated-staged"
-                    and result["manifest_sha256"] == manifest_sha256
-                    and result["trust_policy_sha256"] == hashlib.sha256(policy).hexdigest()
-                    and result["version"] == package["version"]
-                    and result["selected_target"] == TARGET
-                    and result["selected_files"] == [package["name_on_release"]]
-                    and result["artifact_count"] == 1
-                    and result["artifact_total_bytes"] == package["size_bytes"]
-                    and result["whole_declared_asset_set_verified"] is True
-                    and result["windows_dacl_metadata_verified"] is True
-                    and result["install_permitted"] is False,
-                    f"managed MSI {role} stage evidence differs from the verified input")
-            staged[role] = result
+            expected[role] = (package, manifest_sha256, hashlib.sha256(policy).hexdigest())
             prefix = "previous-" if role == "previous" else ""
-            for key, value in selection:
+            for key, value in (("policy", str(policy_path)), ("stage", str(stage)), ("version", package["version"])):
                 pair.extend((f"--{prefix}{key}", value))
+        require(all(not os.path.lexists(root / f"{role}-stage") for role in expected),
+                "managed MSI update requires both stage leaves to be absent")
+        result = run_managed_msi(home, "update", pair, ca=cert_path)
         require(requested == list(bodies), "managed MSI fixture received unexpected HTTPS requests")
-    return pair, staged
+
+    staged = {"feed": "disposable-loopback-https", "initial_command": "update", "initial_stages_absent": True,
+              "https_requests": requested, "feed_closed_before_retry": True}
+    for role, (package, manifest_sha256, policy_sha256) in expected.items():
+        record = result[f"{role}_stage"]
+        require(record["phase"] == "authenticated-staged"
+                and record["manifest_sha256"] == manifest_sha256
+                and record["trust_policy_sha256"] == policy_sha256
+                and record["version"] == package["version"]
+                and record["selected_target"] == TARGET
+                and record["selected_files"] == [package["name_on_release"]]
+                and record["artifact_count"] == 1
+                and record["artifact_total_bytes"] == package["size_bytes"]
+                and record["whole_declared_asset_set_verified"] is True
+                and record["windows_dacl_metadata_verified"] is True
+                and record["install_permitted"] is False,
+                f"managed MSI {role} stage evidence differs from the verified input")
+        staged[role] = record
+    return pair, staged, result
 
 
 def require_same_inputs(result: dict, staged: dict, previous: dict, candidate: dict) -> None:

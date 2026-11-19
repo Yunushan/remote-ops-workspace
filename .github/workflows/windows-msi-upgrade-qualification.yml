@@ -65,7 +65,7 @@ jobs:
           $blocks.Value | Set-Content -LiteralPath $requirements -Encoding ascii
           python -I -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple --requirement $requirements
           exit $LASTEXITCODE
-      - name: Stage the signed pair, exercise rollback, and apply through the managed CLI
+      - name: Exercise rollback and install through the managed CLI from empty stages
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,7 +148,7 @@ jobs:
               raise SystemExit("Windows MSI qualification receipt digest or size mismatch")
           receipt = json.loads(raw)
           expected = {
-              "schema": "row.signed-windows-msi-upgrade.v4",
+              "schema": "row.signed-windows-msi-upgrade.v5",
               "status": "passed",
               "phase": "complete",
               "target": "windows-x64",

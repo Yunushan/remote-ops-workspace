@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import ctypes as c
 import hashlib
+import os
 import subprocess
 import sys
+from contextlib import contextmanager
 from ctypes import wintypes as win
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from remote_ops_workspace.update_channel import UpdatePolicy, authenticate_manifest
 from scripts import managed_windows_msi as managed
 from scripts import qualify_windows_msi_upgrade as upgrade
+from scripts import windows_msi_stage_fixture as fixture
 from scripts.inspect_windows_msi import (
     EXPECTED_PREDECESSOR,
     EXPECTED_PREDECESSOR_CONDITION,
@@ -232,7 +237,7 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
     ("wrong-rollback-bytes", "registered launcher bytes differ from the exact MSI payload"),
     ("candidate-still-registered", "candidate still registered"),
     ("modified-candidate", "MSI bytes changed"),
-    ("wrong-preflight-launcher", "managed preflight did not verify the restored predecessor"),
+    ("wrong-preflight-launcher", "managed preflight did not verify the reinstalled predecessor"),
     ("wrong-restored-workspace", "workspace restore verification failed"),
 ])
 def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, monkeypatch, scenario, error):
@@ -348,7 +353,8 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
             assert registered == {"previous"}
             digest = "a" * 64 if scenario == "wrong-preflight-launcher" else upgrade.fingerprint(launcher)
             return {"phase": "msi-preflight-passed", "previous_launcher_sha256": digest}
-        assert action in ("apply", "update")
+        assert action == "update"
+        assert registered == ({"previous"} if len(update_actions) == 1 else {"candidate"})
         return managed.apply_verified_pair(native, previous[1], candidate[1], candidate[0], launcher)
 
     workspace_operations = []
@@ -377,9 +383,10 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         with pytest.raises(ValueError, match=error):
             upgrade.exercise(native, previous, candidate, launcher, recovery, report, save,
                              filesystem=storage, update=update)
-        if scenario == "wrong-restored-workspace":
+        if scenario in ("wrong-preflight-launcher", "wrong-restored-workspace"):
             assert operations == ["previous", "refuse", "cancel", "candidate", "uninstall-candidate", "previous"]
-            assert report["phase"] == "verify-restored-workspace"
+            assert report["phase"] == ("preflight-retained-stages" if scenario == "wrong-preflight-launcher"
+                                       else "verify-restored-workspace")
         else:
             assert "candidate" not in operations
         assert "status" not in report
@@ -390,7 +397,7 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         assert report["previous_restored"] == report["previous_installed"]
         assert report["previous_reinstalled"] == report["previous_installed"]
         assert report["managed_preflight"]["phase"] == "msi-preflight-passed"
-        assert update_actions == ["preflight", "apply", "update"]
+        assert update_actions == ["update", "update", "preflight"]
         assert report["managed_apply"]["phase"] == "msi-applied"
         assert report["managed_retry"]["phase"] == "msi-already-applied"
         assert report["workspace_recovery"] == {"restored_matches_pre_upgrade": True}
@@ -406,6 +413,89 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         ]
         assert phases[-1] == "complete"
     assert not held_files
+
+
+@pytest.mark.parametrize(("scenario", "refusal"), [
+    ("accepted", None),
+    ("preexisting-stage", "both stage leaves to be absent"),
+    ("missing-request", "unexpected HTTPS requests"),
+    ("wrong-manifest", "candidate stage evidence differs"),
+])
+def test_update_fixture_binds_the_single_empty_stage_command(tmp_path, monkeypatch, scenario, refusal):
+    pytest.importorskip("cryptography.hazmat.primitives.asymmetric.ed25519")
+    home = tmp_path / "workspace"
+    home.mkdir()
+    if scenario == "preexisting-stage":
+        (tmp_path / "candidate-stage").mkdir()
+    packages = {}
+    for role, version in (("previous", "1.0.27"), ("candidate", "1.0.28")):
+        path = tmp_path / f"remote-ops-workspace-v{version}-windows-x64.msi"
+        payload = role.encode()
+        path.write_bytes(payload)
+        packages[role] = (path, {"version": version, "name_on_release": path.name, "size_bytes": len(payload),
+                                 "sha256": hashlib.sha256(payload).hexdigest()})
+    calls, trace = [], []
+    feed_bodies, feed_requests = {}, []
+    origin = "https://127.0.0.1:43433"
+    ca = tmp_path / "fixture-ca.pem"
+
+    @contextmanager
+    def https(root, bodies, requests):
+        nonlocal feed_bodies, feed_requests
+        assert root == tmp_path
+        feed_bodies, feed_requests = bodies, requests
+        trace.append("opened")
+        try:
+            yield origin, ca
+        finally:
+            trace.append("closed")
+
+    @contextmanager
+    def private(root):
+        assert root == tmp_path
+        yield SimpleNamespace(create_private_file=lambda path: os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+
+    def run(workspace, action, argv, *, ca):
+        assert workspace == home and action == "update" and ca == tmp_path / "fixture-ca.pem"
+        assert trace == ["opened"]
+        calls.append(argv)
+        flags = dict(zip(argv[::2], argv[1::2], strict=True))
+        result = {"phase": "msi-applied"}
+        for role, (artifact, item) in packages.items():
+            prefix = "--previous-" if role == "previous" else "--"
+            assert flags[prefix + "version"] == item["version"]
+            assert Path(flags[prefix + "stage"]) == tmp_path / f"{role}-stage"
+            assert not Path(flags[prefix + "stage"]).exists()
+            policy = UpdatePolicy(Path(flags[prefix + "policy"]).read_bytes())
+            routes = (f"/{role}/manifest.json", f"/{role}/{artifact.name}")
+            raw = feed_bodies[routes[0]]
+            manifest = authenticate_manifest(raw, policy, expected_version=item["version"])
+            assert manifest.artifacts[0].sha256 == item["sha256"] and feed_bodies[routes[1]] == artifact.read_bytes()
+            feed_requests.extend(routes[:1] if scenario == "missing-request" and role == "candidate" else routes)
+            result[f"{role}_stage"] = {
+                "phase": "authenticated-staged", "manifest_sha256": (
+                    "0" * 64 if scenario == "wrong-manifest" and role == "candidate" else hashlib.sha256(raw).hexdigest()
+                ),
+                "trust_policy_sha256": policy.digest, "version": item["version"], "selected_target": fixture.TARGET,
+                "selected_files": [artifact.name], "artifact_count": 1, "artifact_total_bytes": item["size_bytes"],
+                "whole_declared_asset_set_verified": True, "windows_dacl_metadata_verified": True,
+                "install_permitted": False,
+            }
+        return result
+
+    monkeypatch.setattr(fixture, "serve_https_fixture", https)
+    monkeypatch.setattr(fixture, "private_stage_guard", private)
+    monkeypatch.setattr(fixture, "run_managed_msi", run)
+    if refusal:
+        with pytest.raises(ValueError, match=refusal):
+            fixture.update_unstaged_pair(tmp_path, home, packages["previous"], packages["candidate"])
+        assert len(calls) == (0 if scenario == "preexisting-stage" else 1)
+    else:
+        arguments, staged, result = fixture.update_unstaged_pair(tmp_path, home, packages["previous"], packages["candidate"])
+        assert calls == [arguments] and result["phase"] == "msi-applied"
+        assert staged["initial_command"] == "update" and staged["initial_stages_absent"] is True
+        assert staged["https_requests"] == list(feed_bodies) and staged["feed_closed_before_retry"] is True
+    assert trace == ["opened", "closed"]
 
 
 @pytest.mark.parametrize(("role", "field"), [

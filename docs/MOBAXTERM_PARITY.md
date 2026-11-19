@@ -438,6 +438,31 @@ a tagged capture for acceptance. The Linux fixture tests application policy
 enforcement and Linux file permissions. Windows installer qualification
 remains a separate step.
 
+Assemble both capture directories with the exact wheel, the independently
+trusted organization public key, and the approved HTTPS origin. The assembler
+verifies the common release identity and original customizer manifest, checks
+the installer metadata and all six policy surfaces, and downloads the signed
+manifest and both installers to verify their delivered bytes. It writes the
+review directory only after all checks pass.
+
+```powershell
+python scripts/assemble_moba_professional_evidence.py `
+  --installer-review $InstallerReview --policy-review $PolicyReview `
+  --wheel $PublishedWheel --update-key $OrganizationPublicKey `
+  --update-origin $ApprovedHttpsOrigin --out $DeploymentReview
+python scripts/make_mobaxterm_parity_evidence_record.py `
+  --article-id professional-deployment --release-tag $ReleaseTag `
+  --release-target windows-x64 --evidence "$DeploymentReview/evidence.json" `
+  --assets-dir $DeploymentReview --release-asset-url $PublishedWheelUrl `
+  --artifact "$(Split-Path -Leaf $PublishedWheel)=$PublishedWheel" --out $CandidateJson
+```
+
+Keep the candidate JSON outside the review directory. For a local rehearsal,
+use both local captures, add `--local` to the assembly command, and omit the
+candidate generation command. A local rehearsal without an approved origin
+validates the signed manifest and installer files on disk. Supply a local
+HTTPS origin to check delivery as well.
+
 Start the GUI and authenticated Web API before installing the machine policy.
 Record the stable process IDs in `gui_process` and `web_process`, with
 `before` and `after` values. Capture the policy endpoint's HTTP status and

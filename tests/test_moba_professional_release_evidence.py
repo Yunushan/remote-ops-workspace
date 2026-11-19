@@ -13,6 +13,7 @@ from remote_ops_workspace.moba_customizer import (
     canonical_update_manifest_payload,
     validate_professional_deployment_evidence,
 )
+from scripts import assemble_moba_professional_evidence as assembler
 from scripts import capture_moba_professional_installers as native_capture
 from scripts import capture_moba_professional_policy as policy_capture
 from scripts import check_moba_professional_deployment_evidence as gate
@@ -244,6 +245,96 @@ def professional_bundle(tmp_path):
         root=root, source_asset=source_asset, source=source, capture=capture, build=build_manifest,
         update=update, envelope=envelope, policy_capture=policy_capture, put=put, write_bundle=write_bundle,
     )
+
+
+@pytest.mark.parametrize("failure", [
+    None, "different-attempt", "different-bundle", "changed-artifact", "wrong-key", "missing-origin", "changed-delivery",
+])
+def test_assemble_professional_review_binds_captures_and_delivery(
+    professional_bundle, tmp_path, monkeypatch, failure,
+):
+    item = professional_bundle
+    wheel = tmp_path / "remote_ops_workspace-1.0.28-py3-none-any.whl"
+    item.source_asset.rename(wheel)
+    release_asset = {"name": wheel.name, "sha256": gate.sha256_file(wheel)}
+    for capture in (item.capture, item.policy_capture):
+        capture["release_asset"] = release_asset
+    item.write_bundle()
+
+    windows = item.root
+    linux = tmp_path / "policy"
+    linux.mkdir()
+    for name in ("bundle-manifest.json", "policy-capture.json", "enterprise-policy.json"):
+        (linux / name).write_bytes((windows / name).read_bytes())
+    if failure == "different-bundle":
+        with (linux / "bundle-manifest.json").open("ab") as stream:
+            stream.write(b"\n")
+    manifest_ref = item.envelope["bundle_manifest"]
+    policy_manifest_ref = {**manifest_ref, "evidence_sha256": gate.sha256_file(linux / "bundle-manifest.json")}
+    installer = {
+        **{name: item.envelope[name] for name in (
+            "source", "release_target", "brand_name", "version", "bundle_manifest", "installer_branding",
+        )},
+        "release_asset": release_asset,
+        "update_manifest": {"evidence_file": "update.json", "evidence_sha256": gate.sha256_file(windows / "update.json")},
+    }
+    policy = {
+        "source": {**item.source, **({"run_attempt": 2} if failure == "different-attempt" else {})},
+        "release_asset": release_asset, "bundle_manifest": policy_manifest_ref, "policy_locks": item.envelope["policy_locks"],
+    }
+    item.put("installer-review.json", installer)
+    (linux / "policy-review.json").write_text(json.dumps(policy), encoding="utf-8")
+    urls = {item.update["update_url"]: windows / "update.json"}
+    urls.update({row["url"]: windows / row["file"] for row in item.update["artifacts"]})
+    if failure == "changed-artifact":
+        (windows / item.update["artifacts"][0]["file"]).write_bytes(b"changed artifact")
+    observed = []
+
+    def responses(url, _settings, _deadline, _maximum, *, expected):
+        observed.append(url)
+        data = urls[url].read_bytes()
+        if failure == "changed-delivery" and url.endswith(".msi"):
+            data = b"!" + data[1:]
+        assert len(data) == expected
+        yield data
+
+    monkeypatch.setattr(gate.update_channel, "_chunks", responses)
+    output = tmp_path / "assembled"
+    origins = [] if failure == "missing-origin" else ["https://updates.example.com"]
+    public_key = item.envelope["update_channel"]["public_key"]
+    if failure == "wrong-key":
+        public_key = "ed25519:" + b64encode(bytes(32)).decode()
+    failures = {
+        "different-attempt": "same release wheel, tag and workflow attempt",
+        "different-bundle": "same original customizer manifest",
+        "changed-artifact": "signed update artifact SHA-256 differs",
+        "wrong-key": "signature",
+        "missing-origin": "at least one independently approved",
+        "changed-delivery": "HTTPS delivery SHA-256 differs",
+    }
+    if failure:
+        with pytest.raises(ValueError, match=failures[failure]):
+            assembler.assemble(windows, linux, wheel, public_key, output, origins=origins)
+        assert not output.exists()
+        if failure != "changed-delivery":
+            assert observed == []
+        return
+
+    evidence = assembler.assemble(windows, linux, wheel, public_key, output, origins=origins)
+    assert evidence == output / "evidence.json"
+    assert observed[0] == item.update["update_url"] and set(observed) == set(urls)
+    args = SimpleNamespace(
+        article_id="professional-deployment", release_tag=item.source["release_tag"], release_target="windows-x64",
+        evidence=evidence, assets_dir=output,
+        release_asset_url=[f"https://github.com/example/row/releases/download/v1.0.28/{wheel.name}"],
+        artifact=[f"{wheel.name}={wheel}"],
+    )
+    errors, candidate = generator.build_evidence_record(args)
+    assert not errors
+    summary = candidate["validation_summary"]["summary"]
+    assert summary["verified_windows_installers"] == item.capture["installer_sha256"]
+    assert summary["verified_policy_surfaces"] == sorted(REQUIRED_POLICY_SURFACES)
+    assert not (output / "installer-review.json").exists()
 
 
 def test_candidate_and_published_audit_bind_exact_branded_installer_pair(professional_bundle):

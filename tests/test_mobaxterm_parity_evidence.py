@@ -226,6 +226,8 @@ def test_server_candidate_and_release_audit_validate_the_same_client_evidence(em
     (None, None),
     ("package", "capture index must bind the supplied Debian asset"),
     ("receipt", "must bind a successful protocol client"),
+    ("attempt", "capture index must bind the current Actions workflow attempt"),
+    ("hidden-path", "capture attachment must use a canonical relative path"),
     ("missing", "requires each of the eight services"),
     ("package-contents", "Debian package differs from the deployed runtime"),
 ])
@@ -236,6 +238,16 @@ def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, 
     runtime_root.parent.mkdir(parents=True)
     (captures / "runtimes").rename(runtime_root)
     authoring_index = {key: evidence[key] for key in ("source", "release_asset")}
+    source = evidence["source"]
+    for key, value in {
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_REF": f"refs/tags/{source['release_tag']}",
+        "GITHUB_REPOSITORY": source["repository"],
+        "GITHUB_SHA": source["head_sha"],
+        "GITHUB_RUN_ID": source["workflow_run_url"].rsplit("/", 1)[-1],
+        "GITHUB_RUN_ATTEMPT": str(source["run_attempt"] + (change == "attempt")),
+    }.items():
+        monkeypatch.setenv(key, value)
     authoring_index["services"] = [
         {
             "service": row["service"], "policy": row["policy"],
@@ -247,6 +259,9 @@ def test_assemble_debian_server_review_inputs(embedded_server_bundle, tmp_path, 
         package.write_bytes(b"wrong package")
     elif change == "missing":
         authoring_index["services"].pop()
+    elif change == "hidden-path":
+        row = authoring_index["services"][0]
+        row["receipt"] = attachment(".captures/http.json", (captures / row["receipt"]["file"]).read_bytes())
     elif change == "receipt":
         row = authoring_index["services"][0]
         name = row["receipt"]["file"]
@@ -643,6 +658,8 @@ def reviewed_release(tmp_path, monkeypatch):
             record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {debian_asset.name: debian_digest}
         if article == "embedded-x-server":
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1235"
+        if article == "embedded-server-suite":
+            record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1239"
         if article == "moba-text-editor-diff":
             record["release_target"] = "linux-x86_64"
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1236"
@@ -726,6 +743,8 @@ def reviewed_release(tmp_path, monkeypatch):
     macro_jobs = f"{macro_run}/jobs?per_page=20&page=1"
     transport_run = "actions/runs/1238/attempts/2"
     transport_jobs = f"{transport_run}/jobs?per_page=20&page=1"
+    server_run = "actions/runs/1239/attempts/2"
+    server_jobs = f"{server_run}/jobs?per_page=20&page=1"
     review = "pulls/42/reviews/99"
     responses = {
         "branches/main": {"name": "main", "protected": True, "commit": {"sha": main_tip}},
@@ -777,6 +796,13 @@ def reviewed_release(tmp_path, monkeypatch):
         "total_count": 1, "jobs": [{
             **responses[jobs]["jobs"][0], "name": release_parity.TRANSPORT_JOB, "run_id": 1238,
             "labels": ["self-hosted", "Linux", "X64", "transport-evidence"],
+        }],
+    }
+    responses[server_run] = {**responses[run], "id": 1239, "path": release_parity.SERVER_WORKFLOW}
+    responses[server_jobs] = {
+        "total_count": 1, "jobs": [{
+            **responses[jobs]["jobs"][0], "name": release_parity.SERVER_JOB, "run_id": 1239,
+            "labels": ["self-hosted", "Linux", "X64", "server-evidence"],
         }],
     }
     hosted_archives = {}
@@ -867,6 +893,7 @@ def reviewed_release(tmp_path, monkeypatch):
         editor_run=editor_run, editor_jobs=editor_jobs,
         macro_run=macro_run, macro_jobs=macro_jobs,
         transport_run=transport_run, transport_jobs=transport_jobs,
+        server_run=server_run, server_jobs=server_jobs,
         hosted_archives=hosted_archives,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
@@ -945,6 +972,29 @@ def test_x11_certification_refuses_the_wrong_workflow_or_job(reviewed_release) -
     reviewed_release.responses[reviewed_release.x11_jobs]["jobs"][0]["name"] = release_parity.MOBAPT_JOB
     assert release_parity.audit_release(**reviewed_release.args) == [
         "embedded-x-server X11 evidence attempt must contain one successful qualification job"
+    ]
+
+
+def test_debian_server_certification_binds_the_native_lab_attempt_and_archive(reviewed_release) -> None:
+    article = "embedded-server-suite"
+    attempt = reviewed_release.responses[reviewed_release.server_run]
+    job = reviewed_release.responses[reviewed_release.server_jobs]["jobs"][0]
+    attempt["path"] = release_parity.X11_WORKFLOW
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        f"{article} Embedded servers evidence must come from its dedicated workflow dispatched at the release tag"
+    ]
+    attempt["path"] = release_parity.SERVER_WORKFLOW
+    job["labels"].remove("server-evidence")
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        f"{article} Embedded servers evidence job did not report the approved native runner labels"
+    ]
+    job["labels"].append("server-evidence")
+    archive = reviewed_release.hosted_archives[article]
+    archive.metadata["expired"] = True
+    archive.path.unlink()
+    assert release_parity.audit_release(**reviewed_release.args) == [
+        f"{article} GitHub workflow artifact expired; retain its original ZIP at "
+        "workflow-artifacts/embedded-server-evidence-1239-2.zip"
     ]
 
 
@@ -1136,7 +1186,7 @@ def test_certification_binds_review_time_to_completed_attempt_jobs(
     reviewed_release, field, value, expected,
 ) -> None:
     for jobs in (reviewed_release.jobs, reviewed_release.x11_jobs, reviewed_release.editor_jobs,
-                 reviewed_release.macro_jobs, reviewed_release.transport_jobs):
+                 reviewed_release.macro_jobs, reviewed_release.transport_jobs, reviewed_release.server_jobs):
         reviewed_release.responses[jobs]["jobs"][0][field] = value
 
     errors = release_parity.audit_release(**reviewed_release.args)

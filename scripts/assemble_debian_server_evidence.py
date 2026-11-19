@@ -29,7 +29,7 @@ from scripts.check_release_license_compliance import (  # noqa: E402
     secure_regular_file,
     sha256_file,
 )
-from scripts.debian_release_fixture import release_deb_version  # noqa: E402
+from scripts.debian_release_fixture import actions_source, release_deb_version  # noqa: E402
 from scripts.debian_server_notices import (  # noqa: E402
     MANIFEST,
     PAYLOAD,
@@ -37,6 +37,7 @@ from scripts.debian_server_notices import (  # noqa: E402
     notice_records,
 )
 from scripts.moba_debian_server_payload import ELF_TARGETS, server_payload  # noqa: E402
+from scripts.release_candidate_inventory import safe_name  # noqa: E402
 
 CAPTURES_INDEX = "captures.json"
 RUNTIME_DIR = "runtimes"
@@ -72,7 +73,10 @@ def copy_capture_file(source: Path, reference: Any, output: Path) -> Path:
     if not isinstance(reference, dict) or not isinstance(name := reference.get("file"), str):
         raise ValueError("each client receipt and capture requires a file and SHA-256")
     relative = PurePosixPath(name)
-    if not relative.parts or relative.as_posix() != name or ":" in name:
+    if (
+        not relative.parts or relative.as_posix() != name
+        or any(part.startswith(".") or not safe_name(part) for part in relative.parts)
+    ):
         raise ValueError(f"capture attachment must use a canonical relative path: {name}")
     if relative.parts[0].casefold() in RESERVED_PATHS:
         raise ValueError(f"capture attachment uses a reserved review path: {name}")
@@ -119,6 +123,9 @@ def assemble(package: Path, target: str, installed_root: Path, captures: Path, o
         or identity["release_tag"] != f"v{version}"
     ):
         raise ValueError("capture index must bind the supplied Debian asset and its exact release tag")
+    expected_source = actions_source(f"v{version}")
+    if expected_source is not None and observed["source"] != expected_source:
+        raise ValueError("capture index must bind the current Actions workflow attempt")
     observations = service_inventory(observed.get("services"), "capture index")
 
     with TemporaryDirectory(prefix=".server-evidence-", dir=output.parent) as temporary:

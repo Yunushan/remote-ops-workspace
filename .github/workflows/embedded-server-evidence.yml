@@ -1,0 +1,97 @@
+name: Debian embedded-server release evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  qualify-debian-servers:
+    name: Qualify the published Debian package's embedded servers
+    if: github.ref_type == 'tag'
+    runs-on: [self-hosted, linux, x64, server-evidence]
+    environment: server-evidence
+    timeout-minutes: 60
+    steps:
+      - name: Require an exact release tag
+        shell: bash
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          work="$RUNNER_TEMP/server-evidence-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          umask 077
+          mkdir -- "$work" "$work/release" "$work/review"
+          printf 'SERVER_EVIDENCE_WORK=%s\n' "$work" >> "$GITHUB_ENV"
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.7"
+      - name: Verify the immutable Debian asset and its promotion provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
+          package="$SERVER_EVIDENCE_WORK/release/$asset"
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$asset" --dir "$SERVER_EVIDENCE_WORK/release"
+          python scripts/check_release_provenance.py --asset "$package" \
+            --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
+          digest="$(sha256sum -- "$package")"
+          printf 'SERVER_EVIDENCE_DEB_SHA256=%s\n' "${digest%% *}" >> "$GITHUB_ENV"
+      - name: Wait for the lab to stage its eight completed client captures
+        shell: bash
+        run: |
+          printf 'Capture source: %s/%s/actions/runs/%s attempt %s\n' \
+            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          printf 'Release tag %s, source SHA %s, Debian SHA-256 %s\n' \
+            "$GITHUB_REF_NAME" "$GITHUB_SHA" "$SERVER_EVIDENCE_DEB_SHA256"
+          printf 'Stage the completed capture directory at RUNNER_TEMP/server-evidence-%s-%s/incoming\n' \
+            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+          incoming="$SERVER_EVIDENCE_WORK/incoming"
+          deadline=$((SECONDS + 2400))
+          until [[ -e "$incoming" || -L "$incoming" ]]; do
+            if (( SECONDS >= deadline )); then
+              echo "The lab did not stage its completed capture directory before timeout" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          test -d "$incoming" && test ! -L "$incoming"
+      - name: Validate the captured clients and exact packaged runtimes
+        shell: bash
+        run: |
+          asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
+          package="$SERVER_EVIDENCE_WORK/release/$asset"
+          printf '%s  %s\n' "$SERVER_EVIDENCE_DEB_SHA256" "$package" | sha256sum --check --strict
+          installed="$SERVER_EVIDENCE_WORK/installed"
+          evidence="$SERVER_EVIDENCE_WORK/review/embedded-server-suite"
+          dpkg-deb --extract "$package" "$installed"
+          python scripts/assemble_debian_server_evidence.py \
+            --deb "$package" --target linux-x86_64 --installed-root "$installed" \
+            --captures "$SERVER_EVIDENCE_WORK/incoming" --out "$evidence"
+          python scripts/make_mobaxterm_parity_evidence_record.py \
+            --article-id embedded-server-suite --release-tag "$GITHUB_REF_NAME" --release-target linux-x86_64 \
+            --evidence "$evidence/evidence.json" --assets-dir "$evidence" \
+            --release-asset-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$asset" \
+            --artifact "$asset=$package" --out "$SERVER_EVIDENCE_WORK/review/candidate.json"
+      - name: Retain the candidate and exact server evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: embedded-server-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/server-evidence-${{ github.run_id }}-${{ github.run_attempt }}/review/
+          if-no-files-found: error
+          retention-days: 30

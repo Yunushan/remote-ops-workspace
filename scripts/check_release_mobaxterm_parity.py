@@ -64,6 +64,8 @@ MOBAPT_WORKFLOW = ".github/workflows/mobapt-offline-evidence.yml"
 MOBAPT_JOB = "Qualify published Debian package"
 X11_WORKFLOW = ".github/workflows/x11-forwarding-evidence.yml"
 X11_JOB = "Qualify packaged X11 forwarding"
+SERVER_WORKFLOW = ".github/workflows/embedded-server-evidence.yml"
+SERVER_JOB = "Qualify the published Debian package's embedded servers"
 EDITOR_WORKFLOW = ".github/workflows/connected-editor-evidence.yml"
 EDITOR_JOB = "Qualify the published wheel's connected editor"
 MACRO_WORKFLOW = ".github/workflows/macro-replay-evidence.yml"
@@ -84,6 +86,10 @@ class EvidenceWorkflow:
 EVIDENCE_WORKFLOWS = {
     "mobapt-unix-runtime": EvidenceWorkflow("MobApt", MOBAPT_WORKFLOW, MOBAPT_JOB, "mobapt-offline-evidence"),
     "embedded-x-server": EvidenceWorkflow("X11", X11_WORKFLOW, X11_JOB, "x11-forwarding-evidence"),
+    "embedded-server-suite": EvidenceWorkflow(
+        "Embedded servers", SERVER_WORKFLOW, SERVER_JOB, "embedded-server-evidence",
+        frozenset({"self-hosted", "linux", "x64", "server-evidence"}),
+    ),
     "moba-text-editor-diff": EvidenceWorkflow(
         "Connected editor", EDITOR_WORKFLOW, EDITOR_JOB, "connected-editor-evidence",
     ),
@@ -475,6 +481,8 @@ def audit_release(
                 errors.append(f"{article} SHA-256 differs from the downloaded release asset: {name}")
 
         evidence_workflow = EVIDENCE_WORKFLOWS.get(article)
+        if article == "embedded-server-suite" and record["release_target"] != "linux-x86_64":
+            evidence_workflow = None
         run_key = (source["workflow_run_url"], source["run_attempt"], evidence_workflow)
         review = record["acceptance_review"]
         review_key = (review["review_url"], review["reviewer"], review["reviewed_at"])

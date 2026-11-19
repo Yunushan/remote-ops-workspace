@@ -584,9 +584,10 @@ and `release_asset` objects observed during collection. Its `services` array
 contains one entry per service with `service`, the observed `policy` object in
 the server config-plan schema, and a `receipt` reference containing `file` and
 `sha256`. Place the receipts and their referenced data files relative to this
-directory. The assembler checks the embedded daemon bytes and notices against
-the supplied package and validates all eight client receipts before writing
-the review directory.
+directory, using visible files and directory names that can be retained in the
+Actions archive. The assembler checks the embedded daemon bytes and notices
+against the supplied package and validates all eight client receipts before
+writing the review directory.
 
 ```bash
 mkdir -p "$review_dir"
@@ -600,6 +601,23 @@ Use the generated `evidence.json` and the same release asset with `--artifact`
 when generating the candidate. The published-release audit re-runs the capture
 checks on the reviewed attachments and checks the release bytes and GitHub
 workflow and reviewer provenance.
+
+For Debian amd64, dispatch `embedded-server-evidence.yml` at the published
+release tag. The job runs in the protected `server-evidence` environment on a
+trusted Linux x64 lab runner with the `server-evidence` label and `dpkg-deb`
+and `gh` available. It verifies the published DEB and prints its digest and
+the exact run URL, attempt, tag and source SHA. Exercise that package in the
+lab and use those identities in the index and receipts.
+
+Complete the capture directory under a temporary sibling of the printed
+`incoming` path. Rename the directory to `incoming` on the same filesystem
+after all files are in place. Stage it within 40 minutes of the handoff step.
+The job verifies the attempt and package again, assembles the candidate,
+and uploads one artifact named `embedded-server-evidence-<run-id>-<attempt>`.
+Keep its original ZIP at
+`workflow-artifacts/embedded-server-evidence-<run-id>-<attempt>.zip` in the
+review evidence root. The release audit ties the reviewed files to that ZIP
+and the successful dedicated job.
 
 ### Connected editor release evidence
 

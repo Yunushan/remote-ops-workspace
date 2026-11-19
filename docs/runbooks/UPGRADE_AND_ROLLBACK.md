@@ -172,6 +172,52 @@ candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in
 the [release promotion runbook](RELEASE_PROMOTION.md).
 
+## Managed RPM package updates
+
+Use `scripts/managed_rpm_update.py` from a root-owned, verified checkout on an
+x86-64 RPM host. Use the existing stock RPM installation and a Python environment
+with Ed25519 support. Prepare an encrypted workspace backup before upgrading.
+The controller changes the package installation. Workspace recovery uses the
+separate restore procedure below.
+
+Configure separate v2 trust policies for the installed version and the
+candidate. Both policies must select `linux-x86_64` and use the same publisher
+key, organization, and channel. The candidate policy's minimum version must
+allow the installed predecessor. Use distinct, existing root-owned private
+directories for each stage and the transaction, outside `ROW_HOME`.
+
+```bash
+python3 -I scripts/managed_rpm_update.py update \
+  --version "$CANDIDATE_VERSION" --policy "$CANDIDATE_POLICY" --stage "$CANDIDATE_STAGE" \
+  --previous-policy "$PREVIOUS_POLICY" --previous-stage "$PREVIOUS_STAGE" \
+  --workspace "$ROW_HOME" --transaction "$TRANSACTION"
+```
+
+The controller authenticates the previous RPM first, retains both exact
+installer files, and matches the previous package's signed bytes to the
+installed RPM header, launcher owner, and file digests. It then invokes
+`rpm --freshen` and verifies the installed candidate. Manage ROW through one
+deployment tool during the transaction. The managed controllers share a
+transaction lock, and RPM acquires its native database lock for package changes.
+[RPM transaction options](https://rpm.org/docs/6.0.x/man/rpm.8)
+
+Use a fresh transaction directory for each version pair. Keep the transaction
+directory and its private, digest-bound RPM snapshots until rollout validation
+is complete. Reissuing `update` verifies a completed installation or recovers
+an interrupted transaction. If the controller recovers the predecessor during
+an update, it reports `rolled-back` and exits with status 1.
+
+```bash
+python3 -I scripts/managed_rpm_update.py rollback \
+  --workspace "$ROW_HOME" --transaction "$TRANSACTION"
+```
+
+This command works offline. On a completed update it first verifies that the
+exact candidate is still installed. During recovery it recognizes only the two
+recorded RPM identities. If the installed package or a retained file fails
+verification, keep the journal and inspect the installation before making
+further package changes.
+
 ## RPM rollback qualification
 
 The x86-64 `all-modern` native candidate job runs this drill against the

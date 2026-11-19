@@ -270,8 +270,8 @@ Enterprise update manifests use Ed25519 public keys only. Generate and protect
 the private key outside deployed clients; distribute only the base64-encoded
 32-byte public key as `ed25519:<public-key>`.
 The `row customizer update-verify` command validates a local manifest and assets.
-Use the Debian update controller below for managed DEB updates and your endpoint
-management system for other installation formats.
+Use the managed update procedures below for supported DEB, RPM, and Windows MSI
+installations. Use your endpoint management system for other formats.
 
 Configure the trusted public key independently of the received manifest.
 `row customizer update-verify` and the standalone manifest checker reject an
@@ -322,6 +322,9 @@ rehashes every file. Journal flags and payload checksums never authorize recover
 Linux administrators can authenticate both DEBs, install the candidate, and
 roll back on failure in one invocation with the
 [managed Debian update controller](runbooks/UPGRADE_AND_ROLLBACK.md#managed-debian-package-updates).
+On x86-64 RPM hosts, the [managed RPM updater](runbooks/UPGRADE_AND_ROLLBACK.md#managed-rpm-package-updates)
+authenticates both RPMs, checks the exact installed predecessor, and retains an
+offline rollback package.
 The [managed Windows MSI updater](runbooks/UPGRADE_AND_ROLLBACK.md#stage-and-apply-in-one-command)
 can stage both stock x64 MSIs and apply the upgrade in one elevated invocation.
 It binds the install to the exact predecessor and checks the installed result

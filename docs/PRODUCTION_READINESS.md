@@ -133,20 +133,24 @@ run the full exact-artifact compliance checker before creating or uploading a
 GitHub Release. A reviewer signature
 over an unused lock is insufficient.
 
-After the four protected host runs succeed and their finalized records are
-assembled, capture the GitHub run and artifact inventory while the original
-Actions archives are still available:
+After the four protected host runs succeed, put their original
+`platform-verified-evidence-<target>-final.json` files in one directory.
+Prepare the release registry and source capture while the original Actions
+archives are still available.
 
 ```bash
-python scripts/check_platform_release_evidence_remote.py \
-  --repository <owner>/<repo> --release-tag <tag> \
-  --registry <finalized-platform-registry.json> --require-goal-targets \
-  --capture-source-evidence <new-capture-directory>
+python scripts/prepare_protected_platform_review.py \
+  --repository "$release_repository" --release-tag "$release_tag" --release-sha "$release_sha" \
+  --records-dir "$protected_finalized_records" --out "$protected_review_dir"
 ```
 
-Copy the generated `protected-platform-sources/` directory into the signed
-evidence bundle. Include the generated `protected_platform_sources` field
-in the exact approval JSON before signing it. Keep the generated `archives/`
+Use the tagged checkout and GitHub credentials with Actions and contents read
+access. The command checks the live tag, verifies the original Actions ZIPs,
+and re-finalizes the review bundles. Copy the generated
+`platform_verified_evidence.json` and `protected-platform-sources/` directory
+into the evidence bundle for independent review. Include the
+`protected_platform_sources` field from `protected-platform-sources.json` in
+the exact approval JSON before signing. Keep the generated `archives/`
 directory in release evidence storage with the approved bundle. Promotion
 compares the signed source metadata with live GitHub records and verifies
 each original ZIP against GitHub's digest and the finalized record. The

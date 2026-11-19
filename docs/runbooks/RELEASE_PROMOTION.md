@@ -68,7 +68,10 @@ python scripts/release_candidate_inventory.py promote \
   --assets-root "$release_assets_dir"
 ```
 
-After the platform host runs are finalized, place the reviewed registry at
+After the platform host runs are finalized, use the
+[protected-platform review preparation](../PRODUCTION_READINESS.md#external-prerequisites)
+to build the release registry, verify the four bundles, and retain the source
+archives. Place the reviewed registry at
 `$approval_dir/bundle/platform_verified_evidence.json`. Import the native
 packages and their review files from the exact Actions runs into the same
 staging directory.

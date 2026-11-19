@@ -388,8 +388,8 @@
     },
     {
       "path": "src/remote_ops_workspace/update_channel.py",
-      "sha256": "a109cc3ee48119c38b9bdf51ffa30c11a81bc9a9fcf9ed5a553b08d9da2653d1",
-      "size": 27355
+      "sha256": "3adc8885fd0225bbcec8bb8a4e34fb5b2c4e23766be352ed5e52866b2455879d",
+      "size": 27429
     },
     {
       "path": "src/remote_ops_workspace/update_staging.py",

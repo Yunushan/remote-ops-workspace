@@ -16,7 +16,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
@@ -552,7 +552,8 @@ def verified_recovered_stage(policy, stage_root, *, current_home, expected_versi
     deadline = time.monotonic() + settings["limits"]["operation_timeout_seconds"]
     try:
         with _stage_boundary(stage_root, current_home, recover=True) as (root, guard):
-            with _stage_lease(root / JOURNAL, min(30, settings["limits"]["operation_timeout_seconds"]), guard):
+            with (_stage_lease(root / JOURNAL, min(30, settings["limits"]["operation_timeout_seconds"]), guard),
+                  ExitStack() as verified_files):
                 # Journal authenticity fields never authorize recovery. Reapply the
                 # current operator policy and exact original signature from scratch.
                 raw = _read_stage_manifest(root, settings["limits"]["manifest_bytes"], guard)
@@ -560,10 +561,10 @@ def verified_recovered_stage(policy, stage_root, *, current_home, expected_versi
                 transaction = (_transaction(root, manifest, deadline) if guard is None
                                    else _transaction(root, manifest, deadline, private_guard=guard))
                 transaction.recover()
-                with transaction._verified_files():
-                    result = _verify_complete_held(transaction, manifest, policy, deadline, authenticate=authenticate)
-                    yield root, manifest, result
-                    _deadline(deadline)
+                verified_files.enter_context(transaction._verified_files())
+                result = _verify_complete_held(transaction, manifest, policy, deadline, authenticate=authenticate)
+                yield root, manifest, result
+                _deadline(deadline)
     except StagingError as exc:
         raise UpdateError("update-stage-refused") from exc
     except OSError as exc:

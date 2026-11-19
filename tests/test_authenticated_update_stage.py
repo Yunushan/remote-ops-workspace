@@ -937,7 +937,10 @@ def test_stage_io_failure_is_fixed_refusal_and_retains_all_existing_evidence(tmp
     assert list(operation.root.iterdir()) == []
 
 
-def test_recovery_never_follows_asset_urls_and_keeps_outer_lease(tmp_path, monkeypatch, accepted_signature, private_boundary):
+@pytest.mark.parametrize("consumer_refusal", [False, True])
+def test_recovery_never_follows_asset_urls_and_keeps_outer_lease(
+    tmp_path, monkeypatch, accepted_signature, private_boundary, consumer_refusal,
+):
     raw, held = manifest_bytes(), [0]
     manifest = channel.authenticate_manifest(raw, policy(), now=NOW)
     root = tmp_path / "stage"
@@ -969,5 +972,13 @@ def test_recovery_never_follows_asset_urls_and_keeps_outer_lease(tmp_path, monke
     monkeypatch.setattr(channel, "exclusive_file_lock", lease)
     monkeypatch.setattr(channel, "_chunks", no_download)
     monkeypatch.setattr(channel, "validate_professional_update_manifest", validate)
-    result = channel.recover_update(policy(), root, current_home=tmp_path / "home")
-    assert result["artifact_count"] == 2 and not result["install_permitted"] and held == [0]
+    if consumer_refusal:
+        with pytest.raises(channel.UpdateError, match="^synthetic-consumer-refused$"):
+            with channel.verified_recovered_stage(policy(), root, current_home=tmp_path / "home") as observed:
+                assert observed[0] == root and observed[2]["authenticity_checked"] is True
+                assert held == [1] and set(guard.named) == {staging.JOURNAL, staging.MANIFEST, *ASSETS}
+                raise channel.UpdateError("synthetic-consumer-refused")
+    else:
+        result = channel.recover_update(policy(), root, current_home=tmp_path / "home")
+        assert result["artifact_count"] == 2 and not result["install_permitted"]
+    assert held == [0] and not guard.named

@@ -98,6 +98,12 @@ candidate_check_app() {
     --path "$executable" --public-path "$public_path" --stage "$phase" --probe "$probe"
 }
 
+candidate_check_bundle() {
+  local app="$1" kind="$2" phase="$3"
+  python3 scripts/candidate_posix_byte_binding.py bundle --target "$BINDING_TARGET" --report "$BINDING_REPORT" \
+    --path "$app" --public-path "$kind/$APP_NAME" --stage "$phase"
+}
+
 cleanup() {
   hdiutil detach "$MOUNT_DIR" -quiet >/dev/null 2>&1 || true
 }
@@ -218,6 +224,7 @@ fi
 ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
 
 echo "native installer smoke: DMG verify"
+candidate_check_bundle "$DMG_APP" dmg install
 codesign --verify --deep --strict "$DMG_APP"
 verify_app_macos_minimum "$DMG_APP" "DMG verify"
 verify_app_runtime_resources "$DMG_APP" "DMG verify" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
@@ -226,6 +233,7 @@ verify_app_gui "$DMG_APP" "DMG verify" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUT
 echo "native installer smoke: DMG upgrade"
 rm -rf "$DMG_APP"
 ditto "$MOUNT_DIR/$APP_NAME" "$DMG_APP"
+candidate_check_bundle "$DMG_APP" dmg reinstall
 codesign --verify --deep --strict "$DMG_APP"
 verify_app_macos_minimum "$DMG_APP" "DMG upgrade"
 verify_app_runtime_resources "$DMG_APP" "DMG upgrade" "dmg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall
@@ -253,6 +261,7 @@ fi
 
 echo "native installer smoke: PKG verify"
 verify_pkg_receipt "PKG verify"
+candidate_check_bundle "$PKG_APP" pkg install
 codesign --verify --deep --strict "$PKG_APP"
 verify_app_macos_minimum "$PKG_APP" "PKG verify"
 verify_app_runtime_resources "$PKG_APP" "PKG verify" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" install
@@ -265,6 +274,7 @@ if [[ ! -d "$PKG_APP" ]]; then
   exit 1
 fi
 verify_pkg_receipt "PKG upgrade"
+candidate_check_bundle "$PKG_APP" pkg reinstall
 codesign --verify --deep --strict "$PKG_APP"
 verify_app_macos_minimum "$PKG_APP" "PKG upgrade"
 verify_app_runtime_resources "$PKG_APP" "PKG upgrade" "pkg/$APP_NAME/Contents/MacOS/$APP_EXECUTABLE_NAME" reinstall

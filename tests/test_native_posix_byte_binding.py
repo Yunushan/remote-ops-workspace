@@ -84,6 +84,10 @@ def setup_fixture(tmp_path, target, helpers):
         )
         image.chmod(0o755)
     report = tmp_path / f"build/native-smoke/{target}/candidate-runtime-byte-binding.json"
+    if target.startswith("macos-"):
+        resources = tmp_path / binding.MAC_APP_SOURCE / "Contents/Resources"
+        resources.mkdir()
+        (resources / "policy.txt").write_text("packaged resource", encoding="utf-8")
     value = binding.initialize(tmp_path, target, report, image)
     return report, value, image
 
@@ -107,6 +111,9 @@ def fill_report(binding, target, root, report, package):
                     probe,
                     True,
                 )
+    if target.startswith("macos-"):
+        for public_path, phase in sorted(binding.MAC_BUNDLE_STAGES):
+            binding.check_app_bundle(report, target, root / binding.MAC_APP_SOURCE, public_path, phase)
     binding.complete(report, target)
     return json.loads(report.read_text())
 
@@ -136,7 +143,7 @@ def test_complete_receipt_matches_real_finish_contract(helpers, tmp_path, target
         if package
         else []
     )
-    proof.validate_posix_byte_binding(value, archives, target, assets, launchers)
+    proof.validate_posix_byte_binding(value, archives, target, assets, launchers, root=tmp_path)
     assert value["status"] == "bound" and value["smoke_complete"] is True
     assert str(tmp_path) not in report.read_text()
 
@@ -239,6 +246,70 @@ def test_finish_refuses_forged_or_incomplete_receipt(helpers, tmp_path, change):
         proof.validate_posix_byte_binding(value, archives, target, assets, launchers)
 
 
+@pytest.mark.parametrize("change", ("missing", "duplicate", "different-content", "forged-original", "old-schema"))
+def test_macos_finish_requires_verified_bundle_inventory(helpers, tmp_path, change):
+    binding, proof = helpers
+    target = "macos-x64"
+    report, _, _ = setup_fixture(tmp_path, target, helpers)
+    value = fill_report(binding, target, tmp_path, report, None)
+    launcher = binding.target_contract(target)[0]["gui"]
+    archives = [dict(path=launcher, artifact_sha256=binding.digest(tmp_path / launcher), toc=["fixture"])]
+    if change == "missing":
+        value["app_bundle_observations"].pop()
+    elif change == "duplicate":
+        value["app_bundle_observations"][-1] = value["app_bundle_observations"][0]
+    elif change == "different-content":
+        value["app_bundle_observations"][0]["inventory"]["sha256"] = "1" * 64
+    elif change == "forged-original":
+        value["expected_app_bundle"]["sha256"] = "2" * 64
+        for observation in value["app_bundle_observations"]:
+            observation["inventory"]["sha256"] = "2" * 64
+    else:
+        value["schema_version"] = 1
+    with pytest.raises(ValueError):
+        proof.validate_posix_byte_binding(value, archives, target, [], root=tmp_path)
+
+
+def test_macos_resource_mismatch_is_durable_even_when_launcher_matches(helpers, tmp_path):
+    binding, _ = helpers
+    target = "macos-arm64"
+    report, _, _ = setup_fixture(tmp_path, target, helpers)
+    source = tmp_path / binding.MAC_APP_SOURCE
+    installed = tmp_path / binding.MAC_APP
+    shutil.copytree(source, installed)
+    (installed / "Contents/Resources/policy.txt").write_text("changed resource", encoding="utf-8")
+    assert binding.digest(source / "Contents/MacOS/Remote Ops Workspace") == binding.digest(
+        installed / "Contents/MacOS/Remote Ops Workspace",
+    )
+    with pytest.raises(ValueError, match="bundle byte mismatch"):
+        binding.check_app_bundle(report, target, installed, f"pkg/{binding.MAC_APP}", "reinstall")
+    value = json.loads(report.read_text())
+    assert value["status"] == "mismatch" and value["app_bundle_observations"][-1]["matched"] is False
+    with pytest.raises(ValueError):
+        binding.complete(report, target)
+
+
+def test_macos_bundle_fingerprints_literal_links_without_following_them(helpers, tmp_path):
+    binding, _ = helpers
+    app = tmp_path / binding.MAC_APP
+    app.mkdir()
+    library = app / "lib"
+    library.mkdir()
+    (library / "payload").write_bytes(b"component")
+    link = app / "Current"
+    try:
+        link.symlink_to("lib", target_is_directory=True)
+    except OSError:
+        pytest.skip("symbolic links are unavailable on this host")
+    original = binding.app_bundle_inventory(app)
+    assert original["entries"] == 3
+    link.unlink()
+    link.symlink_to("./lib", target_is_directory=True)
+    assert binding.app_bundle_inventory(app) != original
+    with pytest.raises(ValueError, match="root must be a directory"):
+        binding.app_bundle_inventory(link)
+
+
 def test_macos_receipt_cannot_claim_unexpected_wrapper_binding(helpers, tmp_path):
     binding, proof = helpers
     target = "macos-x64"
@@ -309,7 +380,7 @@ def shell_fixture(tmp_path, target, helpers):
     report, _, package = setup_fixture(tmp_path, target, helpers)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    for name in ("candidate_posix_byte_binding.py", "candidate_native_proof.py"):
+    for name in ("candidate_posix_byte_binding.py", "candidate_native_proof.py", "release_evidence_file.py"):
         shutil.copyfile(SCRIPTS / name, scripts / name)
     original = tmp_path / next(iter(binding.target_contract(target)[0].values()))
     actual = (
@@ -317,8 +388,11 @@ def shell_fixture(tmp_path, target, helpers):
         if target.startswith("macos-")
         else tmp_path / "actual/row"
     )
-    actual.parent.mkdir(parents=True)
-    shutil.copyfile(original, actual)
+    if target.startswith("macos-"):
+        shutil.copytree(tmp_path / binding.MAC_APP_SOURCE, actual.parents[2], symlinks=True)
+    else:
+        actual.parent.mkdir(parents=True)
+        shutil.copyfile(original, actual)
     actual.chmod(0o755)
     smoke = report.parent
     env = {
@@ -328,6 +402,7 @@ def shell_fixture(tmp_path, target, helpers):
         "SMOKE_ROOT": str(smoke),
         "VERSION": "1.0.27",
         "APP_EXECUTABLE_NAME": "Remote Ops Workspace",
+        "APP_NAME": binding.MAC_APP,
         "NATIVE_BINDING_MARKER": str(tmp_path / "launch-marker"),
         "EXTRACTION_MARKER": str(tmp_path / "extract-marker"),
         "EXTRACTED_FIXTURE_SOURCE": str(actual),
@@ -335,7 +410,7 @@ def shell_fixture(tmp_path, target, helpers):
         "STAGED_APPIMAGE": str(package) if package else "",
     }
     names = (
-        ("candidate_check_app", "verify_app_runtime_resources", "verify_app_gui")
+        ("candidate_check_app", "candidate_check_bundle", "verify_app_runtime_resources", "verify_app_gui")
         if target.startswith("macos-")
         else (
             "run_row_command",
@@ -362,6 +437,26 @@ def bash_run(tmp_path, code, env):
         timeout=30,
         check=False,
     )
+
+
+@pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")
+@pytest.mark.parametrize("changed", (False, True))
+def test_macos_smoke_bundle_check_stops_before_running_a_modified_app(helpers, tmp_path, changed):
+    report, _, executable, env, code = shell_fixture(tmp_path, "macos-x64", helpers)
+    app = executable.parents[2]
+    if changed:
+        (app / "Contents/Resources/policy.txt").write_text("different resource", encoding="utf-8")
+    env["APP_PATH"] = str(app)
+    result = bash_run(
+        tmp_path,
+        code + '\n'
+        'candidate_check_bundle "$APP_PATH" pkg install\n'
+        '"$APP_PATH/Contents/MacOS/Remote Ops Workspace" --version',
+        env,
+    )
+    assert (result.returncode == 0) is not changed, result.stdout + result.stderr
+    assert (tmp_path / "launch-marker").exists() is not changed
+    assert json.loads(report.read_text())["app_bundle_observations"][-1]["matched"] is not changed
 
 
 @pytest.mark.skipif(BASH is None, reason="actual Bash native fixture requires POSIX host")

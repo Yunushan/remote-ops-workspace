@@ -216,6 +216,10 @@ contain only app paths and their shared parent directories. After installation
 and same-version reinstall, the smoke compares the registered package
 identity, version, location, and app paths with that package. It checks the
 installed app's code signature and executable before running the app probes.
+The DMG and PKG checks also compare the installed bundle against the original
+signed build after install and reinstall. The comparison covers relative paths,
+entry types, regular-file contents, and literal symbolic-link targets. The
+candidate proof rehashes the original bundle before accepting all four results.
 [Apple Distribution XML reference](https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/DistributionDefinitionRef/Chapters/Distribution_XML_Ref.html) ·
 [Apple package receipt example](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools)
 

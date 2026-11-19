@@ -121,15 +121,22 @@ def validate_windows_byte_binding(report, archives, target, assets=None):
         validate_lifecycle(probes, target, assets)
 
 
-def validate_posix_byte_binding(report, archives, target, assets, launchers=()):
-    """Validate per-probe entrypoint hashes; external runtime files are excluded."""
+def validate_posix_byte_binding(report, archives, target, assets, launchers=(), *, root=None):
+    """Validate per-probe hashes and the build tree for candidate macOS app bundles."""
     import re
 
-    from candidate_posix_byte_binding import APPIMAGE_LAUNCHER, target_contract
+    from candidate_posix_byte_binding import (
+        APPIMAGE_LAUNCHER,
+        MAC_APP_SOURCE,
+        app_bundle_inventory,
+        binding_schema,
+        target_contract,
+        validate_app_bundle_observations,
+    )
 
     outputs, paths, probes = target_contract(target)
     if not isinstance(report, dict) or (
-        type(report.get("schema_version")) is not int or report["schema_version"] != 1
+        type(report.get("schema_version")) is not int or report["schema_version"] != binding_schema(target)
         or report.get("target") != target or report.get("status") != "bound"
         or report.get("smoke_complete") is not True
         or set(report.get("required_paths", [])) != set(paths)
@@ -185,8 +192,11 @@ def validate_posix_byte_binding(report, archives, target, assets, launchers=()):
             if row.get("role") != role or row.get("matched") is not True or row.get("expected_sha256") != hashes[role] or row.get("observed_sha256") != hashes[role]:
                 raise ValueError("candidate observed AppImage runtime or launcher bytes differ from recorded build output")
 
-    elif packages or package_observations:
-        raise ValueError("unexpected package runtime binding for macOS")
+    else:
+        if packages or package_observations:
+            raise ValueError("unexpected package runtime binding for macOS")
+        original = app_bundle_inventory((ROOT if root is None else root) / MAC_APP_SOURCE)
+        validate_app_bundle_observations(report, original)
 
 
 GUI_PYZ_REQUIRED_MODULES = (

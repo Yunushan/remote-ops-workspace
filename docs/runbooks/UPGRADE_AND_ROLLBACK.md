@@ -202,6 +202,19 @@ the [release promotion runbook](RELEASE_PROMOTION.md).
    and both workspace directories and follow the
    [incident runbook](SECRET_ROTATION_AND_INCIDENT.md).
 
+## macOS PKG release evidence
+
+The native smoke checks the expanded PKG before installation. The
+distribution must name the exact version of the stock component and require
+macOS 14.4 or later. The component must target the root volume with
+relocation disabled, and its bill of materials must list the launcher and
+contain only app paths and their shared parent directories. After installation
+and same-version reinstall, the smoke compares the registered package
+identity, version, location, and app paths with that package. It checks the
+installed app's code signature and executable before running the app probes.
+[Apple Distribution XML reference](https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/DistributionDefinitionRef/Chapters/Distribution_XML_Ref.html) ·
+[Apple package receipt example](https://developer.apple.com/documentation/xcode/installing-the-command-line-tools)
+
 ## Windows MSI release evidence
 
 The stock and branded MSIs remove the previous product after Windows Installer

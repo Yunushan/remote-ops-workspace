@@ -66,6 +66,8 @@ MOUNT_DIR="$SMOKE_ROOT/dmg-mount"
 DMG_APP_DIR="$SMOKE_ROOT/dmg-app"
 DMG_APP="$DMG_APP_DIR/$APP_NAME"
 PKG_APP="/Applications/$APP_NAME"
+PKG_EXPANDED="$SMOKE_ROOT/pkg-expanded"
+PKG_BOM_PATHS="$SMOKE_ROOT/pkg-bom-paths.txt"
 
 for artifact in "$DMG" "$PKG"; do
   if [[ ! -f "$artifact" ]]; then
@@ -197,13 +199,14 @@ require_pkg_absent() {
 }
 
 verify_pkg_receipt() {
-  local phase="$1" receipt
-  receipt="$(pkgutil --pkg-info "$APP_ID")" || return 1
-  if ! grep -Fxq -- "version: $VERSION" <<< "$receipt"; then
-    echo "$phase expected the package receipt for $APP_ID to report version $VERSION" >&2
+  local phase="$1" info="$SMOKE_ROOT/pkg-receipt-info.txt" files="$SMOKE_ROOT/pkg-receipt-files.txt"
+  LC_ALL=C pkgutil --pkg-info "$APP_ID" > "$info" || return 1
+  LC_ALL=C pkgutil --files "$APP_ID" > "$files" || return 1
+  python3 -I "$ROOT/scripts/check_macos_pkg_receipt.py" receipt --version "$VERSION" \
+    --bom-paths "$PKG_BOM_PATHS" --info "$info" --files "$files" || {
+    echo "$phase could not verify the installed receipt against the package" >&2
     return 1
-  fi
-  echo "native installer smoke PKG receipt: $phase $APP_ID $VERSION"
+  }
 }
 
 echo "native installer smoke: DMG install"
@@ -238,25 +241,10 @@ trap - EXIT
 
 require_pkg_absent "PKG preflight"
 echo "native installer smoke: PKG install"
-pkgutil --expand "$PKG" "$SMOKE_ROOT/pkg-expanded"
-python3 - "$SMOKE_ROOT/pkg-expanded/Distribution" "$APP_ID" <<'PY'
-import sys
-from xml.etree import ElementTree
-
-distribution_path, app_id = sys.argv[1:]
-distribution = ElementTree.parse(distribution_path)
-supported = distribution.findall("./volume-check/allowed-os-versions/os-version")
-if len(supported) != 1 or supported[0].attrib not in ({"min": "14.4"}, {"min": "14.4.0"}):
-    raise SystemExit("PKG distribution must require macOS 14.4 or later")
-packages = [
-    (package.get("id"), package.text.strip().removeprefix("#"))
-    for package in distribution.findall("pkg-ref")
-    if package.text and package.text.strip()
-]
-if packages != [(app_id, "remote-ops-workspace-component.pkg")]:
-    raise SystemExit("PKG distribution must reference the expected application component")
-print("native installer smoke PKG distribution: macOS 14.4 minimum")
-PY
+pkgutil --expand "$PKG" "$PKG_EXPANDED"
+/usr/bin/lsbom -p f "$PKG_EXPANDED/remote-ops-workspace-component.pkg/Bom" > "$PKG_BOM_PATHS"
+python3 -I "$ROOT/scripts/check_macos_pkg_receipt.py" package --expanded "$PKG_EXPANDED" \
+  --bom-paths "$PKG_BOM_PATHS" --version "$VERSION"
 sudo installer -pkg "$PKG" -target /
 if [[ ! -d "$PKG_APP" ]]; then
   echo "PKG install did not create $PKG_APP" >&2

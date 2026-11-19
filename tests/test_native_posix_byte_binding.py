@@ -430,20 +430,32 @@ def test_macos_pkg_checks_installed_receipt_version(tmp_path, installed_version)
     script = SCRIPTS / "smoke_macos_native.sh"
     mock = r"""
 pkgutil() {
-  [[ "$*" = "--pkg-info $APP_ID" && -n "$INSTALLED_VERSION" ]] || return 2
-  printf 'package-id: %s\nversion: %s\n' "$APP_ID" "$INSTALLED_VERSION"
+  case "$*" in
+    "--pkg-info $APP_ID")
+      [[ -n "$INSTALLED_VERSION" ]] || return 2
+      printf 'package-id: %s\nversion: %s\nvolume: /\nlocation: /\n' "$APP_ID" "$INSTALLED_VERSION"
+      ;;
+    "--files $APP_ID") printf '%s\n' "$APP_PATH" ;;
+    *) return 2 ;;
+  esac
 }
 """
+    app_path = "Applications/Remote Ops Workspace.app/Contents/MacOS/Remote Ops Workspace"
+    bom = tmp_path / "bom.txt"
+    bom.write_text("./" + app_path + "\n", encoding="utf-8")
     env = {
         **os.environ,
+        "ROOT": str(SCRIPTS.parent),
         "APP_ID": "io.github.remoteopsworkspace.app",
+        "APP_PATH": app_path,
+        "PKG_BOM_PATHS": str(bom),
+        "SMOKE_ROOT": str(tmp_path),
         "VERSION": "1.0.27",
         "INSTALLED_VERSION": installed_version,
     }
     code = functions(script, ("verify_pkg_receipt",)) + mock + '\nverify_pkg_receipt "PKG verify"'
     result = bash_run(tmp_path, code, env)
     assert (result.returncode == 0) is (installed_version == "1.0.27")
-
 
 PROBES = [
     (target, path, phase, probe)

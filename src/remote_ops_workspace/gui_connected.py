@@ -8,6 +8,7 @@ import posixpath
 import re
 import shlex
 import stat
+import subprocess
 import sys
 import time
 from abc import abstractmethod
@@ -65,6 +66,7 @@ from PyQt6.QtWidgets import (
 
 from .file_transfer import (
     SftpBatchPlan,
+    SftpQueueItem,
     SftpQueuePlan,
     build_sftp_get_plan,
     build_sftp_list_plan,
@@ -194,7 +196,13 @@ class ConnectedMainWindow(Protocol):
     def terminal_panes_in(self, widget: QWidget) -> list[TerminalPane]: ...
     def all_terminal_panes(self) -> list[TerminalPane]: ...
     def active_terminal_pane(self) -> TerminalPane | None: ...
-    def create_transfer_queue_dialog(self, profile: Profile) -> ConnectedTransferQueue: ...
+    def create_transfer_queue_dialog(
+        self,
+        profile: Profile,
+        *,
+        prepare_command: Callable[[list[str]], list[str]] = ...,
+        on_item_completed: Callable[[SftpQueueItem], None] | None = None,
+    ) -> ConnectedTransferQueue: ...
     def show_moba_tools_status(self) -> None: ...
 
 
@@ -291,13 +299,13 @@ def create_moba_connected_classes(
                 "parent-folder",
                 "download",
                 "upload",
+                "new-folder",
                 "connect",
                 "tools",
                 "terminal",
             }
         )
         UNAVAILABLE_ACTION_DETAILS = {
-            "new-folder": "Use Tools > Transfer queue to review and run mkdir safely.",
             "new-file": "Remote file creation is not available in the connected dock.",
             "delete": "Use Tools > Transfer queue for guarded rm/rmdir operations.",
             "ascii-mode": "ASCII transfer mode is not supported by the SFTP queue backend.",
@@ -1335,6 +1343,7 @@ def create_moba_connected_classes(
             if self.runtime_shutting_down:
                 return
             self.background_state_activation_timer.stop()
+            self.update_sftp_action_states()
             self._apply_initial_background_state(start_runtime=False)
             self.schedule_background_state_activation()
 
@@ -3596,9 +3605,10 @@ def create_moba_connected_classes(
                 and profile.protocol.lower().strip() in {"ssh", "sftp"}
                 and profile.host
             )
+            tooltips = {action.key: action.tooltip for action in gui_design_moba_sftp_dock_actions()}
             for action_key, button in getattr(self, "sftp_action_buttons", {}).items():
                 operational = action_key in self.OPERATIONAL_ACTIONS
-                transfer_action = action_key in {"download", "upload"}
+                transfer_action = action_key in {"download", "upload", "new-folder"}
                 enabled = operational and (not transfer_action or sftp_ready) and (
                     action_key != "download" or download_ready
                 )
@@ -3609,6 +3619,8 @@ def create_moba_connected_classes(
                     button.setToolTip("Connect an SSH/SFTP profile before using this action")
                 elif action_key == "download" and operational and not download_ready:
                     button.setToolTip("Select a remote file or directory to download")
+                elif operational and transfer_action:
+                    button.setToolTip(tooltips[action_key])
             transfer_actions = getattr(self, "sftp_transfer_menu_actions", {})
             download_menu_action = transfer_actions.get("download")
             upload_menu_action = transfer_actions.get("upload")
@@ -3861,6 +3873,60 @@ def create_moba_connected_classes(
             )
             return True
 
+        def open_moba_sftp_new_folder_workflow(self) -> bool:
+            main_window = self.main_window()
+            profile = self.profile_for_sftp_action()
+            if self.runtime_shutting_down or main_window is None or profile is None:
+                return False
+            parent_path = self.active_remote_path
+            name, accepted = QInputDialog.getText(
+                self, "New remote folder", "Name of the folder to create"
+            )
+            if not accepted:
+                return True
+            if (
+                not name.strip()
+                or not name.isprintable()
+                or name in {".", ".."}
+                or "/" in name
+                or "\\" in name
+            ):
+                self.show_sftp_status("Enter a single remote folder name")
+                return True
+            remote_path = str(PurePosixPath(parent_path) / name)
+
+            def prepare_command(command: list[str]) -> list[str]:
+                if self.runtime_shutting_down or self.profile_for_sftp_action() != profile:
+                    raise ValueError("the connected SSH profile changed")
+                command = openssh_command_with_overrides(
+                    command,
+                    {"BatchMode": "yes", "ConnectTimeout": "5", "StrictHostKeyChecking": "yes"},
+                )
+                control_path = self.shared_ssh_control_path()
+                if control_path:
+                    return ssh_command_with_control_path(command, control_path, master=False)
+                return openssh_command_without_windows_connection_sharing(command)
+
+            def refresh_created_folder(item: SftpQueueItem) -> None:
+                if (
+                    item.action == "mkdir"
+                    and item.remote_path == remote_path
+                    and self.active_remote_path == parent_path
+                ):
+                    self.request_sftp_refresh(reason="new-folder")
+
+            dialog = main_window.create_transfer_queue_dialog(
+                profile,
+                prepare_command=prepare_command,
+                on_item_completed=refresh_created_folder,
+            )
+            arguments = ["mkdir", remote_path]
+            operation = subprocess.list2cmdline(arguments) if os.name == "nt" else shlex.join(arguments)
+            dialog.operations.setPlainText(operation)
+            dialog.refresh_queue_preview()
+            dialog.exec()
+            return True
+
         def reconnect_moba_sftp_session(self) -> bool:
             main_window = self.main_window()
             if main_window is None:
@@ -3914,6 +3980,8 @@ def create_moba_connected_classes(
                 return self.navigate_moba_sftp_path(parent)
             if action_key in {"download", "upload"}:
                 return self.open_moba_sftp_transfer_workflow(action_key)
+            if action_key == "new-folder":
+                return self.open_moba_sftp_new_folder_workflow()
             if action_key == "connect":
                 return self.reconnect_moba_sftp_session()
             if action_key == "tools":

@@ -188,12 +188,16 @@ reviews, and the downloaded release assets. See the
   dispatch the same action; Sessions/Favorites switch the visible profile tree
   without destroying a connected SFTP dock, and SFTP returns to that dock. The
   connected SFTP toolbar now routes path/parent navigation, download/upload
-  transfer queues, reconnect, Tools and terminal focus to live GUI workflows.
+  transfer queues, remote folder creation, reconnect, Tools and terminal focus
+  to live GUI workflows. New folder preloads a mkdir operation for review and
+  runs it when the operator chooses Run queue. It uses a shared authenticated
+  SSH socket when available or a trusted host key with key or agent authentication.
+  A successful creation refreshes the listing if its parent is still selected.
   The transcript keeps linear multi-line mouse/keyboard selections stable while
   output arrives, copies exact visible lines, renders bounded ANSI SGR
   foreground/background styles, and exposes cyan underlined HTTP(S) links that
   require an explicit Ctrl+click.
-  New-file, new-folder, delete, ASCII-mode and split-view controls remain
+  New-file, delete, ASCII-mode and split-view controls remain
   disabled in that dock until safe operational backends replace their earlier
   metadata-only previews.
   The terminal renderer keeps a bounded transcript and a cursor-addressed

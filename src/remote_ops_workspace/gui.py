@@ -11,6 +11,7 @@ from .file_safety import (
     write_bytes_atomic,
     write_json_atomic,
 )
+from .file_transfer import SftpQueueItem
 from .gui_designs import (
     PRODUCT_GUI_PRESET_IDS,
     PRODUCT_REFERENCE_TAB_PRESET_IDS,
@@ -109,7 +110,7 @@ from .paths import ensure_data_dir
 from .process_status import ProcessStatusError
 from .smartcard_keys import PINNED_SMARTCARD_KEY
 from .storage import ProfileStore
-from .terminal import TerminalPanePlan
+from .terminal import TerminalPanePlan, openssh_command_without_windows_connection_sharing
 from .terminal import terminal_plan_for_profile as terminal_plan_for_profile
 from .terminal_output import _ByteChunkQueue  # noqa: F401 - existing queue seam
 
@@ -2334,13 +2335,20 @@ def create_main_window(
             return ProfileImportPreviewDialog(source, result, self, services=dialog_services)
 
         def create_transfer_queue_dialog(
-            self, profile: Profile, *, process_factory=None,
+            self,
+            profile: Profile,
+            *,
+            process_factory=None,
+            prepare_command: Callable[[list[str]], list[str]] = openssh_command_without_windows_connection_sharing,
+            on_item_completed: Callable[[SftpQueueItem], None] | None = None,
         ) -> TransferQueueDialog:
             return TransferQueueDialog(
                 profile,
                 self,
                 services=dialog_services,
                 process_factory=process_factory,
+                prepare_command=prepare_command,
+                on_item_completed=on_item_completed,
             )
 
         def show_doctor(self) -> None:

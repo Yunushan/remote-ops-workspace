@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 
 from .enterprise_policy import assert_profile_launch_allowed
 from .file_transfer import (
+    SftpQueueItem,
     SftpQueuePlan,
     build_sftp_queue_plan,
     parse_transfer_item_spec,
@@ -507,10 +508,14 @@ class TransferQueueDialog(ScreenBoundedDialog):
         *,
         services: DialogServices,
         process_factory=None,
+        prepare_command: Callable[[list[str]], list[str]] = openssh_command_without_windows_connection_sharing,
+        on_item_completed: Callable[[SftpQueueItem], None] | None = None,
     ) -> None:
         super().__init__(parent, services=services)
         self.setObjectName("workflowDialog")
         self.profile = profile
+        self._prepare_command = prepare_command
+        self._on_item_completed = on_item_completed
         self.setWindowTitle(f"Transfer Queue: {profile.name}")
         self.services.size_for_screen(
             self,
@@ -688,8 +693,12 @@ class TransferQueueDialog(ScreenBoundedDialog):
         index = self.active_queue_index
         command = plan.batch_commands[index]
         self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: running")
+        try:
+            runtime_command = self._prepare_command(list(plan.command))
+        except ValueError as exc:
+            self.finish_queue_execution(f"queue stopped: {exc}")
+            return
         process = self._process_factory(self)
-        runtime_command = openssh_command_without_windows_connection_sharing(list(plan.command))
         process.setProgram(runtime_command[0])
         process.setArguments(runtime_command[1:])
         process.readyReadStandardOutput.connect(
@@ -732,6 +741,8 @@ class TransferQueueDialog(ScreenBoundedDialog):
             return
         self.preview.append(f"{index + 1}/{len(plan.items)} {plan.items[index].action}: completed")
         self.active_queue_index += 1
+        if self._on_item_completed is not None:
+            self._on_item_completed(plan.items[index])
         self.run_next_queue_item()
 
     def handle_queue_process_error(self, process: QProcess, index: int, error) -> None:

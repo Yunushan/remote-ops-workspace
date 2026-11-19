@@ -78,13 +78,13 @@
     },
     {
       "path": "src/remote_ops_workspace/gui.py",
-      "sha256": "ad983d9fc17d3fca1bace9f32d861d032f05a06f5757e8ac82bf68d611ab25f4",
-      "size": 389798
+      "sha256": "663af69e8be8a77a98e4f51dc0ce4e7126cae918ff22df2496aee46cdba7c433",
+      "size": 390223
     },
     {
       "path": "src/remote_ops_workspace/gui_connected.py",
-      "sha256": "f79c0181282e440d4bb048e285b6369350c0a5857f4830cba0c0e3d73327b3d0",
-      "size": 263436
+      "sha256": "907435940d91ca0e40ecef472e215e6d6979e002fbd4ba664891df87a8b664dd",
+      "size": 266424
     },
     {
       "path": "src/remote_ops_workspace/gui_designs.py",
@@ -93,8 +93,8 @@
     },
     {
       "path": "src/remote_ops_workspace/gui_dialogs.py",
-      "sha256": "564cd93c036c44ae0cc667f5039594a724b7c770916a0df4244c97a8bd73ed59",
-      "size": 35341
+      "sha256": "f1f3b9100c55ad40bea5b351b0ceff2706e1c8b17bb7ef520d6c3593515fe961",
+      "size": 35855
     },
     {
       "path": "src/remote_ops_workspace/gui_editors.py",

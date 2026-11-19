@@ -2470,7 +2470,8 @@ def test_moba_sftp_dock_routes_supported_actions_and_disables_stubs(gui_window) 
     dock = window.moba_connected_dock
     assert dock is not None
 
-    for action_key in {"new-folder", "new-file", "delete", "ascii-mode", "split-view"}:
+    assert dock.sftp_action_buttons["new-folder"].isEnabled()
+    for action_key in {"new-file", "delete", "ascii-mode", "split-view"}:
         button = dock.sftp_action_buttons[action_key]
         assert button.isEnabled() is False
         assert button.property("mobaSftpActionOperational") is False
@@ -2895,6 +2896,109 @@ def _install_fake_terminal_process(
     pane.process = process
     pane.update_process_actions()
     return process
+
+
+@pytest.mark.parametrize(
+    ("name", "accepted", "result", "shared"),
+    [
+        ("nightly build's output", True, "success", False),
+        ("nightly build's output", True, "success", True),
+        ("nightly build's output", True, "server-error", False),
+        ("nightly build's output", True, "close-preview", False),
+        ("nightly build's output", True, "changed-profile", False),
+        ("nightly build's output", True, "changed-folder", False),
+        ("scratch", False, "no-preview", False),
+        (" ", True, "no-preview", False),
+        ("..", True, "no-preview", False),
+        ("elsewhere/subfolder", True, "no-preview", False),
+        (r"elsewhere\subfolder", True, "no-preview", False),
+        ("two\u2028lines", True, "no-preview", False),
+    ],
+)
+def test_moba_new_folder_uses_reviewed_queue_and_refreshes_only_after_success(
+    gui_window, monkeypatch, name, accepted, result, shared,
+) -> None:
+    from PyQt6.QtWidgets import QInputDialog
+
+    from remote_ops_workspace import gui_connected
+    from remote_ops_workspace.terminal import TerminalPanePlan
+
+    _app, window = gui_window
+    window.design_select.setCurrentIndex(window.design_select.findData("mobaxterm"))
+    profile = Profile(name="create-folder", protocol="ssh", host="example.invalid", username="operator")
+    window.store.save([profile])
+    window.refresh_profiles()
+    window.open_moba_connected_session_tab(
+        profile, TerminalPanePlan(title=profile.name, command=[], source="test"),
+        remote_path="/team releases",
+    )
+    dock = window.moba_connected_dock
+    assert dock is not None
+    refreshed = []
+    shared_connections = []
+    processes = []
+    factory = window.create_transfer_queue_dialog
+    target = f"/team releases/{name}"
+
+    def process_factory(parent):
+        process = _FakeProcess(parent)
+        processes.append(process)
+        return process
+
+    def share_command(command, socket, *, master):
+        shared_connections.append((socket, master))
+        return command
+
+    def create_dialog(profile, **options):
+        assert result != "no-preview"
+        dialog = factory(profile, process_factory=process_factory, **options)
+
+        def run_dialog():
+            assert not processes
+            assert dialog.queue_plan().items[0].remote_path == target
+            batch = dialog.queue_plan().batch_input()
+            assert batch.startswith("mkdir ")
+            assert batch in dialog.preview.toPlainText()
+            if result == "close-preview":
+                return 0
+            if result == "changed-profile":
+                monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: None)
+            dialog.run_queue()
+            assert refreshed == []
+            if result == "changed-profile":
+                assert processes == []
+                assert "connected SSH profile changed" in dialog.preview.toPlainText()
+                return 0
+            process = processes[0]
+            assert process.written == batch.encode("utf-8")
+            assert "BatchMode=yes" in process.arguments
+            assert "StrictHostKeyChecking=yes" in process.arguments
+            if result == "changed-folder":
+                dock.active_remote_path = "/elsewhere"
+            process.finish(1 if result == "server-error" else 0)
+            assert not dialog.queue_is_active()
+            return 0
+
+        monkeypatch.setattr(dialog, "exec", run_dialog)
+        return dialog
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_args: (name, accepted))
+    monkeypatch.setattr(dock, "request_sftp_refresh", lambda *, reason: refreshed.append(reason))
+    monkeypatch.setattr(dock, "shared_ssh_control_path", lambda: "/run/private/ssh.sock" if shared else "")
+    monkeypatch.setattr(gui_connected, "ssh_command_with_control_path", share_command)
+    monkeypatch.setattr(window, "create_transfer_queue_dialog", create_dialog)
+    assert dock.sftp_action_buttons["new-folder"].isEnabled()
+    dock.show_moba_sftp_toolbar_action("new-folder")
+
+    assert refreshed == (["new-folder"] if result == "success" else [])
+    assert shared_connections == ([("/run/private/ssh.sock", False)] if shared else [])
+    if result == "no-preview" and accepted:
+        assert "Enter a single remote folder name" in window.log.toPlainText()
+
+    monkeypatch.setattr(dock, "profile_for_sftp_action", lambda: None)
+    dock.update_sftp_action_states()
+    assert not dock.sftp_action_buttons["new-folder"].isEnabled()
+    assert not dock.open_moba_sftp_new_folder_workflow()
 
 
 def test_transfer_queue_owns_process_lifecycle_until_completion_and_cancel(gui_window) -> None:

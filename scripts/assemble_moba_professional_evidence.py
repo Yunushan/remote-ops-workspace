@@ -158,7 +158,7 @@ def assemble(
                                     https_update_url=True, signature_verified=True, organization_channel=True),
         }
         evidence = root / EVIDENCE
-        evidence.write_text(json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        evidence.write_text(json.dumps(envelope, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
         if local:
             result = validate_professional_deployment_evidence(evidence)
         else:

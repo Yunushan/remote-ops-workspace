@@ -322,6 +322,7 @@ def test_assemble_professional_review_binds_captures_and_delivery(
 
     evidence = assembler.assemble(windows, linux, wheel, public_key, output, origins=origins)
     assert evidence == output / "evidence.json"
+    assert b"\r\n" not in evidence.read_bytes()
     assert observed[0] == item.update["update_url"] and set(observed) == set(urls)
     args = SimpleNamespace(
         article_id="professional-deployment", release_tag=item.source["release_tag"], release_target="windows-x64",

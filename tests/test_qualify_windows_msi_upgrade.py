@@ -187,11 +187,13 @@ def test_sealed_candidate_msi_binds_exact_bytes_and_signature_through_installer(
     ("wrong-rollback-bytes", "did not restore the exact previous launcher"),
     ("candidate-still-registered", "candidate still registered"),
     ("modified-candidate", "MSI bytes changed"),
+    ("wrong-restored-workspace", "workspace restore verification failed"),
 ])
 def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, monkeypatch, scenario, error):
     launcher = tmp_path / "Program Files" / "Remote Ops Workspace" / "bin" / "row.exe"
     home = tmp_path / "workspace"
     home.mkdir()
+    restored = tmp_path / "restored"
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "user"))
 
     def make_package(role, version):
@@ -240,8 +242,8 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         return 0
 
     def uninstall(product_code):
-        assert product_code == "candidate" and registered == {"candidate"}
-        operations.append("uninstall")
+        assert registered == {product_code}
+        operations.append(f"uninstall-{product_code}")
         registered.clear()
         launcher.unlink()
 
@@ -249,13 +251,30 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         assert not registered
 
     def cli(command, *, cwd, env, text, timeout):
-        assert command == [str(launcher), "--version"] and cwd == home and env["ROW_HOME"] == str(home)
+        assert command == [str(launcher), "--version"] and cwd in (home, restored) and env["ROW_HOME"] == str(cwd)
         role = "previous" if "previous" in registered else "candidate"
         return f"remote-ops-workspace {packages[role]['version']}\n"
 
     monkeypatch.setattr(upgrade.subprocess, "check_output", cli)
     monkeypatch.setattr(upgrade, "inspect_registration", registration)
     native = SimpleNamespace(require_no_related_products=no_products, install=install, uninstall=uninstall)
+    workspace_operations = []
+
+    def workspace_action(phase):
+        def run(path, sha):
+            assert path == launcher and sha == upgrade.fingerprint(launcher)
+            workspace_operations.append(phase)
+            if phase == "verify-restored":
+                if scenario == "wrong-restored-workspace":
+                    raise ValueError("workspace restore verification failed")
+                return {"restored_matches_pre_upgrade": True}
+            return None
+        return run
+
+    recovery = SimpleNamespace(home=home, restored=restored, seed_and_backup=workspace_action("backup"),
+                               verify_original=workspace_action("verify-original"),
+                               restore_with_candidate=workspace_action("restore-with-candidate"),
+                               verify_restored=workspace_action("verify-restored"))
     report = {}
     phases = []
 
@@ -263,11 +282,19 @@ def test_qualification_requires_actual_removal_and_exact_restoration(tmp_path, m
         phases.append(report["phase"])
     if error:
         with pytest.raises(ValueError, match=error):
-            upgrade.exercise(native, previous, candidate, launcher, home, report, save)
-        assert "candidate" not in operations and "uninstall" not in operations
+            upgrade.exercise(native, previous, candidate, launcher, recovery, report, save)
+        if scenario == "wrong-restored-workspace":
+            assert operations == ["previous", "cancel", "candidate", "uninstall-candidate", "previous"]
+            assert report["phase"] == "verify-restored-workspace"
+        else:
+            assert "candidate" not in operations
+        assert "status" not in report
     else:
-        upgrade.exercise(native, previous, candidate, launcher, home, report, save)
+        upgrade.exercise(native, previous, candidate, launcher, recovery, report, save)
         assert report["status"] == "passed" and report["phase"] == "complete"
         assert report["previous_restored"] == report["previous_installed"]
-        assert operations == ["previous", "cancel", "candidate", "uninstall"]
+        assert report["previous_reinstalled"] == report["previous_installed"]
+        assert report["workspace_recovery"] == {"restored_matches_pre_upgrade": True}
+        assert workspace_operations == ["backup", "verify-original", "restore-with-candidate", "verify-restored"]
+        assert operations == ["previous", "cancel", "candidate", "uninstall-candidate", "previous", "uninstall-previous"]
         assert phases[-1] == "complete"

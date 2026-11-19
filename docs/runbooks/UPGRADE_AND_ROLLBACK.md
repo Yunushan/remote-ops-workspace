@@ -242,10 +242,20 @@ predecessor, cancels the upgrade through Windows Installer after the
 predecessor's launcher disappears, and compares the
 restored product registration, launcher SHA-256, and CLI version with the
 baseline. It then retries with the same signed MSI bytes and checks that the
-candidate replaces the prior product and uninstalls cleanly. Keep the
+candidate replaces the prior product and uninstalls cleanly. The workflow
+checkout takes the encrypted pre-upgrade backup, which also covers older
+predecessors that can read and write the fixture but lack the backup command.
+The drill verifies that cancellation preserves the original workspace and
+adds a candidate-only profile and vault entry after a successful retry. The
+candidate CLI restores the backup into a fresh sibling. The drill reinstalls the
+same predecessor, and checks that the predecessor can read the old profile
+and decrypt the restored vault. It compares the full restored file inventory
+with the baseline and checks that the upgraded workspace and encrypted archive
+survive the restore. Keep the
 `signed-windows-msi-upgrade-<run>-<attempt>` receipt with the qualification
-evidence. This exercise covers the stock x64 install transaction. The managed
-updater's policy, staging, and recovery paths require their own qualification.
+evidence. This exercise covers the stock x64 installer and encrypted workspace
+recovery. The managed updater's automated policy and installation paths
+require their own qualification.
 Sealed-candidate results can inform promotion review. Independent approval
 and final published artifact verification still apply.
 

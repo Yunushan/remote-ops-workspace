@@ -51,6 +51,17 @@ jobs:
         with:
           architecture: x64
           python-version: "3.14.7"
+      - name: Install hash-locked workspace recovery dependencies
+        shell: pwsh
+        timeout-minutes: 3
+        run: |
+          $lock = Get-Content -LiteralPath requirements-locks/windows-x64.txt -Raw
+          $blocks = [regex]::Matches($lock, '(?m)^(?:cryptography|cffi|pycparser)==[^\r\n]+(?:\r?\n[ ]+--hash=sha256:[^\r\n]+)+')
+          if ($blocks.Count -ne 3) { throw 'Expected three hash-locked workspace recovery dependencies' }
+          $requirements = Join-Path $env:RUNNER_TEMP 'row-msi-recovery-requirements.txt'
+          $blocks.Value | Set-Content -LiteralPath $requirements -Encoding ascii
+          python -I -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple --requirement $requirements
+          exit $LASTEXITCODE
       - name: Cancel and retry the signed MSI upgrade
         shell: pwsh
         env:

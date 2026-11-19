@@ -38,6 +38,7 @@ from inspect_windows_msi import (  # noqa: E402
 )
 from release_candidate_inventory import GitHubClient  # noqa: E402
 from windows_msi_candidate_source import InventoryPointer, materialize_msi  # noqa: E402
+from windows_msi_workspace_recovery import WorkspaceRecovery  # noqa: E402
 
 from remote_ops_workspace.windows_private_storage import _Native  # noqa: E402
 
@@ -205,9 +206,10 @@ def launcher_snapshot(native: Installer, package: dict, expected: Path, home: Pa
 
 
 def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: tuple[Path, dict],
-             launcher: Path, home: Path, report: dict, save) -> None:
+             launcher: Path, recovery: WorkspaceRecovery, report: dict, save) -> None:
     old_path, old = previous
     new_path, new = candidate
+    home = recovery.home
     require(old["product_code"] != new["product_code"] and old["package_code"] != new["package_code"],
             "major upgrade requires distinct ProductCode and PackageCode values")
     validate_upgrade_rollback(new["upgrade_sequence"], new["disable_rollback"])
@@ -226,7 +228,10 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     confirm(install(old_path, old), "install previous signed MSI")
     before = launcher_snapshot(native, old, launcher, home)
     inspect_registration(native, new, "absent")
-    report.update(phase="cancel-upgrade", previous_installed=before)
+    report.update(phase="backup-previous-workspace", previous_installed=before)
+    save()
+    recovery.seed_and_backup(launcher, before["launcher_sha256"])
+    report["phase"] = "cancel-upgrade"
     save()
 
     cancellation = Cancellation(launcher)
@@ -240,18 +245,37 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     restored = launcher_snapshot(native, old, launcher, home)
     inspect_registration(native, new, "absent")
     require(restored == before, "cancelled upgrade did not restore the exact previous launcher and registration")
-    report.update(phase="retry-upgrade", previous_restored=restored, candidate_absent_after_cancel=True)
+    recovery.verify_original(launcher, before["launcher_sha256"])
+    report.update(phase="retry-upgrade", previous_restored=restored, candidate_absent_after_cancel=True,
+                  original_workspace_preserved_after_cancel=True)
     save()
 
     confirm(install(new_path, new), "retry signed MSI upgrade")
     upgraded = launcher_snapshot(native, new, launcher, home)
     inspect_registration(native, old, "absent")
     require(upgraded["launcher_sha256"] != before["launcher_sha256"], "successful upgrade retained the previous launcher bytes")
-    report.update(phase="uninstall-candidate", candidate_installed=upgraded, previous_absent_after_retry=True)
+    report.update(phase="restore-pre-upgrade-workspace", candidate_installed=upgraded, previous_absent_after_retry=True)
+    save()
+    recovery.restore_with_candidate(launcher, upgraded["launcher_sha256"])
+    report["phase"] = "uninstall-candidate"
     save()
     native.uninstall(new["product_code"])
     native.require_no_related_products()
     require(not os.path.lexists(launcher), "candidate launcher remains after uninstall")
+    report["phase"] = "reinstall-predecessor"
+    save()
+    confirm(install(old_path, old), "reinstall exact previous signed MSI")
+    rolled_back = launcher_snapshot(native, old, launcher, recovery.restored)
+    inspect_registration(native, new, "absent")
+    require(rolled_back == before, "reinstalled predecessor differs from the original signed launcher and registration")
+    report.update(phase="verify-restored-workspace", previous_reinstalled=rolled_back)
+    save()
+    report.update(phase="uninstall-predecessor",
+                  workspace_recovery=recovery.verify_restored(launcher, before["launcher_sha256"]))
+    save()
+    native.uninstall(old["product_code"])
+    native.require_no_related_products()
+    require(not os.path.lexists(launcher), "previous launcher remains after final uninstall")
     report.update(phase="complete", status="passed", stock_products_absent_after_uninstall=True)
     save()
 
@@ -270,7 +294,7 @@ def main() -> int:
         output = ROOT / RECEIPT
         output.parent.mkdir(parents=True, exist_ok=True)
         require(not os.path.lexists(output), "Windows MSI drill refuses to overwrite an existing receipt")
-        report = {"schema": "row.signed-windows-msi-upgrade.v1", "status": "failed", "phase": "verify-release-assets",
+        report = {"schema": "row.signed-windows-msi-upgrade.v2", "status": "failed", "phase": "verify-release-assets",
                   "source_commit": source, "run_id": os.environ["GITHUB_RUN_ID"],
                   "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"], "target": "windows-x64"}
 
@@ -293,9 +317,8 @@ def main() -> int:
                 for name in ("GH_TOKEN", "GITHUB_TOKEN"):
                     os.environ.pop(name, None)
                 report.update(previous=previous[1], candidate=candidate[1], input_read_only_sharing_held=True)
-                home = staging / "workspace"
-                home.mkdir()
-                exercise(native, previous, candidate, launcher, home, report, save)
+                recovery = WorkspaceRecovery(staging / "workspace-recovery")
+                exercise(native, previous, candidate, launcher, recovery, report, save)
     except (KeyError, OSError, RuntimeError, subprocess.SubprocessError, ValueError, zipfile.BadZipFile) as exc:
         print(f"Windows MSI upgrade qualification: {exc}", file=sys.stderr)
         return 1

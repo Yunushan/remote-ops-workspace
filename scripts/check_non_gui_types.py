@@ -52,7 +52,8 @@ def main() -> int:
     package_python = os.environ.get("ROW_MYPY_PYTHON")
     package_args: list[str] = []
     if package_python:
-        executable = str(Path(package_python).expanduser().resolve())
+        # Python finds pyvenv.cfg relative to the virtualenv entry point.
+        executable = str(Path(package_python).expanduser().absolute())
         package_args = ["--python-executable", executable]
         print(f"non-GUI production type gate dependency interpreter: {executable}", flush=True)
     results: list[str] = []

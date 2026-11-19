@@ -461,7 +461,7 @@ function Test-RowVault([string]$Path, [string]$Label, [bool]$ExpectedBackend) {
 
 function Add-MsiLifecycleProbe([string]$Probe, [string]$State) {
   $Inspector = Join-Path $PSScriptRoot "inspect_windows_msi.py"
-  $Output = & python -I $Inspector --package $Msi --architecture $Arch --version $Version --state $State
+  $Output = & python -I $Inspector --package $Msi --architecture $Arch --version $Version --state $State --require-transactional-upgrade
   if ($LASTEXITCODE -ne 0) { throw "Windows Installer registration check failed at $Probe" }
   $Snapshot = $Output | ConvertFrom-Json
   $Registration = $Snapshot.registration

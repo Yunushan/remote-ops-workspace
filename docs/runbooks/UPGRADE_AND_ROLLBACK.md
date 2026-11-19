@@ -204,6 +204,12 @@ the [release promotion runbook](RELEASE_PROMOTION.md).
 
 ## Windows MSI release evidence
 
+The stock and branded MSIs remove the previous product after Windows Installer
+initializes the installation transaction. With rollback enabled, Windows
+Installer can restore the removed product if an upgrade fails. The build reads
+the compiled MSI and rejects a removal scheduled outside the transaction. See
+the [WiX upgrade schedule](https://docs.firegiant.com/wix3/xsd/wix/majorupgrade/).
+
 The native Windows smoke reads the stock MSI's package identity, architecture,
 and launcher component before installation. During installation and reinstall
 it checks that Windows Installer registered the exact ProductCode, PackageCode,

@@ -18,6 +18,9 @@ STOCK_UPGRADE = "{8F8A21B4-6E48-4B1A-9F5D-B9373E1807D0}"
 STOCK_CLI_COMPONENT = "{7689D62F-2557-4DD3-8C58-38C5E245E44C}"
 TEMPLATES = {"Intel": "x86", "x64": "x64", "Arm64": "arm64"}
 PROBES = ("before-install", "after-install", "after-reinstall", "after-uninstall")
+ROLLBACK_ACTIONS = ("InstallValidate", "InstallInitialize", "RemoveExistingProducts", "ProcessComponents",
+                    "InstallFiles", "InstallFinalize")
+ROLLBACK_BREAKERS = {"DisableRollback", "ForceReboot", "ScheduleReboot"}
 READONLY = None
 MACHINE = 4
 LOCAL = 3
@@ -103,9 +106,14 @@ class Installer:
                 "MsiSummaryInfoGetProperty")
         return buffer.value
 
+    def upgrade_sequence(self, database) -> dict[str, int]:
+        rows = self.rows(database, "SELECT `Action`, `Sequence` FROM `InstallExecuteSequence`", 2)
+        return {action: int(sequence) for action, sequence in rows}
+
     def inspect(self, path: Path) -> dict:
         with self.handle(self.dll.MsiOpenDatabaseW, str(path), READONLY) as database:
             properties = dict(self.rows(database, "SELECT `Property`, `Value` FROM `Property`", 2))
+            upgrade_sequence = self.upgrade_sequence(database)
             media = self.rows(database, "SELECT `Cabinet` FROM `Media`", 1)
             files = self.rows(database, "SELECT `Component_`, `FileName` FROM `File` WHERE `File` = 'RowExe'", 2)
             components = self.rows(
@@ -132,6 +140,8 @@ class Installer:
             "manufacturer": properties["Manufacturer"],
             "all_users": properties.get("ALLUSERS"),
             "per_user": properties.get("MSIINSTALLPERUSER", ""),
+            "upgrade_sequence": upgrade_sequence,
+            "disable_rollback": properties.get("DISABLEROLLBACK", ""),
         }
 
     def product(self, product_code: str, field: str) -> str | None:
@@ -165,6 +175,21 @@ def validate_package(package: dict, architecture: str, version: str | None = Non
                 f"MSI {field} must be a canonical GUID")
 
 
+def validate_upgrade_rollback(sequence, disable_rollback: str) -> None:
+    require(isinstance(sequence, dict) and all(type(value) is int for value in sequence.values())
+            and all(sequence.get(name, 0) > 0 for name in ROLLBACK_ACTIONS),
+            "MSI upgrade rollback sequence is incomplete")
+    positions = [sequence[name] for name in ROLLBACK_ACTIONS]
+    require(positions == sorted(set(positions)),
+            "MSI must remove the previous product inside the installation transaction")
+    initialize, remove_previous = positions[1:3]
+    require(not any(initialize < position <= remove_previous for name, position in sequence.items()
+                    if name != "RemoveExistingProducts"),
+            "MSI must remove the previous product immediately after InstallInitialize")
+    require(disable_rollback == "" and not ROLLBACK_BREAKERS.intersection(sequence),
+            "MSI upgrade must preserve rollback and suppress in-package reboot actions")
+
+
 def inspect_registration(native, package: dict, state: str) -> dict:
     product_code = package["product_code"]
     registered = native.product(product_code, "State")
@@ -189,6 +214,8 @@ def validate_lifecycle(probes, target: str, assets: list[dict] | None = None) ->
     package = probes[0].get("package")
     require(isinstance(package, dict), "candidate MSI package identity is missing")
     validate_package(package, target.removeprefix("windows-"))
+    if assets is not None or "upgrade_sequence" in package:
+        validate_upgrade_rollback(package.get("upgrade_sequence"), package.get("disable_rollback"))
     digest = package.get("sha256")
     require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
             "candidate MSI package digest is invalid")
@@ -221,21 +248,36 @@ def fingerprint(path: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", type=Path, required=True)
-    parser.add_argument("--architecture", choices=tuple(TEMPLATES.values()), required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--architecture", choices=tuple(TEMPLATES.values()))
+    mode.add_argument("--sequence-only", action="store_true", help="verify rollback scheduling for a stock or branded package")
     parser.add_argument("--version")
     parser.add_argument("--state", choices=("absent", "installed"))
+    parser.add_argument("--require-transactional-upgrade", action="store_true")
     args = parser.parse_args()
     try:
         require(sys.platform == "win32", "native MSI inspection requires Windows")
         original = fingerprint(args.package)
         native = Installer()
-        package = native.inspect(args.package.absolute())
-        validate_package(package, args.architecture, args.version)
-        registration = inspect_registration(native, package, args.state) if args.state else None
+        if args.sequence_only:
+            require(not (args.version or args.state or args.require_transactional_upgrade),
+                    "sequence-only inspection does not accept stock package or registration options")
+            with native.handle(native.dll.MsiOpenDatabaseW, str(args.package.absolute()), READONLY) as database:
+                sequence = native.upgrade_sequence(database)
+                properties = dict(native.rows(database, "SELECT `Property`, `Value` FROM `Property`", 2))
+            validate_upgrade_rollback(sequence, properties.get("DISABLEROLLBACK", ""))
+            result = {"upgrade_sequence": sequence, "sha256": original}
+        else:
+            package = native.inspect(args.package.absolute())
+            validate_package(package, args.architecture, args.version)
+            if args.require_transactional_upgrade:
+                validate_upgrade_rollback(package["upgrade_sequence"], package["disable_rollback"])
+            registration = inspect_registration(native, package, args.state) if args.state else None
+            result = {"package": {**package, "sha256": original}, "registration": registration}
         require(fingerprint(args.package) == original, "MSI bytes changed during native inspection")
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f"MSI inspection refused: {error}\n")
-    print(json.dumps({"package": {**package, "sha256": original}, "registration": registration}, sort_keys=True))
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 

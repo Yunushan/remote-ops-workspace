@@ -6,6 +6,11 @@ import pytest
 
 from scripts import inspect_windows_msi as msi
 
+UPGRADE_SEQUENCE = {
+    "InstallValidate": 1400, "InstallInitialize": 1500, "RemoveExistingProducts": 1501,
+    "ProcessComponents": 1600, "InstallFiles": 4000, "InstallFinalize": 6600,
+}
+
 
 @pytest.fixture
 def package():
@@ -14,6 +19,7 @@ def package():
         "upgrade_code": msi.STOCK_UPGRADE, "row_component_code": msi.STOCK_CLI_COMPONENT,
         "product_code": "{11111111-2222-3333-4444-555555555555}", "package_code": "{11111111-2222-3333-4444-666666666666}",
         "architecture": "x64", "version": "1.0.28", "all_users": "1", "per_user": "", "sha256": "a" * 64,
+        "upgrade_sequence": dict(UPGRADE_SEQUENCE), "disable_rollback": "",
     }
 
 
@@ -72,11 +78,47 @@ def test_advertised_product_is_not_an_absent_registration(package):
 
 
 @pytest.mark.parametrize(("change", "message"), [
+    (None, ""),
+    ("early-removal", "inside the installation transaction"),
+    ("late-removal", "inside the installation transaction"),
+    ("interleaved", "immediately after InstallInitialize"),
+    ("missing-action", "sequence is incomplete"),
+    ("disable-action", "must preserve rollback"),
+    ("reboot-action", "must preserve rollback"),
+    ("disable-property", "must preserve rollback"),
+])
+def test_upgrade_schedule_keeps_old_product_removal_in_the_rollback_transaction(change, message):
+    sequence = dict(UPGRADE_SEQUENCE)
+    disabled = ""
+    if change == "early-removal":
+        sequence["RemoveExistingProducts"] = 1401
+    if change == "late-removal":
+        sequence["RemoveExistingProducts"] = 6601
+    if change == "interleaved":
+        sequence.update(RemoveExistingProducts=1502, ExtraAction=1501)
+    if change == "missing-action":
+        del sequence["InstallInitialize"]
+    if change == "disable-action":
+        sequence["DisableRollback"] = 3500
+    if change == "reboot-action":
+        sequence["ScheduleReboot"] = 6400
+    if change == "disable-property":
+        disabled = "1"
+
+    if change:
+        with pytest.raises(ValueError, match=message):
+            msi.validate_upgrade_rollback(sequence, disabled)
+    else:
+        msi.validate_upgrade_rollback(sequence, disabled)
+
+
+@pytest.mark.parametrize(("change", "message"), [
     ("", ""), ("missing", "observations are incomplete"),
     ("asset", "built MSI asset"), ("architecture", "architecture differs"),
     ("different-family", "stock Remote Ops Workspace package family"),
     ("registration", "registration differs at after-uninstall"),
     ("different-build", "registration differs at after-reinstall"),
+    ("old-schedule", "inside the installation transaction"),
 ])
 def test_candidate_lifecycle_binds_the_exact_asset_and_all_registration_states(package, change, message):
     installed = {"state": "installed", "package_code": package["package_code"], "version": package["version"],
@@ -98,6 +140,8 @@ def test_candidate_lifecycle_binds_the_exact_asset_and_all_registration_states(p
         probes[-1]["registration"] = installed
     if change == "different-build":
         probes[2]["package"]["sha256"] = "b" * 64
+    if change == "old-schedule":
+        probes[0]["package"]["upgrade_sequence"] = {**UPGRADE_SEQUENCE, "RemoveExistingProducts": 1401}
     if change:
         with pytest.raises(ValueError, match=message):
             msi.validate_lifecycle(probes, "windows-x64", assets)

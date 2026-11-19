@@ -268,7 +268,7 @@ function Build-WixMsi([string]$Version, [string]$Stage, [string]$OutDir, [string
   $WixSource = @"
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="$ProductName" Manufacturer="$Publisher" Version="$Version" UpgradeCode="$($Branding.msi_id)" Scope="perMachine">
-    <MajorUpgrade DowngradeErrorMessage="A newer version of $ProductName is already installed." />
+    <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version of $ProductName is already installed." />
     <MediaTemplate EmbedCab="yes" />
     <Icon Id="RemoteOpsWorkspaceIcon" SourceFile="$IconSource" />
     <Property Id="ARPPRODUCTICON" Value="RemoteOpsWorkspaceIcon" />
@@ -340,6 +340,12 @@ $WelcomeReference
   }
   if (!(Test-Path $Msi)) {
     throw "WiX did not create $Msi"
+  }
+  # Inspect the compiled execute sequence before signing or publishing either
+  # the stock or branded package.
+  & $Python -I (Join-Path $PSScriptRoot "inspect_windows_msi.py") --package $Msi --sequence-only | Out-Host
+  if ($LASTEXITCODE -ne 0) {
+    throw "MSI build does not preserve the previous product on upgrade failure"
   }
   $WixPdb = [System.IO.Path]::ChangeExtension($Msi, ".wixpdb")
   if (Test-Path $WixPdb) {

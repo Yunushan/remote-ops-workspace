@@ -86,13 +86,28 @@ Actions archives, captured evidence, GitHub reviews, and hosted Professional
 update bytes. It reports whether the eight candidate reviews match the staged
 release. The accepted registry is written during finalization after publication.
 
-After review and immutable release publication, download the referenced
-release assets and rerun the finalizer with the same inputs, the review URL,
-login and UTC timestamp, and one `--published-release-asset name=path` for each
-download. Save the accepted JSON outside the article directory. Finalization
-re-hashes the published assets and binds the matching bytes to the accepted
-schema-v2 record. Use `--append-registry` together with `--out` when adding a
-reviewed record to the registry.
+### Finalize the registry after immutable publication
+
+Download the complete immutable release inventory and reuse the candidate
+files, review index, evidence root, and approved Professional update origins
+from the preflight. Choose a new path for the registry outside the two input
+directories.
+
+```bash
+python scripts/finalize_mobaxterm_parity_release.py \
+  --repository "$release_repository" --tag "$release_tag" --sha "$release_sha" \
+  --assets-dir "$release_assets_dir" --evidence-root "$parity_evidence_root" \
+  --out "$parity_registry_for_review"
+```
+
+The command verifies the published hashes and attestations from one completed
+promotion attempt, then rechecks the original archives, live GitHub reviews,
+and Professional update delivery. It writes one complete schema-v2 registry
+after all eight records pass.
+
+For an individual record, use the finalizer with the review URL, login,
+UTC timestamp, and one `--published-release-asset name=path` argument per
+download. Keep its output outside the article directory.
 
 For production certification, merge the reviewed registry into protected
 `main` after the published release is available and retain the full commit

@@ -36,8 +36,9 @@ promotion target.
    python scripts/check_platform_verified_evidence.py --registry "<signed-registry.json>" --require-goal-targets --require-review-bundles --release-tag "<tag>"
    ```
 
-4. After publication, finalize the MobaXterm records using the downloaded
-   release assets and merge the reviewed registry into protected `main`.
+4. After publication, [finalize the MobaXterm registry](../MOBAXTERM_PARITY.md#finalize-the-registry-after-immutable-publication)
+   using the complete downloaded release inventory. Merge the reviewed
+   registry into protected `main`.
    Run the [aggregate gate with the required release inputs](../PRODUCTION_READINESS.md#final-promotion-sequence)
    from the tagged checkout and require `production readiness: 100/100 gates passed`.
 

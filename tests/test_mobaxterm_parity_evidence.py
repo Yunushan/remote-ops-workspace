@@ -21,6 +21,7 @@ from scripts import capture_debian_server_clients as client_capture
 from scripts import check_candidate_mobaxterm_parity as candidate_parity
 from scripts import check_moba_server_release_evidence as server_evidence
 from scripts import check_release_mobaxterm_parity as release_parity
+from scripts import finalize_mobaxterm_parity_release as batch_finalize
 from scripts.check_mobaxterm_parity_evidence import (
     PROFESSIONAL_POLICY_SURFACES,
     SOURCE_BOUND_ARTICLES,
@@ -1012,6 +1013,18 @@ def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_r
     })]
 
 
+@pytest.fixture
+def reviewed_parity_inputs(reviewed_release):
+    root = reviewed_release.args["evidence_root"]
+    (root / "candidates").mkdir()
+    index_path = root / "candidate-reviews.json"
+    index = {row["article_id"]: row["acceptance_review"] for row in reviewed_release.records}
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    for name, archive in reviewed_release.hosted_archives.items():
+        (root / "candidates" / f"{name}.json").write_text(json.dumps(archive.candidate), encoding="utf-8")
+    return reviewed_release
+
+
 @pytest.mark.parametrize(("fault", "detail"), [
     ("none", ""),
     ("missing-review", "must index all eight"),
@@ -1026,25 +1039,27 @@ def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_r
     ("colliding-inventory-filenames", "duplicate or case-colliding asset"),
 ])
 def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
-    reviewed_release, monkeypatch, capsys, fault, detail,
+    reviewed_parity_inputs, monkeypatch, capsys, fault, detail,
 ):
+    reviewed_release = reviewed_parity_inputs
     args = reviewed_release.args
     root = args["evidence_root"]
-    (root / "candidates").mkdir()
     article = "ssh-browser-26-4-smartcard"
-    index = {row["article_id"]: row["acceptance_review"].copy() for row in reviewed_release.records}
+    index_path = root / "candidate-reviews.json"
+    index = json.loads(index_path.read_bytes())
     if fault == "missing-review":
         index.pop(article)
     if fault == "foreign-review":
         index[article]["review_url"] = index[article]["review_url"].replace("example/", "foreign/")
-    (root / "candidate-reviews.json").write_text(json.dumps(index), encoding="utf-8")
-    for name, archive in reviewed_release.hosted_archives.items():
-        candidate = json.loads(json.dumps(archive.candidate))
-        if name == article and fault == "wrong-source":
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    if fault in ("wrong-source", "already-accepted"):
+        path = root / "candidates" / f"{article}.json"
+        candidate = json.loads(path.read_bytes())
+        if fault == "wrong-source":
             candidate["validation_summary"]["summary"]["source_head_sha"] = "a" * 40
-        if name == article and fault == "already-accepted":
+        else:
             candidate["release_asset_bytes"] = {"verified": True}
-        (root / "candidates" / f"{name}.json").write_text(json.dumps(candidate), encoding="utf-8")
+        path.write_text(json.dumps(candidate), encoding="utf-8")
     files = [
         {"path": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
         for path in args["assets_dir"].iterdir()
@@ -1091,6 +1106,93 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         assert status == 0 and "8/8 reviewed candidates verified" in output.out and not output.err
         assert len(seen) == 1 and set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
         assert len(reviewed_release.delivery_calls) == 1 and reviewed_release.delivery_calls[0][1]["published"] is True
+
+
+@pytest.mark.parametrize(("fault", "detail"), [
+    ("none", ""),
+    ("provenance-failure", "immutable release provenance did not pass"),
+    ("stale-review", "does not explicitly accept this exact article evidence"),
+    ("changed-after-provenance", "SHA-256 differs from the downloaded release asset"),
+    ("conflicting-review-hashes", "reviewed candidates disagree on the published SHA-256"),
+    ("delivery-failure", "fixture delivery rejected"),
+    ("output-inside-input", "--out must be a new file outside"),
+    ("existing-output", "--out must be a new file outside"),
+    ("concurrent-output", "already exists"),
+])
+def test_batch_finalization_writes_all_reviewed_records_only_after_live_checks(
+    reviewed_parity_inputs, tmp_path, monkeypatch, capsys, fault, detail,
+):
+    reviewed = reviewed_parity_inputs
+    args = reviewed.args
+    root = args["evidence_root"]
+    output = tmp_path / "acceptance" / "registry.json"
+    if fault == "existing-output":
+        output.parent.mkdir()
+        output.write_bytes(b"other registry")
+    if fault == "output-inside-input":
+        output = args["assets_dir"] / "registry.json"
+    if fault == "stale-review":
+        reviewed.responses[reviewed.review]["body"] = "Reviewed different bytes."
+    if fault == "conflicting-review-hashes":
+        file = root / "candidates" / "ssh-browser-26-4-smartcard.json"
+        candidate = json.loads(file.read_bytes())
+        name = reviewed.wheel.name
+        candidate["artifact_sha256"][name] = "9" * 64
+        candidate["validation_summary"]["summary"]["tested_release_asset"]["sha256"] = "9" * 64
+        file.write_text(json.dumps(candidate), encoding="utf-8")
+    if fault == "delivery-failure":
+        def reject_delivery(*_args, **_kwargs):
+            raise ValueError("fixture delivery rejected")
+        monkeypatch.setattr(release_parity, "verify_hosted_professional_update", reject_delivery)
+    if fault == "concurrent-output":
+        publisher, operation = (Path, "rename") if batch_finalize.os.name == "nt" else (batch_finalize.os, "link")
+        publish = getattr(publisher, operation)
+
+        def race(staged, target):
+            assert target == output
+            output.write_bytes(b"other registry")
+            try:
+                publish(staged, target)
+            except FileExistsError as exc:
+                raise FileExistsError("registry already exists") from exc
+
+        monkeypatch.setattr(publisher, operation, race)
+
+    checks = []
+
+    def check_release(argv, *, reviewed_asset_hashes):
+        assert not output.exists()
+        assert argv == ["--assets-dir", str(args["assets_dir"]), "--repository", args["repository"],
+                        "--tag", args["tag"], "--sha", args["release_sha"]]
+        expected = {name: digest for row in reviewed.records for name, digest in row["artifact_sha256"].items()}
+        assert reviewed_asset_hashes == expected
+        checks.append(reviewed_asset_hashes)
+        if fault == "changed-after-provenance":
+            reviewed.wheel.write_bytes(b"substituted after release provenance")
+        return int(fault == "provenance-failure")
+
+    monkeypatch.setattr(batch_finalize, "verify_release_provenance", check_release)
+    before = {path: path.read_bytes() for path in root.rglob("*.json")}
+    result = batch_finalize.main([
+        "--repository", args["repository"], "--tag", args["tag"], "--sha", args["release_sha"],
+        "--assets-dir", str(args["assets_dir"]), "--evidence-root", str(root), "--out", str(output),
+        "--professional-update-origin", args["professional_update_origins"][0],
+    ])
+    log = capsys.readouterr()
+    assert {path: path.read_bytes() for path in root.rglob("*.json")} == before
+    if detail:
+        assert result == 1 and detail in log.err
+        if fault in ("existing-output", "concurrent-output"):
+            assert output.read_bytes() == b"other registry"
+        else:
+            assert not output.exists()
+    else:
+        assert result == 0 and "8/8 reviewed records written" in log.out and not log.err, log.err
+        assert len(checks) == 1 and len(reviewed.delivery_calls) == 1
+        registry = json.loads(output.read_bytes())
+        checker = _load_checker()
+        assert checker.check_mobaxterm_parity_evidence(registry=registry, require_complete=True) == []
+        assert registry["accepted_evidence"] == sorted(reviewed.records, key=lambda row: row["article_id"])
 
 
 @pytest.mark.parametrize(("failure", "expected"), [

@@ -172,6 +172,8 @@ def test_release_asset_bytes_requires_explicit_remote_immutability(tmp_path: Pat
     ("condition", "expected_error"),
     [
         ("valid", ""),
+        ("reviewed-bytes-valid", ""),
+        ("reviewed-bytes-disagree", "does not match the independently reviewed SHA-256"),
         ("mutable", "must have GitHub immutable releases enabled"),
         ("unpublished", "must not be a draft"),
         ("malformed-page", "paginated lists"),
@@ -292,9 +294,13 @@ def test_single_asset_cli_checks_the_exact_published_release(
 
     monkeypatch.setattr(checker, "run_gh_json", fake_run)
     signature_args = ["--verify-platform-signature"] if native else []
+    reviewed = None
+    if condition.startswith("reviewed-bytes-"):
+        reviewed = {name: "c" * 64 if condition == "reviewed-bytes-disagree"
+                    else hashlib.sha256(asset.read_bytes()).hexdigest()}
     result = checker.main([
         "--asset", str(asset), "--repository", repository, "--tag", tag, "--sha", sha, *signature_args,
-    ])
+    ], reviewed_asset_hashes=reviewed)
     output = capsys.readouterr()
     assert signature_checks == (
         [signature_commands] if condition in {"native-valid", "native-replaced-during", "native-refused"} else []
@@ -303,6 +309,8 @@ def test_single_asset_cli_checks_the_exact_published_release(
         assert result == 1
         assert expected_error in output.err
         assert output.out == ""
+        if condition == "reviewed-bytes-disagree":
+            assert all(call[0] != "attestation" for call in calls)
     else:
         assert result == 0
         assert f"{name} matches immutable v1.2.3" in output.out

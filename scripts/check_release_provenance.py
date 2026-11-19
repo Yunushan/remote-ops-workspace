@@ -88,6 +88,7 @@ def main(
     check_published_at: Callable[[datetime], list[str]] | None = None,
     audited_inputs: dict[Path, str] | None = None,
     audited_policy: tuple[bytes, dict[str, Any]] | None = None,
+    reviewed_asset_hashes: dict[str, str] | None = None,
 ) -> int:
     args = parse_args(argv)
     try:
@@ -253,6 +254,9 @@ def main(
             item["name"]: item["digest"].removeprefix("sha256:")
             for item in release["assets"] if item["name"] in local_assets
         }
+        for name, digest in (reviewed_asset_hashes or {}).items():
+            if release_digests.get(name) != digest:
+                raise ValueError(f"published asset {name} does not match the independently reviewed SHA-256")
         if args.candidate_inventory is not None:
             assert approval is not None and audited_inputs is not None
             deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"

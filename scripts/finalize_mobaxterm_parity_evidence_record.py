@@ -205,9 +205,8 @@ def finalize_candidate(
     if errors:
         return errors, {}
 
-    record = {
+    record = accepted_record({
         **candidate,
-        "status": "accepted",
         "release_source": release_source(
             candidate, repository, source_head_sha, tag_source_head_sha, workflow_run_url, run_attempt,
         ),
@@ -216,15 +215,23 @@ def finalize_candidate(
             "review_url": review_url,
             "reviewed_at": reviewed_at,
         },
+    }, published_hashes)
+    final_errors = check_record(record)
+    return final_errors, record if not final_errors else {}
+
+
+def accepted_record(reviewed: dict[str, Any], published_hashes: dict[str, str]) -> dict[str, Any]:
+    review = reviewed["acceptance_review"]
+    return {
+        **reviewed,
+        "status": "accepted",
         "release_asset_bytes": {
             "verified": True,
-            "verified_by": reviewer,
-            "verified_at": reviewed_at,
+            "verified_by": review["reviewer"],
+            "verified_at": review["reviewed_at"],
             "sha256": published_hashes,
         },
     }
-    final_errors = check_record(record)
-    return final_errors, record if not final_errors else {}
 
 
 def published_asset_paths(items: list[str]) -> tuple[dict[str, Path], list[str]]:

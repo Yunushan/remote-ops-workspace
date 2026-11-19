@@ -306,9 +306,9 @@ is still unused before creating the tag on the qualified source commit.
    the immutable inventory and the two attested proofs. The final aggregate
    also runs the published compliance audit with the complete signed bundle
    and original protected-platform source archives.
-9. Finalize the eight MobaXterm evidence records after publication. Use the
-   published bytes referenced by each record and merge the reviewed registry
-   into protected `main`. Retain the full SHA of that registry commit.
+9. [Finalize the eight MobaXterm evidence records](MOBAXTERM_PARITY.md#finalize-the-registry-after-immutable-publication)
+   against the complete immutable release. Merge the reviewed registry into
+   protected `main` and retain the full SHA of that registry commit.
 10. Run the aggregate certification gate from the tagged checkout with the
     downloaded release assets and the pinned evidence inputs. The final
     audit rechecks the live release notes because GitHub allows edits to

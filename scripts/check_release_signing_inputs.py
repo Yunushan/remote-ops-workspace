@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import os
+import re
+import ssl
 import subprocess
 import sys
 from collections.abc import Mapping
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -19,6 +24,14 @@ SIGNING_INPUTS = {
               "ROW_MACOS_INSTALLER_SIGN_IDENTITY", "ROW_MACOS_NOTARY_KEY_BASE64", "ROW_MACOS_NOTARY_KEY_ID",
               "ROW_MACOS_NOTARY_ISSUER"),
 }
+MACOS_CERTIFICATE_ROLES = {
+    "ROW_MACOS_SIGN_IDENTITY": "1.2.840.113635.100.6.1.13",
+    "ROW_MACOS_INSTALLER_SIGN_IDENTITY": "1.2.840.113635.100.6.1.14",
+}
+CERTIFICATE_PEM = re.compile(
+    rb"^-----BEGIN CERTIFICATE-----\r?\n[A-Za-z0-9+/=\r\n]+^-----END CERTIFICATE-----\r?$",
+    re.MULTILINE,
+)
 
 
 def decode_secret(value: str, name: str) -> bytes:
@@ -50,23 +63,82 @@ def run_openssl(*options: str, contents: bytes, password: str | None = None) -> 
         raise ValueError("system OpenSSL timed out checking a signing input") from None
 
 
-def check_pkcs12(contents: bytes, password: str, name: str) -> None:
+def check_pkcs12(contents: bytes, password: str, name: str, *, key_count: int = 1) -> tuple[str, ...]:
     # Decrypt the key bags as well as the outer MAC. Discard decoded
     # credentials inside OpenSSL so only bag metadata reaches this process.
     options = ("pkcs12", "-info", "-noenc", "-out", os.devnull, "-passin", "env:ROW_OPENSSL_IMPORT_PASSWORD")
+    legacy = ()
     result = run_openssl(*options, contents=contents, password=password)
     if result.returncode != 0:
         # Native certificate exports may use older PKCS#12 encryption.
-        result = run_openssl(*options, "-legacy", contents=contents, password=password)
+        legacy = ("-legacy",)
+        result = run_openssl(*options, *legacy, contents=contents, password=password)
     if result.returncode != 0:
         raise ValueError(f"{name} could not be opened with the configured password")
     bags = result.stderr.splitlines()
     if not any(line.startswith(b"MAC: ") for line in bags):
         raise ValueError(f"{name} does not have a verifiable password MAC")
-    if b"Certificate bag" not in bags or not any(
+    keys = sum(
         line == b"Key bag" or line.startswith(b"Shrouded Keybag: ") for line in bags
-    ):
+    )
+    if b"Certificate bag" not in bags or keys < 1:
         raise ValueError(f"{name} must include a certificate and a private key")
+    if keys < key_count:
+        raise ValueError(f"{name} must include private keys for both Developer ID roles")
+    return legacy
+
+
+def developer_id_certificate(pem: bytes) -> tuple[str, str, set[str], datetime, datetime]:
+    subject_options = "sep_multiline,sname,utf8,esc_ctrl"
+    result = run_openssl(
+        "x509", "-inform", "PEM", "-noout", "-subject", "-nameopt", subject_options, "-dates", "-text",
+        contents=pem,
+    )
+    if result.returncode != 0:
+        raise ValueError("could not read a macOS signing certificate")
+    try:
+        subject, details = result.stdout.decode("utf-8").replace("\r\n", "\n").split("\nCertificate:\n", 1)
+        common_names = re.findall(r"^    CN=(.+)$", subject, flags=re.MULTILINE)
+        dates = dict(re.findall(r"^(notBefore|notAfter)=(.+)$", subject, flags=re.MULTILINE))
+        if len(common_names) != 1:
+            raise ValueError
+        first = parsedate_to_datetime(dates["notBefore"])
+        last = parsedate_to_datetime(dates["notAfter"])
+        if first.tzinfo is None or last.tzinfo is None:
+            raise ValueError
+        roles = set(re.findall(r"^ {12}(1\.2\.840\.113635\.100\.6\.1\.(?:13|14)):", details, flags=re.MULTILINE))
+        fingerprint = hashlib.sha1(ssl.PEM_cert_to_DER_cert(pem.decode("ascii")), usedforsecurity=False).hexdigest()
+    except (KeyError, ValueError):
+        raise ValueError("could not read macOS signing certificate metadata") from None
+    return common_names[0], fingerprint, roles, first, last
+
+
+def check_developer_id_certificates(
+    contents: bytes, password: str, legacy: tuple[str, ...], environment: Mapping[str, str],
+) -> None:
+    # OpenSSL emits only the public certificates associated with keys in the bundle.
+    result = run_openssl(
+        "pkcs12", "-clcerts", "-nokeys", "-passin", "env:ROW_OPENSSL_IMPORT_PASSWORD",
+        *legacy, contents=contents, password=password,
+    )
+    if result.returncode != 0:
+        raise ValueError("could not read public certificates from ROW_MACOS_CERTIFICATE_BASE64")
+    certificates = [developer_id_certificate(pem) for pem in dict.fromkeys(CERTIFICATE_PEM.findall(result.stdout))]
+    now = datetime.now(timezone.utc)
+    for name, role in MACOS_CERTIFICATE_ROLES.items():
+        identity = environment[name].casefold()
+        by_fingerprint = re.fullmatch(r"[0-9a-f]{40}", identity) is not None
+        matches = [
+            (roles, first, last) for subject, fingerprint, roles, first, last in certificates
+            if (identity == fingerprint if by_fingerprint else identity in subject.casefold())
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"{name} must select one certificate in ROW_MACOS_CERTIFICATE_BASE64")
+        roles, first, last = matches[0]
+        if roles != {role}:
+            raise ValueError(f"{name} selects a certificate with the wrong Developer ID role")
+        if not first <= now < last:
+            raise ValueError(f"{name} selects a certificate outside its validity period")
 
 
 def check_timestamp_url(value: str) -> None:
@@ -101,8 +173,9 @@ def check_inputs(target: str, environment: Mapping[str, str]) -> None:
     contents = decode_secret(environment[bundle], bundle)
     if target == "windows":
         check_timestamp_url(environment["ROW_WINDOWS_TIMESTAMP_URL"])
+        check_pkcs12(contents, environment[password], bundle)
     else:
-        for name in ("ROW_MACOS_SIGN_IDENTITY", "ROW_MACOS_INSTALLER_SIGN_IDENTITY"):
+        for name in MACOS_CERTIFICATE_ROLES:
             if "\n" in environment[name] or "\r" in environment[name]:
                 raise ValueError(f"{name} must be on one line")
         key_id = environment["ROW_MACOS_NOTARY_KEY_ID"]
@@ -116,7 +189,8 @@ def check_inputs(target: str, environment: Mapping[str, str]) -> None:
             raise ValueError("ROW_MACOS_NOTARY_ISSUER must be a team issuer UUID") from None
         notary_name = "ROW_MACOS_NOTARY_KEY_BASE64"
         check_notary_key(decode_secret(environment[notary_name], notary_name))
-    check_pkcs12(contents, environment[password], bundle)
+        legacy = check_pkcs12(contents, environment[password], bundle, key_count=len(MACOS_CERTIFICATE_ROLES))
+        check_developer_id_certificates(contents, environment[password], legacy, environment)
 
 
 def main(argv: list[str] | None = None) -> int:

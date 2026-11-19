@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 import subprocess
 import sys
@@ -14,6 +15,18 @@ P12 = b"disposable bundle fixture"
 KEY = b"-----BEGIN PRIVATE KEY-----\nmocked fixture\n-----END PRIVATE KEY-----\n"
 PASSWORD = "disposable-fake-password"
 P12_INFO = b"MAC: sha256, Iteration 2048\nShrouded Keybag: PBES2\nCertificate bag\n"
+APP_PEM = b"-----BEGIN CERTIFICATE-----\nYXBw\n-----END CERTIFICATE-----"
+INSTALLER_PEM = b"-----BEGIN CERTIFICATE-----\ncGtn\n-----END CERTIFICATE-----"
+
+
+def public_certificate(issuer_role: str, *, common_name: str | None = None,
+                       not_before: str = "Jan 1 00:00:00 2000 GMT", not_after: str = "Jan 1 00:00:00 2099 GMT") -> bytes:
+    oid = {"Application": "13", "Installer": "14"}.get(issuer_role, issuer_role)
+    subject = common_name or f"Developer ID {issuer_role}: Disposable fixture"
+    return (
+        f"subject=\n    CN={subject}\nnotBefore={not_before}\nnotAfter={not_after}\n"
+        f"Certificate:\n    Data:\n        X509v3 extensions:\n            1.2.840.113635.100.6.1.{oid}: critical\n"
+    ).encode()
 
 
 def encode(data: bytes) -> str:
@@ -54,14 +67,76 @@ def test_only_the_selected_secret_reaches_the_system_tool(monkeypatch, target) -
             assert target == "macos" and input == KEY.strip()
             assert env == {"LC_ALL": "C"}
             return subprocess.CompletedProcess(command, 0, b"ASN1 OID: prime256v1\n", b"")
+        if command[1] == "x509":
+            assert target == "macos" and env == {"LC_ALL": "C"}
+            assert input in (APP_PEM, INSTALLER_PEM)
+            role = "Application" if input == APP_PEM else "Installer"
+            return subprocess.CompletedProcess(command, 0, public_certificate(role), b"")
         assert command[1] == "pkcs12" and input == P12
-        assert command[command.index("-out") + 1] == os.devnull and "-nomacver" not in command
+        assert "-nomacver" not in command
         assert env == {"LC_ALL": "C", "ROW_OPENSSL_IMPORT_PASSWORD": PASSWORD}
+        if "-nokeys" in command:
+            assert target == "macos" and "-clcerts" in command and "-noenc" not in command
+            return subprocess.CompletedProcess(command, 0, b"\n".join((APP_PEM, INSTALLER_PEM)), b"")
+        assert command[command.index("-out") + 1] == os.devnull
+        if target == "macos":
+            return subprocess.CompletedProcess(command, 0, b"", P12_INFO + b"Key bag\nCertificate bag\n")
         return subprocess.CompletedProcess(command, 0, b"", P12_INFO)
 
     monkeypatch.setattr(signing.subprocess, "run", run)
     assert signing.main([target]) == 0
-    assert observed == (["pkey", "pkcs12"] if target == "macos" else ["pkcs12"])
+    assert observed == (["pkey", "pkcs12", "pkcs12", "x509", "x509"] if target == "macos" else ["pkcs12"])
+
+
+def mock_developer_id_certificates(monkeypatch, certificates):
+    def run(*args, contents, **kwargs):
+        if args[0] == "pkcs12":
+            assert "-clcerts" in args and "-nokeys" in args
+            return subprocess.CompletedProcess(args, 0, b"\n".join(certificates), b"")
+        assert args[0] == "x509"
+        return subprocess.CompletedProcess(args, 0, certificates[contents], b"")
+
+    monkeypatch.setattr(signing, "run_openssl", run)
+
+
+def test_developer_id_selector_accepts_fingerprint_and_unambiguous_partial_name(monkeypatch):
+    values = inputs("macos")
+    values["ROW_MACOS_SIGN_IDENTITY"] = hashlib.sha1(b"app", usedforsecurity=False).hexdigest().upper()
+    values["ROW_MACOS_INSTALLER_SIGN_IDENTITY"] = "Developer ID Installer"
+    mock_developer_id_certificates(monkeypatch, {
+        APP_PEM: public_certificate("Application"),
+        INSTALLER_PEM: public_certificate("Installer"),
+    })
+    signing.check_developer_id_certificates(P12, PASSWORD, ("-legacy",), values)
+
+
+@pytest.mark.parametrize(("selector", "certificates", "error"), [
+    ("Developer ID Installer: Disposable fixture", {APP_PEM: public_certificate("Application")}, "select one"),
+    ("Disposable fixture", {APP_PEM: public_certificate("Application"),
+                            INSTALLER_PEM: public_certificate("Installer")}, "select one"),
+    ("Developer ID Installer", {INSTALLER_PEM: public_certificate(
+        "Application", common_name="Developer ID Installer: Wrong role",
+    )}, "wrong Developer ID role"),
+    ("Developer ID Installer", {INSTALLER_PEM: public_certificate(
+        "Installer", not_after="Jan 1 00:00:00 2001 GMT",
+    )}, "outside its validity period"),
+    ("Developer ID Installer", {INSTALLER_PEM: public_certificate(
+        "Installer", not_before="Jan 1 00:00:00 2098 GMT",
+    )}, "outside its validity period"),
+])
+def test_developer_id_refuses_unusable_installer_selection(monkeypatch, selector, certificates, error):
+    values = {**inputs("macos"), "ROW_MACOS_INSTALLER_SIGN_IDENTITY": selector}
+    mock_developer_id_certificates(monkeypatch, {APP_PEM: public_certificate("Application"), **certificates})
+    with pytest.raises(ValueError, match=f"ROW_MACOS_INSTALLER_SIGN_IDENTITY.*{error}") as failure:
+        signing.check_developer_id_certificates(P12, PASSWORD, (), values)
+    assert selector not in str(failure.value)
+
+
+def test_macos_requires_both_private_key_bags(monkeypatch):
+    monkeypatch.setattr(signing, "check_notary_key", lambda _: None)
+    monkeypatch.setattr(signing, "run_openssl", lambda *a, **k: subprocess.CompletedProcess(a, 0, b"", P12_INFO))
+    with pytest.raises(ValueError, match="private keys for both Developer ID roles"):
+        signing.check_inputs("macos", inputs("macos"))
 
 
 @pytest.mark.parametrize(("target", "name", "value"), [
@@ -135,7 +210,11 @@ def test_real_linux_credential_parser(tmp_path):
             values[f"{prefix}_CERTIFICATE_BASE64"] = encode(raw)
             if target == "macos":
                 values["ROW_MACOS_NOTARY_KEY_BASE64"] = encode(key.read_bytes())
-            signing.check_inputs(target, values)
+            if target == "windows":
+                signing.check_inputs(target, values)
+            else:
+                with pytest.raises(ValueError, match="private keys for both Developer ID roles"):
+                    signing.check_inputs(target, values)
             values[f"{prefix}_CERTIFICATE_PASSWORD"] = "wrong-test-password"
             with pytest.raises(ValueError, match="could not be opened with the configured password"):
                 signing.check_inputs(target, values)

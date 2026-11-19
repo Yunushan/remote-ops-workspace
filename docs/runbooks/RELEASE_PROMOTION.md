@@ -268,12 +268,16 @@ python -I scripts/check_release_signing_inputs.py macos
 ```
 
 The checks open the password-protected certificate bundles and validate the
-Windows timestamp URL and macOS notarization key format. The verifier reads
-credentials from the process environment and checks them offline with the
-system OpenSSL. The protected preflight runs the same checks before starting
-native builds. The native jobs verify the signing and notarization on the
-actual packages.
+Windows timestamp URL and macOS notarization key format. The macOS bundle
+must contain both Developer ID keys. The application and installer selectors
+must each resolve to one currently valid certificate with the corresponding
+Apple role. Use the certificate's unique common name or SHA-1 fingerprint.
+The verifier reads credentials from the process environment and checks them
+offline with system OpenSSL. The protected preflight runs the same checks
+before starting native builds. The native jobs use the imported keys and verify
+platform trust, signing and notarization on the actual packages.
 [OpenSSL PKCS#12](https://docs.openssl.org/3.0/man1/openssl-pkcs12/) ·
+[Apple Developer ID certificate roles](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements) ·
 [App Store Connect team API keys](https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests)
 
 You can check the protected `release` environment while other approvals are

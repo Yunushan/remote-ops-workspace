@@ -247,13 +247,19 @@ def qualify(args, root: Path) -> dict:
         receipt = json.loads(result.stdout)
         if result.returncode != code or receipt.get("phase") != phase:
             raise RuntimeError(f"{name} expected {phase} ({code}), got {result.returncode}: {receipt}")
-        receipts[name] = {"exit_code": result.returncode, **receipt}
+        receipts[name] = {"action": action, "exit_code": result.returncode, **receipt}
         return receipt
+
+    def apply_arguments(policy, stage, previous_policy, previous_stage, transaction):
+        return ("--version", candidate, "--policy", policy, "--stage", stage,
+                "--previous-policy", previous_policy, "--previous-stage", previous_stage,
+                "--transaction", transaction)
 
     signer = Ed25519PrivateKey.generate()
     now = datetime.now(timezone.utc)
     payloads: dict[str, bytes] = {}
     stages = {}
+    packages = {"candidate": args.candidate_sha256, "failing": sha256(broken), "interrupted": sha256(suspended)}
     with https_feed(root, payloads, now) as (origin, certificate):
         env["SSL_CERT_FILE"] = str(certificate)
         for name, path, version in (("previous", args.previous_deb, previous),
@@ -267,24 +273,44 @@ def qualify(args, root: Path) -> dict:
             version_args = () if is_previous else ("--version", version)
             update(name, action, "--policy", policy, "--stage", stage, *version_args, phase="authenticated-staged")
 
+        previous_policy, previous_stage = stages["previous"]
+        automatic_previous = root / "automatic-previous-stage"
+        automatic_previous.mkdir(mode=0o700)
+        for name in ("candidate", "failing"):
+            policy, _ = stages[name]
+            stage = root / f"automatic-{name}-stage"
+            transaction = root / f"automatic-{name}-transaction"
+            stage.mkdir(mode=0o700)
+            transaction.mkdir(mode=0o700)
+            arguments = apply_arguments(policy, stage, previous_policy, automatic_previous, transaction)
+            succeeded = name == "candidate"
+            receipt = update(f"automatic-{name}", "update", *arguments,
+                             phase="applied" if succeeded else "rolled-back", code=0 if succeeded else 1)
+            if receipt["previous_sha256"] != args.previous_sha256 or receipt["candidate_sha256"] != packages[name]:
+                raise RuntimeError("Automatic update used different installer bytes")
+            if succeeded:
+                if checked(launcher, "--version") != f"{PACKAGE} {candidate}" or sha256(launcher) != receipt["candidate_launcher_sha256"]:
+                    raise RuntimeError("Automatic update did not apply the exact candidate")
+                update("automatic-explicit-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
+            if (checked(launcher, "--version") != f"{PACKAGE} {previous}" or sha256(launcher) != previous_launcher
+                    or sha256(sentinel) != original):
+                raise RuntimeError("Automatic update rollback did not preserve the original launcher and workspace")
+
     env.pop("SSL_CERT_FILE")
-    previous_policy, previous_stage = stages["previous"]
     bundled_servers = False
-    packages = {"candidate": args.candidate_sha256, "failing": sha256(broken), "interrupted": sha256(suspended)}
     for name, expected_candidate in packages.items():
         policy, stage = stages[name]
         transaction = root / f"{name}-transaction"
         transaction.mkdir(mode=0o700)
         outcome = "applied" if name == "candidate" else "rolled-back"
         code = 0 if name == "candidate" else 1
-        arguments = ("--version", candidate, "--policy", policy, "--stage", stage,
-                     "--previous-policy", previous_policy, "--previous-stage", previous_stage,
-                     "--transaction", transaction)
+        arguments = apply_arguments(policy, stage, previous_policy, previous_stage, transaction)
         if name == "interrupted":
             interrupt_controller(argv("apply", *arguments), env, entered, resume, transaction, candidate)
             if checked(launcher, "--version") != f"{PACKAGE} {candidate}" or sha256(launcher) == previous_launcher:
                 raise RuntimeError("The interrupted transaction never installed the candidate launcher")
-        receipt = update(f"{name}-apply", "apply", *arguments, phase=outcome, code=code)
+        action = "apply" if name == "failing" else "update"
+        receipt = update(f"{name}-apply", action, *arguments, phase=outcome, code=code)
         if receipt["previous_sha256"] != args.previous_sha256:
             raise RuntimeError("The transaction used a different rollback package")
         if receipt["candidate_sha256"] != expected_candidate:
@@ -324,7 +350,7 @@ def qualify(args, root: Path) -> dict:
         if sha256(sentinel) != original:
             raise RuntimeError("The package transition changed the retained workspace data")
 
-    return {"schema": "row.managed-debian-qualification.v1", "status": "passed", "target": TARGET,
+    return {"schema": "row.managed-debian-qualification.v2", "status": "passed", "target": TARGET,
             "controller_sha256": sha256(MANAGER), "previous_sha256": args.previous_sha256,
             "candidate_sha256": args.candidate_sha256, "download_server_closed_before_apply": True,
             "workspace_unchanged": True, "candidate_has_server_bundle": bundled_servers,

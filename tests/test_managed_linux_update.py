@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -23,6 +24,97 @@ def test_manager_refuses_non_root_or_other_platform_before_package_commands(monk
     monkeypatch.setattr(updater, "native_command", lambda *_a, **_kw: pytest.fail("system tool started"))
     with pytest.raises(updater.UpdateError, match="linux-root-required"):
         updater.run(SimpleNamespace())
+
+
+@pytest.mark.parametrize("previous_stage_state", ["empty", "prepared", "interrupted"])
+def test_update_prepares_the_rollback_installer_before_the_candidate(tmp_path, monkeypatch, previous_stage_state):
+    previous, candidate, transaction, workspace = [tmp_path / name for name in ("previous", "candidate", "tx", "home")]
+    for directory in (previous, candidate, transaction, workspace):
+        directory.mkdir()
+    marker = previous / (updater.STAGE_LOCK if previous_stage_state == "empty" else "manifest.json")
+    marker.write_bytes(b"staging canary")
+    args = SimpleNamespace(stage=candidate, previous_stage=previous, version="1.0.28")
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **_kw: path)
+    monkeypatch.setattr(updater, "upgrade_preflight", lambda *_args: ("1.0.24", "candidate-policy", "previous-policy"))
+    observations = []
+
+    def download(policy, root, *, current_home, expected_version):
+        observations.append(("download", policy, root, current_home, expected_version))
+
+    def recover(policy, root, *, current_home, expected_version):
+        observations.append(("recover", policy, root, current_home, expected_version))
+        if previous_stage_state == "interrupted":
+            raise updater.UpdateError("update-stage-refused")
+
+    monkeypatch.setattr(updater, "stage_update", download)
+    monkeypatch.setattr(updater, "recover_update", recover)
+    if previous_stage_state == "interrupted":
+        with pytest.raises(updater.UpdateError, match="update-stage-refused"):
+            updater.prepare_upgrade(args, workspace, transaction, "amd64")
+        assert observations == [("recover", "previous-policy", previous, workspace, "1.0.24")]
+    else:
+        assert updater.prepare_upgrade(args, workspace, transaction, "amd64") == "1.0.24"
+        assert observations == [
+            ("download" if previous_stage_state == "empty" else "recover", "previous-policy", previous, workspace, "1.0.24"),
+            ("download", "candidate-policy", candidate, workspace, "1.0.28"),
+        ]
+    assert marker.read_bytes() == b"staging canary"
+
+
+@pytest.mark.parametrize("journal_exists", [False, True])
+def test_update_downloads_before_the_dpkg_lease_or_recovers_offline(tmp_path, monkeypatch, journal_exists):
+    transaction = tmp_path / "tx"
+    transaction.mkdir()
+    journal = transaction / updater.JOURNAL
+    if journal_exists:
+        journal.touch()
+    args = SimpleNamespace(action="update", transaction=transaction, workspace=tmp_path / "home")
+    monkeypatch.setattr(updater.sys, "platform", "linux")
+    monkeypatch.setattr(updater.os, "getuid", lambda: 0, raising=False)
+    monkeypatch.setattr(updater.os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(updater, "native_command", lambda *_args: SimpleNamespace(stdout="amd64\n"))
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **_kw: path)
+    global_root = tmp_path / "global"
+    monkeypatch.setattr(updater, "SYSTEM_LOCK_ROOT", global_root)
+    active = []
+
+    @contextmanager
+    def lock(path="dpkg"):
+        active.append(path)
+        try:
+            yield
+        finally:
+            assert active.pop() == path
+
+    monkeypatch.setattr(updater, "exclusive_file_lock", lock)
+    monkeypatch.setattr(updater, "debian_frontend_lock", lock)
+    updater_locks = [global_root / updater.JOURNAL, journal]
+
+    def prepare(inputs, workspace, root, architecture):
+        assert not journal_exists and active == updater_locks
+        assert (inputs, workspace, root, architecture) == (args, args.workspace, transaction, "amd64")
+        return "1.0.24"
+
+    def apply(inputs, path, architecture, *, expected_previous):
+        assert active == [*updater_locks, "dpkg"]
+        assert (inputs, path, architecture) == (args, journal, "amd64")
+        assert expected_previous == (None if journal_exists else "1.0.24")
+        return state("rolled-back" if journal_exists else "applied")
+
+    monkeypatch.setattr(updater, "prepare_upgrade", prepare)
+    monkeypatch.setattr(updater, "apply", apply)
+    assert updater.run(args)["phase"] == ("rolled-back" if journal_exists else "applied")
+    assert active == []
+
+
+def test_update_refuses_a_package_replacement_between_staging_and_installing(tmp_path, monkeypatch):
+    monkeypatch.setattr(updater, "installed_package", lambda _arch: ("installed", "1.0.26"))
+    monkeypatch.setattr(updater, "load_policy", lambda *_args: pytest.fail("policies entered after package changed"))
+    args = SimpleNamespace(version="1.0.28", policy=tmp_path / "policy.json")
+    journal = tmp_path / updater.JOURNAL
+    with pytest.raises(updater.UpdateError, match="installed-package-changed"):
+        updater.apply(args, journal, "amd64", expected_previous="1.0.24")
+    assert not journal.exists()
 
 
 def test_interrupted_apply_requires_recovery_instead_of_retrying_install(tmp_path, monkeypatch):

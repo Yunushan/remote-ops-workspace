@@ -1099,6 +1099,7 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     (False, None), (True, None), (False, "digest"), (False, "interruption"),
     (False, "changed-launcher-reason"), (True, "changed-server-manifest-reason"),
     (True, "changed-server-manifest-missing"),
+    (False, "automatic-missing"), (False, "automatic-manual-action"), (False, "automatic-digest"), (False, "old-schema"),
 ])
 def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, bundled, mismatch):
     previous = tmp_path / "previous.deb"
@@ -1143,8 +1144,25 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
                 "refusal": "unrelated" if mismatch == "changed-server-manifest-reason"
                 else "installed-runtime-payload-refused",
             }
+        for name, action, phase, code, package_digest in (
+            ("automatic-candidate", "update", "applied", 0, "b" * 64),
+            ("automatic-failing", "update", "rolled-back", 1, "f" * 64),
+            ("automatic-explicit-rollback", "rollback", "rolled-back", 0, "b" * 64),
+        ):
+            steps[name] = {"action": action, "phase": phase, "exit_code": code,
+                           "previous_sha256": "a" * 64, "candidate_sha256": package_digest}
+        steps["candidate-apply"].update(action="update", previous_sha256="a" * 64, candidate_sha256="b" * 64)
+        steps["interrupted-apply"].update(action="update", previous_sha256="a" * 64)
+        steps["failing-apply"]["candidate_sha256"] = "f" * 64
+        if mismatch == "automatic-missing":
+            del steps["automatic-failing"]
+        if mismatch == "automatic-manual-action":
+            steps["interrupted-apply"]["action"] = "apply"
+        if mismatch == "automatic-digest":
+            steps["automatic-candidate"]["candidate_sha256"] = "f" * 64
         return json.dumps({
-            "schema": "row.managed-debian-qualification.v1", "status": "passed", "target": module.TARGET,
+            "schema": "row.managed-debian-qualification.v1" if mismatch == "old-schema" else "row.managed-debian-qualification.v2",
+            "status": "passed", "target": module.TARGET,
             "production_acceptance": False, "previous_sha256": "a" * 64,
             "candidate_sha256": "c" * 64 if mismatch == "digest" else "b" * 64,
             "controller_sha256": module.digest(module.ROOT / "scripts/managed_linux_update.py"),

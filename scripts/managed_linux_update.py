@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 from contextlib import contextmanager
+from itertools import combinations
 from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile, TemporaryFile
 
@@ -31,6 +32,7 @@ from remote_ops_workspace.update_channel import (  # noqa: E402
     recover_update,
     stage_update,
 )
+from remote_ops_workspace.update_staging import LOCK as STAGE_LOCK  # noqa: E402
 from remote_ops_workspace.update_staging import MANIFEST, MAX_ARTIFACT_BYTES  # noqa: E402
 
 PACKAGE = "remote-ops-workspace"
@@ -45,7 +47,7 @@ DPKG = "/usr/bin/dpkg"
 DPKG_DEB = "/usr/bin/dpkg-deb"
 DPKG_QUERY = "/usr/bin/dpkg-query"
 DPKG_FRONTEND_LOCK = Path("/var/lib/dpkg/lock-frontend")
-ARCHITECTURES = {"amd64", "arm64", "armhf", "i386"}
+DEBIAN_TARGETS = {"amd64": "linux-x86_64", "arm64": "linux-arm64", "armhf": "linux-armhf", "i386": "linux-i386"}
 COMMAND_ENV = {"LANG": "C", "LC_ALL": "C", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"}
 
 
@@ -333,7 +335,39 @@ def rollback(journal: Path, state: dict, architecture: str) -> dict:
     return journal_write(journal, state, "rolled-back")
 
 
-def apply(args, journal: Path, architecture: str) -> dict:
+def upgrade_preflight(args, architecture: str, *, expected_previous: str | None = None):
+    status, previous = installed_package(architecture)
+    if expected_previous is not None:
+        require((status, previous) == ("installed", expected_previous), "installed-package-changed")
+    require(status == "installed" and _release_version(args.version) > _release_version(previous),
+            "update-version-not-newer")
+    policy = load_policy(args.policy)
+    previous_policy = load_policy(args.previous_policy)
+    keys = ("organization", "channel", "public_key", "selected_target")
+    require(all(policy.settings[key] == previous_policy.settings[key] for key in keys),
+            "rollback-trust-identity-refused")
+    require(policy.settings["selected_target"] == DEBIAN_TARGETS[architecture], "managed-update-target-refused")
+    require(_release_version(previous) >= _release_version(policy.settings["minimum_version"]),
+            "rollback-version-below-policy-minimum")
+    return previous, policy, previous_policy
+
+
+def prepare_upgrade(args, workspace: Path, transaction: Path, architecture: str) -> str:
+    stage = trusted_path(args.stage, directory=True, private=True)
+    previous_stage = trusted_path(args.previous_stage, directory=True, private=True)
+    require(not any(left.is_relative_to(right) or right.is_relative_to(left)
+                    for left, right in combinations((stage, previous_stage, transaction, workspace), 2)),
+            "managed-update-directories-overlap")
+    previous, policy, previous_policy = upgrade_preflight(args, architecture)
+    # Recover occupied stages under the current trust policy. Incomplete or
+    # changed input is retained for inspection rather than downloaded over.
+    for target, root, version in ((previous_policy, previous_stage, previous), (policy, stage, args.version)):
+        operation = recover_update if any(path.name != STAGE_LOCK for path in root.iterdir()) else stage_update
+        operation(target, root, current_home=workspace, expected_version=version)
+    return previous
+
+
+def apply(args, journal: Path, architecture: str, *, expected_previous: str | None = None) -> dict:
     if journal.exists() or journal.is_symlink():
         state = read_journal(journal, architecture)
         require(state["candidate_version"] == args.version, "existing-update-transaction")
@@ -345,16 +379,7 @@ def apply(args, journal: Path, architecture: str) -> dict:
             return state
         return rollback(journal, state, architecture)
 
-    status, previous = installed_package(architecture)
-    require(status == "installed" and _release_version(args.version) > _release_version(previous),
-            "update-version-not-newer")
-    policy = load_policy(args.policy)
-    previous_policy = load_policy(args.previous_policy)
-    keys = ("organization", "channel", "public_key", "selected_target")
-    require(all(policy.settings[key] == previous_policy.settings[key] for key in keys),
-            "rollback-trust-identity-refused")
-    require(_release_version(previous) >= _release_version(policy.settings["minimum_version"]),
-            "rollback-version-below-policy-minimum")
+    previous, policy, previous_policy = upgrade_preflight(args, architecture, expected_previous=expected_previous)
     source, candidate = verified_deb(policy, args.stage, args.workspace, architecture, args.version)
     old_source, prior = verified_deb(previous_policy, args.previous_stage, args.workspace, architecture, previous)
     old = journal.parent / PREVIOUS_PACKAGE
@@ -382,7 +407,7 @@ def apply(args, journal: Path, architecture: str) -> dict:
 def run(args) -> dict:
     require(sys.platform == "linux" and os.getuid() == 0 and os.geteuid() == 0, "linux-root-required")
     architecture = native_command(DPKG, "--print-architecture").stdout.strip()
-    require(architecture in ARCHITECTURES, "unsupported-debian-architecture")
+    require(architecture in DEBIAN_TARGETS, "unsupported-debian-architecture")
     if args.action in {"stage-previous", "stage-candidate"}:
         status, version = installed_package(architecture)
         require(status == "installed", "installed-package-identity-refused")
@@ -398,10 +423,15 @@ def run(args) -> dict:
     SYSTEM_LOCK_ROOT.mkdir(mode=0o700, exist_ok=True)
     system_root = trusted_path(SYSTEM_LOCK_ROOT, directory=True, private=True)
     journal = root / JOURNAL
-    with exclusive_file_lock(system_root / JOURNAL), exclusive_file_lock(journal), debian_frontend_lock():
-        if args.action == "apply":
-            return apply(args, journal, architecture)
-        return rollback(journal, read_journal(journal, architecture), architecture)
+    with exclusive_file_lock(system_root / JOURNAL), exclusive_file_lock(journal):
+        previous = None
+        if args.action == "update" and not (journal.exists() or journal.is_symlink()):
+            # Leave the package manager available during network transfers.
+            previous = prepare_upgrade(args, workspace, root, architecture)
+        with debian_frontend_lock():
+            if args.action in {"apply", "update"}:
+                return apply(args, journal, architecture, expected_previous=previous)
+            return rollback(journal, read_journal(journal, architecture), architecture)
 
 
 def main(argv=None) -> int:
@@ -410,17 +440,19 @@ def main(argv=None) -> int:
     previous = actions.add_parser("stage-previous", help="stage the signed installer for the currently installed version")
     candidate = actions.add_parser("stage-candidate", help="stage the signed installer for the specified newer version")
     upgrade = actions.add_parser("apply", help="apply a signed staged update with a verified rollback package")
+    automatic = actions.add_parser("update", help="authenticate both installers, apply the update and recover failures")
     restore = actions.add_parser("rollback", help="restore the retained previous package without network access")
-    for action in (previous, candidate, upgrade, restore):
+    for action in (previous, candidate, upgrade, automatic, restore):
         action.add_argument("--workspace", required=True, type=Path, help="ROW_HOME excluded from installer staging")
-    for action in (previous, candidate, upgrade):
+    for action in (previous, candidate, upgrade, automatic):
         action.add_argument("--policy", required=True, type=Path)
         action.add_argument("--stage", required=True, type=Path)
-    for action in (upgrade, restore):
+    for action in (upgrade, automatic, restore):
         action.add_argument("--transaction", required=True, type=Path)
-    upgrade.add_argument("--previous-policy", required=True, type=Path)
-    upgrade.add_argument("--previous-stage", required=True, type=Path)
-    for action in (candidate, upgrade):
+    for action in (upgrade, automatic):
+        action.add_argument("--previous-policy", required=True, type=Path)
+        action.add_argument("--previous-stage", required=True, type=Path)
+    for action in (candidate, upgrade, automatic):
         action.add_argument("--version", required=True)
     args = parser.parse_args(argv)
     try:
@@ -433,7 +465,7 @@ def main(argv=None) -> int:
         return 1
     print(json.dumps(result, sort_keys=True))
     expected = {"stage-previous": "authenticated-staged", "stage-candidate": "authenticated-staged",
-                "apply": "applied", "rollback": "rolled-back"}
+                "apply": "applied", "update": "applied", "rollback": "rolled-back"}
     return 0 if result["phase"] == expected[args.action] else 1
 
 

@@ -1079,7 +1079,7 @@ def managed_debian_report(
         "--candidate-deb", candidate_input, "--candidate-sha256", candidate_sha,
     ], timeout=420, limit=65536))
     try:
-        validate_receipt(receipt, previous_sha=previous_sha, candidate_sha=candidate_sha)
+        validate_receipt(receipt, previous_sha=previous_sha, candidate_sha=candidate_sha, require_automatic=True)
     except ValueError as error:
         raise EvidenceError(str(error)) from error
     if receipt.get("controller_sha256") != digest(ROOT / "scripts/managed_linux_update.py"):

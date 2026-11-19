@@ -7,13 +7,16 @@ import re
 REPORT_NAME = "managed-debian-update.json"
 MANAGED_IMAGE = "python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d"
 HASH = re.compile(r"[0-9a-f]{64}")
+SCHEMA = "row.managed-debian-qualification.v2"
+PREVIOUS_SCHEMA = "row.managed-debian-qualification.v1"
 
 
-def validate_receipt(receipt: object, *, previous_sha: str, candidate_sha: str) -> None:
+def validate_receipt(receipt: object, *, previous_sha: str, candidate_sha: str, require_automatic: bool = False) -> None:
     error = "managed-debian-receipt-binding-mismatch"
     if (
         not isinstance(receipt, dict)
-        or receipt.get("schema") != "row.managed-debian-qualification.v1"
+        or receipt.get("schema") not in (SCHEMA, PREVIOUS_SCHEMA)
+        or require_automatic and receipt.get("schema") != SCHEMA
         or receipt.get("status") != "passed"
         or receipt.get("target") != "linux-x86_64"
         or receipt.get("production_acceptance") is not False
@@ -34,6 +37,16 @@ def validate_receipt(receipt: object, *, previous_sha: str, candidate_sha: str) 
     if receipt["candidate_has_server_bundle"]:
         expected_steps["changed-server-manifest-rollback"] = ("refused", 1)
         refusals["changed-server-manifest-rollback"] = "installed-runtime-payload-refused"
+    automatic_actions = {}
+    if receipt["schema"] == SCHEMA:
+        expected_steps.update({
+            "automatic-candidate": ("applied", 0), "automatic-failing": ("rolled-back", 1),
+            "automatic-explicit-rollback": ("rolled-back", 0),
+        })
+        automatic_actions = {
+            "candidate-apply": "update", "interrupted-apply": "update", "automatic-candidate": "update",
+            "automatic-failing": "update", "automatic-explicit-rollback": "rollback",
+        }
     steps = receipt.get("receipts")
     if not isinstance(steps, dict) or steps.keys() != expected_steps.keys() or any(
         not isinstance(steps[name], dict)
@@ -41,3 +54,16 @@ def validate_receipt(receipt: object, *, previous_sha: str, candidate_sha: str) 
         for name, expected in expected_steps.items()
     ) or any(steps[name].get("refusal") != expected for name, expected in refusals.items()):
         raise ValueError(error)
+    for name, action in automatic_actions.items():
+        if steps[name].get("action") != action or steps[name].get("previous_sha256") != previous_sha:
+            raise ValueError(error)
+    if automatic_actions:
+        if any(steps[name].get("candidate_sha256") != candidate_sha for name in (
+            "automatic-candidate", "automatic-explicit-rollback", "candidate-apply",
+        )):
+            raise ValueError(error)
+        fault_sha = steps["automatic-failing"].get("candidate_sha256")
+        if not isinstance(fault_sha, str) or HASH.fullmatch(fault_sha) is None or fault_sha == candidate_sha or (
+            fault_sha != steps["failing-apply"].get("candidate_sha256")
+        ):
+            raise ValueError(error)

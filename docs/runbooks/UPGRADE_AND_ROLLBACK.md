@@ -89,6 +89,30 @@ Close the application and take the [encrypted workspace backup](WORKSPACE_BACKUP
 before installing. Use the distribution's package manager to install any new
 dependencies declared by the candidate DEB before running the offline apply.
 
+Use `update` to authenticate and install the exact target version in one
+invocation. It stages the prior installer first and reuses complete staged
+downloads after authenticating them again. It keeps the package manager
+available during downloads, then rechecks the installed package under the
+Debian package-manager lock before installing. Use separate staging and
+transaction directories that do not overlap each other or the workspace.
+
+```bash
+python3 -I scripts/managed_linux_update.py update --version 1.0.28 \
+  --workspace /home/operator/.config/remote-ops-workspace \
+  --policy /root/row-updates/candidate.json --stage /root/row-updates/candidate \
+  --previous-policy /root/row-updates/previous.json --previous-stage /root/row-updates/previous \
+  --transaction /root/row-updates/transition-1.0.28
+```
+
+If a download is interrupted and leaves an incomplete stage, retain it and use
+a fresh private directory for that stage. Once installation is journaled,
+retry the same `update` command with the same transaction directory. It uses
+the retained installers without accessing the network. A recovered rollback
+reports `rolled-back` with a nonzero exit status.
+
+To download and install in separate maintenance steps, use the staging and
+offline `apply` commands below.
+
 ```bash
 python3 -I scripts/managed_linux_update.py stage-previous \
   --workspace /home/operator/.config/remote-ops-workspace \
@@ -131,13 +155,14 @@ restore and validation steps below.
 The x86-64 all-modern native candidate job also runs an automated update drill
 using the byte-verified previous release and exact candidate DEBs. It stages the
 packages through certificate-validated HTTPS inside an isolated Debian
-container, shuts down the feed, and exercises offline apply, operator-requested
-rollback, and automatic rollback after a controlled `dpkg` configuration
-failure. It checks that changing the launcher under the same installed
+container and exercises `update` from fresh staging directories, including a
+controlled `dpkg` failure that restores the previous installer. It then shuts
+down the feed and exercises reuse of complete stages and operator-requested
+rollback. It checks that changing the launcher under the same installed
 version prevents explicit rollback. For candidates with an embedded server
 bundle, it also checks changes to the installed manifest. It interrupts
-the controller during package configuration and checks that retrying the
-persisted transaction restores the previous launcher.
+the controller during package configuration and checks that retrying with
+`update` restores the previous launcher while the HTTPS feed is offline.
 The retained `managed-debian-update.json` records the package digests,
 candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in

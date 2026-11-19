@@ -319,8 +319,9 @@ against the current policy, including any new version floor or target set, and
 the running version. It validates the bound journal and
 rehashes every file. Journal flags and payload checksums never authorize recovery.
 
-Linux administrators can install an authenticated DEB and retain its verified
-rollback package with the [managed Debian update controller](runbooks/UPGRADE_AND_ROLLBACK.md#managed-debian-package-updates).
+Linux administrators can authenticate both DEBs, install the candidate, and
+roll back on failure in one invocation with the
+[managed Debian update controller](runbooks/UPGRADE_AND_ROLLBACK.md#managed-debian-package-updates).
 
 On POSIX, use an existing empty private staging directory outside `ROW_HOME`,
 with current owner and mode 0700. The policy file must be regular, unlinked and

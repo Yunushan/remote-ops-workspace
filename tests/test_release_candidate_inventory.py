@@ -21,6 +21,7 @@ if str(SCRIPTS) not in sys.path:
 import release_candidate_inventory as candidate  # noqa: E402
 
 from scripts import qualify_rpm_candidate as rpm_qualification  # noqa: E402
+from scripts import release_evidence_file  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -127,6 +128,40 @@ def test_candidate_staging_can_retry_after_a_later_archive_fails(
     assert {path.name: path.read_text() for path in root.iterdir()} == {
         "first.txt": "first", "second.txt": "second",
     }
+
+
+@pytest.mark.parametrize("destination_changed", [False, True])
+def test_publish_candidate_directory_checks_destination_after_windows_retry(tmp_path, monkeypatch, destination_changed):
+    staged = tmp_path / "staging"
+    destination = tmp_path / "assets"
+    staged.mkdir()
+    (staged / "candidate.rpm").write_bytes(b"verified candidate bytes")
+    original_rename = Path.rename
+    attempts = []
+
+    def temporarily_denied(source, target):
+        attempts.append(source)
+        if len(attempts) == 1:
+            error = PermissionError("rename denied")
+            error.winerror = 5
+            raise error
+        return original_rename(source, target)
+
+    def wait_for_retry(_delay):
+        if destination_changed:
+            destination.mkdir()
+
+    monkeypatch.setattr(Path, "rename", temporarily_denied)
+    monkeypatch.setattr(release_evidence_file.time, "sleep", wait_for_retry)
+    if destination_changed:
+        with pytest.raises(ValueError, match="assets root appeared"):
+            candidate.publish_candidate_directory(staged, destination)
+        assert len(attempts) == 1 and not list(destination.iterdir())
+        assert (staged / "candidate.rpm").read_bytes() == b"verified candidate bytes"
+    else:
+        candidate.publish_candidate_directory(staged, destination)
+        assert len(attempts) == 2 and not staged.exists()
+        assert (destination / "candidate.rpm").read_bytes() == b"verified candidate bytes"
 
 
 def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:

@@ -13,6 +13,7 @@ from remote_ops_workspace.file_safety import (
     write_json_atomic,
     write_text_atomic,
 )
+from scripts.release_evidence_file import replace_evidence_file
 
 
 def test_write_json_atomic_replaces_content_and_cleans_temporary_files(tmp_path) -> None:
@@ -319,7 +320,7 @@ def test_private_write_rejects_changed_recovery_copy(tmp_path, monkeypatch) -> N
             recovery = next(tmp_path.glob(".*.rollback.*.tmp"))
             replacement = tmp_path / "replacement"
             replacement.write_bytes(b"foreign-state")
-            file_safety.os.replace(replacement, recovery)
+            replace_evidence_file(replacement, recovery)
             raise PermissionError("final permissions denied")
         original_chmod(target, mode)
 

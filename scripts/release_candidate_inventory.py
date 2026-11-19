@@ -40,6 +40,7 @@ from scripts.managed_debian_qualification import (  # noqa: E402
     REPORT_NAME,
     validate_receipt,
 )
+from scripts.release_evidence_file import retry_evidence_operation  # noqa: E402
 
 SCHEMA_VERSION = 5
 RPM_SCHEMA_VERSION = 4
@@ -822,8 +823,26 @@ def materialize_records(
             raise ValueError("assets root became a symlink during staging")
         if assets_root.exists():
             assets_root.rmdir()
-        staged_root.rename(assets_root)
+        publish_candidate_directory(staged_root, assets_root)
     return records
+
+
+def publish_candidate_directory(staged_root: Path, assets_root: Path) -> None:
+    expected = staged_root.lstat()
+
+    def publish() -> None:
+        current = staged_root.lstat()
+        if (
+            not stat.S_ISDIR(current.st_mode)
+            or getattr(current, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+            or (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino)
+        ):
+            raise ValueError("verified candidate staging directory changed before publication")
+        if assets_root.is_symlink() or assets_root.exists():
+            raise ValueError("candidate assets root appeared before publication")
+        staged_root.rename(assets_root)
+
+    retry_evidence_operation(publish)
 
 
 def materialize_candidate_files(

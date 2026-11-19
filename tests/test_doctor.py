@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 
 import remote_ops_workspace.cli as cli_module
+import remote_ops_workspace.cli_reports as cli_reports
 import remote_ops_workspace.doctor as doctor_module
 from remote_ops_workspace.doctor import DoctorResult, run_doctor
 
@@ -103,7 +104,7 @@ def test_doctor_cli_prints_sshv1_legacy_status(monkeypatch, capsys) -> None:
             },
         },
     )
-    monkeypatch.setattr(cli_module, "run_doctor", lambda: result)
+    monkeypatch.setattr(cli_reports, "run_doctor", lambda: result)
 
     assert cli_module.cmd_doctor(SimpleNamespace(json=False)) == 0
 

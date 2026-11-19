@@ -15,9 +15,8 @@ jobs:
   qualify-debian-servers:
     name: Qualify the published Debian package's embedded servers
     if: github.ref_type == 'tag'
-    runs-on: [self-hosted, linux, x64, server-evidence]
-    environment: server-evidence
-    timeout-minutes: 60
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - name: Require an exact release tag
         shell: bash
@@ -29,7 +28,7 @@ jobs:
           [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
           work="$RUNNER_TEMP/server-evidence-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           umask 077
-          mkdir -- "$work" "$work/release" "$work/review"
+          mkdir -- "$work" "$work/release" "$work/review" "$work/build-context"
           printf 'SERVER_EVIDENCE_WORK=%s\n' "$work" >> "$GITHUB_ENV"
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -52,25 +51,23 @@ jobs:
             --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
           digest="$(sha256sum -- "$package")"
           printf 'SERVER_EVIDENCE_DEB_SHA256=%s\n' "${digest%% *}" >> "$GITHUB_ENV"
-      - name: Wait for the lab to stage its eight completed client captures
+      - name: Build the Debian lab using signed package metadata
         shell: bash
         run: |
-          printf 'Capture source: %s/%s/actions/runs/%s attempt %s\n' \
-            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
-          printf 'Release tag %s, source SHA %s, Debian SHA-256 %s\n' \
-            "$GITHUB_REF_NAME" "$GITHUB_SHA" "$SERVER_EVIDENCE_DEB_SHA256"
-          printf 'Stage the completed capture directory at RUNNER_TEMP/server-evidence-%s-%s/incoming\n' \
-            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
-          incoming="$SERVER_EVIDENCE_WORK/incoming"
-          deadline=$((SECONDS + 2400))
-          until [[ -e "$incoming" || -L "$incoming" ]]; do
-            if (( SECONDS >= deadline )); then
-              echo "The lab did not stage its completed capture directory before timeout" >&2
-              exit 1
-            fi
-            sleep 5
-          done
-          test -d "$incoming" && test ! -L "$incoming"
+          asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
+          image="row-debian-server-evidence:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          docker build --platform linux/amd64 --pull \
+            --build-context "release=$SERVER_EVIDENCE_WORK/release" \
+            --build-arg "ROW_DEB=$asset" --build-arg "ROW_DEB_SHA256=$SERVER_EVIDENCE_DEB_SHA256" \
+            --file docker/Dockerfile.debian-server-evidence --tag "$image" "$SERVER_EVIDENCE_WORK/build-context"
+          printf 'SERVER_EVIDENCE_IMAGE=%s\n' "$image" >> "$GITHUB_ENV"
+      - name: Exercise all eight clients in isolated fixtures
+        shell: bash
+        run: |
+          asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
+          python scripts/run_debian_server_lab.py --image "$SERVER_EVIDENCE_IMAGE" \
+            --deb "$SERVER_EVIDENCE_WORK/release/$asset" --sha256 "$SERVER_EVIDENCE_DEB_SHA256" \
+            --out "$SERVER_EVIDENCE_WORK/incoming"
       - name: Validate the captured clients and exact packaged runtimes
         shell: bash
         run: |

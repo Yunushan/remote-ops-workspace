@@ -24,6 +24,7 @@ from scripts.check_mobaxterm_parity_evidence import (
     PROFESSIONAL_POLICY_SURFACES,
     SOURCE_BOUND_ARTICLES,
 )
+from scripts.run_debian_server_lab import capture as capture_debian_lab
 from scripts.write_release_notes import moba_counts
 
 
@@ -337,6 +338,22 @@ def test_server_recorder_binds_nfs_fragment_to_the_receipts_attempt(embedded_ser
         assert {entry.name: entry.read_bytes() for entry in combined.iterdir()} == {
             entry.name: entry.read_bytes() for entry in fragment.iterdir()
         }
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    ("package-digest", "does not match the supplied SHA-256"),
+    ("missing-actions", "requires source and release_asset objects"),
+])
+def test_debian_lab_rejects_unverified_inputs_before_starting_docker(embedded_server_bundle, tmp_path, monkeypatch,
+                                                            change, error):
+    _, package, evidence, _ = embedded_server_bundle
+    digest = "0" * 64 if change == "package-digest" else evidence["release_asset"]["sha256"]
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setattr("scripts.run_debian_server_lab.docker", lambda *_args: pytest.fail("unexpected Docker call"))
+    output = tmp_path / "capture"
+    with pytest.raises(ValueError, match=error):
+        capture_debian_lab("fixture-image", package, digest, output)
+    assert not output.exists()
 
 
 @pytest.mark.parametrize(
@@ -847,7 +864,7 @@ def reviewed_release(tmp_path, monkeypatch):
     responses[server_jobs] = {
         "total_count": 1, "jobs": [{
             **responses[jobs]["jobs"][0], "name": release_parity.SERVER_JOB, "run_id": 1239,
-            "labels": ["self-hosted", "Linux", "X64", "server-evidence"],
+            "labels": ["ubuntu-24.04"],
         }],
     }
     hosted_archives = {}
@@ -1020,7 +1037,7 @@ def test_x11_certification_refuses_the_wrong_workflow_or_job(reviewed_release) -
     ]
 
 
-def test_debian_server_certification_binds_the_native_lab_attempt_and_archive(reviewed_release) -> None:
+def test_debian_server_certification_binds_the_hosted_lab_attempt_and_archive(reviewed_release) -> None:
     article = "embedded-server-suite"
     attempt = reviewed_release.responses[reviewed_release.server_run]
     job = reviewed_release.responses[reviewed_release.server_jobs]["jobs"][0]
@@ -1029,11 +1046,11 @@ def test_debian_server_certification_binds_the_native_lab_attempt_and_archive(re
         f"{article} Embedded servers evidence must come from its dedicated workflow dispatched at the release tag"
     ]
     attempt["path"] = release_parity.SERVER_WORKFLOW
-    job["labels"].remove("server-evidence")
+    job["labels"] = ["self-hosted", "Linux", "X64", "server-evidence"]
     assert release_parity.audit_release(**reviewed_release.args) == [
         f"{article} Embedded servers evidence job did not report the approved native runner labels"
     ]
-    job["labels"].append("server-evidence")
+    job["labels"] = ["ubuntu-24.04"]
     archive = reviewed_release.hosted_archives[article]
     archive.metadata["expired"] = True
     archive.path.unlink()

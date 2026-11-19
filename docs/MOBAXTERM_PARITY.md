@@ -603,59 +603,35 @@ checks on the reviewed attachments and checks the release bytes and GitHub
 workflow and reviewer provenance.
 
 For Debian amd64, dispatch `embedded-server-evidence.yml` at the published
-release tag. The job runs in the protected `server-evidence` environment on a
-trusted Linux x64 lab runner with the `server-evidence` label and `dpkg-deb`
-and `gh` available. It verifies the published DEB and prints its digest and
-the exact run URL, attempt, tag and source SHA. Exercise that package in the
-lab and use those identities in the index and receipts.
+release tag. The Ubuntu runner verifies the published DEB and its promotion
+provenance, then builds the lab from a digest-pinned Debian image and signed
+Debian package metadata. It installs the tested DEB inside disposable
+containers. It starts a Debian guest with no network adapter for NFSv4.2
+over loopback, verifies a Kerberos-privacy read and rejection of `sec=sys`,
+and then exercises the other seven services on another container's loopback
+interfaces. The captures carry the workflow's tag, source SHA, run and attempt.
 
-Use `scripts/capture_debian_server_clients.py` to generate these receipts in
-the lab. Save the printed identity as `source.json` with the five `source`
-fields listed above. Both recorder invocations use that identity and the same
-verified DEB.
-
-Prepare NFS in an offline Debian guest with only a loopback interface. Install
-the tested DEB, configure its TCP-only NFSv4 and Kerberos-privacy export, and
-obtain a ticket in the unprivileged client account's default Kerberos cache.
-Prepare a challenge file at the root of the export and leave the kernel NFS
-threads stopped. The recorder starts the packaged daemon, mounts the export
-with `sec=krb5p`, reads the challenge over NFS, and checks rejection of
-`sec=sys` before stopping the daemon.
-
-```bash
-python3 scripts/capture_debian_server_clients.py \
-  --deb "$tested_deb" --source source.json --out "$nfs_capture" \
-  nfs --hostname nfs.row.test --port 12049 --account rownfs \
-  --challenge /export/row-proof/marker.txt
-```
-
-Run the other clients as root in a fresh disposable Debian amd64 container
-with the DEB's runtime dependencies and the lab tools `curl`, `tftp-hpa`,
-OpenSSL, OpenSSH, `Xvfb`, `xsetroot`, `vncsnapshot`, ImageMagick,
-`xinetd` and an interactive Telnet client. Use an isolated Docker internal
-network without published ports, and drop `NET_ADMIN`, `NET_RAW` and
-`SYS_ADMIN`. Copy the completed NFS capture onto the container's capture
-volume. The recorder installs the DEB and runs the other seven clients
-against loopback listeners, then checks and adds the NFS receipt.
-
-```bash
-python3 scripts/capture_debian_server_clients.py \
-  --deb "$tested_deb" --source source.json --out "$captures" \
-  managed --nfs-capture "$nfs_capture"
-```
-
-Use `--local` in place of `--source` for a lab rehearsal. Those receipts
-carry local provenance and cannot be submitted to the release workflow.
-
-Complete the capture directory under a temporary sibling of the printed
-`incoming` path. Rename the directory to `incoming` on the same filesystem
-after all files are in place. Stage it within 40 minutes of the handoff step.
-The job verifies the attempt and package again, assembles the candidate,
-and uploads one artifact named `embedded-server-evidence-<run-id>-<attempt>`.
-Keep its original ZIP at
+The job assembles a candidate and uploads one artifact named
+`embedded-server-evidence-<run-id>-<attempt>`. Keep the original ZIP at
 `workflow-artifacts/embedded-server-evidence-<run-id>-<attempt>.zip` in the
 review evidence root. The release audit ties the reviewed files to that ZIP
 and the successful dedicated job.
+
+For a local rehearsal, use the same Dockerfile and runner. Provide a
+`release_dir` containing the tested DEB, an empty `build_context` directory,
+and the verified SHA-256.
+
+```bash
+docker build --platform linux/amd64 \
+  --build-context "release=$release_dir" \
+  --build-arg "ROW_DEB=$asset" --build-arg "ROW_DEB_SHA256=$deb_sha256" \
+  --file docker/Dockerfile.debian-server-evidence --tag row-debian-server-lab "$build_context"
+python scripts/run_debian_server_lab.py --image row-debian-server-lab \
+  --deb "$release_dir/$asset" --sha256 "$deb_sha256" --out "$captures" --local
+```
+
+The local receipts carry rehearsal provenance and cannot be submitted to
+the release workflow.
 
 ### Connected editor release evidence
 

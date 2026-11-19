@@ -88,7 +88,7 @@ EVIDENCE_WORKFLOWS = {
     "embedded-x-server": EvidenceWorkflow("X11", X11_WORKFLOW, X11_JOB, "x11-forwarding-evidence"),
     "embedded-server-suite": EvidenceWorkflow(
         "Embedded servers", SERVER_WORKFLOW, SERVER_JOB, "embedded-server-evidence",
-        frozenset({"self-hosted", "linux", "x64", "server-evidence"}),
+        frozenset({"ubuntu-24.04"}),
     ),
     "moba-text-editor-diff": EvidenceWorkflow(
         "Connected editor", EDITOR_WORKFLOW, EDITOR_JOB, "connected-editor-evidence",

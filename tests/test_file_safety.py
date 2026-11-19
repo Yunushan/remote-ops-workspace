@@ -1,5 +1,6 @@
 import os
 import stat
+from pathlib import Path
 
 import pytest
 
@@ -155,6 +156,61 @@ def test_private_write_retains_secure_recovery_copy_when_restore_is_denied(tmp_p
     assert "recovery replace denied" in str(failure.value)
     if os.name == "posix":
         assert stat.S_IMODE(recovery[0].stat().st_mode) == PRIVATE_FILE_MODE
+
+
+@pytest.mark.parametrize("outcome", ["restored", "persistent-denial", "changed-destination"])
+def test_private_rollback_rechecks_identity_after_windows_permission_error(tmp_path, monkeypatch, outcome):
+    path = tmp_path / "profiles.json"
+    write_bytes_atomic(path, b"old-private-state", private=True)
+    original_chmod = file_safety._chmod_required
+    original_replace = file_safety.os.replace
+    attempts = []
+    delays = []
+
+    def denied_final_permissions(target, mode):
+        if target == path:
+            raise PermissionError("final permissions denied")
+        original_chmod(target, mode)
+
+    def delayed_restore(source, destination):
+        if ".rollback." in Path(source).name:
+            attempts.append(source)
+            if len(attempts) == 1 or outcome == "persistent-denial":
+                error = PermissionError("rollback rename denied")
+                error.winerror = 5
+                raise error
+        original_replace(source, destination)
+
+    def wait_for_retry(delay):
+        delays.append(delay)
+        if outcome == "changed-destination":
+            replacement = tmp_path / "independent"
+            replacement.write_bytes(b"independent-state")
+            original_replace(replacement, path)
+
+    monkeypatch.setattr(file_safety, "_chmod_required", denied_final_permissions)
+    monkeypatch.setattr(file_safety.os, "replace", delayed_restore)
+    monkeypatch.setattr(file_safety, "sleep", wait_for_retry)
+    error = {
+        "restored": "final permissions denied",
+        "persistent-denial": "rollback rename denied",
+        "changed-destination": "private artifact changed before rollback",
+    }
+    with pytest.raises(OSError, match=error[outcome]):
+        write_bytes_atomic(path, b"new-private-state", private=True)
+
+    recovery = list(tmp_path.glob(".*.rollback.*.tmp"))
+    if outcome == "restored":
+        assert path.read_bytes() == b"old-private-state"
+        assert len(attempts) == 2 and len(delays) == 1
+        assert not recovery
+    else:
+        assert len(recovery) == 1 and recovery[0].read_bytes() == b"old-private-state"
+        if outcome == "changed-destination":
+            assert path.read_bytes() == b"independent-state"
+            assert len(attempts) == 1 and len(delays) == 1
+        else:
+            assert len(attempts) == len(delays) + 1 == 6
 
 
 def test_private_write_rejects_recovery_after_destination_identity_changes(tmp_path, monkeypatch) -> None:

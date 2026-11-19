@@ -6,6 +6,7 @@ import shutil
 import stat
 import tempfile
 from pathlib import Path
+from time import sleep
 from typing import Any
 
 PRIVATE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
@@ -250,21 +251,32 @@ def _rollback_private_write(
     installed_status: os.stat_result,
     predecessor: tuple[Path, os.stat_result] | None,
 ) -> None:
-    _require_no_linked_path_components(path.parent)
-    named = path.lstat()
-    if (
-        stat.S_ISLNK(named.st_mode)
-        or _is_reparse_point(named)
-        or not stat.S_ISREG(named.st_mode)
-        or (named.st_dev, named.st_ino) != (installed_status.st_dev, installed_status.st_ino)
-    ):
-        raise OSError(f"private artifact changed before rollback: {path}")
-    if predecessor is None:
-        # There is no safe prior value; remove the failed newly-created artifact.
-        path.unlink()
-        return
-    _require_private_recovery_identity(predecessor)
-    os.replace(predecessor[0], path)
+    retry_delays = iter((0.01, 0.02, 0.04, 0.08, 0.16))
+    while True:
+        _require_no_linked_path_components(path.parent)
+        named = path.lstat()
+        if (
+            stat.S_ISLNK(named.st_mode)
+            or _is_reparse_point(named)
+            or not stat.S_ISREG(named.st_mode)
+            or (named.st_dev, named.st_ino) != (installed_status.st_dev, installed_status.st_ino)
+        ):
+            raise OSError(f"private artifact changed before rollback: {path}")
+        if predecessor is not None:
+            _require_private_recovery_identity(predecessor)
+        try:
+            if predecessor is None:
+                path.unlink()
+            else:
+                os.replace(predecessor[0], path)
+        except PermissionError as error:
+            # Windows may briefly deny a rename or deletion while another process holds a file handle.
+            delay = next(retry_delays, None)
+            if delay is None or getattr(error, "winerror", None) not in {5, 32, 33}:
+                raise
+            sleep(delay)
+        else:
+            return
 
 
 def _require_private_recovery_identity(predecessor: tuple[Path, os.stat_result]) -> None:

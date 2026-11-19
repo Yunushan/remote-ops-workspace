@@ -152,14 +152,24 @@ smoke-tested. The drill upgrades from the pinned v1.0.27 RPM, checks the
 explicit downgrade, and verifies the restored profile and encrypted vault
 with the predecessor launcher.
 
+The same job runs the managed RPM controller in a fresh Fedora container.
+It checks the authenticated HTTPS upgrade, refusal of tampered inputs, offline
+retry, interrupted upgrade and rollback recovery, and concurrent execution.
+It installs only the hash-locked cryptography dependencies from the checkout
+and uses a test signer on loopback.
+
 The `release-linux-rpm-recovery` Actions artifact contains
 `rpm-recovery.json`, `finish.json`, and `candidate-runtime-byte-binding.json`.
 The sealer checks their digests, the tagged workflow attempt, the RPM bytes,
-and the launcher observations from installation and reinstallation. Promotion
-downloads the same archive by its sealed artifact ID and rechecks the evidence.
+and the launcher observations from installation and reinstallation. It also
+checks that both drills refer to the same packages and launchers, and that the
+managed drill used the controller and dependency lock from the release
+checkout. Promotion downloads the same archive by its sealed artifact ID and
+rechecks the evidence.
 Before signing approval, review the embedded `rpm_recovery` receipt alongside
-the original smoke reports listed in `rpm_smoke`. Inventory schema 5 carries
-both records. The reader also accepts historical schema 2 through 4 inventories.
+the original smoke reports listed in `rpm_smoke`. Inventory schema 6 requires
+the managed findings inside the RPM receipt. The reader also accepts historical
+schema 2 through 5 inventories.
 
 ### Select an optional Debian amd64 server bundle
 

@@ -225,6 +225,10 @@ pinned v1.0.27 release RPM and the exact RPM from the native smoke report.
 It retains `build/candidate-proof/linux-x86_64/rpm-recovery.json` with the
 candidate artifacts. The receipt binds the source commit, workflow attempt,
 native smoke proof digest, both package digests, and the Fedora image digest.
+The job also runs the managed controller from the same checkout against the
+same RPM pair in a separate offline container. Its receipt records the HTTPS
+downloads, tamper refusals, interruption recovery, and concurrent update
+result. The tagged release binds both drills in the same evidence archive.
 
 Use a disposable x86-64 Fedora Docker container with Python 3.10 or later,
 `rpm`, and `rpm2archive`. Start with a fresh RPM database for ROW and no

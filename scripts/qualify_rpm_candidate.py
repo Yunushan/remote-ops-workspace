@@ -1,4 +1,4 @@
-"""Run the offline RPM recovery drill against a byte-bound CI candidate."""
+"""Run offline native and managed RPM recovery drills against a byte-bound CI candidate."""
 
 from __future__ import annotations
 
@@ -12,10 +12,12 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from scripts import managed_rpm_qualification as managed
 from scripts.qualify_rpm_recovery import ARCH, PACKAGE, SHA256, VERSION, sha256
 
 TARGET = "linux-x86_64"
-SCHEMA = "row.rpm-candidate-qualification.v1"
+SCHEMA = "row.rpm-candidate-qualification.v2"
+NATIVE_ONLY_SCHEMA = "row.rpm-candidate-qualification.v1"
 REPORT_NAME = "rpm-recovery.json"
 PROOF = Path("build/candidate-proof") / TARGET / "finish.json"
 SMOKE_BINDING = Path("build/native-smoke") / TARGET / "candidate-runtime-byte-binding.json"
@@ -36,6 +38,14 @@ CHECKS = (
     "restored_profiles_and_vault_read_by_previous_launcher",
     "upgraded_workspace_preserved",
 )
+MANAGED_ENTRYPOINT = """+mkdir /tmp/source
+tar -xf /input/source.tar -C /tmp/source
+python3 -I -m venv /tmp/managed-rpm
+/tmp/managed-rpm/bin/python -I -m pip --isolated install --no-index --find-links=/wheels \
+  --only-binary=:all: --require-hashes --no-deps --requirement /input/crypto.txt >&2
+exec /tmp/managed-rpm/bin/python -I -B /tmp/source/scripts/qualify_managed_rpm_update.py \
+  --crypto-requirements /input/crypto.txt "$@"
+"""
 
 
 class QualificationError(ValueError):
@@ -112,7 +122,42 @@ def verify_receipt(receipt: dict, version: str, candidate_sha256: str) -> None:
             raise QualificationError("RPM recovery receipt refers to a different package")
 
 
-def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str) -> dict:
+def managed_drill(root: Path, temporary: Path, commit: str, previous: Path, candidate: Path,
+                  digest: str, wheelhouse: Path | None) -> dict:
+    requirements = temporary / "crypto.txt"
+    requirements.write_bytes(managed.locked_crypto_requirements(root))
+    if wheelhouse is None:
+        wheelhouse = temporary / "wheels"
+        wheelhouse.mkdir()
+        subprocess.run(
+            [sys.executable, "-I", "-m", "pip", "--isolated", "download", "--disable-pip-version-check",
+             "--index-url", "https://pypi.org/simple", "--only-binary=:all:", "--require-hashes", "--no-deps",
+             "--dest", str(wheelhouse), "--requirement", str(requirements)],
+            check=True, stdout=sys.stderr, timeout=180,
+        )
+    else:
+        wheelhouse = wheelhouse.resolve(strict=True)
+        if not wheelhouse.is_dir():
+            raise QualificationError("The offline wheelhouse must be a directory")
+    source = temporary / "source.tar"
+    subprocess.run(["git", "archive", "--format=tar", f"--output={source}", commit], cwd=root, check=True, timeout=60)
+    result = subprocess.run(
+        ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none",
+         "--security-opt", "no-new-privileges",
+         "--mount", f"type=bind,source={source},target=/input/source.tar,readonly",
+         "--mount", f"type=bind,source={requirements},target=/input/crypto.txt,readonly",
+         "--mount", f"type=bind,source={wheelhouse},target=/wheels,readonly",
+         "--mount", f"type=bind,source={previous},target=/previous/{previous.name},readonly",
+         "--mount", f"type=bind,source={candidate},target=/candidate/{candidate.name},readonly",
+         "--entrypoint", "/bin/sh", IMAGE, "-ec", MANAGED_ENTRYPOINT, "row-managed-rpm",
+         "--previous-rpm", f"/previous/{previous.name}", "--previous-sha256", PREVIOUS_SHA256,
+         "--candidate-rpm", f"/candidate/{candidate.name}", "--candidate-sha256", digest],
+        check=True, stdout=subprocess.PIPE, timeout=600,
+    )
+    return json.loads(result.stdout)
+
+
+def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str, *, wheelhouse: Path | None = None) -> dict:
     version = tag.removeprefix("v")
     if (
         tag != f"v{version}"
@@ -137,8 +182,9 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str) -> dic
     proof = json.loads(proof_bytes)
     candidate, digest = candidate_input(root, proof, version, commit, run_id, attempt)
     filename = rpm_name(PREVIOUS_VERSION)
-    with TemporaryDirectory(prefix="row-rpm-candidate-") as temporary:
-        previous = Path(temporary) / filename
+    with TemporaryDirectory(prefix="row-rpm-candidate-") as directory:
+        temporary = Path(directory)
+        previous = temporary / filename
         subprocess.run(
             [
                 "curl",
@@ -198,8 +244,13 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str) -> dic
             stdout=subprocess.PIPE,
             timeout=420,
         )
-    receipt = json.loads(result.stdout)
-    verify_receipt(receipt, version, digest)
+        receipt = json.loads(result.stdout)
+        verify_receipt(receipt, version, digest)
+        managed_receipt = managed_drill(root, temporary, commit, previous, candidate, digest, wheelhouse)
+        managed.verify_receipt(
+            managed_receipt, receipt, controller_sha256=sha256(root / managed.CONTROLLER),
+            requirements_sha256=hashlib.sha256(managed.locked_crypto_requirements(root)).hexdigest(),
+        )
     if (root / PROOF).read_bytes() != proof_bytes or sha256(candidate) != digest:
         raise QualificationError("Native proof or candidate RPM changed during qualification")
     return {
@@ -214,6 +265,7 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str) -> dic
         "previous_release_url": PREVIOUS_URL,
         "container_image": IMAGE,
         "receipt": receipt,
+        "managed_update": managed_receipt,
     }
 
 
@@ -221,6 +273,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-tag", required=True)
     parser.add_argument("--candidate-source-sha", required=True)
+    parser.add_argument("--wheelhouse", type=Path, help="reuse cached wheels verified against the source lock")
     args = parser.parse_args()
     try:
         report = qualify(
@@ -229,6 +282,7 @@ def main() -> int:
             args.candidate_source_sha,
             os.environ["GITHUB_RUN_ID"],
             os.environ["GITHUB_RUN_ATTEMPT"],
+            wheelhouse=args.wheelhouse,
         )
     except QualificationError as exc:
         print(exc, file=sys.stderr)

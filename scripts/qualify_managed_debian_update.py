@@ -81,7 +81,7 @@ def validate_deb(path: Path, expected: str) -> str:
 
 
 @contextmanager
-def https_feed(root: Path, payloads: dict[str, bytes], now: datetime):
+def https_feed(root: Path, payloads: dict[str, bytes], now: datetime, *, requests: list[str] | None = None):
     tls = Ed25519PrivateKey.generate()
     identity = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
     certificate = (x509.CertificateBuilder().subject_name(identity).issuer_name(identity)
@@ -99,6 +99,8 @@ def https_feed(root: Path, payloads: dict[str, bytes], now: datetime):
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
+            if requests is not None:
+                requests.append(self.path)
             body = payloads.get(self.path)
             if body is None:
                 self.send_error(404)

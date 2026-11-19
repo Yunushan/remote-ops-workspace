@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts import managed_rpm_qualification  # noqa: E402
 from scripts import qualify_rpm_candidate as rpm_qualification  # noqa: E402
 from scripts.candidate_posix_byte_binding import binding_schema, target_contract  # noqa: E402
 from scripts.managed_debian_qualification import (  # noqa: E402
@@ -42,7 +43,8 @@ from scripts.managed_debian_qualification import (  # noqa: E402
 )
 from scripts.release_evidence_file import retry_evidence_operation  # noqa: E402
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
+RPM_SMOKE_SCHEMA_VERSION = 5
 RPM_SCHEMA_VERSION = 4
 MANAGED_SCHEMA_VERSION = 3
 LEGACY_SCHEMA_VERSION = 2
@@ -346,7 +348,9 @@ def stage(
         client, by_name[RPM_ARTIFACT], RPM_ARTIFACT, run_id, release_sha, (RPM_REPORT_NAME, *RPM_SMOKE_FILES),
     )
     rpm = {**rpm_archive, **rpm_records[RPM_REPORT_NAME], "receipt": json.loads(rpm_files[RPM_REPORT_NAME])}
-    _, rpm_sha = validate_rpm_report(rpm, repository, release_tag, release_sha, run_id, run_attempt)
+    _, rpm_sha = validate_rpm_report(
+        rpm, repository, release_tag, release_sha, run_id, run_attempt, require_managed=True, source_root=ROOT,
+    )
     rpm_smoke = {name: rpm_records[name] for name in RPM_SMOKE_FILES}
     validate_rpm_smoke_files(rpm_files, rpm["receipt"], rpm_smoke)
     records = materialize_records(
@@ -480,11 +484,11 @@ def validate_managed_report(record: Any, release_tag: str, release_sha: str, run
 
 def validate_rpm_report(
     record: Any, repository: str, release_tag: str, release_sha: str, run_id: int, run_attempt: int,
+    *, require_managed: bool = False, source_root: Path | None = None,
 ) -> tuple[int, str]:
     artifact_id = validate_qualification_archive(record, "RPM recovery")
     receipt = record["receipt"]
     expected = {
-        "schema": rpm_qualification.SCHEMA,
         "target": rpm_qualification.TARGET,
         "source_commit": release_sha,
         "workflow_ref": f"{repository}/{BUILD_WORKFLOW}@refs/tags/{release_tag}",
@@ -494,6 +498,7 @@ def validate_rpm_report(
     }
     if (
         not isinstance(receipt, dict)
+        or receipt.get("schema") not in (rpm_qualification.SCHEMA, rpm_qualification.NATIVE_ONLY_SCHEMA)
         or any(receipt.get(key) != value for key, value in expected.items())
         or type(receipt.get("run_id")) is not int or receipt["run_id"] != run_id
         or type(receipt.get("run_attempt")) is not int or receipt["run_attempt"] != run_attempt
@@ -509,6 +514,18 @@ def validate_rpm_report(
         rpm_qualification.verify_receipt(native, release_tag.removeprefix("v"), candidate_sha)
     except (ValueError, KeyError, TypeError, AttributeError):
         raise ValueError("RPM recovery receipt has invalid package identities or rollback results") from None
+    if require_managed and receipt["schema"] != rpm_qualification.SCHEMA:
+        raise ValueError("The current RPM recovery receipt requires the managed-update qualification")
+    if receipt["schema"] == rpm_qualification.SCHEMA:
+        managed_rpm_qualification.verify_receipt(
+            receipt.get("managed_update"), native,
+            controller_sha256=None if source_root is None else rpm_qualification.sha256(
+                source_root / managed_rpm_qualification.CONTROLLER,
+            ),
+            requirements_sha256=None if source_root is None else hashlib.sha256(
+                managed_rpm_qualification.locked_crypto_requirements(source_root),
+            ).hexdigest(),
+        )
     return artifact_id, candidate_sha
 
 
@@ -611,7 +628,8 @@ def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256:
 def validate_managed_release_qualification(
     inventory: dict[str, Any], *, repository: str, release_tag: str, release_sha: str, deb_sha256: str,
 ) -> None:
-    if inventory.get("schema_version") not in (MANAGED_SCHEMA_VERSION, RPM_SCHEMA_VERSION, SCHEMA_VERSION):
+    if (type(inventory.get("schema_version")) is not int
+            or not MANAGED_SCHEMA_VERSION <= inventory["schema_version"] <= SCHEMA_VERSION):
         raise ValueError("production Debian qualification requires the current sealed candidate inventory")
     run_id = inventory.get("build_run_id")
     if type(run_id) is not int or run_id < 1:
@@ -907,7 +925,7 @@ def validate_inventory(
     if not isinstance(value, dict):
         raise ValueError("approved candidate inventory must be an object")
     schema = value.get("schema_version")
-    if type(schema) is not int or schema not in (LEGACY_SCHEMA_VERSION, MANAGED_SCHEMA_VERSION, RPM_SCHEMA_VERSION, SCHEMA_VERSION):
+    if type(schema) is not int or not LEGACY_SCHEMA_VERSION <= schema <= SCHEMA_VERSION:
         raise ValueError("approved candidate inventory schema version is unsupported")
     expected = {
         "repository": repository,
@@ -963,21 +981,22 @@ def validate_inventory(
         normalize_digest(report["archive_digest"], f"runtime report {target} archive digest")
         if positive_int(report["size_bytes"], f"runtime report {target} size") > MAX_JSON_BYTES:
             raise ValueError(f"runtime report {target} exceeds the size limit")
-    if schema in (MANAGED_SCHEMA_VERSION, RPM_SCHEMA_VERSION, SCHEMA_VERSION) or "managed_debian_update" in value:
+    if schema >= MANAGED_SCHEMA_VERSION or "managed_debian_update" in value:
         managed = value.get("managed_debian_update")
         artifact_id = validate_managed_report(managed, release_tag, release_sha, run_id, run_attempt)
         if artifact_id in ids:
             raise ValueError(f"managed Debian report artifact id is duplicated: {artifact_id}")
         ids.add(artifact_id)
         require_managed_deb(records, release_tag, managed["receipt"]["candidate_sha256"])
-    if schema in (RPM_SCHEMA_VERSION, SCHEMA_VERSION) or "rpm_recovery" in value or "rpm_smoke" in value:
+    if schema >= RPM_SCHEMA_VERSION or "rpm_recovery" in value or "rpm_smoke" in value:
         artifact_id, rpm_sha = validate_rpm_report(
             value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,
+            require_managed=schema == SCHEMA_VERSION,
         )
         if artifact_id in ids:
             raise ValueError(f"RPM recovery report artifact id is duplicated: {artifact_id}")
         require_release_rpm(records, release_tag, rpm_sha)
-        if schema == SCHEMA_VERSION or "rpm_smoke" in value:
+        if schema >= RPM_SMOKE_SCHEMA_VERSION or "rpm_smoke" in value:
             validate_rpm_smoke_metadata(value.get("rpm_smoke"), value["rpm_recovery"]["receipt"])
     return sorted(records, key=lambda item: item["name"])
 

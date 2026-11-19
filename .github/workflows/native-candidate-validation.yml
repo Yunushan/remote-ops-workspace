@@ -556,7 +556,7 @@ jobs:
             --candidate-source-sha "${{ needs.candidate-source.outputs.candidate_sha }}" "${options[@]}"
       - name: Qualify x86-64 RPM upgrade and rollback in Fedora
         if: ${{ matrix.arch == 'x86_64' && steps.candidate-proof.outcome == 'success' }}
-        timeout-minutes: 12
+        timeout-minutes: 25
         env:
           CANDIDATE_SOURCE_SHA: ${{ needs.candidate-source.outputs.candidate_sha }}
           REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}

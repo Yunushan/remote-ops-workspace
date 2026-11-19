@@ -678,7 +678,7 @@ jobs:
         run: bash scripts/smoke_linux_native.sh --arch "${{ matrix.arch }}" --dist native-dist/linux
       - name: Qualify the exact release RPM upgrade and rollback
         if: ${{ matrix.arch == 'x86_64' }}
-        timeout-minutes: 12
+        timeout-minutes: 25
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: |

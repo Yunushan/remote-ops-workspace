@@ -13,8 +13,15 @@ import sys
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import UUID
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.release_pkcs12_keys import verify_private_keys  # noqa: E402
 
 OPENSSL = "/usr/bin/openssl"
 MAX_SECRET_BYTES = 48 * 1024
@@ -138,14 +145,15 @@ def windows_signing_candidate(pem: bytes, now: datetime) -> bool:
     )
 
 
-def check_windows_signing_certificate(contents: bytes, password: str, legacy: tuple[str, ...], name: str) -> None:
+def check_windows_signing_certificate(contents: bytes, password: str, legacy: tuple[str, ...], name: str) -> bytes:
     certificates = public_signing_certificates(contents, password, legacy, name)
     now = datetime.now(timezone.utc)
-    eligible = sum(windows_signing_candidate(pem, now) for pem in certificates)
+    eligible = [pem for pem in certificates if windows_signing_candidate(pem, now)]
     if not eligible:
         raise ValueError(f"{name} has no currently valid leaf certificate compatible with code signing")
-    if eligible > 1:
+    if len(eligible) > 1:
         raise ValueError(f"{name} has multiple currently valid code-signing certificates")
+    return eligible[0]
 
 
 def developer_id_certificate(pem: bytes) -> tuple[str, str, set[str], datetime, datetime]:
@@ -171,26 +179,29 @@ def developer_id_certificate(pem: bytes) -> tuple[str, str, set[str], datetime, 
 
 def check_developer_id_certificates(
     contents: bytes, password: str, legacy: tuple[str, ...], environment: Mapping[str, str],
-) -> None:
+) -> list[bytes]:
     certificates = [
-        developer_id_certificate(pem)
+        (pem, *developer_id_certificate(pem))
         for pem in public_signing_certificates(contents, password, legacy, "ROW_MACOS_CERTIFICATE_BASE64")
     ]
+    selected = []
     now = datetime.now(timezone.utc)
     for name, role in MACOS_CERTIFICATE_ROLES.items():
         identity = environment[name].casefold()
         by_fingerprint = re.fullmatch(r"[0-9a-f]{40}", identity) is not None
         matches = [
-            (roles, first, last) for subject, fingerprint, roles, first, last in certificates
+            (pem, roles, first, last) for pem, subject, fingerprint, roles, first, last in certificates
             if (identity == fingerprint if by_fingerprint else identity in subject.casefold())
         ]
         if len(matches) != 1:
             raise ValueError(f"{name} must select one certificate in ROW_MACOS_CERTIFICATE_BASE64")
-        roles, first, last = matches[0]
+        pem, roles, first, last = matches[0]
         if roles != {role}:
             raise ValueError(f"{name} selects a certificate with the wrong Developer ID role")
         if not first <= now < last:
             raise ValueError(f"{name} selects a certificate outside its validity period")
+        selected.append(pem)
+    return selected
 
 
 def check_timestamp_url(value: str) -> None:
@@ -226,7 +237,7 @@ def check_inputs(target: str, environment: Mapping[str, str]) -> None:
     if target == "windows":
         check_timestamp_url(environment["ROW_WINDOWS_TIMESTAMP_URL"])
         legacy = check_pkcs12(contents, environment[password], bundle)
-        check_windows_signing_certificate(contents, environment[password], legacy, bundle)
+        selected = [check_windows_signing_certificate(contents, environment[password], legacy, bundle)]
     else:
         for name in MACOS_CERTIFICATE_ROLES:
             if "\n" in environment[name] or "\r" in environment[name]:
@@ -243,7 +254,8 @@ def check_inputs(target: str, environment: Mapping[str, str]) -> None:
         notary_name = "ROW_MACOS_NOTARY_KEY_BASE64"
         check_notary_key(decode_secret(environment[notary_name], notary_name))
         legacy = check_pkcs12(contents, environment[password], bundle, key_count=len(MACOS_CERTIFICATE_ROLES))
-        check_developer_id_certificates(contents, environment[password], legacy, environment)
+        selected = check_developer_id_certificates(contents, environment[password], legacy, environment)
+    verify_private_keys(contents, environment[password], selected, legacy=bool(legacy))
 
 
 def main(argv: list[str] | None = None) -> int:

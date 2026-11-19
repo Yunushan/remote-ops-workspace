@@ -274,10 +274,13 @@ key usage allow code signing. The macOS bundle must contain both Developer ID
 keys. The application and installer selectors
 must each resolve to one currently valid certificate with the corresponding
 Apple role. Use the certificate's unique common name or SHA-1 fingerprint.
-The verifier reads credentials from the process environment and checks them
-offline with system OpenSSL. The protected preflight runs the same checks
-before starting native builds. The native jobs use the imported keys and verify
-platform trust, signing and notarization on the actual packages.
+For both platforms, the verifier checks that each selected certificate is
+paired with a matching private key in the bundle, using the PKCS#12
+associations. OpenSSL handles decrypted keys in memory. The verifier reads
+credentials from the process environment and checks them offline with system
+OpenSSL 3, including its runtime library. The protected preflight runs the same
+checks before starting native builds. The native jobs use the imported keys and
+verify platform trust, signing and notarization on the actual packages.
 [OpenSSL PKCS#12](https://docs.openssl.org/3.0/man1/openssl-pkcs12/) ·
 [Microsoft SignTool certificate selection](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool#sign-command-options) ·
 [Apple Developer ID certificate roles](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements) ·

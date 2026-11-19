@@ -50,19 +50,26 @@ def asset_filename(kind: str, tag: str) -> str:
     return ASSETS[kind][1].format(tag=tag, version=tag[1:])
 
 
-def read_attested_inventory(
-    client: GitHubClient, repository: str, directory: Path, tag: str, sha: str, pointer: InventoryPointer,
-) -> tuple[list[dict], dict]:
-    """Read the exact first-attempt candidate inventory without fetching package archives."""
+def require_candidate_run(
+    client: GitHubClient, repository: str, tag: str, sha: str, run_id: int,
+) -> dict:
     observed, errors = resolve_tag_commit(client.json, tag)
     if errors or observed != sha:
         raise ValueError("live release tag does not resolve to the selected candidate SHA")
-    run = client.json(f"actions/runs/{pointer.run_id}")
-    coordinates = {"release_tag": tag, "release_sha": sha, "run_id": pointer.run_id, "run_attempt": 1}
-    check_build_run(run, **coordinates, require_success=True)
+    run = client.json(f"actions/runs/{run_id}")
+    check_build_run(run, release_tag=tag, release_sha=sha, run_id=run_id, run_attempt=1, require_success=True)
     if normalize_repository_from_api(run) != repository:
         raise ValueError("candidate build run belongs to a different repository")
+    return run
 
+
+def read_attested_inventory(
+    client: GitHubClient, repository: str, directory: Path, tag: str, sha: str, pointer: InventoryPointer,
+    *, archive_output: Path | None = None,
+) -> tuple[list[dict], dict]:
+    """Read the exact first-attempt candidate inventory without fetching package archives."""
+    run = require_candidate_run(client, repository, tag, sha, pointer.run_id)
+    coordinates = {"release_tag": tag, "release_sha": sha, "run_id": pointer.run_id, "run_attempt": 1}
     metadata = client.json(f"actions/artifacts/{pointer.artifact_id}")
     check_artifact_metadata(
         metadata, artifact_id=pointer.artifact_id, name=CANDIDATE_INVENTORY_ARTIFACT,
@@ -70,6 +77,7 @@ def read_attested_inventory(
     )
     raw, inventory = sealed_json_artifact(
         client, metadata, CANDIDATE_INVENTORY_ARTIFACT, pointer.run_id, sha, INVENTORY_FILE,
+        archive_output=archive_output,
     )
     inventory_path = directory / INVENTORY_FILE
     with inventory_path.open("xb") as stream:

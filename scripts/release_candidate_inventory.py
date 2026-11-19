@@ -364,6 +364,7 @@ def seal_runtime_report(
 
 def sealed_json_artifact(
     client: GitHubClient, artifact: dict[str, Any], name: str, run_id: int, release_sha: str, filename: str,
+    *, archive_output: Path | None = None,
 ) -> tuple[bytes, dict[str, Any]]:
     artifact_id = positive_int(artifact.get("id"), f"artifact {name} id")
     digest = normalize_digest(artifact.get("digest"), f"artifact {name} archive digest")
@@ -386,6 +387,9 @@ def sealed_json_artifact(
             archive, unpacked, max_expanded_bytes=MAX_JSON_BYTES, only_name=filename,
         )
         report = (unpacked / filename).read_bytes()
+        if archive_output is not None:
+            with archive.open("rb") as source, archive_output.open("xb") as output:
+                shutil.copyfileobj(source, output)
     return report, {
         "artifact_id": artifact_id,
         "archive_digest": digest,
@@ -550,6 +554,12 @@ def promote(
         run_id=run_id,
         run_attempt=run_attempt,
     )
+    materialize_sealed_records(client, records, assets_root, run_id=run_id, release_sha=release_sha)
+
+
+def materialize_sealed_records(
+    client: GitHubClient, records: list[dict[str, Any]], assets_root: Path, *, run_id: int, release_sha: str,
+) -> None:
     live: dict[str, dict[str, Any]] = {}
     for record in records:
         artifact_id = record["id"]

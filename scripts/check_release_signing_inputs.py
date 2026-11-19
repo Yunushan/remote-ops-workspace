@@ -88,6 +88,66 @@ def check_pkcs12(contents: bytes, password: str, name: str, *, key_count: int = 
     return legacy
 
 
+def public_signing_certificates(contents: bytes, password: str, legacy: tuple[str, ...], name: str) -> list[bytes]:
+    # Have OpenSSL select certificates associated with key bags and emit only
+    # public data. Repeated copies of one certificate do not add a selector.
+    result = run_openssl(
+        "pkcs12", "-clcerts", "-nokeys", "-passin", "env:ROW_OPENSSL_IMPORT_PASSWORD",
+        *legacy, contents=contents, password=password,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"could not read public certificates from {name}")
+    return list(dict.fromkeys(CERTIFICATE_PEM.findall(result.stdout.replace(b"\r\n", b"\n"))))
+
+
+def certificate_validity(metadata: str) -> tuple[datetime, datetime]:
+    dates = dict(re.findall(r"^(notBefore|notAfter)=(.+)$", metadata, flags=re.MULTILINE))
+    first = parsedate_to_datetime(dates["notBefore"])
+    last = parsedate_to_datetime(dates["notAfter"])
+    if first.tzinfo is None or last.tzinfo is None:
+        raise ValueError
+    return first, last
+
+
+def windows_signing_candidate(pem: bytes, now: datetime) -> bool:
+    result = run_openssl(
+        "x509", "-inform", "PEM", "-noout", "-dates", "-ext", "basicConstraints,keyUsage,extendedKeyUsage",
+        contents=pem,
+    )
+    if result.returncode != 0:
+        raise ValueError("could not read a Windows signing certificate")
+    try:
+        metadata = result.stdout.decode("utf-8").replace("\r\n", "\n")
+        first, last = certificate_validity(metadata)
+    except (KeyError, ValueError):
+        raise ValueError("could not read Windows signing certificate metadata") from None
+    _, *sections = re.split(
+        r"^X509v3 (Basic Constraints|Key Usage|Extended Key Usage):[^\n]*\n?",
+        metadata,
+        flags=re.MULTILINE,
+    )
+    extensions = {
+        name: {item.strip() for item in values.split(",")}
+        for name, values in zip(sections[::2], sections[1::2], strict=True)
+    }
+    return (
+        first <= now < last
+        and "CA:FALSE" in extensions.get("Basic Constraints", {"CA:FALSE"})
+        and "Digital Signature" in extensions.get("Key Usage", {"Digital Signature"})
+        and not {"Code Signing", "1.3.6.1.5.5.7.3.3"}.isdisjoint(extensions.get("Extended Key Usage", {"Code Signing"}))
+    )
+
+
+def check_windows_signing_certificate(contents: bytes, password: str, legacy: tuple[str, ...], name: str) -> None:
+    certificates = public_signing_certificates(contents, password, legacy, name)
+    now = datetime.now(timezone.utc)
+    eligible = sum(windows_signing_candidate(pem, now) for pem in certificates)
+    if not eligible:
+        raise ValueError(f"{name} has no currently valid leaf certificate compatible with code signing")
+    if eligible > 1:
+        raise ValueError(f"{name} has multiple currently valid code-signing certificates")
+
+
 def developer_id_certificate(pem: bytes) -> tuple[str, str, set[str], datetime, datetime]:
     subject_options = "sep_multiline,sname,utf8,esc_ctrl"
     result = run_openssl(
@@ -99,13 +159,9 @@ def developer_id_certificate(pem: bytes) -> tuple[str, str, set[str], datetime, 
     try:
         subject, details = result.stdout.decode("utf-8").replace("\r\n", "\n").split("\nCertificate:\n", 1)
         common_names = re.findall(r"^    CN=(.+)$", subject, flags=re.MULTILINE)
-        dates = dict(re.findall(r"^(notBefore|notAfter)=(.+)$", subject, flags=re.MULTILINE))
         if len(common_names) != 1:
             raise ValueError
-        first = parsedate_to_datetime(dates["notBefore"])
-        last = parsedate_to_datetime(dates["notAfter"])
-        if first.tzinfo is None or last.tzinfo is None:
-            raise ValueError
+        first, last = certificate_validity(subject)
         roles = set(re.findall(r"^ {12}(1\.2\.840\.113635\.100\.6\.1\.(?:13|14)):", details, flags=re.MULTILINE))
         fingerprint = hashlib.sha1(ssl.PEM_cert_to_DER_cert(pem.decode("ascii")), usedforsecurity=False).hexdigest()
     except (KeyError, ValueError):
@@ -116,14 +172,10 @@ def developer_id_certificate(pem: bytes) -> tuple[str, str, set[str], datetime, 
 def check_developer_id_certificates(
     contents: bytes, password: str, legacy: tuple[str, ...], environment: Mapping[str, str],
 ) -> None:
-    # OpenSSL emits only the public certificates associated with keys in the bundle.
-    result = run_openssl(
-        "pkcs12", "-clcerts", "-nokeys", "-passin", "env:ROW_OPENSSL_IMPORT_PASSWORD",
-        *legacy, contents=contents, password=password,
-    )
-    if result.returncode != 0:
-        raise ValueError("could not read public certificates from ROW_MACOS_CERTIFICATE_BASE64")
-    certificates = [developer_id_certificate(pem) for pem in dict.fromkeys(CERTIFICATE_PEM.findall(result.stdout))]
+    certificates = [
+        developer_id_certificate(pem)
+        for pem in public_signing_certificates(contents, password, legacy, "ROW_MACOS_CERTIFICATE_BASE64")
+    ]
     now = datetime.now(timezone.utc)
     for name, role in MACOS_CERTIFICATE_ROLES.items():
         identity = environment[name].casefold()
@@ -173,7 +225,8 @@ def check_inputs(target: str, environment: Mapping[str, str]) -> None:
     contents = decode_secret(environment[bundle], bundle)
     if target == "windows":
         check_timestamp_url(environment["ROW_WINDOWS_TIMESTAMP_URL"])
-        check_pkcs12(contents, environment[password], bundle)
+        legacy = check_pkcs12(contents, environment[password], bundle)
+        check_windows_signing_certificate(contents, environment[password], legacy, bundle)
     else:
         for name in MACOS_CERTIFICATE_ROLES:
             if "\n" in environment[name] or "\r" in environment[name]:

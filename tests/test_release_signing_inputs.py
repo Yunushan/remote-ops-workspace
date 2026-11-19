@@ -29,6 +29,11 @@ def public_certificate(issuer_role: str, *, common_name: str | None = None,
     ).encode()
 
 
+def windows_certificate(*extensions: str, not_before: str = "Jan 1 00:00:00 2000 GMT",
+                        not_after: str = "Jan 1 00:00:00 2099 GMT") -> bytes:
+    return "\n".join((f"notBefore={not_before}", f"notAfter={not_after}", *extensions, "")).encode()
+
+
 def encode(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
@@ -68,16 +73,24 @@ def test_only_the_selected_secret_reaches_the_system_tool(monkeypatch, target) -
             assert env == {"LC_ALL": "C"}
             return subprocess.CompletedProcess(command, 0, b"ASN1 OID: prime256v1\n", b"")
         if command[1] == "x509":
-            assert target == "macos" and env == {"LC_ALL": "C"}
+            assert env == {"LC_ALL": "C"}
             assert input in (APP_PEM, INSTALLER_PEM)
+            if target == "windows":
+                assert input == APP_PEM and "-ext" in command
+                return subprocess.CompletedProcess(command, 0, windows_certificate(
+                    "X509v3 Basic Constraints: critical\n    CA:FALSE",
+                    "X509v3 Key Usage: critical\n    Digital Signature",
+                    "X509v3 Extended Key Usage: \n    Code Signing",
+                ), b"")
             role = "Application" if input == APP_PEM else "Installer"
             return subprocess.CompletedProcess(command, 0, public_certificate(role), b"")
         assert command[1] == "pkcs12" and input == P12
         assert "-nomacver" not in command
         assert env == {"LC_ALL": "C", "ROW_OPENSSL_IMPORT_PASSWORD": PASSWORD}
         if "-nokeys" in command:
-            assert target == "macos" and "-clcerts" in command and "-noenc" not in command
-            return subprocess.CompletedProcess(command, 0, b"\n".join((APP_PEM, INSTALLER_PEM)), b"")
+            assert "-clcerts" in command and "-noenc" not in command
+            certs = (APP_PEM, INSTALLER_PEM) if target == "macos" else (APP_PEM,)
+            return subprocess.CompletedProcess(command, 0, b"\n".join(certs), b"")
         assert command[command.index("-out") + 1] == os.devnull
         if target == "macos":
             return subprocess.CompletedProcess(command, 0, b"", P12_INFO + b"Key bag\nCertificate bag\n")
@@ -85,10 +98,12 @@ def test_only_the_selected_secret_reaches_the_system_tool(monkeypatch, target) -
 
     monkeypatch.setattr(signing.subprocess, "run", run)
     assert signing.main([target]) == 0
-    assert observed == (["pkey", "pkcs12", "pkcs12", "x509", "x509"] if target == "macos" else ["pkcs12"])
+    assert observed == (
+        ["pkey", "pkcs12", "pkcs12", "x509", "x509"] if target == "macos" else ["pkcs12", "pkcs12", "x509"]
+    )
 
 
-def mock_developer_id_certificates(monkeypatch, certificates):
+def mock_certificate_metadata(monkeypatch, certificates):
     def run(*args, contents, **kwargs):
         if args[0] == "pkcs12":
             assert "-clcerts" in args and "-nokeys" in args
@@ -103,7 +118,7 @@ def test_developer_id_selector_accepts_fingerprint_and_unambiguous_partial_name(
     values = inputs("macos")
     values["ROW_MACOS_SIGN_IDENTITY"] = hashlib.sha1(b"app", usedforsecurity=False).hexdigest().upper()
     values["ROW_MACOS_INSTALLER_SIGN_IDENTITY"] = "Developer ID Installer"
-    mock_developer_id_certificates(monkeypatch, {
+    mock_certificate_metadata(monkeypatch, {
         APP_PEM: public_certificate("Application"),
         INSTALLER_PEM: public_certificate("Installer"),
     })
@@ -126,7 +141,7 @@ def test_developer_id_selector_accepts_fingerprint_and_unambiguous_partial_name(
 ])
 def test_developer_id_refuses_unusable_installer_selection(monkeypatch, selector, certificates, error):
     values = {**inputs("macos"), "ROW_MACOS_INSTALLER_SIGN_IDENTITY": selector}
-    mock_developer_id_certificates(monkeypatch, {APP_PEM: public_certificate("Application"), **certificates})
+    mock_certificate_metadata(monkeypatch, {APP_PEM: public_certificate("Application"), **certificates})
     with pytest.raises(ValueError, match=f"ROW_MACOS_INSTALLER_SIGN_IDENTITY.*{error}") as failure:
         signing.check_developer_id_certificates(P12, PASSWORD, (), values)
     assert selector not in str(failure.value)
@@ -137,6 +152,37 @@ def test_macos_requires_both_private_key_bags(monkeypatch):
     monkeypatch.setattr(signing, "run_openssl", lambda *a, **k: subprocess.CompletedProcess(a, 0, b"", P12_INFO))
     with pytest.raises(ValueError, match="private keys for both Developer ID roles"):
         signing.check_inputs("macos", inputs("macos"))
+
+
+@pytest.mark.parametrize("certificates", [
+    {},
+    {APP_PEM: windows_certificate("X509v3 Extended Key Usage: \n    TLS Web Server Authentication")},
+    {APP_PEM: windows_certificate("X509v3 Key Usage: critical\n    Key Encipherment")},
+    {APP_PEM: windows_certificate("X509v3 Basic Constraints: critical\n    CA:TRUE")},
+    {APP_PEM: windows_certificate(not_after="Jan 1 00:00:00 2001 GMT")},
+    {APP_PEM: windows_certificate(not_before="Jan 1 00:00:00 2098 GMT")},
+])
+def test_windows_refuses_pfx_without_eligible_leaf_certificate(monkeypatch, certificates):
+    mock_certificate_metadata(monkeypatch, certificates)
+    with pytest.raises(ValueError, match="no currently valid leaf certificate compatible with code signing"):
+        signing.check_windows_signing_certificate(P12, PASSWORD, (), "ROW_WINDOWS_CERTIFICATE_BASE64")
+
+
+def test_windows_refuses_ambiguous_pfx_without_automatic_selection(monkeypatch):
+    mock_certificate_metadata(monkeypatch, {
+        APP_PEM: windows_certificate("X509v3 Extended Key Usage: \n    Code Signing, E-mail Protection"),
+        INSTALLER_PEM: windows_certificate(),
+    })
+    with pytest.raises(ValueError, match="multiple currently valid code-signing certificates"):
+        signing.check_windows_signing_certificate(P12, PASSWORD, (), "ROW_WINDOWS_CERTIFICATE_BASE64")
+
+
+def test_windows_allows_one_eligible_leaf_with_unrelated_certificate(monkeypatch):
+    mock_certificate_metadata(monkeypatch, {
+        APP_PEM: windows_certificate("X509v3 Extended Key Usage: \n    1.3.6.1.5.5.7.3.3"),
+        INSTALLER_PEM: windows_certificate("X509v3 Extended Key Usage: \n    TLS Web Client Authentication"),
+    })
+    signing.check_windows_signing_certificate(P12, PASSWORD, ("-legacy",), "ROW_WINDOWS_CERTIFICATE_BASE64")
 
 
 @pytest.mark.parametrize(("target", "name", "value"), [
@@ -200,7 +246,9 @@ def test_real_linux_credential_parser(tmp_path):
     key = tmp_path / "disposable.pem"
     cert = tmp_path / "disposable.crt"
     openssl("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-noenc",
-            "-subj", "/CN=Disposable candidate fixture", "-days", "1", "-keyout", str(key), "-out", str(cert))
+            "-subj", "/CN=Disposable candidate fixture", "-days", "1", "-keyout", str(key), "-out", str(cert),
+            "-addext", "basicConstraints=critical,CA:FALSE",
+            "-addext", "keyUsage=critical,digitalSignature", "-addext", "extendedKeyUsage=codeSigning")
     for format_flags in ((), ("-legacy",)):
         raw = openssl("pkcs12", "-export", "-in", str(cert), "-inkey", str(key), "-passout", f"pass:{PASSWORD}",
                       *format_flags)

@@ -13,8 +13,8 @@ from scripts.inspect_windows_msi import ROLLBACK_ACTIONS
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="requires native MSI records")
-@pytest.mark.parametrize("action_field", [1, 2])
-def test_install_decodes_native_action_records_and_clears_callback(tmp_path, action_field):
+@pytest.mark.parametrize("preexisting_error", [False, True])
+def test_install_decodes_native_action_records_and_clears_callback(tmp_path, preexisting_error):
     native = upgrade.UpgradeInstaller()
     records = native.dll
     records.MsiCreateRecord.argtypes = (c.c_uint,)
@@ -29,14 +29,15 @@ def test_install_decodes_native_action_records_and_clears_callback(tmp_path, act
     def set_handler(callback, mask, context, previous):
         nonlocal handler
         assert context is None and previous is None
-        assert mask == (1 << 8 if callback else 0)
+        assert mask == ((1 << 8) | (1 << 1) | 1 if callback else 0)
         handler = callback if callback else None
         return records.MsiSetExternalUIRecord(callback, mask, context, previous)
 
-    def message(action):
+    def message(action, description=""):
         record = records.MsiCreateRecord(3)
         try:
-            assert records.MsiRecordSetStringW(record, action_field, action) == 0
+            assert records.MsiRecordSetStringW(record, 1, action) == 0
+            assert records.MsiRecordSetStringW(record, 2, description) == 0
             return handler(None, upgrade.ACTION_START, record)
         finally:
             assert records.MsiCloseHandle(record) == 0
@@ -46,7 +47,10 @@ def test_install_decodes_native_action_records_and_clears_callback(tmp_path, act
         assert message("RemoveExistingProducts") == 0
         assert message("InstallFiles") == 0
         launcher.unlink()
-        assert message("InstallFiles") == upgrade.IDCANCEL
+        assert message("UnrelatedAction", description="InstallFiles") == 0
+        if preexisting_error:
+            assert handler(None, upgrade.INSTALL_ERROR, 0) == 0
+        assert message("InstallFiles") == (0 if preexisting_error else upgrade.IDCANCEL)
         assert message("InstallFiles") == 0
         return upgrade.INSTALL_USER_EXIT
 
@@ -54,7 +58,8 @@ def test_install_decodes_native_action_records_and_clears_callback(tmp_path, act
                                  MsiRecordGetStringW=records.MsiRecordGetStringW)
     cancellation = upgrade.Cancellation(launcher)
     assert native.install(tmp_path / "fixture.msi", cancellation) == upgrade.INSTALL_USER_EXIT
-    assert cancellation.requested and handler is None
+    assert cancellation.requested == (not preexisting_error)
+    assert cancellation.error_before_cancel == preexisting_error and handler is None
 
 
 @pytest.mark.parametrize("modified", [False, True])

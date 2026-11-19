@@ -34,6 +34,8 @@ from inspect_windows_msi import (  # noqa: E402
 REPOSITORY = "Yunushan/remote-ops-workspace"
 RECEIPT = Path("build/native-smoke/windows-x64/signed-msi-upgrade.json")
 ACTION_START = 0x08000000
+FATAL_EXIT = 0x00000000
+INSTALL_ERROR = 0x01000000
 INSTALL_USER_EXIT = 1602
 UILEVEL_NONE = 2
 IDCANCEL = 2
@@ -45,11 +47,12 @@ class Cancellation:
         self.launcher = launcher
         self.removal_started = False
         self.requested = False
+        self.error_before_cancel = False
 
     def observe(self, action: str) -> int:
         if action == "RemoveExistingProducts":
             self.removal_started = True
-        if action == "InstallFiles" and self.removal_started and not self.requested:
+        if action == "InstallFiles" and self.removal_started and not self.requested and not self.error_before_cancel:
             try:
                 self.launcher.lstat()
             except FileNotFoundError:
@@ -83,22 +86,23 @@ class UpgradeInstaller(Installer):
         @self.callback_type
         def on_action(_context, message, record):
             nonlocal callback_error
-            if message & 0xFF000000 != ACTION_START or not record:
+            message_type = message & 0xFF000000
+            if message_type in (FATAL_EXIT, INSTALL_ERROR) and not cancellation.requested:
+                cancellation.error_before_cancel = True
+            if message_type != ACTION_START or not record:
                 return 0
             try:
-                # MSI records expose the action and description separately. Look
-                # for the two literal sequence-table identifiers, never log text.
-                for field in (1, 2):
-                    buffer, length = c.create_unicode_buffer(LIMIT), win.DWORD(LIMIT)
-                    result = self.dll.MsiRecordGetStringW(record, field, buffer, c.byref(length))
-                    if result == 0 and buffer.value in ("RemoveExistingProducts", "InstallFiles"):
-                        return cancellation.observe(buffer.value)
+                # Field 1 is the action identifier. Field 2 is its description.
+                buffer, length = c.create_unicode_buffer(LIMIT), win.DWORD(LIMIT)
+                result = self.dll.MsiRecordGetStringW(record, 1, buffer, c.byref(length))
+                if result == 0:
+                    return cancellation.observe(buffer.value)
             except OSError as exc:
                 callback_error = exc
             return 0
 
-        confirm(self.dll.MsiSetExternalUIRecord(on_action, 1 << (ACTION_START >> 24), None, None),
-                "MsiSetExternalUIRecord")
+        messages = sum(1 << (message >> 24) for message in (FATAL_EXIT, INSTALL_ERROR, ACTION_START))
+        confirm(self.dll.MsiSetExternalUIRecord(on_action, messages, None, None), "MsiSetExternalUIRecord")
         try:
             result = self.dll.MsiInstallProductW(str(path), "REBOOT=ReallySuppress")
         finally:
@@ -201,6 +205,7 @@ def exercise(native: UpgradeInstaller, previous: tuple[Path, dict], candidate: t
     cancellation = Cancellation(launcher)
     result = install(new_path, new, cancellation)
     report["cancellation"] = {"exit_code": result, "removal_started": cancellation.removal_started,
+                              "installer_error_before_cancel": cancellation.error_before_cancel,
                               "previous_launcher_absent_at_cancel": cancellation.requested}
     save()
     require(result == INSTALL_USER_EXIT and cancellation.requested,

@@ -353,8 +353,8 @@
     },
     {
       "path": "src/remote_ops_workspace/paths.py",
-      "sha256": "7e742ac90be7184952b802f179243c006f15dcbebca53a3ecc4b3f59b6aacb15",
-      "size": 2261
+      "sha256": "6049e09b34e6fe0fb8480ce8790255af9c79a1765c1ca5bea9de69cc9c2f6597",
+      "size": 2380
     },
     {
       "path": "src/remote_ops_workspace/platform_targets.py",

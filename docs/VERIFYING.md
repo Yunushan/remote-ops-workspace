@@ -334,6 +334,12 @@ python -m build --sdist --wheel --outdir artifacts/python315-dist
 python scripts/check_python_distribution_install.py --dist-dir artifacts/python315-dist --out artifacts/python315-runtime/distribution-install.json
 ```
 
+The frozen CLI check compares the reported version with `pyproject.toml` and
+the reported platform catalog with `configs/platform_targets.json`. The frozen
+app loads configuration and Web/PWA assets from its bundle. Launch failures
+such as Windows Application Control denials appear in the failed
+`python315-frozen` receipt with the executable digest and command diagnostic.
+
 The two native Windows Python 3.15 rows also install `paramiko==5.0.0`, set
 `ROW_REQUIRE_WINDOWS_SSH_LOOPBACK=1`, and run
 `tests/test_windows_ssh_loopback.py`. They retain the three machine-readable

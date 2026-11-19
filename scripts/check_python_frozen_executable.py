@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.check_release_version import read_project_version  # noqa: E402
+
 VERSION_RE = re.compile(r"\d+\.\d+")
 
 
@@ -98,6 +103,24 @@ def run_frozen_executable_smoke(
     }
     if errors:
         return errors, evidence
+
+    expected_version = read_project_version(ROOT / "pyproject.toml", errors)
+    if expected_version is None:
+        return errors, evidence
+    try:
+        catalog_bytes = (ROOT / "configs" / "platform_targets.json").read_bytes()
+        expected_platforms = json.loads(catalog_bytes)
+    except (OSError, ValueError) as exc:
+        errors.append(f"cannot read the checked-out platform catalog: {exc}")
+        return errors, evidence
+    if not isinstance(expected_platforms, dict) or any(
+        not isinstance(expected_platforms.get(key), list) or not expected_platforms[key]
+        for key in ("release_architectures", "windows_legacy_targets")
+    ):
+        errors.append("the checked-out platform catalog must contain release and legacy targets")
+        return errors, evidence
+    evidence["expected_project_version"] = expected_version
+    evidence["source_platform_catalog_sha256"] = hashlib.sha256(catalog_bytes).hexdigest()
 
     out_dir = out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -198,10 +221,12 @@ def run_frozen_executable_smoke(
     version_smoke = run_command(
         [str(executable), "--version"],
         timeout_seconds=min(timeout_seconds, 120),
+        cwd=out_dir,
     )
     platforms_smoke = run_command(
         [str(executable), "platforms", "--json"],
         timeout_seconds=min(timeout_seconds, 120),
+        cwd=out_dir,
     )
     evidence["smokes"] = {
         "version": command_evidence(version_smoke),
@@ -211,6 +236,8 @@ def run_frozen_executable_smoke(
         validate_frozen_smokes(
             version_smoke=version_smoke,
             platforms_smoke=platforms_smoke,
+            expected_version=expected_version,
+            expected_platforms=expected_platforms,
         )
     )
     evidence["passed"] = not errors
@@ -222,12 +249,14 @@ def validate_frozen_smokes(
     *,
     version_smoke: subprocess.CompletedProcess[str],
     platforms_smoke: subprocess.CompletedProcess[str],
+    expected_version: str,
+    expected_platforms: dict[str, Any],
 ) -> list[str]:
     errors: list[str] = []
     if version_smoke.returncode != 0:
         errors.append(f"frozen --version smoke exited {version_smoke.returncode}")
-    elif not version_smoke.stdout.strip().startswith("remote-ops-workspace "):
-        errors.append("frozen --version smoke did not report the ROW package version")
+    elif version_smoke.stdout.strip() != f"remote-ops-workspace {expected_version}":
+        errors.append(f"frozen --version smoke must report ROW package version {expected_version}")
     if platforms_smoke.returncode != 0:
         errors.append(f"frozen platforms --json smoke exited {platforms_smoke.returncode}")
     else:
@@ -236,8 +265,8 @@ def validate_frozen_smokes(
         except json.JSONDecodeError:
             errors.append("frozen platforms --json smoke returned invalid JSON")
         else:
-            if not isinstance(payload, dict) or not payload:
-                errors.append("frozen platforms --json smoke returned an empty or non-object payload")
+            if json.dumps(payload, sort_keys=True) != json.dumps(expected_platforms, sort_keys=True):
+                errors.append("frozen platforms --json smoke differs from the checked-out platform catalog")
     return errors
 
 
@@ -274,6 +303,10 @@ def run_command(
             124,
             stdout=str(exc.stdout or ""),
             stderr=f"timed out after {timeout_seconds} seconds\n{exc.stderr or ''}",
+        )
+    except OSError as exc:
+        return subprocess.CompletedProcess(
+            command, 126, stdout="", stderr=f"could not launch command: {exc}",
         )
 
 

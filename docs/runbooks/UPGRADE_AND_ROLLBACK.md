@@ -174,7 +174,13 @@ the [release promotion runbook](RELEASE_PROMOTION.md).
 
 ## RPM rollback qualification
 
-Use a disposable x86-64 Fedora Docker container with Python 3.11 or later,
+The x86-64 `all-modern` native candidate job runs this drill against the
+pinned v1.0.27 release RPM and the exact RPM from the native smoke report.
+It retains `build/candidate-proof/linux-x86_64/rpm-recovery.json` with the
+candidate artifacts. The receipt binds the source commit, workflow attempt,
+native smoke proof digest, both package digests, and the Fedora image digest.
+
+Use a disposable x86-64 Fedora Docker container with Python 3.10 or later,
 `rpm`, and `rpm2archive`. Start with a fresh RPM database for ROW and no
 `/usr/bin/row`. Mount the checkout and both inputs read-only. Use the expected
 SHA-256 from each package's verified release evidence. For a local candidate,

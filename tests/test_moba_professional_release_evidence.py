@@ -18,6 +18,7 @@ from scripts import capture_moba_professional_installers as native_capture
 from scripts import capture_moba_professional_policy as policy_capture
 from scripts import check_moba_professional_deployment_evidence as gate
 from scripts import check_release_mobaxterm_parity as published
+from scripts import fetch_moba_professional_update_manifest as fetch_update
 from scripts import isolated_linux_fixture, qt_release_capture
 from scripts import make_mobaxterm_parity_evidence_record as generator
 
@@ -43,6 +44,36 @@ def test_policy_capture_rejects_modified_bundle_before_machine_installation(tmp_
     with pytest.raises(ValueError, match="must match config/policy.json in the customizer manifest"):
         policy_capture.capture(tmp_path / "release.whl", bundle, output, local=True)
     assert not output.exists()
+
+
+@pytest.mark.parametrize("failure", [None, "unapproved", "loopback", "different-url"])
+def test_fetch_professional_update_requires_approved_https_and_the_exact_manifest(tmp_path, monkeypatch, failure):
+    approved = "https://updates.example.com"
+    if failure == "loopback":
+        approved = "https://127.0.0.1:8080"
+    url = f"{approved}/stable.json" if failure != "unapproved" else "https://other.example.com/stable.json"
+    manifest_url = f"{approved}/other.json" if failure == "different-url" else url
+    raw = (json.dumps({"update_url": manifest_url}, indent=4) + "\n").encode()
+    observed = []
+
+    def chunks(requested, settings, _deadline, maximum):
+        observed.append(requested)
+        assert settings["allowed_origins"] == {approved}
+        assert maximum == 1024 * 1024
+        yield raw[:10]
+        yield raw[10:]
+
+    monkeypatch.setattr(gate.update_channel, "_chunks", chunks)
+    output = tmp_path / "stable.json"
+    if failure:
+        with pytest.raises(ValueError):
+            fetch_update.fetch(url, [approved], output)
+        assert not output.exists()
+        assert observed == ([url] if failure == "different-url" else [])
+    else:
+        fetch_update.fetch(url, [approved], output)
+        assert observed == [url]
+        assert output.read_bytes() == raw
 
 
 @pytest.mark.parametrize("damage", [None, "unreferenced", "outside-section"])

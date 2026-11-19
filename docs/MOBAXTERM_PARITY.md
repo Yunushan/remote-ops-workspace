@@ -346,6 +346,37 @@ reviews, and the downloaded release assets. See the
 
 ### Professional Windows installer release evidence
 
+Run **Professional deployment release evidence** at the exact promoted release
+tag. The Windows build job verifies the published wheel before creating the
+customizer bundle, then signs the branded EXE and MSI using the existing
+protected `release` signing environment. Configure `ROW_PROFESSIONAL_BRAND`,
+`ROW_PROFESSIONAL_ORGANIZATION`, `ROW_PROFESSIONAL_LOGO_BASE64` (the organization's
+ICO file), and `ROW_PROFESSIONAL_DEPLOYMENT_ID` (the approved stable deployment
+GUID) as variables in that environment.
+
+Download `professional-build-<run-id>-<attempt>` and use `native/` to publish
+the exact signed installers to the approved organization HTTPS channel. The
+organization signs and hosts the update manifest using those installer hashes.
+Keep the signing key with the organization. The workflow's separate Linux job
+uses the wheel and original customizer bundle from this same attempt to record
+the live `protocol=ssh` policy checks.
+
+Configure the `professional-update-review` environment with required reviewers
+and the `RELEASE_PROFESSIONAL_UPDATE_URL`, `RELEASE_PROFESSIONAL_UPDATE_ORIGINS`
+(space-separated), and `RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY` variables.
+Approve the waiting Windows qualification job after the signed update manifest
+and both installers are available at their approved HTTPS locations. That job
+inspects the native branding, verifies the signature and actual downloads, and
+uploads `professional-deployment-evidence-<run-id>-<attempt>` for independent
+review. Retain its original ZIP under `workflow-artifacts/` for certification.
+If the run must be repeated, start a new attempt with all jobs and publish the
+installer bytes from that new attempt before approving the review job.
+
+The published audit requires all three successful jobs from this exact tagged
+attempt, their Windows and Linux runner labels, the uploaded review ZIP, and
+the published wheel. It also repeats the live update downloads using the
+production audit's independently approved `RELEASE_PROFESSIONAL_UPDATE_ORIGINS`.
+
 Build both branded installers from the published source asset for the release
 under review. Record its `name` and SHA-256 in `release_asset` and record the
 GitHub repository, release tag, source SHA, workflow run URL and run attempt

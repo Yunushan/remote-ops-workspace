@@ -1,0 +1,243 @@
+name: Professional deployment release evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  attestations: read
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_REQUIRE_VIRTUALENV: "1"
+
+jobs:
+  build-windows:
+    name: Build the signed Professional installers
+    runs-on: windows-latest
+    environment: release
+    timeout-minutes: 55
+    steps:
+      - name: Require an exact release tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -ne 'tag' -or $env:GITHUB_REF_NAME -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$' -or
+              $env:GITHUB_REF -cne "refs/tags/$env:GITHUB_REF_NAME" -or $env:GITHUB_SHA -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'Professional qualification requires an exact release tag and source SHA'
+          }
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.7"
+          architecture: x64
+      - name: Download and verify the promoted release wheel
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Checkout differs from the frozen release source' }
+          $InputRoot = Join-Path $env:RUNNER_TEMP 'professional-input'
+          $Release = New-Item -ItemType Directory -Path (Join-Path $InputRoot 'release')
+          $Wheel = "remote_ops_workspace-$($env:GITHUB_REF_NAME.Substring(1))-py3-none-any.whl"
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --pattern $Wheel --dir $Release.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Release wheel download failed' }
+          python scripts/check_release_provenance.py --asset (Join-Path $Release.FullName $Wheel) --repository $env:GITHUB_REPOSITORY --tag $env:GITHUB_REF_NAME --sha $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Release wheel provenance failed' }
+          @{
+            repository = $env:GITHUB_REPOSITORY
+            release_tag = $env:GITHUB_REF_NAME
+            head_sha = $env:GITHUB_SHA
+            workflow_run_url = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            run_attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $InputRoot 'source.json') -Encoding utf8
+      - name: Set up the locked Windows x64 installer toolchain
+        shell: pwsh
+        run: ./scripts/setup_professional_windows_evidence.ps1 -Build
+      - name: Build the organization bundle with the exact release wheel
+        shell: pwsh
+        env:
+          ROW_PROFESSIONAL_BRAND: ${{ vars.ROW_PROFESSIONAL_BRAND }}
+          ROW_PROFESSIONAL_ORGANIZATION: ${{ vars.ROW_PROFESSIONAL_ORGANIZATION }}
+          ROW_PROFESSIONAL_LOGO_BASE64: ${{ vars.ROW_PROFESSIONAL_LOGO_BASE64 }}
+        run: |
+          foreach ($Name in @('ROW_PROFESSIONAL_BRAND','ROW_PROFESSIONAL_ORGANIZATION','ROW_PROFESSIONAL_LOGO_BASE64')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))) {
+              throw "Protected release environment is missing $Name"
+            }
+          }
+          $InputRoot = Join-Path $env:RUNNER_TEMP 'professional-input'
+          $Wheel = Join-Path "$InputRoot/release" "remote_ops_workspace-$($env:GITHUB_REF_NAME.Substring(1))-py3-none-any.whl"
+          python -m pip install --no-index --no-deps $Wheel
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the verified release wheel' }
+          python -c "import sys; from pathlib import Path; from scripts.qt_release_capture import verify_wheel; verify_wheel(Path(sys.argv[1]))" $Wheel
+          if ($LASTEXITCODE -ne 0) { throw 'Installed package differs from the verified release wheel' }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw 'Installed Windows release dependencies are inconsistent' }
+          $Logo = Join-Path $env:RUNNER_TEMP 'professional-logo.ico'
+          [IO.File]::WriteAllBytes($Logo, [Convert]::FromBase64String($env:ROW_PROFESSIONAL_LOGO_BASE64))
+          $BundleArgs = @('--out', "$InputRoot/bundle", "--brand-name=$env:ROW_PROFESSIONAL_BRAND",
+            "--organization=$env:ROW_PROFESSIONAL_ORGANIZATION", "--welcome-message=Welcome to $env:ROW_PROFESSIONAL_BRAND",
+            '--logo', $Logo, '--lock-setting', 'protocol=ssh')
+          python -I -m remote_ops_workspace customizer build @BundleArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the original customizer bundle' }
+      - name: Build and sign the exact branded EXE and MSI
+        shell: pwsh
+        env:
+          ROW_PROFESSIONAL_DEPLOYMENT_ID: ${{ vars.ROW_PROFESSIONAL_DEPLOYMENT_ID }}
+          ROW_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.ROW_WINDOWS_CERTIFICATE_BASE64 }}
+          ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD }}
+          ROW_WINDOWS_TIMESTAMP_URL: ${{ secrets.ROW_WINDOWS_TIMESTAMP_URL }}
+        run: |
+          foreach ($Name in @('ROW_WINDOWS_CERTIFICATE_BASE64','ROW_WINDOWS_CERTIFICATE_PASSWORD','ROW_WINDOWS_TIMESTAMP_URL')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))) {
+              throw "Protected release environment is missing $Name"
+            }
+          }
+          $Deployment = [guid]::ParseExact($env:ROW_PROFESSIONAL_DEPLOYMENT_ID, 'D')
+          $InputRoot = Join-Path $env:RUNNER_TEMP 'professional-input'
+          $BuildRoot = 'native-dist/professional-evidence'
+          $Certificate = Join-Path $env:RUNNER_TEMP "professional-$([guid]::NewGuid()).pfx"
+          try {
+            [IO.File]::WriteAllBytes($Certificate, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
+            Remove-Item -LiteralPath Env:ROW_WINDOWS_CERTIFICATE_BASE64
+            $env:ROW_WINDOWS_CERTIFICATE_PATH = $Certificate
+            $env:ROW_REQUIRE_RELEASE_SIGNING = '1'
+            ./scripts/make_windows_native.ps1 -Arch x64 -Dist $BuildRoot -EnterpriseBundle "$InputRoot/bundle" -EnterpriseDeploymentId $Deployment
+            if ($LASTEXITCODE -ne 0) { throw 'Signed branded Windows build failed' }
+          } finally {
+            if (Test-Path -LiteralPath $Certificate) { Remove-Item -LiteralPath $Certificate -Force }
+          }
+          $Inventories = @(Get-ChildItem -LiteralPath $BuildRoot -Recurse -Filter 'enterprise-installers.json' -File)
+          if ($Inventories.Count -ne 1) { throw 'Expected exactly one native Professional build inventory' }
+          $Inventory = Get-Content -LiteralPath $Inventories[0].FullName -Raw | ConvertFrom-Json
+          if ($Inventory.authenticode_verified -ne $true) { throw 'The Windows build did not verify Authenticode' }
+          Copy-Item -LiteralPath $Inventories[0].DirectoryName -Destination "$InputRoot/native" -Recurse
+      - name: Retain the build inputs for policy capture and organization publication
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: professional-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/professional-input/
+          if-no-files-found: error
+          retention-days: 30
+
+  capture-policy:
+    name: Capture the live Professional policy surfaces
+    needs: build-windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.7"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: professional-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/professional-input
+      - name: Prepare the hash-locked Qt fixture
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bash scripts/build_qt_release_fixture.sh "$RUNNER_TEMP/professional-qt" "row-professional-evidence:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - name: Record live policy enforcement without a network route
+        shell: bash
+        run: |
+          input="$RUNNER_TEMP/professional-input"
+          wheel="remote_ops_workspace-${GITHUB_REF_NAME#v}-py3-none-any.whl"
+          mkdir "$RUNNER_TEMP/professional-policy"
+          docker run --rm --pull never --platform linux/amd64 --network none \
+            --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN --security-opt no-new-privileges \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
+            --mount "type=bind,source=$input/release,target=/release,readonly" \
+            --mount "type=bind,source=$input/bundle,target=/bundle,readonly" \
+            --mount "type=bind,source=$RUNNER_TEMP/professional-policy,target=/proof" \
+            --env GITHUB_ACTIONS --env GITHUB_REF --env GITHUB_SHA --env GITHUB_REPOSITORY \
+            --env GITHUB_RUN_ID --env GITHUB_RUN_ATTEMPT \
+            "row-professional-evidence:$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" bash -euc '
+              wheel="/release/$1"
+              /opt/editor/bin/python -m pip install --no-index --no-deps "$wheel"
+              /opt/editor/bin/python -I /src/scripts/capture_moba_professional_policy.py \
+                --wheel "$wheel" --bundle /bundle --out /proof/review
+            ' bash "$wheel"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: professional-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/professional-policy/review/
+          if-no-files-found: error
+          retention-days: 30
+
+  qualify-review:
+    name: Qualify the branded Professional deployment
+    needs: [build-windows, capture-policy]
+    runs-on: windows-latest
+    environment: professional-update-review
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.7"
+          architecture: x64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: professional-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/professional-input
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: professional-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/professional-policy
+      - name: Set up the locked Windows review tools
+        shell: pwsh
+        run: ./scripts/setup_professional_windows_evidence.ps1
+      - name: Capture the native branding and verify signed HTTPS delivery
+        shell: pwsh
+        env:
+          RELEASE_PROFESSIONAL_UPDATE_URL: ${{ vars.RELEASE_PROFESSIONAL_UPDATE_URL }}
+          RELEASE_PROFESSIONAL_UPDATE_ORIGINS: ${{ vars.RELEASE_PROFESSIONAL_UPDATE_ORIGINS }}
+          RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY: ${{ vars.RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY }}
+        run: |
+          if ((git rev-parse HEAD) -cne $env:GITHUB_SHA) { throw 'Checkout differs from the frozen release source' }
+          foreach ($Name in @('RELEASE_PROFESSIONAL_UPDATE_URL','RELEASE_PROFESSIONAL_UPDATE_ORIGINS','RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))) {
+              throw "Protected organization review environment is missing $Name"
+            }
+          }
+          $InputRoot = Join-Path $env:RUNNER_TEMP 'professional-input'
+          $Policy = Join-Path $env:RUNNER_TEMP 'professional-policy'
+          $Installer = Join-Path $env:RUNNER_TEMP 'professional-installer'
+          $Update = Join-Path $env:RUNNER_TEMP 'professional-update.json'
+          $Review = New-Item -ItemType Directory -Path (Join-Path $env:RUNNER_TEMP 'professional-review')
+          $Evidence = Join-Path $Review.FullName 'professional-deployment'
+          $WheelName = "remote_ops_workspace-$($env:GITHUB_REF_NAME.Substring(1))-py3-none-any.whl"
+          $Wheel = Join-Path "$InputRoot/release" $WheelName
+          $Origins = $env:RELEASE_PROFESSIONAL_UPDATE_ORIGINS.Trim() -split '\s+'
+          $DownloadOrigins = @($Origins | ForEach-Object { "--origin=$_" })
+          $ReviewOrigins = @($Origins | ForEach-Object { "--update-origin=$_" })
+          $Key = $env:RELEASE_PROFESSIONAL_UPDATE_PUBLIC_KEY
+          python scripts/fetch_moba_professional_update_manifest.py --url $env:RELEASE_PROFESSIONAL_UPDATE_URL @DownloadOrigins --out $Update
+          if ($LASTEXITCODE -ne 0) { throw 'Organization update manifest download failed' }
+          python scripts/capture_moba_professional_installers.py --bundle "$InputRoot/bundle" --installers "$InputRoot/native" --update-manifest $Update --update-key $Key --source "$InputRoot/source.json" --release-asset $Wheel --out $Installer
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows installer inspection failed' }
+          python scripts/assemble_moba_professional_evidence.py --installer-review $Installer --policy-review $Policy --wheel $Wheel --update-key $Key @ReviewOrigins --out $Evidence
+          if ($LASTEXITCODE -ne 0) { throw 'Professional deployment review assembly failed' }
+          $AssetUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:GITHUB_REF_NAME/$WheelName"
+          python scripts/make_mobaxterm_parity_evidence_record.py --article-id professional-deployment --release-tag $env:GITHUB_REF_NAME --release-target windows-x64 --evidence "$Evidence/evidence.json" --assets-dir $Evidence --release-asset-url $AssetUrl --artifact "$WheelName=$Wheel" --out (Join-Path $Review.FullName 'candidate.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Professional deployment candidate generation failed' }
+      - name: Retain the candidate and exact Professional review files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: professional-deployment-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/professional-review/
+          if-no-files-found: error
+          retention-days: 90

@@ -722,6 +722,11 @@ def reviewed_release(tmp_path, monkeypatch):
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1235"
         if article == "embedded-server-suite":
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1239"
+        if article == "professional-deployment":
+            record["release_target"] = "windows-x64"
+            record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1240"
+            record["release_asset_urls"] = [f"https://github.com/{repository}/releases/download/{tag}/{wheel.name}"]
+            record["artifact_sha256"] = record["release_asset_bytes"]["sha256"] = {wheel.name: wheel_digest}
         if article == "moba-text-editor-diff":
             record["release_target"] = "linux-x86_64"
             record["release_source"]["workflow_run_url"] = f"https://github.com/{repository}/actions/runs/1236"
@@ -782,7 +787,7 @@ def reviewed_release(tmp_path, monkeypatch):
             record["validation_summary"]["summary"].update(
                 verified_windows_installers={"org-setup.exe": "a" * 64, "org.msi": "b" * 64},
                 verified_policy_surfaces=list(PROFESSIONAL_POLICY_SURFACES), verified_machine_policy_sha256="e" * 64,
-                tested_release_asset={"name": name, "sha256": digest},
+                tested_release_asset={"name": wheel.name, "sha256": wheel_digest},
             )
         article_root = evidence_root / article
         article_root.mkdir()
@@ -807,6 +812,8 @@ def reviewed_release(tmp_path, monkeypatch):
     transport_jobs = f"{transport_run}/jobs?per_page=20&page=1"
     server_run = "actions/runs/1239/attempts/2"
     server_jobs = f"{server_run}/jobs?per_page=20&page=1"
+    professional_run = "actions/runs/1240/attempts/2"
+    professional_jobs = f"{professional_run}/jobs?per_page=20&page=1"
     review = "pulls/42/reviews/99"
     responses = {
         "branches/main": {"name": "main", "protected": True, "commit": {"sha": main_tip}},
@@ -866,6 +873,17 @@ def reviewed_release(tmp_path, monkeypatch):
             **responses[jobs]["jobs"][0], "name": release_parity.SERVER_JOB, "run_id": 1239,
             "labels": ["ubuntu-24.04"],
         }],
+    }
+    responses[professional_run] = {**responses[run], "id": 1240, "path": release_parity.PROFESSIONAL_WORKFLOW}
+    responses[professional_jobs] = {
+        "total_count": 3, "jobs": [
+            {**responses[jobs]["jobs"][0], "id": index, "run_id": 1240, "name": name, "labels": [runner]}
+            for index, (name, runner) in enumerate([
+                (release_parity.PROFESSIONAL_BUILD_JOB, "windows-latest"),
+                (release_parity.PROFESSIONAL_POLICY_JOB, "ubuntu-24.04"),
+                (release_parity.PROFESSIONAL_JOB, "windows-latest"),
+            ], 1)
+        ],
     }
     hosted_archives = {}
     for record in records:
@@ -956,6 +974,7 @@ def reviewed_release(tmp_path, monkeypatch):
         macro_run=macro_run, macro_jobs=macro_jobs,
         transport_run=transport_run, transport_jobs=transport_jobs,
         server_run=server_run, server_jobs=server_jobs,
+        professional_run=professional_run, professional_jobs=professional_jobs,
         hosted_archives=hosted_archives,
         review=review, validator_calls=validator_calls,
         delivery_calls=delivery_calls,
@@ -973,6 +992,25 @@ def test_certification_accepts_post_release_registry_and_exact_assets(reviewed_r
         "evidence_sha256": article["evidence_file_sha256"],
         "verified_installers": article["validation_summary"]["summary"]["verified_windows_installers"],
     })]
+
+
+@pytest.mark.parametrize(("failure", "expected"), [
+    ("generic-workflow", "its dedicated workflow dispatched at the release tag"),
+    ("missing-build", "Build the signed Professional installers) evidence attempt must contain"),
+    ("wrong-policy-runner", "Capture the live Professional policy surfaces) evidence job did not report"),
+])
+def test_professional_certification_requires_the_exact_native_workflow_jobs(reviewed_release, failure, expected):
+    attempt = reviewed_release.responses[reviewed_release.professional_run]
+    jobs = reviewed_release.responses[reviewed_release.professional_jobs]["jobs"]
+    if failure == "generic-workflow":
+        attempt["path"] = ".github/workflows/ci.yml"
+    if failure == "missing-build":
+        jobs[0]["conclusion"] = "failure"
+    if failure == "wrong-policy-runner":
+        jobs[1]["labels"] = ["ubuntu-22.04"]
+    errors = release_parity.audit_release(**reviewed_release.args)
+    assert len(errors) == 1 and errors[0].startswith("professional-deployment ") and expected in errors[0]
+    assert reviewed_release.delivery_calls == []
 
 
 def test_linux_server_certification_requires_the_reviewed_payload_in_the_release_debian_package(
@@ -1248,7 +1286,8 @@ def test_certification_binds_review_time_to_completed_attempt_jobs(
     reviewed_release, field, value, expected,
 ) -> None:
     for jobs in (reviewed_release.jobs, reviewed_release.x11_jobs, reviewed_release.editor_jobs,
-                 reviewed_release.macro_jobs, reviewed_release.transport_jobs, reviewed_release.server_jobs):
+                 reviewed_release.macro_jobs, reviewed_release.transport_jobs, reviewed_release.server_jobs,
+                 reviewed_release.professional_jobs):
         reviewed_release.responses[jobs]["jobs"][0][field] = value
 
     errors = release_parity.audit_release(**reviewed_release.args)

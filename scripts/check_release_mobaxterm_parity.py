@@ -72,6 +72,10 @@ MACRO_WORKFLOW = ".github/workflows/macro-replay-evidence.yml"
 MACRO_JOB = "Qualify the published wheel's timed macro replay"
 TRANSPORT_WORKFLOW = ".github/workflows/transport-terminal-evidence.yml"
 TRANSPORT_JOB = "Qualify native terminal-grid and shared SSH"
+PROFESSIONAL_WORKFLOW = ".github/workflows/professional-deployment-evidence.yml"
+PROFESSIONAL_BUILD_JOB = "Build the signed Professional installers"
+PROFESSIONAL_POLICY_JOB = "Capture the live Professional policy surfaces"
+PROFESSIONAL_JOB = "Qualify the branded Professional deployment"
 
 
 @dataclass(frozen=True)
@@ -81,6 +85,7 @@ class EvidenceWorkflow:
     job: str
     artifact_prefix: str
     runner_labels: frozenset[str] = frozenset()
+    prerequisite_jobs: tuple[tuple[str, frozenset[str]], ...] = ()
 
 
 EVIDENCE_WORKFLOWS = {
@@ -94,6 +99,13 @@ EVIDENCE_WORKFLOWS = {
         "Connected editor", EDITOR_WORKFLOW, EDITOR_JOB, "connected-editor-evidence",
     ),
     "macro-recorder": EvidenceWorkflow("Macro replay", MACRO_WORKFLOW, MACRO_JOB, "macro-replay-evidence"),
+    "professional-deployment": EvidenceWorkflow(
+        "Professional deployment", PROFESSIONAL_WORKFLOW, PROFESSIONAL_JOB, "professional-deployment-evidence",
+        frozenset({"windows-latest"}), (
+            (PROFESSIONAL_BUILD_JOB, frozenset({"windows-latest"})),
+            (PROFESSIONAL_POLICY_JOB, frozenset({"ubuntu-24.04"})),
+        ),
+    ),
     "shared-authenticated-transport-terminal-grid": EvidenceWorkflow(
         "Terminal grid", TRANSPORT_WORKFLOW, TRANSPORT_JOB, "transport-terminal-evidence",
         frozenset({"self-hosted", "linux", "x64", "transport-evidence"}),
@@ -164,6 +176,23 @@ def load_registry(repository: str, release_sha: str, registry_commit: str) -> di
     return registry
 
 
+def successful_evidence_job(
+    jobs: list[dict[str, Any]], name: str, runner_labels: frozenset[str], workflow_label: str,
+) -> dict[str, Any]:
+    matches = [job for job in jobs if job.get("name") == name and job.get("conclusion") == "success"]
+    if len(matches) != 1:
+        raise ValueError(f"{workflow_label} evidence attempt must contain one successful qualification job")
+    job = matches[0]
+    if runner_labels:
+        labels = job.get("labels")
+        if (
+            not isinstance(labels, list) or not all(isinstance(label, str) for label in labels)
+            or not runner_labels.issubset(label.casefold() for label in labels)
+        ):
+            raise ValueError(f"{workflow_label} evidence job did not report the approved native runner labels")
+    return job
+
+
 def verify_workflow_run(
     repository: str, source: dict[str, Any], *, evidence_workflow: EvidenceWorkflow | None = None,
 ) -> tuple[str, tuple[str, str] | None]:
@@ -217,19 +246,11 @@ def verify_workflow_run(
         raise ValueError("GitHub evidence attempt has no successful jobs with completion timestamps")
     archive_window = None
     if evidence_workflow is not None:
-        qualification = [job for job in jobs if job.get("name") == evidence_workflow.job
-                         and job.get("conclusion") == "success"]
-        if len(qualification) != 1:
-            raise ValueError(f"{evidence_workflow.label} evidence attempt must contain one successful qualification job")
-        if evidence_workflow.runner_labels:
-            labels = qualification[0].get("labels")
-            if (
-                not isinstance(labels, list) or not all(isinstance(label, str) for label in labels)
-                or not evidence_workflow.runner_labels.issubset(label.casefold() for label in labels)
-            ):
-                raise ValueError(f"{evidence_workflow.label} evidence job did not report the approved native runner labels")
-        started = qualification[0].get("started_at")
-        completed = qualification[0]["completed_at"]
+        qualification = successful_evidence_job(jobs, evidence_workflow.job, evidence_workflow.runner_labels, evidence_workflow.label)
+        for name, labels in evidence_workflow.prerequisite_jobs:
+            successful_evidence_job(jobs, name, labels, f"{evidence_workflow.label} ({name})")
+        started = qualification.get("started_at")
+        completed = qualification["completed_at"]
         if not valid_utc_timestamp(started) or started > completed:
             raise ValueError("GitHub qualification job has an invalid start timestamp")
         archive_window = started, completed
@@ -468,6 +489,11 @@ def audit_release(
             wheel = f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl"
             if tested["name"] != wheel or record["release_target"] != "linux-x86_64":
                 errors.append(f"{article} must verify the published wheel on Linux x86_64")
+                continue
+        if article == "professional-deployment":
+            asset = record["validation_summary"]["summary"]["tested_release_asset"]
+            if asset["name"] != f"remote_ops_workspace-{tag[1:]}-py3-none-any.whl" or record["release_target"] != "windows-x64":
+                errors.append(f"{article} must bind the published wheel and the branded Windows x64 deployment")
                 continue
 
         for name, expected in record["artifact_sha256"].items():

@@ -318,6 +318,10 @@ def verify_transition_plan(
 def install_deb(path: Path, architecture: str, version: str, digests: dict[PurePosixPath, str]) -> None:
     check_deb(path, architecture, version)
     native_command(DPKG, "--install", str(path), frontend_locked=True)
+    verify_running_installation(architecture, version, digests)
+
+
+def verify_running_installation(architecture: str, version: str, digests: dict[PurePosixPath, str]) -> None:
     verify_installation(architecture, version, digests)
     launcher = trusted_path(Path("/usr/bin/row"))
     result = native_command(str(launcher), "--version")
@@ -340,6 +344,7 @@ def rollback(journal: Path, state: dict, architecture: str) -> dict:
     previous = state["previous_version"]
     phase = state["phase"]
     candidate = state["candidate_version"]
+    observed = None
     installed_candidate = phase == "applied"
     if phase == "applied":
         # A completed transaction grants rollback only for the exact
@@ -350,7 +355,8 @@ def rollback(journal: Path, state: dict, architecture: str) -> dict:
         )
         verify_installation(architecture, candidate, candidate_runtime)
     elif phase != "rolled-back":
-        status, installed_version = installed_package(architecture)
+        observed = installed_package(architecture)
+        status, installed_version = observed
         require(installed_version in (previous, candidate), "installed-package-changed")
         installed_candidate = (status, installed_version) == ("installed", candidate)
     retained = journal.parent / PREVIOUS_PACKAGE
@@ -360,6 +366,14 @@ def rollback(journal: Path, state: dict, architecture: str) -> dict:
     if phase == "rolled-back":
         verify_installation(architecture, previous, previous_runtime)
         return state
+    if phase == "rolling-back" and observed == ("installed", previous):
+        # dpkg may have finished before the interrupted controller updated the journal.
+        try:
+            verify_running_installation(architecture, previous, previous_runtime)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+        else:
+            return journal_write(journal, state, "rolled-back")
     if installed_candidate:
         verify_transition_plan(retained, architecture, candidate, previous, downgrade=True)
     state = journal_write(journal, state, "rolling-back")

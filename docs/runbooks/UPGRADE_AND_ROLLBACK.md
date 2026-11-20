@@ -179,6 +179,8 @@ The drill also stops the controller after `dpkg` reinstalls the exact
 predecessor and before the controller records rollback completion. It checks
 that the journal retains `rolling-back`, retrying `rollback` completes
 offline, and repeating the completed rollback leaves the journal unchanged.
+The drill counts the native installer invocations to verify that both retries
+leave the already restored installation in place.
 It also stages a candidate with an unavailable dependency and verifies the
 preflight refusal against the unchanged package database and launcher. The
 refusal leaves the transaction without an installation journal.

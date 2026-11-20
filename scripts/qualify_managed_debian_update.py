@@ -265,7 +265,12 @@ def pause_dpkg_rollback(root: Path):
     entered = root / "rollback-entered"
     resume = root / "rollback-resume"
     hook = root / "pause-rollback"
-    hook.write_text("#!/bin/sh\nset -eu\n" + pause_script(entered, resume), encoding="ascii")
+    hook.write_text(
+        "#!/bin/sh\nset -eu\n"
+        f"printf 'install\\n' >> {shlex.quote(str(entered))}\n"
+        + pause_script(entered, resume),
+        encoding="ascii",
+    )
     hook.chmod(0o700)
     stream = config.open("x", encoding="ascii")
     try:
@@ -448,18 +453,22 @@ def qualify(args, root: Path) -> dict:
                     argv("rollback", "--transaction", transaction), env, rollback_entered, rollback_resume,
                     transaction, previous, phase="rolling-back",
                 )
-            if sha256(launcher) != previous_launcher or sha256(sentinel) != original:
-                raise RuntimeError("Interrupted rollback did not restore the exact launcher and preserve workspace data")
+                if sha256(launcher) != previous_launcher or sha256(sentinel) != original:
+                    raise RuntimeError("Interrupted rollback did not restore the exact launcher and preserve workspace data")
+                recovered = update("explicit-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
+                completed_journal = journal.read_bytes()
+                repeated = update("repeated-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
+                if repeated != recovered or journal.read_bytes() != completed_journal:
+                    raise RuntimeError("Repeating the completed rollback changed its transaction")
+                native_invocations = rollback_entered.read_bytes().splitlines()
+                if native_invocations != [b"install"]:
+                    raise RuntimeError("Retrying an already restored rollback ran dpkg again")
             receipts["rollback-interruption"] = {
                 "action": "rollback", "phase": "rolling-back", "exit_code": rollback_code,
                 "previous_sha256": args.previous_sha256, "candidate_sha256": args.candidate_sha256,
                 "previous_launcher_sha256": sha256(launcher),
+                "native_rollback_invocations": len(native_invocations),
             }
-            recovered = update("explicit-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
-            completed_journal = journal.read_bytes()
-            repeated = update("repeated-rollback", "rollback", "--transaction", transaction, phase="rolled-back")
-            if repeated != recovered or journal.read_bytes() != completed_journal:
-                raise RuntimeError("Repeating the completed rollback changed its transaction")
         if checked(launcher, "--version") != f"{PACKAGE} {previous}" or sha256(launcher) != previous_launcher:
             raise RuntimeError("Rollback did not restore the original launcher")
         if sha256(sentinel) != original:

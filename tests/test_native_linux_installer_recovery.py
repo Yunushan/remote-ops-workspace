@@ -1103,7 +1103,8 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     (True, "changed-server-manifest-missing"),
     (False, "automatic-missing"), (False, "automatic-manual-action"), (False, "automatic-digest"),
     (False, "missing-rollback-interruption"), (False, "rollback-exit-code"), (False, "rollback-launcher"),
-    (False, "rollback-repeat"), (False, "old-schema"), (False, "automatic-schema"),
+    (False, "rollback-repeat"), (False, "native-rollback-repeated"), (False, "rollback-plan-schema"),
+    (False, "old-schema"), (False, "automatic-schema"),
     (False, "interruption-schema"), (False, "dependency-step-missing"), (False, "dependency-reason"),
     (False, "dependency-digest"), (False, "dependency-journal"), (False, "dependency-previous"),
     (False, "upgrade-plan-schema"), (False, "rollback-conflict-missing"),
@@ -1168,7 +1169,10 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
                     "previous_launcher_sha256": "e" * 64}
         steps["explicit-rollback"] = rollback
         steps["repeated-rollback"] = dict(rollback)
-        steps["rollback-interruption"] = {**rollback, "phase": "rolling-back", "exit_code": -15}
+        steps["rollback-interruption"] = {
+            **rollback, "phase": "rolling-back", "exit_code": -15,
+            "native_rollback_invocations": 2 if mismatch == "native-rollback-repeated" else 1,
+        }
         if mismatch == "missing-rollback-interruption":
             del steps["rollback-interruption"]
         if mismatch == "rollback-exit-code":
@@ -1186,10 +1190,11 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
         schemas = {"old-schema": managed_debian_qualification.PREVIOUS_SCHEMA,
                    "automatic-schema": managed_debian_qualification.AUTOMATIC_SCHEMA,
                    "interruption-schema": managed_debian_qualification.INTERRUPTION_SCHEMA,
-                   "upgrade-plan-schema": managed_debian_qualification.UPGRADE_PLAN_SCHEMA}
+                   "upgrade-plan-schema": managed_debian_qualification.UPGRADE_PLAN_SCHEMA,
+                   "rollback-plan-schema": managed_debian_qualification.ROLLBACK_PLAN_SCHEMA}
         if mismatch in {"old-schema", "automatic-schema"}:
             del steps["rollback-interruption"], steps["repeated-rollback"]
-        if mismatch not in schemas or mismatch == "upgrade-plan-schema":
+        if mismatch not in schemas or mismatch in {"upgrade-plan-schema", "rollback-plan-schema"}:
             steps["dependency-blocked"] = {"phase": "authenticated-staged", "exit_code": 0}
             if mismatch != "dependency-step-missing":
                 steps["dependency-blocked-apply"] = {
@@ -1200,7 +1205,7 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
                     "previous_installation_unchanged": mismatch != "dependency-previous",
                     "journal_created": mismatch == "dependency-journal",
                 }
-        if mismatch not in schemas:
+        if mismatch not in schemas or mismatch == "rollback-plan-schema":
             if mismatch != "rollback-conflict-missing":
                 steps["dependency-blocked-rollback"] = {
                     "phase": "refused", "exit_code": 1, "action": "rollback",
@@ -1211,6 +1216,8 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
             steps["dependency-blocked-update-retry"] = dict(steps["candidate-apply"])
             if mismatch == "rollback-conflict-retry":
                 steps["dependency-blocked-update-retry"]["action"] = "apply"
+        if mismatch == "rollback-plan-schema":
+            del steps["rollback-interruption"]["native_rollback_invocations"]
         return json.dumps({
             "schema": schemas.get(mismatch, managed_debian_qualification.SCHEMA),
             "status": "passed", "target": module.TARGET,

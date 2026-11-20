@@ -356,7 +356,9 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     steps.update({
         "explicit-rollback": rollback,
         "repeated-rollback": dict(rollback),
-        "rollback-interruption": {**rollback, "phase": "rolling-back", "exit_code": -15},
+        "rollback-interruption": {
+            **rollback, "phase": "rolling-back", "exit_code": -15, "native_rollback_invocations": 1,
+        },
         "interrupted-apply": {"phase": "rolled-back", "exit_code": 1, "action": "update", "previous_sha256": previous},
         "failing-apply": {"phase": "rolled-back", "exit_code": 1, "candidate_sha256": failing_sha},
         "automatic-candidate": {"phase": "applied", "exit_code": 0, "action": "update",

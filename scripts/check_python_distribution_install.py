@@ -123,6 +123,7 @@ GUI_SOURCE_MODULES = (
     "gui_preset_remmina",
     "gui_preset_securecrt",
     "gui_preset_termius",
+    "gui_reference_tabs",
     "gui_values",
     "terminal_output",
     "gui_workspace",

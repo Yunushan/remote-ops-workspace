@@ -52,6 +52,7 @@ LEGACY_SCHEMA_VERSION = 2
 BUILD_WORKFLOW = ".github/workflows/release.yml"
 CANDIDATE_INVENTORY_ARTIFACT = "release-candidate-inventory"
 MANAGED_DEBIAN_ARTIFACT = "release-managed-debian-update"
+MANAGED_DEBIAN_CONTROLLER = Path("scripts/managed_linux_update.py")
 RPM_ARTIFACT = "release-linux-rpm-recovery"
 RPM_REPORT_NAME = rpm_qualification.REPORT_NAME
 RPM_SMOKE_FILES = (rpm_qualification.PROOF.name, rpm_qualification.SMOKE_BINDING.name)
@@ -341,7 +342,9 @@ def stage(
         client, by_name[MANAGED_DEBIAN_ARTIFACT], MANAGED_DEBIAN_ARTIFACT, run_id, release_sha, REPORT_NAME,
     )
     managed["receipt"] = json.loads(report)
-    validate_managed_report(managed, release_tag, release_sha, run_id, run_attempt, require_current=True)
+    validate_managed_report(
+        managed, release_tag, release_sha, run_id, run_attempt, require_current=True, source_root=ROOT,
+    )
     if qualification_receipt_bytes(managed["receipt"]) != report:
         raise ValueError("managed Debian receipt must use the canonical JSON format")
     repository = normalize_repository_from_api(run)
@@ -453,6 +456,7 @@ def validate_qualification_archive(record: Any, label: str) -> int:
 
 def validate_managed_report(
     record: Any, release_tag: str, release_sha: str, run_id: int, run_attempt: int, *, require_current: bool = False,
+    source_root: Path | None = None,
 ) -> int:
     artifact_id = validate_qualification_archive(record, "managed Debian")
     receipt = record["receipt"]
@@ -466,6 +470,10 @@ def validate_managed_report(
                for key in ("candidate_sha256", "controller_sha256", "source_archive_sha256"))
     ):
         raise ValueError("managed Debian receipt does not match the release source and Actions attempt")
+    if source_root is not None and receipt["controller_sha256"] != hashlib.sha256(
+        (source_root / MANAGED_DEBIAN_CONTROLLER).read_bytes(),
+    ).hexdigest():
+        raise ValueError("managed Debian controller digest differs from the release checkout")
     image = receipt.get("drill_image")
     if receipt["debian_depends"]:
         normalize_digest(image, "managed Debian dependency image")
@@ -600,6 +608,7 @@ def validate_rpm_smoke_files(
 
 def verify_sealed_rpm_smoke(
     client: GitHubClient, inventory: dict[str, Any], run_id: int, release_sha: str,
+    *, archive_output: Path | None = None,
 ) -> None:
     rpm = inventory["rpm_recovery"]
     metadata = client.json(f'actions/artifacts/{rpm["artifact_id"]}')
@@ -609,6 +618,7 @@ def verify_sealed_rpm_smoke(
     )
     files, _, _ = sealed_json_members(
         client, metadata, RPM_ARTIFACT, run_id, release_sha, (RPM_REPORT_NAME, *RPM_SMOKE_FILES),
+        archive_output=archive_output,
     )
     validate_rpm_smoke_files(files, rpm["receipt"], inventory["rpm_smoke"])
 

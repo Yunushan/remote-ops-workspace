@@ -27,6 +27,9 @@ from scripts.check_release_license_compliance import (  # noqa: E402
 )
 from scripts.release_candidate_inventory import (  # noqa: E402
     BUILD_WORKFLOW,
+    MANAGED_DEBIAN_ARTIFACT,
+    REPORT_NAME,
+    RPM_ARTIFACT,
     RUNTIME_REPORT_ARTIFACT_NAMES,
     RUNTIME_REPORT_NAME,
     GitHubClient,
@@ -35,8 +38,12 @@ from scripts.release_candidate_inventory import (  # noqa: E402
     normalize_repository,
     normalize_sha,
     normalize_tag,
+    qualification_receipt_bytes,
     sealed_json_artifact,
+    validate_managed_report,
+    validate_rpm_report,
     validate_runtime_report,
+    verify_sealed_rpm_smoke,
 )
 from scripts.release_candidate_source import (  # noqa: E402
     INVENTORY_FILE,
@@ -84,6 +91,43 @@ def evidence_record(path: Path, bundle: Path, raw: bytes, reference: str) -> dic
         "size_bytes": len(raw),
         "reference": reference,
     }
+
+
+def collect_qualification_archives(
+    client: GitHubClient, archives: Path, inventory: dict[str, Any],
+    repository: str, tag: str, sha: str, run_id: int,
+) -> dict[str, Any]:
+    artifact_ids = {}
+    if "managed_debian_update" in inventory:
+        record = inventory["managed_debian_update"]
+        artifact_id = validate_managed_report(record, tag, sha, run_id, 1, source_root=ROOT)
+        metadata = client.json(f"actions/artifacts/{artifact_id}")
+        check_artifact_metadata(
+            metadata, artifact_id=artifact_id, name=MANAGED_DEBIAN_ARTIFACT,
+            digest=record["archive_digest"], run_id=run_id, release_sha=sha,
+        )
+        raw, _ = sealed_json_artifact(
+            client, metadata, MANAGED_DEBIAN_ARTIFACT, run_id, sha, REPORT_NAME,
+            archive_output=archives / f"{MANAGED_DEBIAN_ARTIFACT}.zip",
+        )
+        if raw != qualification_receipt_bytes(record["receipt"]):
+            raise ValueError("managed Debian archive receipt does not match the sealed inventory")
+        artifact_ids[MANAGED_DEBIAN_ARTIFACT] = artifact_id
+    if "rpm_smoke" in inventory:
+        artifact_id, _ = validate_rpm_report(
+            inventory["rpm_recovery"], repository, tag, sha, run_id, 1, source_root=ROOT,
+        )
+        verify_sealed_rpm_smoke(
+            client, inventory, run_id, sha, archive_output=archives / f"{RPM_ARTIFACT}.zip",
+        )
+        artifact_ids[RPM_ARTIFACT] = artifact_id
+
+    records = {}
+    for name, artifact_id in artifact_ids.items():
+        archive = archives / f"{name}.zip"
+        reference = f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}"
+        records[name] = evidence_record(archive, archives.parent, archive.read_bytes(), reference)
+    return records
 
 
 def collect_runtime_inputs(
@@ -171,9 +215,13 @@ def prepare_review(
         )
         inventory = bundle / INVENTORY_FILE
         inventory_bytes = inventory.read_bytes()
+        sealed = json.loads(inventory_bytes)
+        qualification_archives = collect_qualification_archives(
+            client, archives, sealed, repository, tag, sha, pointer.run_id,
+        )
         reviews = collect_runtime_inputs(
             client, bundle, archives, repository, sha, pointer.run_id,
-            json.loads(inventory_bytes)["runtime_reports"], platform_locks,
+            sealed["runtime_reports"], platform_locks,
         )
         materialize_sealed_records(client, records, packet / "assets", run_id=pointer.run_id, release_sha=sha)
         require_candidate_run(client, repository, tag, sha, pointer.run_id)
@@ -192,6 +240,7 @@ def prepare_review(
             "policy_sha256": hashlib.sha256(policy).hexdigest(),
             "candidate_inventory": evidence_record(inventory, bundle, inventory_bytes, inventory_reference),
             "candidate_inventory_source": inventory_meta,
+            "qualification_archives": qualification_archives,
             "modern_targets": reviews,
         }
         (packet / "review-materials.json").write_bytes((json.dumps(materials, indent=2) + "\n").encode("utf-8"))

@@ -38,6 +38,9 @@ def archive(name, data):
     ("wrong-sealed-payload", "pip inspect bytes do not match the sealed inventory"),
     ("wrong-distributions", "runtime distributions differ"),
     ("wrong-package", "raw ZIP digest must be"),
+    ("wrong-qualification-controller", "managed Debian controller digest differs"),
+    ("wrong-qualification-archive", "archive does not match GitHub"),
+    ("wrong-qualification-receipt", "does not match the sealed inventory"),
     ("moved-tag", "live release tag does not resolve"),
     ("source-changed", "tracked files changed"),
 ])
@@ -145,19 +148,25 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
     receipt = {
         "schema": DEBIAN_RECEIPT_SCHEMA, "status": "passed", "target": "linux-x86_64", "production_acceptance": False,
         "previous_sha256": previous, "candidate_sha256": deb_digest, "candidate_has_server_bundle": False,
-        "controller_sha256": "c" * 64, "source_archive_sha256": "d" * 64, "receipts": receipts,
+        "controller_sha256": (
+            "c" * 64 if defect == "wrong-qualification-controller" else
+            digest((review.ROOT / "scripts/managed_linux_update.py").read_bytes())
+        ),
+        "source_archive_sha256": "d" * 64, "receipts": receipts,
         "download_server_closed_before_apply": True, "workspace_unchanged": True,
         "source_sha": SHA, "run_id": str(RUN_ID), "run_attempt": "1",
         "container_image": candidate.MANAGED_IMAGE, "drill_image": candidate.MANAGED_IMAGE, "debian_depends": "",
     }
     receipt_bytes = candidate.qualification_receipt_bytes(receipt)
+    archived_receipt = receipt_bytes if defect != "wrong-qualification-receipt" else receipt_bytes + b"\n"
+    qualification_digest = fixture(500, candidate.MANAGED_DEBIAN_ARTIFACT, candidate.REPORT_NAME, archived_receipt)
     inventory = {
         "schema_version": candidate.MANAGED_SCHEMA_VERSION, "repository": REPO,
         "release_tag": tag, "release_sha": SHA, "source_ref": f"refs/tags/{tag}",
         "workflow": candidate.BUILD_WORKFLOW, "build_run_id": RUN_ID, "build_run_attempt": 1,
         "artifacts": package_artifacts, "runtime_reports": reports,
         "managed_debian_update": {
-            "artifact_id": 500, "archive_digest": "sha256:" + "e" * 64, "sha256": digest(receipt_bytes),
+            "artifact_id": 500, "archive_digest": qualification_digest, "sha256": digest(receipt_bytes),
             "size_bytes": len(receipt_bytes), "receipt": receipt,
         },
     }
@@ -188,6 +197,8 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
             raw = archives[artifact_id]
             if (defect, artifact_id) in (("wrong-archive", bad_report_id), ("wrong-package", 400)):
                 raw += b"tamper"
+            if defect == "wrong-qualification-archive" and artifact_id == 500:
+                raw += b"tamper"
             assert len(raw) <= max_bytes and not path.exists()
             path.write_bytes(raw)
             return f"sha256:{digest(raw)}"
@@ -216,18 +227,23 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
         assert not destination.exists() and not list(tmp_path.iterdir())
         assert len(attestations) == 1
         if defect in ("wrong-run", "wrong-archive", "wrong-sealed-payload", "wrong-distributions"):
-            assert not any(item >= 400 for item in downloads)
+            assert not any(400 <= item < 408 for item in downloads)
+        if defect.startswith("wrong-qualification"):
+            assert not any(300 <= item < 408 for item in downloads)
         return
 
     review.prepare_review(client, destination, REPO, tag, SHA, pointer)
     assert len(attestations) == 1 and len(tag_checks) == len(source_checks) == 2
-    assert downloads == [INVENTORY_ID, *range(300, 307), *range(400, 408)]
+    assert downloads == [INVENTORY_ID, 500, *range(300, 307), *range(400, 408)]
     assert {path.name: path.read_bytes() for path in (destination / "assets").iterdir()} == files
     assert not (destination / "release-evidence.json").exists()
     index = json.loads((destination / "review-materials.json").read_bytes())
     assert index["policy_sha256"] == digest(policy)
     assert index["candidate_inventory_source"]["archive_digest"] == inventory_digest
     assert (destination / "archives/release-candidate-inventory.zip").read_bytes() == archives[INVENTORY_ID]
+    qualification = index["qualification_archives"][candidate.MANAGED_DEBIAN_ARTIFACT]
+    assert (destination / qualification["file"]).read_bytes() == archives[500]
+    assert qualification["sha256"] == qualification_digest.removeprefix("sha256:")
     bundle = destination / "bundle"
     assert (bundle / source.INVENTORY_FILE).read_bytes() == inventory_bytes
     assert index["candidate_inventory"]["sha256"] == digest(inventory_bytes)

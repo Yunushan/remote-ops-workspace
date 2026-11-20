@@ -23,6 +23,7 @@ import release_candidate_inventory as candidate  # noqa: E402
 from scripts import (  # noqa: E402
     managed_debian_qualification,
     managed_rpm_qualification,
+    prepare_release_redistribution_review,
     release_evidence_file,
 )
 from scripts import qualify_rpm_candidate as rpm_qualification  # noqa: E402
@@ -233,6 +234,7 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("missing-rpm", "missing=.*release-linux-rpm-recovery"),
         ("missing-rpm-smoke", "archive must contain the exact evidence files"),
         ("wrong-managed-run", "managed Debian receipt does not match the release source and Actions attempt"),
+        ("wrong-managed-controller", "managed Debian controller digest differs from the release checkout"),
         ("wrong-managed-deb", "managed Debian receipt must bind the exact candidate DEB"),
         ("wrong-managed-depends", "receipt Depends field differs from the candidate DEB"),
         ("wrong-managed-bundle", "receipt server bundle claim differs from the candidate DEB"),
@@ -363,7 +365,11 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                   managed_debian_qualification.SCHEMA, "status": "passed", "target": "linux-x86_64",
         "production_acceptance": False, "candidate_has_server_bundle": bundled,
         "previous_sha256": previous, "candidate_sha256": deb_sha,
-        "controller_sha256": "c" * 64, "source_archive_sha256": "d" * 64,
+        "controller_sha256": (
+            "c" * 64 if condition == "wrong-managed-controller" else
+            hashlib.sha256((ROOT / candidate.MANAGED_DEBIAN_CONTROLLER).read_bytes()).hexdigest()
+        ),
+        "source_archive_sha256": "d" * 64,
         "download_server_closed_before_apply": True, "workspace_unchanged": True,
         "source_sha": sha, "run_id": "224" if condition == "wrong-managed-run" else "123", "run_attempt": "1",
         "container_image": candidate.MANAGED_IMAGE,
@@ -555,7 +561,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             seal()
         if condition in {"wrong-managed-deb", "wrong-rpm-digest", "wrong-managed-depends", "wrong-managed-bundle"}:
             assert len(downloads) == len(archives)
-        elif condition in {"wrong-managed-run", "missing-rollback", "old-managed-schema"}:
+        elif condition in {"wrong-managed-run", "wrong-managed-controller", "missing-rollback", "old-managed-schema"}:
             assert len(downloads) == len(runtime) + 1
         elif condition in {
             "wrong-rpm-ref", "wrong-rpm-attempt", "rpm-failed",
@@ -634,8 +640,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["rpm_recovery"] = rpm
-    candidate.verify_sealed_rpm_smoke(BuildRun(), inventory, 123, sha)
-    assert downloads[-1] == rpm["artifact_id"]
+    retained = tmp_path / "review" / "archives"
+    retained.mkdir(parents=True)
+    qualifications = prepare_release_redistribution_review.collect_qualification_archives(
+        BuildRun(), retained, inventory, "example/project", tag, sha, 123,
+    )
+    assert downloads[-2:] == [managed["artifact_id"], rpm["artifact_id"]]
+    for name, record in ((candidate.MANAGED_DEBIAN_ARTIFACT, managed), (candidate.RPM_ARTIFACT, rpm)):
+        path = retained / f"{name}.zip"
+        assert path.read_bytes() == archives[record["artifact_id"]]
+        assert qualifications[name]["sha256"] == record["archive_digest"].removeprefix("sha256:")
     smoke_records[candidate.RPM_SMOKE_FILES[1]]["sha256"] = "f" * 64
     with pytest.raises(ValueError, match="RPM native smoke file differs"):
         candidate.verify_sealed_rpm_smoke(BuildRun(), inventory, 123, sha)

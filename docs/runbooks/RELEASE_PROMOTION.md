@@ -66,10 +66,14 @@ release_assets_dir="$approval_dir/assets"
 ```
 
 The command retains the original inventory ZIP and all seven runtime report
-ZIPs in `archives/`. It copies the sealed inventory, report payloads, and
-matching tagged resolver locks into `bundle/`. It verifies each report
-against the sealed digest and the locked installed distributions before
-publishing the directory. Use the `policy_sha256` and `candidate_inventory`
+ZIPs in `archives/`. For current candidates it also retains the original
+Debian update and RPM recovery ZIPs. It checks the qualification files and
+controller digests against the sealed inventory and tagged checkout.
+`review-materials.json` lists the retained qualification archive paths, hashes,
+and source references. The command copies the sealed inventory, report
+payloads, and matching tagged resolver locks into `bundle/` and verifies the
+runtime reports against the sealed digests and locked installed distributions
+before publishing the directory. Use the `policy_sha256` and `candidate_inventory`
 fields in `review-materials.json` and copy each `modern_targets` entry into
 the matching native inventory during review. Complete the artifact extraction
 scans, license classifications, Qt review where applicable, and the

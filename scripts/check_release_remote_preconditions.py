@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -23,6 +24,7 @@ MAX_JSON_BYTES = 20 * 1024 * 1024
 MAX_RELEASE_PAGES = 1000
 MAX_ENVIRONMENT_SECRETS = 100
 DEPLOYMENT_ENVIRONMENTS = ("release", "release-compliance-review", "platform-evidence")
+DEBIAN_SERVER_BUNDLE_VARIABLE = "ROW_DEBIAN_AMD64_SERVER_BUNDLE"
 RELEASE_SIGNING_SECRETS = frozenset({
     "ROW_WINDOWS_CERTIFICATE_BASE64",
     "ROW_WINDOWS_CERTIFICATE_PASSWORD",
@@ -114,6 +116,13 @@ def require_pre_tag(api_root: str, repository: str, tag: str, sha: str) -> None:
     require_environment_secret_inventory(
         api_root, repository, "platform-evidence", {"ROW_PLATFORM_RUNNER_INVENTORY_TOKEN"}, inventory_token,
     )
+    server_bundle = read_debian_server_bundle_selection(api_root, repository, tag, inventory_token)
+    artifact_id, sha256 = server_bundle
+    with tempfile.TemporaryDirectory(prefix="row-pre-tag-server-") as scratch:
+        run_release_check(
+            "stage_debian_server_bundle.py", "--repository", repository, "--artifact-id", artifact_id,
+            "--sha256", sha256, "--target", "linux-x86_64", "--out", str(Path(scratch) / "verified"),
+        )
     coordinates = ("--repository", repository, "--branch", PRODUCTION_BRANCH)
     run_release_check("check_python315_ci_evidence.py", *coordinates, "--sha", sha)
     run_release_check("check_repository_governance.py", *coordinates, "--sha", sha)
@@ -127,6 +136,8 @@ def require_pre_tag(api_root: str, repository: str, tag: str, sha: str) -> None:
     )
     require_unused_namespace(api_root, repository, tag, namespace_token, require_push=True)
     check_remote_pre_tag_refs(repository, tag, sha)
+    if read_debian_server_bundle_selection(api_root, repository, tag, inventory_token) != server_bundle:
+        raise RuntimeError(f"{DEBIAN_SERVER_BUNDLE_VARIABLE} changed during the pre-tag check")
     run_release_check("check_repository_cleanup.py", "--require-clean")
     check_local_pre_tag_refs(tag, sha)
 
@@ -255,6 +266,20 @@ def require_immutable_enabled(api_root: str, repository: str, token: str) -> Non
 
 def require_signing_secret_inventory(api_root: str, repository: str, token: str) -> None:
     require_environment_secret_inventory(api_root, repository, "release", RELEASE_SIGNING_SECRETS, token)
+
+
+def read_debian_server_bundle_selection(api_root: str, repository: str, tag: str, token: str) -> tuple[str, str]:
+    name = DEBIAN_SERVER_BUNDLE_VARIABLE
+    url = f"{api_root}/repos/{repository}/environments/release/variables/{name}"
+    try:
+        payload, _ = get_json(url, token, api_version="2026-03-10")
+    except (RuntimeError, ValueError) as exc:
+        raise RuntimeError(f"could not read {name} in the release environment with Environments read access") from exc
+    value = payload.get("value") if isinstance(payload, dict) and payload.get("name") == name else None
+    match = re.fullmatch(rf"{re.escape(tag)} ([1-9][0-9]*) ([0-9a-f]{{64}})", value) if isinstance(value, str) else None
+    if match is None:
+        raise RuntimeError(f"{name} must contain {tag}, a positive artifact ID and the reviewed SHA-256")
+    return match[1], match[2]
 
 
 def require_environment_secret_inventory(

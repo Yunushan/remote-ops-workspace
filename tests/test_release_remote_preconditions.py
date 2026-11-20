@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from subprocess import CompletedProcess
 
 import pytest
@@ -16,6 +17,7 @@ FIRST_PAGE = f"{REPOSITORY_URL}/releases?per_page=100"
 SECOND_PAGE = f"{API_ROOT}{RELEASES_PATH}?per_page=100&page=2"
 RELEASE_TAG = "v1.2.3"
 RELEASE_SHA = "a" * 40
+BUNDLE_SHA = "b" * 64
 
 
 def test_signing_inventory_matches_the_production_workflow() -> None:
@@ -81,6 +83,43 @@ def test_signing_access_failure_reports_the_required_permission(monkeypatch) -> 
     monkeypatch.setattr(preconditions, "get_json", denied)
     with pytest.raises(RuntimeError, match="Environments read access") as exc:
         preconditions.require_signing_secret_inventory(API_ROOT, REPOSITORY, "fixture")
+    assert "remote response body" not in str(exc.value)
+
+
+@pytest.mark.parametrize("value", [
+    f"{RELEASE_TAG} 42 {BUNDLE_SHA}",
+    "",
+    None,
+    f"v1.2.2 42 {BUNDLE_SHA}",
+    f"{RELEASE_TAG} 0 {BUNDLE_SHA}",
+    f"{RELEASE_TAG} 42 {BUNDLE_SHA.upper()}",
+    f"{RELEASE_TAG} 42 {BUNDLE_SHA}\n",
+])
+def test_debian_bundle_selection_is_bound_to_the_release_environment_and_tag(monkeypatch, value) -> None:
+    name = preconditions.DEBIAN_SERVER_BUNDLE_VARIABLE
+
+    def get_json(url, token, *, api_version):
+        assert url == f"{REPOSITORY_URL}/environments/release/variables/{name}"
+        assert token == "environments-token" and api_version == "2026-03-10"
+        return {"name": name, "value": value}, {}
+
+    monkeypatch.setattr(preconditions, "get_json", get_json)
+    if value == f"{RELEASE_TAG} 42 {BUNDLE_SHA}":
+        assert preconditions.read_debian_server_bundle_selection(
+            API_ROOT, REPOSITORY, RELEASE_TAG, "environments-token",
+        ) == ("42", BUNDLE_SHA)
+    else:
+        with pytest.raises(RuntimeError, match="must contain v1.2.3, a positive artifact ID and the reviewed SHA-256"):
+            preconditions.read_debian_server_bundle_selection(API_ROOT, REPOSITORY, RELEASE_TAG, "environments-token")
+
+
+def test_debian_bundle_selection_is_required_when_the_environment_variable_is_unavailable(monkeypatch) -> None:
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("remote response body")
+
+    monkeypatch.setattr(preconditions, "get_json", unavailable)
+    with pytest.raises(RuntimeError, match="could not read ROW_DEBIAN_AMD64_SERVER_BUNDLE") as exc:
+        preconditions.read_debian_server_bundle_selection(API_ROOT, REPOSITORY, RELEASE_TAG, "environments-token")
     assert "remote response body" not in str(exc.value)
 
 
@@ -286,11 +325,14 @@ def test_remote_pre_tag_binds_qualified_history_without_accepting_an_existing_ta
         preconditions.check_remote_pre_tag_refs(REPOSITORY, RELEASE_TAG, RELEASE_SHA)
 
 
-@pytest.mark.parametrize(("tag_created_during_audit", "signing_ready"), [(False, True), (True, True), (False, False)])
+@pytest.mark.parametrize(("tag_created_during_audit", "signing_ready", "bundle_changed"), [
+    (False, True, False), (True, True, False), (False, False, False), (False, True, True),
+])
 def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
-    monkeypatch, capsys, tag_created_during_audit, signing_ready,
+    monkeypatch, capsys, tag_created_during_audit, signing_ready, bundle_changed,
 ) -> None:
     calls = []
+    staging_dirs = []
     coordinates = ("--repository", REPOSITORY, "--branch", "main")
     monkeypatch.setenv("GITHUB_API_URL", API_ROOT)
     monkeypatch.setenv("GITHUB_TOKEN", "namespace-token")
@@ -307,7 +349,13 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
         calls.append(event)
 
     def check_script(script, *args, env=None):
-        calls.append((script, *args))
+        if script == "stage_debian_server_bundle.py":
+            output = Path(args[-1])
+            assert output.name == "verified" and output.parent.is_dir() and not output.exists()
+            staging_dirs.append(output.parent)
+            calls.append((script, *args[:-1]))
+        else:
+            calls.append((script, *args))
         if script == "check_platform_evidence_runner_readiness.py":
             assert env["GH_TOKEN"] == "runner-token"
         else:
@@ -318,11 +366,18 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
         if not signing_ready:
             raise RuntimeError("missing signing secrets in the release environment")
 
+    def read_bundle(*args):
+        event = ("read-bundle", *args)
+        changed = event in calls and bundle_changed
+        calls.append(event)
+        return ("43" if changed else "42"), BUNDLE_SHA
+
     monkeypatch.setattr(preconditions, "check_remote_pre_tag_refs", check_remote)
     monkeypatch.setattr(preconditions, "run_release_check", check_script)
     monkeypatch.setattr(preconditions, "require_immutable_enabled", lambda *args: calls.append(("immutable", *args)))
     monkeypatch.setattr(preconditions, "require_deployment_environment_policies", lambda *args: calls.append(("environments", *args)))
     monkeypatch.setattr(preconditions, "require_signing_secret_inventory", check_signing)
+    monkeypatch.setattr(preconditions, "read_debian_server_bundle_selection", read_bundle)
     monkeypatch.setattr(preconditions, "require_environment_secret_inventory", lambda *args: calls.append(("environment-secrets", *args)))
     monkeypatch.setattr(preconditions, "require_unused_namespace", lambda *args, require_push: calls.append(("namespace", *args, require_push)))
 
@@ -350,12 +405,16 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
     expected += [
         ("environment-secrets", API_ROOT, REPOSITORY, "release-compliance-review", {"ROW_RELEASE_IMMUTABILITY_TOKEN"}, "signing-token"),
         ("environment-secrets", API_ROOT, REPOSITORY, "platform-evidence", {"ROW_PLATFORM_RUNNER_INVENTORY_TOKEN"}, "signing-token"),
+        ("read-bundle", API_ROOT, REPOSITORY, RELEASE_TAG, "signing-token"),
+        ("stage_debian_server_bundle.py", "--repository", REPOSITORY, "--artifact-id", "42",
+         "--sha256", BUNDLE_SHA, "--target", "linux-x86_64", "--out"),
         ("check_python315_ci_evidence.py", *coordinates, "--sha", RELEASE_SHA),
         ("check_repository_governance.py", *coordinates, "--sha", RELEASE_SHA),
         ("check_repository_governance.py", *coordinates, "--release-tag", RELEASE_TAG),
         ("check_platform_evidence_runner_readiness.py", "--repository", REPOSITORY, "--require-goal-targets", "--require-idle"),
         ("namespace", API_ROOT, REPOSITORY, RELEASE_TAG, "namespace-token", True),
     ]
+    assert len(staging_dirs) == 1 and not staging_dirs[0].exists()
     if tag_created_during_audit:
         assert result == 1
         assert "remote tag created during audit" in captured.err
@@ -363,9 +422,16 @@ def test_pre_tag_cli_keeps_checks_source_bound_and_rechecks_refs(
     else:
         expected.extend([
             ("remote", REPOSITORY, RELEASE_TAG, RELEASE_SHA),
-            ("check_repository_cleanup.py", "--require-clean"),
-            ("local", RELEASE_TAG, RELEASE_SHA),
+            ("read-bundle", API_ROOT, REPOSITORY, RELEASE_TAG, "signing-token"),
         ])
-        assert result == 0
-        assert f"{REPOSITORY}@{RELEASE_SHA} and {RELEASE_TAG}" in captured.out
+        if bundle_changed:
+            assert result == 1 and "changed during the pre-tag check" in captured.err
+            assert captured.out == ""
+        else:
+            expected.extend([
+                ("check_repository_cleanup.py", "--require-clean"),
+                ("local", RELEASE_TAG, RELEASE_SHA),
+            ])
+            assert result == 0
+            assert f"{REPOSITORY}@{RELEASE_SHA} and {RELEASE_TAG}" in captured.out
     assert calls == expected

@@ -171,7 +171,7 @@ the original smoke reports listed in `rpm_smoke`. Inventory schema 6 requires
 the managed findings inside the RPM receipt. The reader also accepts historical
 schema 2 through 5 inventories.
 
-### Select an optional Debian amd64 server bundle
+### Select the Debian amd64 server bundle
 
 Prepare and review a gzip-compressed tar archive containing
 `servers-runtime.json`, the native files it lists under `linux/`, and the
@@ -183,11 +183,13 @@ Keep the artifact available until the candidate build finishes.
 Before tagging, set `ROW_DEBIAN_AMD64_SERVER_BUNDLE` in the protected
 `release` environment to three space-separated fields. Use the release tag,
 the numeric Actions artifact ID, and the lowercase SHA-256 of the inner
-`server-bundle.tar.gz` file. Preflight freezes the selection for that tag.
-The Linux x86_64 build verifies the artifact ZIP and the pinned tarball,
-validates the exact native files and notice bytes, and passes the verified
-directory to the Debian packager. Remove the selection when preparing a tag
-that will ship the standard Debian package.
+`server-bundle.tar.gz` file. The strict pre-tag check requires this selection
+for the embedded-server article. It downloads and stages the exact archive
+in temporary storage, verifies its native files and notices, and rereads the
+selection before reporting success. Keep the selection and archive available
+for the tagged build. The release workflow freezes the selection for that tag
+and the Linux x86_64 job independently verifies the archive before passing it
+to the Debian packager.
 
 The same archive can be checked locally before requesting a candidate build.
 
@@ -234,7 +236,8 @@ first if the selected commit is behind its live tip so Git can verify ancestry.
 Use the following credentials for their respective checks.
 
 - Export `GITHUB_TOKEN` for an account with push access so the release listing
-  includes drafts. The token also needs Actions read for exact-commit CI.
+  includes drafts. The token also needs Actions read for exact-commit CI
+  and the selected Debian server bundle artifact.
 - Use `GH_TOKEN` for branch protection and tag-ruleset inspection, including
   visibility of bypass actors, if `GITHUB_TOKEN` lacks that access.
 - Export `ROW_RELEASE_IMMUTABILITY_TOKEN` for the repository setting check
@@ -242,9 +245,10 @@ Use the following credentials for their respective checks.
   [GitHub release listing permissions](https://docs.github.com/en/rest/releases/releases#list-releases)
 - Give `GITHUB_TOKEN` Environments read access for the signing inventory check,
   or export a separate `ROW_RELEASE_SIGNING_INVENTORY_TOKEN` with that access.
-  The same permission covers the required promotion and platform runner secret
-  names in their own environments.
+  The same permission covers the selected Debian bundle variable and the
+  required promotion and platform runner secret names in their own environments.
   [GitHub environment secret listing permissions](https://docs.github.com/en/rest/actions/secrets#list-environment-secrets)
+  [GitHub environment variable read permissions](https://docs.github.com/en/rest/actions/variables#get-an-environment-variable)
 
 Check the deployment rules before the signing and review credentials are ready.
 The command verifies the `v*` tag rule in all three release environments and

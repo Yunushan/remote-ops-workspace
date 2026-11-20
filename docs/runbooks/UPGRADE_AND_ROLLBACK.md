@@ -228,9 +228,12 @@ python3 -I scripts/managed_rpm_update.py rollback \
 
 This command works offline. On a completed update it first verifies that the
 exact candidate is still installed. During recovery it recognizes only the two
-recorded RPM identities. If the installed package or a retained file fails
-verification, keep the journal and inspect the installation before making
-further package changes.
+recorded RPM identities. Before recording a rollback attempt, it tests the
+exact retained RPM with the same reinstall or downgrade arguments. If
+`rpm-rollback-test-refused` appears, the current installation and journal
+remain intact. Resolve the transaction conflict and retry `rollback` with the
+same directory. If the installed package or a retained file fails verification,
+keep the journal and inspect the installation before making further package changes.
 
 ## RPM rollback qualification
 
@@ -245,9 +248,11 @@ downloads, tamper refusals, interruption recovery, and concurrent update
 result. The drill also installs a metadata-only RPM that requires the
 predecessor version. The exact candidate must be refused while that dependency
 is present, with the predecessor and workspace intact and no update journal.
-After removing the fixture, the drill retries the same transaction with the
-feed offline and verifies the exact candidate and its rollback. New tagged
-release inventories require this result alongside the native recovery receipt.
+After removing the fixture, the drill retries the same update with the feed
+offline. A second fixture requires the candidate version. The drill verifies
+that a refused rollback preserves the candidate, workspace, and applied journal.
+Removing the second fixture lets the same transaction roll back offline. New
+tagged release inventories require both results alongside the native recovery receipt.
 
 Use a disposable x86-64 Fedora Docker container with Python 3.10 or later,
 `rpm`, and `rpm2archive`. Start with a fresh RPM database for ROW and no

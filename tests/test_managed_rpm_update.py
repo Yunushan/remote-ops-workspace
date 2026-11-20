@@ -191,9 +191,12 @@ def test_rollback_changes_only_a_bound_rpm(tmp_path, monkeypatch, initial, phase
         if needs_repair:
             raise updater.UpdateError("installed-launcher-digest-refused")
 
-    def native(*argv):
+    def native(*argv, check=True):
         nonlocal observed, needs_repair
         calls.append(argv)
+        if not check:
+            assert not phases
+            return SimpleNamespace(returncode=0)
         assert phases == ["rolling-back"]
         observed, needs_repair = OLD, False
 
@@ -217,4 +220,32 @@ def test_rollback_changes_only_a_bound_rpm(tmp_path, monkeypatch, initial, phase
         assert observed == OLD
         assert phases == (["rolling-back", "rolled-back"] if native_flags else
                           [] if phase == "rolled-back" else ["rolled-back"])
-    assert calls == ([(updater.RPM, *native_flags, str(tmp_path / updater.PREVIOUS))] if native_flags else [])
+    previous = str(tmp_path / updater.PREVIOUS)
+    assert calls == ([
+        (updater.RPM, *native_flags, "--test", previous),
+        (updater.RPM, *native_flags, previous),
+    ] if native_flags else [])
+
+
+def test_blocked_rollback_preserves_the_completed_update(tmp_path, monkeypatch):
+    journal = tmp_path / updater.JOURNAL
+    state = {"phase": "applied", "previous": {"version": OLD.version}, "candidate": {"version": NEW.version}}
+    journal.write_bytes(b"completed update")
+    monkeypatch.setattr(updater, "retained_header", lambda path, _: OLD if path.name == updater.PREVIOUS else NEW)
+    monkeypatch.setattr(updater, "installed_header", lambda: NEW)
+    def verify(expected):
+        assert expected == NEW
+
+    monkeypatch.setattr(updater, "verify_installation", verify)
+    monkeypatch.setattr(updater, "trusted_path", lambda path, **_: path)
+    monkeypatch.setattr(updater, "journal_write", lambda *_: pytest.fail("Rollback refused after the journal changed"))
+
+    def native(*argv, check=True):
+        assert not check
+        assert argv == (updater.RPM, "--upgrade", "--oldpackage", "--test", str(tmp_path / updater.PREVIOUS))
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(updater, "native_command", native)
+    with pytest.raises(updater.UpdateError, match="rpm-rollback-test-refused"):
+        updater.rollback(journal, state)
+    assert journal.read_bytes() == b"completed update"

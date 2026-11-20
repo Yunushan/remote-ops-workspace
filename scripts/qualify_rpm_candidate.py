@@ -123,15 +123,17 @@ def verify_receipt(receipt: dict, version: str, candidate_sha256: str) -> None:
             raise QualificationError("RPM recovery receipt refers to a different package")
 
 
-def build_upgrade_blocker(directory: Path) -> Path:
+def build_dependency_blocker(directory: Path, name: str, version: str) -> Path:
+    if name not in (managed.UPGRADE_BLOCKER, managed.ROLLBACK_BLOCKER) or not VERSION.fullmatch(version):
+        raise QualificationError("The dependency fixture requires a known name and exact version")
     directory.mkdir()
     spec = directory / "blocker.spec"
     spec.write_text(
-        f"Name: {managed.UPGRADE_BLOCKER}\n"
+        f"Name: {name}\n"
         "Version: 1\nRelease: 1\nSummary: RPM qualification dependency fixture\n"
         "License: 0BSD\nBuildArch: noarch\n"
-        f"Requires: {PACKAGE} = {PREVIOUS_VERSION}\n"
-        "\n%description\nHolds the predecessor version in a disposable qualification container.\n"
+        f"Requires: {PACKAGE} = {version}\n"
+        "\n%description\nHolds the selected version in a disposable qualification container.\n"
         "\n%files\n",
         encoding="ascii",
     )
@@ -139,11 +141,11 @@ def build_upgrade_blocker(directory: Path) -> Path:
         ["rpmbuild", "--define", f"_topdir {directory}", "-bb", str(spec)],
         check=True, stdout=sys.stderr, timeout=60,
     )
-    return directory / "RPMS" / "noarch" / f"{managed.UPGRADE_BLOCKER}-1-1.noarch.rpm"
+    return directory / "RPMS" / "noarch" / f"{name}-1-1.noarch.rpm"
 
 
 def managed_drill(root: Path, temporary: Path, commit: str, previous: Path, candidate: Path,
-                  digest: str, wheelhouse: Path | None) -> dict:
+                  digest: str, wheelhouse: Path | None, *, version: str) -> dict:
     requirements = temporary / "crypto.txt"
     requirements.write_bytes(managed.locked_crypto_requirements(root))
     if wheelhouse is None:
@@ -161,7 +163,10 @@ def managed_drill(root: Path, temporary: Path, commit: str, previous: Path, cand
             raise QualificationError("The offline wheelhouse must be a directory")
     source = temporary / "source.tar"
     subprocess.run(["git", "archive", "--format=tar", f"--output={source}", commit], cwd=root, check=True, timeout=60)
-    blocker = build_upgrade_blocker(temporary / "dependency-blocker")
+    blocker = build_dependency_blocker(temporary / "dependency-blocker", managed.UPGRADE_BLOCKER, PREVIOUS_VERSION)
+    rollback_blocker = build_dependency_blocker(
+        temporary / "rollback-blocker", managed.ROLLBACK_BLOCKER, version,
+    )
     result = subprocess.run(
         ["docker", "run", "--rm", "--platform", "linux/amd64", "--network", "none",
          "--security-opt", "no-new-privileges",
@@ -171,10 +176,11 @@ def managed_drill(root: Path, temporary: Path, commit: str, previous: Path, cand
          "--mount", f"type=bind,source={previous},target=/previous/{previous.name},readonly",
          "--mount", f"type=bind,source={candidate},target=/candidate/{candidate.name},readonly",
          "--mount", f"type=bind,source={blocker},target=/input/dependency-blocker.rpm,readonly",
+         "--mount", f"type=bind,source={rollback_blocker},target=/input/rollback-blocker.rpm,readonly",
          "--entrypoint", "/bin/sh", IMAGE, "-ec", MANAGED_ENTRYPOINT, "row-managed-rpm",
          "--previous-rpm", f"/previous/{previous.name}", "--previous-sha256", PREVIOUS_SHA256,
          "--candidate-rpm", f"/candidate/{candidate.name}", "--candidate-sha256", digest,
-         "--dependency-blocker", "/input/dependency-blocker.rpm"],
+         "--dependency-blocker", "/input/dependency-blocker.rpm", "--rollback-blocker", "/input/rollback-blocker.rpm"],
         check=True, stdout=subprocess.PIPE, timeout=600,
     )
     return json.loads(result.stdout)
@@ -269,7 +275,7 @@ def qualify(root: Path, tag: str, commit: str, run_id: str, attempt: str, *, whe
         )
         receipt = json.loads(result.stdout)
         verify_receipt(receipt, version, digest)
-        managed_receipt = managed_drill(root, temporary, commit, previous, candidate, digest, wheelhouse)
+        managed_receipt = managed_drill(root, temporary, commit, previous, candidate, digest, wheelhouse, version=version)
         managed.verify_receipt(
             managed_receipt, receipt, controller_sha256=sha256(root / managed.CONTROLLER),
             requirements_sha256=hashlib.sha256(managed.locked_crypto_requirements(root)).hexdigest(),

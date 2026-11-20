@@ -93,6 +93,14 @@ def private_transaction(root: Path, name: str, workspace: Path) -> tuple[Path, l
     return path, ["--workspace", str(workspace), "--transaction", str(path)]
 
 
+def install_dependency_blocker(path: Path, name: str, version: str) -> None:
+    require(checked("Inspect dependency fixture name", RPM, "--query", "--package", "--queryformat", "%{NAME}", path)
+            == name, "The dependency fixture has the wrong RPM identity")
+    requirements = checked("Inspect dependency fixture requirements", RPM, "--query", "--package", "--requires", path)
+    require(f"{PACKAGE} = {version}" in requirements.splitlines(), "The fixture does not require the exact version")
+    checked("Install the dependency conflict fixture", RPM, "--install", path)
+
+
 def exercise(args: argparse.Namespace, root: Path) -> dict:
     old = read_package(args.previous_rpm, args.previous_sha256)
     new = read_package(args.candidate_rpm, args.candidate_sha256)
@@ -199,12 +207,7 @@ def exercise(args: argparse.Namespace, root: Path) -> dict:
             "The winning transaction did not roll back")
     verify_installed(old)
 
-    blocker = args.dependency_blocker
-    require(checked("Inspect dependency fixture name", RPM, "--query", "--package", "--queryformat", "%{NAME}", blocker)
-            == contract.UPGRADE_BLOCKER, "The dependency fixture has the wrong RPM identity")
-    requirements = checked("Inspect dependency fixture requirements", RPM, "--query", "--package", "--requires", blocker)
-    require(f"{PACKAGE} = {old.version}" in requirements.splitlines(), "The fixture does not require the exact predecessor")
-    checked("Install the dependency conflict fixture", RPM, "--install", blocker)
+    install_dependency_blocker(args.dependency_blocker, contract.UPGRADE_BLOCKER, old.version)
     packages_before = sorted(checked("List installed packages", RPM, "--query", "--all").splitlines())
     blocked, blocked_flags = private_transaction(root, "dependency-conflict", workspace)
     blocked_update = ["update", *update_flags, *blocked_flags]
@@ -221,8 +224,22 @@ def exercise(args: argparse.Namespace, root: Path) -> dict:
     require(controller(blocked_update) == applied,
             "The same staged RPM update did not apply offline after resolving the conflict")
     verify_installed(new)
-    require(controller(["rollback", *blocked_flags])["phase"] == "rolled-back",
-            "The retried dependency transaction did not roll back")
+
+    restore = ["rollback", *blocked_flags]
+    applied_journal = (blocked / JOURNAL).read_bytes()
+    install_dependency_blocker(args.rollback_blocker, contract.ROLLBACK_BLOCKER, new.version)
+    packages_before = sorted(checked("List installed packages", RPM, "--query", "--all").splitlines())
+    refusal = controller(restore, exits=(1,))
+    require(refusal == {"phase": "refused", "refusal": "rpm-rollback-test-refused"}
+            and (blocked / JOURNAL).read_bytes() == applied_journal
+            and sorted(checked("Recheck installed packages", RPM, "--query", "--all").splitlines()) == packages_before
+            and state_digests(workspace) == before,
+            "RPM dependency refusal changed the applied installation or journal")
+    verify_installed(new)
+    require(controller(blocked_update) == applied, "The refused rollback made the completed update unrecoverable")
+    checked("Remove the rollback dependency conflict fixture", RPM, "--erase", contract.ROLLBACK_BLOCKER)
+    require(controller(restore)["phase"] == "rolled-back",
+            "The same RPM transaction did not roll back offline after resolving the conflict")
     verify_installed(old)
 
     verify_workspace(root, environment, {"managed-original": secret})
@@ -248,6 +265,7 @@ def main() -> None:
         parser.add_argument(f"--{role}-sha256", required=True)
     parser.add_argument("--crypto-requirements", type=Path, required=True)
     parser.add_argument("--dependency-blocker", type=Path, required=True)
+    parser.add_argument("--rollback-blocker", type=Path, required=True)
     args = parser.parse_args()
     validate_container()
     require(args.crypto_requirements.read_bytes() == contract.locked_crypto_requirements(ROOT),

@@ -174,9 +174,11 @@ def rollback(journal: Path, state: dict) -> dict:
     else:
         command = ("--upgrade", "--oldpackage")
 
-    state = journal_write(journal, state, "rolling-back")
-    require(installed_header() == current, "installed-rpm-changed")
     trusted_path(LAUNCHER.parent, directory=True)
+    require(native_command(RPM, *command, "--test", str(before), check=False).returncode == 0,
+            "rpm-rollback-test-refused")
+    require(installed_header() == current, "installed-rpm-changed")
+    state = journal_write(journal, state, "rolling-back")
     native_command(RPM, *command, str(before))
     verify_installation(previous)
     return journal_write(journal, state, "rolled-back")

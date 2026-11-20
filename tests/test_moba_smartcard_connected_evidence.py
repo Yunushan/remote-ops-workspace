@@ -3,6 +3,7 @@ import datetime as dt
 import hashlib
 import json
 import sys
+from shutil import copytree
 from types import SimpleNamespace
 
 import pytest
@@ -131,7 +132,7 @@ def test_workflow_seals_only_the_run_bound_physical_capture(capture, tmp_path, m
 
     inventory = generator.evidence_assets_sha256(capture.root)
     capture.save("private-extra.txt", b"deliberately excluded lab file")
-    capture.root.rename(work / "inbox" / "ready")
+    copytree(capture.root, work / "inbox" / "ready")
     monkeypatch.setattr(sys, "argv", [*argv, "collect", "--fixture", fixture])
     assert staging.main() == 0
     assert generator.evidence_assets_sha256(work / "review" / ARTICLE) == inventory

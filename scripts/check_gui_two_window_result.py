@@ -28,6 +28,7 @@ SOURCE_FILES = (
     "src/remote_ops_workspace/gui_connected_terminal.py",
     "src/remote_ops_workspace/gui_moba_sessions.py",
     "src/remote_ops_workspace/gui_sftp_editor.py",
+    "src/remote_ops_workspace/gui_window_chrome.py",
     "src/remote_ops_workspace/gui_workspace.py",
     "src/remote_ops_workspace/gui_designs.py",
     "src/remote_ops_workspace/gui_interaction_states.py",

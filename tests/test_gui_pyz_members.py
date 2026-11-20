@@ -47,6 +47,7 @@ class TestRequiredGuiPyzModules(_gui_pyz_unittest.TestCase):
                 "remote_ops_workspace.gui_reference_tabs",
                 "remote_ops_workspace.gui_values",
                 "remote_ops_workspace.terminal_output",
+                "remote_ops_workspace.gui_window_chrome",
                 "remote_ops_workspace.gui_workspace",
                 "remote_ops_workspace.gui_connected",
                 "remote_ops_workspace.gui_connected_terminal",

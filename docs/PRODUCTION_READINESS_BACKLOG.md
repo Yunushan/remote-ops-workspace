@@ -168,6 +168,8 @@ Rules:
   and responsive sizing for the supported desktop presets.
   `gui_design_activation.py` applies presets and coordinates the paint guard,
   geometry updates, and terminal input policy during switches.
+  `gui_window_chrome.py` builds the status bar and bottom-edge tab controls
+  and applies the title-bar and top-stack geometry.
   `gui_interaction_states.py` applies preset focus, toolbar state, tree
   selection, and tab status to live widgets.
   `gui_quick_connect.py` builds the desktop Quick Connect controls, displays

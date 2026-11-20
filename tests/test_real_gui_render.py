@@ -4211,6 +4211,7 @@ def test_real_gui_render_prepares_mobaxterm_connected_reference() -> None:
 
 def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
     sessions_source = Path("src/remote_ops_workspace/gui_moba_sessions.py").read_text(encoding="utf-8")
     sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
@@ -4227,7 +4228,7 @@ def test_gui_profile_tab_label_helper_is_product_specific() -> None:
     assert "mobaTabChromeKey" in workspace_tabs_source
     assert "mobaRightUtilityKey" in terminal_panel_source
     assert "mobaSessionEdgeKey" in terminal_panel_source
-    assert "mobaBottomEdgeKey" in source
+    assert "mobaBottomEdgeKey" in chrome_source
     assert "def activate_adjacent_tab" in session_tabs_source
     assert "mobaSshBannerTitle" in terminal_panel_source
     assert "mobaSshBannerTargetLine" in terminal_panel_source

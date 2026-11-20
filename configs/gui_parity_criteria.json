@@ -856,7 +856,7 @@
               "draw_moba_titlebar_icon",
               "draw_moba_titlebar_control"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "apply_moba_titlebar_chrome",
               "mobaTitlebarTitle",
               "mobaTitlebarControlKeys"
@@ -889,7 +889,7 @@
               "top_stack.ribbon_y",
               "top_stack.left_dock_y"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "apply_moba_top_stack_geometry",
               "mobaTopStackRibbonHeight",
               "mobaTopStackQuickConnectY"
@@ -2642,7 +2642,7 @@
               "CPU monitor",
               "SSH browser"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -2666,7 +2666,7 @@
               "gui_design_moba_status_segments",
               "chrome.product_note"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusNotice",
               "productStatusMarker",
               "productStatusKey"
@@ -2696,7 +2696,7 @@
               "chrome.segment_start_right_offset",
               "chrome.marker_right_inset"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "mobaStatusStaticHeight",
               "mobaStatusNoticeX",
               "mobaStatusMarkerRightInset"
@@ -2728,7 +2728,7 @@
               "draw_moba_bottom_edge_icon",
               "gui_design_moba_bottom_edge_controls"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "mobaBottomEdgeControls",
               "mobaBottomEdgeControl"
             ],
@@ -2833,7 +2833,7 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "gui_preset_properties.apply_preset_selection_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -4652,7 +4652,7 @@
               "gui_design_preset_reference_status_bar_route",
               "active-reference-status-bar-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusSegment"
             ],
             "src/remote_ops_workspace/gui_reference_tabs.py": [
@@ -4842,7 +4842,7 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "gui_preset_properties.apply_preset_selection_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -5162,7 +5162,7 @@
             "src/remote_ops_workspace/gui_designs.py": [
               "2 active tabs"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -6569,7 +6569,7 @@
               "gui_design_preset_reference_status_bar_route",
               "active-reference-status-bar-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusSegment"
             ],
             "src/remote_ops_workspace/gui_reference_tabs.py": [
@@ -6759,7 +6759,7 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "gui_preset_properties.apply_preset_selection_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -7076,7 +7076,7 @@
               "Port fwd ready",
               "Sync current"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -7924,7 +7924,7 @@
               "Scale 100%",
               "Clipboard on"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -8452,7 +8452,7 @@
               "gui_design_preset_reference_status_bar_route",
               "active-reference-status-bar-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusSegment"
             ],
             "src/remote_ops_workspace/gui_reference_tabs.py": [
@@ -8642,7 +8642,7 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "gui_preset_properties.apply_preset_selection_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [
@@ -9807,7 +9807,7 @@
               "Inheritance on",
               "2 open panes"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "configure_status_bar_for_design",
               "productStatusSegment"
             ],
@@ -10274,7 +10274,7 @@
               "gui_design_preset_reference_status_bar_route",
               "active-reference-status-bar-evidence"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "productStatusSegment"
             ],
             "src/remote_ops_workspace/gui_reference_tabs.py": [
@@ -10464,7 +10464,7 @@
               "gui_design_preset_selection_route",
               "selector-to-toolbar-sidebar-tabs-status-workspace"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_window_chrome.py": [
               "gui_preset_properties.apply_preset_selection_route_properties"
             ],
             "src/remote_ops_workspace/gui_preset_properties.py": [

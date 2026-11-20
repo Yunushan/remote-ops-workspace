@@ -860,7 +860,7 @@ def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
     requirement_ids = {item["id"] for item in criteria["presets"]["mobaxterm"]["requirements"]}
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
     mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     menu_source = Path("src/remote_ops_workspace/gui_menus.py").read_text(encoding="utf-8")
@@ -882,12 +882,12 @@ def test_mobaxterm_titlebar_chrome_uses_shared_metadata() -> None:
     assert "top_stack.left_dock_y" in renderer_source
     assert "draw_moba_titlebar_icon" in renderer_source
     assert "draw_moba_titlebar_control" in renderer_source
-    assert "apply_moba_titlebar_chrome" in gui_source
-    assert "apply_moba_top_stack_geometry" in gui_source
-    assert "mobaTitlebarTitle" in gui_source
-    assert "mobaTitlebarControlKeys" in gui_source
-    assert "mobaTopStackRibbonHeight" in gui_source
-    assert "mobaTopStackQuickConnectY" in gui_source
+    assert "apply_moba_titlebar_chrome" in chrome_source
+    assert "apply_moba_top_stack_geometry" in chrome_source
+    assert "mobaTitlebarTitle" in chrome_source
+    assert "mobaTitlebarControlKeys" in chrome_source
+    assert "mobaTopStackRibbonHeight" in chrome_source
+    assert "mobaTopStackQuickConnectY" in chrome_source
     assert "mobaTopMenuStaticX" in menu_source
     assert "mobaTopMenuLabelFontSize" in menu_source
     assert "EXPECTED_MOBA_TITLEBAR_CHROME" in checker_source
@@ -1726,7 +1726,7 @@ def test_mobaxterm_terminal_transcript_uses_shared_connected_state() -> None:
 
 def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
     mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
@@ -1739,11 +1739,11 @@ def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
     assert "gui_design_moba_status_segments" in renderer_source
     assert "chrome.notice_x" in renderer_source
     assert "chrome.segment_start_right_offset" in renderer_source
-    assert "productStatusNotice" in gui_source
-    assert "productStatusMarker" in gui_source
-    assert "productStatusKey" in gui_source
-    assert "mobaStatusNoticeX" in gui_source
-    assert "mobaStatusMarkerRightInset" in gui_source
+    assert "productStatusNotice" in chrome_source
+    assert "productStatusMarker" in chrome_source
+    assert "productStatusKey" in chrome_source
+    assert "mobaStatusNoticeX" in chrome_source
+    assert "mobaStatusMarkerRightInset" in chrome_source
     assert "EXPECTED_MOBA_STATUS_KEYS" in checker_source
     assert "EXPECTED_MOBA_STATUS_CHROME" in checker_source
     assert "mobaStatusSegmentStartRightOffset" in checker_source
@@ -1754,6 +1754,7 @@ def test_mobaxterm_bottom_status_uses_shared_chrome_metadata() -> None:
 def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
     home_source = Path("src/remote_ops_workspace/gui_home.py").read_text(encoding="utf-8")
     session_tabs_source = Path("src/remote_ops_workspace/gui_session_tabs.py").read_text(encoding="utf-8")
     tabs_source = Path("src/remote_ops_workspace/gui_workspace_tabs.py").read_text(encoding="utf-8")
@@ -1766,21 +1767,21 @@ def test_mobaxterm_bottom_edge_controls_use_shared_metadata() -> None:
     assert "gui_design_moba_bottom_edge_controls" in renderer_source
     assert "draw_moba_bottom_edge_controls" in renderer_source
     assert "draw_moba_bottom_edge_icon" in renderer_source
-    assert "mobaBottomEdgeControls" in gui_source
-    assert "mobaBottomEdgeControl" in gui_source
+    assert "mobaBottomEdgeControls" in chrome_source
+    assert "mobaBottomEdgeControl" in chrome_source
     assert 'box.setProperty("designPreset", self.current_design_id())' in home_source
     assert 'home_widget_preset != self.current_design_id()' in tabs_source
     main_window_source = gui_source.split("class MainWindow", 1)[1]
     assert "def moba_utility_icon" in main_window_source
-    assert main_window_source.index("def moba_utility_icon") < main_window_source.index(
-        "def create_moba_bottom_edge_controls"
-    )
+    assert "def create_moba_bottom_edge_controls" in chrome_source
+    assert "self.moba_utility_icon(action.icon_key, action.color)" in chrome_source
     assert '"arrow-left"' in main_window_source
     assert '"arrow-right"' in main_window_source
     assert '"close"' in main_window_source
     main_window_bases = main_window_source.split("):", 1)[0]
     assert "SessionTabActions" in main_window_bases
     assert "WorkspaceTabs" in main_window_bases
+    assert "WindowChrome" in main_window_bases
     assert "def activate_adjacent_tab" in session_tabs_source
     assert "EXPECTED_MOBA_BOTTOM_EDGE_KEYS" in checker_source
     assert "expected_moba_bottom_edge_controls" in checker_source
@@ -3751,12 +3752,12 @@ def test_live_and_static_renderers_share_interaction_state_copy() -> None:
 
 
 def test_live_and_static_renderers_share_status_bar_copy() -> None:
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    chrome_source = Path("src/remote_ops_workspace/gui_window_chrome.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     design_source = Path("src/remote_ops_workspace/gui_designs.py").read_text(encoding="utf-8")
 
     assert "GUI_DESIGN_STATUS_COPY" in design_source
-    assert "configure_status_bar_for_design" in gui_source
+    assert "configure_status_bar_for_design" in chrome_source
     assert "gui_design_status_segments" in renderer_source
 
 

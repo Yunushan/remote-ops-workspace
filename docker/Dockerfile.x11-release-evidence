@@ -1,4 +1,0 @@
-FROM docker.io/library/python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends xvfb xauth x11-apps x11-utils openssh-server openssh-client imagemagick \
-    && rm -rf /var/lib/apt/lists/*

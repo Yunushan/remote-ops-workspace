@@ -1,0 +1,21 @@
+FROM docker.io/library/python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d AS mobapt
+
+ARG ROW_DEB
+ARG ROW_DEB_SHA256
+RUN --mount=type=bind,target=/release \
+    set -eu; \
+    package="/release/$ROW_DEB"; \
+    printf '%s  %s\n' "$ROW_DEB_SHA256" "$package" | sha256sum --check --strict; \
+    depends="$(dpkg-deb --field "$package" Depends)"; \
+    if [ -n "$depends" ]; then \
+      apt-get update; \
+      DEBIAN_FRONTEND=noninteractive \
+        apt-get -y --no-install-recommends --no-remove satisfy -- "$depends"; \
+    fi; \
+    rm -rf /var/lib/apt/lists/*
+
+FROM mobapt AS x11
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends xvfb xauth x11-apps x11-utils openssh-server openssh-client imagemagick \
+    && rm -rf /var/lib/apt/lists/*

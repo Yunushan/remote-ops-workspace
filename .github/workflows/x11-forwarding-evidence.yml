@@ -47,7 +47,12 @@ jobs:
             --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
       - name: Prepare the X11 fixture from signed Debian package metadata
         shell: bash
-        run: docker build --platform linux/amd64 --pull --tag "$X11_IMAGE" - < docker/Dockerfile.x11-release-evidence
+        run: |
+          asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
+          digest="$(sha256sum -- "$X11_WORK/release/$asset")"
+          docker build --platform linux/amd64 --pull --target x11 \
+            --build-arg "ROW_DEB=$asset" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
+            --file docker/Dockerfile.debian-parity-evidence --tag "$X11_IMAGE" "$X11_WORK/release"
       - name: Capture packaged X11 forwarding in isolation
         shell: bash
         run: |

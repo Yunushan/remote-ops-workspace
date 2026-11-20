@@ -132,14 +132,19 @@ from the successful run. It contains `candidate.json` and the
 `embedded-x-server/` evidence directory. Use the same published `.deb` for
 independent finalization and retain the evidence directory for the strict audit.
 
-To qualify a Debian candidate locally, build the fixture image, then mount
-the checkout and installer directory read-only with a separate writable
-evidence directory. Set `X11_RELEASE_ASSETS` to the installer directory and
-`X11_DEB_NAME` to the native `.deb` filename.
+To qualify a Debian candidate locally, build the fixture image with the
+candidate's declared dependencies from Debian's signed repositories. The
+collector installs the candidate itself in the offline container. Set
+`X11_RELEASE_ASSETS` to the installer directory and `X11_DEB_NAME` to the native
+`.deb` filename. Mount the checkout and installer directory read-only with a
+separate writable evidence directory.
 
 ```bash
-docker build --platform linux/amd64 --pull --tag row-x11-evidence:local - \
-  < docker/Dockerfile.x11-release-evidence
+digest="$(sha256sum -- "$X11_RELEASE_ASSETS/$X11_DEB_NAME")"
+docker build --platform linux/amd64 --pull --target x11 --tag row-x11-evidence:local \
+  --file docker/Dockerfile.debian-parity-evidence \
+  --build-arg "ROW_DEB=$X11_DEB_NAME" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
+  "$X11_RELEASE_ASSETS"
 docker run --rm --pull never --network none \
   --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
   --security-opt no-new-privileges \
@@ -215,10 +220,18 @@ maintainer scripts as container root. For release evidence, run this from a
 GitHub Actions job checked out at the release tag. Set `MOBAPT_DEB_NAME` to the
 native `.deb` filename and `MOBAPT_RELEASE_ASSETS` to the directory containing
 the exact staged or published installer. Mount it read-only along with the
-checkout and bundle. For example, with `tree` in the bundle and a locally
-prepared image in `MOBAPT_IMAGE`, run:
+checkout and bundle. Build the fixture from that installer to resolve its
+declared dependencies before capture. For example, with `tree` in the bundle,
+run:
 
 ```bash
+MOBAPT_IMAGE=row-mobapt-evidence:local
+digest="$(sha256sum -- "$MOBAPT_RELEASE_ASSETS/$MOBAPT_DEB_NAME")"
+docker build --platform linux/amd64 --pull --target mobapt --tag "$MOBAPT_IMAGE" \
+  --file docker/Dockerfile.debian-parity-evidence \
+  --build-arg "ROW_DEB=$MOBAPT_DEB_NAME" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
+  "$MOBAPT_RELEASE_ASSETS"
+
 docker run --rm --pull never --network none \
   --cap-drop NET_ADMIN --cap-drop NET_RAW --cap-drop SYS_ADMIN \
   --security-opt no-new-privileges \
@@ -232,7 +245,7 @@ docker run --rm --pull never --network none \
   --bundle /bundle --out /proof/review --release-deb "/release/$MOBAPT_DEB_NAME" --probe-package tree \
   --probe-executable /usr/bin/tree --probe-arg=--version
 
-python scripts/check_mobapt_cache_evidence.py \
+python scripts/check_mobapt_cache_evidence.py --local-execution \
   --evidence "$MOBAPT_OUTPUT/review/evidence.json" --assets-dir "$MOBAPT_OUTPUT/review"
 ```
 

@@ -30,6 +30,30 @@ from scripts.run_debian_server_lab import capture as capture_debian_lab
 from scripts.write_release_notes import moba_counts
 
 
+@pytest.mark.parametrize(("workflow", "target", "image", "work"), [
+    ("mobapt-offline-evidence", "mobapt", "MOBAPT_IMAGE", "MOBAPT_WORK"),
+    ("x11-forwarding-evidence", "x11", "X11_IMAGE", "X11_WORK"),
+])
+def test_debian_parity_capture_prepares_the_verified_asset_dependencies(
+    workflow: str, target: str, image: str, work: str,
+) -> None:
+    source = Path(f".github/workflows/{workflow}.yml").read_text(encoding="utf-8")
+    verified_asset = source.index("scripts/fetch_qualification_release_asset.py --kind debian-amd64")
+    image_build = source.index(f"docker build --platform linux/amd64 --pull --target {target}")
+    offline_capture = source.index("docker run --rm --pull never --platform linux/amd64 --network none")
+    assert verified_asset < image_build < offline_capture
+    assert f'sha256sum -- "${work}/release/$asset"' in source[verified_asset:image_build]
+    assert '--build-arg "ROW_DEB_SHA256=${digest%% *}"' in source[image_build:offline_capture]
+    assert f'--file docker/Dockerfile.debian-parity-evidence --tag "${image}" "${work}/release"' in (
+        source[image_build:offline_capture]
+    )
+    assert f'"${image}" python /src/scripts/capture_moba' in source[offline_capture:]
+    fixture = Path("docker/Dockerfile.debian-parity-evidence").read_text(encoding="utf-8")
+    assert fixture.index("sha256sum --check --strict") < fixture.index("apt-get update")
+    assert 'satisfy -- "$depends"' in fixture
+    assert "FROM mobapt AS x11" in fixture
+
+
 def test_mobaxterm_parity_evidence_empty_registry_is_valid_but_not_complete() -> None:
     checker = _load_checker()
     registry = {

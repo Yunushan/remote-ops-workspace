@@ -15,7 +15,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  MOBAPT_IMAGE: docker.io/library/python:3.14.7-slim-trixie@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d
+  MOBAPT_IMAGE: row-mobapt-evidence:local
 
 jobs:
   qualify-debian-x64:
@@ -45,10 +45,17 @@ jobs:
           mkdir -p "$MOBAPT_WORK/release" "$MOBAPT_WORK/input" "$MOBAPT_WORK/review"
           python3 -I scripts/fetch_qualification_release_asset.py --kind debian-amd64 --directory "$MOBAPT_WORK/release" \
             --repository "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --sha "$GITHUB_SHA"
+      - name: Prepare dependencies of the verified Debian asset
+        shell: bash
+        run: |
+          asset="remote-ops-workspace-$GITHUB_REF_NAME-linux-amd64.deb"
+          digest="$(sha256sum -- "$MOBAPT_WORK/release/$asset")"
+          docker build --platform linux/amd64 --pull --target mobapt \
+            --build-arg "ROW_DEB=$asset" --build-arg "ROW_DEB_SHA256=${digest%% *}" \
+            --file docker/Dockerfile.debian-parity-evidence --tag "$MOBAPT_IMAGE" "$MOBAPT_WORK/release"
       - name: Prepare the offline cache from signed Debian package metadata
         shell: bash
         run: |
-          docker pull --platform linux/amd64 "$MOBAPT_IMAGE"
           docker run --rm --pull never --platform linux/amd64 \
             --mount "type=bind,source=$GITHUB_WORKSPACE,target=/src,readonly" \
             --mount "type=bind,source=$MOBAPT_WORK/input,target=/input" \

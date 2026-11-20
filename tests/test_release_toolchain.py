@@ -21,7 +21,9 @@ def test_release_signing_refuses_missing_timestamp_or_package_verification() -> 
     smoke = Path("scripts/smoke_windows_native.ps1").read_text(encoding="utf-8")
     macos = Path("scripts/make_macos_native.sh").read_text(encoding="utf-8")
     assert checker.check_native_signing_verification(windows, signer, smoke, macos) == []
-    errors = checker.check_native_signing_verification(windows, signer.replace(" /tw ", " ", 1), smoke, macos)
+    missing_timestamp = signer.replace('"/tw", ', "", 1)
+    assert missing_timestamp != signer
+    errors = checker.check_native_signing_verification(windows, missing_timestamp, smoke, macos)
     assert any("timestamp verification" in error for error in errors)
     for artifact in ("RowExe", "RowGuiExe"):
         changed = windows.replace(f"Sign-NativeArtifact ${artifact}\n", f"Sign-NativeArtifact ${artifact}Copy\n", 1)
@@ -40,14 +42,20 @@ def test_release_signing_refuses_missing_timestamp_or_package_verification() -> 
         assert any("verify both final packages" in error for error in errors)
 
 
-def test_windows_authenticode_requires_timestamp_digest_after_url() -> None:
+@pytest.mark.parametrize(("before", "after"), [
+    ('"/tr", $Timestamp.AbsoluteUri, "/td", "SHA256"', '"/td", "SHA256", "/tr", $Timestamp.AbsoluteUri'),
+    ('"/td", "SHA256"', '"/td", "SHA1"'),
+    ('Invoke-SignTool $SignTool $SignArgs', 'Invoke-SignTool $SignTool $OtherArgs'),
+])
+def test_windows_authenticode_requires_timestamp_digest_after_url(before: str, after: str) -> None:
     checker = _load_release_toolchain_checker()
     windows = Path("scripts/sign_windows_artifact.ps1").read_text(encoding="utf-8")
     xp = Path("scripts/make_windows_xp_legacy.ps1").read_text(encoding="utf-8")
     assert checker.check_windows_timestamp_digest(windows, xp) == []
 
-    windows = windows.replace("/tr $Timestamp.AbsoluteUri /td SHA256", "/td SHA256 /tr $Timestamp.AbsoluteUri")
-    assert checker.check_windows_timestamp_digest(windows, xp) == [
+    changed = windows.replace(before, after, 1)
+    assert changed != windows
+    assert checker.check_windows_timestamp_digest(changed, xp) == [
         "Windows native signing must select SHA256 after the RFC 3161 timestamp URL",
     ]
 

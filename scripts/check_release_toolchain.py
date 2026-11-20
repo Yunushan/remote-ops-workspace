@@ -693,12 +693,14 @@ def check_native_release_tag_guards() -> list[str]:
 
 def check_windows_timestamp_digest(windows: str, xp: str) -> list[str]:
     errors: list[str] = []
-    signing_commands = re.findall(
-        r"(?m)^ *& \$SignTool sign [^\n]+",
-        strip_unquoted_comments(windows),
+    windows = strip_unquoted_comments(windows)
+    signing_args = re.findall(r"(?m)^ *\$SignArgs = ([^\n]+)", windows)
+    expected = (
+        '@("sign", "/fd", "SHA256", "/tr", $Timestamp.AbsoluteUri, "/td", "SHA256") '
+        '+ $CertificateArgs + @($ArtifactPath)'
     )
-    if len(signing_commands) != 1 or not re.search(
-        r" /fd SHA256 /tr \S+ /td SHA256 ", signing_commands[0],
+    if signing_args != [expected] or not re.search(
+        r"(?m)^ *if \(\(Invoke-SignTool \$SignTool \$SignArgs\) -ne 0\) \{$", windows,
     ):
         errors.append("Windows native signing must select SHA256 after the RFC 3161 timestamp URL")
     xp = strip_unquoted_comments(xp)
@@ -719,7 +721,7 @@ def check_native_signing_verification(windows: str, signer: str, smoke: str, mac
     errors: list[str] = []
     windows = strip_unquoted_comments(windows)
     if not re.search(
-        r"(?m)^& \$SignTool verify /pa /all /tw \$ArtifactPath\nif \(\$LASTEXITCODE -ne 0\) \{",
+        r'(?m)^ *if \(\(Invoke-SignTool \$SignTool @\("verify", "/pa", "/all", "/tw", \$ArtifactPath\)\) -ne 0\) \{$',
         strip_unquoted_comments(signer),
     ):
         errors.append("Windows production signing must require successful Authenticode and timestamp verification")

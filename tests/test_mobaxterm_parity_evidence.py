@@ -1063,6 +1063,9 @@ def reviewed_parity_inputs(reviewed_release):
     ("wrong-review-body", "does not explicitly accept this exact article evidence"),
     ("modified-capture", "reviewed article evidence SHA-256 differs"),
     ("colliding-inventory-filenames", "duplicate or case-colliding asset"),
+    ("retain-workflow-artifacts", ""),
+    ("corrupt-workflow-download", "workflow artifact ZIP digest differs from GitHub"),
+    ("concurrent-retained-archive", "workflow artifact ZIP size differs from GitHub"),
 ])
 def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
     reviewed_parity_inputs, monkeypatch, capsys, fault, detail,
@@ -1103,6 +1106,29 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
     if fault == "modified-capture":
         (root / article / "evidence.json").write_bytes(b"modified capture")
 
+    retain = fault in {"retain-workflow-artifacts", "corrupt-workflow-download", "concurrent-retained-archive"}
+    downloaded = {}
+    archives = {}
+    concurrent_bytes = b"other writer's bytes"
+    if retain:
+        for archive in reviewed_release.hosted_archives.values():
+            if fault == "retain-workflow-artifacts" or archive is reviewed_release.hosted_archives[article]:
+                archives[archive.metadata["id"]] = (archive, archive.path.read_bytes())
+                archive.path.unlink()
+        if fault == "retain-workflow-artifacts":
+            (root / "workflow-artifacts").rmdir()
+
+        def download_archive(repository, artifact_id, destination, size):
+            archive, data = archives[artifact_id]
+            assert repository == args["repository"] and size == len(data)
+            assert not archive.path.exists()
+            downloaded[artifact_id] = data
+            if fault == "concurrent-retained-archive":
+                archive.path.write_bytes(concurrent_bytes)
+            destination.write_bytes(bytes([data[0] ^ 1]) + data[1:] if fault == "corrupt-workflow-download" else data)
+
+        monkeypatch.setattr(release_parity, "download_workflow_archive", download_archive)
+
     seen = []
     monkeypatch.setenv("GH_TOKEN", "fixture-token")
     monkeypatch.setattr(candidate_parity, "GitHubClient", lambda *_args, **_kwargs: "fixture-client")
@@ -1122,6 +1148,7 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         "--candidate-inventory", "31 32 sha256:" + "7" * 64,
         "--assets-dir", str(args["assets_dir"]), "--evidence-root", str(root),
         "--professional-update-origin", args["professional_update_origins"][0],
+        *(["--retain-workflow-artifacts"] if retain else []),
     ])
     output = capsys.readouterr()
     assert {path: path.read_bytes() for path in root.rglob("*.json")} == before
@@ -1132,6 +1159,20 @@ def test_parity_preflight_uses_staged_bytes_original_archives_and_live_reviews(
         assert status == 0 and "8/8 reviewed candidates verified" in output.out and not output.err
         assert len(seen) == 1 and set(reviewed_release.validator_calls) == set(release_parity.ARTICLE_SPECS)
         assert len(reviewed_release.delivery_calls) == 1 and reviewed_release.delivery_calls[0][1]["published"] is True
+    if retain:
+        assert downloaded == {artifact_id: data for artifact_id, (_, data) in archives.items()}
+        assert not list((root / "workflow-artifacts").glob(".row-parity-artifact-*"))
+    if fault == "corrupt-workflow-download":
+        assert not reviewed_release.hosted_archives[article].path.exists()
+    if fault == "concurrent-retained-archive":
+        assert reviewed_release.hosted_archives[article].path.read_bytes() == concurrent_bytes
+    if fault == "retain-workflow-artifacts":
+        for archive, data in archives.values():
+            assert archive.path.read_bytes() == data
+            archive.metadata["expired"] = True
+        monkeypatch.setattr(release_parity, "download_workflow_archive", lambda *_args: pytest.fail("unnecessary download"))
+        audit_args = {name: value for name, value in args.items() if name != "registry_commit"}
+        assert release_parity.audit_reviewed_records(reviewed_release.records, **audit_args) == []
 
 
 @pytest.mark.parametrize(("fault", "detail"), [
@@ -1467,6 +1508,7 @@ def test_certification_downloads_only_the_exact_artifact_when_needed(reviewed_re
     monkeypatch.setattr(release_parity, "download_workflow_archive", download)
     assert release_parity.audit_release(**reviewed_release.args) == []
     assert requested == [(reviewed_release.args["repository"], archive.metadata["id"], len(data))]
+    assert not archive.path.exists()
 
 
 @pytest.mark.parametrize("observed_target", ["linux-arm64", None])

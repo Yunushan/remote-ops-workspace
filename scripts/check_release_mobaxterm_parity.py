@@ -436,6 +436,7 @@ def verify_archive_contents(path: Path, record: dict[str, Any], size: int, diges
 def verify_hosted_evidence(
     repository: str, record: dict[str, Any], evidence_root: Path,
     workflow: EvidenceWorkflow, archive_window: tuple[str, str],
+    *, retain_archive: bool = False,
 ) -> None:
     source = record["release_source"]
     match = GITHUB_WORKFLOW_RUN_RE.fullmatch(source["workflow_run_url"])
@@ -463,18 +464,36 @@ def verify_hosted_evidence(
         raise ValueError(f"GitHub workflow artifact {name} does not match the exact evidence attempt")
 
     relative = f"workflow-artifacts/{name}.zip"
-    if os.path.lexists(evidence_root / relative):
-        archived, error = secure_regular_file(evidence_root, relative, "retained workflow artifact")
-        if archived is None or error:
-            raise ValueError(error)
-        verify_archive_contents(archived, record, size, digest)
-    else:
+    retained = evidence_root / relative
+    if not os.path.lexists(retained):
         if artifact["expired"]:
             raise ValueError(f"GitHub workflow artifact expired; retain its original ZIP at {relative}")
-        with TemporaryDirectory(prefix="row-parity-artifact-") as scratch:
+        archive_dir = retained.parent if retain_archive else None
+        if archive_dir is not None:
+            if path_is_reparse(archive_dir):
+                raise ValueError("workflow-artifacts must be a real directory")
+            archive_dir.mkdir(exist_ok=True)
+            if path_is_reparse(archive_dir):
+                raise ValueError("workflow-artifacts must be a real directory")
+        with TemporaryDirectory(prefix=".row-parity-artifact-", dir=archive_dir) as scratch:
             archive = Path(scratch) / "artifact.zip"
             download_workflow_archive(repository, artifact_id, archive, size)
             verify_archive_contents(archive, record, size, digest)
+            if not retain_archive:
+                return
+            try:
+                # Both operations install verified bytes without replacing a concurrent writer's file.
+                if os.name == "nt":
+                    archive.rename(retained)
+                else:
+                    os.link(archive, retained)
+                return
+            except FileExistsError:
+                pass
+    archived, error = secure_regular_file(evidence_root, relative, "retained workflow artifact")
+    if archived is None or error:
+        raise ValueError(error)
+    verify_archive_contents(archived, record, size, digest)
 
 
 def audit_release(
@@ -507,6 +526,7 @@ def audit_reviewed_records(
     evidence_root: Path,
     professional_update_origins: list[str],
     sealed_assets: dict[str, str] | None = None,
+    retain_workflow_artifacts: bool = False,
 ) -> list[str]:
     evidence_root = evidence_root.absolute()
     if not evidence_root.is_dir() or any(path_is_reparse(path) for path in (*evidence_root.parents, evidence_root)):
@@ -582,7 +602,10 @@ def audit_reviewed_records(
                     verify_packaged_debian_server_evidence(package, evidence_root / article, record["release_target"])
             if evidence_workflow is not None:
                 assert attempt.archive_window is not None
-                verify_hosted_evidence(repository, record, evidence_root, evidence_workflow, attempt.archive_window)
+                verify_hosted_evidence(
+                    repository, record, evidence_root, evidence_workflow, attempt.archive_window,
+                    retain_archive=retain_workflow_artifacts,
+                )
         except (OSError, RuntimeError, ValueError) as exc:
             errors.append(f"{article} {exc}")
     if not errors:

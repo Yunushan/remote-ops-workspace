@@ -106,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--candidate-inventory", required=True, metavar="'RUN_ID ARTIFACT_ID sha256:DIGEST'")
     parser.add_argument("--assets-dir", type=Path, required=True, help="staged assets from the sealed build")
     parser.add_argument("--evidence-root", type=Path, required=True)
+    parser.add_argument(
+        "--retain-workflow-artifacts", action="store_true",
+        help="retain verified original Actions ZIPs under the evidence root for the published audit",
+    )
     parser.add_argument("--professional-update-origin", action="append", help="independently approved HTTPS origin")
     args = parser.parse_args(argv)
     try:
@@ -126,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             professional_update_origins=(args.professional_update_origin or
                                          os.environ.get("RELEASE_PROFESSIONAL_UPDATE_ORIGINS", "").split()),
             sealed_assets=sealed_asset_hashes(records),
+            retain_workflow_artifacts=args.retain_workflow_artifacts,
         )
     except (OSError, RuntimeError, ValueError, zipfile.BadZipFile) as exc:
         errors = [str(exc)]

@@ -80,13 +80,17 @@ update origins through `RELEASE_PROFESSIONAL_UPDATE_ORIGINS`.
 python scripts/check_candidate_mobaxterm_parity.py \
   --repository "$release_repository" --tag "$release_tag" --sha "$release_sha" \
   --candidate-inventory "$build_run_id $candidate_inventory_artifact_id $candidate_inventory_archive_digest" \
-  --assets-dir "$release_assets_dir" --evidence-root "$parity_evidence_root"
+  --assets-dir "$release_assets_dir" --evidence-root "$parity_evidence_root" \
+  --retain-workflow-artifacts
 ```
 
 The preflight verifies the inventory attestation, staged asset bytes, original
 Actions archives, captured evidence, GitHub reviews, and hosted Professional
-update bytes. It reports whether the eight candidate reviews match the staged
-release. The accepted registry is written during finalization after publication.
+update bytes. The retention flag saves each verified original ZIP in
+`workflow-artifacts/` under the evidence root. Keep that directory with the
+reviewed evidence so finalization can reuse the exact bytes if the Actions
+downloads expire. The accepted registry is written during finalization after
+publication.
 
 ### Finalize the registry after immutable publication
 

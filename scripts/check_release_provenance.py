@@ -286,6 +286,7 @@ def main(
             digest = check_approved_candidate_inventory(
                 args.candidate_inventory, approval[1], repository=repository, tag=tag,
                 sha=sha, published_files=published_files,
+                deb_package=local_assets.get(f"remote-ops-workspace-{tag}-linux-amd64.deb"),
                 archive_root=args.candidate_qualification_archives,
                 require_retained_archives=not current_transaction,
             )
@@ -469,14 +470,16 @@ def main(
 
 def check_approved_candidate_inventory(
     path: Path, approval: dict[str, Any], *, repository: str, tag: str, sha: str,
-    published_files: Mapping[str, tuple[int, str]], archive_root: Path | None, require_retained_archives: bool,
+    published_files: Mapping[str, tuple[int, str]], deb_package: Path | None,
+    archive_root: Path | None, require_retained_archives: bool,
 ) -> str:
     digest, value = read_approved_json(path, approval, "candidate_inventory", "candidate inventory")
     deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
     if deb_name not in published_files:
         raise ValueError("published release is missing the qualified Debian amd64 installer")
     records = validate_managed_release_qualification(
-        value, repository=repository, release_tag=tag, release_sha=sha, deb_sha256=published_files[deb_name][1],
+        value, repository=repository, release_tag=tag, release_sha=sha,
+        deb_sha256=published_files[deb_name][1], deb_package=deb_package,
     )
     check_published_candidate_files(records, published_files)
     if archive_root is not None:

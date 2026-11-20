@@ -1148,7 +1148,7 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
         assert checker.main(candidate_args) == 0
         assert qualified == [{
             "repository": repository, "release_tag": tag, "release_sha": sha,
-            "deb_sha256": checker.sha256_file(asset),
+            "deb_sha256": checker.sha256_file(asset), "deb_package": asset,
         }]
 
         with monkeypatch.context() as current_schema:

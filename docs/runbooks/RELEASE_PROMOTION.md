@@ -51,8 +51,9 @@ Use the **Report promotion coordinates** summary from the successful
 from that run and its repository. Authenticate GitHub CLI and set `GH_TOKEN`
 or `GITHUB_TOKEN` with Actions, attestations, and contents read access.
 
-From the selected tagged checkout with clean tracked files, prepare the exact
-candidate materials in a new directory outside the checkout. The command
+On a Linux review host with `dpkg-deb`, use the selected tagged checkout
+with clean tracked files to prepare the exact candidate materials in a new
+directory outside the checkout. The command
 selects artifacts by numeric ID from the successful first attempt. It checks
 the live tag and build, verifies the inventory attestation, and revalidates
 the archived installer bytes against the sealed file list.
@@ -74,8 +75,12 @@ smoke hashes the Windows ZIP, EXE, and MSI and the macOS DMG and PKG before
 and after installer testing. Both Linux jobs do the same for the DEB, RPM,
 and AppImage. Sealing compares those digests with the candidate assets,
 and the final audit compares the approved candidate assets with the
-published bytes. The review command checks the Linux qualification files
-and controller digests against the sealed inventory and tagged checkout.
+published bytes. Inventory schema 10 requires a bundled Debian amd64
+installer. Sealing, review, promotion, and the published audit open the
+installer to verify its `Depends` field and read the embedded server
+manifest and distro notices. The review command checks the Linux
+qualification files and controller digests against the sealed inventory
+and tagged checkout.
 `review-materials.json` lists the retained qualification archive paths, hashes,
 and source references. The command copies the sealed inventory, report
 payloads, and matching tagged resolver locks into `bundle/` and verifies the
@@ -186,9 +191,9 @@ managed drill used the controller and dependency lock from the release
 checkout. Promotion downloads the same archive by its sealed artifact ID and
 rechecks the evidence.
 Before signing approval, review the embedded `rpm_recovery` receipt alongside
-the original smoke reports listed in `rpm_smoke`. Inventory schema 6 requires
-the managed findings inside the RPM receipt. The reader also accepts historical
-schema 2 through 5 inventories.
+the original smoke reports listed in `rpm_smoke`. Inventory schema 6 and
+later require the managed findings inside the RPM receipt. Historical
+inventories follow the checks associated with their schema.
 
 ### Select the Debian amd64 server bundle
 

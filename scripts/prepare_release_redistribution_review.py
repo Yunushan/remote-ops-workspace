@@ -216,7 +216,9 @@ def prepare_review(
             client, bundle, archives, repository, sha, pointer.run_id,
             sealed["runtime_reports"], platform_locks,
         )
-        materialize_sealed_records(client, records, packet / "assets", run_id=pointer.run_id, release_sha=sha)
+        materialize_sealed_records(
+            client, records, packet / "assets", inventory=sealed, run_id=pointer.run_id, release_sha=sha,
+        )
         require_candidate_run(client, repository, tag, sha, pointer.run_id)
         require_clean_source(sha)
 

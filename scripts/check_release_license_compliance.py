@@ -746,7 +746,7 @@ def check_evidence(
                     try:
                         validate_managed_release_qualification(
                             sealed_candidate, repository=repository, release_tag=tag, release_sha=sha,
-                            deb_sha256=sha256_file(deb),
+                            deb_sha256=sha256_file(deb), deb_package=deb,
                         )
                     except (OSError, ValueError) as error:
                         errors.append(f"managed Debian release qualification: {error}")

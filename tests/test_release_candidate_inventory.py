@@ -261,7 +261,7 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
 @pytest.mark.parametrize(
     ("condition", "error"),
     [
-        ("complete", ""),
+        ("unbundled", "the production Debian candidate requires the embedded server bundle"),
         ("missing-installer", "missing=.*release-source-python"),
         ("missing-smoke", "missing=.*release-macos-gui-smoke-x64"),
         ("missing-linux-smoke", "missing=.*release-linux-native-smoke-aarch64"),
@@ -413,7 +413,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                                           "refusal": "installed-launcher-digest-refused"}
     if condition == "missing-rollback":
         del steps["explicit-rollback"]
-    bundled = condition == "complete-bundled"
+    bundled = condition != "unbundled"
     if bundled:
         steps["changed-server-manifest-rollback"] = {"phase": "refused", "exit_code": 1,
                                                     "refusal": "installed-runtime-payload-refused"}
@@ -653,8 +653,10 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     root = tmp_path / "assets"
     output = tmp_path / "inventory.json"
 
+    metadata_reads = []
+
     def deb_metadata(package: Path) -> tuple[str, bool]:
-        assert not output.exists() and not root.exists()
+        metadata_reads.append((output.exists(), root.exists()))
         assert package.name == deb_name and package.read_bytes() == deb_bytes
         return (
             "libc6" if condition == "wrong-managed-depends" else depends,
@@ -682,7 +684,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "missing-gui-installers", "wrong-gui-installer", "wrong-linux-package",
         }:
             assert len(downloads) == len(archives)
-        elif condition in {"wrong-managed-run", "wrong-managed-controller", "missing-rollback", "old-managed-schema"}:
+        elif condition in {"wrong-managed-run", "wrong-managed-controller", "missing-rollback", "old-managed-schema", "unbundled"}:
             assert len(downloads) == len(runtime) + 1
         elif condition in {
             "wrong-rpm-ref", "wrong-rpm-attempt", "rpm-failed",
@@ -704,6 +706,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         return
 
     seal()
+    assert metadata_reads == [(False, False)]
     inventory = json.loads(output.read_text(encoding="utf-8"))
     records = candidate.validate_inventory(
         inventory, repository="example/project", release_tag=tag, release_sha=sha,
@@ -806,6 +809,35 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["linux_smoke"] = linux_archives
+    old_receipt = {**managed["receipt"], "candidate_has_server_bundle": False}
+    old_receipt["receipts"] = {
+        name: result for name, result in old_receipt["receipts"].items() if name != "changed-server-manifest-rollback"
+    }
+    old_bytes = candidate.qualification_receipt_bytes(old_receipt)
+    inventory["managed_debian_update"] = {
+        **managed, "receipt": old_receipt, "size_bytes": len(old_bytes), "sha256": hashlib.sha256(old_bytes).hexdigest(),
+    }
+    with pytest.raises(ValueError, match="the production Debian candidate requires the embedded server bundle"):
+        candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.LINUX_INSTALLER_SCHEMA_VERSION
+    del inventory["linux_smoke"]
+    with pytest.raises(ValueError, match="must contain all Linux native smoke archives"):
+        candidate.validate_inventory(inventory, **coordinates)
+    inventory["linux_smoke"] = linux_archives
+    candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.SCHEMA_VERSION
+    inventory["managed_debian_update"] = managed
+    with pytest.raises(ValueError, match="requires the exact package for server bundle verification"):
+        candidate.validate_managed_release_qualification(inventory, **public_coordinates, deb_sha256=deb_sha)
+    wrong_deb = tmp_path / deb_name
+    wrong_deb.write_bytes(b"different file under the same published name")
+    with pytest.raises(ValueError, match="differs from the qualified release installer"):
+        candidate.validate_managed_release_qualification(
+            inventory, **public_coordinates, deb_sha256=deb_sha, deb_package=wrong_deb,
+        )
+    candidate.validate_managed_release_qualification(
+        inventory, **public_coordinates, deb_sha256=deb_sha, deb_package=root / deb_name,
+    )
     retained = tmp_path / "review" / "archives"
     retained.mkdir(parents=True)
     qualifications = prepare_release_redistribution_review.collect_qualification_archives(
@@ -851,6 +883,15 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         promote()
     assert not promoted_assets.exists() and not promoted_qualifications.exists()
     archives[arm_id] = arm_original
+    with monkeypatch.context() as changed_metadata:
+        changed_metadata.setattr(candidate, "read_candidate_deb_metadata", lambda _package: (depends, False))
+        with pytest.raises(ValueError, match="receipt server bundle claim differs from the candidate DEB"):
+            promote()
+        assert not promoted_assets.exists() and not promoted_qualifications.exists()
+        with pytest.raises(ValueError, match="receipt server bundle claim differs from the candidate DEB"):
+            candidate.validate_managed_release_qualification(
+                inventory, **public_coordinates, deb_sha256=deb_sha, deb_package=root / deb_name,
+            )
     promote()
     assert attestations[-1] == (output, {
         **coordinates, "inventory_sha256": hashlib.sha256(output.read_bytes()).hexdigest(), "build_event": event,

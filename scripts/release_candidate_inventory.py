@@ -45,7 +45,9 @@ from scripts.managed_debian_qualification import (  # noqa: E402
 )
 from scripts.release_evidence_file import retry_evidence_operation  # noqa: E402
 
-SCHEMA_VERSION = 9
+SERVER_BUNDLE_SCHEMA_VERSION = 10
+SCHEMA_VERSION = SERVER_BUNDLE_SCHEMA_VERSION
+LINUX_INSTALLER_SCHEMA_VERSION = 9
 GUI_INSTALLER_SCHEMA_VERSION = 8
 GUI_SMOKE_SCHEMA_VERSION = 7
 MANAGED_RPM_SCHEMA_VERSION = 6
@@ -356,7 +358,8 @@ def stage(
     )
     managed["receipt"] = json.loads(report)
     validate_managed_report(
-        managed, release_tag, release_sha, run_id, run_attempt, require_current=True, source_root=ROOT,
+        managed, release_tag, release_sha, run_id, run_attempt,
+        require_current=True, require_server_bundle=True, source_root=ROOT,
     )
     if qualification_receipt_bytes(managed["receipt"]) != report:
         raise ValueError("managed Debian receipt must use the canonical JSON format")
@@ -483,7 +486,7 @@ def validate_qualification_archive(record: Any, label: str) -> int:
 
 def validate_managed_report(
     record: Any, release_tag: str, release_sha: str, run_id: int, run_attempt: int, *, require_current: bool = False,
-    source_root: Path | None = None,
+    require_server_bundle: bool = False, source_root: Path | None = None,
 ) -> int:
     artifact_id = validate_qualification_archive(record, "managed Debian")
     receipt = record["receipt"]
@@ -512,6 +515,8 @@ def validate_managed_report(
     validate_receipt(
         receipt, previous_sha=previous, candidate_sha=receipt["candidate_sha256"], require_current=require_current,
     )
+    if require_server_bundle and receipt["candidate_has_server_bundle"] is not True:
+        raise ValueError("the production Debian candidate requires the embedded server bundle")
     applied = receipt["receipts"]["candidate-apply"]
     if (
         applied.get("candidate_sha256") != receipt["candidate_sha256"]
@@ -894,6 +899,14 @@ def read_candidate_deb_metadata(package: Path) -> tuple[str, bool]:
     return depends, bool(read_verified_debian_notices(package, target="linux-x86_64"))
 
 
+def verify_candidate_deb_metadata(package: Path, receipt: dict[str, Any]) -> None:
+    depends, bundled = read_candidate_deb_metadata(package)
+    if depends != receipt["debian_depends"]:
+        raise ValueError("managed Debian receipt Depends field differs from the candidate DEB")
+    if bundled != receipt["candidate_has_server_bundle"]:
+        raise ValueError("managed Debian receipt server bundle claim differs from the candidate DEB")
+
+
 def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256: str) -> None:
     name = rpm_qualification.rpm_name(release_tag.removeprefix("v"))
     require_linux_installer(records, name, sha256, "RPM recovery")
@@ -901,6 +914,7 @@ def require_release_rpm(records: list[dict[str, Any]], release_tag: str, sha256:
 
 def validate_managed_release_qualification(
     inventory: dict[str, Any], *, repository: str, release_tag: str, release_sha: str, deb_sha256: str,
+    deb_package: Path | None = None,
 ) -> list[dict[str, Any]]:
     if (type(inventory.get("schema_version")) is not int
             or not MANAGED_SCHEMA_VERSION <= inventory["schema_version"] <= SCHEMA_VERSION):
@@ -913,6 +927,13 @@ def validate_managed_release_qualification(
         run_id=run_id, run_attempt=1,
     )
     require_managed_deb(records, release_tag, deb_sha256)
+    if inventory["schema_version"] >= SERVER_BUNDLE_SCHEMA_VERSION:
+        if deb_package is None:
+            raise ValueError("production Debian qualification requires the exact package for server bundle verification")
+        with deb_package.open("rb") as stream:
+            if hashlib.file_digest(stream, "sha256").hexdigest() != deb_sha256:
+                raise ValueError("Debian package differs from the qualified release installer")
+        verify_candidate_deb_metadata(deb_package, inventory["managed_debian_update"]["receipt"])
     return records
 
 
@@ -1011,7 +1032,9 @@ def promote(
         retained = Path(temporary) / "archives"
         retained.mkdir()
         download_qualification_archives(client, inventory, run_id, release_sha, retained)
-        materialize_sealed_records(client, records, assets_root, run_id=run_id, release_sha=release_sha)
+        materialize_sealed_records(
+            client, records, assets_root, inventory=inventory, run_id=run_id, release_sha=release_sha,
+        )
         if qualification_archives is not None:
             retained.rename(qualification_archives)
 
@@ -1033,7 +1056,8 @@ def download_qualification_archives(
 
 
 def materialize_sealed_records(
-    client: GitHubClient, records: list[dict[str, Any]], assets_root: Path, *, run_id: int, release_sha: str,
+    client: GitHubClient, records: list[dict[str, Any]], assets_root: Path, *,
+    inventory: dict[str, Any], run_id: int, release_sha: str,
 ) -> None:
     live: dict[str, dict[str, Any]] = {}
     for record in records:
@@ -1048,7 +1072,10 @@ def materialize_sealed_records(
             release_sha=release_sha,
         )
         live[record["name"]] = metadata
-    materialize_records(client, live, assets_root, expected_records=records)
+    managed_deb = None
+    if inventory["schema_version"] >= SERVER_BUNDLE_SCHEMA_VERSION:
+        managed_deb = (inventory["release_tag"], inventory["managed_debian_update"]["receipt"])
+    materialize_records(client, live, assets_root, expected_records=records, managed_deb=managed_deb)
 
 
 def check_build_run(
@@ -1140,11 +1167,7 @@ def materialize_records(
             release_tag, receipt = managed_deb
             require_managed_deb(records, release_tag, receipt["candidate_sha256"])
             package = staged_root / f"remote-ops-workspace-{release_tag}-linux-amd64.deb"
-            depends, bundled = read_candidate_deb_metadata(package)
-            if depends != receipt["debian_depends"]:
-                raise ValueError("managed Debian receipt Depends field differs from the candidate DEB")
-            if bundled != receipt["candidate_has_server_bundle"]:
-                raise ValueError("managed Debian receipt server bundle claim differs from the candidate DEB")
+            verify_candidate_deb_metadata(package, receipt)
         if release_rpm is not None:
             require_release_rpm(records, *release_rpm)
         if smoked_installers is not None:
@@ -1295,7 +1318,10 @@ def validate_inventory(
             raise ValueError(f"runtime report {target} exceeds the size limit")
     if schema >= MANAGED_SCHEMA_VERSION or "managed_debian_update" in value:
         managed = value.get("managed_debian_update")
-        artifact_id = validate_managed_report(managed, release_tag, release_sha, run_id, run_attempt)
+        artifact_id = validate_managed_report(
+            managed, release_tag, release_sha, run_id, run_attempt,
+            require_server_bundle=schema >= SERVER_BUNDLE_SCHEMA_VERSION,
+        )
         if artifact_id in ids:
             raise ValueError(f"managed Debian report artifact id is duplicated: {artifact_id}")
         ids.add(artifact_id)
@@ -1315,7 +1341,7 @@ def validate_inventory(
         validate_smoke_records(value.get("gui_smoke"), ids, GUI_SMOKE_ARTIFACT_NAMES, "desktop GUI")
     if schema >= GUI_INSTALLER_SCHEMA_VERSION:
         require_smoked_installer_assets(records, release_tag, value["gui_smoke"])
-    if schema >= SCHEMA_VERSION or "linux_smoke" in value:
+    if schema >= LINUX_INSTALLER_SCHEMA_VERSION or "linux_smoke" in value:
         validate_smoke_records(value.get("linux_smoke"), ids, LINUX_SMOKE_ARTIFACT_NAMES, "Linux native")
         require_smoked_installer_assets(records, release_tag, value["linux_smoke"])
     return sorted(records, key=lambda item: item["name"])

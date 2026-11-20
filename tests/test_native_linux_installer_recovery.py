@@ -13,6 +13,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts import managed_debian_qualification
+
 REPO = Path.cwd()
 DRAFT = REPO / ".tmp/native-linux-prior-transition-draft-20261002"
 
@@ -1104,6 +1106,8 @@ def test_workflow_recovery_needs_x64_and_actual_basic_finish(
     (False, "rollback-repeat"), (False, "old-schema"), (False, "automatic-schema"),
     (False, "interruption-schema"), (False, "dependency-step-missing"), (False, "dependency-reason"),
     (False, "dependency-digest"), (False, "dependency-journal"), (False, "dependency-previous"),
+    (False, "upgrade-plan-schema"), (False, "rollback-conflict-missing"),
+    (False, "rollback-conflict-journal"), (False, "rollback-conflict-retry"), (False, "rollback-conflict-digest"),
 ])
 def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, monkeypatch, bundled, mismatch):
     previous = tmp_path / "previous.deb"
@@ -1179,12 +1183,13 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
             steps["interrupted-apply"]["action"] = "apply"
         if mismatch == "automatic-digest":
             steps["automatic-candidate"]["candidate_sha256"] = "f" * 64
-        schemas = {"old-schema": "row.managed-debian-qualification.v1",
-                   "automatic-schema": "row.managed-debian-qualification.v2",
-                   "interruption-schema": "row.managed-debian-qualification.v3"}
+        schemas = {"old-schema": managed_debian_qualification.PREVIOUS_SCHEMA,
+                   "automatic-schema": managed_debian_qualification.AUTOMATIC_SCHEMA,
+                   "interruption-schema": managed_debian_qualification.INTERRUPTION_SCHEMA,
+                   "upgrade-plan-schema": managed_debian_qualification.UPGRADE_PLAN_SCHEMA}
         if mismatch in {"old-schema", "automatic-schema"}:
             del steps["rollback-interruption"], steps["repeated-rollback"]
-        if mismatch not in schemas:
+        if mismatch not in schemas or mismatch == "upgrade-plan-schema":
             steps["dependency-blocked"] = {"phase": "authenticated-staged", "exit_code": 0}
             if mismatch != "dependency-step-missing":
                 steps["dependency-blocked-apply"] = {
@@ -1195,8 +1200,19 @@ def test_managed_update_drill_binds_inputs_and_runs_offline(module, tmp_path, mo
                     "previous_installation_unchanged": mismatch != "dependency-previous",
                     "journal_created": mismatch == "dependency-journal",
                 }
+        if mismatch not in schemas:
+            if mismatch != "rollback-conflict-missing":
+                steps["dependency-blocked-rollback"] = {
+                    "phase": "refused", "exit_code": 1, "action": "rollback",
+                    "refusal": "debian-rollback-plan-refused", "previous_sha256": "a" * 64,
+                    "candidate_sha256": "0" * 64 if mismatch == "rollback-conflict-digest" else "b" * 64,
+                    "candidate_installation_unchanged": True, "journal_unchanged": mismatch != "rollback-conflict-journal",
+                }
+            steps["dependency-blocked-update-retry"] = dict(steps["candidate-apply"])
+            if mismatch == "rollback-conflict-retry":
+                steps["dependency-blocked-update-retry"]["action"] = "apply"
         return json.dumps({
-            "schema": schemas.get(mismatch, "row.managed-debian-qualification.v4"),
+            "schema": schemas.get(mismatch, managed_debian_qualification.SCHEMA),
             "status": "passed", "target": module.TARGET,
             "production_acceptance": False, "previous_sha256": "a" * 64,
             "candidate_sha256": "c" * 64 if mismatch == "digest" else "b" * 64,

@@ -21,6 +21,7 @@ if str(SCRIPTS) not in sys.path:
 import release_candidate_inventory as candidate  # noqa: E402
 
 from scripts import (  # noqa: E402
+    managed_debian_qualification,
     managed_rpm_qualification,
     release_evidence_file,
 )
@@ -335,13 +336,19 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                               "previous_sha256": previous, "candidate_sha256": failing_sha},
         "automatic-explicit-rollback": dict(rollback),
     })
+    steps["dependency-blocked"] = {"phase": "authenticated-staged", "exit_code": 0}
+    steps["dependency-blocked-apply"] = {
+        "phase": "refused", "exit_code": 1, "action": "apply", "refusal": "debian-upgrade-plan-refused",
+        "previous_sha256": previous, "candidate_sha256": blocked_sha,
+        "previous_installation_unchanged": True, "journal_created": False,
+    }
     if condition != "old-managed-schema":
-        steps["dependency-blocked"] = {"phase": "authenticated-staged", "exit_code": 0}
-        steps["dependency-blocked-apply"] = {
-            "phase": "refused", "exit_code": 1, "action": "apply", "refusal": "debian-upgrade-plan-refused",
-            "previous_sha256": previous, "candidate_sha256": blocked_sha,
-            "previous_installation_unchanged": True, "journal_created": False,
+        steps["dependency-blocked-rollback"] = {
+            "phase": "refused", "exit_code": 1, "action": "rollback", "refusal": "debian-rollback-plan-refused",
+            "previous_sha256": previous, "candidate_sha256": deb_sha,
+            "candidate_installation_unchanged": True, "journal_unchanged": True,
         }
+        steps["dependency-blocked-update-retry"] = dict(steps["candidate-apply"])
     steps["changed-launcher-rollback"] = {"phase": "refused", "exit_code": 1,
                                           "refusal": "installed-launcher-digest-refused"}
     if condition == "missing-rollback":
@@ -352,8 +359,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                                                     "refusal": "installed-runtime-payload-refused"}
     depends = "libc6 (>= 2.38), libvncserver1" if bundled else "libc6 (>= 2.38), zlib1g"
     managed_report = candidate.qualification_receipt_bytes({
-        "schema": "row.managed-debian-qualification.v3" if condition == "old-managed-schema" else
-                  "row.managed-debian-qualification.v4", "status": "passed", "target": "linux-x86_64",
+        "schema": managed_debian_qualification.UPGRADE_PLAN_SCHEMA if condition == "old-managed-schema" else
+                  managed_debian_qualification.SCHEMA, "status": "passed", "target": "linux-x86_64",
         "production_acceptance": False, "candidate_has_server_bundle": bundled,
         "previous_sha256": previous, "candidate_sha256": deb_sha,
         "controller_sha256": "c" * 64, "source_archive_sha256": "d" * 64,

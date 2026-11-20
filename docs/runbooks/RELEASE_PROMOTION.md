@@ -142,7 +142,7 @@ The release job retains `managed-debian-update.json` in
 `release-managed-debian-update`. The sealed candidate inventory embeds the
 receipt and binds its archive and file digests to the release source, the
 Actions attempt, and the candidate DEB. For new seals, it requires the
-current receipt with the dependency-refusal drill and checks its `Depends`
+current receipt with dependency refusals during upgrade and rollback and checks its `Depends`
 field and server bundle claim against the extracted candidate DEB. Review
 the offline upgrade and rollback outcomes, including the manifest-change
 refusal when the server bundle is present. The drill uses a test signer.

@@ -133,6 +133,12 @@ def test_review_captures_exact_candidate_and_all_runtime_inputs(tmp_path, monkey
                 "previous_sha256": previous, "candidate_sha256": deb_digest,
                 "previous_launcher_sha256": "e" * 64}
     receipts["candidate-apply"]["previous_launcher_sha256"] = "e" * 64
+    receipts["dependency-blocked-rollback"] = {
+        "phase": "refused", "exit_code": 1, "action": "rollback", "refusal": "debian-rollback-plan-refused",
+        "previous_sha256": previous, "candidate_sha256": deb_digest,
+        "candidate_installation_unchanged": True, "journal_unchanged": True,
+    }
+    receipts["dependency-blocked-update-retry"] = dict(receipts["candidate-apply"])
     receipts["explicit-rollback"] = rollback
     receipts["repeated-rollback"] = dict(rollback)
     receipts["rollback-interruption"] = {**rollback, "phase": "rolling-back", "exit_code": -15}

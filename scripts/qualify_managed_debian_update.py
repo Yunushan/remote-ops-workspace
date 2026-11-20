@@ -40,6 +40,7 @@ PACKAGE = "remote-ops-workspace"
 TARGET = "linux-x86_64"
 MANAGER = ROOT / "scripts/managed_linux_update.py"
 SERVER_MANIFEST = Path("/usr/lib/remote-ops-workspace/servers/servers-runtime.json")
+ROLLBACK_BLOCKER = "row-qualification-rollback-blocker"
 
 
 def sha256(path: Path) -> str:
@@ -178,6 +179,21 @@ def package_fixture(candidate: Path, root: Path, *, postinst: str | None = None,
         control.write_text(text if count else f"Depends: {dependency}\n{text}", encoding="utf-8")
     checked("/usr/bin/dpkg-deb", "--root-owner-group", "--build", tree, fault)
     return fault
+
+
+def build_rollback_blocker(root: Path, version: str) -> Path:
+    control = root / "package" / "DEBIAN" / "control"
+    control.parent.mkdir(parents=True)
+    control.write_text(
+        f"Package: {ROLLBACK_BLOCKER}\n"
+        "Version: 1\nArchitecture: all\nMaintainer: Qualification <noreply@example.invalid>\n"
+        f"Depends: {PACKAGE} (= {version})\n"
+        "Description: Disposable rollback dependency qualification fixture\n",
+        encoding="ascii",
+    )
+    package = root / "rollback-blocker.deb"
+    checked("/usr/bin/dpkg-deb", "--root-owner-group", "--build", control.parent.parent, package)
+    return package
 
 
 def await_condition(predicate, message: str) -> None:
@@ -404,6 +420,25 @@ def qualify(args, root: Path) -> dict:
                     if path.is_file() and sha256(path) == changed:
                         with path.open("r+b") as output:
                             output.truncate(size)
+
+            blocker = build_rollback_blocker(root / "rollback-blocker", candidate)
+            checked("/usr/bin/dpkg", "--install", blocker)
+            applied_db = sha256(db)
+            rejected = update("dependency-blocked-rollback", "rollback", "--transaction", transaction,
+                              phase="refused", code=1)
+            if (rejected.get("refusal") != "debian-rollback-plan-refused"
+                    or journal.read_bytes() != applied_journal or sha256(db) != applied_db
+                    or sha256(launcher) != receipt["candidate_launcher_sha256"] or sha256(sentinel) != original):
+                raise RuntimeError("Dependency refusal changed the applied installation or transaction")
+            retry = update("dependency-blocked-update-retry", "update", *arguments, phase="applied")
+            if retry != receipt or journal.read_bytes() != applied_journal:
+                raise RuntimeError("The refused rollback changed the completed update")
+            receipts["dependency-blocked-rollback"].update(
+                previous_sha256=args.previous_sha256, candidate_sha256=args.candidate_sha256,
+                candidate_installation_unchanged=True, journal_unchanged=True,
+            )
+            checked("/usr/bin/dpkg", "--remove", ROLLBACK_BLOCKER)
+
             with pause_dpkg_rollback(root) as (rollback_entered, rollback_resume):
                 rollback_code = interrupt_controller(
                     argv("rollback", "--transaction", transaction), env, rollback_entered, rollback_resume,

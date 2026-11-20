@@ -117,6 +117,7 @@ def test_update_refuses_a_package_replacement_between_staging_and_installing(tmp
     assert not journal.exists()
 
 
+@pytest.mark.parametrize("downgrade", [False, True])
 @pytest.mark.parametrize(("exit_code", "suffix", "detail", "accepted"), [
     (0, "", "", True),
     (0, ":amd64", "", True),
@@ -130,16 +131,17 @@ def test_update_refuses_a_package_replacement_between_staging_and_installing(tmp
     (0, "", "wrong-previous-version", False),
     (0, "", "no-configure-step", False),
 ])
-def test_native_upgrade_plan_requires_only_the_exact_candidate(
-    tmp_path, monkeypatch, exit_code, suffix, detail, accepted,
+def test_native_transition_plan_requires_only_the_exact_target(
+    tmp_path, monkeypatch, downgrade, exit_code, suffix, detail, accepted,
 ):
-    package = tmp_path / "candidate with spaces.deb"
+    package = tmp_path / "target with spaces.deb"
     name = f"{updater.PACKAGE}{suffix}"
-    plan = f"Inst {name} [1.0.24] (1.0.28 local-deb [amd64])\nConf {name} (1.0.28 local-deb [amd64])"
+    installed, target = ("1.0.28", "1.0.24") if downgrade else ("1.0.24", "1.0.28")
+    plan = f"Inst {name} [{installed}] ({target} local-deb [amd64])\nConf {name} ({target} local-deb [amd64])"
     if detail == "wrong-target-version":
-        plan = plan.replace("1.0.28", "1.0.29")
+        plan = plan.replace(f"({target} ", "(1.0.29 ")
     elif detail == "wrong-previous-version":
-        plan = plan.replace("1.0.24", "1.0.25")
+        plan = plan.replace(f"[{installed}]", "[1.0.25]")
     elif detail == "no-configure-step":
         plan = plan.splitlines()[0]
     else:
@@ -147,8 +149,9 @@ def test_native_upgrade_plan_requires_only_the_exact_candidate(
 
     def command(*args, check, frontend_locked):
         assert not check and frontend_locked
+        options = ("--allow-downgrades",) if downgrade else ()
         assert args == (
-            updater.APT_GET, "--simulate", "--no-download", "--no-remove", "--no-install-recommends",
+            updater.APT_GET, "--simulate", *options, "--no-download", "--no-remove", "--no-install-recommends",
             "-o", "APT::Install-Suggests=false", "-o", "Dir::Etc::sourcelist=/dev/null",
             "-o", "Dir::Etc::sourceparts=-", "install", str(package),
         )
@@ -156,10 +159,11 @@ def test_native_upgrade_plan_requires_only_the_exact_candidate(
 
     monkeypatch.setattr(updater, "native_command", command)
     if accepted:
-        updater.verify_upgrade_plan(package, "amd64", "1.0.24", "1.0.28")
+        updater.verify_transition_plan(package, "amd64", installed, target, downgrade=downgrade)
     else:
-        with pytest.raises(updater.UpdateError, match="debian-upgrade-plan-refused"):
-            updater.verify_upgrade_plan(package, "amd64", "1.0.24", "1.0.28")
+        refusal = "debian-rollback-plan-refused" if downgrade else "debian-upgrade-plan-refused"
+        with pytest.raises(updater.UpdateError, match=refusal):
+            updater.verify_transition_plan(package, "amd64", installed, target, downgrade=downgrade)
 
 
 def test_interrupted_apply_requires_recovery_instead_of_retrying_install(tmp_path, monkeypatch):
@@ -277,6 +281,26 @@ def test_rollback_refuses_changed_candidate_runtime_before_changing_state(tmp_pa
 
     with pytest.raises(updater.UpdateError, match="installed-runtime-payload-refused"):
         updater.rollback(tmp_path / updater.JOURNAL, state("applied"), "amd64")
+
+
+@pytest.mark.parametrize("phase", ["applied", "applying"])
+def test_blocked_rollback_does_not_change_the_journal_or_installation(tmp_path, monkeypatch, phase):
+    journal = tmp_path / updater.JOURNAL
+    monkeypatch.setattr(updater, "retained_runtime", lambda *_: {})
+    monkeypatch.setattr(updater, "installed_package", lambda _: ("installed", "1.0.28"))
+    monkeypatch.setattr(updater, "verify_installation", lambda *_: None)
+    monkeypatch.setattr(updater, "journal_write", lambda *_: pytest.fail("journal advanced"))
+    monkeypatch.setattr(updater, "install_deb", lambda *_: pytest.fail("installation attempted"))
+
+    def verify_plan(path, architecture, installed, target, *, downgrade):
+        assert (path, architecture) == (tmp_path / updater.PREVIOUS_PACKAGE, "amd64")
+        assert (installed, target, downgrade) == ("1.0.28", "1.0.24", True)
+        raise updater.UpdateError("debian-rollback-plan-refused")
+
+    monkeypatch.setattr(updater, "verify_transition_plan", verify_plan)
+    with pytest.raises(updater.UpdateError, match="debian-rollback-plan-refused"):
+        updater.rollback(journal, state(phase), "amd64")
+    assert not journal.exists()
 
 
 @pytest.mark.parametrize("name", [updater.PREVIOUS_PACKAGE, "candidate.deb"])

@@ -289,14 +289,18 @@ def verify_installation(architecture: str, version: str, digests: dict[PurePosix
     verify_installed_servers(digests)
 
 
-def verify_upgrade_plan(path: Path, architecture: str, previous: str, version: str) -> None:
+def verify_transition_plan(
+    path: Path, architecture: str, installed_version: str, version: str, *, downgrade: bool = False,
+) -> None:
+    refusal = "debian-rollback-plan-refused" if downgrade else "debian-upgrade-plan-refused"
+    downgrade_option = ("--allow-downgrades",) if downgrade else ()
     result = native_command(
-        APT_GET, "--simulate", "--no-download", "--no-remove", "--no-install-recommends",
+        APT_GET, "--simulate", *downgrade_option, "--no-download", "--no-remove", "--no-install-recommends",
         "-o", "APT::Install-Suggests=false", "-o", "Dir::Etc::sourcelist=/dev/null",
         "-o", "Dir::Etc::sourceparts=-", "install", str(path),
         check=False, frontend_locked=True,
     )
-    require(result.returncode == 0, "debian-upgrade-plan-refused")
+    require(result.returncode == 0, refusal)
     operations = [
         line for line in result.stdout.splitlines()
         if re.match(r"^(?:Inst|Conf|Remv|Purg)(?:\s|$)", line)
@@ -305,9 +309,9 @@ def verify_upgrade_plan(path: Path, architecture: str, previous: str, version: s
     release = rf"\({re.escape(version)}(?: [^)]*)?\)"
     require(
         len(operations) == 2
-        and re.fullmatch(rf"Inst {name} \[{re.escape(previous)}\] {release}", operations[0])
+        and re.fullmatch(rf"Inst {name} \[{re.escape(installed_version)}\] {release}", operations[0])
         and re.fullmatch(rf"Conf {name} {release}", operations[1]),
-        "debian-upgrade-plan-refused",
+        refusal,
     )
 
 
@@ -336,6 +340,7 @@ def rollback(journal: Path, state: dict, architecture: str) -> dict:
     previous = state["previous_version"]
     phase = state["phase"]
     candidate = state["candidate_version"]
+    installed_candidate = phase == "applied"
     if phase == "applied":
         # A completed transaction grants rollback only for the exact
         # installation it verified. Recovery of an interrupted transaction
@@ -345,7 +350,9 @@ def rollback(journal: Path, state: dict, architecture: str) -> dict:
         )
         verify_installation(architecture, candidate, candidate_runtime)
     elif phase != "rolled-back":
-        require(installed_package(architecture)[1] in (previous, candidate), "installed-package-changed")
+        status, installed_version = installed_package(architecture)
+        require(installed_version in (previous, candidate), "installed-package-changed")
+        installed_candidate = (status, installed_version) == ("installed", candidate)
     retained = journal.parent / PREVIOUS_PACKAGE
     previous_runtime = retained_runtime(
         retained, state["previous_sha256"], state["previous_launcher_sha256"], state["previous_size"],
@@ -353,6 +360,8 @@ def rollback(journal: Path, state: dict, architecture: str) -> dict:
     if phase == "rolled-back":
         verify_installation(architecture, previous, previous_runtime)
         return state
+    if installed_candidate:
+        verify_transition_plan(retained, architecture, candidate, previous, downgrade=True)
     state = journal_write(journal, state, "rolling-back")
     install_deb(retained, architecture, previous, previous_runtime)
     return journal_write(journal, state, "rolled-back")
@@ -414,7 +423,7 @@ def apply(args, journal: Path, architecture: str, *, expected_previous: str | No
     previous_runtime = deb_runtime_digests(old)
     candidate_runtime = deb_runtime_digests(new)
     verify_installation(architecture, previous, previous_runtime)
-    verify_upgrade_plan(new, architecture, previous, args.version)
+    verify_transition_plan(new, architecture, previous, args.version)
     state = journal_write(journal, {
         "schema": SCHEMA, "architecture": architecture, "previous_version": previous,
         "candidate_version": args.version, "previous_sha256": prior.sha256, "previous_size": prior.size,

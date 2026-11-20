@@ -148,6 +148,11 @@ command from the same verified checkout. It verifies both retained DEBs
 offline and compares the installed launcher and any bundled server files with
 the candidate DEB. A change to those bytes causes a refusal before the journal
 or installation changes, even when the installed version matches.
+When the candidate is fully installed, APT simulates the downgrade offline
+under the package-manager lock. The plan must contain only the predecessor
+unpack and configuration. If `debian-rollback-plan-refused` appears, resolve
+the dependency or package state conflict and retry with the same transaction
+directory. The current installation and journal remain intact.
 
 ```bash
 python3 -I scripts/managed_linux_update.py rollback \
@@ -177,6 +182,10 @@ offline, and repeating the completed rollback leaves the journal unchanged.
 It also stages a candidate with an unavailable dependency and verifies the
 preflight refusal against the unchanged package database and launcher. The
 refusal leaves the transaction without an installation journal.
+The drill also installs a package that requires the candidate version. A
+blocked rollback must preserve the installed candidate, workspace, and
+applied journal. After removing the fixture, the drill continues the same
+rollback offline.
 The retained `managed-debian-update.json` records the package digests,
 candidate source SHA, run attempt, and observed outcomes. The drill uses an
 ephemeral test signer. Production approval uses the release-bound evidence in

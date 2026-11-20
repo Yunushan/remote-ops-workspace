@@ -1108,8 +1108,19 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
             platform.setattr(checker, "check_approved_protected_platform_assets", verify_registry)
             assert checker.main([*exact_completed, *registry_args]) == 0
             assert checker.main([*current_args, *approval_args, *registry_args]) == 0
+            delegated_args = [*args, *approval_args, *registry_args]
+            delegated_inputs = {path: checker.sha256_file(path) for path in (approved, approved_sig)}
+            delegated = {"audited_policy": selected_policy, "audited_inputs": delegated_inputs}
+            assert checker.main(delegated_args, **delegated) == 0
+            signature_bytes = approved_sig.read_bytes()
+            approved_sig.write_bytes(signature_bytes + b"\n")
+            assert checker.main(delegated_args, **delegated) == 1
+            assert "signed redistribution approval changed after the compliance audit" in capsys.readouterr().err
+            approved_sig.write_bytes(signature_bytes)
             platform.setattr(checker, "verify_attestation", other_registry_attempt)
             assert checker.main([*exact_completed, *registry_args]) == 1
+            assert "must share the successful promotion attempt" in capsys.readouterr().err
+            assert checker.main(delegated_args, **delegated) == 1
             assert "must share the successful promotion attempt" in capsys.readouterr().err
         write_approval("2026-11-01T12:02:30Z")
         monkeypatch.setattr(checker, "verify_attestation", mismatched_input_attempt)
@@ -1154,6 +1165,12 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
 
             alternate.setattr(checker, "validate_managed_release_qualification", previously_reviewed_candidate)
             assert checker.main(candidate_args) == 1
+            assert f"published standard asset {package.name} does not match" in capsys.readouterr().err
+            assert checker.main(
+                [*args, *approval_args, "--candidate-inventory", str(candidate)],
+                audited_policy=checker.read_json_object(policy, "deb policy"),
+                audited_inputs={path: checker.sha256_file(path) for path in (approved, approved_sig)},
+            ) == 1
             assert f"published standard asset {package.name} does not match" in capsys.readouterr().err
         package.unlink()
         release["assets"] = original_assets

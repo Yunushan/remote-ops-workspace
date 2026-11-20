@@ -375,10 +375,13 @@ bytes before certification can succeed.
 
 Use the exact publication proof and detached signature retained by the promotion
 for the aggregate. It verifies their signatures and attested
-digests alongside the published files. All must share a completed, successful
-promotion attempt. The live immutable release's publication time must fall
-within that attempt and the independently signed governance window. The
-operator audit can run after the governance window has expired.
+digests alongside the redistribution approval, sealed candidate inventory,
+protected-platform registry, and published files. All must share a completed,
+successful promotion attempt. The aggregate compares the standard published
+files with the approved candidate inventory and verifies the published protected
+files against the signed registry. The live immutable release's publication
+time must fall within that attempt and the independently signed governance
+window. The operator audit can run after the governance window has expired.
 
 Retain the exact reviewed article files in a separate directory under
 `<reviewed-parity-evidence-directory>/<article-id>/`, with the article document

@@ -8,6 +8,7 @@ import sys
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -508,6 +509,34 @@ def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> No
     checker = _load_checker()
 
     assert checker.main(_positive_fixture(tmp_path, checker)) == 0
+
+
+def test_published_compliance_passes_the_authenticated_bundle_to_provenance(tmp_path, monkeypatch) -> None:
+    checker = _load_checker()
+    args = _positive_fixture(tmp_path, checker)
+
+    def option(name):
+        return args[args.index(name) + 1]
+
+    def verify(argv, *, audited_policy, audited_inputs):
+        assert dict(zip(argv[::2], argv[1::2], strict=True)) == {
+            flag: option(source) for flag, source in (
+                ("--assets-dir", "--assets-dir"), ("--repository", "--repository"),
+                ("--tag", "--tag"), ("--sha", "--sha"),
+                ("--governance-attestation", "--tag-governance-attestation"),
+                ("--governance-signature", "--tag-governance-signature"),
+                ("--redistribution-evidence", "--evidence"), ("--redistribution-signature", "--signature"),
+                ("--candidate-inventory", "--candidate-inventory"),
+                ("--protected-platform-registry", "--protected-platform-registry"),
+            )
+        }
+        assert audited_policy == checker.read_json_object(Path(option("--policy")), "fixture policy")
+        paths = [Path(option(flag)) for flag in ("--evidence", "--signature")]
+        assert audited_inputs == {path: checker.sha256_file(path) for path in paths}
+        return 0
+
+    monkeypatch.setitem(sys.modules, "check_release_provenance", SimpleNamespace(main=verify))
+    assert checker.main([*args, "--verify-published-release"]) == 0
 
 
 def test_signed_approval_rejects_runtime_report_from_another_build(tmp_path: Path, capsys) -> None:

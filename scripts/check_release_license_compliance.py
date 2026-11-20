@@ -178,8 +178,6 @@ def main(argv: list[str] | None = None) -> int:
                 args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
                 args.signature: hashlib.sha256(signature_bytes).hexdigest(),
             }
-            if "linux-x86_64" in policy["production_targets"]:
-                audited_inputs[args.candidate_inventory] = evidence["candidate_inventory"]["sha256"]
             if verify_release_provenance([
                 "--assets-dir", str(args.assets_dir),
                 "--repository", repository,
@@ -187,8 +185,11 @@ def main(argv: list[str] | None = None) -> int:
                 "--sha", sha,
                 "--governance-attestation", str(args.tag_governance_attestation),
                 "--governance-signature", str(args.tag_governance_signature),
+                "--redistribution-evidence", str(args.evidence),
+                "--redistribution-signature", str(args.signature),
+                "--candidate-inventory", str(args.candidate_inventory),
+                "--protected-platform-registry", str(args.protected_platform_registry),
             ],
-                check_published_at=lambda published_at: check_review_window(evidence, now=published_at),
                 audited_policy=(policy_bytes, policy),
                 audited_inputs=audited_inputs,
             ):

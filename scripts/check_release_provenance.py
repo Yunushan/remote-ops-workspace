@@ -147,9 +147,13 @@ def main(
         approval_paths = (args.redistribution_evidence, args.redistribution_signature)
         approval = None
         if any(path is not None for path in approval_paths):
+            delegated_compliance = (
+                audited_policy is not None and audited_inputs is not None
+                and not (current_transaction or completed_promotion)
+            )
             if (
-                not (current_transaction or completed_promotion) or not verify_governance
-                or audited_inputs is not None or None in approval_paths
+                not (current_transaction or completed_promotion or delegated_compliance) or not verify_governance
+                or (audited_inputs is not None and not delegated_compliance) or None in approval_paths
             ):
                 raise ValueError("explicit redistribution inputs require both files and an exact published promotion")
             evidence_path, signature_path = approval_paths
@@ -157,17 +161,20 @@ def main(
             evidence_bytes, evidence = read_json_object(evidence_path, "signed redistribution approval")
             signature_bytes, signature = read_json_object(signature_path, "redistribution approval signature")
             approval = (evidence_bytes, evidence, signature)
-            audited_inputs = {
+            approval_digests = {
                 evidence_path: hashlib.sha256(evidence_bytes).hexdigest(),
                 signature_path: hashlib.sha256(signature_bytes).hexdigest(),
             }
+            if delegated_compliance and approval_digests != audited_inputs:
+                raise ValueError("signed redistribution approval changed after the compliance audit")
+            audited_inputs = approval_digests
         if audited_inputs is not None and not verify_governance:
             raise ValueError("audited input checks require verified governance")
         if args.candidate_inventory is not None and approval is None:
             raise ValueError("--candidate-inventory requires the signed redistribution approval")
         if args.protected_platform_registry is not None and approval is None:
             raise ValueError("--protected-platform-registry requires the signed redistribution approval")
-        if audited_policy is not None and (check_published_at is None or not audited_inputs):
+        if audited_policy is not None and (not audited_inputs or (approval is None and check_published_at is None)):
             raise ValueError("audited policy requires a delegated compliance audit")
         policy_snapshot = (
             audited_policy or read_json_object(POLICY_PATH, "release compliance policy")

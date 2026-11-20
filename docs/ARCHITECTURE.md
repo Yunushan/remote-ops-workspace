@@ -94,6 +94,9 @@ reporting. `cli_reports.py` formats diagnostic, platform, and feature reports.
 `cli_transfers.py` registers the `files` and `ssh-browser` commands and renders
 their results. The underlying transfer plans and browser preferences live in
 `file_transfer.py` and `moba_ssh_browser.py`.
+`cli_customizer.py` registers the `customizer` commands for enterprise bundles,
+deployment evidence, and authenticated update staging. It delegates manifest
+verification and staging to `moba_customizer.py` and `update_channel.py`.
 
 ## Desktop GUI subsystem
 

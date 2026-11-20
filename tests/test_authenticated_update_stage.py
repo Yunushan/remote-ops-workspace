@@ -7,8 +7,6 @@ qualification.
 """
 from __future__ import annotations
 
-import argparse
-import ast
 import base64
 import hashlib
 import json
@@ -19,6 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from remote_ops_workspace import cli, cli_customizer
 from remote_ops_workspace import update_channel as channel
 from remote_ops_workspace import update_staging as staging
 from remote_ops_workspace import windows_private_storage as storage
@@ -658,38 +657,10 @@ def test_stage_closes_all_owned_generators_after_atomic_refusal(monkeypatch, tmp
     assert len(closed) == 3
 
 
-def cli_functions():
-    """Execute only actual parser/three new CLI functions under explicit mocks."""
-    from remote_ops_workspace.cli_transfers import add_transfer_commands
-
-    source = (Path(channel.__file__).parent / "cli.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    wanted = {"build_parser", "_customizer_authenticated_stage", "cmd_customizer_update_stage",
-              "cmd_customizer_update_stage_recover"}
-    definitions = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
-    assert {node.name for node in definitions} == wanted
-    names = {node.id for item in definitions for node in ast.walk(item)
-             if isinstance(node, ast.Name) and node.id.startswith("cmd_")}
-    namespace = {name: lambda _args: 0 for name in names}
-    namespace.update(__package__="remote_ops_workspace", argparse=argparse, json=json,
-                     add_transfer_commands=add_transfer_commands,
-                     Path=Path, __version__=channel.__version__,
-                     DEFAULT_PLUGIN_CHECK_HOST="unrelated-parser-mock.invalid",
-                     DEFAULT_PLUGIN_CHECK_USERNAME="unrelated-parser-mock",
-                     REQUIRED_POLICY_SURFACES=("unrelated-parser-mock",),
-                     SERVER_DEFAULT_PORTS={"unrelated-parser-mock": 1},
-                     SUPPORTED_IMPORT_FORMATS=("unrelated-parser-mock",),
-                     data_dir=lambda: Path("synthetic-row-home"))
-    import sys
-
-    namespace["sys"] = sys
-    exec(compile(ast.Module(body=definitions, type_ignores=[]), "bound-cli-functions", "exec"), namespace)
-    return namespace
-
-
 @pytest.mark.parametrize("recover", [False, True])
 def test_actual_new_cli_parser_and_handler_route_explicit_policy_without_install(monkeypatch, capsys, recover):
-    namespace, calls = cli_functions(), []
+    calls = []
+    monkeypatch.setattr(cli_customizer, "data_dir", lambda: Path("synthetic-row-home"))
     marker = object()
     monkeypatch.setattr(channel, "load_update_policy", lambda path: calls.append(("policy", path)) or marker)
 
@@ -698,24 +669,23 @@ def test_actual_new_cli_parser_and_handler_route_explicit_policy_without_install
         return {"phase": "authenticated-staged", "version": "1.0.28", "artifact_count": 2, "install_permitted": False}
 
     monkeypatch.setattr(channel, "recover_update" if recover else "stage_update", operation)
-    parser = namespace["build_parser"]()
     command = "update-stage-recover" if recover else "update-stage"
-    args = parser.parse_args(["customizer", command, "--policy", "explicit-policy.json", "--stage", "private-stage", "--json"])
-    assert args.func(args) == 0
+    assert cli.main([
+        "customizer", command, "--policy", "explicit-policy.json", "--stage", "private-stage", "--json",
+    ]) == 0
     assert calls == [("policy", Path("explicit-policy.json")),
                      ("operation", marker, Path("private-stage"), Path("synthetic-row-home"))]
     assert json.loads(capsys.readouterr().out)["install_permitted"] is False
 
 
 def test_actual_cli_input_error_does_not_print_secret_received_text(monkeypatch, capsys):
-    namespace = cli_functions()
-
     def refuse(_path):
         raise ValueError("SECRET URL AND KEY CONTENT")
 
     monkeypatch.setattr(channel, "load_update_policy", refuse)
-    args = SimpleNamespace(policy=Path("policy.json"), stage=Path("stage"), json=True)
-    assert namespace["cmd_customizer_update_stage"](args) == 1
+    assert cli.main([
+        "customizer", "update-stage", "--policy", "policy.json", "--stage", "stage", "--json",
+    ]) == 1
     output = capsys.readouterr()
     assert "SECRET" not in output.out + output.err
     assert json.loads(output.out) == {"phase": "refused", "refusal": "update-stage-input-refused", "install_permitted": False}

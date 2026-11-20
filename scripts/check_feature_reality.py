@@ -179,7 +179,8 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.moba_customizer:write_moba_professional_customizer_bundle",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": ["--brand-name", "--lock-setting", "cmd_customizer_build"],
+            "src/remote_ops_workspace/cli.py": ["add_customizer_commands(sub)"],
+            "src/remote_ops_workspace/cli_customizer.py": ["--brand-name", "--lock-setting", "cmd_customizer_build"],
             "src/remote_ops_workspace/moba_customizer.py": [
                 "MobaProfessionalCustomizerPlan",
                 "SHA256SUMS.txt",
@@ -221,7 +222,8 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
             "remote_ops_workspace.enterprise_policy:EnterprisePolicyReview",
         ],
         "source_tokens": {
-            "src/remote_ops_workspace/cli.py": [
+            "src/remote_ops_workspace/cli.py": ["add_customizer_commands(sub)", "assert_profile_launch_allowed"],
+            "src/remote_ops_workspace/cli_customizer.py": [
                 "cmd_customizer_deployment_plan",
                 "cmd_customizer_evidence_bundle",
                 "cmd_customizer_evidence_verify",
@@ -229,7 +231,6 @@ FEATURE_REALITY_RULES: dict[str, dict[str, Any]] = {
                 "evidence-bundle",
                 "--bundle-manifest-sha256",
                 "--update-public-key",
-                "assert_profile_launch_allowed",
             ],
             "src/remote_ops_workspace/storage.py": [
                 "assert_profile_write_allowed",

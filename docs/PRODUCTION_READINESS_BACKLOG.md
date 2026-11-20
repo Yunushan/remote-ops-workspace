@@ -190,6 +190,8 @@ Rules:
   `gui_designs.py` assembles the presets and renders the shared stylesheet.
   `cli_transfers.py` owns file transfer and SSH-browser command registration
   and output. `cli_reports.py` formats diagnostic and readiness reports.
+  `cli_customizer.py` registers the enterprise bundle, deployment evidence,
+  and authenticated update staging commands.
 
 ## Phase 6 - Internal certification gates (about +3)
 

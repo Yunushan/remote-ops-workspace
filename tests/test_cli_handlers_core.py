@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli, cli_reports, cli_transfers
+from remote_ops_workspace import cli, cli_customizer, cli_reports, cli_transfers
 from remote_ops_workspace.models import Profile
 
 
@@ -394,8 +394,8 @@ def test_customizer_handlers_cover_json_text_and_failure(monkeypatch, tmp_path: 
         manifest={"brand_name": "Corp Ops", "profile_count": 2},
         files=files,
     )
-    monkeypatch.setattr(cli, "build_moba_professional_customizer_plan", lambda *_args, **_kwargs: _Record())
-    monkeypatch.setattr(cli, "write_moba_professional_customizer_bundle", lambda _plan: bundle)
+    monkeypatch.setattr(cli_customizer, "build_moba_professional_customizer_plan", lambda *_args, **_kwargs: _Record())
+    monkeypatch.setattr(cli_customizer, "write_moba_professional_customizer_bundle", lambda _plan: bundle)
     common_build = dict(
         out=Path("bundle"),
         brand_name="Corp Ops",
@@ -433,7 +433,7 @@ def test_customizer_handlers_cover_json_text_and_failure(monkeypatch, tmp_path: 
         update_channel=channel,
         evidence_requirements=["signed installer"],
     )
-    monkeypatch.setattr(cli, "build_professional_deployment_plan", lambda **_kwargs: deployment)
+    monkeypatch.setattr(cli_customizer, "build_professional_deployment_plan", lambda **_kwargs: deployment)
     deployment_args = _ns(
         brand_name="Corp Ops",
         organization="Example Corp",
@@ -462,9 +462,9 @@ def test_customizer_handlers_cover_json_text_and_failure(monkeypatch, tmp_path: 
         files=[Path("deployment.json")],
     )
     monkeypatch.setattr(
-        cli, "build_professional_deployment_evidence_bundle_plan", lambda *_args, **_kwargs: _Record()
+        cli_customizer, "build_professional_deployment_evidence_bundle_plan", lambda *_args, **_kwargs: _Record()
     )
-    monkeypatch.setattr(cli, "write_professional_deployment_evidence_bundle", lambda _plan: evidence_result)
+    monkeypatch.setattr(cli_customizer, "write_professional_deployment_evidence_bundle", lambda _plan: evidence_result)
     evidence_args = _ns(
         **vars(deployment_args),
         out_dir=Path("artifacts"),
@@ -533,7 +533,8 @@ def test_validation_handlers_cover_all_output_states(
     args: argparse.Namespace,
 ) -> None:
     result = _validation(passed=True, summary=True)
-    monkeypatch.setattr(cli, dependency_name, lambda *_args, **_kwargs: result)
+    dependency_owner = cli_customizer if handler_name.startswith("cmd_customizer_") else cli
+    monkeypatch.setattr(dependency_owner, dependency_name, lambda *_args, **_kwargs: result)
     handler = getattr(cli, handler_name)
     assert handler(args) == 0
     args.json = True

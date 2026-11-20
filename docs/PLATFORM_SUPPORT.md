@@ -516,6 +516,10 @@ by its frozen launcher, including libraries inside the PyInstaller archive.
 DEBs with a reviewed server bundle also declare the bundled daemons'
 dependencies. The RPM also declares versioned shared-library requirements from
 inside the archive so the package manager can check them before installation.
+The native release manifest lists `minimum_glibc` for the AppImage and native
+tarball. Run `getconf GNU_LIBC_VERSION` to compare your host with that value.
+The tarball also records the requirement in `RELEASE_TARGET.md`. At launch,
+the AppImage reports when it detects a glibc version below the minimum.
 On a distribution that cannot satisfy those requirements, use the source
 installation with a supported Python interpreter.
 [RPM ELF dependency generator](https://rpm.org/docs/6.1.x/man/elfdeps.1)

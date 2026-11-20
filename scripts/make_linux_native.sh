@@ -112,6 +112,12 @@ if [[ ! -x "$ROW_BIN" ]]; then
   exit 1
 fi
 "$PYTHON_BIN" scripts/check_linux_native_elf.py --target "$APPIMAGE_ARCH" --executable "$ROW_BIN"
+launcher_depends="$("$PYTHON_BIN" scripts/debian_native_dependencies.py "$ROW_BIN")"
+minimum_glibc=""
+glibc_dependency='(^|, )libc6 \(>= ([0-9]+(\.[0-9]+)+)\)(, |$)'
+if [[ "$launcher_depends" =~ $glibc_dependency ]]; then
+  minimum_glibc="${BASH_REMATCH[2]}"
+fi
 
 PKGROOT="$BUILD_DIR/pkgroot"
 install -Dm755 "$ROW_BIN" "$PKGROOT/usr/bin/row"
@@ -136,6 +142,10 @@ TARGET_ARCH may be used to select the artifact naming/mapping for a matching
 builder, but this script does not cross-compile PyInstaller binaries. Run it on
 the requested architecture or in an equivalent container/runner.
 EOF
+if [[ -n "$minimum_glibc" ]]; then
+  printf '\nThe frozen row launcher requires glibc %s or newer. Check your host with\n`getconf GNU_LIBC_VERSION`.\n' \
+    "$minimum_glibc" >> "$PKGROOT/usr/share/doc/remote-ops-workspace/RELEASE_TARGET.md"
+fi
 
 DEB_ROOT="$BUILD_DIR/debroot"
 mkdir -p "$DEB_ROOT"
@@ -149,7 +159,7 @@ if [[ -n "${ROW_RELEASE_SERVER_BUNDLE:-}" ]]; then
   deb_depends="$("$PYTHON_BIN" scripts/moba_debian_server_payload.py \
     --bundle "$ROW_RELEASE_SERVER_BUNDLE" --debian-root "$DEB_ROOT" --target "$server_target")"
 else
-  deb_depends="$("$PYTHON_BIN" scripts/debian_native_dependencies.py "$ROW_BIN")"
+  deb_depends="$launcher_depends"
 fi
 mkdir -p "$DEB_ROOT/DEBIAN"
 INSTALLED_SIZE="$(du -ks "$DEB_ROOT/usr" | awk '{print $1}')"
@@ -233,11 +243,35 @@ install -Dm755 "$ROW_BIN" "$APPDIR/usr/bin/row"
 install -Dm644 "$ROOT/LICENSE" "$APPDIR/usr/share/doc/remote-ops-workspace/LICENSE"
 install -Dm644 "$ROOT/NOTICE" "$APPDIR/usr/share/doc/remote-ops-workspace/NOTICE"
 install -Dm644 "$ROOT/redistribution-evidence/THIRD_PARTY_NOTICES.md" "$APPDIR/usr/share/doc/remote-ops-workspace/THIRD_PARTY_NOTICES.md"
-cat > "$APPDIR/AppRun" <<'EOF'
-#!/usr/bin/env sh
+{
+  printf '#!/usr/bin/env sh\nminimum_glibc="%s"\n' "$minimum_glibc"
+  cat <<'EOF'
+if [ -n "$minimum_glibc" ]; then
+  host_glibc="$(LC_ALL=C getconf GNU_LIBC_VERSION 2>/dev/null)" || host_glibc=""
+  case "$host_glibc" in
+    'glibc '*)
+      host_glibc="${host_glibc#glibc }"
+      older="$(LC_ALL=C awk -v host="$host_glibc" -v minimum="$minimum_glibc" 'BEGIN {
+        if (host !~ /^[0-9]+(\.[0-9]+)+$/) exit
+        host_count = split(host, actual, /\./)
+        minimum_count = split(minimum, required, /\./)
+        for (i = 1; i <= host_count || i <= minimum_count; i++) {
+          if (actual[i] + 0 < required[i] + 0) { print "yes"; exit }
+          if (actual[i] + 0 > required[i] + 0) exit
+        }
+      }' 2>/dev/null)" || older=""
+      if [ "$older" = yes ]; then
+        printf 'Remote Ops Workspace requires glibc %s or newer (found %s).\n' \
+          "$minimum_glibc" "$host_glibc" >&2
+        exit 1
+      fi
+      ;;
+  esac
+fi
 HERE="$(dirname "$(readlink -f "$0")")"
 exec "$HERE/usr/bin/row" "$@"
 EOF
+} > "$APPDIR/AppRun"
 chmod +x "$APPDIR/AppRun"
 cat > "$APPDIR/remote-ops-workspace.desktop" <<'EOF'
 [Desktop Entry]
@@ -323,7 +357,7 @@ ARCH="$APPIMAGE_ARCH" "$APPIMAGETOOL" --appimage-extract-and-run \
 TARBALL="$OUT_DIR/remote-ops-workspace-v${VERSION}-linux-${APPIMAGE_ARCH}-native.tar.gz"
 tar -C "$PKGROOT" -czf "$TARBALL" usr
 
-"$PYTHON_BIN" - "$ROOT" "$VERSION" "$OUT_DIR" "$DEB" "$RPM" "$APPIMAGE" "$TARBALL" "$DEB_ARCH" "$RPM_ARCH" "$APPIMAGE_ARCH" "$UNAME_ARCH" "$HOST_ARCH" <<'PY'
+"$PYTHON_BIN" - "$ROOT" "$VERSION" "$OUT_DIR" "$DEB" "$RPM" "$APPIMAGE" "$TARBALL" "$DEB_ARCH" "$RPM_ARCH" "$APPIMAGE_ARCH" "$UNAME_ARCH" "$HOST_ARCH" "$minimum_glibc" <<'PY'
 from __future__ import annotations
 
 import hashlib
@@ -343,6 +377,7 @@ rpm_arch = sys.argv[9]
 appimage_arch = sys.argv[10]
 requested_arch = sys.argv[11]
 host_arch = sys.argv[12]
+minimum_glibc = sys.argv[13]
 
 def repo_path(path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
@@ -418,6 +453,11 @@ manifest = [
         ],
     },
 ]
+
+if minimum_glibc:
+    for item in manifest:
+        if item["format"] in {"AppImage", "tar.gz"}:
+            item["minimum_glibc"] = minimum_glibc
 
 manifest = [add_integrity(item) for item in manifest]
 

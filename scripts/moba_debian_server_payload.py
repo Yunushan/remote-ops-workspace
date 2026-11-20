@@ -38,6 +38,7 @@ from scripts.debian_server_notices import (  # noqa: E402
     notice_records,
     verify_notice_members,
 )
+from scripts.release_evidence_file import stream_sha256  # noqa: E402
 
 LAUNCHER = PurePosixPath("usr/bin/row")
 ELF_TARGETS = {"linux-x86_64": "x86_64", "linux-arm64": "aarch64", "linux-i386": "i686", "linux-armhf": "armhf"}
@@ -226,7 +227,7 @@ def compare_payload_tar(archive: tarfile.TarFile, expected: dict[str, str]) -> N
             if data is None:
                 raise ValueError("cannot read the Debian ROW launcher")
             with data:
-                launcher_digest = hashlib.file_digest(data, "sha256").hexdigest()
+                launcher_digest = stream_sha256(data)
             continue
         if path in directories:
             if not item.isdir() or path in seen_directories or item.uid != 0 or item.gid != 0 or item.mode & 0o7022:
@@ -249,7 +250,7 @@ def compare_payload_tar(archive: tarfile.TarFile, expected: dict[str, str]) -> N
         if data is None:
             raise ValueError(f"cannot read packaged server payload: {relative}")
         with data:
-            if hashlib.file_digest(data, "sha256").hexdigest() != expected[relative]:
+            if stream_sha256(data) != expected[relative]:
                 raise ValueError(f"published Debian daemon or manifest differs from reviewed evidence: {relative}")
         remaining.remove(relative)
     if remaining:

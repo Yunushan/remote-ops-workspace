@@ -35,6 +35,7 @@ from remote_ops_workspace.update_channel import (  # noqa: E402
     MOBA_PROFESSIONAL_UPDATE_MANIFEST_SCHEMA,
 )
 from scripts.managed_debian_qualification import SCHEMA  # noqa: E402
+from scripts.release_evidence_file import stream_sha256  # noqa: E402
 
 PACKAGE = "remote-ops-workspace"
 TARGET = "linux-x86_64"
@@ -45,7 +46,7 @@ ROLLBACK_BLOCKER = "row-qualification-rollback-blocker"
 
 def sha256(path: Path) -> str:
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        return stream_sha256(stream)
 
 
 def command(*args: str | Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
@@ -115,6 +116,7 @@ def https_feed(root: Path, payloads: dict[str, bytes], now: datetime, *, request
             pass
 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(ca, key)
     with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
         server.socket = context.wrap_socket(server.socket, server_side=True)

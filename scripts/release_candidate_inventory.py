@@ -44,7 +44,7 @@ from scripts.managed_debian_qualification import (  # noqa: E402
     REPORT_NAME,
     validate_receipt,
 )
-from scripts.release_evidence_file import retry_evidence_operation  # noqa: E402
+from scripts.release_evidence_file import retry_evidence_operation, stream_sha256  # noqa: E402
 
 REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
 SCHEMA_VERSION = REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION
@@ -968,7 +968,7 @@ def validate_managed_release_qualification(
         if deb_package is None:
             raise ValueError("production Debian qualification requires the exact package for server bundle verification")
         with deb_package.open("rb") as stream:
-            if hashlib.file_digest(stream, "sha256").hexdigest() != deb_sha256:
+            if stream_sha256(stream) != deb_sha256:
                 raise ValueError("Debian package differs from the qualified release installer")
         verify_candidate_deb_metadata(
             deb_package, inventory["managed_debian_update"]["receipt"],

@@ -155,7 +155,7 @@ def write_native_evidence(root: Path, source: dict, asset: dict, report: dict) -
     session_id = str(uuid4())
     socket = {key: report[key] for key in ("ssh_user", "host_key_sha256", "client_endpoint", "server_endpoint")}
     transport = sha256(json.dumps(socket, sort_keys=True).encode())
-    captured = dt.datetime.now(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    captured = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     identity = {
         **{key: source[key] for key in ("repository", "release_tag", "workflow_run_url", "run_attempt")},
         "source_head_sha": source["head_sha"], "captured_at_utc": captured, "release_target": TARGET,

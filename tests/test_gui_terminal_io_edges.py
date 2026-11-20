@@ -288,10 +288,12 @@ def test_remote_cursor_paints_each_shape_and_obeys_desktop_blink_setting(gui_win
     with monkeypatch.context() as patch:
         patch.setattr(pane, "is_running", lambda: True)
         patch.setattr(QApplication, "cursorFlashTime", staticmethod(lambda: flash_time))
+        pane.terminal_emulator.set_screen_size(40, 5)
         pane.append_process_text("\x1b[2J\x1b[?25l")
         app.processEvents()
         assert output.isVisible()
         rect = output.cursorRect(QTextCursor(output.document()))
+        assert viewport.rect().contains(rect.center())
         middle_x = rect.x() + output.fontMetrics().horizontalAdvance("M") // 2
         middle_y = rect.y() + rect.height() // 2
         bottom_y = rect.bottom() - 1

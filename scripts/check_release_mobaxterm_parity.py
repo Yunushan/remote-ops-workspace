@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import hashlib
 import json
 import os
 import stat
@@ -14,7 +13,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
-from typing import Any, BinaryIO
+from typing import Any
 
 SCRIPTS = Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
@@ -58,6 +57,7 @@ from scripts.release_candidate_inventory import (  # noqa: E402
     GitHubClient,
     safe_name,
 )
+from scripts.release_evidence_file import stream_sha256  # noqa: E402
 
 REGISTRY = "configs/mobaxterm_parity_evidence.json"
 MOBAPT_WORKFLOW = ".github/workflows/mobapt-offline-evidence.yml"
@@ -363,13 +363,6 @@ def download_workflow_archive(repository: str, artifact_id: int, path: Path, siz
         raise ValueError("GitHub Actions archive download requires GitHub CLI authentication")
     client = GitHubClient(repository, token, api_url="https://api.github.com")
     client.download(f"actions/artifacts/{artifact_id}/zip", path, max_bytes=size)
-
-
-def stream_sha256(stream: BinaryIO) -> str:
-    digest = hashlib.sha256()
-    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-        digest.update(chunk)
-    return digest.hexdigest()
 
 
 def verify_archive_contents(path: Path, record: dict[str, Any], size: int, digest: str) -> None:

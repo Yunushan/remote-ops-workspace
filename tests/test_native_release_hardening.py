@@ -337,11 +337,14 @@ def test_windows_native_package_builds_double_click_gui_launcher() -> None:
     assert "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru" in smoke
 
 
-def test_windows_pyinstaller_uses_a_private_build_path_and_restores_it(tmp_path) -> None:
+@pytest.mark.parametrize("use_command_name", [False, True])
+def test_windows_pyinstaller_uses_a_private_build_path_and_restores_it(tmp_path, use_command_name) -> None:
     if os.name != "nt":
         pytest.skip("requires Windows DLL search paths")
-    shell = shutil.which("pwsh") or shutil.which("powershell")
+    shell = shutil.which("powershell") or shutil.which("pwsh")
     assert shell is not None
+    python = Path(sys.executable)
+    shutil.copyfile(python, tmp_path / python.name)
     probe = tmp_path / "probe.ps1"
     probe.write_text(
         '''
@@ -355,16 +358,17 @@ $Function = $Ast.Find({
 }, $true)
 . ([scriptblock]::Create($Function.Extent.Text))
 $OriginalPath = $env:PATH
-$Python = $env:ROW_BUILD_TEST_PYTHON
+$Python = $env:ROW_BUILD_TEST_COMMAND
+$ExpectedExecutable = $env:ROW_BUILD_TEST_PYTHON
 $ExpectedPath = @(
   [Environment]::SystemDirectory
   $env:SystemRoot
-  (Split-Path -Parent $Python)
+  (Split-Path -Parent $ExpectedExecutable)
 ) -join [IO.Path]::PathSeparator
 
 Invoke-WindowsPyInstaller -Python $Python -Build {
   param([string]$Executable)
-  if ($Executable -ne $Python -or $env:PATH -ne $ExpectedPath) {
+  if ($Executable -ne $ExpectedExecutable -or $env:PATH -ne $ExpectedPath) {
     throw "PyInstaller received an unexpected executable or PATH"
   }
   & $Executable -c 'raise SystemExit(0)'
@@ -390,8 +394,9 @@ exit 0
     )
     env = {
         **os.environ,
-        "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
-        "ROW_BUILD_TEST_PYTHON": sys.executable,
+        "PATH": os.pathsep.join((str(python.parent), str(tmp_path), os.environ["PATH"])),
+        "ROW_BUILD_TEST_COMMAND": python.stem if use_command_name else str(python),
+        "ROW_BUILD_TEST_PYTHON": str(python),
         "ROW_BUILD_TEST_SCRIPT": str(Path("scripts/make_windows_native.ps1").resolve()),
     }
     result = subprocess.run(

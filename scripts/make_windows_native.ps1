@@ -47,7 +47,7 @@ function Write-NativeChecksums([string]$Version, [string]$OutDir, [string]$Arch,
 }
 
 function Invoke-WindowsPyInstaller([string]$Python, [scriptblock]$Build) {
-  $Executable = (Get-Command -Name $Python -CommandType Application -ErrorAction Stop).Path
+  $Executable = (Get-Command -Name $Python -CommandType Application -TotalCount 1 -ErrorAction Stop).Path
   $OriginalPath = $env:PATH
   try {
     # PyInstaller uses PATH to resolve DLLs during analysis. Keep unrelated

@@ -62,6 +62,20 @@ def run_signer(tmp_path: Path):
     artifact = tmp_path / "fixture installer.exe"
     artifact.touch()
     calls = tmp_path / "signtool-calls.jsonl"
+    driver = tmp_path / "run-signing.ps1"
+    driver.write_text(
+        """param([string]$Signer, [string]$ArtifactPath, [switch]$Rehearse)
+$ErrorActionPreference = 'Stop'
+try {
+    if ($Rehearse) { & $Signer -Rehearse }
+    else { & $Signer -ArtifactPath $ArtifactPath }
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}
+""",
+        encoding="ascii",
+    )
 
     def run(inputs, *, xp=False, sign_exit=0, verify_exit=0, shell=None, rehearse=False):
         env = {key: value for key, value in os.environ.items() if not key.upper().startswith("ROW_WINDOWS_")}
@@ -76,7 +90,7 @@ def run_signer(tmp_path: Path):
             arguments = ["-Rehearse"]
         result = subprocess.run(
             [shell or powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-             "-File", str(xp_driver if xp else signer), *arguments],
+             "-File", str(driver), "-Signer", str(xp_driver if xp else signer), *arguments],
             cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30, check=False,
         )
         commands = [json.loads(line) for line in calls.read_text(encoding="utf-8-sig").splitlines()] if calls.exists() else []

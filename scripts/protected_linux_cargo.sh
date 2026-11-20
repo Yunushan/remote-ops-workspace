@@ -15,14 +15,13 @@ case "${1:-}" in
         --) break ;;
       esac
     done
-    flags=()
-    if [[ "$locked" == false ]]; then
-      flags+=(--locked)
-    fi
     if [[ "$offline" == false ]]; then
-      flags+=(--offline)
+      set -- --offline "$@"
     fi
-    exec cargo "$command_name" "${flags[@]}" "$@"
+    if [[ "$locked" == false ]]; then
+      set -- --locked "$@"
+    fi
+    exec cargo "$command_name" "$@"
     ;;
   *)
     exec cargo "$@"

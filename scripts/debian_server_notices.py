@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import subprocess
@@ -10,6 +9,8 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryFile
 from typing import Any
+
+from scripts.release_evidence_file import stream_sha256
 
 PAYLOAD = PurePosixPath("usr/lib/remote-ops-workspace/servers")
 MANIFEST = "servers-runtime.json"
@@ -79,7 +80,7 @@ def verify_notice_members(archive: tarfile.TarFile, records: dict[str, dict[str,
         if data is None:
             raise ValueError(f"cannot read Debian server notice: {path}")
         with data:
-            if hashlib.file_digest(data, "sha256").hexdigest() != row["sha256"]:
+            if stream_sha256(data) != row["sha256"]:
                 raise ValueError(f"Debian server notice differs from reviewed evidence: {path}")
     if missing := set(expected) - seen:
         raise ValueError(f"Debian package is missing reviewed server notices: {', '.join(map(str, sorted(missing)))}")

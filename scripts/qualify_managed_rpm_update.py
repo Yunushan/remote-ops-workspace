@@ -21,6 +21,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 from remote_ops_workspace.state_lock import exclusive_file_lock  # noqa: E402
 from scripts import managed_rpm_qualification as contract  # noqa: E402
 from scripts.managed_rpm_update import (  # noqa: E402
+    CANDIDATE,
     JOURNAL,
     LAUNCHER,
     PREVIOUS,
@@ -197,6 +198,33 @@ def exercise(args: argparse.Namespace, root: Path) -> dict:
     require(controller(["rollback", *contenders[winner][1]])["phase"] == "rolled-back",
             "The winning transaction did not roll back")
     verify_installed(old)
+
+    blocker = args.dependency_blocker
+    require(checked("Inspect dependency fixture name", RPM, "--query", "--package", "--queryformat", "%{NAME}", blocker)
+            == contract.UPGRADE_BLOCKER, "The dependency fixture has the wrong RPM identity")
+    requirements = checked("Inspect dependency fixture requirements", RPM, "--query", "--package", "--requires", blocker)
+    require(f"{PACKAGE} = {old.version}" in requirements.splitlines(), "The fixture does not require the exact predecessor")
+    checked("Install the dependency conflict fixture", RPM, "--install", blocker)
+    packages_before = sorted(checked("List installed packages", RPM, "--query", "--all").splitlines())
+    blocked, blocked_flags = private_transaction(root, "dependency-conflict", workspace)
+    blocked_update = ["update", *update_flags, *blocked_flags]
+    refusal = controller(blocked_update, exits=(1,))
+    require(refusal == {"phase": "refused", "refusal": "rpm-upgrade-test-refused"}
+            and not (blocked / JOURNAL).exists()
+            and sha256(blocked / PREVIOUS) == old.package_sha256
+            and sha256(blocked / CANDIDATE) == new.package_sha256
+            and sorted(checked("Recheck installed packages", RPM, "--query", "--all").splitlines()) == packages_before
+            and state_digests(workspace) == before,
+            "RPM dependency refusal changed the previous installation or journal")
+    verify_installed(old)
+    checked("Remove the dependency conflict fixture", RPM, "--erase", contract.UPGRADE_BLOCKER)
+    require(controller(blocked_update) == applied,
+            "The same staged RPM update did not apply offline after resolving the conflict")
+    verify_installed(new)
+    require(controller(["rollback", *blocked_flags])["phase"] == "rolled-back",
+            "The retried dependency transaction did not roll back")
+    verify_installed(old)
+
     verify_workspace(root, environment, {"managed-original": secret})
     require(state_digests(workspace) == before and sha256(args.previous_rpm) == old.package_sha256
             and sha256(args.candidate_rpm) == new.package_sha256, "Qualification changed saved workspace data or RPM inputs")
@@ -219,6 +247,7 @@ def main() -> None:
         parser.add_argument(f"--{role}-rpm", type=Path, required=True)
         parser.add_argument(f"--{role}-sha256", required=True)
     parser.add_argument("--crypto-requirements", type=Path, required=True)
+    parser.add_argument("--dependency-blocker", type=Path, required=True)
     args = parser.parse_args()
     validate_container()
     require(args.crypto_requirements.read_bytes() == contract.locked_crypto_requirements(ROOT),

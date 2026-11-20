@@ -242,7 +242,12 @@ native smoke proof digest, both package digests, and the Fedora image digest.
 The job also runs the managed controller from the same checkout against the
 same RPM pair in a separate offline container. Its receipt records the HTTPS
 downloads, tamper refusals, interruption recovery, and concurrent update
-result. The tagged release binds both drills in the same evidence archive.
+result. The drill also installs a metadata-only RPM that requires the
+predecessor version. The exact candidate must be refused while that dependency
+is present, with the predecessor and workspace intact and no update journal.
+After removing the fixture, the drill retries the same transaction with the
+feed offline and verifies the exact candidate and its rollback. New tagged
+release inventories require this result alongside the native recovery receipt.
 
 Use a disposable x86-64 Fedora Docker container with Python 3.10 or later,
 `rpm`, and `rpm2archive`. Start with a fresh RPM database for ROW and no

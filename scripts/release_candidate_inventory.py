@@ -351,6 +351,7 @@ def stage(
     rpm = {**rpm_archive, **rpm_records[RPM_REPORT_NAME], "receipt": json.loads(rpm_files[RPM_REPORT_NAME])}
     _, rpm_sha = validate_rpm_report(
         rpm, repository, release_tag, release_sha, run_id, run_attempt, require_managed=True, source_root=ROOT,
+        require_current_managed=True,
     )
     rpm_smoke = {name: rpm_records[name] for name in RPM_SMOKE_FILES}
     validate_rpm_smoke_files(rpm_files, rpm["receipt"], rpm_smoke)
@@ -489,7 +490,7 @@ def validate_managed_report(
 
 def validate_rpm_report(
     record: Any, repository: str, release_tag: str, release_sha: str, run_id: int, run_attempt: int,
-    *, require_managed: bool = False, source_root: Path | None = None,
+    *, require_managed: bool = False, source_root: Path | None = None, require_current_managed: bool = False,
 ) -> tuple[int, str]:
     artifact_id = validate_qualification_archive(record, "RPM recovery")
     receipt = record["receipt"]
@@ -519,7 +520,7 @@ def validate_rpm_report(
         rpm_qualification.verify_receipt(native, release_tag.removeprefix("v"), candidate_sha)
     except (ValueError, KeyError, TypeError, AttributeError):
         raise ValueError("RPM recovery receipt has invalid package identities or rollback results") from None
-    if require_managed and receipt["schema"] != rpm_qualification.SCHEMA:
+    if (require_managed or require_current_managed) and receipt["schema"] != rpm_qualification.SCHEMA:
         raise ValueError("The current RPM recovery receipt requires the managed-update qualification")
     if receipt["schema"] == rpm_qualification.SCHEMA:
         managed_rpm_qualification.verify_receipt(
@@ -530,6 +531,7 @@ def validate_rpm_report(
             requirements_sha256=None if source_root is None else hashlib.sha256(
                 managed_rpm_qualification.locked_crypto_requirements(source_root),
             ).hexdigest(),
+            require_current=require_current_managed,
         )
     return artifact_id, candidate_sha
 

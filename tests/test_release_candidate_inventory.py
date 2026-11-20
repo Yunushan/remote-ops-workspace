@@ -244,6 +244,8 @@ def test_release_workflow_qualifies_and_uploads_the_smoke_bound_rpm() -> None:
         ("changed-rpm-launcher", "RPM smoke did not observe the recovered candidate launcher"),
         ("rpm-failed", "RPM recovery receipt has invalid package identities or rollback results"),
         ("missing-managed-rpm", "requires the managed-update qualification"),
+        ("old-managed-rpm", "must verify dependency-conflict recovery"),
+        ("missing-rpm-dependency-check", "missing passing upgrade and rollback checks"),
         ("wrong-managed-rpm-controller", "missing its controller, feed, or dependency binding"),
         ("wrong-managed-rpm-lock", "missing its controller, feed, or dependency binding"),
         ("managed-rpm-failed", "missing passing upgrade and rollback checks"),
@@ -435,6 +437,13 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             ),
             "checks": dict.fromkeys(managed_rpm_qualification.CHECKS, condition != "managed-rpm-failed"),
         }
+        managed_rpm = rpm_outer["managed_update"]
+        if condition == "old-managed-rpm":
+            managed_rpm["schema"] = managed_rpm_qualification.PREVIOUS_SCHEMA
+            managed_rpm["checks"] = dict.fromkeys(managed_rpm_qualification.PREVIOUS_CHECKS, True)
+            managed_rpm_qualification.verify_receipt(managed_rpm, rpm_native)
+        if condition == "missing-rpm-dependency-check":
+            managed_rpm["checks"] = dict.fromkeys(managed_rpm_qualification.PREVIOUS_CHECKS, True)
     rpm_report = candidate.qualification_receipt_bytes(rpm_outer)
     for artifact_id, name in enumerate(names, start=1):
         stream = io.BytesIO()
@@ -542,6 +551,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             "wrong-rpm-ref", "wrong-rpm-attempt", "rpm-failed",
             "missing-rpm-smoke", "wrong-rpm-smoke-sha", "changed-rpm-launcher",
             "missing-managed-rpm", "wrong-managed-rpm-controller", "wrong-managed-rpm-lock",
+            "old-managed-rpm", "missing-rpm-dependency-check",
             "managed-rpm-failed", "wrong-managed-rpm-launcher", "wrong-managed-rpm-requests",
         }:
             assert len(downloads) == len(runtime) + 2

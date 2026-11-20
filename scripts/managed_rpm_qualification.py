@@ -7,11 +7,13 @@ from pathlib import Path
 
 from scripts.qualify_rpm_recovery import PACKAGE, SHA256
 
-SCHEMA = "row.managed-rpm-qualification.v1"
+SCHEMA = "row.managed-rpm-qualification.v2"
+PREVIOUS_SCHEMA = "row.managed-rpm-qualification.v1"
 CONTROLLER = Path("scripts/managed_rpm_update.py")
 LOCK = Path("requirements-locks/source-linux-x86_64.txt")
 FEED = "loopback-https-test-signer"
-CHECKS = (
+UPGRADE_BLOCKER = "row-qualification-upgrade-blocker"
+PREVIOUS_CHECKS = (
     "untrusted_tls_refused_before_install",
     "signed_loopback_upgrade_preserved_workspace",
     "offline_update_retry_verified_exact_candidate",
@@ -22,6 +24,7 @@ CHECKS = (
     "interrupted_predecessor_repaired_by_native_reinstall",
     "concurrent_controllers_applied_only_one_transaction",
 )
+CHECKS = (*PREVIOUS_CHECKS, "dependency_conflict_refused_and_same_transaction_retried_offline")
 
 
 def locked_crypto_requirements(root: Path) -> bytes:
@@ -37,10 +40,10 @@ def locked_crypto_requirements(root: Path) -> bytes:
 
 
 def verify_receipt(receipt: object, native: dict, *, controller_sha256: str | None = None,
-                   requirements_sha256: str | None = None) -> None:
+                   requirements_sha256: str | None = None, require_current: bool = False) -> None:
     if (
         not isinstance(receipt, dict)
-        or receipt.get("schema") != SCHEMA
+        or receipt.get("schema") not in (SCHEMA, PREVIOUS_SCHEMA)
         or receipt.get("feed") != FEED
         or any(not isinstance(receipt.get(key), str) or not SHA256.fullmatch(receipt[key])
                for key in ("controller_sha256", "crypto_requirements_sha256"))
@@ -48,6 +51,8 @@ def verify_receipt(receipt: object, native: dict, *, controller_sha256: str | No
         or (requirements_sha256 is not None and receipt["crypto_requirements_sha256"] != requirements_sha256)
     ):
         raise ValueError("Managed RPM receipt is missing its controller, feed, or dependency binding")
+    if require_current and receipt["schema"] != SCHEMA:
+        raise ValueError("Managed RPM receipt must verify dependency-conflict recovery")
     requests = []
     for role in ("previous", "candidate"):
         package = native[role]
@@ -58,5 +63,6 @@ def verify_receipt(receipt: object, native: dict, *, controller_sha256: str | No
     if receipt.get("requests") != requests:
         raise ValueError("Managed RPM receipt is missing the ordered HTTPS downloads")
     checks = receipt.get("checks")
-    if not isinstance(checks, dict) or set(checks) != set(CHECKS) or any(checks[key] is not True for key in CHECKS):
+    expected = CHECKS if receipt["schema"] == SCHEMA else PREVIOUS_CHECKS
+    if not isinstance(checks, dict) or set(checks) != set(expected) or any(checks[key] is not True for key in expected):
         raise ValueError("Managed RPM receipt is missing passing upgrade and rollback checks")

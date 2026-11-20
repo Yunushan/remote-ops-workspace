@@ -196,7 +196,7 @@ def launch(profile: Profile, dry_run: bool = False) -> LaunchPlan:
     return plan
 
 
-def protocol_clients() -> dict[str, list[str]]:
+def protocol_clients(*, include_plugins: bool = True) -> dict[str, list[str]]:
     clients = {
         "ssh": ["ssh"],
         "ssh1": ["ssh"],
@@ -221,8 +221,8 @@ def protocol_clients() -> dict[str, list[str]]:
         "serial": ["picocom", "screen", "cu", "putty"],
         "keygen": ["ssh-keygen"],
     }
-    for protocol, executables in load_plugin_registry().protocol_clients().items():
-        clients[protocol] = executables
+    if include_plugins:
+        clients.update(load_plugin_registry().protocol_clients())
     return clients
 
 

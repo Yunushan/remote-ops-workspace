@@ -173,13 +173,14 @@ secret-like keys and common secret-bearing command flags such as `-N`,
 assignment-style secret arguments such as `--password=value`, URL-embedded
 passwords, bearer-token strings and common Windows-style password switches.
 
-Support bundles include `doctor.json` and a sanitized `profiles.summary.json`;
-they do not include raw `profiles.json`, `vault.json` or private keys. The
-summary preserves counts, protocol names and structural flags, but omits profile
-names, hostnames, usernames, paths, command values, credential references, group
-names, URL contents and sensitive option key names. Sensitive option keys are
-reported only as counts. Treat support bundles as sensitive and review them
-before sharing.
+Each support bundle has a unique filename and contains `doctor.json` and, when
+the profile store is present, `profiles.summary.json`. The doctor report uses
+built-in client diagnostics.
+The profile summary keeps counts, structural flags, and known protocol,
+tunnel, URL scheme, and option labels. It reports sensitive and unrecognized
+option keys as counts. An unreadable profile store produces an unavailable
+summary so the doctor report is still available. Treat support bundles as
+sensitive and review them before sharing.
 
 Run `python scripts/check_security_polish.py` to verify these production
 security polish rules without requiring optional dependencies.

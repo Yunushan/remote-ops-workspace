@@ -53,8 +53,8 @@
     },
     {
       "path": "src/remote_ops_workspace/doctor.py",
-      "sha256": "7ac08c19b65afd0d02cae98395e5192c16e878fe3b107f1fe58eafa8c360d62e",
-      "size": 4372
+      "sha256": "2f3cc955ec8dbcf71dc50c8bea2e3bbcfa8ed271d55172b2d56755b036fbb5bd",
+      "size": 4434
     },
     {
       "path": "src/remote_ops_workspace/embedded_ftp.py",
@@ -293,8 +293,8 @@
     },
     {
       "path": "src/remote_ops_workspace/launcher.py",
-      "sha256": "e83847216ab3a0f7b45d9e5241cb38978f4738ff9fb112b3fe6866757f44e4dc",
-      "size": 45497
+      "sha256": "4029133521b03d2a4eb3084e42d2064c8f87bf1cc831a9e1baacbaca2f5f8cbd",
+      "size": 45494
     },
     {
       "path": "src/remote_ops_workspace/layouts.py",

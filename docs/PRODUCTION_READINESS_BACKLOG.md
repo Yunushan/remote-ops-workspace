@@ -101,8 +101,8 @@ Rules:
   sets `propagate = False`, and replaces prior handlers. `cli.main` configures
   logging at startup and returns exit code 2 for an invalid `ROW_LOG_LEVEL`.
   `web_server.validate_web_bind` emits a redacted warning on an accepted public
-  bind. There is no support-bundle command in the repository, so that part of the
-  item is not applicable.
+  bind. `scripts/support_bundle.py` exports built-in doctor diagnostics with
+  profile counts and a summary of known configuration labels.
 
 ## Phase 4 - Operability (about +4)
 

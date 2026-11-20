@@ -366,8 +366,9 @@ def rollback(journal: Path, state: dict, architecture: str) -> dict:
     if phase == "rolled-back":
         verify_installation(architecture, previous, previous_runtime)
         return state
-    if phase == "rolling-back" and observed == ("installed", previous):
-        # dpkg may have finished before the interrupted controller updated the journal.
+    if observed == ("installed", previous):
+        # The upgrade may have left the predecessor intact, or a rollback may
+        # have finished before the controller updated the journal.
         try:
             verify_running_installation(architecture, previous, previous_runtime)
         except (OSError, subprocess.SubprocessError, ValueError):

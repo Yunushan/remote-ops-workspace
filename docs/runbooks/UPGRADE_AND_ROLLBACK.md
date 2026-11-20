@@ -137,11 +137,12 @@ If a file conflicts, use a separate private transaction directory.
 If the controller reports `debian-upgrade-plan-refused`, resolve any missing
 dependencies with the distribution's package manager and retry with the same
 verified stages and transaction directory.
-The controller records the installation attempt
-before invoking `dpkg` and uses the retained installer if installation or its
-verification fails. If `apply` is interrupted, repeat it with the same
-transaction directory to recover the previous package. An automatic rollback
-reports `rolled-back` with a nonzero exit status for the failed apply.
+The controller records the installation attempt before invoking `dpkg`. If
+the attempt fails and the exact predecessor still runs, the controller
+verifies it against the retained installer and completes recovery in place.
+If the predecessor needs repair, the controller uses the retained installer.
+Repeat an interrupted `apply` with the same transaction directory. Automatic
+recovery reports `rolled-back` with a nonzero exit status for the failed apply.
 
 To roll the package back explicitly, close the application and run the following
 command from the same verified checkout. It verifies both retained DEBs

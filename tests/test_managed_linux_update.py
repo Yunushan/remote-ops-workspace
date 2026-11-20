@@ -220,9 +220,10 @@ def test_successful_rollback_checks_retained_package_before_install(tmp_path, mo
     ]
 
 
+@pytest.mark.parametrize("phase", ["applying", "rolling-back"])
 @pytest.mark.parametrize("verified", [True, False])
-def test_interrupted_rollback_reuses_a_restored_installation_only_after_verification(
-    tmp_path, monkeypatch, verified,
+def test_recovery_reuses_an_intact_predecessor_only_after_verification(
+    tmp_path, monkeypatch, phase, verified,
 ):
     journal = tmp_path / updater.JOURNAL
     runtime = {updater.LAUNCHER: "c" * 64}
@@ -251,7 +252,7 @@ def test_interrupted_rollback_reuses_a_restored_installation_only_after_verifica
     monkeypatch.setattr(updater, "verify_running_installation", verify)
     monkeypatch.setattr(updater, "install_deb", install)
     monkeypatch.setattr(updater, "journal_write", write)
-    assert updater.rollback(journal, state("rolling-back"), "amd64") == state("rolled-back")
+    assert updater.rollback(journal, state(phase), "amd64") == state("rolled-back")
     assert events == (["verify", "rolled-back"] if verified else ["verify", "rolling-back", "install", "rolled-back"])
 
 

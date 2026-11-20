@@ -212,6 +212,11 @@ def test_tagged_release_verifies_the_reviewed_debian_bundle_before_fanning_out()
     assert '--artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" --sha256 "$SERVER_BUNDLE_SHA256"' in verifier
     for key in ("artifact_id", "sha256"):
         assert f"steps.debian-amd64-bundle.outputs.{key}" in verifier
+    sealing = source.split("  seal-release-candidate:\n", 1)[1]
+    assert "needs.release-preflight.outputs.debian_amd64_bundle_artifact_id" in sealing
+    assert "needs.release-preflight.outputs.debian_amd64_bundle_sha256" in sealing
+    assert '--server-bundle-artifact-id "$SERVER_BUNDLE_ARTIFACT_ID"' in sealing
+    assert '--server-bundle-sha256 "$SERVER_BUNDLE_SHA256"' in sealing
     for job in ("source-and-python", "windows-native", "macos-native", "linux-native"):
         builder = source.split(f"  {job}:\n", 1)[1].split("    steps:", 1)[0]
         assert "needs: release-preflight" in builder
@@ -654,8 +659,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     output = tmp_path / "inventory.json"
 
     metadata_reads = []
+    reviewed_bundle = {"artifact_id": 500, "archive_sha256": "b" * 64, "runtime_sha256": "c" * 64}
 
-    def deb_metadata(package: Path) -> tuple[str, bool]:
+    def seal_bundle(_client, artifact_id, archive_sha256):
+        assert (artifact_id, archive_sha256) == (500, reviewed_bundle["archive_sha256"])
+        return reviewed_bundle
+
+    monkeypatch.setattr(candidate, "seal_debian_server_bundle", seal_bundle)
+
+    def deb_metadata(package: Path, *, expected_runtime_sha256: str | None) -> tuple[str, bool]:
+        assert expected_runtime_sha256 == reviewed_bundle["runtime_sha256"]
         metadata_reads.append((output.exists(), root.exists()))
         assert package.name == deb_name and package.read_bytes() == deb_bytes
         return (
@@ -674,6 +687,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
             run_attempt=1,
             assets_root=root,
             output=output,
+            server_bundle_artifact_id=reviewed_bundle["artifact_id"],
+            server_bundle_sha256=reviewed_bundle["archive_sha256"],
         )
 
     if error:
@@ -827,6 +842,16 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     candidate.validate_inventory(inventory, **coordinates)
     inventory["schema_version"] = candidate.SCHEMA_VERSION
     inventory["managed_debian_update"] = managed
+    assert inventory.pop("debian_server_bundle") == reviewed_bundle
+    with pytest.raises(ValueError, match="missing verified Debian server archive coordinates"):
+        candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.SERVER_BUNDLE_SCHEMA_VERSION
+    candidate.validate_inventory(inventory, **coordinates)
+    inventory["schema_version"] = candidate.SCHEMA_VERSION
+    inventory["debian_server_bundle"] = {**reviewed_bundle, "runtime_sha256": "invalid digest"}
+    with pytest.raises(ValueError, match="missing verified Debian server archive coordinates"):
+        candidate.validate_inventory(inventory, **coordinates)
+    inventory["debian_server_bundle"] = reviewed_bundle
     with pytest.raises(ValueError, match="requires the exact package for server bundle verification"):
         candidate.validate_managed_release_qualification(inventory, **public_coordinates, deb_sha256=deb_sha)
     wrong_deb = tmp_path / deb_name
@@ -884,7 +909,7 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
     assert not promoted_assets.exists() and not promoted_qualifications.exists()
     archives[arm_id] = arm_original
     with monkeypatch.context() as changed_metadata:
-        changed_metadata.setattr(candidate, "read_candidate_deb_metadata", lambda _package: (depends, False))
+        changed_metadata.setattr(candidate, "read_candidate_deb_metadata", lambda _package, **_kwargs: (depends, False))
         with pytest.raises(ValueError, match="receipt server bundle claim differs from the candidate DEB"):
             promote()
         assert not promoted_assets.exists() and not promoted_qualifications.exists()

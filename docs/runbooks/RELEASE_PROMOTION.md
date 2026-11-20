@@ -221,7 +221,12 @@ selection before reporting success. Keep the selection and archive available
 for the tagged build. The tagged workflow requires the selection and verifies
 the archive before starting its build matrix. The Linux x86_64 job verifies
 the same artifact ID and digest again before packaging. Its recovery drill
-requires the candidate installer to contain the server bundle.
+requires the candidate installer to contain the server bundle. The sealer
+downloads that archive again and verifies that its reviewed runtime matches
+the packaged runtime. Inventory schema 11 records the archive artifact ID,
+the archive SHA-256, and the SHA-256 of the reviewed manifest fields carried
+into the package. Review, promotion, and the published audit compare the
+packaged runtime with the recorded fingerprint.
 
 The same archive can be checked locally before requesting a candidate build.
 

@@ -193,9 +193,9 @@ def test_portable_bundle_rejects_unreviewed_content(
     assert not output.exists()
 
 
-@pytest.mark.parametrize("damage", [None, "expired", "digest", "entry"])
+@pytest.mark.parametrize("damage", [None, "expired", "digest", "entry", "inner-digest"])
 def test_actions_bundle_download_binds_zip_metadata_and_its_only_file(
-    bundle_archive: Path, tmp_path: Path, damage: str | None,
+    approved_bundle: Path, bundle_archive: Path, tmp_path: Path, damage: str | None,
 ) -> None:
     zipped = tmp_path / "source.zip"
     with zipfile.ZipFile(zipped, mode="w") as archive:
@@ -215,8 +215,14 @@ def test_actions_bundle_download_binds_zip_metadata_and_its_only_file(
 
     client.download.side_effect = download
     if damage is None:
-        extracted = staging.download_bundle(client, 123, tmp_path)
-        assert extracted.read_bytes() == bundle_archive.read_bytes()
+        pinned = payload.sha256_file(bundle_archive)
+        reviewed = json.loads((approved_bundle / payload.MANIFEST).read_bytes())
+        assert inventory.seal_debian_server_bundle(client, 123, pinned) == {
+            "artifact_id": 123, "archive_sha256": pinned, "runtime_sha256": payload.reviewed_runtime_sha256(reviewed),
+        }
+    elif damage == "inner-digest":
+        with pytest.raises(ValueError, match="does not match the approved archive"):
+            inventory.seal_debian_server_bundle(client, 123, "0" * 64)
     else:
         with pytest.raises(ValueError, match={
             "expired": "expired", "digest": "do not match GitHub", "entry": "contain only",
@@ -450,6 +456,31 @@ def test_candidate_receipt_metadata_checks_the_packaged_runtime(
         assert inventory.read_candidate_deb_metadata(package) == (depends, True)
 
 
+def test_matching_package_file_hashes_do_not_replace_reviewed_archive_binding(
+    approved_bundle: Path, staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    manifest = staged_debian / payload.PAYLOAD / payload.MANIFEST
+    document = json.loads(manifest.read_bytes())
+    reviewed = json.loads((approved_bundle / payload.MANIFEST).read_bytes())
+    expected_runtime_sha256 = payload.reviewed_runtime_sha256(reviewed)
+    depends = "libc6 (>= 2.38), libpam0g"
+    contents = make_tar(staged_debian)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: depends)
+    assert inventory.read_candidate_deb_metadata(package, expected_runtime_sha256=expected_runtime_sha256) == (depends, True)
+
+    runtime = next(row["runtime"] for row in document["services"] if row["service"] == "tftp")
+    daemon = staged_debian / payload.PAYLOAD / runtime["executable"]
+    daemon.write_bytes(make_elf(b"different local fixture"))
+    runtime["sha256"] = payload.sha256_file(daemon)
+    manifest.write_text(json.dumps(document), encoding="utf-8")
+    contents = make_tar(staged_debian)
+    assert inventory.read_candidate_deb_metadata(package) == (depends, True)
+    with pytest.raises(ValueError, match="server payload differs from the reviewed archive"):
+        inventory.read_candidate_deb_metadata(package, expected_runtime_sha256=expected_runtime_sha256)
+
+
 def test_legacy_archive_without_an_embedded_server_bundle_requires_no_daemon_notices(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -459,4 +490,7 @@ def test_legacy_archive_without_an_embedded_server_bundle_requires_no_daemon_not
     launcher.write_bytes(b"fixture")
     contents = make_tar(stage)
     monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
-    assert read_verified_debian_notices(tmp_path / "plain.deb", target=TARGET) == {}
+    plain = tmp_path / "plain.deb"
+    assert read_verified_debian_notices(plain, target=TARGET) == {}
+    with pytest.raises(ValueError, match="missing the reviewed server payload"):
+        read_verified_debian_notices(plain, target=TARGET, expected_runtime_sha256="0" * 64)

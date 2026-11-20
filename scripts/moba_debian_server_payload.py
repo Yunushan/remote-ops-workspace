@@ -96,6 +96,17 @@ def server_manifest(
     return document, digests
 
 
+def reviewed_runtime_sha256(document: dict) -> str:
+    """Fingerprint the manifest fields that staging carries into the package."""
+    reviewed = {key: value for key, value in document.items() if key != "debian_depends"}
+    reviewed["services"] = sorted(
+        (row for row in document["services"] if row["service"] in EXTERNAL_SERVICES),
+        key=lambda row: row["service"],
+    )
+    encoded = json.dumps(reviewed, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def server_payload(
     root: Path, target: str, required: frozenset[str] = SERVICES,
 ) -> tuple[dict, dict[str, str]]:

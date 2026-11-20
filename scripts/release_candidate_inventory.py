@@ -21,6 +21,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tarfile
 import tempfile
 import urllib.error
 import urllib.request
@@ -45,8 +46,9 @@ from scripts.managed_debian_qualification import (  # noqa: E402
 )
 from scripts.release_evidence_file import retry_evidence_operation  # noqa: E402
 
+REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION = 11
+SCHEMA_VERSION = REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION
 SERVER_BUNDLE_SCHEMA_VERSION = 10
-SCHEMA_VERSION = SERVER_BUNDLE_SCHEMA_VERSION
 LINUX_INSTALLER_SCHEMA_VERSION = 9
 GUI_INSTALLER_SCHEMA_VERSION = 8
 GUI_SMOKE_SCHEMA_VERSION = 7
@@ -151,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
                 run_attempt=run_attempt,
                 assets_root=args.assets_root,
                 output=args.output,
+                server_bundle_artifact_id=positive_int(args.server_bundle_artifact_id, "Debian server bundle artifact id"),
+                server_bundle_sha256=args.server_bundle_sha256,
             )
         else:
             inventory_artifact_id = positive_int(
@@ -172,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
                 assets_root=args.assets_root,
                 qualification_archives=args.qualification_archives,
             )
-    except (OSError, ValueError, RuntimeError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+    except (EOFError, OSError, ValueError, RuntimeError, tarfile.TarError, zipfile.BadZipFile) as exc:
         print(f"release candidate inventory: {exc}", file=os.sys.stderr)
         return 1
     print(f"release candidate inventory {args.command} passed")
@@ -192,6 +196,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         child.add_argument("--assets-root", required=True, type=Path)
         if command == "stage":
             child.add_argument("--output", required=True, type=Path)
+            child.add_argument("--server-bundle-artifact-id", required=True)
+            child.add_argument("--server-bundle-sha256", required=True)
         else:
             child.add_argument("--inventory-artifact-id", required=True)
             child.add_argument("--inventory-archive-digest", required=True)
@@ -303,6 +309,8 @@ def stage(
     run_attempt: int,
     assets_root: Path,
     output: Path,
+    server_bundle_artifact_id: int,
+    server_bundle_sha256: str,
 ) -> None:
     run = client.json(f"actions/runs/{run_id}")
     check_build_run(
@@ -385,9 +393,11 @@ def stage(
     observed_installers = verify_sealed_smoke(client, smoke, run_id, release_sha)
     for name, record in smoke.items():
         record["installer_sha256"] = observed_installers[name]
+    server_bundle = seal_debian_server_bundle(client, server_bundle_artifact_id, server_bundle_sha256)
     records = materialize_records(
         client, build_artifacts, assets_root,
         managed_deb=(release_tag, managed["receipt"]),
+        expected_runtime_sha256=server_bundle["runtime_sha256"],
         release_rpm=(release_tag, rpm_sha),
         smoked_installers=(release_tag, smoke),
     )
@@ -403,6 +413,7 @@ def stage(
         "artifacts": records,
         "runtime_reports": runtime_reports,
         "managed_debian_update": managed,
+        "debian_server_bundle": server_bundle,
         "rpm_recovery": rpm,
         "rpm_smoke": rpm_smoke,
         "gui_smoke": {name: smoke[name] for name in GUI_SMOKE_ARTIFACT_NAMES},
@@ -410,6 +421,25 @@ def stage(
     }
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(canonical_json(inventory), encoding="utf-8")
+
+
+def seal_debian_server_bundle(client: GitHubClient, artifact_id: int, archive_sha256: str) -> dict[str, Any]:
+    from scripts.moba_debian_server_payload import MANIFEST, reviewed_runtime_sha256
+    from scripts.stage_debian_server_bundle import download_bundle, stage_bundle
+
+    if not isinstance(archive_sha256, str) or HASH.fullmatch(archive_sha256) is None:
+        raise ValueError("server bundle SHA-256 must be 64 lowercase hexadecimal characters")
+    with tempfile.TemporaryDirectory(prefix="row-candidate-server-bundle-") as work:
+        root = Path(work)
+        archive = download_bundle(client, artifact_id, root)
+        verified = root / "verified"
+        stage_bundle(archive, archive_sha256, "linux-x86_64", verified)
+        runtime = json.loads((verified / MANIFEST).read_bytes())
+    return {
+        "artifact_id": artifact_id,
+        "archive_sha256": archive_sha256,
+        "runtime_sha256": reviewed_runtime_sha256(runtime),
+    }
 
 
 def seal_runtime_report(
@@ -889,18 +919,25 @@ def require_managed_deb(records: list[dict[str, Any]], release_tag: str, sha256:
     require_linux_installer(records, f"remote-ops-workspace-{release_tag}-linux-amd64.deb", sha256, "managed Debian")
 
 
-def read_candidate_deb_metadata(package: Path) -> tuple[str, bool]:
+def read_candidate_deb_metadata(
+    package: Path, *, expected_runtime_sha256: str | None = None,
+) -> tuple[str, bool]:
     try:
         depends = subprocess.check_output(
             ["dpkg-deb", "--field", str(package), "Depends"], encoding="utf-8", timeout=30,
         ).strip()
     except (OSError, subprocess.SubprocessError) as error:
         raise ValueError("could not read the candidate Debian Depends field") from error
-    return depends, bool(read_verified_debian_notices(package, target="linux-x86_64", verify_runtime=True))
+    notices = read_verified_debian_notices(
+        package, target="linux-x86_64", verify_runtime=True, expected_runtime_sha256=expected_runtime_sha256,
+    )
+    return depends, bool(notices)
 
 
-def verify_candidate_deb_metadata(package: Path, receipt: dict[str, Any]) -> None:
-    depends, bundled = read_candidate_deb_metadata(package)
+def verify_candidate_deb_metadata(
+    package: Path, receipt: dict[str, Any], *, expected_runtime_sha256: str | None = None,
+) -> None:
+    depends, bundled = read_candidate_deb_metadata(package, expected_runtime_sha256=expected_runtime_sha256)
     if depends != receipt["debian_depends"]:
         raise ValueError("managed Debian receipt Depends field differs from the candidate DEB")
     if bundled != receipt["candidate_has_server_bundle"]:
@@ -933,7 +970,10 @@ def validate_managed_release_qualification(
         with deb_package.open("rb") as stream:
             if hashlib.file_digest(stream, "sha256").hexdigest() != deb_sha256:
                 raise ValueError("Debian package differs from the qualified release installer")
-        verify_candidate_deb_metadata(deb_package, inventory["managed_debian_update"]["receipt"])
+        verify_candidate_deb_metadata(
+            deb_package, inventory["managed_debian_update"]["receipt"],
+            expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
+        )
     return records
 
 
@@ -1075,7 +1115,10 @@ def materialize_sealed_records(
     managed_deb = None
     if inventory["schema_version"] >= SERVER_BUNDLE_SCHEMA_VERSION:
         managed_deb = (inventory["release_tag"], inventory["managed_debian_update"]["receipt"])
-    materialize_records(client, live, assets_root, expected_records=records, managed_deb=managed_deb)
+    materialize_records(
+        client, live, assets_root, expected_records=records, managed_deb=managed_deb,
+        expected_runtime_sha256=inventory.get("debian_server_bundle", {}).get("runtime_sha256"),
+    )
 
 
 def check_build_run(
@@ -1143,6 +1186,7 @@ def materialize_records(
     *,
     expected_records: list[dict[str, Any]] | None = None,
     managed_deb: tuple[str, dict[str, Any]] | None = None,
+    expected_runtime_sha256: str | None = None,
     release_rpm: tuple[str, str] | None = None,
     smoked_installers: tuple[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
@@ -1167,7 +1211,7 @@ def materialize_records(
             release_tag, receipt = managed_deb
             require_managed_deb(records, release_tag, receipt["candidate_sha256"])
             package = staged_root / f"remote-ops-workspace-{release_tag}-linux-amd64.deb"
-            verify_candidate_deb_metadata(package, receipt)
+            verify_candidate_deb_metadata(package, receipt, expected_runtime_sha256=expected_runtime_sha256)
         if release_rpm is not None:
             require_release_rpm(records, *release_rpm)
         if smoked_installers is not None:
@@ -1326,6 +1370,15 @@ def validate_inventory(
             raise ValueError(f"managed Debian report artifact id is duplicated: {artifact_id}")
         ids.add(artifact_id)
         require_managed_deb(records, release_tag, managed["receipt"]["candidate_sha256"])
+    if schema >= REVIEWED_SERVER_BUNDLE_SCHEMA_VERSION or "debian_server_bundle" in value:
+        bundle = value.get("debian_server_bundle")
+        if (
+            not isinstance(bundle, dict) or set(bundle) != {"artifact_id", "archive_sha256", "runtime_sha256"}
+            or type(bundle["artifact_id"]) is not int or bundle["artifact_id"] < 1
+            or any(not isinstance(bundle[key], str) or HASH.fullmatch(bundle[key]) is None
+                   for key in ("archive_sha256", "runtime_sha256"))
+        ):
+            raise ValueError("approved candidate inventory is missing verified Debian server archive coordinates")
     if schema >= RPM_SCHEMA_VERSION or "rpm_recovery" in value or "rpm_smoke" in value:
         artifact_id, rpm_sha = validate_rpm_report(
             value.get("rpm_recovery"), repository, release_tag, release_sha, run_id, run_attempt,

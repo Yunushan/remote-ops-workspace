@@ -86,7 +86,7 @@ def verify_notice_members(archive: tarfile.TarFile, records: dict[str, dict[str,
 
 
 def read_verified_debian_notices(
-    package: Path, *, target: str, verify_runtime: bool = False,
+    package: Path, *, target: str, verify_runtime: bool = False, expected_runtime_sha256: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Verify notices and optionally the recorded server runtime in a Debian asset."""
     try:
@@ -102,6 +102,8 @@ def read_verified_debian_notices(
                 if not embedded and not any(
                     path.is_relative_to(PAYLOAD) or path.is_relative_to(NOTICE_DIR) for path, _ in members
                 ):
+                    if expected_runtime_sha256 is not None:
+                        raise ValueError("candidate Debian package is missing the reviewed server payload")
                     return {}
                 if (
                     len(embedded) != 1 or not embedded[0].isfile()
@@ -114,14 +116,17 @@ def read_verified_debian_notices(
                     raise ValueError("cannot read the Debian embedded server manifest")
                 with stream:
                     raw = stream.read()
-                if verify_runtime:
+                if verify_runtime or expected_runtime_sha256 is not None:
                     # The payload verifier also uses the notice reader's archive checks.
                     from scripts.moba_debian_server_payload import (
                         compare_payload_tar,
+                        reviewed_runtime_sha256,
                         server_manifest,
                     )
 
                     document, expected = server_manifest(raw, target)
+                    if expected_runtime_sha256 is not None and reviewed_runtime_sha256(document) != expected_runtime_sha256:
+                        raise ValueError("candidate Debian server payload differs from the reviewed archive")
                     compare_payload_tar(archive, expected)
                 else:
                     document = json.loads(raw)

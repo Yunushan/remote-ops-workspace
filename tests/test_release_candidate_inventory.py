@@ -195,12 +195,40 @@ def test_expected_gui_smoke_artifacts_match_the_signed_build_matrix() -> None:
     assert expected == set(candidate.GUI_SMOKE_ARTIFACT_NAMES)
 
 
+def test_tagged_release_verifies_the_reviewed_debian_bundle_before_fanning_out() -> None:
+    source = (ROOT / candidate.BUILD_WORKFLOW).read_text(encoding="utf-8")
+    preflight = source.split("  release-preflight:\n", 1)[1].split("  source-and-python:\n", 1)[0]
+    selected, verifier = preflight.split(
+        "      - name: Verify the reviewed Debian amd64 server bundle before candidate builds\n", 1,
+    )
+    selected = selected.split("      - name: Freeze the reviewed Debian amd64 server bundle selection\n", 1)[1]
+    verifier = verifier.split("      - name:", 1)[0]
+    gate = "if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}"
+    assert gate in selected and gate in verifier
+    assert "exit 0" not in selected
+    assert 'vars.ROW_DEBIAN_AMD64_SERVER_BUNDLE' in selected
+    assert "continue-on-error:" not in verifier
+    assert "scripts/stage_debian_server_bundle.py" in verifier
+    assert '--artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" --sha256 "$SERVER_BUNDLE_SHA256"' in verifier
+    for key in ("artifact_id", "sha256"):
+        assert f"steps.debian-amd64-bundle.outputs.{key}" in verifier
+    for job in ("source-and-python", "windows-native", "macos-native", "linux-native"):
+        builder = source.split(f"  {job}:\n", 1)[1].split("    steps:", 1)[0]
+        assert "needs: release-preflight" in builder
+        assert "if: ${{ needs.release-preflight.outputs.candidate_build_ready == 'true' }}" in builder
+
+
 def test_release_workflow_qualifies_and_uploads_the_amd64_deb_before_inventory_sealing() -> None:
     source = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     job, sealer = source.split("  linux-native:\n", 1)[1].split("  seal-release-candidate:\n", 1)
     drill = job.split("- name: Qualify managed Debian upgrade and rollback", 1)[1].split("- name:", 1)[0]
     assert "matrix.arch == 'x86_64'" in drill
-    assert "outputs.release_sha" in drill and "steps.debian-amd64-bundle.outputs.path != ''" in drill
+    stage = job.split("      - name: Stage the reviewed Debian amd64 server bundle\n", 1)[1].split("      - name:", 1)[0]
+    assert "if: ${{ matrix.arch == 'x86_64' }}" in stage
+    for key in ("artifact_id", "sha256"):
+        assert f"needs.release-preflight.outputs.debian_amd64_bundle_{key}" in stage
+    assert "ROW_RELEASE_SERVER_BUNDLE: ${{ steps.debian-amd64-bundle.outputs.path }}" in job
+    assert "outputs.release_sha" in drill and "--server-bundle true" in drill
     assert "scripts/native_linux_installer_recovery.py managed-release" in drill
     assert job.index("Run Linux native installer smoke tests") < job.index(drill)
     assert job.index(drill) < job.index(f"name: {candidate.MANAGED_DEBIAN_ARTIFACT}")

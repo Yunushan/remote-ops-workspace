@@ -78,21 +78,6 @@ jobs:
         run: python scripts/check_release_version.py --release-tag "$RELEASE_TAG"
       - name: Require production maturity metadata
         run: python scripts/check_release_maturity.py --release-tag "$RELEASE_TAG"
-      - name: Freeze the reviewed Debian amd64 server bundle selection
-        id: debian-amd64-bundle
-        shell: bash
-        env:
-          SERVER_BUNDLE_SELECTION: ${{ vars.ROW_DEBIAN_AMD64_SERVER_BUNDLE }}
-        run: |
-          if [[ -z "$SERVER_BUNDLE_SELECTION" ]]; then
-            exit 0
-          fi
-          selection_pattern='^(v[0-9]+\.[0-9]+\.[0-9]+) ([1-9][0-9]*) ([0-9a-f]{64})$'
-          if [[ ! "$SERVER_BUNDLE_SELECTION" =~ $selection_pattern || "${BASH_REMATCH[1]}" != "$RELEASE_TAG" ]]; then
-            echo "ROW_DEBIAN_AMD64_SERVER_BUNDLE must contain this release tag, a positive artifact ID and the reviewed SHA-256" >&2
-            exit 1
-          fi
-          printf 'artifact_id=%s\nsha256=%s\n' "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
       - name: Detect release signing readiness
         id: signing-readiness
         shell: bash
@@ -137,6 +122,31 @@ jobs:
           fi
       - name: Require independently approved production release policy
         run: python scripts/check_release_license_compliance.py --check-policy-only
+      - name: Freeze the reviewed Debian amd64 server bundle selection
+        id: debian-amd64-bundle
+        if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}
+        shell: bash
+        env:
+          SERVER_BUNDLE_SELECTION: ${{ vars.ROW_DEBIAN_AMD64_SERVER_BUNDLE }}
+        run: |
+          set -euo pipefail
+          selection_pattern='^(v[0-9]+\.[0-9]+\.[0-9]+) ([1-9][0-9]*) ([0-9a-f]{64})$'
+          if [[ ! "$SERVER_BUNDLE_SELECTION" =~ $selection_pattern || "${BASH_REMATCH[1]}" != "$RELEASE_TAG" ]]; then
+            echo "ROW_DEBIAN_AMD64_SERVER_BUNDLE must contain this release tag, a positive artifact ID and the reviewed SHA-256" >&2
+            exit 1
+          fi
+          printf 'artifact_id=%s\nsha256=%s\n' "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" >> "$GITHUB_OUTPUT"
+      - name: Verify the reviewed Debian amd64 server bundle before candidate builds
+        if: ${{ steps.signing-readiness.outputs.candidate_build_ready == 'true' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SERVER_BUNDLE_ARTIFACT_ID: ${{ steps.debian-amd64-bundle.outputs.artifact_id }}
+          SERVER_BUNDLE_SHA256: ${{ steps.debian-amd64-bundle.outputs.sha256 }}
+        run: >-
+          python scripts/stage_debian_server_bundle.py
+          --artifact-id "$SERVER_BUNDLE_ARTIFACT_ID" --sha256 "$SERVER_BUNDLE_SHA256"
+          --target linux-x86_64 --out "$RUNNER_TEMP/preflight-debian-amd64-server-bundle"
       - name: Run release preflight verifier
         run: python scripts/verify.py --quick --no-cli-smoke --release-tag "$RELEASE_TAG"
       - name: Require Python 3.15, native Windows, and branch coverage CI evidence for release source
@@ -648,7 +658,7 @@ jobs:
           python scripts/check_release_dependency_locks.py --runtime-report candidate-pip-inspect.json --lock "$RELEASE_DEPENDENCY_LOCK"
       - name: Stage the reviewed Debian amd64 server bundle
         id: debian-amd64-bundle
-        if: ${{ matrix.arch == 'x86_64' && needs.release-preflight.outputs.debian_amd64_bundle_artifact_id != '' }}
+        if: ${{ matrix.arch == 'x86_64' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SERVER_BUNDLE_ARTIFACT_ID: ${{ needs.release-preflight.outputs.debian_amd64_bundle_artifact_id }}
@@ -721,11 +731,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
-          EXPECT_SERVER_BUNDLE: ${{ steps.debian-amd64-bundle.outputs.path != '' && 'true' || 'false' }}
         run: >-
           python scripts/native_linux_installer_recovery.py managed-release
           --candidate-source-sha "$EXPECTED_RELEASE_SHA"
-          --server-bundle "$EXPECT_SERVER_BUNDLE"
+          --server-bundle true
       - name: Retain managed Debian upgrade and rollback results
         if: ${{ matrix.arch == 'x86_64' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

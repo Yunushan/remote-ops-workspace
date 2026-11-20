@@ -212,9 +212,10 @@ requires this selection
 for the embedded-server article. It downloads and stages the exact archive
 in temporary storage, verifies its native files and notices, and rereads the
 selection before reporting success. Keep the selection and archive available
-for the tagged build. The release workflow freezes the selection for that tag
-and the Linux x86_64 job independently verifies the archive before passing it
-to the Debian packager.
+for the tagged build. The tagged workflow requires the selection and verifies
+the archive before starting its build matrix. The Linux x86_64 job verifies
+the same artifact ID and digest again before packaging. Its recovery drill
+requires the candidate installer to contain the server bundle.
 
 The same archive can be checked locally before requesting a candidate build.
 

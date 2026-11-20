@@ -78,8 +78,8 @@
     },
     {
       "path": "src/remote_ops_workspace/file_safety.py",
-      "sha256": "3bcbd4ec49763c363a30f0983de6f5e206267c1cfb9c64e7d2ee993ee5092025",
-      "size": 16754
+      "sha256": "0eb1e6744ce2b5b9acf777ae80e48bdce9a06305914ac8f4028eda42a01e6663",
+      "size": 16761
     },
     {
       "path": "src/remote_ops_workspace/file_transfer.py",

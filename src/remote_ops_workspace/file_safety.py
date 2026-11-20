@@ -186,7 +186,7 @@ def _write_bytes_atomic(path: Path, payload: bytes, *, private: bool) -> None:
         if private:
             _install_private_write(temp_path, path, installed_status, original_status)
         else:
-            os.replace(temp_path, path)
+            _retry_file_operation(lambda: os.replace(temp_path, path))
         replaced = True
         if private:
             _chmod_required(path, mode)
@@ -267,7 +267,7 @@ def _rollback_private_write(
             _require_private_recovery_identity(predecessor)
             os.replace(predecessor[0], path)
 
-    _retry_private_file_operation(restore)
+    _retry_file_operation(restore)
 
 
 def _install_private_write(
@@ -281,7 +281,7 @@ def _install_private_write(
             raise OSError(f"private destination changed before replacement: {path}")
         os.replace(staged, path)
 
-    _retry_private_file_operation(install)
+    _retry_file_operation(install)
 
 
 def _stat_if_present(path: Path) -> os.stat_result | None:
@@ -303,7 +303,7 @@ def _private_file_matches(path: Path, expected: os.stat_result | None) -> bool:
     )
 
 
-def _retry_private_file_operation(operation: Callable[[], None]) -> None:
+def _retry_file_operation(operation: Callable[[], None]) -> None:
     retry_delays = iter((0.01, 0.02, 0.04, 0.08, 0.16))
     while True:
         try:

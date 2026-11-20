@@ -111,6 +111,8 @@ main window stays a composition layer rather than a monolith:
   mounts those surfaces.
 - `gui_toolbars.py` builds the action and layout toolbars, connects their
   buttons to window workflows, and keeps the controls reachable on resize.
+- `gui_sidebar.py` builds the sidebar and its rail, routes sessions, favorites,
+  and SFTP actions, and remembers sidebar widths per preset.
 - `gui_profile_tree.py` renders saved profiles and groups, applies preset
   row metadata and icons, and maintains filtering and visible selection.
 - `gui_profile_actions.py` handles profile context menus, edits,

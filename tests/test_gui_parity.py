@@ -1051,18 +1051,18 @@ def test_mobaxterm_rail_uses_role_based_generated_icons() -> None:
     criteria = _load_checker().load_json(_load_checker().CRITERIA_PATH)
     moba = criteria["presets"]["mobaxterm"]
     requirement = next(item for item in moba["requirements"] if item["id"] == "moba.rail-geometry")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     live_checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
     docs_source = Path("docs/GUI_DESIGN.md").read_text(encoding="utf-8")
 
-    assert "mobaRailRole" in gui_source
-    assert "mobaRailStaticIconY" in gui_source
-    assert "mobaRailStaticIconKey" in gui_source
-    assert "mobaRailButtonHeight" in gui_source
-    assert "show_moba_sftp_rail" in gui_source
-    assert '"S\\ne\\ns\\ns\\ni\\no\\nn\\ns"' not in gui_source
+    assert "mobaRailRole" in sidebar_source
+    assert "mobaRailStaticIconY" in sidebar_source
+    assert "mobaRailStaticIconKey" in sidebar_source
+    assert "mobaRailButtonHeight" in sidebar_source
+    assert "show_moba_sftp_rail" in sidebar_source
+    assert '"S\\ne\\ns\\ns\\ni\\no\\nn\\ns"' not in sidebar_source
     assert "GuiMobaRailChrome" in mobaxterm_design_source
     assert "GUI_DESIGN_MOBA_RAIL_ITEM_GEOMETRY" in mobaxterm_design_source
     assert "rail_icon_key" in mobaxterm_design_source
@@ -1075,7 +1075,7 @@ def test_mobaxterm_rail_uses_role_based_generated_icons() -> None:
     assert "expected_moba_rail_item_geometry" in live_checker_source
     assert "must not use stacked text" in live_checker_source
     assert "MobaXterm-style left rail geometry" in docs_source
-    assert "mobaRailStaticIconY" in requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+    assert "mobaRailStaticIconY" in requirement["source_tokens"]["src/remote_ops_workspace/gui_sidebar.py"]
 
 
 def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
@@ -1106,7 +1106,7 @@ def test_mobaxterm_static_sftp_dock_uses_drawn_glyphs() -> None:
 
 def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
-    gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     connected_source = Path("src/remote_ops_workspace/gui_connected.py").read_text(encoding="utf-8")
     mobaxterm_design_source = Path("src/remote_ops_workspace/gui_preset_mobaxterm.py").read_text(encoding="utf-8")
     checker_source = Path("scripts/check_real_gui_render.py").read_text(encoding="utf-8")
@@ -1202,9 +1202,9 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "moba_monitoring_metric_text" in renderer_source
     assert "mobaSftpActionKey" in connected_source
     assert "mobaSftpIconKey" in connected_source
-    assert "mobaConnectedDockSideWidth" in gui_source
-    assert "mobaConnectedDockRailWidth" in gui_source
-    assert "mobaConnectedDockWidth" in gui_source
+    assert "mobaConnectedDockSideWidth" in sidebar_source
+    assert "mobaConnectedDockRailWidth" in sidebar_source
+    assert "mobaConnectedDockWidth" in sidebar_source
     assert "mobaSftpActionGroupKey" in connected_source
     assert "mobaSftpToolbarRouteKey" in connected_source
     assert "mobaSftpToolbarRouteHandler" in connected_source
@@ -1285,7 +1285,7 @@ def test_mobaxterm_sftp_dock_uses_shared_chrome_metadata() -> None:
     assert "MobaXterm-style SFTP routed file rows" in docs_source
     assert (
         "mobaConnectedDockSideWidth"
-        in connected_frame_requirement["source_tokens"]["src/remote_ops_workspace/gui.py"]
+        in connected_frame_requirement["source_tokens"]["src/remote_ops_workspace/gui_sidebar.py"]
     )
     assert (
         "mobaSftpActionStaticX"
@@ -2066,6 +2066,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     mremoteng_source = Path("src/remote_ops_workspace/gui_mremoteng.py").read_text(encoding="utf-8")
     remmina_source = Path("src/remote_ops_workspace/gui_remmina.py").read_text(encoding="utf-8")
@@ -2234,7 +2235,7 @@ def test_static_renderer_tracks_remmina_and_mremoteng_control_surfaces() -> None
     assert "mRemoteNgInheritanceRouteInheritedValue" in product_workspace_source
     assert "MREMOTENG_FILTER_ROUTE_KEY_ROLE" in tree_source
     assert "mremoteng_document_control_icon" in mremoteng_source
-    assert "build_mremoteng_property_grid_evidence" in gui_source
+    assert "self.build_mremoteng_property_grid_evidence()" in sidebar_source
     assert "mRemoteNgPropertyRowKey" in mremoteng_source
     assert "GuiRemminaViewerControl" in remmina_design_source
     assert "GuiRemminaProfileListChrome" in remmina_design_source
@@ -2403,6 +2404,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     criteria = checker.load_json(checker.CRITERIA_PATH)
     renderer_source = Path("scripts/render_gui_design_previews.py").read_text(encoding="utf-8")
     gui_source = Path("src/remote_ops_workspace/gui.py").read_text(encoding="utf-8")
+    sidebar_source = Path("src/remote_ops_workspace/gui_sidebar.py").read_text(encoding="utf-8")
     product_workspace_source = Path("src/remote_ops_workspace/gui_product_workspace.py").read_text(encoding="utf-8")
     securecrt_source = Path("src/remote_ops_workspace/gui_securecrt.py").read_text(encoding="utf-8")
     termius_source = Path("src/remote_ops_workspace/gui_termius.py").read_text(encoding="utf-8")
@@ -2617,7 +2619,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     assert "secureCrtCommandRouteKey" in securecrt_source
     assert "secureCrtCommandRouteCommand" in securecrt_source
     assert "secureCrtCommandRouteSendLabel" in securecrt_source
-    assert "build_securecrt_session_manager_chrome" in gui_source
+    assert "self.build_securecrt_session_manager_chrome()" in sidebar_source
     assert "secureCrtSessionManagerLiveButtonSize" in securecrt_source
     assert "secureCrtSessionManagerRenderSource" in securecrt_source
     assert "secureCrtSessionRouteKey" in securecrt_source
@@ -2642,7 +2644,7 @@ def test_static_renderer_tracks_securecrt_and_termius_workflow_surfaces() -> Non
     activation_source = Path("src/remote_ops_workspace/gui_design_activation.py").read_text(encoding="utf-8")
     assert "self.configure_menu_bar_for_design(preset)" in activation_source
     assert "secureCrtTopToolbarIconKey" in toolbar_source
-    assert "build_termius_hosts_chrome" in gui_source
+    assert "self.build_termius_hosts_chrome()" in sidebar_source
     assert "termiusHostSearch" in gui_source
     assert "build_termius_header_chips_evidence" in product_workspace_source
     assert "termiusHeaderChipKey" in termius_source

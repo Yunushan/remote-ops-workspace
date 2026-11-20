@@ -150,6 +150,8 @@ Rules:
   `gui_profile_actions.py` owns profile context actions, editing, import
   previews, connection launch and file and queue dispatch. The window
   supplies the dialogs and opens the requested terminal tabs.
+  `gui_sidebar.py` owns sidebar layout, per-preset widths, and the Sessions,
+  Favorites, and SFTP rail actions.
   `gui_profile_tree.py` owns profile grouping, preset labels and row metadata,
   filters, and selection restoration after refresh.
   `gui_workspace_tabs.py` owns workspace page selection, paint guards,

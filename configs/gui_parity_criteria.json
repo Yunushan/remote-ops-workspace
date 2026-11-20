@@ -1108,7 +1108,9 @@
               "item.rail_icon_key"
             ],
             "src/remote_ops_workspace/gui.py": [
-              "quickConnect",
+              "quickConnect"
+            ],
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "mobaRail",
               "create_moba_rail",
               "mobaRailRole",
@@ -1232,10 +1234,12 @@
               "draw_moba_rail_label",
               "gui_design_moba_rail_items"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "MobaRailLabel",
-              "mobaRailLabel",
               "gui_design_moba_rail_items"
+            ],
+            "src/remote_ops_workspace/gui_workspace.py": [
+              "mobaRailLabel"
             ],
             "scripts/check_real_gui_render.py": [
               "EXPECTED_MOBA_RAIL_LABELS",
@@ -1261,7 +1265,7 @@
               "gui_design_moba_rail_item_geometry_for",
               "rail_chrome.static_icon_size"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "mobaRailStaticIconY",
               "mobaRailButtonHeight",
               "mobaRailLabelHeight",
@@ -1290,7 +1294,9 @@
               "\"mobaxterm\": ("
             ],
             "src/remote_ops_workspace/gui.py": [
-              "profile_tree_label",
+              "profile_tree_label"
+            ],
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "show_moba_profile_tree"
             ],
             "src/remote_ops_workspace/gui_profile_tree.py": [
@@ -1349,7 +1355,7 @@
               "side_w = frame.side_width",
               "rail_w = frame.rail_width"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "root_splitter.setSizes",
               "setMinimumWidth"
             ]
@@ -1424,7 +1430,7 @@
               "frame.dock_x",
               "frame.dock_width"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "mobaConnectedDockSideWidth",
               "mobaConnectedDockRailWidth",
               "mobaConnectedDockWidth"
@@ -1444,11 +1450,13 @@
           "description": "Live MobaXterm-style tabs switch the left dock between saved sessions and the active connected-session SFTP/monitoring view.",
           "source_tokens": {
             "src/remote_ops_workspace/gui.py": [
-              "QStackedWidget",
               "show_moba_connected_dock",
-              "show_moba_profile_tree",
               "refresh_moba_left_dock_for_current_tab",
               "moba_connected_state"
+            ],
+            "src/remote_ops_workspace/gui_sidebar.py": [
+              "QStackedWidget",
+              "show_moba_profile_tree"
             ],
             "scripts/check_real_gui_render.py": [
               "prepare_moba_connected_reference",
@@ -3920,7 +3928,7 @@
               "\"securecrt\": (\"Session Manager\"",
               "Folders, sessions and terminal tabs"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "leftPanelHeader",
               "configure_left_panel_header_for_design"
             ],
@@ -5947,7 +5955,7 @@
               "\"termius\": (\"Hosts\"",
               "Vault-backed SSH inventory"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "leftPanelTitle",
               "leftPanelSubtitle"
             ],
@@ -7817,7 +7825,7 @@
               "\"remmina\": (\"Connection Profiles\"",
               "RDP, VNC, SSH and SFTP targets"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "leftPanelHeader",
               "gui_design_sidebar_copy"
             ],
@@ -9718,7 +9726,7 @@
               "\"mremoteng\": (\"Connections\"",
               "Nested groups and saved targets"
             ],
-            "src/remote_ops_workspace/gui.py": [
+            "src/remote_ops_workspace/gui_sidebar.py": [
               "leftPanelTitle",
               "configure_left_panel_header_for_design"
             ],

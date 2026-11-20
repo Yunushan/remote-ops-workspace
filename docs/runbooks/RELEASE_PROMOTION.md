@@ -315,6 +315,19 @@ and before installing build dependencies. The hosted rehearsal reads the PFX
 from the protected step environment and removes its temporary copy. A trust or
 timestamp failure stops that job before packaging starts.
 
+On a macOS signing host with Xcode, load the seven macOS signing values into
+the environment and run the same rehearsal used by the release jobs.
+
+```bash
+bash scripts/with_macos_release_signing.sh --rehearse
+```
+
+The rehearsal imports both Developer ID identities into a temporary keychain.
+It authenticates to the notary service with the stored profile and signs and
+verifies a disposable executable and PKG. It removes the keychain and files
+afterward. The release jobs run this before installing build dependencies and
+submit the final DMG and PKG for notarization after packaging.
+
 You can check the protected `release` environment while other approvals are
 pending. This command verifies the presence of the Windows and macOS signing
 secret names.

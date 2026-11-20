@@ -130,12 +130,16 @@ def test_windows_production_smoke_requires_signed_installers() -> None:
 
 
 @pytest.mark.parametrize("change", ["remove", "skip", "ignore-failure", "missing-secret", "after-python"])
-def test_windows_signing_rehearsal_is_mandatory_before_build_setup(change: str) -> None:
+@pytest.mark.parametrize(("target", "step_label", "command"), [
+    ("windows", "Windows", r".\scripts\sign_windows_artifact.ps1 -Rehearse"),
+    ("macos", "macOS", "bash scripts/with_macos_release_signing.sh --rehearse"),
+])
+def test_signing_rehearsal_is_mandatory_before_build_setup(change: str, target: str, step_label: str, command: str) -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    job = checker.workflow_job_block(workflow, "windows-native")
-    rehearsal = checker.workflow_step_block(job, "name: Rehearse Windows signing on the release runner")
-    run_line = "        run: .\\scripts\\sign_windows_artifact.ps1 -Rehearse\n"
+    job = checker.workflow_job_block(workflow, f"{target}-native")
+    rehearsal = checker.workflow_step_block(job, f"name: Rehearse {step_label} signing on the release runner")
+    run_line = f"        run: {command}\n"
     if change == "remove":
         replacement = job.replace(rehearsal, "", 1)
     elif change == "after-python":
@@ -145,12 +149,12 @@ def test_windows_signing_rehearsal_is_mandatory_before_build_setup(change: str) 
         changed_step = {
             "skip": rehearsal.replace(run_line, "        if: false\n" + run_line),
             "ignore-failure": rehearsal.replace(run_line, "        continue-on-error: true\n" + run_line),
-            "missing-secret": rehearsal.replace("secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD", "secrets.FIXTURE"),
+            "missing-secret": rehearsal.replace(f"secrets.ROW_{target.upper()}_CERTIFICATE_PASSWORD", "secrets.FIXTURE"),
         }[change]
         replacement = job.replace(rehearsal, changed_step, 1)
     assert replacement != job
     errors = checker.check_signing_readiness_gate(workflow.replace(job, replacement, 1))
-    assert "windows-native must require the native signing rehearsal before build setup" in errors
+    assert f"{target}-native must require the native signing rehearsal before build setup" in errors
 
 
 def test_macos_production_smoke_requires_signed_and_notarized_installers() -> None:
@@ -177,10 +181,12 @@ def test_release_smoke_must_not_receive_windows_signing_password() -> None:
 
 def test_release_rejects_macos_notarization_outside_temporary_keychain() -> None:
     checker = _load_checker()
-    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    workflow = workflow.replace('store-credentials "remote-ops-notary" --keychain "$keychain"', 'store-credentials "remote-ops-notary"', 1)
-
-    assert "macos-native must bind notarization to a temporary keychain and delete it when the build exits" in checker.check_signing_readiness_gate(workflow)
+    script = Path("scripts/with_macos_release_signing.sh").read_text(encoding="utf-8")
+    changed = script.replace('store-credentials "$profile" --keychain "$keychain"', 'store-credentials "$profile"', 1)
+    assert changed != script
+    assert checker.check_macos_signing_wrapper(changed) == [
+        'macOS signing wrapper missing temporary keychain boundary: store-credentials "$profile" --keychain "$keychain"',
+    ]
 
 
 def test_native_workflow_rejects_candidate_job_without_readiness_gate() -> None:

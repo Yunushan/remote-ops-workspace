@@ -40,6 +40,7 @@ def main() -> int:
     errors.extend(check_macos_dmg_creation_retry())
     errors.extend(check_linux_appimagetool_download())
     errors.extend(check_native_workflow_boundaries())
+    errors.extend(check_macos_signing_wrapper())
     if errors:
         for error in errors:
             print(f"native release hardening: {error}", file=sys.stderr)
@@ -394,16 +395,9 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     windows = workflow_job_block(workflow, "windows-native")
     windows_rehearsal = workflow_step_block(windows, "name: Rehearse Windows signing on the release runner")
     windows_build = workflow_step_block(windows, "name: Build Windows EXE and MSI installers")
-    rehearsal_secrets = ("ROW_WINDOWS_CERTIFICATE_BASE64", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL")
-    rehearsal_lines = windows_rehearsal.splitlines()
-    rehearsal_start = windows.find(windows_rehearsal) if windows_rehearsal else -1
-    if not (
-        0 <= windows.find("      - name: Verify frozen release source commit\n") < rehearsal_start
-        < windows.find("      - uses: actions/setup-python@")
-        and r"        run: .\scripts\sign_windows_artifact.ps1 -Rehearse" in rehearsal_lines
-        and "        shell: pwsh" in rehearsal_lines
-        and not re.search(r"(?m)^        (?:if|continue-on-error):", windows_rehearsal)
-        and all(f"          {name}: ${{{{ secrets.{name} }}}}" in rehearsal_lines for name in rehearsal_secrets)
+    if not native_rehearsal_required(
+        windows, windows_rehearsal, shell="pwsh", command=r".\scripts\sign_windows_artifact.ps1 -Rehearse",
+        secrets=("ROW_WINDOWS_CERTIFICATE_BASE64", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL"),
     ):
         errors.append("windows-native must require the native signing rehearsal before build setup")
     if 'throw "Production candidate Windows builds require protected release signing"' not in windows:
@@ -412,6 +406,16 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     if not re.search(r"(?m)^\s+run: .*smoke_windows_native\.ps1 .* -RequireReleaseSigning\s*$", windows_smoke):
         errors.append("windows-native must reverify the signed installers before running smoke tests")
     macos = workflow_job_block(workflow, "macos-native")
+    macos_rehearsal = workflow_step_block(macos, "name: Rehearse macOS signing on the release runner")
+    if not native_rehearsal_required(
+        macos, macos_rehearsal, shell="bash", command="bash scripts/with_macos_release_signing.sh --rehearse",
+        secrets=(
+            "ROW_MACOS_CERTIFICATE_BASE64", "ROW_MACOS_CERTIFICATE_PASSWORD", "ROW_MACOS_SIGN_IDENTITY",
+            "ROW_MACOS_INSTALLER_SIGN_IDENTITY", "ROW_MACOS_NOTARY_KEY_BASE64", "ROW_MACOS_NOTARY_KEY_ID",
+            "ROW_MACOS_NOTARY_ISSUER",
+        ),
+    ):
+        errors.append("macos-native must require the native signing rehearsal before build setup")
     if "Production candidate macOS builds require protected release signing" not in macos:
         errors.append("macos-native must fail closed when release signing is unavailable")
     macos_smoke = workflow_step_block(macos, "name: Run macOS native installer smoke tests")
@@ -423,15 +427,15 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     if "} finally {" not in windows_build or "Remove-Item -LiteralPath $CertificatePath" not in windows_build:
         errors.append("windows-native must remove its signing certificate when the build exits")
     macos_build = workflow_step_block(macos, "name: Build macOS DMG and PKG installers")
-    if "GITHUB_ENV" in macos_build or "secrets.ROW_" in macos.replace(macos_build, "", 1):
-        errors.append("macos-native signing credentials must be scoped to its build step")
-    if (
-        "trap cleanup_signing_material EXIT" not in macos_build
-        or 'security delete-keychain "$keychain"' not in macos_build
-        or 'store-credentials "remote-ops-notary" --keychain "$keychain"' not in macos_build
-        or 'ROW_MACOS_SIGNING_KEYCHAIN="$keychain"' not in macos_build
-    ):
-        errors.append("macos-native must bind notarization to a temporary keychain and delete it when the build exits")
+    macos_other_steps = macos.replace(macos_rehearsal, "", 1).replace(macos_build, "", 1)
+    if "GITHUB_ENV" in macos_rehearsal + macos_build or "secrets.ROW_" in macos_other_steps:
+        errors.append("macos-native signing credentials must be scoped to its rehearsal and build steps")
+    expected_build = (
+        '          EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" PYTHON_BIN=python '
+        'bash scripts/with_macos_release_signing.sh --build'
+    )
+    if expected_build not in macos_build.splitlines():
+        errors.append("macos-native must build signed installers through the temporary keychain wrapper")
     preview = (ROOT / ".github" / "workflows" / "unsigned-preview.yml").read_text(
         encoding="utf-8"
     )
@@ -443,6 +447,35 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
         if snippet not in preview:
             errors.append(f"unsigned-preview.yml missing {label}: {snippet}")
     return errors
+
+
+def native_rehearsal_required(block: str, step: str, *, shell: str, command: str, secrets: tuple[str, ...]) -> bool:
+    start = block.find(step) if step else -1
+    lines = step.splitlines()
+    return (
+        0 <= block.find("      - name: Verify frozen release source commit\n") < start
+        < block.find("      - uses: actions/setup-python@")
+        and f"        run: {command}" in lines
+        and f"        shell: {shell}" in lines
+        and not re.search(r"(?m)^        (?:if|continue-on-error):", step)
+        and all(f"          {name}: ${{{{ secrets.{name} }}}}" in lines for name in secrets)
+    )
+
+
+def check_macos_signing_wrapper(script_text: str | None = None) -> list[str]:
+    path = ROOT / "scripts" / "with_macos_release_signing.sh"
+    text = script_text if script_text is not None else (path.read_text(encoding="utf-8") if path.is_file() else "")
+    required = (
+        "trap cleanup_signing_material EXIT",
+        'security delete-keychain "$keychain"',
+        'store-credentials "$profile" --keychain "$keychain"',
+        'history --keychain "$keychain" --keychain-profile "$profile"',
+        'ROW_REQUIRE_RELEASE_SIGNING=1 ROW_MACOS_SIGNING_KEYCHAIN="$keychain" ROW_MACOS_NOTARY_PROFILE="$profile"',
+    )
+    return [
+        f"macOS signing wrapper missing temporary keychain boundary: {snippet}"
+        for snippet in required if snippet not in text
+    ]
 
 
 def check_checkout_step(job_block: str, *, job: str) -> list[str]:

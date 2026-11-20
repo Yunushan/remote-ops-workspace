@@ -23,6 +23,7 @@ python -m pytest -q \
   --cov-fail-under=100
 python scripts/check_coverage_report.py \
   --report artifacts/coverage/coverage.json \
+  --source-root src/remote_ops_workspace \
   --min-total 100 \
   --min-branches 100
 ```
@@ -31,7 +32,9 @@ The release-blocking coverage gate requires 100% aggregate line-and-branch
 coverage and 100% pure branch-decision coverage. Any uncovered line or branch
 fails the gate; this is a test-coverage requirement, not a claim that every
 external platform or production signing prerequisite is complete. Repository
-policy rejects reducing either threshold or making the job advisory.
+policy rejects reducing either threshold or making the job advisory. The
+report validator checks the complete product module inventory and reconciles
+the per-file counts with the totals before accepting the result.
 CI retains XML and JSON reports for both successful and failed test runs so a
 threshold result is auditable. The gate runs the full suite with the native Qt
 Windows platform because instrumented PyQt6 application startup reproducibly

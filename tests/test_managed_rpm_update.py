@@ -82,7 +82,9 @@ def test_retention_authenticates_exact_rpm_and_holds_stage_during_snapshot(tmp_p
     assert record == {"version": OLD.version, "size": artifact.size, "sha256": artifact.sha256} and header == OLD
 
 
-@pytest.mark.parametrize("scenario", ["success", "install-failed", "predecessor-mismatch"])
+@pytest.mark.parametrize("scenario", [
+    "success", "install-failed", "predecessor-mismatch", "test-refused", "predecessor-changed-after-test",
+])
 def test_new_update_binds_the_original_installed_rpm_before_freshen(tmp_path, monkeypatch, scenario):
     args = SimpleNamespace(version=NEW.version, stage=tmp_path / "incoming", previous_stage=tmp_path / "rollback-stage",
                            policy=tmp_path / "new-policy.json", previous_policy=tmp_path / "old-policy.json")
@@ -92,7 +94,13 @@ def test_new_update_binds_the_original_installed_rpm_before_freshen(tmp_path, mo
                 "selected_target": updater.TARGET, "minimum_version": OLD.version}
     trace = []
     monkeypatch.setattr(updater, "trusted_path", lambda path, **_: path)
-    monkeypatch.setattr(updater, "installed_header", lambda: OLD)
+    def installed_header():
+        if "rpm-test" not in trace:
+            return OLD
+        trace.append("recheck-predecessor")
+        return FOREIGN if scenario == "predecessor-changed-after-test" else OLD
+
+    monkeypatch.setattr(updater, "installed_header", installed_header)
     monkeypatch.setattr(updater, "load_policy", lambda _: SimpleNamespace(settings=settings))
 
     def retain(_, stage, home, version, path):
@@ -111,7 +119,12 @@ def test_new_update_binds_the_original_installed_rpm_before_freshen(tmp_path, mo
         trace.append(phase)
         return {**state, "phase": phase}
 
-    def native(*argv):
+    def native(*argv, check=True):
+        if not check:
+            assert argv == (updater.RPM, "--freshen", "--test", str(journal.parent / updater.CANDIDATE))
+            assert trace[-1] == f"check-{OLD.version}" and not journal.exists()
+            trace.append("rpm-test")
+            return SimpleNamespace(returncode=1 if scenario == "test-refused" else 0)
         assert argv == (updater.RPM, "--freshen", str(journal.parent / updater.CANDIDATE))
         assert trace[-1] == "applying"
         trace.append("rpm-freshen")
@@ -132,9 +145,16 @@ def test_new_update_binds_the_original_installed_rpm_before_freshen(tmp_path, mo
     if scenario == "predecessor-mismatch":
         with pytest.raises(updater.UpdateError, match="retained-rpm-is-not-installed-predecessor"):
             updater.update(args, journal, workspace)
+    elif scenario in ("test-refused", "predecessor-changed-after-test"):
+        reason = "rpm-upgrade-test-refused" if scenario == "test-refused" else "installed-rpm-changed"
+        with pytest.raises(updater.UpdateError, match=reason):
+            updater.update(args, journal, workspace)
+        expected += [f"check-{OLD.version}", "rpm-test"]
+        if scenario == "predecessor-changed-after-test":
+            expected.append("recheck-predecessor")
     else:
         report = updater.update(args, journal, workspace)
-        expected += [f"check-{OLD.version}", "applying", "rpm-freshen"]
+        expected += [f"check-{OLD.version}", "rpm-test", "recheck-predecessor", "applying", "rpm-freshen"]
         if scenario == "install-failed":
             expected += ["rollback"]
             assert report["phase"] == "rolled-back"

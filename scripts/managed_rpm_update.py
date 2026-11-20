@@ -209,9 +209,13 @@ def update(args, journal: Path, workspace: Path) -> dict:
     new_record, new = retain_package(policy, stage, workspace, args.version, candidate_path)
     require(installed == old, "retained-rpm-is-not-installed-predecessor")
     verify_installation(old)
+    freshen = (RPM, "--freshen")
+    require(native_command(*freshen, "--test", str(candidate_path), check=False).returncode == 0,
+            "rpm-upgrade-test-refused")
+    require(installed_header() == old, "installed-rpm-changed")
     state = journal_write(journal, {"schema": SCHEMA, "previous": old_record, "candidate": new_record}, "applying")
     try:
-        native_command(RPM, "--freshen", str(candidate_path))
+        native_command(*freshen, str(candidate_path))
         verify_installation(new)
     except (OSError, subprocess.SubprocessError, ValueError):
         return rollback(journal, state)

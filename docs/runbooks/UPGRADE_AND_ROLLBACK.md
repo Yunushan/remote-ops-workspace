@@ -205,17 +205,21 @@ python3 -I scripts/managed_rpm_update.py update \
 
 The controller authenticates the previous RPM first, retains both exact
 installer files, and matches the previous package's signed bytes to the
-installed RPM header, launcher owner, and file digests. It then invokes
-`rpm --freshen` and verifies the installed candidate. Manage ROW through one
-deployment tool during the transaction. The managed controllers share a
+installed RPM header, launcher owner, and file digests. It runs
+`rpm --freshen --test` against the retained candidate before creating the
+journal. After the test passes, it rechecks the installed RPM identity,
+applies the update and verifies the installed candidate. Manage ROW through
+one deployment tool during the transaction. The managed controllers share a
 transaction lock, and RPM acquires its native database lock for package changes.
 [RPM transaction options](https://rpm.org/docs/6.0.x/man/rpm.8)
 
 Use a fresh transaction directory for each version pair. Keep the transaction
 directory and its private, digest-bound RPM snapshots until rollout validation
-is complete. Reissuing `update` verifies a completed installation or recovers
-an interrupted transaction. If the controller recovers the predecessor during
-an update, it reports `rolled-back` and exits with status 1.
+is complete. If the controller reports `rpm-upgrade-test-refused`, resolve the
+transaction problem and retry with the same stages and transaction directory.
+Reissuing `update` verifies a completed installation or recovers an interrupted
+transaction. If the controller recovers the predecessor during an update,
+it reports `rolled-back` and exits with status 1.
 
 ```bash
 python3 -I scripts/managed_rpm_update.py rollback \

@@ -1151,6 +1151,28 @@ def test_published_governance_uses_live_time_and_common_signed_attempt(
             "deb_sha256": checker.sha256_file(asset),
         }]
 
+        with monkeypatch.context() as current_schema:
+            current_inventory = {"linux_smoke": "fixture"}
+            candidate.write_text(json.dumps(current_inventory), encoding="utf-8")
+            write_approval("2026-11-01T12:02:30Z", candidate)
+            current_schema.setattr(
+                checker, "validate_managed_release_qualification",
+                lambda value, **kwargs: verify_exact_deb({"sealed_candidate_fixture": True}, **kwargs),
+            )
+            assert checker.main(candidate_args) == 1
+            assert "published audit requires --candidate-qualification-archives" in capsys.readouterr().err
+            archive_root = tmp_path / "review archives"
+            archive_root.mkdir()
+            replays = []
+            current_schema.setattr(
+                checker, "verify_retained_qualification_archives",
+                lambda path, value: replays.append((path, value)),
+            )
+            assert checker.main([*candidate_args, "--candidate-qualification-archives", str(archive_root)]) == 0
+            assert replays == [(archive_root, current_inventory)]
+        candidate.write_text('{"sealed_candidate_fixture": true}', encoding="utf-8")
+        write_approval("2026-11-01T12:02:30Z", candidate)
+
         package = root / f"remote-ops-workspace-{tag}-macos-arm64.pkg"
         package.write_bytes(b"alternate package with valid GitHub provenance")
         original_assets = release["assets"]

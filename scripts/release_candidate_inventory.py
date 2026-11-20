@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
@@ -664,7 +665,7 @@ def validate_smoke_records(value: Any, ids: set[int], names: tuple[str, ...], la
             raise ValueError(f"{name} archive exceeds the smoke evidence size limit")
 
 
-def read_smoke_reports(path: Path, name: str, filenames: tuple[str, ...]) -> dict[str, bytes]:
+def read_archive_reports(path: Path | io.BytesIO, name: str, filenames: tuple[str, ...]) -> dict[str, bytes]:
     reports = {}
     with zipfile.ZipFile(path) as archive:
         members = archive.infolist()
@@ -685,8 +686,8 @@ def read_smoke_reports(path: Path, name: str, filenames: tuple[str, ...]) -> dic
     return reports
 
 
-def validate_gui_smoke_archive(path: Path, name: str) -> Any:
-    reports = read_smoke_reports(path, name, (GUI_ARCHIVE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
+def validate_gui_smoke_archive(path: Path | io.BytesIO, name: str) -> Any:
+    reports = read_archive_reports(path, name, (GUI_ARCHIVE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
     proof = json.loads(reports[GUI_ARCHIVE_PROOF_FILE])
     binding_bytes = reports[NATIVE_BYTE_BINDING_FILE]
     binding = json.loads(binding_bytes)
@@ -719,8 +720,8 @@ def validate_gui_smoke_archive(path: Path, name: str) -> Any:
     return binding.get("installer_sha256")
 
 
-def validate_linux_smoke_archive(path: Path, name: str, run_id: int, release_sha: str) -> Any:
-    reports = read_smoke_reports(path, name, (LINUX_SMOKE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
+def validate_linux_smoke_archive(path: Path | io.BytesIO, name: str, run_id: int, release_sha: str) -> Any:
+    reports = read_archive_reports(path, name, (LINUX_SMOKE_PROOF_FILE, NATIVE_BYTE_BINDING_FILE))
     proof = json.loads(reports[LINUX_SMOKE_PROOF_FILE])
     raw = reports[NATIVE_BYTE_BINDING_FILE]
     binding = json.loads(raw)
@@ -766,17 +767,61 @@ def verify_sealed_smoke(
                 or metadata.get("size_in_bytes") != record["size_in_bytes"]
             ):
                 raise ValueError(f"{name} archive digest or size differs from the sealed inventory")
-            observed = (
-                validate_linux_smoke_archive(archive, name, run_id, release_sha)
-                if name in LINUX_SMOKE_ARTIFACT_NAMES else validate_gui_smoke_archive(archive, name)
-            )
-            if "installer_sha256" in record and observed != record["installer_sha256"]:
-                raise ValueError(f"{name} installer smoke hashes differ from the sealed inventory")
-            installers[name] = observed
+            installers[name] = check_smoke_archive(archive, name, record, run_id, release_sha)
             if archive_root is not None:
                 with archive.open("rb") as source, (archive_root / archive.name).open("xb") as output:
                     shutil.copyfileobj(source, output)
     return installers
+
+
+def check_smoke_archive(
+    archive: Path | io.BytesIO, name: str, record: dict[str, Any], run_id: int, release_sha: str,
+) -> Any:
+    observed = (
+        validate_linux_smoke_archive(archive, name, run_id, release_sha)
+        if name in LINUX_SMOKE_ARTIFACT_NAMES else validate_gui_smoke_archive(archive, name)
+    )
+    if "installer_sha256" in record and observed != record["installer_sha256"]:
+        raise ValueError(f"{name} installer smoke hashes differ from the sealed inventory")
+    return observed
+
+
+def verify_retained_qualification_archives(archive_root: Path, inventory: dict[str, Any]) -> None:
+    """Replay the qualification archives from an already validated, signed inventory."""
+    if archive_root.is_symlink() or not archive_root.is_dir():
+        raise ValueError("candidate qualification archives must be in a regular directory")
+
+    managed = inventory.get("managed_debian_update")
+    if managed is not None:
+        with retained_archive(archive_root, MANAGED_DEBIAN_ARTIFACT, managed, MAX_JSON_BYTES) as archive:
+            files = read_archive_reports(archive, MANAGED_DEBIAN_ARTIFACT, (REPORT_NAME,))
+        if files[REPORT_NAME] != qualification_receipt_bytes(managed["receipt"]):
+            raise ValueError("managed Debian archive receipt does not match the sealed inventory")
+
+    if "rpm_smoke" in inventory:
+        rpm = inventory["rpm_recovery"]
+        with retained_archive(archive_root, RPM_ARTIFACT, rpm, MAX_JSON_BYTES) as archive:
+            files = read_archive_reports(archive, RPM_ARTIFACT, (RPM_REPORT_NAME, *RPM_SMOKE_FILES))
+        validate_rpm_smoke_files(files, rpm["receipt"], inventory["rpm_smoke"])
+
+    smoke = {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}
+    for name, record in smoke.items():
+        with retained_archive(archive_root, name, record, record["size_in_bytes"]) as archive:
+            check_smoke_archive(archive, name, record, inventory["build_run_id"], inventory["release_sha"])
+
+
+def retained_archive(root: Path, name: str, record: dict[str, Any], limit: int) -> io.BytesIO:
+    path = root / f"{name}.zip"
+    if not path.exists() or not stat.S_ISREG(path.lstat().st_mode):
+        raise ValueError(f"missing or invalid retained candidate qualification archive: {path.name}")
+    with path.open("rb") as source:
+        raw = source.read(limit + 1)
+    if (
+        not 0 < len(raw) <= limit or len(raw) != record.get("size_in_bytes", len(raw))
+        or f"sha256:{hashlib.sha256(raw).hexdigest()}" != record["archive_digest"]
+    ):
+        raise ValueError(f"{name} retained archive digest or size differs from the sealed inventory")
+    return io.BytesIO(raw)
 
 
 def require_smoked_installer_assets(

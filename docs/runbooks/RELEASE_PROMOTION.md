@@ -562,6 +562,11 @@ The aggregate also needs
 the matching signed evidence bundle from the pinned evidence commit and
 the original protected-platform Actions ZIPs retained during
 [source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites).
+Supply the review packet's `archives/` directory as
+`RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES`. The audit verifies the original
+Debian and RPM qualification ZIPs and the desktop and Linux installer smoke
+ZIPs against the signed candidate inventory. The retained ZIPs let the auditor
+repeat these checks after the original Actions downloads expire.
 
 ## Verify a published artifact
 

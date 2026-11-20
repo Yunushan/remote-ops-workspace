@@ -513,7 +513,9 @@ def test_complete_signed_release_compliance_fixture_passes(tmp_path: Path) -> No
 
 def test_published_compliance_passes_the_authenticated_bundle_to_provenance(tmp_path, monkeypatch) -> None:
     checker = _load_checker()
-    args = _positive_fixture(tmp_path, checker)
+    archive_root = tmp_path / "candidate review archives"
+    archive_root.mkdir()
+    args = [*_positive_fixture(tmp_path, checker), "--candidate-qualification-archives", str(archive_root)]
 
     def option(name):
         return args[args.index(name) + 1]
@@ -527,6 +529,7 @@ def test_published_compliance_passes_the_authenticated_bundle_to_provenance(tmp_
                 ("--governance-signature", "--tag-governance-signature"),
                 ("--redistribution-evidence", "--evidence"), ("--redistribution-signature", "--signature"),
                 ("--candidate-inventory", "--candidate-inventory"),
+                ("--candidate-qualification-archives", "--candidate-qualification-archives"),
                 ("--protected-platform-registry", "--protected-platform-registry"),
             )
         }

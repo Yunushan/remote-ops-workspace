@@ -77,6 +77,7 @@ def expected_commands(root, values):
             "--signature", str(root / values["RELEASE_LICENSE_SIGNATURE"]),
             "--evidence-root", str(root / values["RELEASE_LICENSE_EVIDENCE_ROOT"]),
             "--candidate-inventory", str(root / values["RELEASE_CANDIDATE_INVENTORY"]),
+            "--candidate-qualification-archives", str(root / values["RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES"]),
             "--protected-platform-registry", platform,
             "--platform-source-archives", str(root / values["RELEASE_PLATFORM_SOURCE_ARCHIVES"]),
             "--tag-governance-attestation", str(root / values["RELEASE_TAG_GOVERNANCE_ATTESTATION"]),

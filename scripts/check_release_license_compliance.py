@@ -98,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
             args.tag_governance_attestation is not None or args.tag_governance_signature is not None
         ):
             raise ValueError("redistribution-only audit does not take governance proof files")
+        if args.candidate_qualification_archives is not None and not args.verify_published_release:
+            raise ValueError("--candidate-qualification-archives requires --verify-published-release")
         required = {
             "--assets-dir": args.assets_dir,
             "--repository": args.repository,
@@ -178,6 +180,9 @@ def main(argv: list[str] | None = None) -> int:
                 args.evidence: hashlib.sha256(evidence_bytes).hexdigest(),
                 args.signature: hashlib.sha256(signature_bytes).hexdigest(),
             }
+            qualification_args = []
+            if args.candidate_qualification_archives is not None:
+                qualification_args = ["--candidate-qualification-archives", str(args.candidate_qualification_archives)]
             if verify_release_provenance([
                 "--assets-dir", str(args.assets_dir),
                 "--repository", repository,
@@ -188,6 +193,7 @@ def main(argv: list[str] | None = None) -> int:
                 "--redistribution-evidence", str(args.evidence),
                 "--redistribution-signature", str(args.signature),
                 "--candidate-inventory", str(args.candidate_inventory),
+                *qualification_args,
                 "--protected-platform-registry", str(args.protected_platform_registry),
             ],
                 audited_policy=(policy_bytes, policy),
@@ -237,6 +243,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--platform-source-archives",
         type=Path,
         help="directory of original protected-platform Actions ZIPs retained for a published audit",
+    )
+    parser.add_argument(
+        "--candidate-qualification-archives",
+        type=Path,
+        help="directory of original Actions qualification ZIPs retained during candidate review",
     )
     parser.add_argument("--policy", type=Path, default=POLICY_PATH)
     parser.add_argument("--policy-root", type=Path)

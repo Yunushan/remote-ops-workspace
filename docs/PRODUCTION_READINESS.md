@@ -337,6 +337,7 @@ make production-readiness \
   RELEASE_LICENSE_SIGNATURE="<approval.sig.json>" \
   RELEASE_LICENSE_EVIDENCE_ROOT="<evidence-bundle-dir>" \
   RELEASE_CANDIDATE_INVENTORY="<sealed-candidate-inventory.json>" \
+  RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES="<release-review-directory>/archives" \
   RELEASE_PLATFORM_EVIDENCE_REGISTRY="<signed-bundle-platform_verified_evidence.json>" \
   RELEASE_PLATFORM_SOURCE_ARCHIVES="<capture-directory>/archives" \
   RELEASE_MOBAXTERM_REGISTRY_COMMIT="<merged-parity-registry-commit-sha>" \
@@ -379,7 +380,10 @@ digests alongside the redistribution approval, sealed candidate inventory,
 protected-platform registry, and published files. All must share a completed,
 successful promotion attempt. The aggregate compares the standard published
 files with the approved candidate inventory and verifies the published protected
-files against the signed registry. The live immutable release's publication
+files against the signed registry. It checks the original Debian and RPM
+qualification ZIPs and the desktop and Linux installer smoke ZIPs against the
+signed inventory. Supply those originals in
+`RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES`. The live immutable release's publication
 time must fall within that attempt and the independently signed governance
 window. The operator audit can run after the governance window has expired.
 

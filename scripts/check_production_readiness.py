@@ -21,6 +21,7 @@ IDENTITIES = {
 DIRECTORIES = {
     "RELEASE_ASSETS_DIR": "the downloaded release assets directory",
     "RELEASE_LICENSE_EVIDENCE_ROOT": "the closed-world evidence bundle directory",
+    "RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES": "the original candidate qualification Actions ZIP directory",
     "RELEASE_PLATFORM_SOURCE_ARCHIVES": "the retained original Actions ZIP directory",
     "RELEASE_MOBAXTERM_EVIDENCE_ROOT": "the reviewed parity evidence directory",
 }
@@ -103,6 +104,7 @@ def audit_commands(inputs: Mapping[str, str]) -> tuple[list[str], ...]:
             "--signature", inputs["RELEASE_LICENSE_SIGNATURE"],
             "--evidence-root", inputs["RELEASE_LICENSE_EVIDENCE_ROOT"],
             "--candidate-inventory", inputs["RELEASE_CANDIDATE_INVENTORY"],
+            "--candidate-qualification-archives", inputs["RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES"],
             "--protected-platform-registry", registry,
             "--platform-source-archives", inputs["RELEASE_PLATFORM_SOURCE_ARCHIVES"],
             "--tag-governance-attestation", inputs["RELEASE_TAG_GOVERNANCE_ATTESTATION"],

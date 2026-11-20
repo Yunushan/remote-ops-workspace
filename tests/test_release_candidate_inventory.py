@@ -786,6 +786,22 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         path = retained / f"{name}.zip"
         assert path.read_bytes() == archives[record["artifact_id"]]
         assert qualifications[name]["sha256"] == record["archive_digest"].removeprefix("sha256:")
+    candidate.verify_retained_qualification_archives(retained, inventory)
+    arm_archive = retained / f"{linux_smoke[1]}.zip"
+    arm_bytes = arm_archive.read_bytes()
+    arm_archive.unlink()
+    with pytest.raises(ValueError, match="missing or invalid retained.*aarch64"):
+        candidate.verify_retained_qualification_archives(retained, inventory)
+    arm_archive.write_bytes(arm_bytes[:-1] + bytes([arm_bytes[-1] ^ 1]))
+    with pytest.raises(ValueError, match="aarch64 retained archive digest or size differs"):
+        candidate.verify_retained_qualification_archives(retained, inventory)
+    arm_archive.write_bytes(arm_bytes)
+    arm_record = linux_archives[linux_smoke[1]]
+    arm_installers = arm_record["installer_sha256"]
+    arm_record["installer_sha256"] = {name: "f" * 64 for name in arm_installers}
+    with pytest.raises(ValueError, match="aarch64 installer smoke hashes differ"):
+        candidate.verify_retained_qualification_archives(retained, inventory)
+    arm_record["installer_sha256"] = arm_installers
     smoke_records[candidate.RPM_SMOKE_FILES[1]]["sha256"] = "f" * 64
     with pytest.raises(ValueError, match="RPM native smoke file differs"):
         candidate.verify_sealed_rpm_smoke(BuildRun(), inventory, 123, sha)

@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -55,6 +56,7 @@ from fetch_release_tag_governance import promotion_transaction, require_transact
 from release_candidate_inventory import (  # noqa: E402
     MAX_JSON_BYTES,
     validate_managed_release_qualification,
+    verify_retained_qualification_archives,
 )
 
 PREDICATE_TYPE = "https://slsa.dev/provenance/v1"
@@ -172,6 +174,8 @@ def main(
             raise ValueError("audited input checks require verified governance")
         if args.candidate_inventory is not None and approval is None:
             raise ValueError("--candidate-inventory requires the signed redistribution approval")
+        if args.candidate_qualification_archives is not None and args.candidate_inventory is None:
+            raise ValueError("--candidate-qualification-archives requires --candidate-inventory")
         if args.protected_platform_registry is not None and approval is None:
             raise ValueError("--protected-platform-registry requires the signed redistribution approval")
         if audited_policy is not None and (not audited_inputs or (approval is None and check_published_at is None)):
@@ -282,6 +286,8 @@ def main(
             digest = check_approved_candidate_inventory(
                 args.candidate_inventory, approval[1], repository=repository, tag=tag,
                 sha=sha, published_files=published_files,
+                archive_root=args.candidate_qualification_archives,
+                require_retained_archives=not current_transaction,
             )
             audited_inputs[args.candidate_inventory] = digest
         if args.protected_platform_registry is not None:
@@ -440,7 +446,7 @@ def main(
         for name, path in local_assets.items():
             if path.is_symlink() or sha256_file(path) != release_digests[name]:
                 raise ValueError(f"local release asset changed during verification: {name}")
-    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
         print(f"release provenance: {exc}", file=sys.stderr)
         return 1
 
@@ -463,7 +469,7 @@ def main(
 
 def check_approved_candidate_inventory(
     path: Path, approval: dict[str, Any], *, repository: str, tag: str, sha: str,
-    published_files: Mapping[str, tuple[int, str]],
+    published_files: Mapping[str, tuple[int, str]], archive_root: Path | None, require_retained_archives: bool,
 ) -> str:
     digest, value = read_approved_json(path, approval, "candidate_inventory", "candidate inventory")
     deb_name = f"remote-ops-workspace-{tag}-linux-amd64.deb"
@@ -473,6 +479,10 @@ def check_approved_candidate_inventory(
         value, repository=repository, release_tag=tag, release_sha=sha, deb_sha256=published_files[deb_name][1],
     )
     check_published_candidate_files(records, published_files)
+    if archive_root is not None:
+        verify_retained_qualification_archives(archive_root, value)
+    elif require_retained_archives and "linux_smoke" in value:
+        raise ValueError("published audit requires --candidate-qualification-archives from the original release review")
     return digest
 
 
@@ -569,6 +579,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--redistribution-evidence", type=Path)
     parser.add_argument("--redistribution-signature", type=Path)
     parser.add_argument("--candidate-inventory", type=Path)
+    parser.add_argument(
+        "--candidate-qualification-archives", type=Path,
+        help="directory of original Actions qualification ZIPs retained during candidate review",
+    )
     parser.add_argument("--protected-platform-registry", type=Path)
     return parser.parse_args(argv)
 

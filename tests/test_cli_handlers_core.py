@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli, cli_customizer, cli_reports, cli_transfers
+from remote_ops_workspace import cli, cli_customizer, cli_reports, cli_transfers, cli_workspace
 from remote_ops_workspace.models import Profile
 
 
@@ -982,8 +982,8 @@ def test_vault_sync_gui_and_module_guard_handlers(monkeypatch, capsys, tmp_path:
             assert source and replace
             return 2
 
-    monkeypatch.setattr(cli, "BackupService", Backup)
-    monkeypatch.setattr(cli, "DirectorySyncProvider", Sync)
+    monkeypatch.setattr(cli_workspace, "BackupService", Backup)
+    monkeypatch.setattr(cli_workspace, "DirectorySyncProvider", Sync)
     assert cli.cmd_export(_ns(out=tmp_path / "backup.zip")) == 0
     assert cli.cmd_sync_push(_ns(to=tmp_path / "remote")) == 0
     assert cli.cmd_sync_pull(_ns(source=tmp_path / "remote", replace=True)) == 0
@@ -1004,8 +1004,8 @@ def test_vault_sync_gui_and_module_guard_handlers(monkeypatch, capsys, tmp_path:
     client = _Record()
     client.push = lambda team, expected_version: snapshot
     client.pull = lambda team, replace: snapshot
-    monkeypatch.setattr(cli, "TeamSyncBackend", Backend)
-    monkeypatch.setattr(cli, "_team_sync_client", lambda _root: client)
+    monkeypatch.setattr(cli_workspace, "TeamSyncBackend", Backend)
+    monkeypatch.setattr(cli_workspace, "_team_sync_client", lambda _root: client)
     team_args = _ns(root=tmp_path, team="ops", json=False, expected_version=2, replace=True)
     assert cli.cmd_team_sync_status(team_args) == 0
     assert cli.cmd_team_sync_push(team_args) == 0

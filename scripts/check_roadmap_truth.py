@@ -100,7 +100,7 @@ IMPLEMENTED_ITEMS = (
         completed_snippet="Added profile importers for Remmina, mRemoteNG, Termius-style JSON and MobaXterm session exports.",
         stale_future_snippets=("Add profile importers for Remmina, mRemoteNG, Termius-style JSON and MobaXterm session exports.",),
         evidence=(
-            Evidence("src/remote_ops_workspace/cli.py", 'imp = sub.add_parser("import"'),
+            Evidence("src/remote_ops_workspace/cli_workspace.py", 'imp = sub.add_parser("import"'),
             Evidence("src/remote_ops_workspace/profile_importers.py", "SUPPORTED_IMPORT_FORMATS"),
         ),
     ),
@@ -124,7 +124,7 @@ IMPLEMENTED_ITEMS = (
             "Add sync provider interface.",
         ),
         evidence=(
-            Evidence("src/remote_ops_workspace/cli.py", 'sync = sub.add_parser("sync"'),
+            Evidence("src/remote_ops_workspace/cli_workspace.py", 'sync = sub.add_parser("sync"'),
             Evidence("src/remote_ops_workspace/sync.py", "class DirectorySyncProvider"),
         ),
     ),
@@ -167,7 +167,7 @@ IMPLEMENTED_ITEMS = (
         evidence=(
             Evidence("src/remote_ops_workspace/team_sync.py", "class TeamSyncBackend"),
             Evidence("src/remote_ops_workspace/team_sync.py", "class TeamSyncConflictError"),
-            Evidence("src/remote_ops_workspace/cli.py", 'team_sync = sub.add_parser("team-sync"'),
+            Evidence("src/remote_ops_workspace/cli_workspace.py", 'team_sync = sub.add_parser("team-sync"'),
             Evidence(
                 "tests/test_team_sync.py",
                 "test_team_sync_refuses_a_concurrent_advisory_writer_lock",

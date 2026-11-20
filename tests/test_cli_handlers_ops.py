@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from remote_ops_workspace import cli, cli_managed_runtime, cli_transfers
+from remote_ops_workspace import cli, cli_managed_runtime, cli_transfers, cli_workspace
 from remote_ops_workspace.models import Profile
 
 
@@ -937,8 +937,8 @@ def test_import_team_client_serve_web_and_remaining_helpers(monkeypatch, tmp_pat
         source_format="moba",
         warnings=["import warning"],
     )
-    monkeypatch.setattr(cli, "import_profiles_into_store", lambda *_args, **_kwargs: result)
-    monkeypatch.setattr(cli, "ProfileStore", lambda: object())
+    monkeypatch.setattr(cli_workspace, "import_profiles_into_store", lambda *_args, **_kwargs: result)
+    monkeypatch.setattr(cli_workspace, "ProfileStore", lambda: object())
     assert (
         cli.cmd_import(
             _ns(input=Path("profiles.ini"), format="auto", replace=False)
@@ -949,10 +949,10 @@ def test_import_team_client_serve_web_and_remaining_helpers(monkeypatch, tmp_pat
     profile_store = object()
     backend = object()
     sentinel = object()
-    monkeypatch.setattr(cli, "ProfileStore", lambda: profile_store)
-    monkeypatch.setattr(cli, "TeamSyncBackend", lambda root: backend if root == tmp_path else None)
+    monkeypatch.setattr(cli_workspace, "ProfileStore", lambda: profile_store)
+    monkeypatch.setattr(cli_workspace, "TeamSyncBackend", lambda root: backend if root == tmp_path else None)
     monkeypatch.setattr(
-        cli,
+        cli_workspace,
         "TeamSyncClient",
         lambda store, candidate: sentinel if store is profile_store and candidate is backend else None,
     )

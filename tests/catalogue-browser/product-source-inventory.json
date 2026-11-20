@@ -33,13 +33,18 @@
     },
     {
       "path": "src/remote_ops_workspace/cli.py",
-      "sha256": "01bc16b8e0bb8064782ec9c004aac7c294ce1f18dba4315caa4984e771550601",
-      "size": 93749
+      "sha256": "341e1bb812291ce1c0ed469cc49651d106a8ab31309a1aa357da6a468c9fddd6",
+      "size": 86937
     },
     {
       "path": "src/remote_ops_workspace/cli_customizer.py",
       "sha256": "86c87d4edee8eebaa4474b6c11663401c6afcdd5cab5a839bc94b1f28151df24",
       "size": 17557
+    },
+    {
+      "path": "src/remote_ops_workspace/cli_input.py",
+      "sha256": "6569030a75abcd0bc9fa1a195def846302b1cedaab0cfa16a55a0d3352f3174b",
+      "size": 412
     },
     {
       "path": "src/remote_ops_workspace/cli_managed_runtime.py",
@@ -55,6 +60,11 @@
       "path": "src/remote_ops_workspace/cli_transfers.py",
       "sha256": "f0c39d345f65ab59065ad3738d1d1f7b44e7db2247bfa66232d43228372133c7",
       "size": 16446
+    },
+    {
+      "path": "src/remote_ops_workspace/cli_workspace.py",
+      "sha256": "87152c2142792d09b649abaf276f981e32f8b97bdb01a02dc113105f85bb743b",
+      "size": 7882
     },
     {
       "path": "src/remote_ops_workspace/command_safety.py",

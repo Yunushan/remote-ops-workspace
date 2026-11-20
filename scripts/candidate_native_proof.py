@@ -344,15 +344,52 @@ def validate_gui_pyz_modules(archives, target):
     return report
 
 
+def verify_gui_archive(target: str, assets_root: Path) -> int:
+    gui = ROOT / GUI_PYZ_ARCHIVE_PATHS[target]
+    paths = [gui]
+    if target.startswith("windows-"):
+        paths.append(ROOT / GUI_PYZ_CLI_ARCHIVE_PATHS[target])
+    for path in paths:
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError(f"Expected a regular PyInstaller executable: {path.relative_to(ROOT)}")
+    archives = [archive_inventory(path) for path in paths]
+    report = validate_gui_pyz_modules(archives, target)
+    if report["status"] != "passed":
+        raise RuntimeError(f"Required GUI modules failed verification for {target}: {', '.join(report['errors'])}")
+
+    smoke = ROOT / "build/native-smoke" / target / "candidate-runtime-byte-binding.json"
+    raw = smoke.read_bytes()
+    binding = json.loads(raw)
+    if target.startswith("windows-"):
+        msi_assets = [
+            {"path": path.name, "sha256": digest(path)}
+            for path in assets_root.glob("*.msi")
+            if path.is_file() and not path.is_symlink()
+        ]
+        validate_windows_byte_binding(binding, archives, target, msi_assets)
+    else:
+        validate_posix_byte_binding(binding, archives, target, [])
+    report.update(target=target, smoke_binding_sha256=hashlib.sha256(raw).hexdigest())
+    save(smoke.with_name("gui-archive-proof.json"), report)
+    print(f"Verified {len(report['required_modules'])} frozen GUI modules against the {target} smoke observations.")
+    return 0
+
+
 def main():
-    parser = argparse.ArgumentParser(description=SCOPE)
-    parser.add_argument("phase", choices=["bind", "finish"])
+    parser = argparse.ArgumentParser(description="Inspect native build and installed executable evidence.")
+    parser.add_argument("phase", choices=["bind", "finish", "verify-gui"])
     parser.add_argument("--target", required=True)
-    parser.add_argument("--expected-sha", required=True)
+    parser.add_argument("--expected-sha")
     parser.add_argument("--asset-dir", required=True)
     parser.add_argument("--native-build-outcome", default="not-run")
     parser.add_argument("--native-smoke-outcome", default="not-run")
     args = parser.parse_args()
+    if args.phase == "verify-gui":
+        if args.target not in GUI_PYZ_ARCHIVE_PATHS:
+            parser.error("verify-gui requires a desktop GUI target")
+        return verify_gui_archive(args.target, ROOT / args.asset_dir)
+    if args.expected_sha is None:
+        parser.error(f"{args.phase} requires --expected-sha")
     output = ROOT / "build/candidate-proof" / args.target
     output.mkdir(parents=True, exist_ok=True)
     observed = fingerprint()

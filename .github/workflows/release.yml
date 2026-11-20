@@ -447,6 +447,9 @@ jobs:
         shell: powershell
         timeout-minutes: 20
         run: .\scripts\smoke_windows_native.ps1 -Arch "${{ matrix.arch }}" -Dist "native-dist\windows" -RequireReleaseSigning
+      - name: Verify Windows frozen GUI module inventory
+        if: ${{ matrix.arch != 'x86' }}
+        run: python scripts/candidate_native_proof.py verify-gui --target "windows-${{ matrix.arch }}" --asset-dir native-dist/windows
       - name: Retain Windows candidate runtime inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -459,7 +462,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-windows-gui-smoke-${{ matrix.arch }}
-          path: build/native-smoke/windows-${{ matrix.arch }}/gui-*
+          path: |
+            build/native-smoke/windows-${{ matrix.arch }}/gui-*
+            build/native-smoke/windows-${{ matrix.arch }}/candidate-runtime-byte-binding.json
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -557,6 +562,8 @@ jobs:
           EXPECTED_ARTIFACT_ARCH="${{ matrix.arch }}" PYTHON_BIN=python bash scripts/with_macos_release_signing.sh --build
       - name: Run macOS native installer smoke tests
         run: bash scripts/smoke_macos_native.sh --arch "${{ matrix.arch }}" --dist native-dist/macos --require-release-signing
+      - name: Verify macOS frozen GUI module inventory
+        run: python scripts/candidate_native_proof.py verify-gui --target "macos-${{ matrix.arch }}" --asset-dir native-dist/macos
       - name: Retain macOS candidate runtime inventory
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -569,7 +576,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-macos-gui-smoke-${{ matrix.arch }}
-          path: build/native-smoke/macos-${{ matrix.arch }}/gui-*
+          path: |
+            build/native-smoke/macos-${{ matrix.arch }}/gui-*
+            build/native-smoke/macos-${{ matrix.arch }}/candidate-runtime-byte-binding.json
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

@@ -337,6 +337,32 @@ def check_native_workflow_boundaries(workflow: str | None = None) -> list[str]:
     if "runner: macos-15-intel" not in workflow_text:
         errors.append("macOS x64 release builds must use the Intel macos-15-intel runner")
     errors.extend(check_signing_readiness_gate(workflow_text))
+    errors.extend(check_release_gui_archive_steps(workflow_text))
+    return errors
+
+
+def check_release_gui_archive_steps(workflow: str) -> list[str]:
+    errors = []
+    for platform, label in (("windows", "Windows"), ("macos", "macOS")):
+        job = workflow_job_block(workflow, f"{platform}-native")
+        verify = workflow_step_block(job, f"name: Verify {label} frozen GUI module inventory")
+        smoke = workflow_step_block(job, f"name: Run {label} native installer smoke tests")
+        upload = workflow_step_block(job, f"name: Retain installed {label} GUI workflow evidence")
+        condition = ["        if: ${{ matrix.arch != 'x86' }}"] if platform == "windows" else []
+        command = (
+            "        run: python scripts/candidate_native_proof.py verify-gui "
+            f'--target "{platform}-${{{{ matrix.arch }}}}" --asset-dir native-dist/{platform}'
+        )
+        if (
+            not all((smoke, verify, upload))
+            or not job.index(smoke) < job.index(verify) < job.index(upload)
+            or verify.splitlines()[1:] != [*condition, command]
+        ):
+            errors.append(f"{platform}-native must require the frozen GUI archive check after installer smoke")
+        path = f"build/native-smoke/{platform}-${{{{ matrix.arch }}}}/"
+        for member in ("gui-*", "candidate-runtime-byte-binding.json"):
+            if f"            {path}{member}" not in upload.splitlines():
+                errors.append(f"{platform}-native must retain {member} with the GUI evidence")
     return errors
 
 

@@ -139,6 +139,58 @@ def _semantic_receipt():
     return {"schema_version": 1, "target": "windows-x64", "status": "bound", "smoke_complete": True, "required_paths": paths, "expected_executables": expected, "observations": observed}, [{"path": item["path"], "artifact_sha256": item["sha256"], "toc": ["semantic fixture"]} for item in expected]
 
 
+
+def test_release_gui_archive_requires_binding_to_native_smoke(tmp_path, monkeypatch):
+    import sys
+
+    from scripts import inspect_windows_msi
+
+    binding, archive_rows = _semantic_receipt()
+    target = binding["target"]
+    gui_archive = archive_rows[1]
+    gui_archive["toc"] = [{"name": "PYZ.pyz"}]
+    gui_archive["pyz_toc"] = {
+        name: [0, position, 50]
+        for position, name in enumerate(VALIDATOR.GUI_PYZ_REQUIRED_MODULES, start=1)
+    }
+    archives = {}
+    for row in archive_rows:
+        executable = tmp_path / row["path"]
+        executable.parent.mkdir(parents=True, exist_ok=True)
+        executable.write_bytes(b"inert fixture")
+        archives[executable] = row
+    assets = tmp_path / "native-dist/windows"
+    assets.mkdir(parents=True)
+    msi = assets / "remote-ops-workspace-v1.0.28-windows-x64.msi"
+    msi.write_bytes(b"inert package")
+    smoke = tmp_path / "build/native-smoke" / target / "candidate-runtime-byte-binding.json"
+    report = smoke.with_name("gui-archive-proof.json")
+
+    def check_lifecycle(_probes, native_target, native_assets):
+        assert native_target == target
+        assert native_assets == [{"path": msi.name, "sha256": hashlib.sha256(msi.read_bytes()).hexdigest()}]
+
+    monkeypatch.setattr(inspect_windows_msi, "validate_lifecycle", check_lifecycle)
+    monkeypatch.setattr(VALIDATOR, "ROOT", tmp_path)
+    monkeypatch.setattr(VALIDATOR, "archive_inventory", archives.__getitem__)
+    monkeypatch.setattr(sys, "argv", ["proof.py", "verify-gui", "--target", target, "--asset-dir", "native-dist/windows"])
+
+    observation = next(row for row in binding["observations"] if row["role"] == "gui")
+    observation["observed_sha256"] = "c" * 64
+    VALIDATOR.save(smoke, binding)
+    with pytest.raises(ValueError, match="observed executable bytes do not match"):
+        VALIDATOR.main()
+    assert not report.exists()
+
+    observation["observed_sha256"] = gui_archive["artifact_sha256"]
+    VALIDATOR.save(smoke, binding)
+    assert VALIDATOR.main() == 0
+    result = json.loads(report.read_bytes())
+    assert result["status"] == "passed"
+    assert result["artifact_sha256"] == gui_archive["artifact_sha256"]
+    assert result["smoke_binding_sha256"] == hashlib.sha256(smoke.read_bytes()).hexdigest()
+
+
 @pytest.mark.parametrize("change", [None, "archive-bytes", "observed-bytes", "missing-path", "target", "incomplete", "boolean-schema", "wrong-role"])
 def test_candidate_validator_rejects_incorrect_byte_and_completeness_records_on_every_host(change):
     receipt, archives = _semantic_receipt()

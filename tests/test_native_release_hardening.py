@@ -129,6 +129,18 @@ def test_windows_production_smoke_requires_signed_installers() -> None:
     assert "windows-native must reverify the signed installers before running smoke tests" in errors
 
 
+
+@pytest.mark.parametrize(("platform", "label"), [("windows", "Windows"), ("macos", "macOS")])
+def test_signed_build_requires_gui_archive_check_before_evidence_upload(platform, label) -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert checker.check_release_gui_archive_steps(workflow) == []
+    job = checker.workflow_job_block(workflow, f"{platform}-native")
+    verify = checker.workflow_step_block(job, f"name: Verify {label} frozen GUI module inventory")
+    ignored = verify.replace("        run:", "        continue-on-error: true\n        run:")
+    errors = checker.check_release_gui_archive_steps(workflow.replace(verify, ignored, 1))
+    assert f"{platform}-native must require the frozen GUI archive check after installer smoke" in errors
+
 @pytest.mark.parametrize("change", ["remove", "skip", "ignore-failure", "missing-secret", "after-python"])
 @pytest.mark.parametrize(("target", "step_label", "command"), [
     ("windows", "Windows", r".\scripts\sign_windows_artifact.ps1 -Rehearse"),

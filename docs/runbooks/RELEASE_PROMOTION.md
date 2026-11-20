@@ -116,6 +116,12 @@ different path in a package, add that package name and its extracted path to
 match the required path, size, and digest. Complete the remaining component
 license review before signing.
 
+The signed Windows x64, Windows ARM64, and macOS build jobs retain
+`gui-archive-proof.json` alongside the installed GUI smoke reports and
+`candidate-runtime-byte-binding.json`. The archive check confirms that the
+executables observed during installation and reinstall contain the required
+frozen GUI modules. The proof records the executable and smoke receipt digests.
+
 ### Qualify the Windows x64 MSI before publication
 
 The signed MSI rollback drill can use attested inventories from completed

@@ -5,6 +5,7 @@ import io
 import json
 import shutil
 import struct
+import subprocess
 import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -13,6 +14,7 @@ from unittest.mock import Mock
 import pytest
 
 from scripts import moba_debian_server_payload as payload
+from scripts import prepare_debian_server_bundle as preparation
 from scripts import stage_debian_server_bundle as staging
 from scripts.debian_server_notices import NOTICE_DIR, notice_path, read_verified_debian_notices
 
@@ -108,6 +110,54 @@ def test_portable_bundle_stages_only_the_reviewed_bytes(
     }
     with pytest.raises(ValueError, match="output already exists"):
         staging.stage_bundle(bundle_archive, payload.sha256_file(bundle_archive), TARGET, output)
+
+
+@pytest.mark.parametrize(
+    ("damage", "reason"),
+    [
+        (None, None),
+        ("unreviewed-commit", "must be on the fetched"),
+        ("wrong-tag", "must contain the archive as a regular data file"),
+        ("digest", "does not match the approved archive"),
+    ],
+)
+def test_prepare_upload_from_the_exact_evidence_commit(
+    bundle_archive: Path, tmp_path: Path, damage: str | None, reason: str | None,
+) -> None:
+    repo = tmp_path / "evidence"
+    repo.mkdir()
+    output = tmp_path / "upload"
+    tag = "v2.3.4"
+    source = repo / "server-bundles" / tag / staging.ARCHIVE_NAME
+    source.parent.mkdir(parents=True)
+    shutil.copyfile(bundle_archive, source)
+
+    def git(*args: str) -> str:
+        return subprocess.check_output(
+            ["git", "-C", str(repo), "-c", "user.name=Readiness tests", "-c", "user.email=test@example.org", *args],
+            encoding="utf-8",
+        ).strip()
+
+    git("init", "--quiet")
+    git("commit", "--quiet", "--allow-empty", "-m", "Base")
+    base = git("rev-parse", "HEAD")
+    git("add", "--", source.relative_to(repo).as_posix())
+    git("commit", "--quiet", "-m", "Reviewed release archive")
+    commit = git("rev-parse", "HEAD")
+    git("update-ref", preparation.EVIDENCE_REF, base if damage == "unreviewed-commit" else commit)
+    digest = "0" * 64 if damage == "digest" else payload.sha256_file(bundle_archive)
+    if damage == "wrong-tag":
+        tag = "v2.3.5"
+    # A worktree file under the approved path cannot substitute for the Git blob.
+    source.write_bytes(b"uncommitted file")
+    if reason:
+        with pytest.raises(ValueError, match=reason):
+            preparation.prepare_bundle(repo, commit, tag, digest, output)
+        assert not output.exists()
+    else:
+        preparation.prepare_bundle(repo, commit, tag, digest, output)
+        assert list(output.iterdir()) == [output / staging.ARCHIVE_NAME]
+        assert (output / staging.ARCHIVE_NAME).read_bytes() == bundle_archive.read_bytes()
 
 
 @pytest.mark.parametrize(

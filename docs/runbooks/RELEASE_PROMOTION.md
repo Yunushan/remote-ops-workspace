@@ -194,15 +194,21 @@ schema 2 through 5 inventories.
 
 Prepare and review a gzip-compressed tar archive containing
 `servers-runtime.json`, the native files it lists under `linux/`, and the
-reviewed copyright attachments under `notices/`. After the review and upload
-are authorized, retain the exact bytes as the single file
-`server-bundle.tar.gz` in a GitHub Actions artifact in the release repository.
+reviewed copyright attachments under `notices/`. Record its SHA-256 during
+review. Once upload is authorized, place the exact archive at
+`server-bundles/<tag>/server-bundle.tar.gz` on the data-only
+`release-compliance-evidence` branch and record the full commit SHA.
+Dispatch **Prepare Debian amd64 server bundle** from protected `main` with the
+release tag, evidence commit SHA, and reviewed archive SHA-256. The job reads
+the archive from that commit, verifies the target, native files and notices,
+and retains the original archive as the only file in the Actions artifact.
 Keep the artifact available until the candidate build finishes.
 
 Before tagging, set `ROW_DEBIAN_AMD64_SERVER_BUNDLE` in the protected
-`release` environment to three space-separated fields. Use the release tag,
-the numeric Actions artifact ID, and the lowercase SHA-256 of the inner
-`server-bundle.tar.gz` file. The strict pre-tag check requires this selection
+`release` environment to the value printed in the workflow summary. It
+contains the release tag, the numeric Actions artifact ID, and the lowercase
+SHA-256 of the inner `server-bundle.tar.gz` file. The strict pre-tag check
+requires this selection
 for the embedded-server article. It downloads and stages the exact archive
 in temporary storage, verifies its native files and notices, and rereads the
 selection before reporting success. Keep the selection and archive available

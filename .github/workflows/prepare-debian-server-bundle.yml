@@ -1,0 +1,68 @@
+name: Prepare Debian amd64 server bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Target production release tag (vX.Y.Z)"
+        required: true
+        type: string
+      evidence_commit:
+        description: "Full commit on release-compliance-evidence containing the reviewed archive"
+        required: true
+        type: string
+      archive_sha256:
+        description: "Lowercase SHA-256 of the reviewed server-bundle.tar.gz"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  prepare-bundle:
+    if: github.repository == 'Yunushan/remote-ops-workspace' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      EVIDENCE_COMMIT: ${{ inputs.evidence_commit }}
+      ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14.7"
+      - name: Verify exact reviewed archive from the data branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch --no-tags origin "refs/heads/release-compliance-evidence:refs/remotes/origin/release-compliance-evidence"
+          python scripts/prepare_debian_server_bundle.py \
+            --commit "$EVIDENCE_COMMIT" --tag "$RELEASE_TAG" \
+            --sha256 "$ARCHIVE_SHA256" --out "$RUNNER_TEMP/debian-server-upload"
+      - name: Retain the original reviewed archive for the tag build
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: debian-amd64-server-bundle-${{ inputs.release_tag }}
+          path: ${{ runner.temp }}/debian-server-upload/server-bundle.tar.gz
+          if-no-files-found: error
+          retention-days: 90
+      - name: Report protected release variable value
+        shell: bash
+        env:
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          printf 'Reviewed archive for `ROW_DEBIAN_AMD64_SERVER_BUNDLE`\n\n`%s %s %s`\n' \
+            "$RELEASE_TAG" "$ARTIFACT_ID" "$ARCHIVE_SHA256" >> "$GITHUB_STEP_SUMMARY"

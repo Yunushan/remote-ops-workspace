@@ -346,9 +346,15 @@ make production-readiness \
   RELEASE_TAG_GOVERNANCE_SIGNATURE="<tag-governance-attestation.sig.json>"
 ```
 
-The target checks that the supplied directories exist and the evidence files
-are nonempty before starting the audit. Keep the evidence inputs outside the
-tagged checkout so its clean-tree check can pass. The default `release-assets/`
+Set the same `RELEASE_*` names as environment variables to run the audit
+directly with `python scripts/check_production_readiness.py` from the tagged
+checkout. In PowerShell, assign each value with `$env:RELEASE_TAG = 'vX.Y.Z'`
+and the corresponding variable name for the other inputs. The Make target
+calls the same Python audit.
+
+The audit checks all required inputs before running the gate. Evidence
+directories must exist, and evidence files must be nonempty. Keep the inputs
+outside the tagged checkout so its clean-tree check can pass. The default `release-assets/`
 download directory is ignored by Git.
 Use the protected-platform registry from the signed compliance bundle for
 `RELEASE_PLATFORM_EVIDENCE_REGISTRY`. The local checks and live GitHub audit

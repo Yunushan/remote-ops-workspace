@@ -296,6 +296,14 @@ jobs:
         env:
           EXPECTED_RELEASE_SHA: ${{ needs.release-preflight.outputs.release_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+      - name: Rehearse Windows signing on the release runner
+        shell: pwsh
+        timeout-minutes: 5
+        env:
+          ROW_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.ROW_WINDOWS_CERTIFICATE_BASE64 }}
+          ROW_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD }}
+          ROW_WINDOWS_TIMESTAMP_URL: ${{ secrets.ROW_WINDOWS_TIMESTAMP_URL }}
+        run: .\scripts\sign_windows_artifact.ps1 -Rehearse
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14.7"

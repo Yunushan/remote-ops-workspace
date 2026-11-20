@@ -18,6 +18,7 @@ function Invoke-SignTool([string]$Executable, [string[]]$Arguments) {
   $StartInfo.RedirectStandardOutput = $true
   $StartInfo.RedirectStandardError = $true
   $StartInfo.WorkingDirectory = $ExecutionContext.SessionState.Path.CurrentFileSystemLocation.ProviderPath
+  $StartInfo.EnvironmentVariables.Remove("ROW_WINDOWS_CERTIFICATE_BASE64")
   # Windows PowerShell 5.1 does not preserve native arguments with embedded quotes.
   # Double backslashes before each quote or the closing delimiter for Windows argv.
   $EncodedArguments = foreach ($Argument in $Arguments) {
@@ -52,6 +53,7 @@ if (![uri]::TryCreate($env:ROW_WINDOWS_TIMESTAMP_URL, [UriKind]::Absolute, [ref]
 
 $Thumbprint = $env:ROW_WINDOWS_CERTIFICATE_THUMBPRINT
 $StoreLocation = $env:ROW_WINDOWS_CERTIFICATE_STORE_LOCATION
+$UseEncodedPfx = $Rehearse -and ![string]::IsNullOrWhiteSpace($env:ROW_WINDOWS_CERTIFICATE_BASE64)
 if (![string]::IsNullOrWhiteSpace($Thumbprint)) {
   if ($Thumbprint -cnotmatch '\A[0-9a-fA-F]{40}\z') {
     throw "ROW_WINDOWS_CERTIFICATE_THUMBPRINT must be a 40-digit hexadecimal certificate thumbprint."
@@ -70,15 +72,18 @@ if (![string]::IsNullOrWhiteSpace($Thumbprint)) {
   if ($StoreLocation) {
     throw "ROW_WINDOWS_CERTIFICATE_STORE_LOCATION requires ROW_WINDOWS_CERTIFICATE_THUMBPRINT."
   }
-  if ([string]::IsNullOrWhiteSpace($CertificatePath) -or
+  if ($UseEncodedPfx -and $CertificatePath) {
+    throw "Choose one PFX source: certificate path or ROW_WINDOWS_CERTIFICATE_BASE64."
+  }
+  if (([string]::IsNullOrWhiteSpace($CertificatePath) -and !$UseEncodedPfx) -or
       [string]::IsNullOrWhiteSpace($env:ROW_WINDOWS_CERTIFICATE_PASSWORD)) {
     throw "PFX signing requires a certificate path and ROW_WINDOWS_CERTIFICATE_PASSWORD."
   }
-  $CertificateArgs = @("/f", $CertificatePath, "/p", $env:ROW_WINDOWS_CERTIFICATE_PASSWORD)
 }
 
 $SignTool = Find-WindowsSignTool
 $RehearsalDirectory = $null
+$RehearsalPfx = $null
 try {
   if ($Rehearse) {
     $RehearsalId = [guid]::NewGuid().ToString("N")
@@ -87,6 +92,14 @@ try {
     )).FullName
     $ArtifactPath = Join-Path $RehearsalDirectory "rehearsal.dll"
     Add-Type -TypeDefinition "public static class RowSigningRehearsal$RehearsalId {}" -OutputAssembly $ArtifactPath
+    if ($UseEncodedPfx) {
+      $RehearsalPfx = Join-Path $RehearsalDirectory "rehearsal.pfx"
+      [IO.File]::WriteAllBytes($RehearsalPfx, [Convert]::FromBase64String($env:ROW_WINDOWS_CERTIFICATE_BASE64))
+      $CertificatePath = $RehearsalPfx
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace($Thumbprint)) {
+    $CertificateArgs = @("/f", $CertificatePath, "/p", $env:ROW_WINDOWS_CERTIFICATE_PASSWORD)
   }
   $SignArgs = @("sign", "/fd", "SHA256", "/tr", $Timestamp.AbsoluteUri, "/td", "SHA256") + $CertificateArgs + @($ArtifactPath)
   if ((Invoke-SignTool $SignTool $SignArgs) -ne 0) {
@@ -97,8 +110,10 @@ try {
   }
 } finally {
   if ($RehearsalDirectory) {
-    if (Test-Path -LiteralPath $ArtifactPath) {
-      Remove-Item -LiteralPath $ArtifactPath -Force
+    foreach ($File in @($RehearsalPfx, $ArtifactPath)) {
+      if ($File -and (Test-Path -LiteralPath $File)) {
+        Remove-Item -LiteralPath $File -Force
+      }
     }
     [IO.Directory]::Delete($RehearsalDirectory)
   }

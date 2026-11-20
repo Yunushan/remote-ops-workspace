@@ -392,6 +392,20 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
         if "needs.release-preflight.outputs.candidate_build_ready == 'true'" not in block:
             errors.append(f"{job} must require signed production candidate readiness")
     windows = workflow_job_block(workflow, "windows-native")
+    windows_rehearsal = workflow_step_block(windows, "name: Rehearse Windows signing on the release runner")
+    windows_build = workflow_step_block(windows, "name: Build Windows EXE and MSI installers")
+    rehearsal_secrets = ("ROW_WINDOWS_CERTIFICATE_BASE64", "ROW_WINDOWS_CERTIFICATE_PASSWORD", "ROW_WINDOWS_TIMESTAMP_URL")
+    rehearsal_lines = windows_rehearsal.splitlines()
+    rehearsal_start = windows.find(windows_rehearsal) if windows_rehearsal else -1
+    if not (
+        0 <= windows.find("      - name: Verify frozen release source commit\n") < rehearsal_start
+        < windows.find("      - uses: actions/setup-python@")
+        and r"        run: .\scripts\sign_windows_artifact.ps1 -Rehearse" in rehearsal_lines
+        and "        shell: pwsh" in rehearsal_lines
+        and not re.search(r"(?m)^        (?:if|continue-on-error):", windows_rehearsal)
+        and all(f"          {name}: ${{{{ secrets.{name} }}}}" in rehearsal_lines for name in rehearsal_secrets)
+    ):
+        errors.append("windows-native must require the native signing rehearsal before build setup")
     if 'throw "Production candidate Windows builds require protected release signing"' not in windows:
         errors.append("windows-native must fail closed when release signing is unavailable")
     windows_smoke = workflow_step_block(windows, "name: Run Windows native installer smoke tests")
@@ -403,17 +417,14 @@ def check_signing_readiness_gate(workflow: str) -> list[str]:
     macos_smoke = workflow_step_block(macos, "name: Run macOS native installer smoke tests")
     if not re.search(r"(?m)^\s+run: bash scripts/smoke_macos_native\.sh .* --require-release-signing\s*$", macos_smoke):
         errors.append("macos-native must reverify final signatures and stapled tickets before smoke tests")
-    for job, block, build_step in (
-        ("windows-native", windows, "Build Windows EXE and MSI installers"),
-        ("macos-native", macos, "Build macOS DMG and PKG installers"),
-    ):
-        build = workflow_step_block(block, f"name: {build_step}")
-        if "GITHUB_ENV" in build or "secrets.ROW_" in block.replace(build, "", 1):
-            errors.append(f"{job} signing credentials must be scoped to its build step")
-    windows_build = workflow_step_block(windows, "name: Build Windows EXE and MSI installers")
+    windows_other_steps = windows.replace(windows_rehearsal, "", 1).replace(windows_build, "", 1)
+    if "GITHUB_ENV" in windows_rehearsal + windows_build or "secrets.ROW_" in windows_other_steps:
+        errors.append("windows-native signing credentials must be scoped to its rehearsal and build steps")
     if "} finally {" not in windows_build or "Remove-Item -LiteralPath $CertificatePath" not in windows_build:
         errors.append("windows-native must remove its signing certificate when the build exits")
     macos_build = workflow_step_block(macos, "name: Build macOS DMG and PKG installers")
+    if "GITHUB_ENV" in macos_build or "secrets.ROW_" in macos.replace(macos_build, "", 1):
+        errors.append("macos-native signing credentials must be scoped to its build step")
     if (
         "trap cleanup_signing_material EXIT" not in macos_build
         or 'security delete-keychain "$keychain"' not in macos_build

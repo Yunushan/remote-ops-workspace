@@ -28,6 +28,10 @@ def run_signer(tmp_path: Path):
             "from pathlib import Path\n"
             "if os.environ.get('ROW_TEST_SIGNTOOL_REHEARSE') == '1':\n"
             "    assert Path(sys.argv[-1]).read_bytes().startswith(b'MZ')\n"
+            "    assert 'ROW_WINDOWS_CERTIFICATE_BASE64' not in os.environ\n"
+            "    if '/f' in sys.argv:\n"
+            "        pfx = Path(sys.argv[sys.argv.index('/f') + 1])\n"
+            "        assert pfx.parent == Path(sys.argv[-1]).parent and pfx.read_bytes() == b'SYNTHETIC'\n"
             "with open(os.environ['ROW_TEST_SIGNTOOL_CALLS'], 'a', encoding='utf-8') as log:\n"
             f"    log.write(json.dumps([{operation!r}, *sys.argv[1:]]) + '\\n')\n"
             "if '/p' in sys.argv:\n"
@@ -173,6 +177,36 @@ def test_signing_rehearsal_checks_a_disposable_assembly(
         assert "rehearsal passed" not in result.stdout
     else:
         assert "signing, timestamp and trust rehearsal passed" in result.stdout
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows signing rehearsal")
+@pytest.mark.parametrize("sign_exit", [0, 1])
+def test_signing_rehearsal_cleans_up_the_encoded_pfx(run_signer, sign_exit) -> None:
+    result, commands, _ = run_signer({
+        "CERTIFICATE_BASE64": "U1lOVEhFVElD",
+        "CERTIFICATE_PASSWORD": "fixture password",
+        "TIMESTAMP_URL": TIMESTAMP,
+    }, rehearse=True, sign_exit=sign_exit)
+
+    assert result.returncode == sign_exit, result.stderr
+    assert [command[0] for command in commands] == (["sign"] if sign_exit else ["sign", "verify"])
+    temporary_pfx = Path(commands[0][commands[0].index("/f") + 1])
+    assert temporary_pfx.name == "rehearsal.pfx"
+    assert not temporary_pfx.parent.exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows signing rehearsal")
+def test_signing_rehearsal_rejects_two_pfx_sources(run_signer) -> None:
+    result, commands, _ = run_signer({
+        "CERTIFICATE_PATH": "fixture.pfx",
+        "CERTIFICATE_BASE64": "U1lOVEhFVElD",
+        "CERTIFICATE_PASSWORD": "fixture password",
+        "TIMESTAMP_URL": TIMESTAMP,
+    }, rehearse=True)
+
+    assert result.returncode == 1
+    assert "Choose one PFX source" in result.stderr
+    assert commands == []
 
 
 @pytest.mark.parametrize(("overrides", "error"), [

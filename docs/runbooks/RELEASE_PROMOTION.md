@@ -310,6 +310,11 @@ commands. The timestamp service receives the signature digest. The script
 removes the temporary DLL after success or failure. The release build still
 signs and verifies the final installer bytes on its native runners.
 
+The Windows release jobs repeat this rehearsal after verifying their checkout
+and before installing build dependencies. The hosted rehearsal reads the PFX
+from the protected step environment and removes its temporary copy. A trust or
+timestamp failure stops that job before packaging starts.
+
 You can check the protected `release` environment while other approvals are
 pending. This command verifies the presence of the Windows and macOS signing
 secret names.

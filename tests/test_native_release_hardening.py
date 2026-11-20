@@ -129,6 +129,30 @@ def test_windows_production_smoke_requires_signed_installers() -> None:
     assert "windows-native must reverify the signed installers before running smoke tests" in errors
 
 
+@pytest.mark.parametrize("change", ["remove", "skip", "ignore-failure", "missing-secret", "after-python"])
+def test_windows_signing_rehearsal_is_mandatory_before_build_setup(change: str) -> None:
+    checker = _load_checker()
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    job = checker.workflow_job_block(workflow, "windows-native")
+    rehearsal = checker.workflow_step_block(job, "name: Rehearse Windows signing on the release runner")
+    run_line = "        run: .\\scripts\\sign_windows_artifact.ps1 -Rehearse\n"
+    if change == "remove":
+        replacement = job.replace(rehearsal, "", 1)
+    elif change == "after-python":
+        setup_python = checker.workflow_step_block(job, "uses: actions/setup-python@")
+        replacement = job.replace(rehearsal + setup_python, setup_python + rehearsal, 1)
+    else:
+        changed_step = {
+            "skip": rehearsal.replace(run_line, "        if: false\n" + run_line),
+            "ignore-failure": rehearsal.replace(run_line, "        continue-on-error: true\n" + run_line),
+            "missing-secret": rehearsal.replace("secrets.ROW_WINDOWS_CERTIFICATE_PASSWORD", "secrets.FIXTURE"),
+        }[change]
+        replacement = job.replace(rehearsal, changed_step, 1)
+    assert replacement != job
+    errors = checker.check_signing_readiness_gate(workflow.replace(job, replacement, 1))
+    assert "windows-native must require the native signing rehearsal before build setup" in errors
+
+
 def test_macos_production_smoke_requires_signed_and_notarized_installers() -> None:
     checker = _load_checker()
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -147,7 +171,8 @@ def test_release_smoke_must_not_receive_windows_signing_password() -> None:
         1,
     )
 
-    assert "windows-native signing credentials must be scoped to its build step" in checker.check_signing_readiness_gate(workflow)
+    assert ("windows-native signing credentials must be scoped to its rehearsal and build steps"
+            in checker.check_signing_readiness_gate(workflow))
 
 
 def test_release_rejects_macos_notarization_outside_temporary_keychain() -> None:

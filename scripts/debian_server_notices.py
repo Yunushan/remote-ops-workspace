@@ -85,8 +85,10 @@ def verify_notice_members(archive: tarfile.TarFile, records: dict[str, dict[str,
         raise ValueError(f"Debian package is missing reviewed server notices: {', '.join(map(str, sorted(missing)))}")
 
 
-def read_verified_debian_notices(package: Path, *, target: str) -> dict[str, dict[str, Any]]:
-    """Locate and verify notices in a candidate or published Debian asset."""
+def read_verified_debian_notices(
+    package: Path, *, target: str, verify_runtime: bool = False,
+) -> dict[str, dict[str, Any]]:
+    """Verify notices and optionally the recorded server runtime in a Debian asset."""
     try:
         with TemporaryFile() as payload:
             subprocess.run(
@@ -111,12 +113,23 @@ def read_verified_debian_notices(package: Path, *, target: str) -> dict[str, dic
                 if stream is None:
                     raise ValueError("cannot read the Debian embedded server manifest")
                 with stream:
-                    document = json.load(stream)
-                if (
-                    not isinstance(document, dict) or document.get("schema") != SCHEMA
-                    or document.get("system") != "linux" or document.get("release_target") != target
-                ):
-                    raise ValueError("invalid Debian embedded server manifest")
+                    raw = stream.read()
+                if verify_runtime:
+                    # The payload verifier also uses the notice reader's archive checks.
+                    from scripts.moba_debian_server_payload import (
+                        compare_payload_tar,
+                        server_manifest,
+                    )
+
+                    document, expected = server_manifest(raw, target)
+                    compare_payload_tar(archive, expected)
+                else:
+                    document = json.loads(raw)
+                    if (
+                        not isinstance(document, dict) or document.get("schema") != SCHEMA
+                        or document.get("system") != "linux" or document.get("release_target") != target
+                    ):
+                        raise ValueError("invalid Debian embedded server manifest")
                 records = notice_records(document.get("debian_notices"))
                 verify_notice_members(archive, records)
                 return records

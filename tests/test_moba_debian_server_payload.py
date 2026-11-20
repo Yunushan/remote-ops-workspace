@@ -15,6 +15,7 @@ import pytest
 
 from scripts import moba_debian_server_payload as payload
 from scripts import prepare_debian_server_bundle as preparation
+from scripts import release_candidate_inventory as inventory
 from scripts import stage_debian_server_bundle as staging
 from scripts.debian_server_notices import NOTICE_DIR, notice_path, read_verified_debian_notices
 
@@ -310,9 +311,13 @@ def test_debian_stages_and_audits_both_private_openssh_helpers(
         with pytest.raises(ValueError, match="differs from reviewed evidence"):
             payload.compare_payload_tar(archive, expected)
     (package / changed).unlink()
-    with tarfile.open(fileobj=io.BytesIO(make_tar(package))) as archive:
+    contents = make_tar(package)
+    with tarfile.open(fileobj=io.BytesIO(contents)) as archive:
         with pytest.raises(ValueError, match="missing the reviewed server payload members"):
             payload.compare_payload_tar(archive, expected)
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    with pytest.raises(ValueError, match="missing the reviewed server payload members.*sshd-auth"):
+        read_verified_debian_notices(tmp_path / "candidate.deb", target=TARGET, verify_runtime=True)
 
 
 @pytest.mark.parametrize(
@@ -415,6 +420,34 @@ def test_redistribution_reads_exact_installed_notice_bytes(
     contents = make_tar(staged_debian)
     with pytest.raises(ValueError, match="missing reviewed server notices"):
         read_verified_debian_notices(archive, target=TARGET)
+
+
+@pytest.mark.parametrize(("change", "error"), [
+    ("none", ""),
+    ("changed-daemon", "daemon or manifest differs from reviewed evidence"),
+    ("missing-daemon", "missing the reviewed server payload members"),
+    ("different-launcher", "HTTP and FTP runtime bytes must match the Debian ROW launcher"),
+])
+def test_candidate_receipt_metadata_checks_the_packaged_runtime(
+    staged_debian: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str, error: str,
+) -> None:
+    package = tmp_path / "remote-ops-workspace-v1.0.28-linux-amd64.deb"
+    daemon = payload.PAYLOAD / "linux/tftp/bin/tftpd"
+    if change == "missing-daemon":
+        (staged_debian / daemon).unlink()
+    substitute = {
+        "changed-daemon": daemon.as_posix(),
+        "different-launcher": payload.LAUNCHER.as_posix(),
+    }.get(change)
+    contents = make_tar(staged_debian, substitute=substitute)
+    depends = "libc6 (>= 2.38), libpam0g"
+    monkeypatch.setattr(payload.subprocess, "run", lambda *_, stdout, **__: stdout.write(contents))
+    monkeypatch.setattr(payload.subprocess, "check_output", lambda *_args, **_kwargs: depends)
+    if error:
+        with pytest.raises(ValueError, match=error):
+            inventory.read_candidate_deb_metadata(package)
+    else:
+        assert inventory.read_candidate_deb_metadata(package) == (depends, True)
 
 
 def test_legacy_archive_without_an_embedded_server_bundle_requires_no_daemon_notices(

@@ -19,6 +19,7 @@ for location in (ROOT, ROOT / "src"):
 
 from remote_ops_workspace.moba_servers import (  # noqa: E402
     SERVER_OPENSSH_HELPER_DIR,
+    SERVER_OPENSSH_HELPERS,
     SERVER_RUNTIME_MAX_BYTES,
     verify_packaged_openssh_helpers,
 )
@@ -32,6 +33,7 @@ from scripts.debian_server_notices import (  # noqa: E402
     NOTICE_MAX_BYTES,
     PAYLOAD,
     SCHEMA,
+    SHA256_RE,
     notice_path,
     notice_records,
     verify_notice_members,
@@ -49,19 +51,9 @@ def private_helper_reference(path: Path, name: str) -> bool:
     return reference in path.read_bytes()
 
 
-def server_payload(
-    root: Path, target: str, required: frozenset[str] = SERVICES,
+def server_manifest(
+    raw: bytes, target: str, required: frozenset[str] = SERVICES,
 ) -> tuple[dict, dict[str, str]]:
-    elf = ELF_TARGETS.get(target)
-    if elf is None:
-        raise ValueError("unsupported Debian embedded server target")
-    path, error = secure_regular_file(root, MANIFEST, "embedded server manifest")
-    if path is None:
-        raise ValueError(error)
-    with path.open("rb") as stream:
-        raw = stream.read(1024 * 1024 + 1)
-    if len(raw) > 1024 * 1024:
-        raise ValueError("embedded server manifest exceeds 1 MiB")
     document = json.loads(raw)
     if (
         not isinstance(document, dict) or document.get("schema") != SCHEMA
@@ -71,7 +63,6 @@ def server_payload(
         raise ValueError("embedded server manifest must describe the required services for the exact Linux target")
     digests = {MANIFEST: hashlib.sha256(raw).hexdigest()}
     seen = set()
-    private_openssh = {}
     for row in services:
         service = row.get("service") if isinstance(row, dict) else None
         if not isinstance(service, str) or service not in required or service in seen:
@@ -90,18 +81,50 @@ def server_payload(
             raise ValueError(f"{service} executable must use the installed runtime layout")
         if service in BUILTINS and (runtime["key"], parts[3]) != BUILTINS[service]:
             raise ValueError(f"{service} must use the packaged ROW launcher runtime")
+        digest = runtime.get("sha256")
+        if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+            raise ValueError(f"{service} daemon has an invalid manifest SHA-256")
+        digests[relative] = digest
+    if "openssh_helpers" in document:
+        helpers = document["openssh_helpers"]
+        if not isinstance(helpers, dict) or helpers.keys() != set(SERVER_OPENSSH_HELPERS):
+            raise ValueError("OpenSSH helper manifest must record sshd-session and sshd-auth")
+        for name, digest in helpers.items():
+            if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+                raise ValueError(f"OpenSSH helper has an invalid SHA-256: {name}")
+            digests[f"{SERVER_OPENSSH_HELPER_DIR}/{name}"] = digest
+    return document, digests
+
+
+def server_payload(
+    root: Path, target: str, required: frozenset[str] = SERVICES,
+) -> tuple[dict, dict[str, str]]:
+    elf = ELF_TARGETS.get(target)
+    if elf is None:
+        raise ValueError("unsupported Debian embedded server target")
+    path, error = secure_regular_file(root, MANIFEST, "embedded server manifest")
+    if path is None:
+        raise ValueError(error)
+    with path.open("rb") as stream:
+        raw = stream.read(NOTICE_MAX_BYTES + 1)
+    if len(raw) > NOTICE_MAX_BYTES:
+        raise ValueError("embedded server manifest exceeds 1 MiB")
+    document, digests = server_manifest(raw, target, required)
+    private_openssh = {}
+    for row in document["services"]:
+        service, runtime = row["service"], row["runtime"]
+        relative = runtime["executable"]
         executable, error = secure_regular_file(root, relative, f"{service} daemon")
         if executable is None:
             raise ValueError(error)
         if not 0 < executable.stat().st_size <= SERVER_RUNTIME_MAX_BYTES:
             raise ValueError(f"{service} daemon has an invalid size")
         digest = sha256_file(executable)
-        if digest != runtime.get("sha256"):
+        if digest != digests[relative]:
             raise ValueError(f"{service} daemon differs from its manifest digest")
         validate_elf(executable, elf)
-        digests[relative] = digest
         if service in OPENSSH_DAEMON_KEYS and private_helper_reference(executable, "sshd-session"):
-            if runtime["key"] != OPENSSH_DAEMON_KEYS[service] or parts[3] != "sshd":
+            if runtime["key"] != OPENSSH_DAEMON_KEYS[service] or executable.name != "sshd":
                 raise ValueError(f"{service} must record the correct packaged OpenSSH daemon")
             private_openssh[service] = digest
     if "openssh_helpers" in document:
@@ -113,7 +136,6 @@ def server_payload(
         session = root / SERVER_OPENSSH_HELPER_DIR / "sshd-session"
         if not private_helper_reference(session, "sshd-auth"):
             raise ValueError("sshd-session must reference the package-owned sshd-auth")
-        digests.update(helpers)
     elif private_openssh:
         raise ValueError("the package-owned OpenSSH helper files must be recorded in the manifest")
     return document, digests

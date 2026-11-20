@@ -896,7 +896,7 @@ def read_candidate_deb_metadata(package: Path) -> tuple[str, bool]:
         ).strip()
     except (OSError, subprocess.SubprocessError) as error:
         raise ValueError("could not read the candidate Debian Depends field") from error
-    return depends, bool(read_verified_debian_notices(package, target="linux-x86_64"))
+    return depends, bool(read_verified_debian_notices(package, target="linux-x86_64", verify_runtime=True))
 
 
 def verify_candidate_deb_metadata(package: Path, receipt: dict[str, Any]) -> None:

@@ -77,8 +77,9 @@ and AppImage. Sealing compares those digests with the candidate assets,
 and the final audit compares the approved candidate assets with the
 published bytes. Inventory schema 10 requires a bundled Debian amd64
 installer. Sealing, review, promotion, and the published audit open the
-installer to verify its `Depends` field and read the embedded server
-manifest and distro notices. The review command checks the Linux
+installer to verify its `Depends` field and distro notices. They compare
+the packaged daemons, OpenSSH helpers, and HTTP and FTP launchers with
+the hashes in the server manifest. The review command checks the Linux
 qualification files and controller digests against the sealed inventory
 and tagged checkout.
 `review-materials.json` lists the retained qualification archive paths, hashes,

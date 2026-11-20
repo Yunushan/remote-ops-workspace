@@ -617,6 +617,7 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                 '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
                 '--candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
                 '--protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"',
+                '--candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification"',
             ),
             ("--help",),
             frozenset({
@@ -625,6 +626,7 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                 "--governance-attestation", "--governance-signature",
                 "--redistribution-evidence", "--redistribution-signature", "--candidate-inventory",
                 "--protected-platform-registry",
+                "--candidate-qualification-archives",
             }),
         ),
         "Verify attestation and download exact candidate artifact IDs": (
@@ -637,6 +639,7 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                 '--inventory-artifact-id "$INPUT_INVENTORY_ARTIFACT_ID"',
                 '--inventory-archive-digest "$INPUT_INVENTORY_ARCHIVE_DIGEST"',
                 '--approved-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                '--qualification-archives "$RUNNER_TEMP/candidate-qualification"',
                 "--assets-root release-assets",
             ),
             ("--help", "--dry-run"),
@@ -650,6 +653,7 @@ def check_promotion_transaction_contract(workflow: str) -> list[str]:
                     "--inventory-artifact-id",
                     "--inventory-archive-digest",
                     "--approved-inventory",
+                    "--qualification-archives",
                     "--assets-root",
                 }
             ),

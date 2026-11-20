@@ -158,7 +158,15 @@ jobs:
           --inventory-artifact-id "$INPUT_INVENTORY_ARTIFACT_ID"
           --inventory-archive-digest "$INPUT_INVENTORY_ARCHIVE_DIGEST"
           --approved-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"
+          --qualification-archives "$RUNNER_TEMP/candidate-qualification"
           --assets-root release-assets
+      - name: Retain original candidate qualification ZIPs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: production-candidate-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate-qualification/*.zip
+          if-no-files-found: error
+          retention-days: 90
       - name: Import exact protected-platform artifacts from signed registry
         shell: bash
         env:
@@ -530,6 +538,7 @@ jobs:
           --redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"
           --candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"
           --protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"
+          --candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification"
       - name: Verify published release notes
         env:
           GH_TOKEN: ${{ github.token }}

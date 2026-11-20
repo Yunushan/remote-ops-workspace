@@ -473,6 +473,8 @@ def test_completed_certification_is_separate_from_in_progress_transaction() -> N
     ]
     changed = workflow.replace("production-redistribution-approval-", "other-")
     assert any("attempt-specific redistribution approval" in error for error in checker.check_certification_truth(changed))
+    changed = workflow.replace("production-candidate-qualification-", "other-")
+    assert any("attempt-specific candidate qualification ZIPs" in error for error in checker.check_certification_truth(changed))
     changed = workflow.replace(
         '--candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json"',
         '--candidate-inventory "$RUNNER_TEMP/unverified.json"',
@@ -513,6 +515,11 @@ def test_promotion_attests_and_retains_the_exact_audited_inputs(filename, label)
             "must run the exact immutable publication audit unconditionally",
         ),
         (
+            '--candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification"',
+            '--candidate-qualification-archives "$RUNNER_TEMP/unreviewed"',
+            "must run the exact immutable publication audit unconditionally",
+        ),
+        (
             "      - name: Verify completed promotion, immutable numeric release and every attested byte\n",
             "      - name: Verify completed promotion, immutable numeric release and every attested byte\n"
             "        continue-on-error: true\n",
@@ -548,6 +555,17 @@ def test_release_verifier_rejects_unisolated_python_environment(name: str) -> No
     message = f"{name} must install the hash-locked compliance verifier in an isolated Python environment"
     assert message not in check(workflow)
     assert message in check(remove_named_step(workflow, "Create isolated compliance verifier environment"))
+
+
+def test_promotion_requires_retaining_the_qualification_zips() -> None:
+    checker = load_script("check_release_truth")
+    workflow = promotion_workflow()
+    message = "promotion must retain the verified qualification ZIPs before creating a draft"
+    assert message not in checker.check_promotion_truth(workflow)
+    changed = remove_named_step(workflow, "Retain original candidate qualification ZIPs")
+    assert message in checker.check_promotion_truth(changed)
+    changed = workflow.replace("production-candidate-qualification-", "other-")
+    assert message in checker.check_promotion_truth(changed)
 
 
 def test_certification_verifies_source_before_installing_dependencies() -> None:

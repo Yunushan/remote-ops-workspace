@@ -168,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
                 inventory_archive_digest=inventory_archive_digest,
                 approved_inventory=args.approved_inventory,
                 assets_root=args.assets_root,
+                qualification_archives=args.qualification_archives,
             )
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
         print(f"release candidate inventory: {exc}", file=os.sys.stderr)
@@ -193,6 +194,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--inventory-artifact-id", required=True)
             child.add_argument("--inventory-archive-digest", required=True)
             child.add_argument("--approved-inventory", required=True, type=Path)
+            child.add_argument("--qualification-archives", type=Path, help="retain the verified original qualification ZIPs")
     return parser.parse_args(argv)
 
 
@@ -648,6 +650,23 @@ def verify_sealed_rpm_smoke(
     validate_rpm_smoke_files(files, rpm["receipt"], inventory["rpm_smoke"])
 
 
+def verify_sealed_debian_update(
+    client: GitHubClient, record: dict[str, Any], run_id: int, release_sha: str, *,
+    archive_output: Path | None = None,
+) -> None:
+    artifact_id = record["artifact_id"]
+    metadata = client.json(f"actions/artifacts/{artifact_id}")
+    check_artifact_metadata(
+        metadata, artifact_id=artifact_id, name=MANAGED_DEBIAN_ARTIFACT, digest=record["archive_digest"],
+        run_id=run_id, release_sha=release_sha,
+    )
+    raw, _ = sealed_json_artifact(
+        client, metadata, MANAGED_DEBIAN_ARTIFACT, run_id, release_sha, REPORT_NAME, archive_output=archive_output,
+    )
+    if raw != qualification_receipt_bytes(record["receipt"]):
+        raise ValueError("managed Debian archive receipt does not match the sealed inventory")
+
+
 def validate_smoke_records(value: Any, ids: set[int], names: tuple[str, ...], label: str) -> None:
     if not isinstance(value, dict) or value.keys() != set(names):
         raise ValueError(f"approved candidate inventory must contain all {label} smoke archives")
@@ -919,6 +938,7 @@ def promote(
     inventory_archive_digest: str,
     approved_inventory: Path,
     assets_root: Path,
+    qualification_archives: Path | None = None,
 ) -> None:
     run = client.json(f"actions/runs/{run_id}")
     check_build_run(
@@ -981,10 +1001,35 @@ def promote(
         run_id=run_id,
         run_attempt=run_attempt,
     )
+    if qualification_archives is not None:
+        resolved = qualification_archives.resolve()
+        assets = assets_root.resolve()
+        if os.path.lexists(qualification_archives) or resolved.is_relative_to(assets) or assets.is_relative_to(resolved):
+            raise ValueError("qualification archive output must be an unused path separate from the release assets")
+    directory = None if qualification_archives is None else qualification_archives.parent
+    with tempfile.TemporaryDirectory(prefix="row-promotion-qualifications-", dir=directory) as temporary:
+        retained = Path(temporary) / "archives"
+        retained.mkdir()
+        download_qualification_archives(client, inventory, run_id, release_sha, retained)
+        materialize_sealed_records(client, records, assets_root, run_id=run_id, release_sha=release_sha)
+        if qualification_archives is not None:
+            retained.rename(qualification_archives)
+
+
+def download_qualification_archives(
+    client: GitHubClient, inventory: dict[str, Any], run_id: int, release_sha: str, archive_root: Path,
+) -> None:
+    if "managed_debian_update" in inventory:
+        verify_sealed_debian_update(
+            client, inventory["managed_debian_update"], run_id, release_sha,
+            archive_output=archive_root / f"{MANAGED_DEBIAN_ARTIFACT}.zip",
+        )
     if "rpm_smoke" in inventory:
-        verify_sealed_rpm_smoke(client, inventory, run_id, release_sha)
-    verify_sealed_smoke(client, {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}, run_id, release_sha)
-    materialize_sealed_records(client, records, assets_root, run_id=run_id, release_sha=release_sha)
+        verify_sealed_rpm_smoke(
+            client, inventory, run_id, release_sha, archive_output=archive_root / f"{RPM_ARTIFACT}.zip",
+        )
+    smoke = {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}
+    verify_sealed_smoke(client, smoke, run_id, release_sha, archive_root=archive_root)
 
 
 def materialize_sealed_records(

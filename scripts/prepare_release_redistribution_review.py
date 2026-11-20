@@ -28,23 +28,20 @@ from scripts.check_release_license_compliance import (  # noqa: E402
 from scripts.release_candidate_inventory import (  # noqa: E402
     BUILD_WORKFLOW,
     MANAGED_DEBIAN_ARTIFACT,
-    REPORT_NAME,
     RPM_ARTIFACT,
     RUNTIME_REPORT_ARTIFACT_NAMES,
     RUNTIME_REPORT_NAME,
     GitHubClient,
     check_artifact_metadata,
+    download_qualification_archives,
     materialize_sealed_records,
     normalize_repository,
     normalize_sha,
     normalize_tag,
-    qualification_receipt_bytes,
     sealed_json_artifact,
     validate_managed_report,
     validate_rpm_report,
     validate_runtime_report,
-    verify_sealed_rpm_smoke,
-    verify_sealed_smoke,
 )
 from scripts.release_candidate_source import (  # noqa: E402
     INVENTORY_FILE,
@@ -102,34 +99,20 @@ def collect_qualification_archives(
     if "managed_debian_update" in inventory:
         record = inventory["managed_debian_update"]
         artifact_id = validate_managed_report(record, tag, sha, run_id, 1, source_root=ROOT)
-        metadata = client.json(f"actions/artifacts/{artifact_id}")
-        check_artifact_metadata(
-            metadata, artifact_id=artifact_id, name=MANAGED_DEBIAN_ARTIFACT,
-            digest=record["archive_digest"], run_id=run_id, release_sha=sha,
-        )
-        raw, _ = sealed_json_artifact(
-            client, metadata, MANAGED_DEBIAN_ARTIFACT, run_id, sha, REPORT_NAME,
-            archive_output=archives / f"{MANAGED_DEBIAN_ARTIFACT}.zip",
-        )
-        if raw != qualification_receipt_bytes(record["receipt"]):
-            raise ValueError("managed Debian archive receipt does not match the sealed inventory")
         artifact_ids[MANAGED_DEBIAN_ARTIFACT] = artifact_id
     if "rpm_smoke" in inventory:
         artifact_id, _ = validate_rpm_report(
             inventory["rpm_recovery"], repository, tag, sha, run_id, 1, source_root=ROOT,
         )
-        verify_sealed_rpm_smoke(
-            client, inventory, run_id, sha, archive_output=archives / f"{RPM_ARTIFACT}.zip",
-        )
         artifact_ids[RPM_ARTIFACT] = artifact_id
 
+    download_qualification_archives(client, inventory, run_id, sha, archives)
     records = {}
     for name, artifact_id in artifact_ids.items():
         archive = archives / f"{name}.zip"
         reference = f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}"
         records[name] = evidence_record(archive, archives.parent, archive.read_bytes(), reference)
     smoke = {**inventory.get("gui_smoke", {}), **inventory.get("linux_smoke", {})}
-    verify_sealed_smoke(client, smoke, run_id, sha, archive_root=archives)
     for name, record in smoke.items():
         records[name] = {
             "file": f"archives/{name}.zip",

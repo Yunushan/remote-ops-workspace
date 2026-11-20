@@ -553,6 +553,9 @@ gh run download "$promotion_run_id" --repo "$release_repository" \
 gh run download "$promotion_run_id" --repo "$release_repository" \
   --name "production-redistribution-approval-${promotion_run_id}-${promotion_run_attempt}" \
   --dir "$publication_evidence_dir/redistribution"
+gh run download "$promotion_run_id" --repo "$release_repository" \
+  --name "production-candidate-qualification-${promotion_run_id}-${promotion_run_attempt}" \
+  --dir "$publication_evidence_dir/candidate-qualification"
 ```
 
 Use the downloaded governance JSON and signature for the aggregate audit.
@@ -562,8 +565,10 @@ The aggregate also needs
 the matching signed evidence bundle from the pinned evidence commit and
 the original protected-platform Actions ZIPs retained during
 [source evidence capture](../PRODUCTION_READINESS.md#external-prerequisites).
-Supply the review packet's `archives/` directory as
-`RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES`. The audit verifies the original
+Use the downloaded `candidate-qualification/` directory or the original review
+packet's `archives/` directory as `RELEASE_CANDIDATE_QUALIFICATION_ARCHIVES`.
+The hosted certification job downloads the same attempt's qualification ZIPs.
+The audit verifies the original
 Debian and RPM qualification ZIPs and the desktop and Linux installer smoke
 ZIPs against the signed candidate inventory. The retained ZIPs let the auditor
 repeat these checks after the original Actions downloads expire.

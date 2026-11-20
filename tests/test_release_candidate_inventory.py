@@ -599,6 +599,8 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
                     "head_sha": sha,
                     "path": ".github/workflows/release.yml",
                     "repository": {"full_name": "example/project"},
+                    "status": "completed",
+                    "conclusion": "success",
                 }
             if endpoint.startswith("actions/artifacts/"):
                 artifact_id = int(endpoint.rsplit("/", 1)[1])
@@ -786,6 +788,47 @@ def test_seal_requires_workflow_artifacts_and_keeps_smoke_reports_out_of_release
         path = retained / f"{name}.zip"
         assert path.read_bytes() == archives[record["artifact_id"]]
         assert qualifications[name]["sha256"] == record["archive_digest"].removeprefix("sha256:")
+
+    pointer_id = max(archives) + 1
+    pointer_zip = io.BytesIO()
+    with zipfile.ZipFile(pointer_zip, "w") as sealed:
+        sealed.writestr("release-candidate-inventory.json", output.read_bytes())
+    archives[pointer_id] = pointer_zip.getvalue()
+    pointer_digest = f"sha256:{hashlib.sha256(archives[pointer_id]).hexdigest()}"
+    artifacts.append({
+        "id": pointer_id, "name": candidate.CANDIDATE_INVENTORY_ARTIFACT, "digest": pointer_digest,
+        "size_in_bytes": len(archives[pointer_id]), "expired": False, "workflow_run": {"id": 123, "head_sha": sha},
+    })
+    promoted_assets = tmp_path / "promoted-assets"
+    promoted_qualifications = tmp_path / "promoted-qualifications"
+    attestations = []
+    monkeypatch.setattr(candidate, "verify_candidate_attestation", lambda path, **kwargs: attestations.append((path, kwargs)))
+
+    def promote():
+        candidate.promote(
+            BuildRun(), release_tag=tag, release_sha=sha, run_id=123, run_attempt=1,
+            inventory_artifact_id=pointer_id, inventory_archive_digest=pointer_digest,
+            approved_inventory=output, assets_root=promoted_assets, qualification_archives=promoted_qualifications,
+        )
+
+    arm_id = linux_archives[linux_smoke[1]]["artifact_id"]
+    arm_original = archives[arm_id]
+    archives[arm_id] = arm_original[:-1] + bytes([arm_original[-1] ^ 1])
+    with pytest.raises(ValueError, match="aarch64 archive digest or size differs"):
+        promote()
+    assert not promoted_assets.exists() and not promoted_qualifications.exists()
+    archives[arm_id] = arm_original
+    promote()
+    assert attestations[-1] == (output, {
+        **coordinates, "inventory_sha256": hashlib.sha256(output.read_bytes()).hexdigest(), "build_event": event,
+    })
+    assert {path.name: path.read_bytes() for path in promoted_assets.iterdir()} == {
+        path.name: path.read_bytes() for path in root.iterdir()
+    }
+    assert {path.name: path.read_bytes() for path in promoted_qualifications.iterdir()} == {
+        path.name: path.read_bytes() for path in retained.iterdir()
+    }
+    candidate.verify_retained_qualification_archives(promoted_qualifications, inventory)
     candidate.verify_retained_qualification_archives(retained, inventory)
     arm_archive = retained / f"{linux_smoke[1]}.zip"
     arm_bytes = arm_archive.read_bytes()

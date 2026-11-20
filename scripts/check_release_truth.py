@@ -623,6 +623,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 '--redistribution-signature "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/release-evidence.sig.json"',
                 '--candidate-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
                 '--protected-platform-registry "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/platform_verified_evidence.json"',
+                '--candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification"',
             ),
             ("--help",),
             frozenset({
@@ -631,6 +632,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 "--governance-attestation", "--governance-signature",
                 "--redistribution-evidence", "--redistribution-signature", "--candidate-inventory",
                 "--protected-platform-registry",
+                "--candidate-qualification-archives",
             }),
         ),
         "Verify attestation and download exact candidate artifact IDs": (
@@ -643,6 +645,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                 '--inventory-artifact-id "$INPUT_INVENTORY_ARTIFACT_ID"',
                 '--inventory-archive-digest "$INPUT_INVENTORY_ARCHIVE_DIGEST"',
                 '--approved-inventory "release-compliance-input/releases/$RELEASE_TAG/$RELEASE_SHA/bundle/release-candidate-inventory.json"',
+                '--qualification-archives "$RUNNER_TEMP/candidate-qualification"',
                 "--assets-root release-assets",
             ),
             ("--help", "--dry-run"),
@@ -656,6 +659,7 @@ def check_promotion_truth(workflow: str) -> list[str]:
                     "--inventory-artifact-id",
                     "--inventory-archive-digest",
                     "--approved-inventory",
+                    "--qualification-archives",
                     "--assets-root",
                 }
             ),
@@ -910,6 +914,20 @@ def check_promotion_truth(workflow: str) -> list[str]:
             )
         )
     bundle_path = "release-compliance-input/releases/${{ env.RELEASE_TAG }}/${{ env.RELEASE_SHA }}/bundle"
+    retained_name = "Retain original candidate qualification ZIPs"
+    retained = workflow_step_block(block, f"name: {retained_name}")
+    if (
+        step_is_suppressed(retained)
+        or not all(line in retained for line in (
+            "uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+            "name: production-candidate-qualification-${{ github.run_id }}-${{ github.run_attempt }}",
+            "path: ${{ runner.temp }}/candidate-qualification/*.zip",
+            "if-no-files-found: error",
+        ))
+        or not 0 <= block.find("name: Verify attestation and download exact candidate artifact IDs")
+            < block.find(f"name: {retained_name}") < block.find("name: Create new draft by numeric API identity")
+    ):
+        errors.append("promotion must retain the verified qualification ZIPs before creating a draft")
     for step_name in ("Attest the audited redistribution approval", "Retain the audited redistribution approval"):
         step = workflow_step_block(block, f"name: {step_name}")
         paths = {line.strip() for line in step.splitlines()}
@@ -981,6 +999,7 @@ def check_certification_truth(workflow: str) -> list[str]:
     for proof, artifact, directory in (
         ("governance proof", "production-tag-governance", "publication-governance"),
         ("redistribution approval", "production-redistribution-approval", "redistribution-approval"),
+        ("candidate qualification ZIPs", "production-candidate-qualification", "candidate-qualification"),
     ):
         step = workflow_step_block(block, f"name: Download {proof} from the triggering promotion attempt")
         if "run-id: ${{ env.PROMOTION_RUN_ID }}" not in step:
@@ -1012,6 +1031,7 @@ def check_certification_truth(workflow: str) -> list[str]:
         '--redistribution-evidence "$RUNNER_TEMP/redistribution-approval/release-evidence.json" '
         '--redistribution-signature "$RUNNER_TEMP/redistribution-approval/release-evidence.sig.json" '
         '--candidate-inventory "$RUNNER_TEMP/redistribution-approval/bundle/release-candidate-inventory.json" '
+        '--candidate-qualification-archives "$RUNNER_TEMP/candidate-qualification" '
         '--protected-platform-registry "$RUNNER_TEMP/redistribution-approval/bundle/platform_verified_evidence.json"',
     ]
     if (

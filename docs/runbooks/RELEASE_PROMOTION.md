@@ -328,6 +328,14 @@ verifies a disposable executable and PKG. It removes the keychain and files
 afterward. The release jobs run this before installing build dependencies and
 submit the final DMG and PKG for notarization after packaging.
 
+For production releases from v1.0.28, the macOS native manifests include a
+notarization receipt for each DMG and PKG. The builder requires Apple's
+accepted submission log to match the local filename and SHA-256 before
+stapling. It records the submission ID, the uploaded SHA-256, and the
+SHA-256 of the stapled file after ticket and Gatekeeper verification.
+Candidate staging and promotion compare the recorded stapled SHA-256 with
+the exact release file. [Apple notarization logs](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)
+
 You can check the protected `release` environment while other approvals are
 pending. This command verifies the presence of the Windows and macOS signing
 secret names.

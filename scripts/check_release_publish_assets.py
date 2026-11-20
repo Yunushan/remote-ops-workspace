@@ -29,8 +29,10 @@ from check_platform_verified_evidence import (  # noqa: E402
     RESERVED_WORKSPACE_ROOTS,
     directory_path_has_file_suffix,
 )
+from macos_notarization import check_release_receipt  # noqa: E402
 
 EXPECTED_CHECKSUM_SUFFIX = "SHA256SUMS.txt"
+MACOS_NOTARIZATION_RECEIPT_FIRST_RELEASE = (1, 0, 28)
 SOURCE_PYTHON_SBOM_SCOPE = "source-and-python-release-environment"
 RUNTIME_CONFIG_FILES = (
     "feature_manifest.json",
@@ -1404,6 +1406,40 @@ def check_native_release_signing_metadata(
             for key, value in expected.items():
                 if signing.get(key) != value:
                     errors.append(f"{label} signing.{key} must be {value!r}")
+        macos_manifest = re.fullmatch(
+            r"(remote-ops-workspace-v(\d+)\.(\d+)\.(\d+)-macos-(?:x64|arm64))-native-manifest\.json", name,
+        )
+        if (expected_production and macos_manifest
+                and tuple(map(int, macos_manifest.groups()[1:])) >= MACOS_NOTARIZATION_RECEIPT_FIRST_RELEASE):
+            errors.extend(check_macos_notarization_receipts(root, macos_manifest[1], payload))
+    return errors
+
+
+def check_macos_notarization_receipts(root: Path, base: str, payload: list[Any]) -> list[str]:
+    expected = {f"{base}.dmg", f"{base}.pkg"}
+    checked = set()
+    submission_ids = set()
+    errors: list[str] = []
+    for item in payload:
+        path = item.get("file") if isinstance(item, dict) else None
+        name = PurePosixPath(path).name if isinstance(path, str) else ""
+        if name not in expected or name in checked or item.get("format") != name.rsplit(".", 1)[1]:
+            errors.append(f"{base} notarization evidence must contain one receipt for each exact DMG and PKG")
+            continue
+        checked.add(name)
+        artifact = root / name
+        try:
+            digest = item.get("sha256")
+            receipt_id = check_release_receipt(item.get("notarization"), archive=name, stapled_sha256=digest)
+            if receipt_id in submission_ids:
+                raise ValueError("Apple notarization submission ID is duplicated")
+            submission_ids.add(receipt_id)
+            if artifact.is_symlink() or not artifact.is_file() or sha256_file(artifact) != digest:
+                raise ValueError("release file does not match the verified stapled SHA-256")
+        except (OSError, ValueError) as exc:
+            errors.append(f"{name}: {exc}")
+    if checked != expected:
+        errors.append(f"{base} notarization evidence is missing receipts for {sorted(expected - checked)}")
     return errors
 
 
